@@ -1005,7 +1005,7 @@ def test_numbered_projectors_skip_the_empty_diagnostic_half(monkeypatch, caplog)
         projectors = projector_preparation.build_numbered_projectors(
             halves, [object(), object()], settings, current_size=4, n_classes=1, reusable_half1=None,
             real_references_by_half=None, iteration=0, log=log,
-            files=_projector_files(),
+            files=projector_preparation.ProjectorFiles(),
         )
     assert built == ["iter000_half0"] and projectors[0] is not None and projectors[1] is None
     assert "RELION mode: skipping Projector::data build for empty half-2 dataset" in caplog.messages
@@ -2171,10 +2171,3 @@ def test_the_command_checks_each_reference_before_reading_any(monkeypatch, tmp_p
     with pytest.raises(SystemExit, match=option):
         controller_inputs(monkeypatch, tmp_path, command, *[a.replace("<LEGACY>", str(legacy)) for a in arguments],
                           n_classes=2)
-
-
-def _projector_files():
-    """The projector files the command reads from the environment (``RefinementEnvironment.projector_files``)."""
-    from relax.refinement.refinement_options import RefinementEnvironment
-
-    return RefinementEnvironment.from_environ().projector_files

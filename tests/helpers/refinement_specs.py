@@ -6,7 +6,8 @@ from relax.classification.probes import NoProbe as KClassNoProbe
 from relax.local_search import records
 from relax.refinement import dense_half, local_half, local_sampling
 from relax.refinement.ports import NoProbe
-from relax.refinement.refinement_options import LocalAdaptivePass2Support, RefinementEnvironment, ScoringVariants
+from relax.refinement.refinement_options import LocalAdaptivePass2Support, ScoringVariants
+from relax.runtime.engine_tuning import EngineTuning
 from relax.runtime.scoring_overrides import ScoringOverrides
 from relax.steps import half_inputs, scoring_policy, shape_class_scoring
 from relax.steps.half_inputs import HalfSet
@@ -112,8 +113,8 @@ def local_iteration_owners(*args, **values):
             stats_use_reconstruction_probs=values.pop("stats_use_reconstruction_probs", False),
             score_only=values.pop("score_only", False),
             return_profile=values.pop("return_profile", False),
-            # The environment, read as the command does.
-            engine_tuning=RefinementEnvironment.from_environ().engine,
+            # The command's default engine tuning unless the test gives one.
+            engine_tuning=values.pop("engine_tuning", EngineTuning()),
             scoring_overrides=values.pop("scoring_overrides", ScoringOverrides()),
         ),
     )
@@ -209,12 +210,12 @@ def local_half_owners(**values):
                 scoring_policy.DENSE_PRECISION,
                 values["iteration"] + 1 if values.get("debug_iteration") is None else values["debug_iteration"],
                 pass_index=2,
-                # The environment, read as the command does.
-                float64_pass2_iterations=RefinementEnvironment.from_environ().diagnostic_float64_pass2_iterations,
+                # The command's default (no float64 pass-2 iterations) unless the test gives them.
+                float64_pass2_iterations=values.pop("float64_pass2_iterations", frozenset()),
             ),
             score_only=values.pop("diagnostic_score_only"),
             firstiter_cc=values.pop("firstiter_cc", False),
-            engine_tuning=RefinementEnvironment.from_environ().engine,
+            engine_tuning=values.pop("engine_tuning", EngineTuning()),
             scoring_overrides=values.pop("scoring_overrides", ScoringOverrides()),
         ),
         local_half.LocalDiagnosticPolicy(
@@ -283,8 +284,8 @@ def dense_execution_policy(**fields):
             "nyquist_column_counting": "relion",
             "k_class_probe": KClassNoProbe(),
             "keep_pose_rotation_eulers": False,
-            # The environment, read as the command does.
-            "engine_tuning": RefinementEnvironment.from_environ().engine,
+            # The command's default engine tuning unless the test gives one.
+            "engine_tuning": EngineTuning(),
             **fields,
         }
     , scoring_overrides=ScoringOverrides())

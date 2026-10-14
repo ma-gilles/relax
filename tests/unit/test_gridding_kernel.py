@@ -99,21 +99,19 @@ def test_projector_setup_rejects_an_unknown_kernel():
         setup.setup_relion_projector_on_host(_reference(8), 3, box_size=8, padding_factor=PF, gridding_kernel="x", deterministic_reductions=False)
 
 
-def _scoring_projector(reference_real, r_max=3, **kwargs):
+def _scoring_projector(reference_real, r_max=3, files=projector_preparation.ProjectorFiles(), **kwargs):
     from recovar.core import fourier_transform_utils as ftu
 
     n = reference_real.shape[0]
     reference_ft = np.asarray(ftu.get_dft3(jnp.asarray(reference_real))).reshape(-1)
     return projector_preparation.prepare_scoring_projector(
         reference_ft, volume_shape=(n, n, n), current_size=2 * r_max, padding_factor=PF, n_classes=1, **kwargs,
-        files=_projector_files(),
+        files=files,
         deterministic_reductions=False,
     )
 
 
 def test_scoring_projector_hands_the_setup_the_kernel(monkeypatch):
-    monkeypatch.delenv("RELAX_RELION_PROJECTOR_CACHE_DIR", raising=False)
-    monkeypatch.delenv("RELAX_RELION_PROJECTOR_DUMP_DIR", raising=False)
     reference = _reference(8)
     builder = record_calls(monkeypatch, setup, "setup_relion_projector_on_host")
 
@@ -135,18 +133,17 @@ def test_scoring_projector_hands_the_setup_the_kernel(monkeypatch):
 
 
 def test_projector_cache_keeps_radial_and_separable_entries_apart(monkeypatch, tmp_path):
-    monkeypatch.setenv("RELAX_RELION_PROJECTOR_CACHE_DIR", str(tmp_path))
-    monkeypatch.delenv("RELAX_RELION_PROJECTOR_DUMP_DIR", raising=False)
+    files = projector_preparation.ProjectorFiles(cache_dir=str(tmp_path))
     reference = _reference(8)
 
-    radial = _scoring_projector(reference)
+    radial = _scoring_projector(reference, files=files)
     assert len(sorted(tmp_path.glob("projector_*.npz"))) == 1
-    separable = _scoring_projector(reference, gridding_kernel="separable")
+    separable = _scoring_projector(reference, files=files, gridding_kernel="separable")
     assert len(sorted(tmp_path.glob("projector_*.npz"))) == 2
     # Each window reads its own entry back without building.
     builder = record_calls(monkeypatch, setup, "reference_to_relion_projector_half_maps_and_power")
-    assert_matches(_scoring_projector(reference).data, radial.data)
-    assert_matches(_scoring_projector(reference, gridding_kernel="separable").data, separable.data)
+    assert_matches(_scoring_projector(reference, files=files).data, radial.data)
+    assert_matches(_scoring_projector(reference, files=files, gridding_kernel="separable").data, separable.data)
     assert not builder
 
 
@@ -422,10 +419,3 @@ def _refine_stubs(halves, **options):
 def test_class3d_refuses_separable():
     with pytest.raises(NotImplementedError, match="K=1 single-particle"):
         _refine_stubs([_stub_half(), _stub_half()], k_class=KClassOptions(n_classes=2))
-
-
-def _projector_files():
-    """The projector files the command reads from the environment (``RefinementEnvironment.projector_files``)."""
-    from relax.refinement.refinement_options import RefinementEnvironment
-
-    return RefinementEnvironment.from_environ().projector_files

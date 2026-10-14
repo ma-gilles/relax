@@ -336,6 +336,13 @@ def test_scoring_overrides_defaults_are_the_unset_environment(monkeypatch):
     assert ScoringOverrides.from_environ() == ScoringOverrides()
 
 
+def test_refinement_environment_defaults_are_the_unset_environment(monkeypatch):
+    """``RefinementEnvironment()`` is what the command reads with no variable set; the tiny refinement runs with it
+    unless a test gives another."""
+    _unset_relax_environment(monkeypatch)
+    assert RefinementEnvironment.from_environ() == RefinementEnvironment()
+
+
 def test_engine_tuning_reaches_the_dense_engine(monkeypatch):
     from relax.runtime.compile_ahead import CompileAheadConfig
     from relax.runtime.engine_tuning import EngineTuning

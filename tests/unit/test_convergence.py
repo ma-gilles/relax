@@ -22,6 +22,7 @@ from helpers.float_compare import assert_matches
 from relax.refinement.refinement_state import (
     MAX_NR_ITER_WO_LARGE_HIDDEN_VARIABLE_CHANGES,
     MAX_NR_ITER_WO_RESOL_GAIN,
+    LowPmaxRefineGuard,
     RefinementState,
     _exhaustive_grid_order_for_state,
     check_convergence,
@@ -46,11 +47,9 @@ pytestmark = pytest.mark.unit
 _REFINEMENT_LOGGER = logging.getLogger("relax.refinement.iteration_loop")
 
 
-def _guard_from_environ():
-    """The low-Pmax guard the command reads (``RefinementEnvironment.from_environ``)."""
-    from relax.refinement.refinement_options import RefinementEnvironment
-
-    return RefinementEnvironment.from_environ().low_pmax_refine_guard
+# The low-Pmax guard RELAX_EM_LOW_PMAX_REFINE_GUARD=1 turns on, with its other variables unset
+# (test_refinement_environment.test_low_pmax_refine_guard_is_read_once).
+_LOW_PMAX_GUARD = LowPmaxRefineGuard(max_ave_pmax=0.15, min_res_stall=3, require_local_search=True)
 
 
 def _refines_angular_sampling(state: RefinementState, guard=None) -> bool:
@@ -1425,7 +1424,7 @@ class TestRefinementPolicy:
         assert refined.sigma_rot > 0.0
         assert refined.sigma_psi > 0.0
 
-    def test_low_pmax_refinement_guard_is_opt_in(self, monkeypatch):
+    def test_low_pmax_refinement_guard_is_opt_in(self):
         state = RefinementState(
             healpix_order=4,
             max_healpix_order=7,
@@ -1441,11 +1440,9 @@ class TestRefinementPolicy:
             acc_rot=float("inf"),
         )
 
-        monkeypatch.delenv("RELAX_EM_LOW_PMAX_REFINE_GUARD", raising=False)
-        assert _refines_angular_sampling(state, _guard_from_environ())
+        assert _refines_angular_sampling(state, None)
 
-        monkeypatch.setenv("RELAX_EM_LOW_PMAX_REFINE_GUARD", "1")
-        guard = _guard_from_environ()
+        guard = _LOW_PMAX_GUARD
         assert not _refines_angular_sampling(state, guard)
 
         confident = RefinementState(
@@ -1464,7 +1461,7 @@ class TestRefinementPolicy:
         )
         assert _refines_angular_sampling(confident, guard)
 
-    def test_low_pmax_refinement_guard_can_cover_prelocal_transition(self, monkeypatch):
+    def test_low_pmax_refinement_guard_can_cover_prelocal_transition(self):
         state = RefinementState(
             healpix_order=3,
             max_healpix_order=7,
@@ -1481,12 +1478,8 @@ class TestRefinementPolicy:
         )
         assert not state.do_local_search
 
-        monkeypatch.setenv("RELAX_EM_LOW_PMAX_REFINE_GUARD", "1")
-        monkeypatch.delenv("RELAX_EM_LOW_PMAX_REFINE_REQUIRE_LOCAL", raising=False)
-        assert _refines_angular_sampling(state, _guard_from_environ())
-
-        monkeypatch.setenv("RELAX_EM_LOW_PMAX_REFINE_REQUIRE_LOCAL", "0")
-        assert not _refines_angular_sampling(state, _guard_from_environ())
+        assert _refines_angular_sampling(state, _LOW_PMAX_GUARD)
+        assert not _refines_angular_sampling(state, replace(_LOW_PMAX_GUARD, require_local_search=False))
 
     def test_local_search_keeps_exhaustive_grid_at_last_prelocal_order(self):
         state = RefinementState(healpix_order=4, auto_local_healpix_order=4)

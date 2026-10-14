@@ -19,9 +19,12 @@ between the two engines; that would be false by construction.
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import numpy as np
 import pytest
 from helpers import cuda_targets
+from helpers.engine_settings import LOCAL_RESIDENT_ENGINE
 from helpers.float_compare import assert_matches
 from helpers.projector_half_maps import reference_to_relion_projector_half_maps
 
@@ -172,7 +175,7 @@ def _case(seed=20260919, full_support=False):
 def _run(
     case,
     *,
-    monkeypatch,
+    engine_tuning=EngineTuning(),
     current_size=CURRENT_SIZE,
     source_faithful_spectrum_norm=False,
     production_shapes=False,
@@ -187,10 +190,8 @@ def _run(
 
     """One fine pass 2 through the production dispatch."""
 
-    if resident_operands is None:
-        monkeypatch.delenv("RELAX_SPARSE_PASS2_RESIDENT_OPERANDS", raising=False)
-    else:
-        monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_OPERANDS", "1" if resident_operands else "0")
+    if resident_operands is not None:
+        engine_tuning = replace(engine_tuning, resident_operands=resident_operands)
     layout = case["layout"]
     projector = case["projector_half"]
     if projector_dtype is not None:
@@ -242,14 +243,9 @@ def _run(
         return_best_pose_details=True,
         source_faithful_spectrum_norm=source_faithful_spectrum_norm,
         pass2_layout=layout,
+        engine_tuning=engine_tuning,
         **owners,
     ))
-
-
-@pytest.fixture
-def _resident_local_env(monkeypatch):
-    monkeypatch.setenv("RELAX_LOCAL_SEARCH_RESIDENT_ROW_CAPACITIES", "64,256,1024")
-    monkeypatch.setenv("RELAX_LOCAL_SEARCH_RESIDENT_IMAGE_CAPACITIES", "2,4,8")
 
 
 class _Dispatched(Exception):
@@ -269,7 +265,7 @@ def _dispatched_arguments(monkeypatch, **run):
 
     monkeypatch.setattr(local_half, "compute_local_search_resident", resident)
     with pytest.raises(_Dispatched):
-        _run(_case(), monkeypatch=monkeypatch, **run)
+        _run(_case(), **run)
     (arguments, keywords), = bound
     return arguments.arguments, keywords
 
@@ -512,7 +508,7 @@ def _parent_layout(seed=20260919):
 
 
 @requires_resident_gpu
-def test_resident_local_capacity_texture_matches_the_per_call_texture(monkeypatch, _resident_local_env):
+def test_resident_local_capacity_texture_matches_the_per_call_texture(monkeypatch):
     """One texture staged for the pass projects the rows the per-call staging projects.
 
     EMPIAR-10202 (14507538): the per-call texture allocated the slab's CUDA arrays on
@@ -540,12 +536,12 @@ def test_resident_local_capacity_texture_matches_the_per_call_texture(monkeypatc
         return real_start(*args, **kwargs)
 
     monkeypatch.setattr(rlp, "_start_resident_local_chunk", start_spy)
-    staged = _run(case, monkeypatch=monkeypatch)
+    staged = _run(case, engine_tuning=LOCAL_RESIDENT_ENGINE)
     assert opened == [True]
     assert chunk_slabs and set(chunk_slabs) == {jax.ShapeDtypeStruct}
     chunk_slabs.clear()
     monkeypatch.setattr(rlp, "_open_capacity_texture", lambda *a, **k: None)
-    per_call = _run(case, monkeypatch=monkeypatch)
+    per_call = _run(case, engine_tuning=LOCAL_RESIDENT_ENGINE)
     assert chunk_slabs and all(issubclass(kind, jax.Array) for kind in chunk_slabs)
 
     def rel_l2(a, b):
@@ -561,7 +557,7 @@ def test_resident_local_capacity_texture_matches_the_per_call_texture(monkeypatc
 
 @requires_resident_gpu
 @pytest.mark.parametrize("unshifted", [True, False], ids=["unshifted-operands", "translated-tiles"])
-def test_local_chunk_tile_count_matches_the_live_translated_arrays(monkeypatch, _resident_local_env, unshifted):
+def test_local_chunk_tile_count_matches_the_live_translated_arrays(monkeypatch, unshifted):
     """The capacity plan's per-stage tile counts are the translated arrays a chunk
     actually holds, for both operand families. EMPIAR-10202 it22 (14509861) ran out
     of memory when the plan counted three recon tiles and the tile preparation held
@@ -640,7 +636,7 @@ def test_local_chunk_tile_count_matches_the_live_translated_arrays(monkeypatch, 
     monkeypatch.setattr(resident_chunk_memory_module, "plan_resident_chunk_memory", plan)
     monkeypatch.setattr(resident_chunk_inputs_module, "prepare_chunk_reconstruction_operands", prepare)
     monkeypatch.setattr(rlp, "_unshifted_chunk_operands", unshifted_operands)
-    _run(_case(), monkeypatch=monkeypatch, resident_operands=unshifted)
+    _run(_case(), engine_tuning=LOCAL_RESIDENT_ENGINE, resident_operands=unshifted)
     assert len(planned) == 1 and len(measured) >= 2
     for key, image_translations, live in measured:
         assert live == image_translations * planned[0][key] * 8, (key, live, planned[0][key])
@@ -664,7 +660,7 @@ def test_driver_does_not_narrow_the_projector_slab():
 
 
 @requires_resident_gpu
-def test_exact_float32_accumulation_switch_runs_the_local_driver(monkeypatch, _resident_local_env):
+def test_exact_float32_accumulation_switch_runs_the_local_driver(monkeypatch):
     """``RELAX_EM_EXACT_FLOAT32_ACCUMULATION=1`` routes the local pass through the partial pair (relax#65).
 
     Too few rows here for one accumulator to lose weight, so the switched pass agrees with the default one to
@@ -674,7 +670,7 @@ def test_exact_float32_accumulation_switch_runs_the_local_driver(monkeypatch, _r
     from relax.reconstruction import half_volume_mstep as hvm
 
     case = _case()
-    default = _run(case, monkeypatch=monkeypatch)
+    default = _run(case, engine_tuning=LOCAL_RESIDENT_ENGINE)
     allocated = []
     real_allocate = rlp.allocate_row_partial
 
@@ -683,7 +679,7 @@ def test_exact_float32_accumulation_switch_runs_the_local_driver(monkeypatch, _r
         return allocated[-1]
 
     monkeypatch.setattr(rlp, "allocate_row_partial", allocate)
-    exact = _run(case, monkeypatch=monkeypatch, scoring_overrides=ScoringOverrides(exact_float32_accumulation=True))
+    exact = _run(case, engine_tuning=LOCAL_RESIDENT_ENGINE, scoring_overrides=ScoringOverrides(exact_float32_accumulation=True))
     assert allocated and all(isinstance(p, hvm.RowPartial) for p in allocated), "the switched pass must own a partial pair"
     assert_matches(np.asarray(default.hard_assignment), np.asarray(exact.hard_assignment))
     a, b = np.asarray(default.Ft_y, dtype=np.complex128), np.asarray(exact.Ft_y, dtype=np.complex128)
@@ -691,12 +687,12 @@ def test_exact_float32_accumulation_switch_runs_the_local_driver(monkeypatch, _r
 
 
 @requires_resident_gpu
-def test_resident_local_repeats_itself(monkeypatch, _resident_local_env):
+def test_resident_local_repeats_itself():
     """The resident driver's own repeat band, the reference for the table above."""
 
     case = _case()
-    first = _run(case, monkeypatch=monkeypatch)
-    second = _run(case, monkeypatch=monkeypatch)
+    first = _run(case, engine_tuning=LOCAL_RESIDENT_ENGINE)
+    second = _run(case, engine_tuning=LOCAL_RESIDENT_ENGINE)
     assert_matches(
         np.asarray(first.hard_assignment), np.asarray(second.hard_assignment)
     )
@@ -768,7 +764,7 @@ def test_mstep_adapter_refuses_unshifted_operands_without_the_kernel_tables():
 
 @requires_resident_gpu
 def test_local_chunk_runs_with_the_once_per_half_operand_flag(
-    monkeypatch, _resident_local_env
+    monkeypatch
 ):
     """One local-search chunk through the M-step adapter with T16's flag on.
 
@@ -794,9 +790,9 @@ def test_local_chunk_runs_with_the_once_per_half_operand_flag(
 
     monkeypatch.setattr(resident_mstep_blocks, "run_resident_mstep_blocks", counting_mstep_blocks)
 
-    on = _run(case, monkeypatch=monkeypatch, resident_operands=True)
+    on = _run(case, engine_tuning=LOCAL_RESIDENT_ENGINE, resident_operands=True)
     assert calls, "the local pass must reach run_resident_mstep_blocks"
-    off = _run(case, monkeypatch=monkeypatch, resident_operands=False)
+    off = _run(case, engine_tuning=LOCAL_RESIDENT_ENGINE, resident_operands=False)
 
     assert_matches(
         np.asarray(on.hard_assignment), np.asarray(off.hard_assignment)
@@ -830,7 +826,7 @@ def test_local_chunk_runs_with_the_once_per_half_operand_flag(
 
 
 @requires_resident_gpu
-def test_block_row_program_matches_the_slicing_callback(monkeypatch, _resident_local_env):
+def test_block_row_program_matches_the_slicing_callback():
     """P3-G: the chunk-array form against the per-block Python callback.
 
     With ``RELAX_LOCAL_SEARCH_RESIDENT_BLOCK_ROW_PROGRAM=1`` the chunk's three
@@ -845,10 +841,8 @@ def test_block_row_program_matches_the_slicing_callback(monkeypatch, _resident_l
     """
 
     case = _case()
-    monkeypatch.setenv("RELAX_LOCAL_SEARCH_RESIDENT_BLOCK_ROW_PROGRAM", "0")
-    off = _run(case, monkeypatch=monkeypatch, production_shapes=True)
-    monkeypatch.setenv("RELAX_LOCAL_SEARCH_RESIDENT_BLOCK_ROW_PROGRAM", "1")
-    on = _run(case, monkeypatch=monkeypatch, production_shapes=True)
+    off = _run(case, engine_tuning=replace(LOCAL_RESIDENT_ENGINE, local_block_row_program=False), production_shapes=True)
+    on = _run(case, engine_tuning=replace(LOCAL_RESIDENT_ENGINE, local_block_row_program=True), production_shapes=True)
 
     assert_matches(
         np.asarray(off.hard_assignment), np.asarray(on.hard_assignment)
@@ -919,7 +913,7 @@ def _assert_the_same_pass(default_pairs, exact_pair):
 
 
 @requires_resident_gpu
-def test_full_box_iteration_without_a_current_size_runs_resident(monkeypatch, _resident_local_env):
+def test_full_box_iteration_without_a_current_size_runs_resident(monkeypatch):
     """A regular iteration at the full box passes current_size=None (MS2 box 512 it25,
     bench 14641044, which the dispatcher refused); it is the box-size pass
     (:func:`_assert_the_same_pass` says how the two results are compared)."""
@@ -928,8 +922,8 @@ def test_full_box_iteration_without_a_current_size_runs_resident(monkeypatch, _r
     box = int(case["dataset"].image_shape[0])
 
     def pair(scoring_overrides=ScoringOverrides()):
-        unset = _run(case, monkeypatch=monkeypatch, current_size=None, scoring_overrides=scoring_overrides)
-        return _run(case, monkeypatch=monkeypatch, current_size=box, scoring_overrides=scoring_overrides), unset
+        unset = _run(case, engine_tuning=LOCAL_RESIDENT_ENGINE, current_size=None, scoring_overrides=scoring_overrides)
+        return _run(case, engine_tuning=LOCAL_RESIDENT_ENGINE, current_size=box, scoring_overrides=scoring_overrides), unset
 
     default_pairs = [pair() for _ in range(5)]
     exact_pair = pair(ScoringOverrides(exact_float32_accumulation=True))
@@ -984,7 +978,7 @@ def test_same_pass_assertions_pass_accumulation_noise_and_catch_a_changed_pass()
 
 
 @requires_resident_gpu
-def test_padded_posterior_bins_serve_two_bin_counts_with_one_program(monkeypatch, _resident_local_env):
+def test_padded_posterior_bins_serve_two_bin_counts_with_one_program(monkeypatch):
     """K=1 posterior bins padded to the quantum: halves whose used-bin counts differ share the
     image-term program, the padding holds no mass, and the results are the unpadded ones."""
 
@@ -995,7 +989,7 @@ def test_padded_posterior_bins_serve_two_bin_counts_with_one_program(monkeypatch
         programs = []
         results = []
         for case in cases:
-            results.append(_run(case, monkeypatch=monkeypatch))
+            results.append(_run(case, engine_tuning=LOCAL_RESIDENT_ENGINE))
             programs.append(resident_image_terms.accumulate_chunk_image_terms._cache_size())
         return results, programs
 
@@ -1054,7 +1048,7 @@ def test_rotation_posterior_is_accumulated_over_the_used_bins():
 
 @requires_resident_gpu
 @pytest.mark.parametrize("zero_oversampling", [True, False], ids=["all-weights", "pruned"])
-def test_two_identical_classes_split_the_single_class_pass(monkeypatch, _resident_local_env, zero_oversampling):
+def test_two_identical_classes_split_the_single_class_pass(zero_oversampling):
     """Two copies of one reference, no class prior: each class carries half of the K=1 pass.
 
     RELION's Class3D local search scores every class at the particle's local orientations and
@@ -1064,13 +1058,13 @@ def test_two_identical_classes_split_the_single_class_pass(monkeypatch, _residen
     """
 
     case = _case()
-    single = _run(case, monkeypatch=monkeypatch, zero_oversampling=zero_oversampling)
+    single = _run(case, engine_tuning=LOCAL_RESIDENT_ENGINE, zero_oversampling=zero_oversampling)
     doubled = dict(
         case,
         volume=jnp.stack([case["volume"], case["volume"]]),
         projector_half=jnp.stack([case["projector_half"], case["projector_half"]]),
     )
-    joint = _run(doubled, monkeypatch=monkeypatch, zero_oversampling=zero_oversampling, n_classes=2).class_pass
+    joint = _run(doubled, engine_tuning=LOCAL_RESIDENT_ENGINE, zero_oversampling=zero_oversampling, n_classes=2).class_pass
 
     def rel_l2(a, b):
         a, b = np.asarray(a, dtype=np.complex128), np.asarray(b, dtype=np.complex128)
@@ -1101,7 +1095,7 @@ def test_cc_block_rows_divide_every_capacity():
 
 
 @requires_resident_gpu
-def test_local_firstiter_cc_class3d_takes_the_winner_over_classes(monkeypatch, _resident_local_env):
+def test_local_firstiter_cc_class3d_takes_the_winner_over_classes():
     """RELION's --firstiter_cc iteration of a local Class3D with given references scores every class
     (do_generate_seeds is off, ml_optimiser.cpp:4392-4401) and keeps each particle's best sample over
     classes and poses (relax#72: this pass was refused).
@@ -1116,15 +1110,15 @@ def test_local_firstiter_cc_class3d_takes_the_winner_over_classes(monkeypatch, _
         rng.uniform(0.5, 1.5, np.shape(case["projector_half"])), dtype=jnp.float32
     )
     singles = [
-        _run(case, monkeypatch=monkeypatch, firstiter_cc=True),
-        _run(dict(case, projector_half=other_projector), monkeypatch=monkeypatch, firstiter_cc=True),
+        _run(case, engine_tuning=LOCAL_RESIDENT_ENGINE, firstiter_cc=True),
+        _run(dict(case, projector_half=other_projector), engine_tuning=LOCAL_RESIDENT_ENGINE, firstiter_cc=True),
     ]
     two = dict(
         case,
         volume=jnp.stack([case["volume"], case["volume"]]),
         projector_half=jnp.stack([case["projector_half"], other_projector]),
     )
-    joint = _run(two, monkeypatch=monkeypatch, firstiter_cc=True, n_classes=2).class_pass
+    joint = _run(two, engine_tuning=LOCAL_RESIDENT_ENGINE, firstiter_cc=True, n_classes=2).class_pass
 
     best = np.stack([np.asarray(s.relion_stats.best_log_score_per_image, dtype=np.float64) for s in singles])
     for k in range(2):
@@ -1139,7 +1133,7 @@ def test_local_firstiter_cc_class3d_takes_the_winner_over_classes(monkeypatch, _
 
 
 @requires_resident_gpu
-def test_local_firstiter_cc_identical_classes_give_the_first_class_everything(monkeypatch, _resident_local_env):
+def test_local_firstiter_cc_identical_classes_give_the_first_class_everything():
     """An exact tie between classes goes to the first class: with two copies of one reference the first
     class's BPref is the K=1 CC pass's and the second class has none.
 
@@ -1150,13 +1144,13 @@ def test_local_firstiter_cc_identical_classes_give_the_first_class_everything(mo
     """
 
     case = _case()
-    single = _run(case, monkeypatch=monkeypatch, firstiter_cc=True)
+    single = _run(case, engine_tuning=LOCAL_RESIDENT_ENGINE, firstiter_cc=True)
     doubled = dict(
         case,
         volume=jnp.stack([case["volume"], case["volume"]]),
         projector_half=jnp.stack([case["projector_half"], case["projector_half"]]),
     )
-    joint = _run(doubled, monkeypatch=monkeypatch, firstiter_cc=True, n_classes=2).class_pass
+    joint = _run(doubled, engine_tuning=LOCAL_RESIDENT_ENGINE, firstiter_cc=True, n_classes=2).class_pass
 
     def rel_l2(a, b):
         a, b = np.asarray(a, dtype=np.complex128), np.asarray(b, dtype=np.complex128)
@@ -1169,7 +1163,7 @@ def test_local_firstiter_cc_identical_classes_give_the_first_class_everything(mo
 
 
 @requires_resident_gpu
-def test_local_firstiter_cc_is_winner_take_all_and_ignores_the_priors(monkeypatch, _resident_local_env):
+def test_local_firstiter_cc_is_winner_take_all_and_ignores_the_priors():
     """RELION's --firstiter_cc iteration when the search is local from iteration 1 (--sigma_ang).
 
     RELION scores the normalized CC and zeroes every weight but the best
@@ -1182,10 +1176,10 @@ def test_local_firstiter_cc_is_winner_take_all_and_ignores_the_priors(monkeypatc
     import dataclasses
 
     case = _case()
-    gaussian = _run(case, monkeypatch=monkeypatch)
+    gaussian = _run(case, engine_tuning=LOCAL_RESIDENT_ENGINE)
     assert float(np.min(np.asarray(gaussian.relion_stats.max_posterior_per_image))) < 1.0
 
-    cc = _run(case, monkeypatch=monkeypatch, firstiter_cc=True)
+    cc = _run(case, engine_tuning=LOCAL_RESIDENT_ENGINE, firstiter_cc=True)
     np.testing.assert_array_equal(np.asarray(cc.relion_stats.max_posterior_per_image), 1.0)
 
     rng = np.random.default_rng(7)
@@ -1202,12 +1196,12 @@ def test_local_firstiter_cc_is_winner_take_all_and_ignores_the_priors(monkeypatc
             ),
         ),
     )
-    cc_reweighted = _run(reweighted, monkeypatch=monkeypatch, firstiter_cc=True)
+    cc_reweighted = _run(reweighted, engine_tuning=LOCAL_RESIDENT_ENGINE, firstiter_cc=True)
     assert_matches(np.asarray(cc.hard_assignment), np.asarray(cc_reweighted.hard_assignment))
 
 
 @requires_resident_gpu
-def test_local_firstiter_cc_probe_keeps_the_fine_pass_winner(monkeypatch, _resident_local_env):
+def test_local_firstiter_cc_probe_keeps_the_fine_pass_winner():
     """The --firstiter_cc parent probe keeps one sample per image, the one the fine pass picks.
 
     Scored on the same layout, the score-only probe (its own operand preparation)
@@ -1216,10 +1210,10 @@ def test_local_firstiter_cc_probe_keeps_the_fine_pass_winner(monkeypatch, _resid
 
     parent, translations = _parent_layout()
     case = dict(_case(), layout=parent, translations=translations)
-    fine = _run(case, monkeypatch=monkeypatch, firstiter_cc=True)
+    fine = _run(case, engine_tuning=LOCAL_RESIDENT_ENGINE, firstiter_cc=True)
     probe = _run(
         case,
-        monkeypatch=monkeypatch,
+        engine_tuning=LOCAL_RESIDENT_ENGINE,
         firstiter_cc=True,
         score_only=True,
         disable_adjoint_y=True,
@@ -1234,7 +1228,7 @@ def test_local_firstiter_cc_probe_keeps_the_fine_pass_winner(monkeypatch, _resid
 
 @requires_resident_gpu
 @pytest.mark.parametrize("firstiter_cc", [False, True], ids=["gaussian", "firstiter_cc"])
-def test_lone_overflow_image_matches_the_one_call_chunk(monkeypatch, _resident_local_env, firstiter_cc):
+def test_lone_overflow_image_matches_the_one_call_chunk(monkeypatch, firstiter_cc):
     """An image past the largest local row class runs alone in row blocks (relax#49 follow-up): its rows are
     projected and scored a block at a time (the scorer the global pass's lone chunk uses), the posterior is
     formed over all of them, and each M-step block projects its own rows. Each row's projection and score are
@@ -1245,7 +1239,7 @@ def test_lone_overflow_image_matches_the_one_call_chunk(monkeypatch, _resident_l
     from relax.fine_pass import resident_scoring
 
     case = _case()
-    whole = _run(case, monkeypatch=monkeypatch, production_shapes=True, firstiter_cc=firstiter_cc)
+    whole = _run(case, engine_tuning=LOCAL_RESIDENT_ENGINE, production_shapes=True, firstiter_cc=firstiter_cc)
 
     blocked_calls = []
     name = "score_resident_chunk_normalized_cc_in_row_blocks" if firstiter_cc else "score_resident_chunk_in_row_blocks"
@@ -1257,9 +1251,7 @@ def test_lone_overflow_image_matches_the_one_call_chunk(monkeypatch, _resident_l
 
     monkeypatch.setattr(rlp, name, spy)
     assert real_blocked is getattr(resident_scoring, name)
-    monkeypatch.setenv("RELAX_LOCAL_SEARCH_RESIDENT_ROW_CAPACITIES", "8")
-    monkeypatch.setenv("RELAX_LOCAL_SEARCH_RESIDENT_IMAGE_CAPACITIES", "1,2")
-    lone = _run(case, monkeypatch=monkeypatch, production_shapes=True, firstiter_cc=firstiter_cc)
+    lone = _run(case, engine_tuning=replace(LOCAL_RESIDENT_ENGINE, local_row_capacities=(8,), local_image_capacities=(1, 2)), production_shapes=True, firstiter_cc=firstiter_cc)
 
     assert blocked_calls, "the 8-row ladder made no lone chunk"
     assert_matches(np.asarray(whole.hard_assignment), np.asarray(lone.hard_assignment))
@@ -1278,7 +1270,7 @@ def test_lone_overflow_image_matches_the_one_call_chunk(monkeypatch, _resident_l
 
 
 @requires_resident_gpu
-def test_class3d_lone_overflow_image_matches_the_one_call_chunk(monkeypatch, _resident_local_env):
+def test_class3d_lone_overflow_image_matches_the_one_call_chunk(monkeypatch):
     """A Class3D local image past the largest row class runs alone in row blocks too: each block's rows project
     with their own class's reference (a block spans the class boundary of the image's class-major rows), the
     joint and per-class posteriors are formed over all rows at once, and each class's M-step blocks project with
@@ -1302,7 +1294,7 @@ def test_class3d_lone_overflow_image_matches_the_one_call_chunk(monkeypatch, _re
         volume=jnp.stack([case["volume"], jnp.asarray(other_ft)]),
         projector_half=jnp.stack([case["projector_half"], other_half]),
     )
-    whole = _run(two, monkeypatch=monkeypatch, n_classes=2).class_pass
+    whole = _run(two, engine_tuning=LOCAL_RESIDENT_ENGINE, n_classes=2).class_pass
 
     block_classes = []
     real_project = rlp._project_class_rows
@@ -1313,9 +1305,7 @@ def test_class3d_lone_overflow_image_matches_the_one_call_chunk(monkeypatch, _re
 
     monkeypatch.setattr(rlp, "_project_class_rows", spy)
     # 12-row blocks straddle the class boundary (see the docstring).
-    monkeypatch.setenv("RELAX_LOCAL_SEARCH_RESIDENT_ROW_CAPACITIES", "12")
-    monkeypatch.setenv("RELAX_LOCAL_SEARCH_RESIDENT_IMAGE_CAPACITIES", "1,2")
-    lone = _run(two, monkeypatch=monkeypatch, n_classes=2).class_pass
+    lone = _run(two, engine_tuning=replace(LOCAL_RESIDENT_ENGINE, local_row_capacities=(12,), local_image_capacities=(1, 2)), n_classes=2).class_pass
 
     assert any(len(c) == 2 for c in block_classes), "no lone row block spanned the class boundary"
 
@@ -1351,20 +1341,18 @@ def test_lone_block_rows_divide_a_chunk_rounded_to_a_smaller_class():
 
 
 @requires_resident_gpu
-def test_lone_overflow_chunk_from_a_smaller_class_replan_matches_the_one_call_chunk(monkeypatch, _resident_local_env):
+def test_lone_overflow_chunk_from_a_smaller_class_replan_matches_the_one_call_chunk(monkeypatch):
     """The pass's chunks planned with only the smaller row class (as plan_pass_chunks' re-plan does) give an
     overflow chunk that the largest class does not divide; it runs in blocks of the class that does."""
 
     case = _case()
-    whole = _run(case, monkeypatch=monkeypatch, production_shapes=True)
+    whole = _run(case, engine_tuning=LOCAL_RESIDENT_ENGINE, production_shapes=True)
     real_plan = rlp.plan_local_capacity_chunks
 
     def smaller_class_plan(tables, *, row_capacity_ladder, image_capacity_ladder):
         return real_plan(tables, row_capacity_ladder=(8,), image_capacity_ladder=image_capacity_ladder)
 
     monkeypatch.setattr(rlp, "plan_local_capacity_chunks", smaller_class_plan)
-    monkeypatch.setenv("RELAX_LOCAL_SEARCH_RESIDENT_ROW_CAPACITIES", "8,16")
-    monkeypatch.setenv("RELAX_LOCAL_SEARCH_RESIDENT_IMAGE_CAPACITIES", "1,2")
     sizes = []
     real_start = rlp._start_resident_local_chunk
 
@@ -1374,7 +1362,7 @@ def test_lone_overflow_chunk_from_a_smaller_class_replan_matches_the_one_call_ch
         return real_start(chunk, **kwargs)
 
     monkeypatch.setattr(rlp, "_start_resident_local_chunk", spy)
-    lone = _run(case, monkeypatch=monkeypatch, production_shapes=True)
+    lone = _run(case, engine_tuning=replace(LOCAL_RESIDENT_ENGINE, local_row_capacities=(8, 16), local_image_capacities=(1, 2)), production_shapes=True)
 
     assert any(rows % 16 for rows, _ in sizes), f"no overflow chunk off the 16-row class: {sizes}"
     assert all(block == 8 for rows, block in sizes if rows % 16)

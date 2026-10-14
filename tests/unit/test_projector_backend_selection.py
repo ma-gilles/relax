@@ -67,18 +67,18 @@ def test_setup_agrees_with_relion_to_double_precision(padding_factor):
     assert float(np.abs(np.asarray(power) - native_power).max()) / power_scale < 1e-11
 
 
-def test_the_projector_cache_round_trips(tmp_path, monkeypatch):
-    from relax.steps.projector_preparation import prepare_scoring_projector
+def test_the_projector_cache_round_trips(tmp_path):
+    from relax.steps.projector_preparation import ProjectorFiles, prepare_scoring_projector
 
-    monkeypatch.setenv("RELAX_RELION_PROJECTOR_CACHE_DIR", str(tmp_path))
+    files = ProjectorFiles(cache_dir=str(tmp_path))
     rng = np.random.default_rng(1)
     reference = rng.standard_normal((1, 32, 32, 32)).astype(np.float64)
     # Fourier references are validated even when real_references supplies the volume.
     flat_ft = np.zeros((1, 32**3), dtype=np.complex128)
     kwargs = dict(volume_shape=(32, 32, 32), current_size=16, padding_factor=2, n_classes=1, real_references=reference)
-    built = prepare_scoring_projector(flat_ft, **kwargs, files=_projector_files(), deterministic_reductions=False)
+    built = prepare_scoring_projector(flat_ft, **kwargs, files=files, deterministic_reductions=False)
     assert len(sorted(tmp_path.glob("projector_*.npz"))) == 1
-    cached = prepare_scoring_projector(flat_ft, **kwargs, files=_projector_files(), deterministic_reductions=False)
+    cached = prepare_scoring_projector(flat_ft, **kwargs, files=files, deterministic_reductions=False)
     assert_matches(cached.data, built.data)
     assert cached.r_max == built.r_max
     assert_matches(cached.power_spectrum, built.power_spectrum)
@@ -86,10 +86,11 @@ def test_the_projector_cache_round_trips(tmp_path, monkeypatch):
 
 @pytest.mark.parametrize("current_size,cached_size", [(4, 4), (None, 8)])
 def test_accuracy_projector_reuse_bypasses_conversion_cache_and_dump(
-    monkeypatch, tmp_path, current_size, cached_size,
+    tmp_path, current_size, cached_size,
 ):
     from relax.steps.projector_preparation import (
         PreparedProjector,
+        ProjectorFiles,
         ProjectorReuse,
         prepare_scoring_projector,
     )
@@ -108,13 +109,11 @@ def test_accuracy_projector_reuse_bypasses_conversion_cache_and_dump(
         references=references, current_size=cached_size, image_box_size=8,
         projector=projector,
     )
-    monkeypatch.setenv("RELAX_RELION_PROJECTOR_CACHE_DIR", str(tmp_path / "cache"))
-    monkeypatch.setenv("RELAX_RELION_PROJECTOR_DUMP_DIR", str(tmp_path / "dump"))
     result = prepare_scoring_projector(
         references, volume_shape=(4, 4, 4), current_size=current_size,
         padding_factor=2, n_classes=1, reusable=reusable,
         real_references=UnconvertibleReference(), dump_label="reuse",
-        files=_projector_files(),
+        files=ProjectorFiles(cache_dir=str(tmp_path / "cache"), dump_dir=str(tmp_path / "dump")),
         deterministic_reductions=False,
     )
 
@@ -135,12 +134,11 @@ def test_accuracy_projector_reuse_misses_build_the_requested_transform(
     import relax.relion.projector_setup as setup
     from relax.steps.projector_preparation import (
         PreparedProjector,
+        ProjectorFiles,
         ProjectorReuse,
         prepare_scoring_projector,
     )
 
-    monkeypatch.delenv("RELAX_RELION_PROJECTOR_CACHE_DIR", raising=False)
-    monkeypatch.delenv("RELAX_RELION_PROJECTOR_DUMP_DIR", raising=False)
     references = np.zeros((n_classes, 4**3), dtype=np.complex64)
     real_references = np.arange(n_classes * 4**3, dtype=np.float64).reshape(n_classes, 4, 4, 4)
     cached = PreparedProjector(data=object(), r_max=2)
@@ -164,7 +162,7 @@ def test_accuracy_projector_reuse_misses_build_the_requested_transform(
         references, volume_shape=(4, 4, 4), current_size=current_size,
         padding_factor=2, n_classes=n_classes, reusable=reusable,
         real_references=real_references,
-        files=_projector_files(),
+        files=ProjectorFiles(),
         deterministic_reductions=False,
     )
 
@@ -173,10 +171,3 @@ def test_accuracy_projector_reuse_misses_build_the_requested_transform(
     assert result.r_max == transform_size // 2
     assert result.data.dtype == np.complex128
     assert result.power_spectrum.dtype == np.float64
-
-
-def _projector_files():
-    """The projector files the command reads from the environment (``RefinementEnvironment.projector_files``)."""
-    from relax.refinement.refinement_options import RefinementEnvironment
-
-    return RefinementEnvironment.from_environ().projector_files

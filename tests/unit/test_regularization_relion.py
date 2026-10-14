@@ -649,7 +649,7 @@ def test_tau2_from_the_scoring_projector_spectrum_matches_the_relion_transform()
     from helpers.em_fixtures import fixture_file
     from recovar.utils.helpers import load_relion_volume, recovar_volume_to_relion
 
-    from relax.steps.projector_preparation import prepare_scoring_projector
+    from relax.steps.projector_preparation import ProjectorFiles, prepare_scoring_projector
 
     volume_path = fixture_file("k4_5k128_relion_os0", "run_it000_class001.mrc")
     vol_recovar = np.asarray(load_relion_volume(str(volume_path)), dtype=np.float64)
@@ -664,7 +664,7 @@ def test_tau2_from_the_scoring_projector_spectrum_matches_the_relion_transform()
             current_size=current_size,
             padding_factor=2,
             n_classes=1,
-            files=_projector_files(),
+            files=ProjectorFiles(),
             deterministic_reductions=False,
         )
         _, relion_power, *_ = bind.compute_fourier_transform_map(
@@ -862,10 +862,3 @@ def test_final_halfmap_prior_leaves_the_accumulators_unchanged(monkeypatch):
 def _join_route():
     """The low-resolution join route the command reads from the environment (``ReconstructionPrograms``)."""
     return ReconstructionPrograms.from_environ().lowres_join
-
-
-def _projector_files():
-    """The projector files the command reads from the environment (``RefinementEnvironment.projector_files``)."""
-    from relax.refinement.refinement_options import RefinementEnvironment
-
-    return RefinementEnvironment.from_environ().projector_files

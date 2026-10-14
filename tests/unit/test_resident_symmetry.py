@@ -19,6 +19,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from helpers.engine_settings import LOCAL_RESIDENT_ENGINE
 
 pytest.importorskip("jax")
 from test_resident_significance import (
@@ -315,9 +316,7 @@ def _c4_local_case(monkeypatch):
 def test_c4_resident_local_backprojection_is_c4_invariant(monkeypatch):
     """The C4 local fine pass 2 symmetrizes its CTF backprojection over the point group."""
 
-    monkeypatch.setenv("RELAX_LOCAL_SEARCH_RESIDENT_ROW_CAPACITIES", "64,256,1024")
-    monkeypatch.setenv("RELAX_LOCAL_SEARCH_RESIDENT_IMAGE_CAPACITIES", "2,4,8")
     local_tests, case = _c4_local_case(monkeypatch)
     assert case["layout"].symmetry == SYMMETRY
-    resident = local_tests._run(case, monkeypatch=monkeypatch)
+    resident = local_tests._run(case, engine_tuning=LOCAL_RESIDENT_ENGINE)
     assert _c4_rotation_residual(resident.Ft_ctf) < 1e-5, _rotation_diagnostics(resident.Ft_ctf)

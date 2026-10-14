@@ -22,7 +22,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 from helpers import cuda_targets
-from helpers.engine_settings import RESIDENT_PRODUCTION_ENGINE
+from helpers.engine_settings import LOCAL_RESIDENT_ENGINE, RESIDENT_PRODUCTION_ENGINE
 from helpers.float_compare import assert_matches
 
 pytest.importorskip("jax")
@@ -591,6 +591,7 @@ def _run_local(case, current_size: int):
         return_best_pose_details=True,
         pass2_layout=case["layout"],
         scoring_overrides=_MANUAL_INTERP,
+        engine_tuning=LOCAL_RESIDENT_ENGINE,
     ))
 
 
@@ -603,8 +604,6 @@ def test_resident_local_pass_is_relions_local_fine_pass(monkeypatch, noise, curr
     corners, and the local search routes that pass to the resident driver too.
     """
 
-    monkeypatch.setenv("RELAX_LOCAL_SEARCH_RESIDENT_ROW_CAPACITIES", "64,256,1024")
-    monkeypatch.setenv("RELAX_LOCAL_SEARCH_RESIDENT_IMAGE_CAPACITIES", "2,4,8")
     case, reference = _local_case(current_size, noise)
     out = _run_local(case, current_size)
     posts = ref.posteriors(reference)
@@ -774,6 +773,7 @@ def _run_local_parent_probe(case, current_size: int):
         adaptive_fraction=0.999,
         max_significants=-1,
         pass2_layout=case["parent"],
+        engine_tuning=LOCAL_RESIDENT_ENGINE,
         return_reconstruction_sample_indices=True,
         apply_max_significants_to_support=True,
         score_only=True,
@@ -792,8 +792,6 @@ def test_resident_parent_probe_is_relions_local_pass_1(monkeypatch, noise, curre
     differently (at most one sample per image).
     """
 
-    monkeypatch.setenv("RELAX_LOCAL_SEARCH_RESIDENT_ROW_CAPACITIES", "64,256,1024")
-    monkeypatch.setenv("RELAX_LOCAL_SEARCH_RESIDENT_IMAGE_CAPACITIES", "2,4,8")
     case, reference = _local_parent_case(current_size, noise)
     out = _run_local_parent_probe(case, current_size)
     posts = ref.posteriors(reference)

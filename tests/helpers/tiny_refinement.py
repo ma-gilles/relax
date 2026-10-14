@@ -314,12 +314,13 @@ def run_tiny_refinement(
     for name in ("RELAX_PARITY_DUMP_DIR", "RELAX_PARITY_TIMING_DIR"):
         monkeypatch.delenv(name, raising=False)
     # K=1: run the final all-data pass after the last numbered iteration without waiting for convergence
-    # (RELAX_FINAL_ALL_DATA_AFTER_MAX_ITER); the rest of the environment is read as the command does.
+    # (RELAX_FINAL_ALL_DATA_AFTER_MAX_ITER); its other options are read as the command does.
     # Class3D refuses the option at set-up (require_final_pass_route), so only K=1 sets it.
     option_groups["final_pass"] = replace(
         FinalPassOptions.from_environ(), after_max_iter=final_after_max_iter and n_classes == 1,
     )
-    option_groups.setdefault("environment", RefinementEnvironment.from_environ())
+    # The controller's environment switches at their defaults (the unset environment), unless the caller gives them.
+    option_groups.setdefault("environment", RefinementEnvironment())
     rng = np.random.default_rng(42)
     halves = [MockHalfSet(N_IMAGES // 2, rng), MockHalfSet(N_IMAGES // 2, rng)]
     option_groups.setdefault("adaptive", stand_in.adaptive(adaptive_oversampling=1))
@@ -386,7 +387,7 @@ def engine_stage_kwargs(monkeypatch, **engine_kwargs):
     translations, fine_translations = np.zeros((2, 2), np.float32), np.zeros((4, 2), np.float32)
     rotation_parents, translation_parents = np.repeat(np.arange(4), 2), np.repeat(np.arange(2), 2)
     means = jnp.zeros((1, VOLUME_SIZE), jnp.complex64)
-    # The engine tuning the command reads from the environment, unless the caller gives one.
+    # The command's default engine tuning, unless the caller gives one.
     keywords = dict(half_spectrum_scoring=True, mstep_relion_x_half=True,
                     **{"engine_tuning": EngineTuning(), **engine_kwargs})
     stages = {}

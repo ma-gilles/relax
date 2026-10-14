@@ -3102,7 +3102,7 @@ def test_relion_projector_cache_reuses_cached_projector_data(monkeypatch, tmp_pa
         return projector_half, power, int(current_size // 2)
 
     monkeypatch.setattr(projector_setup, "reference_to_relion_projector_half_maps_and_power", fake_projector_builder)
-    monkeypatch.setenv("RELAX_RELION_PROJECTOR_CACHE_DIR", str(tmp_path))
+    files = projector_preparation.ProjectorFiles(cache_dir=str(tmp_path))
 
     mean_ft = np.zeros((4, 4, 4), dtype=np.complex64)
     mean_ft[0, 0, 0] = 1.0
@@ -3112,7 +3112,7 @@ def test_relion_projector_cache_reuses_cached_projector_data(monkeypatch, tmp_pa
         current_size=4,
         padding_factor=2,
         n_classes=1,
-        files=_projector_files(),
+        files=files,
         deterministic_reductions=False,
     )
     second = projector_preparation.prepare_scoring_projector(
@@ -3121,7 +3121,7 @@ def test_relion_projector_cache_reuses_cached_projector_data(monkeypatch, tmp_pa
         current_size=4,
         padding_factor=2,
         n_classes=1,
-        files=_projector_files(),
+        files=files,
         deterministic_reductions=False,
     )
 
@@ -3164,7 +3164,7 @@ def test_relion_projector_direct_real_reference_bypasses_fourier_roundtrip(monke
         padding_factor=2,
         n_classes=1,
         real_references=exact_real,
-        files=_projector_files(),
+        files=projector_preparation.ProjectorFiles(),
         deterministic_reductions=False,
     )
 
@@ -9785,10 +9785,3 @@ def test_non_c1_small_rotation_grid_keeps_adaptive_sparse_route():
     assert not choose(adaptive_oversampling=1, use_local=False, n_rotations=12, symmetry="C1")
     assert not choose(adaptive_oversampling=0, use_local=False, n_rotations=12, symmetry="O")
     assert not choose(adaptive_oversampling=1, use_local=True, n_rotations=12, symmetry="O")
-
-
-def _projector_files():
-    """The projector files the command reads from the environment (``RefinementEnvironment.projector_files``)."""
-    from relax.refinement.refinement_options import RefinementEnvironment
-
-    return RefinementEnvironment.from_environ().projector_files
