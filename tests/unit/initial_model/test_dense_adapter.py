@@ -199,9 +199,8 @@ def test_arrays_to_accumulators_splits_grouped_halfsets():
     assert not np.array_equal(actual[0].weight, actual[1].weight)
 
 
-def test_accumulator_dump_directory_is_read_once_and_receives_each_accumulator(monkeypatch, tmp_path):
-    """RELAX_INITIAL_MODEL_ACCUM_DUMP_DIR is read into VdamEnvironment; arrays_to_accumulators writes one file per
-    half and class there, and nothing without it."""
+def test_accumulator_dump_directory_is_read_once(monkeypatch, tmp_path):
+    """RELAX_INITIAL_MODEL_ACCUM_DUMP_DIR is read into VdamEnvironment as set; unset or empty is None."""
     from relax.vdam.native_options import VdamEnvironment
 
     monkeypatch.delenv("RELAX_INITIAL_MODEL_ACCUM_DUMP_DIR", raising=False)
@@ -209,9 +208,13 @@ def test_accumulator_dump_directory_is_read_once_and_receives_each_accumulator(m
     monkeypatch.setenv("RELAX_INITIAL_MODEL_ACCUM_DUMP_DIR", "")
     assert VdamEnvironment.from_environ().accum_dump_dir is None
     monkeypatch.setenv("RELAX_INITIAL_MODEL_ACCUM_DUMP_DIR", str(tmp_path))
-    dump_dir = VdamEnvironment.from_environ().accum_dump_dir
-    assert dump_dir == str(tmp_path)
+    assert VdamEnvironment.from_environ().accum_dump_dir == str(tmp_path)
 
+
+def test_accumulator_dump_directory_receives_each_accumulator(tmp_path):
+    """arrays_to_accumulators writes one file per half and class in VdamEnvironment.accum_dump_dir, and nothing
+    without it."""
+    dump_dir = str(tmp_path)
     state = initialise_denovo_state(box_size=8, pixel_size=1.0, K=1, nr_iter=1, n_directions=4)
     state.current_size = 4
     data = np.ones((1, 2, 7 * 7 * 7), dtype=np.complex64)
@@ -504,9 +507,23 @@ def test_resolve_class_inputs_reuses_prebuilt_production_projector(monkeypatch):
         _resolve_class_inputs(state, replace(config, relion_projector_r_max=None))
 
 
+def test_projector_dump_directory_is_read_once(monkeypatch, tmp_path):
+    """RELAX_INITIAL_MODEL_PROJECTOR_DUMP_DIR is read once into VdamEnvironment, stripped; unset or blank is None."""
+    from relax.vdam.native_options import VdamEnvironment
+
+    for unset in (None, "  "):
+        if unset is None:
+            monkeypatch.delenv("RELAX_INITIAL_MODEL_PROJECTOR_DUMP_DIR", raising=False)
+        else:
+            monkeypatch.setenv("RELAX_INITIAL_MODEL_PROJECTOR_DUMP_DIR", unset)
+        assert VdamEnvironment.from_environ().projector_dump_dir is None
+    assert VdamEnvironment().projector_dump_dir is None
+    monkeypatch.setenv("RELAX_INITIAL_MODEL_PROJECTOR_DUMP_DIR", f" {tmp_path} ")
+    assert VdamEnvironment.from_environ().projector_dump_dir == str(tmp_path)
+
+
 def test_projector_refresh_can_dump_exact_projector_operand(monkeypatch, tmp_path):
-    """RELAX_INITIAL_MODEL_PROJECTOR_DUMP_DIR is read once into VdamEnvironment; the iteration's projector context
-    hands it to the dump; unset or blank dumps nothing."""
+    """The iteration's projector context hands VdamEnvironment.projector_dump_dir to the dump."""
     from relax.vdam.estep_setup import IterationProjectorContext
     from relax.vdam.native_options import VdamEnvironment
 
@@ -518,16 +535,7 @@ def test_projector_refresh_can_dump_exact_projector_operand(monkeypatch, tmp_pat
     state = initialise_denovo_state(box_size=8, pixel_size=1.0, K=1, nr_iter=1, n_directions=4)
     state.iter = 7
     state.current_size = 4
-    for unset in (None, "  "):
-        if unset is None:
-            monkeypatch.delenv("RELAX_INITIAL_MODEL_PROJECTOR_DUMP_DIR", raising=False)
-        else:
-            monkeypatch.setenv("RELAX_INITIAL_MODEL_PROJECTOR_DUMP_DIR", unset)
-        assert VdamEnvironment.from_environ().projector_dump_dir is None
-    assert VdamEnvironment().projector_dump_dir is None
-    monkeypatch.setenv("RELAX_INITIAL_MODEL_PROJECTOR_DUMP_DIR", f" {tmp_path} ")
-    environment = VdamEnvironment.from_environ()
-    assert environment.projector_dump_dir == str(tmp_path)
+    environment = VdamEnvironment(projector_dump_dir=str(tmp_path))
 
     IterationProjectorContext(projector_dump_dir=environment.projector_dump_dir).refresh(state, padding_factor=1)
 

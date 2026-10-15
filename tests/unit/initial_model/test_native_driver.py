@@ -2238,6 +2238,34 @@ def test_environment_flags_take_the_shared_tokens_and_refuse_a_malformed_value(m
         native_options.VdamEnvironment.from_environ()
 
 
+def test_library_settings_are_read_once_by_from_environ(monkeypatch):
+    """TF_GPU_ALLOCATOR, JAX_COMPILATION_CACHE_DIR and JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS as they are set;
+    unset: "default", None and None."""
+    names = ("TF_GPU_ALLOCATOR", "JAX_COMPILATION_CACHE_DIR", "JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS")
+    fields = ("cuda_allocator", "jax_compilation_cache_dir", "jax_persistent_cache_min_compile_time_secs")
+    for name in names:
+        monkeypatch.delenv(name, raising=False)
+    environment = native_options.VdamEnvironment.from_environ()
+    assert tuple(getattr(environment, field) for field in fields) == ("default", None, None)
+    for name, value in zip(names, ("cuda_malloc_async", "/cache/dir", "0.5"), strict=True):
+        monkeypatch.setenv(name, value)
+    environment = native_options.VdamEnvironment.from_environ()
+    assert tuple(getattr(environment, field) for field in fields) == ("cuda_malloc_async", "/cache/dir", "0.5")
+
+
+def test_vdam_environment_defaults_are_the_unset_environment(monkeypatch):
+    """``VdamEnvironment()`` is what the command reads with no variable set; tests pass it, or it with the fields
+    they need."""
+    import os
+
+    for name in list(os.environ):
+        if name.startswith(("RELAX_", "RECOVAR_")):
+            monkeypatch.delenv(name)
+    for name in ("TF_GPU_ALLOCATOR", "JAX_COMPILATION_CACHE_DIR", "JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS"):
+        monkeypatch.delenv(name, raising=False)
+    assert native_options.VdamEnvironment.from_environ() == native_options.VdamEnvironment()
+
+
 def test_float64_scoring_switch_is_refused_by_from_environ(monkeypatch):
     # The resident E-step never took it: InitialModel ignored RELAX_USE_FLOAT64_SCORING until 2026-10-06.
     monkeypatch.setenv("RELAX_USE_FLOAT64_SCORING", "1")
@@ -2905,29 +2933,27 @@ def test_log_likelihood_contribution_of_a_group_on_another_grid():
 
 def test_run_metadata_records_the_library_settings_the_options_read(monkeypatch, tmp_path):
     """The options file's allocator and JAX cache entries come from ``VdamEnvironment`` (read once by
-    ``from_environ``, as the command does), not from the process environment at write time; unset variables give
-    "default", None and None."""
+    ``from_environ``, as the command does: test_library_settings_are_read_once_by_from_environ), not from the
+    process environment at write time; unset variables give "default", None and None."""
     names = ("TF_GPU_ALLOCATOR", "JAX_COMPILATION_CACHE_DIR", "JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS")
 
-    def written(tag):
+    def written(tag, environment):
         opts = native_options.NativeInitialModelOptions(
-            fn_img="x", outputname=str(tmp_path / tag / "run"), environment=native_options.VdamEnvironment.from_environ()
+            fn_img="x", outputname=str(tmp_path / tag / "run"), environment=environment
         )
         for name in names:  # what the environment holds after the options are built must not matter
             monkeypatch.setenv(name, "changed-later")
         output.write_initial_run_metadata(opts, None)
         return json.loads((tmp_path / tag / "run_native_options.json").read_text())
 
-    for name in names:
-        monkeypatch.delenv(name, raising=False)
-    unset = written("unset")
+    unset = written("unset", native_options.VdamEnvironment())
     assert (unset["resolved_cuda_allocator"], unset["jax_compilation_cache_enabled"]) == ("default", False)
     assert (unset["jax_compilation_cache_dir"], unset["jax_persistent_cache_min_compile_time_secs"]) == (None, None)
     assert "environment" not in unset
 
-    monkeypatch.setenv("TF_GPU_ALLOCATOR", "cuda_malloc_async")
-    monkeypatch.setenv("JAX_COMPILATION_CACHE_DIR", "/cache/dir")
-    monkeypatch.setenv("JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS", "0.5")
-    set_ = written("set")
+    set_ = written("set", native_options.VdamEnvironment(
+        cuda_allocator="cuda_malloc_async", jax_compilation_cache_dir="/cache/dir",
+        jax_persistent_cache_min_compile_time_secs="0.5",
+    ))
     assert (set_["resolved_cuda_allocator"], set_["jax_compilation_cache_enabled"]) == ("cuda_malloc_async", True)
     assert (set_["jax_compilation_cache_dir"], set_["jax_persistent_cache_min_compile_time_secs"]) == ("/cache/dir", "0.5")
