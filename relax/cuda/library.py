@@ -429,7 +429,7 @@ OPTIONAL_FFI_REGISTRATIONS = {
 }
 
 
-_LIBRARY = NativeLibrary(
+LIBRARY = NativeLibrary(
     name="relax (EM)",
     filename="librelax_cuda.so",
     make_dir=pathlib.Path(__file__).resolve().parent,
@@ -440,20 +440,20 @@ _LIBRARY = NativeLibrary(
 )
 
 
-_ffi_lock = _LIBRARY.ffi_lock
+_ffi_lock = LIBRARY.ffi_lock
 
 
 def get_lib():
     """ctypes handle of the EM library (C-ABI exports such as the persistent-texture registry)."""
 
-    return _LIBRARY.get_lib()
+    return LIBRARY.get_lib()
 
 
 def ensure_ffi():
     """Register recovar's pipeline FFI targets, which EM wrappers also call, then the EM library's."""
 
     cuda_backproject.ensure_ffi()
-    _LIBRARY.ensure_ffi()
+    LIBRARY.ensure_ffi()
 
 
 def ensure_optional_ffi(target):
@@ -461,6 +461,6 @@ def ensure_optional_ffi(target):
 
     if target in OPTIONAL_FFI_REGISTRATIONS:
         ensure_ffi()
-        _LIBRARY.ensure_optional_ffi(target)
+        LIBRARY.ensure_optional_ffi(target)
     else:
         cuda_backproject.ensure_optional_ffi(target)

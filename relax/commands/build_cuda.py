@@ -17,8 +17,8 @@ def main():
     args = parser.parse_args()
     from relax.cuda import library
 
-    output = pathlib.Path(args.output or library._LIBRARY.make_dir / "librelax_cuda.so").expanduser().resolve()
-    library._LIBRARY.build(output_path=output, force=True)
+    output = pathlib.Path(args.output or library.LIBRARY.make_dir / "librelax_cuda.so").expanduser().resolve()
+    library.LIBRARY.build(output_path=output, force=True)
     print(f"Built {output}")
 
 

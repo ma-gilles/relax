@@ -470,7 +470,7 @@ def test_relion_coarse_prehalf_shared_body_is_built_packaged_and_stale_checked()
         str(include_dir() / "device_scratch.cuh"),
         "Makefile",
     )
-    assert library._LIBRARY.source_names == library._RELAX_CUDA_BUILD_SOURCE_NAMES
+    assert library.LIBRARY.source_names == library._RELAX_CUDA_BUILD_SOURCE_NAMES
 
 
 

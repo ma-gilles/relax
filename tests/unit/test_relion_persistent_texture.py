@@ -586,7 +586,7 @@ def test_bound_cuda_library_keeps_persistent_texture_handles_live(
     # The persistent textures live in the EM library (librelax_cuda.so), which binds like the pipeline one.
     with jax.default_device(gpu_device):
         library.ensure_ffi()
-        bound = library._LIBRARY.loaded_path
+        bound = library.LIBRARY.loaded_path
         reference = project()
         copy = tmp_path / "second_copy" / "librelax_cuda.so"
         copy.parent.mkdir()
@@ -597,7 +597,7 @@ def test_bound_cuda_library_keeps_persistent_texture_handles_live(
         # Without an explicit request, native calls keep using the bound library.
         monkeypatch.delenv("RELAX_CUDA_LIB")
         assert_matches(project(), reference)
-    assert library._LIBRARY.loaded_path == bound
+    assert library.LIBRARY.loaded_path == bound
 
 
 def test_large_static_projector_uses_half_storage_without_full_cube(monkeypatch):
