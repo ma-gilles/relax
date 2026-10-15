@@ -196,9 +196,11 @@ def _pass2_projection_budget(
     device_memory_bytes,
     include_abs2: bool,
     max_projected_rotations_override: int | None,
+    projection_max_bytes: int | None,
 ):
     """Projection cache dtype, budget pixels and rotations per projection call of a pass 2
-    (``max_projected_rotations_override``: ``EngineTuning.max_projected_rotations``).
+    (``max_projected_rotations_override``: ``EngineTuning.max_projected_rotations``; ``projection_max_bytes``:
+    ``EngineTuning.projection_max_bytes``).
 
     ``include_abs2`` says whether the projection call also materializes the
     squared magnitudes; the single-volume route skips them for score-only
@@ -221,6 +223,7 @@ def _pass2_projection_budget(
         projection_complex_dtype=projection_complex_dtype,
         include_abs2=include_abs2,
         override=max_projected_rotations_override,
+        projection_max_bytes=projection_max_bytes,
     )
     return projection_complex_dtype, projection_budget_pixels, max_projected_rotations_per_projection_call
 

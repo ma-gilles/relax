@@ -25,9 +25,8 @@ _H100_BYTES = int(79.65 * 1024**3)
 _A100_40_BYTES = 40 * 1024**3
 
 
-def _clear_env(monkeypatch):
-    monkeypatch.delenv("RELAX_SPARSE_PASS2_PROJECTION_CACHE_MAX_BYTES", raising=False)
-    monkeypatch.delenv("RELAX_SPARSE_PASS2_MAX_PROJECTED_ROTATIONS", raising=False)
+# The run without a projection budget override (EngineTuning.projection_max_bytes).
+_NO_OVERRIDE = EngineTuning().projection_max_bytes
 
 
 def test_hp3_cs92_cache_estimate_matches_logged_value():
@@ -44,35 +43,50 @@ def test_hp3_cs92_cache_estimate_matches_logged_value():
     "logged_gib",
     [18.36, 20.00],  # before and after the stable windows' physical-class padding (job 14514823)
 )
-def test_hp3_cache_admitted_on_80gb_rejected_on_40gb(monkeypatch, logged_gib):
-    _clear_env(monkeypatch)
+def test_hp3_cache_admitted_on_80gb_rejected_on_40gb(logged_gib):
     logged_hp3_estimate = int(logged_gib * 1024**3)
-    assert _projection_cache_fits_budget(logged_hp3_estimate, _projection_cache_max_bytes_for_pass(_H100_BYTES))
-    assert not _projection_cache_fits_budget(logged_hp3_estimate, _projection_cache_max_bytes_for_pass(_A100_40_BYTES))
+    assert _projection_cache_fits_budget(logged_hp3_estimate, _projection_cache_max_bytes_for_pass(_H100_BYTES, override=_NO_OVERRIDE))
+    assert not _projection_cache_fits_budget(logged_hp3_estimate, _projection_cache_max_bytes_for_pass(_A100_40_BYTES, override=_NO_OVERRIDE))
 
 
-def test_cache_cap_is_thirty_percent_of_device_memory_without_override(monkeypatch):
-    _clear_env(monkeypatch)
-    assert _projection_cache_max_bytes_for_pass(_H100_BYTES) == int(_H100_BYTES * 0.30)
+def test_cache_cap_is_thirty_percent_of_device_memory_without_override():
+    assert _projection_cache_max_bytes_for_pass(_H100_BYTES, override=_NO_OVERRIDE) == int(_H100_BYTES * 0.30)
 
 
-def test_cache_cap_change_leaves_per_call_rotation_budget_alone(monkeypatch):
-    _clear_env(monkeypatch)
+def test_cache_cap_change_leaves_per_call_rotation_budget_alone():
     # The per-call projected-rotation budget (809 rotations per call at cs 92 on
     # an H100 in the measured runs) must not grow with the cache admission cap.
-    assert _projection_call_max_bytes_for_pass(_H100_BYTES) == int(_H100_BYTES * 0.040)
-    assert _projection_call_max_bytes_for_pass(_H100_BYTES) < _projection_cache_max_bytes_for_pass(_H100_BYTES)
+    assert _projection_call_max_bytes_for_pass(_H100_BYTES, override=_NO_OVERRIDE) == int(_H100_BYTES * 0.040)
+    assert _projection_call_max_bytes_for_pass(_H100_BYTES, override=_NO_OVERRIDE) < _projection_cache_max_bytes_for_pass(
+        _H100_BYTES, override=_NO_OVERRIDE,
+    )
 
 
-def test_env_override_still_wins(monkeypatch):
-    monkeypatch.setenv("RELAX_SPARSE_PASS2_PROJECTION_CACHE_MAX_BYTES", "654321")
-    assert _projection_cache_max_bytes_for_pass(_H100_BYTES) == 654321
+def test_the_override_wins():
+    assert _projection_cache_max_bytes_for_pass(_H100_BYTES, override=654321) == 654321
+    assert _projection_call_max_bytes_for_pass(_H100_BYTES, override=654321) == 654321
 
 
-def test_cache_build_rotations_per_call_scales_scoring_budget(monkeypatch):
+def test_the_override_is_read_once(monkeypatch):
+    """EngineTuning.from_environ reads RELAX_SPARSE_PASS2_PROJECTION_CACHE_MAX_BYTES: unset or empty is None, a
+    non-negative integer is taken, anything else is refused."""
+    name = "RELAX_SPARSE_PASS2_PROJECTION_CACHE_MAX_BYTES"
+    monkeypatch.delenv(name, raising=False)
+    assert EngineTuning.from_environ().projection_max_bytes is None
+    monkeypatch.setenv(name, "")
+    assert EngineTuning.from_environ().projection_max_bytes is None
+    for raw, value in (("0", 0), ("654321", 654321)):
+        monkeypatch.setenv(name, raw)
+        assert EngineTuning.from_environ().projection_max_bytes == value
+    for bad in ("-3", "lots"):
+        monkeypatch.setenv(name, bad)
+        with pytest.raises(ValueError, match="must be a non-negative integer"):
+            EngineTuning.from_environ()
+
+
+def test_cache_build_rotations_per_call_scales_scoring_budget():
     from relax.runtime.memory_budget import _projection_cache_build_max_rotations_per_call
 
-    _clear_env(monkeypatch)
     assert _projection_cache_build_max_rotations_per_call(
         809, 294912, override=EngineTuning().max_projected_rotations,
     ) == 4 * 809

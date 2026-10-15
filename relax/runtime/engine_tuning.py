@@ -18,9 +18,16 @@ from relax.runtime.compile_ahead import (
     CompileAheadConfig,
     parse_compile_ahead_config,
 )
-from relax.runtime.env_flags import parse_env_flag, parse_env_positive_float, parse_env_true_flag, read_env_text
+from relax.runtime.env_flags import (
+    parse_env_flag,
+    parse_env_nonnegative_int,
+    parse_env_positive_float,
+    parse_env_true_flag,
+    read_env_text,
+)
 
 DEVICE_MEMORY_GB_ENV = "RELAX_SPARSE_PASS2_DEVICE_MEMORY_GB"
+PROJECTION_CACHE_MAX_BYTES_ENV = "RELAX_SPARSE_PASS2_PROJECTION_CACHE_MAX_BYTES"
 # relax.numerics.finite_check's opt-in checks and their warn-only mode (EngineTuning.finite_check).
 FINITE_CHECK_ENV = "RELAX_EM_FINITE_CHECK"
 FINITE_CHECK_WARN_ENV = "RELAX_EM_FINITE_CHECK_WARN"
@@ -167,6 +174,10 @@ class EngineTuning:
     which refuses a value that is not a positive number): the accelerator memory the budgets take instead of the
     probe (``memory_budget._device_memory_limit_bytes``), an operator escape hatch for shared GPUs or a wrong probe;
     None probes the device.
+    ``projection_max_bytes`` (RELAX_SPARSE_PASS2_PROJECTION_CACHE_MAX_BYTES, ``env_flags.parse_env_nonnegative_int``,
+    which refuses a value that is not a non-negative integer): the bytes of pass 2's projection cache and of one
+    projection call (``memory_budget._projection_bytes_for_pass``) instead of their device shares; None takes the
+    shares (3 GiB without a device).
     """
 
     compile_ahead: CompileAheadConfig = field(default_factory=CompileAheadConfig)
@@ -207,6 +218,7 @@ class EngineTuning:
     finite_check: str = "off"
     resident_glue_jit: bool = True
     device_memory_bytes: int | None = None
+    projection_max_bytes: int | None = None
 
     @classmethod
     def from_environ(cls) -> EngineTuning:
@@ -283,6 +295,7 @@ class EngineTuning:
             finite_check=finite_check_mode(parse_env_true_flag(FINITE_CHECK_ENV), parse_env_true_flag(FINITE_CHECK_WARN_ENV)),
             resident_glue_jit=parse_env_flag("RELAX_SPARSE_PASS2_RESIDENT_GLUE_JIT", default=True),
             device_memory_bytes=parse_device_memory_gb(parse_env_positive_float(DEVICE_MEMORY_GB_ENV)),
+            projection_max_bytes=parse_env_nonnegative_int(PROJECTION_CACHE_MAX_BYTES_ENV),
         )
 
 

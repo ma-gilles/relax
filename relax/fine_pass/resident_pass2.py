@@ -1525,6 +1525,7 @@ def _resident_pass2(
         device_memory_bytes=device_memory_bytes,
         include_abs2=False,
         max_projected_rotations_override=engine_tuning.max_projected_rotations,
+        projection_max_bytes=engine_tuning.projection_max_bytes,
     )
     transient_projection_bytes = _projection_cache_transient_bytes(
         n_projections,
@@ -1561,7 +1562,9 @@ def _resident_pass2(
             projection_complex_dtype=precision_policy.score_complex_dtype,
             include_abs2=False,
         )
-    max_projection_cache_bytes = _projection_cache_max_bytes_for_pass(device_memory_bytes)
+    max_projection_cache_bytes = _projection_cache_max_bytes_for_pass(
+        device_memory_bytes, override=engine_tuning.projection_max_bytes,
+    )
     projection_kwargs = _projection_kwargs_for_relion_score_window(
         window_spec.projection_kwargs(return_abs2=False),
         use_relion_projector=use_relion_projector,

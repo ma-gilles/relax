@@ -902,7 +902,9 @@ def compute_local_search_resident(
             support.engine_tuning.local_row_capacities or _DEFAULT_ROW_CAPACITY_LADDER,
             n_score_pixels=n_windowed,
             n_recon_pixels=n_recon_windowed,
-            max_bytes=_projection_cache_max_bytes_for_pass(device_memory_bytes),
+            max_bytes=_projection_cache_max_bytes_for_pass(
+                device_memory_bytes, override=support.engine_tuning.projection_max_bytes,
+            ),
         )
         # The accumulators already exist, so the budget reading counts them; the
         # plan records them so that its pass_bytes is the pass's total need.

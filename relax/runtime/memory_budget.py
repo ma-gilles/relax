@@ -3,8 +3,9 @@
 Device memory limits and free-memory probes (JAX allocator, nvidia-smi) and
 the per-pass byte budgets derived from them: hypotheses per microbatch,
 translation tiles, projection gathers and caches, noise and adjoint blocks.
-The positive-int/float environment parsers live here because the budgets
-and the policy switches both read them.
+Their overrides come from ``EngineTuning``, read by the command; the only
+environment read here is ``CUDA_VISIBLE_DEVICES``, which names the physical
+device the NVML probes query (device discovery, not configuration).
 """
 
 from __future__ import annotations
@@ -17,7 +18,6 @@ import subprocess
 import jax
 import numpy as np
 
-from relax.runtime.env_flags import parse_env_nonnegative_int
 from relax.runtime.xla_memory_reserve import _nvidia_smi_visible_device_memory_bytes
 
 logger = logging.getLogger(__name__)
@@ -81,9 +81,6 @@ _DEFAULT_ADJOINT_BLOCK_MAX_BYTES = 512 * 1024**2
 
 
 
-
-
-_PROJECTION_CACHE_MAX_BYTES_ENV = "RELAX_SPARSE_PASS2_PROJECTION_CACHE_MAX_BYTES"
 
 
 _DEFAULT_PROJECTION_CACHE_MAX_BYTES = 3 * 1024**3
@@ -396,10 +393,10 @@ def accuracy_slab_resident_bytes(device_memory_override: int | None) -> int | No
     return max(1, int(float(device_memory_bytes) * _AUTO_ACCURACY_SLAB_DEVICE_FRACTION))
 
 
-def _projection_bytes_for_pass(device_memory_bytes: int | None, device_fraction: float) -> int:
-    """The projection byte budget: the environment override, else ``device_fraction`` of the device, else 3 GiB."""
+def _projection_bytes_for_pass(device_memory_bytes: int | None, device_fraction: float, override: int | None) -> int:
+    """The projection byte budget: ``override`` (``EngineTuning.projection_max_bytes``), else ``device_fraction`` of
+    the device, else 3 GiB."""
 
-    override = parse_env_nonnegative_int(_PROJECTION_CACHE_MAX_BYTES_ENV)
     if override is not None:
         return override
     if device_memory_bytes is None:
@@ -407,12 +404,12 @@ def _projection_bytes_for_pass(device_memory_bytes: int | None, device_fraction:
     return max(1, int(float(device_memory_bytes) * device_fraction))
 
 
-def _projection_cache_max_bytes_for_pass(device_memory_bytes: int | None = None) -> int:
-    return _projection_bytes_for_pass(device_memory_bytes, _AUTO_PROJECTION_CACHE_DEVICE_FRACTION)
+def _projection_cache_max_bytes_for_pass(device_memory_bytes: int | None, *, override: int | None) -> int:
+    return _projection_bytes_for_pass(device_memory_bytes, _AUTO_PROJECTION_CACHE_DEVICE_FRACTION, override)
 
 
-def _projection_call_max_bytes_for_pass(device_memory_bytes: int | None = None) -> int:
-    return _projection_bytes_for_pass(device_memory_bytes, _AUTO_PROJECTED_ROTATIONS_DEVICE_FRACTION)
+def _projection_call_max_bytes_for_pass(device_memory_bytes: int | None, *, override: int | None) -> int:
+    return _projection_bytes_for_pass(device_memory_bytes, _AUTO_PROJECTED_ROTATIONS_DEVICE_FRACTION, override)
 
 
 def _projection_cache_transient_bytes(
@@ -456,14 +453,16 @@ def _max_projected_rotations_per_call_for_pass(
     projection_complex_dtype,
     include_abs2: bool,
     override: int | None,
+    projection_max_bytes: int | None,
 ) -> int | None:
     """Rotations per projection call: ``override`` (``EngineTuning.max_projected_rotations``), else what the
-    device's projection call budget holds."""
+    device's projection call budget holds (``projection_max_bytes``, ``EngineTuning.projection_max_bytes``, in its
+    place when set)."""
     if override is not None:
         return int(override)
     if device_memory_bytes is None or int(n_projection_pixels) <= 0:
         return None
-    max_bytes = _projection_call_max_bytes_for_pass(device_memory_bytes)
+    max_bytes = _projection_call_max_bytes_for_pass(device_memory_bytes, override=projection_max_bytes)
     bytes_per_rotation = _projection_cache_transient_bytes(
         1,
         int(n_projection_pixels),
