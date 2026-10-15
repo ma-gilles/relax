@@ -358,7 +358,7 @@ __global__ void relion_coarse_cut_mass_decide_kernel(
         for (int b = 0; b < kRelionCutBins; ++b) total += masses[b];
         const float total_f32 = static_cast<float>(total);
         sum_weight[row] = total_f32;
-        // _relion_cuda_f32_tail_target: (1 - textToFloat(fraction)) * sum, narrowed to XFLOAT.
+        // relion_cuda_f32_tail_target: (1 - textToFloat(fraction)) * sum, narrowed to XFLOAT.
         target[row] = static_cast<double>(static_cast<float>(
             (1.0 - static_cast<double>(fraction)) * static_cast<double>(total_f32)));
         low[row] = 0.0;

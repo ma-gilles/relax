@@ -675,18 +675,18 @@ def test_translation_grid_matches_relion_ceil_boundary_for_every_class_count(mon
     rounded_range = 4.25 / 1.4166666666666667
     rounded_step = 1.416667 / 1.4166666666666667
 
-    k1_grid = grids_module._translation_grid_for_class_count(
+    k1_grid = grids_module.translation_grid_for_class_count(
         rounded_range,
         rounded_step,
         n_classes=1,
     )
-    k4_grid = grids_module._translation_grid_for_class_count(
+    k4_grid = grids_module.translation_grid_for_class_count(
         rounded_range,
         rounded_step,
         n_classes=4,
     )
     monkeypatch.setenv("RELAX_K1_RELION_EXACT_TRANSLATION_GRID", "0")
-    diagnostic_control_grid = grids_module._translation_grid_for_class_count(
+    diagnostic_control_grid = grids_module.translation_grid_for_class_count(
         rounded_range,
         rounded_step,
         n_classes=1,
@@ -717,7 +717,7 @@ def test_k4_translation_grid_matches_relions_recorded_count():
     log = fixture_file("k4_5k128_relion_os0", "relion_run.log").read_text()
     recorded = {int(n) for step, n in re.findall(r"TranslationalSampling= (\S+) NrTranslations= (\d+)", log)
                 if float(step) == offset_step}
-    grid = grids_module._translation_grid_for_class_count(
+    grid = grids_module.translation_grid_for_class_count(
         offset_range / offset_step, 1.0, n_classes=4, source_units_per_pixel=offset_step
     )
     assert recorded == {grid.shape[0]} == {29}
@@ -726,7 +726,7 @@ def test_k4_translation_grid_matches_relions_recorded_count():
 def test_k1_translation_grid_rejects_invalid_diagnostic_switch(monkeypatch):
     monkeypatch.setenv("RELAX_K1_RELION_EXACT_TRANSLATION_GRID", "sometimes")
     with pytest.raises(ValueError, match="must be a boolean value"):
-        grids_module._translation_grid_for_class_count(3.0, 1.0, n_classes=1)
+        grids_module.translation_grid_for_class_count(3.0, 1.0, n_classes=1)
 
 
 def test_local_translation_prior_ignores_stale_replay_grid_shape():
@@ -2291,7 +2291,7 @@ def test_lazy_pass2_layouts_request_aligned_relion_mstep_rotations(monkeypatch, 
 
     monkeypatch.setattr(local_layout_module, "get_oversampled_rotation_grid_from_samples", fake_oversampled_rotations)
     # The adaptive builder expands every image's parents in one uncached call.
-    monkeypatch.setattr(local_layout_module, "_compute_oversampled_rotation_grid", fake_oversampled_rotations)
+    monkeypatch.setattr(local_layout_module, "compute_oversampled_rotation_grid", fake_oversampled_rotations)
     translations = np.array([[0.0, 0.0]], dtype=np.float32)
     if builder_name == "parent_expanded":
         layout = build_local_hypothesis_layout(

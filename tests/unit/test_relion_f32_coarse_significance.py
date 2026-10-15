@@ -7,9 +7,9 @@ import pytest
 from helpers.float_compare import assert_matches
 
 from relax.sampling.oversampling import (
-    _relion_cuda_f32_tail_target,
     relion_cuda_f32_coarse_log_weights,
     relion_cuda_f32_coarse_posterior,
+    relion_cuda_f32_tail_target,
 )
 
 
@@ -189,7 +189,7 @@ def test_diagnostic_coarse_support_can_absorb_two_ulp_atomic_cutoff_split():
 
 def test_relion_cuda_f32_tail_target_preserves_text_to_float_semantics():
     sum_weight = np.asarray([2.8323050236340316e22], dtype=np.float32)
-    target = np.asarray(_relion_cuda_f32_tail_target(sum_weight, 0.999))
+    target = np.asarray(relion_cuda_f32_tail_target(sum_weight, 0.999))
 
     assert_matches(target, np.asarray([1606715186], dtype=np.uint32).view(np.float32))
 

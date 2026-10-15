@@ -29,7 +29,7 @@ from relax.relion.initial_noise import (
     relion_mpi_process_start_scoring_noise_pair,
 )
 from relax.runtime.env_flags import parse_env_flag_or_false
-from relax.sampling.grids import _translation_grid_for_class_count
+from relax.sampling.grids import translation_grid_for_class_count
 from relax.sampling.healpix import angular_sampling_deg
 from relax.sampling.orientation_priors import (
     DirectionPrior,
@@ -1516,10 +1516,10 @@ def apply_k1_iter_replay_overrides(
             state,
             cs,
             _sampling,
-            replay_translations=_translation_grid_for_class_count(
+            replay_translations=translation_grid_for_class_count(
                 _sampling.offset_range, _sampling.offset_step, n_classes=1, source_units_per_pixel=_px
             ).astype(dtype),
-            state_translations=_translation_grid_for_class_count(
+            state_translations=translation_grid_for_class_count(
                 float(state.translation_range), float(state.translation_step), n_classes=1, source_units_per_pixel=_px
             ).astype(dtype),
             perturb_replay_relion_dir=perturb_replay_relion_dir,
@@ -1659,10 +1659,10 @@ def apply_class_iter_replay_overrides(
             state,
             cs,
             _sampling,
-            replay_translations=_translation_grid_for_class_count(
+            replay_translations=translation_grid_for_class_count(
                 _sampling.offset_range, _sampling.offset_step, n_classes=n_classes, source_units_per_pixel=_px
             ).astype(dtype),
-            state_translations=_translation_grid_for_class_count(
+            state_translations=translation_grid_for_class_count(
                 float(state.translation_range),
                 float(state.translation_step),
                 n_classes=n_classes,

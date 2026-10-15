@@ -12,7 +12,7 @@ from functools import partial
 import jax
 import jax.numpy as jnp
 
-from relax.sampling.oversampling import _relion_cuda_f32_tail_target
+from relax.sampling.oversampling import relion_cuda_f32_tail_target
 
 
 @partial(jax.jit, static_argnames=("adaptive_fraction", "keep_all"))
@@ -82,7 +82,7 @@ def relion_f32_fine_probabilities(
         cumulative = jnp.cumsum(sorted_weights.astype(jnp.float64), axis=1)
         fine_sum_weight = cumulative[:, -1].astype(jnp.float32)
         cut_index = jax.vmap(lambda row, target: jnp.searchsorted(row, target, side="right"))(
-            cumulative, _relion_cuda_f32_tail_target(fine_sum_weight, adaptive_fraction).astype(jnp.float64)
+            cumulative, relion_cuda_f32_tail_target(fine_sum_weight, adaptive_fraction).astype(jnp.float64)
         )
         cut_weight = sorted_weights[jnp.arange(flat_scores.shape[0]), jnp.minimum(cut_index, cumulative.shape[1] - 1)]
     if normalization_sum_weight is None:

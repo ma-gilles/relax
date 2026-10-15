@@ -398,7 +398,7 @@ def _k1_relion_exact_translation_grid_enabled(environ=None):
     )
 
 
-def _translation_grid_for_class_count(max_pixel, pixel_offset, *, n_classes, source_units_per_pixel=1.0):
+def translation_grid_for_class_count(max_pixel, pixel_offset, *, n_classes, source_units_per_pixel=1.0):
     """RELION's translation grid (``HealpixSampling::setTranslations``) for every class count.
 
     ``RELAX_K1_RELION_EXACT_TRANSLATION_GRID=0`` keeps the floor-division grid for K=1 as a diagnostic
@@ -658,7 +658,7 @@ def relion_base_translation_grid(translation_range, translation_step, *, n_class
     the unrounded coordinates (see ``perturbed_trial_grid``).
     """
 
-    return _translation_grid_for_class_count(
+    return translation_grid_for_class_count(
         translation_range,
         translation_step,
         n_classes=n_classes,

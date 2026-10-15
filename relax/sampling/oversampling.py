@@ -350,7 +350,7 @@ def adaptive_fine_rows(grids, coarse_healpix_order: int, adaptive_oversampling: 
     return eulers, None
 
 
-def _relion_cuda_f32_tail_target(sum_weight, adaptive_fraction: float):
+def relion_cuda_f32_tail_target(sum_weight, adaptive_fraction: float):
     """Match RELION's parsed adaptive-fraction arithmetic at the CUDA cutoff.
 
     RELION initializes ``adaptive_fraction`` with ``textToFloat`` even when
@@ -501,7 +501,7 @@ def relion_cuda_f32_coarse_posterior(
         sorted_weights = jnp.sort(raw_weights, axis=1)
         cumulative = jnp.cumsum(sorted_weights.astype(jnp.float64), axis=1)
         sum_weight = cumulative[:, -1].astype(jnp.float32)
-        tail_target = _relion_cuda_f32_tail_target(sum_weight, adaptive_fraction).astype(jnp.float64)
+        tail_target = relion_cuda_f32_tail_target(sum_weight, adaptive_fraction).astype(jnp.float64)
         threshold_idx = jax.vmap(
             lambda row, target: jnp.searchsorted(row, target, side="right"),
         )(cumulative, tail_target).astype(jnp.int32)

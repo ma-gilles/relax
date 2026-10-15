@@ -22,7 +22,7 @@ from relax.sampling.grids import (
 from relax.sampling.healpix import euler_angles_to_matrix
 from relax.sampling.orientation_priors import make_relion_translation_log_prior
 from relax.sampling.oversampled_grids import (
-    _compute_oversampled_rotation_grid,
+    compute_oversampled_rotation_grid,
     get_local_rotation_grid_fast,
     get_oversampled_rotation_grid_from_samples,
     get_oversampled_translation_grid,
@@ -1324,7 +1324,7 @@ def build_local_adaptive_pass2_hypothesis_layout(
     # Every image's oversampled children in one call: each parent's children
     # depend on that parent only, so the rows are the per-image calls' rows.
     oversampled_rots, parent_map, oversampled_rot_indices, oversampled_mstep_rots, source_eulers = (
-        _compute_oversampled_rotation_grid(
+        compute_oversampled_rotation_grid(
             unit_rot,
             parent_healpix_order,
             oversampling_order=oversampling_order,

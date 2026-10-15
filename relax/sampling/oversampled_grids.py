@@ -105,7 +105,7 @@ def get_oversampled_rotation_grid_from_samples(
     dtype: np.dtype = np.float32,
     symmetry: str = "C1",
 ):
-    """Oversampled child orientations of coarse samples (see ``_compute_oversampled_rotation_grid``).
+    """Oversampled child orientations of coarse samples (see ``compute_oversampled_rotation_grid``).
 
     One VDAM iteration asks for the same full fine grid more than once (the
     pass-2 grids and the source Euler rows); the most recent grid is kept, as
@@ -125,7 +125,7 @@ def get_oversampled_rotation_grid_from_samples(
     )
     cached = _OVERSAMPLED_GRID_MEMO.get(key)
     if cached is None:
-        cached = _compute_oversampled_rotation_grid(
+        cached = compute_oversampled_rotation_grid(
             parents,
             parent_nside_level,
             oversampling_order,
@@ -153,7 +153,7 @@ def get_oversampled_rotation_grid_from_samples(
     return tuple(outputs)
 
 
-def _compute_oversampled_rotation_grid(
+def compute_oversampled_rotation_grid(
     parent_rotation_indices,
     parent_nside_level,
     oversampling_order=1,

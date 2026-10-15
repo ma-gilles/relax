@@ -303,7 +303,7 @@ __device__ void block_radix_cut(const float* weights, int64_t n, float fraction,
                 double total = 0.0;
                 for (int b = 0; b < 256; ++b) total += c.masses[b];
                 c.total = total;
-                // _relion_cuda_f32_tail_target on the float32 sum.
+                // relion_cuda_f32_tail_target on the float32 sum.
                 c.target = static_cast<double>(static_cast<float>(
                     (1.0 - static_cast<double>(fraction)) * static_cast<double>(static_cast<float>(total))));
             }

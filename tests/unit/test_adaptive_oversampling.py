@@ -1045,7 +1045,7 @@ class TestOversampledGridGeneration:
         second = rng.integers(n_grid // 4, n_grid, size=5000)  # overlaps the first call's parents
         calls = [(first, 1), (second, 0), (second, 1), (first, 0), (first, 1)]  # two argument sets interleaved
         og._PARENT_ROWS_MEMO.clear()
-        memo = [og._compute_oversampled_rotation_grid(ids, 2, order, **kwargs) for ids, order in calls]
+        memo = [og.compute_oversampled_rotation_grid(ids, 2, order, **kwargs) for ids, order in calls]
         assert len(og._PARENT_ROWS_MEMO) == 2
         monkeypatch.setattr(og, "_PARENT_ROWS_MEMO_MAX_ROWS", 0)  # memo off: each call computes its own rows
         for (ids, order), got in zip(calls, memo):

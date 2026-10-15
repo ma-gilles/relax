@@ -21,7 +21,7 @@ from relax.parity import relion_replay_source
 from relax.parity.relion_replay import _sealed_sampling_base_grids
 from relax.refinement import trial_grids
 from relax.sampling import grids as grids_module
-from relax.sampling.grids import _translation_grid_for_class_count
+from relax.sampling.grids import translation_grid_for_class_count
 
 pytestmark = pytest.mark.unit
 
@@ -85,7 +85,7 @@ def _initial_grids(**overrides):
 @pytest.mark.parametrize("n_classes", [1, 4])
 def test_base_translation_grid_is_host_float64_in_source_units(n_classes):
     grid = grids_module.relion_base_translation_grid(4.25, 1.416667, n_classes=n_classes, voxel_size=2.0)
-    expected = _translation_grid_for_class_count(4.25, 1.416667, n_classes=n_classes, source_units_per_pixel=2.0)
+    expected = translation_grid_for_class_count(4.25, 1.416667, n_classes=n_classes, source_units_per_pixel=2.0)
     assert isinstance(grid, np.ndarray) and grid.dtype == np.float64
     assert _same(grid, expected.astype(np.float64))
 
@@ -158,7 +158,7 @@ def test_controller_materializes_explicit_coarse_grid_variants():
         "dtype",
         "log",
     )
-    for name in ("InitialGridSampling", "_sealed_sampling_base_grids", "_translation_grid_for_class_count"):
+    for name in ("InitialGridSampling", "_sealed_sampling_base_grids", "translation_grid_for_class_count"):
         assert not hasattr(iteration_loop, name)
 
 
