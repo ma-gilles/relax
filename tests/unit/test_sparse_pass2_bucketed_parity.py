@@ -14,14 +14,12 @@ RELION stats.
 """
 
 
+import jax.numpy as jnp
 import numpy as np
 import pytest
-from helpers.float_compare import assert_matches
-
-pytest.importorskip("jax")
-import jax.numpy as jnp
 import recovar.core.fourier_transform_utils as ftu
 from helpers.em_arrays import _raw_real_image_2d
+from helpers.float_compare import assert_matches
 
 from relax.fine_pass.bucket_arrays import _prepare_per_image_pass2_inputs
 from scripts.lib.bucketed_pass2 import _build_bucket_arrays, _normalize_pass2_bucket_with_log_z, _reorder_to_indices
@@ -465,7 +463,6 @@ def test_sparse_pass2_rotations_by_index_build_matches_the_host_build(monkeypatc
     """The device gather by fine-grid index (RELAX_SPARSE_KCLASS_ROTATIONS_BY_INDEX) is the one table route left
     after the vectorized resident hypothesis tables went: it builds the same padded score and M-step rotations as
     the host build, identity padding included."""
-    pytest.importorskip("jax")
     from scripts.lib import bucketed_pass2
 
     score_rotations = np.stack([_z_rotation(angle) for angle in (0.1, 0.2, 0.3, 0.4)])
