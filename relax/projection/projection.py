@@ -404,7 +404,7 @@ def relion_projector_half_to_texture_full(volume_relion_half: jax.Array) -> jax.
 _TEXTURE_FALLBACK_REPORTED: set[str] = set()
 
 
-def _relion_projector_texture_enabled(
+def relion_projector_texture_enabled(
     volume_relion_half,
     *,
     r_max: int,
@@ -461,7 +461,7 @@ def host_relion_projector_texture_enabled(
     dtype = projector_half.dtype
     if allow_float32_cast and dtype == np.dtype(np.complex128):
         dtype = np.dtype(np.complex64)
-    return bool(dtype == np.dtype(np.complex64) and _relion_projector_texture_enabled(
+    return bool(dtype == np.dtype(np.complex64) and relion_projector_texture_enabled(
         SimpleNamespace(shape=projector_half.shape, dtype=dtype),
         r_max=int(r_max), padding_factor=int(padding_factor), enabled=enabled,
     ))
@@ -616,7 +616,7 @@ def relion_capacity_texture_serves(
     has the half-storage geometry.
     """
 
-    return _relion_projector_texture_enabled(
+    return relion_projector_texture_enabled(
         volume_relion_half, r_max=int(r_max), padding_factor=int(padding_factor), enabled=relion_texture_interp
     ) and _half_storage_projection(
         volume_relion_half,
@@ -892,7 +892,7 @@ def compute_relion_projector_projections_block(
             raise ValueError("projector capacity cannot use the manual projection fallback")
         use_texture = True
     else:
-        use_texture = _relion_projector_texture_enabled(
+        use_texture = relion_projector_texture_enabled(
             volume_relion_half,
             r_max=int(r_max),
             padding_factor=int(padding_factor),

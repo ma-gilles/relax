@@ -779,8 +779,8 @@ def native_relion_callbacks(
     """Adapt the existing CUDA RELION projector and fused x-half adjoint."""
     from relax.cuda.backprojection import relion_fused_x_half_backproject_indexed
     from relax.projection.projection import (
-        _relion_projector_texture_enabled,
         compute_relion_projector_projections_block,
+        relion_projector_texture_enabled,
     )
 
     if backprojection_backend not in {"fused", "separate"}:
@@ -790,7 +790,7 @@ def native_relion_callbacks(
     rec_indices = jnp.asarray(rec_indices, jnp.int32)
 
     def project(reference, rotations):
-        if not _relion_projector_texture_enabled(reference, r_max=r_max, padding_factor=padding_factor, enabled=True):
+        if not relion_projector_texture_enabled(reference, r_max=r_max, padding_factor=padding_factor, enabled=True):
             raise RuntimeError("dense GEMM experiment requires the native RELION CUDA texture projector")
         projected, _ = compute_relion_projector_projections_block(
             reference,

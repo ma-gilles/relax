@@ -2806,7 +2806,7 @@ def test_relion_projector_texture_route_defaults_on_and_can_be_disabled(monkeypa
         ScoringOverrides.from_environ()
 
     monkeypatch.setattr(projection_helpers, "_cuda_projection_available", lambda: True)
-    assert projection_helpers._relion_projector_texture_enabled(
+    assert projection_helpers.relion_projector_texture_enabled(
         projector_half,
         r_max=1,
         padding_factor=1,
@@ -2956,7 +2956,7 @@ def test_texture_projector_compact_indices_bypass_full_scatter(monkeypatch):
     from relax.projection import projection as projection_helpers
 
     requested = jnp.asarray([6, 7, 9], dtype=jnp.int32)
-    monkeypatch.setattr(projection_helpers, "_relion_projector_texture_enabled", lambda *args, **kwargs: True)
+    monkeypatch.setattr(projection_helpers, "relion_projector_texture_enabled", lambda *args, **kwargs: True)
 
     def fake_texture(projector, rotations, image_shape, **kwargs):
         assert_matches(np.asarray(kwargs.pop("pixel_indices")), np.asarray(requested))

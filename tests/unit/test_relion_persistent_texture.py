@@ -631,7 +631,7 @@ def test_large_static_projector_uses_half_storage_without_full_cube(monkeypatch)
 def test_host_texture_planning_and_dispatch_share_eligibility(monkeypatch, layout):
     from relax.projection import projection
     calls = []
-    monkeypatch.setattr(projection, "_relion_projector_texture_enabled", lambda *a, **kw: calls.append(kw) or True)
+    monkeypatch.setattr(projection, "relion_projector_texture_enabled", lambda *a, **kw: calls.append(kw) or True)
     slab = np.zeros((7, 7, 4), dtype=np.complex64)
     radius = 1
     if layout == "strided": slab = slab[:, :, ::2]
@@ -671,7 +671,7 @@ def test_sparse_pass2_opens_eligible_texture_from_original_host_slab(monkeypatch
 
     monkeypatch.setattr(
         projection,
-        "_relion_projector_texture_enabled",
+        "relion_projector_texture_enabled",
         lambda *args, **kwargs: True,
     )
     monkeypatch.setattr(
@@ -704,7 +704,7 @@ def test_host_float32_upload_cast_preserves_double_source(monkeypatch):
     source += np.float64(2**-27)
     original = source.copy()
     captured = []
-    monkeypatch.setattr(projection, "_relion_projector_texture_enabled", lambda value, **kw: value.dtype == np.complex64)
+    monkeypatch.setattr(projection, "relion_projector_texture_enabled", lambda value, **kw: value.dtype == np.complex64)
     monkeypatch.setattr(cuda_projector, "RelionPersistentHalfTextureF32", lambda value, **kw: captured.append(value) or object())
     assert projection.host_relion_projector_texture_enabled(source, r_max=1, padding_factor=1, enabled=True, allow_float32_cast=True)
     _open_persistent_relion_projector_texture(source, relion_projector_r_max=1, projection_padding_factor=1)

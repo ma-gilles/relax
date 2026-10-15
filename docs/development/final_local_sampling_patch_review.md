@@ -4610,7 +4610,7 @@ if use_local or use_adaptive or selected_gemm_global:
         logger.info(
             # The slab dtype decides whether pass-2 projection runs on
             # the native texture projector or the vmapped JAX fallback
-            # (_relion_projector_texture_enabled requires complex64),
+            # (relion_projector_texture_enabled requires complex64),
             # so record it rather than leaving the path implicit.
             "RELION mode: built exact Projector::data for scoring at current_size=%s r_max=%s "
             "dtype=%s in %.2fs",
@@ -7465,7 +7465,7 @@ slots. Captured-state validation remains one atomic operation.
                 logger.info(
                     # The slab dtype decides whether pass-2 projection runs on
                     # the native texture projector or the vmapped JAX fallback
-                    # (_relion_projector_texture_enabled requires complex64),
+                    # (relion_projector_texture_enabled requires complex64),
                     # so record it rather than leaving the path implicit.
                     "RELION mode: built exact Projector::data for scoring at current_size=%s r_max=%s "
                     "dtype=%s in %.2fs",
