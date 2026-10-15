@@ -30,7 +30,7 @@ from recovar.core import fourier_transform_utils as ftu
 from recovar.core import mask
 from recovar.reconstruction.relion_functions import relion_window_centered_half_fourier
 
-from relax.fourier.half_spectrum import _host_half_spectrum_plan
+from relax.fourier.half_spectrum import host_half_spectrum_plan
 from relax.reconstruction.noise import normalize_wsum_to_sigma2_noise
 from relax.relion.project import gridding_correct_volume_real
 from relax.relion.projector_setup import setup_relion_projector_uncorrected, swap_relion_volume_layout
@@ -224,7 +224,7 @@ def corner_white_sigma2(images: np.ndarray, image_mask: np.ndarray, *, image_mul
     transfer_power = float(np.sum(m * m)) + np.abs(c) ** 2 * float(np.sum(w * w)) + 2.0 * np.real(np.conj(c) * mw_fft)
     transfer_power = np.fft.fftshift(transfer_power, axes=(0,))
     n_shells = n // 2 + 1
-    shell_ids = _host_half_spectrum_plan((n, n)).relion_noise_shell_indices.reshape(n, n // 2 + 1)
+    shell_ids = host_half_spectrum_plan((n, n)).relion_noise_shell_indices.reshape(n, n // 2 + 1)
     selected = shell_ids < n_shells
     power_sum = np.bincount(
         shell_ids[selected].reshape(-1), weights=transfer_power[selected].reshape(-1), minlength=n_shells

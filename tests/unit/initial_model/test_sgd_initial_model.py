@@ -11,7 +11,7 @@ from recovar.data_io.image_backends import _apply_relion_soft_image_mask_numpy, 
 from recovar.reconstruction.noise import make_radial_noise
 
 from relax.commands.initial_model import _native_options_dict, make_parser
-from relax.fourier.half_spectrum import _host_half_spectrum_plan
+from relax.fourier.half_spectrum import host_half_spectrum_plan
 from relax.relion.projector_setup import setup_relion_projector, swap_relion_volume_layout
 from relax.runtime.engine_tuning import DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM
 from relax.sampling import grids as sampling_grids
@@ -230,7 +230,7 @@ def test_corner_prior_matches_actual_masked_fft_covariance():
     impulses = np.eye(n * n, dtype=np.float32).reshape(n * n, n, n)
     processed = _centered_rfft2_numpy(_apply_relion_soft_image_mask_numpy(impulses, image_mask))
     expected_power = np.sum(np.abs(processed.astype(np.complex128)) ** 2, axis=0) * pixel_variance / (2 * n**4)
-    shells = _host_half_spectrum_plan((n, n)).relion_noise_shell_indices.reshape(n, n // 2 + 1)
+    shells = host_half_spectrum_plan((n, n)).relion_noise_shell_indices.reshape(n, n // 2 + 1)
     expected = np.array([expected_power[shells == shell].mean() for shell in range(n // 2 + 1)])
     np.testing.assert_allclose(measured, expected, rtol=2e-7, atol=1e-10)
     np.testing.assert_allclose(corner_white_sigma2(images, image_mask, image_multiplier=2), 4 * measured)
@@ -251,7 +251,7 @@ def test_noise_state_is_relion_units_and_adapter_restores_engine_units():
     state = initialize_sgd_noise(state, baseline)
     initial_prior = (WHITE_PRIOR_COUNT + 8 * INFLATED_PRIOR_COUNT) / (WHITE_PRIOR_COUNT + INFLATED_PRIOR_COUNT)
     np.testing.assert_allclose(state.sigma2_noise[0], baseline * initial_prior)
-    shells = _host_half_spectrum_plan((n, n)).relion_noise_shell_indices.reshape(-1)
+    shells = host_half_spectrum_plan((n, n)).relion_noise_shell_indices.reshape(-1)
     shell_counts = np.bincount(shells[shells <= n // 2], minlength=n // 2 + 1)
     batch_variance = 0.005
     mass = 20.0

@@ -31,7 +31,7 @@ def _readonly(array):
 
 
 @functools.lru_cache(maxsize=None)
-def _host_half_spectrum_plan(image_shape):
+def host_half_spectrum_plan(image_shape):
     """Construct exact static half-spectrum geometry without eager JAX calls."""
 
     height, width = image_shape
@@ -130,7 +130,7 @@ def _normalize_image_shape(image_shape):
 def make_half_image_weights(image_shape):
     """Return Hermitian weights for half-spectrum inner products."""
 
-    plan = _host_half_spectrum_plan(_normalize_image_shape(image_shape))
+    plan = host_half_spectrum_plan(_normalize_image_shape(image_shape))
     return jnp.asarray(plan.hermitian_weights)
 
 
@@ -165,7 +165,7 @@ def make_scoring_half_image_weights(
     """
 
     image_shape = _normalize_image_shape(image_shape)
-    plan = _host_half_spectrum_plan(image_shape)
+    plan = host_half_spectrum_plan(image_shape)
     if nyquist_column_counting not in ("relion", "once"):
         raise ValueError(f"nyquist_column_counting must be 'relion' or 'once', got {nyquist_column_counting!r}")
     if not relion_half_sum:
@@ -189,13 +189,13 @@ def make_scoring_half_image_weights(
 def make_shell_indices_half(image_shape):
     """Return half-spectrum radial shell indices in packed-rfft layout."""
 
-    plan = _host_half_spectrum_plan(_normalize_image_shape(image_shape))
+    plan = host_half_spectrum_plan(_normalize_image_shape(image_shape))
     return jnp.asarray(plan.shell_indices)
 
 
 def half_spectrum_dc_index(image_shape) -> int:
     """Return the flat packed-rfft index of the DC pixel."""
-    plan = _host_half_spectrum_plan(_normalize_image_shape(image_shape))
+    plan = host_half_spectrum_plan(_normalize_image_shape(image_shape))
     return plan.dc_index
 
 
@@ -207,7 +207,7 @@ def make_relion_noise_shell_indices_half(image_shape, nyquist_column_counting: s
     """
 
     image_shape = _normalize_image_shape(image_shape)
-    plan = _host_half_spectrum_plan(image_shape)
+    plan = host_half_spectrum_plan(image_shape)
     if nyquist_column_counting == "relion":
         return jnp.asarray(plan.relion_noise_shell_indices)
     if nyquist_column_counting != "once":
