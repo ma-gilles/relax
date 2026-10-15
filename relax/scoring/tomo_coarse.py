@@ -254,11 +254,13 @@ def _score_window_projections(
 @partial(jax.jit, static_argnames=("image_shape",))
 def _images_coarse_gemm_diff2(projected, unshifted, pixel_weight, initial_diff2, translation_angles, score_indices, *, image_shape):
     """Coarse diff2 ``[N, T, R]`` (translation-major) of ``N`` tilt images with their own projections ``[N, R, P]``
-    and phases ``[N, T, 2]``.
+    and phases ``[N, T, 2]``, and each image's GEMM error bound ``[N]``.
 
     Each image is scored by the SPA coarse GEMM scorer (:func:`relax.scoring.coarse_kernels.relion_coarse_gaussian_gemm_scores_jit`,
     RELION's ``d0 + 0.5 sum w |p - y|^2`` as two real-packed float32 GEMMs) on its shifted pixels from RELION's
-    score translation; a zero-weight padded image scores zero.
+    score translation; a zero-weight padded image scores zero. The bound
+    (:func:`relax.scoring.exact_cut.gemm_error_bound`) takes the image's largest model energy over its rotations from
+    the scorer's own model-energy GEMM, and its image energy from its unshifted pixels.
     """
 
     from relax.cuda import translate as cuda_translate
@@ -271,7 +273,7 @@ def _images_coarse_gemm_diff2(projected, unshifted, pixel_weight, initial_diff2,
     ).reshape(n_images, n_trans, -1)
 
     def one(reference, shifted, weight, initial):
-        scores = relion_coarse_gaussian_gemm_scores_jit(
+        scores, model_energy = relion_coarse_gaussian_gemm_scores_jit(
             reference,
             None,
             shifted[None],
@@ -283,25 +285,14 @@ def _images_coarse_gemm_diff2(projected, unshifted, pixel_weight, initial_diff2,
             image_shape=image_shape,
             volume_shape=(1, 1, 1),
             translation_major=True,
+            return_model_energy=True,
         )
-        return -scores[0]
+        return -scores[0], jnp.max(model_energy[0])
 
-    return jax.vmap(one)(projected, shifted_all, pixel_weight, initial_diff2)
-
-
-def _images_gemm_error_bound(projected, unshifted, pixel_weight, initial_diff2):
-    """:func:`relax.scoring.exact_cut.gemm_error_bound` ``[N]`` of images with their own projections ``[N, R, P]``
-    (complex, or ``[N, R, 2 P]`` packed ``[Re | Im]``): each image's largest model energy over its rotations."""
-
+    diff2, model_energy = jax.vmap(one)(projected, shifted_all, pixel_weight, initial_diff2)
     weight = pixel_weight.astype(jnp.float32)
-    if jnp.iscomplexobj(projected):
-        squares = projected.real * projected.real + projected.imag * projected.imag
-    else:
-        n_pixels = projected.shape[-1] // 2
-        squares = projected[..., :n_pixels] * projected[..., :n_pixels] + projected[..., n_pixels:] * projected[..., n_pixels:]
-    model_energy = jnp.max(jnp.sum(squares * weight[:, None, :], axis=-1), axis=1)
     image_energy = jnp.sum((unshifted.real * unshifted.real + unshifted.imag * unshifted.imag) * weight, axis=-1)
-    return gemm_error_bound(model_energy, image_energy, initial_diff2, int(weight.shape[-1]))
+    return diff2, gemm_error_bound(model_energy, image_energy, initial_diff2, int(weight.shape[-1]))
 
 
 @partial(
@@ -313,7 +304,7 @@ def _coarse_gemm_slot_block(
     first, *, count, image_shape, current_size, model_max_r, padding_factor, texture,
 ):
     """One batch's slots ``first:first + count`` in one program: each image's projections, its GEMM diff2,
-    added in slot order, and the images' GEMM error bounds (:func:`_images_gemm_error_bound`) added to
+    added in slot order, and the images' GEMM error bounds (:func:`_images_coarse_gemm_diff2`) added to
     ``error`` ``[P]``.
 
     ``rotations`` ``[P, S, R, 3, 3]``, ``unshifted``/``pixel_weight`` ``[P, S, pixels]``, ``initial_diff2``
@@ -339,7 +330,7 @@ def _coarse_gemm_slot_block(
         padding_factor=padding_factor,
         texture=texture,
     ).reshape(n_images, n_rot, -1)
-    image_diff2 = _images_coarse_gemm_diff2(
+    image_diff2, bound = _images_coarse_gemm_diff2(
         projected,
         unshifted.reshape(n_images, -1),
         pixel_weight.reshape(n_images, -1),
@@ -347,9 +338,6 @@ def _coarse_gemm_slot_block(
         translation_angles.reshape(n_images, translation_angles.shape[2], 2),
         score_indices,
         image_shape=image_shape,
-    )
-    bound = _images_gemm_error_bound(
-        projected, unshifted.reshape(n_images, -1), pixel_weight.reshape(n_images, -1), initial_diff2.reshape(n_images)
     )
     return (
         _add_image_diff2_in_slot_order(total, image_diff2.reshape(n_particles, n_slots, -1, n_rot)),

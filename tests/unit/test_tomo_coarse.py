@@ -148,12 +148,11 @@ def test_the_gemm_scorer_is_relions_direct_square_with_each_images_own_rows(monk
         return (images[:, None, :] * phase[:, :, None]).reshape(-1, images.shape[1])
 
     monkeypatch.setattr(cuda_translate, "relion_translate_score_f32", shift)
-    got = np.asarray(
-        tomo_coarse._images_coarse_gemm_diff2.__wrapped__(
-            jnp.asarray(projected), jnp.asarray(images), jnp.asarray(weight), jnp.asarray(initial), jnp.asarray(angles),
-            jnp.arange(n_px, dtype=jnp.int32), image_shape=(8, 8),
-        )
+    got, _bound = tomo_coarse._images_coarse_gemm_diff2.__wrapped__(
+        jnp.asarray(projected), jnp.asarray(images), jnp.asarray(weight), jnp.asarray(initial), jnp.asarray(angles),
+        jnp.arange(n_px, dtype=jnp.int32), image_shape=(8, 8),
     )
+    got = np.asarray(got)
     for b in range(n_images):
         shifted = images[b][None, :] * np.exp(1j * angles[b].sum(axis=1))[:, None]
         direct = initial[b] + 0.5 * np.einsum(
@@ -476,12 +475,11 @@ def test_the_gemm_scorer_follows_relions_direct_square_kernel(gpu_device, persis
             texture=texture,
         ).reshape(f["n_images"], f["n_rot"], -1)
         assert projected.dtype == (jnp.float32 if persistent_texture else jnp.complex64)
-        gemm = np.asarray(
-            tomo_coarse._images_coarse_gemm_diff2(
-                projected, jnp.asarray(f["images"]), jnp.asarray(f["weight"]), jnp.asarray(f["initial"]),
-                jnp.asarray(f["angles"]), jnp.asarray(layout.score_indices_np, jnp.int32), image_shape=(f["box"], f["box"]),
-            )
+        gemm, bounds = tomo_coarse._images_coarse_gemm_diff2(
+            projected, jnp.asarray(f["images"]), jnp.asarray(f["weight"]), jnp.asarray(f["initial"]),
+            jnp.asarray(f["angles"]), jnp.asarray(layout.score_indices_np, jnp.int32), image_shape=(f["box"], f["box"]),
         )
+        gemm, bounds = np.asarray(gemm), np.asarray(bounds)
         if texture is not None:
             texture.close()
         rotations = f["rotations"].reshape(f["n_images"], f["n_rot"], 3, 3)
@@ -494,12 +492,7 @@ def test_the_gemm_scorer_follows_relions_direct_square_kernel(gpu_device, persis
             )
             assert_matches(gemm[b].T, direct, rtol=1e-5, err_msg=f"image {b}")
             # The re-score at the cut relies on this bound of the GEMM's distance from the direct square.
-            bound = float(
-                tomo_coarse._images_gemm_error_bound(
-                    projected[b : b + 1], jnp.asarray(f["images"][b : b + 1]), jnp.asarray(f["weight"][b : b + 1]),
-                    jnp.asarray(f["initial"][b : b + 1]),
-                )[0]
-            )
+            bound = float(bounds[b])
             worst = float(np.max(np.abs(gemm[b].T - direct)))
             assert 0.0 < worst <= bound, f"image {b}"
             # The worst case over the pixels: measured 18 float32 units of the diff2 here, the bound about 2000.
@@ -524,17 +517,11 @@ def test_the_gemm_error_bound_holds_over_a_million_samples(gpu_device, box):
         projected = _coarse_gemm_projections(
             f["half"], jnp.asarray(f["rotations"]), layout, model_max_r=f["max_r"], padding_factor=f["pad"], texture=None
         ).reshape(n_images, n_rot, -1)
-        gemm = np.asarray(
-            tomo_coarse._images_coarse_gemm_diff2(
-                projected, jnp.asarray(f["images"]), jnp.asarray(f["weight"]), jnp.asarray(f["initial"]),
-                jnp.asarray(f["angles"]), jnp.asarray(layout.score_indices_np, jnp.int32), image_shape=(box, box),
-            )
+        gemm, bound = tomo_coarse._images_coarse_gemm_diff2(
+            projected, jnp.asarray(f["images"]), jnp.asarray(f["weight"]), jnp.asarray(f["initial"]),
+            jnp.asarray(f["angles"]), jnp.asarray(layout.score_indices_np, jnp.int32), image_shape=(box, box),
         )
-        bound = np.asarray(
-            tomo_coarse._images_gemm_error_bound(
-                projected, jnp.asarray(f["images"]), jnp.asarray(f["weight"]), jnp.asarray(f["initial"])
-            )
-        )
+        gemm, bound = np.asarray(gemm), np.asarray(bound)
         rotations = f["rotations"].reshape(n_images, n_rot, 3, 3)
         assert gemm.size >= 1_000_000
         for b in range(n_images):
@@ -548,6 +535,72 @@ def test_the_gemm_error_bound_holds_over_a_million_samples(gpu_device, box):
             units = worst / float(np.spacing(np.float32(np.max(direct))))
             print(f"box {box} pixels {layout.score_indices_np.size} image {b}: worst {worst:.4g} = {units:.1f} float32 units of the diff2; bound {bound[b]:.4g}")
             assert worst <= bound[b], f"image {b}"
+
+
+@pytest.mark.gpu
+@pytest.mark.parametrize("persistent_texture", [False, True], ids=["complex_rows", "packed_rows"])
+def test_the_bound_from_the_scorers_model_energy_leaves_the_diff2_bitwise(gpu_device, persistent_texture):
+    """The per-image diff2 is bitwise the scorer called without its model energy, and the bound takes the largest
+    model energy of the scorer's GEMM: the bound shares the scores' program and changes no score."""
+
+    import jax
+    from recovar.cuda_backproject import custom_cuda_requested
+
+    from relax.cuda import translate as cuda_translate
+    from relax.scoring.coarse_kernels import relion_coarse_gaussian_gemm_scores_jit
+    from relax.scoring.exact_cut import gemm_error_bound
+
+    if not custom_cuda_requested():
+        pytest.skip("custom CUDA is disabled")
+    with jax.default_device(gpu_device):
+        f = _gemm_fixture(np.random.default_rng(31), n_images=4, n_rot=640, n_trans=57)
+        layout = f["layout"]
+        texture = (
+            tomo_coarse._coarse_capacity_texture(
+                f["half"], layout, model_max_r=f["max_r"], padding_factor=f["pad"], class_index=0
+            )
+            if persistent_texture else None
+        )
+        projected = _coarse_gemm_projections(
+            f["half"], jnp.asarray(f["rotations"]), layout, model_max_r=f["max_r"], padding_factor=f["pad"],
+            texture=texture,
+        ).reshape(f["n_images"], f["n_rot"], -1)
+        images, weight = jnp.asarray(f["images"]), jnp.asarray(f["weight"])
+        initial, angles = jnp.asarray(f["initial"]), jnp.asarray(f["angles"])
+        score_indices = jnp.asarray(layout.score_indices_np, jnp.int32)
+        image_shape = (f["box"], f["box"])
+        diff2, bound = tomo_coarse._images_coarse_gemm_diff2(
+            projected, images, weight, initial, angles, score_indices, image_shape=image_shape
+        )
+
+        @jax.jit
+        def scorer_alone(projected, images, weight, initial, angles):
+            n_trans = angles.shape[1]
+            shifted = cuda_translate.relion_translate_score_f32(images, angles, score_indices, image_shape).reshape(
+                images.shape[0], n_trans, -1
+            )
+
+            def one(reference, shifted, weight, initial):
+                scores = relion_coarse_gaussian_gemm_scores_jit(
+                    reference, None, shifted[None], weight[None], initial.reshape(1), jnp.int32(1),
+                    n_images=1, n_trans=n_trans, image_shape=image_shape, volume_shape=(1, 1, 1),
+                    translation_major=True,
+                )
+                return -scores[0]
+
+            return jax.vmap(one)(projected, shifted, weight, initial)
+
+        np.testing.assert_array_equal(np.asarray(diff2), np.asarray(scorer_alone(projected, images, weight, initial, angles)))
+        packed = projected if not jnp.iscomplexobj(projected) else jnp.concatenate([projected.real, projected.imag], -1)
+        n_px = packed.shape[-1] // 2
+        model_energy = jnp.einsum(
+            "bp,brp->br", weight, packed[..., :n_px] ** 2 + packed[..., n_px:] ** 2, precision=jax.lax.Precision.HIGHEST
+        )
+        image_energy = jnp.sum(jnp.abs(images) ** 2 * weight, axis=-1)
+        expected = gemm_error_bound(jnp.max(model_energy, axis=1), image_energy, initial, n_px)
+        assert_matches(np.asarray(bound), np.asarray(expected), rtol=1e-5)
+        if texture is not None:
+            texture.close()
 
 
 @pytest.mark.gpu
