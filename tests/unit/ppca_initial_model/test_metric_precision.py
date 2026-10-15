@@ -18,7 +18,7 @@ from helpers.float_compare import assert_matches
 
 from relax.ppca_initial_model.update import coupled_direction, metric_floor
 from relax.ppca_refinement import full_row_stream
-from relax.ppca_refinement.full_row_stream import _metric_dot, _second_moment_sums, tf32_capable
+from relax.ppca_refinement.full_row_stream import _metric_dot, second_moment_sums, tf32_capable
 
 pytestmark = pytest.mark.unit
 
@@ -52,7 +52,7 @@ def _operands():
     )
     covariance = np.zeros((ROTATIONS, IMAGES, Q * (Q + 1) // 2))
     covariance[..., [0, 2]] = 1e-6
-    sums = _second_moment_sums(jnp.asarray(gamma), jnp.asarray(mean, jnp.float32), jnp.asarray(covariance, jnp.float32))
+    sums = second_moment_sums(jnp.asarray(gamma), jnp.asarray(mean, jnp.float32), jnp.asarray(covariance, jnp.float32))
     ctf2 = rng.uniform(0.0, 1.0, (IMAGES, PIXELS)).astype(np.float32)
     return np.asarray(sums).reshape(-1, IMAGES), ctf2
 

@@ -159,7 +159,7 @@ external dirs first.**
 ## 6. Hot tips for editing this package
 
 - The PPCA augmented system is `[μ, W_1, ..., W_q]`; index 0 is always the
-  mean row. `_enforce_augmented_x0` zeros the DC of the augmented stats
+  mean row. `enforce_augmented_x0` zeros the DC of the augmented stats
   before the M-step.
 - `SparsePass2Config(enabled=False)` is the parity-test mode: pass 2
   backprojects every (image, pose) regardless of posterior weight. Use it

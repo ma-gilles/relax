@@ -22,7 +22,7 @@ from relax.fourier.half_spectrum import make_half_image_weights, make_shell_indi
 from relax.fourier.preprocessing import relion_half_translation_lattice
 from relax.ppca_initial_model.tomo import TiltParticles, load_tilt_tile, tilt_shifts, tilt_tiles
 from relax.ppca_refinement.config import GeometryConfig, ScheduleConfig, ScoringConfig
-from relax.ppca_refinement.engine import _enforce_augmented_x0
+from relax.ppca_refinement.engine import enforce_augmented_x0
 from relax.ppca_refinement.full_row_stream import prepare_full_row_stream
 
 pytestmark = pytest.mark.unit
@@ -248,7 +248,7 @@ def _brute_force(particles, stream, p):
         residual[c] = adjoint(images, rotations)
     for c in range(len(tri)):
         lhs[c] = adjoint(np.stack([lhs_images[key][c] for key in keys]).astype(np.complex128), rotations).real
-    lhs = np.asarray(_enforce_augmented_x0(jnp.asarray(lhs, jnp.complex128), VOLUME_SHAPE).real)
+    lhs = np.asarray(enforce_augmented_x0(jnp.asarray(lhs, jnp.complex128), VOLUME_SHAPE).real)
     shells = np.asarray(make_shell_indices_half(IMAGE_SHAPE))
     residual_num = np.zeros((particles.n_noise_groups, shells.max() + 1))
     residual_den = np.zeros_like(residual_num)

@@ -24,7 +24,7 @@ from scipy.spatial.transform import Rotation
 from relax.fourier.half_spectrum import make_half_image_weights
 from relax.fourier.preprocessing import relion_half_translation_lattice, translation_phases
 from relax.ppca_initial_model.initialization import initial_noise, seed_model
-from relax.ppca_refinement.full_row_stream import _SHIFT_ALIGN, _real_imag, _TileArrays, tile_size_bucket, tile_support
+from relax.ppca_refinement.full_row_stream import SHIFT_ALIGN, TileArrays, real_imag, tile_size_bucket, tile_support
 from relax.ppca_refinement.residual_statistics import full_float32
 from relax.reconstruction.resolution import compute_ini_high_shell
 from relax.sampling.tomo_particles import tilt_image_shifts
@@ -223,7 +223,7 @@ def load_tilt_tile(stream, image_indices, significant_rows, *, collect_observati
         **static,
     )
     coarse_mask, table, layout = tile_support(stream, significant_rows)
-    tile = _TileArrays(
+    tile = TileArrays(
         # Padding particles take the first particle's support; the stream gives them no posterior mass.
         coarse_mask=jnp.concatenate([coarse_mask, jnp.repeat(coarse_mask[:1], padded - B, axis=0)]),
         rows=table,
@@ -266,7 +266,7 @@ def _operand_layout(stream, n_particles: int, n_frames: int):
         "n_frames": int(n_frames),
         # GPU streams pad each frame's pixels to the GEMM window and the (image, shift) axis to its multiple.
         "pad": int(stream.arrays.gemm_window.shape[0] - window.size) if stream.static.cuda_kernels else 0,
-        "shift_pad": -(int(n_particles) * T) % _SHIFT_ALIGN if stream.static.cuda_kernels else 0,
+        "shift_pad": -(int(n_particles) * T) % SHIFT_ALIGN if stream.static.cuda_kernels else 0,
     }
     return window, constants, static
 
@@ -361,8 +361,8 @@ def _tilt_operands(
 
     Y_score = padded(weighted[:, :, None, :] * score_mask * phases[None])  # (B, K, T, F')
     Y_recon = padded(weighted[:, :, None, :] * recon_mask * phases[None])
-    Y1 = jnp.pad(jnp.transpose(_real_imag(Y_score), (1, 3, 0, 2)).reshape(-1, B * T), ((0, 0), (0, shift_pad)))
-    Y1_recon = jnp.pad(jnp.transpose(_real_imag(Y_recon), (0, 2, 1, 3)).reshape(B * T, -1), ((0, shift_pad), (0, 0)))
+    Y1 = jnp.pad(jnp.transpose(real_imag(Y_score), (1, 3, 0, 2)).reshape(-1, B * T), ((0, 0), (0, shift_pad)))
+    Y1_recon = jnp.pad(jnp.transpose(real_imag(Y_recon), (0, 2, 1, 3)).reshape(B * T, -1), ((0, shift_pad), (0, 0)))
     ctf2_score = jnp.transpose(padded(ctf2 * score_mask), (1, 2, 0)).reshape(-1, B)
     ctf2_recon = padded(ctf2 * recon_mask).reshape(B, -1)
     y_norm = jnp.sum(jnp.abs(half) ** 2 / nv * weights, axis=(1, 2))

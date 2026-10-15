@@ -726,7 +726,7 @@ def fused_dense_pose_ppca_block(
     return rhs_volume, lhs_tri_volume, diagnostics
 
 
-def _enforce_augmented_x0(volumes, volume_shape):
+def enforce_augmented_x0(volumes, volume_shape):
     from relax.reconstruction.half_volume_mstep import enforce_relion_half_volume_x0_hermitian
 
     enforced = [enforce_relion_half_volume_x0_hermitian(volumes[i], volume_shape) for i in range(volumes.shape[0])]

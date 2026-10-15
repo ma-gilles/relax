@@ -48,32 +48,32 @@ from relax.cuda.ppca import ppca_window_project_f32
 from relax.fourier.preprocessing import half_translation_phase_table
 from relax.ppca_refinement.dense_dataset import DensePPCAEmbeddings
 from relax.ppca_refinement.full_row_stream import (
-    _HIGHEST,
-    _SHIFT_ALIGN,
+    HIGHEST,
+    SHIFT_ALIGN,
     TILE_FRAGMENTATION_HEADROOM,
     FullRowStream,
-    _available_bytes,
-    _block_starts,
-    _check_finite_posterior,
-    _drop_padding,
-    _empty_carry,
-    _finish_full_row_tile,
-    _frame_rotations,
-    _gemm,
-    _latent_scores,
-    _n_frames,
-    _n_real,
-    _plan_shape_key,
-    _Posterior,
-    _project,
-    _read_tile,
-    _real_imag,
-    _scatter_moment_images,
-    _score_tile,
-    _second_moment_sums,
-    _tile_frames,
-    _tile_spec,
-    _window,
+    Posterior,
+    available_bytes,
+    check_finite_posterior,
+    device_block_starts,
+    drop_padding,
+    empty_carry,
+    finish_full_row_tile,
+    frame_rotations,
+    gemm,
+    latent_scores,
+    n_frames,
+    plan_shape_key,
+    project,
+    read_tile,
+    real_imag,
+    real_image_count,
+    scatter_moment_images,
+    score_tile,
+    score_window_pixels,
+    second_moment_sums,
+    tile_frames,
+    tile_spec,
     tile_support,
 )
 from relax.ppca_refinement.residual_statistics import full_float32
@@ -216,7 +216,7 @@ def prepare_oversampled_stream(
         translations=fine_translations,
         n_coarse_rotations=n_rotations,
         n_coarse_translations=n_translations,
-        block_starts=_block_starts(fine_rotations.shape[0], pass2.rotation_block_size, pass2.device),
+        block_starts=device_block_starts(fine_rotations.shape[0], pass2.rotation_block_size, pass2.device),
         rotation_parent=rotation_parent,
     )
     # The pass-2 stream at one zero shift: its coarse grid keeps the reader's row table small.
@@ -239,7 +239,7 @@ def prepare_oversampled_stream(
 def _window_pixel_ids(stream: FullRowStream) -> np.ndarray:
     """The packed half-image pixel of each operand slot of a frame (-1: a GPU stream's GEMM padding)."""
     arrays = stream.arrays
-    return np.asarray(_window(arrays, stream.static) if arrays.gemm_window is None else arrays.gemm_window)
+    return np.asarray(score_window_pixels(arrays, stream.static) if arrays.gemm_window is None else arrays.gemm_window)
 
 
 @partial(jax.jit, static_argnames=("n_frames", "shift_pad"))
@@ -275,8 +275,8 @@ def _pass1_tile(ostream: OversampledStream, tile, layout, significant_rows):
         tile.ctf2,
         phases,
         ostream.pass1_slots,
-        n_frames=_n_frames(tile),
-        shift_pad=-(B * T) % _SHIFT_ALIGN if coarse.static.cuda_kernels else 0,
+        n_frames=n_frames(tile),
+        shift_pad=-(B * T) % SHIFT_ALIGN if coarse.static.cuda_kernels else 0,
     )
     pass1 = tile._replace(coarse_mask=coarse_mask, rows=table, Y1=Y1, ctf2=ctf2, Y1_recon=None, ctf2_recon=None)
     if "n_real" in layout:
@@ -383,7 +383,7 @@ def _shifted(planar, phases, shifts, n_frames):
     planar = planar.reshape(J, n_frames, 2, -1)
     image = jax.lax.complex(planar[:, :, 0], planar[:, :, 1])  # (J, K, F)
     shifted = image[:, None] * phases[shifts]  # (J, T_c, K, F)
-    return _real_imag(shifted).reshape(J, shifts.shape[1], -1)
+    return real_imag(shifted).reshape(J, shifts.shape[1], -1)
 
 
 def _job_projections(arrays, tile, rows, static):
@@ -391,7 +391,7 @@ def _job_projections(arrays, tile, rows, static):
     score GEMM rows of :func:`_latent_block`), and their packed pair products ``(tri(P), J, R_c, K F)``: the
     relax CUDA projector on GPU streams (window padded as the tile operands), else recovar's projection."""
     J, R_c = rows.shape
-    rotations = _frame_rotations(tile, arrays.rotations[rows.reshape(-1)])
+    rotations = frame_rotations(tile, arrays.rotations[rows.reshape(-1)])
     if static.cuda_kernels:
         planar, products = ppca_window_project_f32(
             arrays.augmented_voxel_major,
@@ -403,13 +403,13 @@ def _job_projections(arrays, tile, rows, static):
             with_products=True,
         )
         return planar.reshape(planar.shape[0], J, R_c, -1), products.reshape(products.shape[0], J, R_c, -1)
-    proj = _project(arrays, rotations, static)  # (P, J R_c K, F)
+    proj = project(arrays, rotations, static)  # (P, J R_c K, F)
     P = proj.shape[0]
     proj = proj.reshape(P, J * R_c, -1, proj.shape[-1])
     first, second = np.triu_indices(P)
     real, imag = proj.real, proj.imag
     products = jnp.stack([real[i] * real[j] + imag[i] * imag[j] for i, j in zip(first.tolist(), second.tolist())])
-    return _real_imag(proj).reshape(P, J, R_c, -1), products.reshape(first.size, J, R_c, -1)
+    return real_imag(proj).reshape(P, J, R_c, -1), products.reshape(first.size, J, R_c, -1)
 
 
 @partial(jax.jit, static_argnames=("static", "rotation_children", "translation_children", "chunk"), donate_argnums=(0,))
@@ -424,12 +424,12 @@ def _score_jobs(
     jobs = _FineJobs(*(x[slots] for x in table))
     rows, shifts, prior = _job_poses(arrays, jobs, rotation_children, translation_children)
     planar, products = _job_projections(arrays, tile, rows, static)
-    Y1 = _shifted(tile.Y1[:, jobs.image].T, phases, shifts, _n_frames(tile))  # (J, T_c, K 2F)
-    inner = jnp.einsum("pjrk,jtk->jprt", planar, Y1, precision=_gemm(static))
-    gram = jnp.einsum("mjrk,kj->jmr", products, tile.ctf2[:, jobs.image], precision=_gemm(static))
+    Y1 = _shifted(tile.Y1[:, jobs.image].T, phases, shifts, n_frames(tile))  # (J, T_c, K 2F)
+    inner = jnp.einsum("pjrk,jtk->jprt", planar, Y1, precision=gemm(static))
+    gram = jnp.einsum("mjrk,kj->jmr", products, tile.ctf2[:, jobs.image], precision=gemm(static))
 
     def one(inner, gram, prior):
-        score, mean, covariance = _latent_scores(inner[:, :, None], gram[:, :, None], prior[None])
+        score, mean, covariance = latent_scores(inner[:, :, None], gram[:, :, None], prior[None])
         return score[:, 0], mean[:, :, 0], covariance[:, 0]
 
     score, mean, covariance = jax.vmap(one)(inner, gram, prior)
@@ -496,7 +496,7 @@ def _moment_rows(
     latent_trace = sum((covariance[..., k] for k in diagonal), jnp.zeros(covariance.shape[:1], covariance.dtype))
     row_mass = jnp.sum(gamma, axis=1)  # (N,)
     carry = carry._replace(
-        embedding=carry.embedding.at[rows.image].add(jnp.einsum("nt,nqt->nq", gamma, mean, precision=_HIGHEST)),
+        embedding=carry.embedding.at[rows.image].add(jnp.einsum("nt,nqt->nq", gamma, mean, precision=HIGHEST)),
         rotation_mass=carry.rotation_mass.at[rows.parent].add(row_mass),
         latent_covariance_trace_sum=carry.latent_covariance_trace_sum + jnp.sum(row_mass * latent_trace),
         pose_entropy_sum=carry.pose_entropy_sum - jnp.sum(jnp.where(significant, gamma * centered, 0)),
@@ -506,21 +506,21 @@ def _moment_rows(
     if not moments:
         return carry
     P = static.basis_size
-    K = _n_frames(tile)
+    K = n_frames(tile)
     F = tile.ctf2_recon.shape[1] // K
     latent = jnp.moveaxis(mean, 1, 0)  # (q, N, T_c)
     weights = jnp.concatenate([gamma[None], gamma[None] * latent], axis=0)  # (P, N, T_c)
     # (tri(P), N, 1): the moment sums over each row's child translations.
-    sums = _second_moment_sums(gamma[:, None, :], latent[:, :, None, :], covariance[:, None, :])
+    sums = second_moment_sums(gamma[:, None, :], latent[:, :, None, :], covariance[:, None, :])
     recon = _shifted(tile.Y1_recon[rows.image], phases, shifts, K)  # (N, T_c, K 2F)
-    rhs_parts = jnp.einsum("pnt,ntk->pnk", weights, recon, precision=_gemm(static)).reshape(P, N * K, 2 * F)
+    rhs_parts = jnp.einsum("pnt,ntk->pnk", weights, recon, precision=gemm(static)).reshape(P, N * K, 2 * F)
     # No contraction: full float32 products cost nothing here, and TF32 would round each moment
     # entry on its own and leave the metric indefinite (full_row_stream._metric_dot).
-    lhs_images = jnp.einsum("mn,nk->mnk", sums[:, :, 0], tile.ctf2_recon[rows.image], precision=_HIGHEST).reshape(
+    lhs_images = jnp.einsum("mn,nk->mnk", sums[:, :, 0], tile.ctf2_recon[rows.image], precision=HIGHEST).reshape(
         sums.shape[0], N * K, F
     )
-    rotations = _frame_rotations(tile, arrays.rotations[rows.row])
-    return _scatter_moment_images(carry, arrays, static, rhs_parts, lhs_images, rotations)
+    rotations = frame_rotations(tile, arrays.rotations[rows.row])
+    return scatter_moment_images(carry, arrays, static, rhs_parts, lhs_images, rotations)
 
 
 # A tile's jobs (and rows) run in chunks of the planned size and of 1/4 and 1/16 of it: whole large chunks first,
@@ -566,7 +566,7 @@ def _fine_posterior(score, rotation, translation, fraction, *, every):
     sample, child = first // (R_c * T_c), first % (R_c * T_c)
     top_rotation = jnp.take_along_axis(rotation, sample[:, None], axis=1)[:, 0] * R_c + child // T_c
     top_translation = jnp.take_along_axis(translation, sample[:, None], axis=1)[:, 0] * T_c + child % T_c
-    posterior = _Posterior(
+    posterior = Posterior(
         center=center,
         centered_logZ=centered_logZ,
         top_score=center,
@@ -582,7 +582,7 @@ def _fine_posterior(score, rotation, translation, fraction, *, every):
 
 
 def _significant(ostream: OversampledStream, coarse_tile, coarse_layout, kept, posterior):
-    n_real = _n_real(coarse_tile, coarse_layout)
+    n_real = real_image_count(coarse_tile, coarse_layout)
     fraction = ostream.adaptive_fraction
     return _significant_samples(
         kept.score,
@@ -602,7 +602,7 @@ def _shift_phases(base: FullRowStream, layout, translations):
     translations = np.ascontiguousarray(translations, np.float32)
     pad = None if not base.static.cuda_kernels else int(base.arrays.gemm_window.shape[0])
     if base.tile_loader is None:
-        window = np.ascontiguousarray(_window(base.arrays, base.static), np.int32)
+        window = np.ascontiguousarray(score_window_pixels(base.arrays, base.static), np.int32)
         return _single_particle_phases(
             translations.tobytes(), translations.shape, base.static.image_shape, window.tobytes(), pad, base.device
         )
@@ -629,13 +629,13 @@ def _oversampled_tile(ostream: OversampledStream, image_indices, significant_row
     """Both passes of one tile: the unshifted fine tile, its layout, the fine posterior, the carry and the
     significant samples ``(rotation, translation, valid, mass, capped)``."""
     coarse, fine, base = ostream.coarse, ostream.fine, ostream.base
-    tile, observation_power, layout = _read_tile(
+    tile, observation_power, layout = read_tile(
         base, image_indices, [None] * len(image_indices), collect_observation=collect_observation
     )
     coarse_tile, coarse_layout = _pass1_tile(ostream, tile, layout, significant_rows)
-    kept, posterior = _score_tile(coarse, coarse_tile, coarse_layout["n_blocks"])
-    n_real = _n_real(coarse_tile, coarse_layout)
-    _check_finite_posterior(posterior, n_real)
+    kept, posterior = score_tile(coarse, coarse_tile, coarse_layout["n_blocks"])
+    n_real = real_image_count(coarse_tile, coarse_layout)
+    check_finite_posterior(posterior, n_real)
     significant = _significant(ostream, coarse_tile, coarse_layout, kept, posterior)
     rotation, translation, valid = significant[:3]
     del kept, coarse_tile
@@ -668,11 +668,11 @@ def _oversampled_tile(ostream: OversampledStream, image_indices, significant_row
     fine_posterior, threshold = _fine_posterior(
         results.score, rotation, translation, jnp.float32(fine_fraction), every=fine_fraction >= 1.0
     )
-    _check_finite_posterior(fine_posterior, n_real)
-    fine_posterior = _drop_padding(fine_posterior, n_real)
+    check_finite_posterior(fine_posterior, n_real)
+    fine_posterior = drop_padding(fine_posterior, n_real)
     n_coarse = int(coarse.arrays.rotations.shape[0]) - 1
     power = jnp.float32(0) if observation_power is None else observation_power
-    carry = _empty_carry(fine, B, power)._replace(rotation_mass=jnp.zeros((n_coarse,), jnp.float32))
+    carry = empty_carry(fine, B, power)._replace(rotation_mass=jnp.zeros((n_coarse,), jnp.float32))
     row_mask = _significant_rows(results.score, table, fine_posterior, threshold)
     take, n_rows, chunks = _chunks(jax.device_get(row_mask), tuple(size * R_c for size in sizes), padding=0)
     for start, size in chunks:
@@ -727,11 +727,11 @@ def accumulate_oversampled_tile(ostream: OversampledStream, image_indices, signi
         )
         n_coarse = int(carry.rotation_mass.shape[0])
         host = jax.device_get(dict(zip(("rotation", "translation", "valid", "mass", "capped"), significant)))
-        n_real = _n_real(tile, layout)
+        n_real = real_image_count(tile, layout)
         packed = host["rotation"] * int(coarse.translations.shape[0]) + host["translation"]
         samples = [np.sort(packed[i][host["valid"][i]]).astype(np.int64) for i in range(n_real)]
         layout = dict(layout, rows=np.arange(n_coarse, dtype=np.int32))
-        stats = _finish_full_row_tile(coarse, image_indices, tile, layout, posterior, carry, enforce_x0=enforce_x0)
+        stats = finish_full_row_tile(coarse, image_indices, tile, layout, posterior, carry, enforce_x0=enforce_x0)
     stats.diagnostics.update(
         {
             "engine": OVERSAMPLED_ENGINE,
@@ -759,7 +759,7 @@ def oversampled_tile_embeddings(
         tile, layout, _, carry, _ = _oversampled_tile(
             ostream, image_indices, significant_rows, collect_observation=False, moments=False
         )
-        n_real = _n_real(tile, layout)
+        n_real = real_image_count(tile, layout)
         return DensePPCAEmbeddings(carry.embedding[:n_real], layout["original_ids"], n_real)
 
 
@@ -773,11 +773,11 @@ def job_program_bytes(ostream: OversampledStream, n_images: int, chunk: int) -> 
     shapes; cached per stage shape."""
     fine, base = ostream.fine, ostream.base
     n_jobs = int(n_images) * ostream.max_significant + 1
-    key = (_plan_shape_key(fine), int(n_images), n_jobs, int(chunk), getattr(fine.device, "id", None))
+    key = (plan_shape_key(fine), int(n_images), n_jobs, int(chunk), getattr(fine.device, "id", None))
     if key not in _JOB_PROGRAM_BYTES:
         spec = jax.ShapeDtypeStruct
         R_c, T_c = ostream.rotation_children, ostream.translation_children
-        tile = _tile_spec(base, n_images)
+        tile = tile_spec(base, n_images)
         K = 1 if tile.frames is None else tile.frames.shape[0]
         F = tile.ctf2.shape[0] // K
         phases = spec((int(fine.translations.shape[0]), K, F), jnp.complex64)
@@ -787,13 +787,13 @@ def job_program_bytes(ostream: OversampledStream, n_images: int, chunk: int) -> 
         rows = chunk * R_c  # one moment program's rows: a job chunk's child rotations
         n_coarse = int(ostream.coarse.arrays.rotations.shape[0]) - 1
         carry = jax.eval_shape(
-            lambda: _empty_carry(fine, int(n_images), jnp.float32(0))._replace(
+            lambda: empty_carry(fine, int(n_images), jnp.float32(0))._replace(
                 rotation_mass=jnp.zeros((n_coarse,), jnp.float32)
             )
         )
         vector, index = spec((int(n_images),), jnp.float32), spec((int(n_images),), jnp.int32)
         scalar = spec((), jnp.int32)
-        posterior = _Posterior(vector, vector, vector, index, index)
+        posterior = Posterior(vector, vector, vector, index, index)
         with jax.default_device(fine.device):
             programs = (
                 _score_jobs.lower(
@@ -847,7 +847,7 @@ def launch_job_chunk(ostream: OversampledStream) -> int:
     frames one kernel launch takes (:data:`KERNEL_LAUNCH_ROTATIONS`); CPU streams have no such limit."""
     chunk = MAX_JOB_CHUNK
     if ostream.fine.static.cuda_kernels:
-        per_job = ostream.rotation_children * _tile_frames(ostream.base)
+        per_job = ostream.rotation_children * tile_frames(ostream.base)
         if per_job > KERNEL_LAUNCH_ROTATIONS:
             raise ValueError(f"One job's {per_job} child rotations over its frames exceed one kernel launch")
         while chunk * per_job > KERNEL_LAUNCH_ROTATIONS:
@@ -865,13 +865,13 @@ def plan_job_chunk(ostream: OversampledStream, n_images: int, *, memory_bytes=No
     so the job programs have the device to themselves, apart from the tile's unshifted operands and job results."""
     if memory_bytes is None and device_bytes is None:
         # The device probes run nvidia-smi (tens of ms); a stage's shapes are planned once.
-        key = (_plan_shape_key(ostream.fine), int(n_images), getattr(ostream.fine.device, "id", None))
+        key = (plan_shape_key(ostream.fine), int(n_images), getattr(ostream.fine.device, "id", None))
         if key not in _JOB_CHUNKS:
             _JOB_CHUNKS[key] = plan_job_chunk(
                 ostream,
                 n_images,
-                memory_bytes=_available_bytes(ostream.fine)[0],
-                device_bytes=_available_bytes(ostream.fine)[1],
+                memory_bytes=available_bytes(ostream.fine)[0],
+                device_bytes=available_bytes(ostream.fine)[1],
             )
         return _JOB_CHUNKS[key]
     budget = memory_bytes - TILE_FRAGMENTATION_HEADROOM * (device_bytes or memory_bytes)

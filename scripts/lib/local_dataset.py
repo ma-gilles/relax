@@ -40,8 +40,8 @@ from relax.ppca_refinement.diagnostics import build_iteration_diagnostics, resol
 from relax.ppca_refinement.engine import (
     DensePPCAFusedEMResult,
     PosteriorDiagnostics,
-    _enforce_augmented_x0,
     add_compensated_blocks,
+    enforce_augmented_x0,
 )
 from relax.ppca_refinement.mean_regularization import (
     MeanRegularizationConfig,
@@ -1846,8 +1846,8 @@ def run_local_ppca_fused_em_iteration(
     if enforce_x0:
         rhs_volume = jnp.swapaxes(stats.rhs, 0, 1)
         lhs_tri_volume = jnp.swapaxes(stats.lhs_tri, 0, 1)
-        rhs_volume = _enforce_augmented_x0(rhs_volume, tuple(int(x) for x in experiment_dataset.volume_shape))
-        lhs_tri_volume = _enforce_augmented_x0(
+        rhs_volume = enforce_augmented_x0(rhs_volume, tuple(int(x) for x in experiment_dataset.volume_shape))
+        lhs_tri_volume = enforce_augmented_x0(
             lhs_tri_volume.astype(jnp.complex64),
             tuple(int(x) for x in experiment_dataset.volume_shape),
         ).real.astype(jnp.float32)

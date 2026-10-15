@@ -423,7 +423,7 @@ def _padded_loader(n_dummies):
             stream, image_indices, significant_rows, collect_observation=collect_observation
         )
         B, T = len(image_indices), int(stream.translations.shape[0])
-        pad = -((B + n_dummies) * T) % frs._SHIFT_ALIGN if stream.static.cuda_kernels else 0
+        pad = -((B + n_dummies) * T) % frs.SHIFT_ALIGN if stream.static.cuda_kernels else 0
         extra = n_dummies * T
         Y1 = jnp.pad(tile.Y1[:, : B * T], ((0, 0), (0, extra + pad)))
         Y1_recon = jnp.pad(tile.Y1_recon[: B * T], ((0, extra + pad), (0, 0)))
@@ -465,12 +465,12 @@ def test_padded_tile_matches_the_real_tile(tile_problem):
 def test_single_particle_reader_pads_to_the_planned_buckets(tile_problem, planned):
     """With a planned tile size the single-particle reader pads a short tile to its bucket (3 images
     to 4, 5 and 6 here); the statistics do not depend on the padded size."""
-    from relax.ppca_refinement.full_row_stream import _read_tile, tile_size_bucket
+    from relax.ppca_refinement.full_row_stream import read_tile, tile_size_bucket
 
     _dataset, _mu, _W, stream, _host = tile_problem
     real = accumulate_full_row_tile(stream, np.arange(3), SIGNIFICANT)
     planned_stream = stream._replace(tile_images=planned, image_batch_size=planned)
-    tile, _power, layout = _read_tile(planned_stream, np.arange(3), SIGNIFICANT, collect_observation=True)
+    tile, _power, layout = read_tile(planned_stream, np.arange(3), SIGNIFICANT, collect_observation=True)
     assert layout["n_real"] == 3 and tile.y_norm.shape[0] == tile_size_bucket(3, planned) > 3
     assert not np.any(np.asarray(tile.y_norm)[3:]) and not np.any(np.asarray(tile.ctf2_recon)[3:])
     padded = accumulate_full_row_tile(planned_stream, np.arange(3), SIGNIFICANT)
@@ -483,11 +483,11 @@ def test_single_particle_reader_pads_to_the_planned_buckets(tile_problem, planne
 
 def test_a_tile_of_the_planned_size_is_not_padded(tile_problem):
     """A tile that already has the planned size is read as before: same operands, bit for bit."""
-    from relax.ppca_refinement.full_row_stream import _read_tile
+    from relax.ppca_refinement.full_row_stream import read_tile
 
     _dataset, _mu, _W, stream, _host = tile_problem
-    plain, _p, _l = _read_tile(stream, np.arange(3), SIGNIFICANT, collect_observation=False)
-    planned, _p, layout = _read_tile(
+    plain, _p, _l = read_tile(stream, np.arange(3), SIGNIFICANT, collect_observation=False)
+    planned, _p, layout = read_tile(
         stream._replace(tile_images=3), np.arange(3), SIGNIFICANT, collect_observation=False
     )
     assert layout["n_real"] == 3
@@ -776,7 +776,7 @@ def _float64_tile_statistics(stream, image_indices, significant):
     import jax
 
     from relax.ppca_refinement import full_row_stream as frs
-    from relax.ppca_refinement.engine import _enforce_augmented_x0
+    from relax.ppca_refinement.engine import enforce_augmented_x0
 
     def up(tree):
         def one(x):
@@ -806,7 +806,7 @@ def _float64_tile_statistics(stream, image_indices, significant):
         posterior = frs._normalize(
             kept.score, tile.rows, n_blocks=layout["n_blocks"], block_size=stream.rotation_block_size
         )
-        carry = up(frs._empty_carry(stream, n_images, observation_power))
+        carry = up(frs.empty_carry(stream, n_images, observation_power))
         carry = frs._run_pass2(wide, tile, kept, posterior, layout["n_blocks"], carry, moments=True)
         volume_shape = stream.static.volume_shape
         weights = make_half_image_weights(stream.static.image_shape)
@@ -819,7 +819,7 @@ def _float64_tile_statistics(stream, image_indices, significant):
         pmax = np.exp(np.asarray(posterior.top_score - posterior.center) - np.asarray(posterior.centered_logZ))
         return {
             "lhs_tri": np.asarray(
-                jnp.swapaxes(_enforce_augmented_x0(lhs_tri.astype(jnp.complex128), volume_shape).real, 0, 1)
+                jnp.swapaxes(enforce_augmented_x0(lhs_tri.astype(jnp.complex128), volume_shape).real, 0, 1)
             ),
             "residual_gradient": np.asarray(residual),
             "residual_num": residual_num,

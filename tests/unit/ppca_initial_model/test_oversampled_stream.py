@@ -371,8 +371,8 @@ def test_pass1_tile_from_the_pass2_tile_is_the_readers(tilts):
     else:
         assert 0 < (slots >= 0).sum() < frs._window_pixels(pass2)  # a smaller window
     support = [None] * len(ids)
-    expected, _, expected_layout = frs._read_tile(coarse, ids, support, collect_observation=False)
-    tile, _, layout = frs._read_tile(ostream.base, ids, support, collect_observation=False)
+    expected, _, expected_layout = frs.read_tile(coarse, ids, support, collect_observation=False)
+    tile, _, layout = frs.read_tile(ostream.base, ids, support, collect_observation=False)
     actual, actual_layout = oss._pass1_tile(ostream, tile, layout, support)
     assert actual.Y1.shape == expected.Y1.shape and actual.ctf2.shape == expected.ctf2.shape
     assert actual.y_norm.shape[0] == (4 if tilts else len(ids)) and actual_layout.get("n_real") == expected_layout.get(

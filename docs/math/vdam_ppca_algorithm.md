@@ -1817,8 +1817,8 @@ Approved for the first version (October 2, 2026), each to be lifted separately:
 ### 16.7 Implementation and checks
 
 - [full_row_stream.py](../../relax/ppca_refinement/full_row_stream.py): a tile may
-  carry `K` frame matrices (`_TileArrays.frames`); projection and scatter
-  rotations expand block rows by frames (`_frame_rotations`); operands and pass-2
+  carry `K` frame matrices (`TileArrays.frames`); projection and scatter
+  rotations expand block rows by frames (`frame_rotations`); operands and pass-2
   images flatten `(frame, pixel)`; the tile reader is a stream argument
   (`tile_loader`); the noise denominator counts observed images. Single-particle
   tiles keep their shapes and arithmetic.

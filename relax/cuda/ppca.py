@@ -167,7 +167,7 @@ def ppca_posterior_prep_f32(kept_score, kept_mean, kept_covariance, center, cent
     padding up to ``row_length`` (default ``B T``; the RHS GEMM's aligned shift axis), the packed
     upper translation sums
     ``(tri(P), R, B)`` of ``gamma E[a_i a_j]`` for ``a = [1, z]``
-    (:func:`relax.ppca_refinement.full_row_stream._second_moment_sums`), the partial diagnostics
+    (:func:`relax.ppca_refinement.full_row_stream.second_moment_sums`), the partial diagnostics
     ``(2, R, B)`` (``-sum_t gamma log-gamma`` over ``gamma > 0`` and ``sum_t gamma |shift|^2``) and
     the count ``(R, B)`` of poses with ``gamma > 1e-3``.
     """

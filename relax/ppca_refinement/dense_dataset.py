@@ -37,7 +37,6 @@ from relax.ppca_refinement.engine import (
     DensePPCAFusedBlock,
     DensePPCAFusedEMResult,
     DenseScoreStats,
-    _enforce_augmented_x0,
     accumulate_pose_ppca_block_cached,
     add_compensated_blocks,
     compensated_add,
@@ -45,6 +44,7 @@ from relax.ppca_refinement.engine import (
     dense_pose_ppca_score_tensor_stats_blocked,
     dense_pose_ppca_score_with_moments_blocked,
     dense_pose_ppca_score_with_moments_factor_once,
+    enforce_augmented_x0,
     fused_dense_pose_ppca_block,
     pose_invariant_score_offset,
 )
@@ -1267,8 +1267,8 @@ def accumulate_dense_ppca_statistics(
         top_posterior_values.append(top_posteriors)
 
     if enforce_x0:
-        rhs_volume = _enforce_augmented_x0(rhs_volume, volume_shape)
-        lhs_tri_volume = _enforce_augmented_x0(lhs_tri_volume.astype(jnp.complex64), volume_shape).real.astype(
+        rhs_volume = enforce_augmented_x0(rhs_volume, volume_shape)
+        lhs_tri_volume = enforce_augmented_x0(lhs_tri_volume.astype(jnp.complex64), volume_shape).real.astype(
             jnp.float32
         )
 

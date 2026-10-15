@@ -204,7 +204,7 @@ def test_latent_epilogue_and_posterior_prep_match_xla(q, T, gpu_device):
                 latent_mean=kept.latent_mean.at[:, start : start + R].set(mean),
                 latent_covariance=kept.latent_covariance.at[start : start + R].set(covariance),
             )
-            posterior = frs._Posterior(center, logZ, center, None, None)
+            posterior = frs.Posterior(center, logZ, center, None, None)
             carry = frs._MomentCarry(
                 None,
                 None,
