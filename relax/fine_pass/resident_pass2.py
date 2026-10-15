@@ -542,6 +542,71 @@ def _runtime_mstep_radius(mstep_max_r) -> float:
     return float(mstep_max_r.image_radius) if isinstance(mstep_max_r, ReferenceSphereClip) else float(mstep_max_r)
 
 
+def _rows_within_rotated_sphere(label, r_max, rotations):
+    """``(sigma_min * label) ** 2 < r_max ** 2 + 1``, ``sigma_min`` the smallest singular value of all ``rotations``.
+
+    The pass's rows are one projection matrix ``P`` composed with rotations, so every ``A^T A`` (or ``A A^T``) is
+    ``P^T P`` (``P P^T``) up to rounding. By Weyl's inequality the smallest eigenvalue over all rows is at least the
+    first row's minus the largest Frobenius distance to it, and at most the first row's: ``sigma_min`` lies in that
+    bracket. The predicate falls with ``sigma_min``, so when both ends give the same rows they are the rows of the
+    exact value; otherwise (rows that do not share one ``P``) every matrix's SVD decides, as it always did. The
+    bracket replaces an SVD of every fine rotation of every pass (0.33 s a pass on multioptics VDAM).
+    """
+
+    a = np.asarray(rotations, dtype=np.float64).reshape(-1, 3, 3)
+    bound = float(r_max) ** 2 + 1.0
+
+    def rows_at(sigma):
+        return (sigma * label) ** 2 < bound
+
+    first = float(np.linalg.svd(a[0], compute_uv=False).min())
+    low = 0.0
+    for gram in (np.einsum("nki,nkj->nij", a, a), np.einsum("nik,njk->nij", a, a)):
+        spread = float(np.sqrt(np.max(np.sum((gram - gram[0]) ** 2, axis=(1, 2)))))
+        low = max(low, float(np.sqrt(max(0.0, np.linalg.eigvalsh(gram[0]).min() - spread))))
+    low = min(low, first)
+    if np.array_equal(rows_at(low), rows_at(first)):
+        return rows_at(first)
+    return rows_at(float(np.linalg.svd(a, compute_uv=False).min()))
+
+
+def _padded_sgd_residual_rows(rows):
+    """``_sgd_residual_rows``' ``(positions, pixels)`` padded to a power-of-two count by repeating the last pixel.
+
+    The count follows the logical current size and the model radius, so unpadded it gave the SGD projection, the
+    cache writes and the M-step block programs a new shape on most passes (about 390 compiles, 30 s on multioptics
+    VDAM). A repeated pixel projects the same value into the same reconstruction position, which the M-step
+    ``set`` writes again, so the residual is unchanged.
+    """
+
+    if rows is None:
+        return None
+    positions, pixels = rows
+    capacity = 1 << max(0, int(positions.size) - 1).bit_length()
+    pad = capacity - int(positions.size)
+    return np.concatenate([positions, np.repeat(positions[-1:], pad)]), np.concatenate([pixels, np.repeat(pixels[-1:], pad)])
+
+
+def _padded_window_union(union):
+    """A score-only :class:`ProjectionWindowUnion` with its pixels padded to a power-of-two count (the last repeated).
+
+    The SGD rows' distinct pixels change in number with the current size and radius like the rows themselves
+    (:func:`_padded_sgd_residual_rows`); the repeated pixel is projected and never taken. A window pixel outside
+    the crop takes the zero column, which moves to the padded end, as in
+    :func:`relax.fine_pass.projection_blocks.capacity_projection_window_union`.
+    """
+
+    indices = np.asarray(union.indices, dtype=np.int64)
+    if indices.size == 0 or union.recon_take is not None:
+        return union
+    capacity = 1 << (int(indices.size) - 1).bit_length()
+    take = np.asarray(union.score_take)
+    return union._replace(
+        indices=jnp.asarray(np.pad(indices, (0, capacity - indices.size), mode="edge").astype(np.int32)),
+        score_take=jnp.asarray(np.where(take == indices.size, capacity, take).astype(np.int32)),
+    )
+
+
 def _sgd_residual_rows(recon_window_indices, *, image_shape, projector_output_size, r_max, rotations):
     """The reconstruction pixels of VDAM's subtracted reference that the projection cache zeroes, or None.
 
@@ -568,8 +633,7 @@ def _sgd_residual_rows(recon_window_indices, *, image_shape, projector_output_si
     label = np.arange(n) - n // 2
     if int(projector_output_size) == n:
         label[0] = n // 2  # the full window's positive Nyquist row (relion_kernel_zero_rows)
-    sigma_min = float(np.linalg.svd(np.asarray(rotations, dtype=np.float64), compute_uv=False).min())
-    reachable = (sigma_min * label) ** 2 < float(r_max) ** 2 + 1.0
+    reachable = _rows_within_rotated_sphere(label, r_max, rotations)
     zero = np.asarray(zero) & np.repeat(reachable, n // 2 + 1)
     recon = np.asarray(recon_window_indices, dtype=np.int64)
     positions = np.flatnonzero(zero[recon])
@@ -1598,7 +1662,7 @@ def _resident_pass2(
         capacity_logical_output_size = int(projection_kwargs["projector_output_size"])
         projection_kwargs["projector_output_size"] = physical_size
     residual_sgd_rows = (
-        _sgd_residual_rows(
+        _padded_sgd_residual_rows(_sgd_residual_rows(
             recon_window_indices,
             image_shape=image_shape,
             projector_output_size=(
@@ -1608,7 +1672,7 @@ def _resident_pass2(
             ),
             r_max=relion_projector_r_max,
             rotations=np.asarray(fine_rotations_override, dtype=np.float64),
-        )
+        ))
         if mstep_subtract_ctf_projection and use_relion_projector
         else None
     )
@@ -1898,11 +1962,13 @@ def _resident_pass2(
             sgd_positions, sgd_pixels = residual_sgd_rows
             sgd_pixels_device = jnp.asarray(sgd_pixels)
             sgd_window_union = (
-                resident_stable_windows.pass_window_union(
-                    sgd_pixels.astype(np.int64),
-                    image_shape=image_shape,
-                    projector_output_size=int(projection_kwargs["projector_output_size"]),
-                    capacity_logical_output_size=capacity_logical_output_size,
+                _padded_window_union(
+                    resident_stable_windows.pass_window_union(
+                        sgd_pixels.astype(np.int64),
+                        image_shape=image_shape,
+                        projector_output_size=int(projection_kwargs["projector_output_size"]),
+                        capacity_logical_output_size=capacity_logical_output_size,
+                    )
                 )
                 if projection_kwargs.get("projector_output_size") is not None
                 else None

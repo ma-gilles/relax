@@ -281,3 +281,84 @@ def test_cached_block_projections_give_the_residual_its_sgd_rows():
     expected = np.asarray(plain[0]).copy()
     expected[:, [1, 3]] = np.asarray(sgd)[np.asarray(rows)]
     assert_matches(residual, expected)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("scale", [1.12, 1.0 + 1.7e-8, 1.4])
+def test_rows_within_the_rotated_sphere_match_the_smallest_singular_value_of_every_rotation(scale):
+    """The Weyl bracket gives the rows an SVD of every rotation gives, for one projection matrix and for several."""
+    from relax.fine_pass.resident_pass2 import _rows_within_rotated_sphere
+
+    box, r_max = 112, 19
+    label = np.arange(box) - box // 2
+    mag = np.array([[1.0, 0.004, 0.0], [0.004, 0.993, 0.0], [0.0, 0.0, 1.0]])
+    for rotations in (
+        (Rotation.random(4000, random_state=7).as_matrix() / scale).astype(np.float32).astype(np.float64),
+        Rotation.random(4000, random_state=8).as_matrix() @ mag / scale,
+        # Two projection matrices in one pass: the bracket is wide and every SVD decides.
+        np.concatenate([Rotation.random(50, random_state=9).as_matrix() / scale, Rotation.random(50, random_state=10).as_matrix() / 1.3]),
+    ):
+        sigma = float(np.linalg.svd(rotations, compute_uv=False).min())
+        expected = (sigma * label) ** 2 < float(r_max) ** 2 + 1.0
+        assert np.array_equal(_rows_within_rotated_sphere(label, r_max, rotations), expected)
+
+
+@pytest.mark.unit
+def test_padded_sgd_rows_leave_the_residual_unchanged_and_share_one_program():
+    """A power-of-two count repeats the last pixel: the M-step residual (set at the take) is the unpadded one, and
+    passes whose counts differ in the same power of two run one compiled program."""
+    import jax
+
+    from relax.fine_pass.resident_chunk_records import ChunkStageTables
+    from relax.fine_pass.resident_mstep_blocks import cached_block_projections
+    from relax.fine_pass.resident_pass2 import _padded_sgd_residual_rows
+
+    rng = np.random.default_rng(5)
+    n_rot, n_recon = 6, 12
+    union = jnp.asarray(rng.standard_normal((n_rot, n_recon)) + 1j * rng.standard_normal((n_rot, n_recon)), dtype=jnp.complex64)
+    fields = {name: None for name in ChunkStageTables._fields}
+    fields.update(
+        projection_score_cache=union,
+        mstep_grid=jnp.asarray(rng.standard_normal((n_rot, 3, 3)), dtype=jnp.float32),
+        union_recon_take=jnp.arange(n_recon, dtype=jnp.int32),
+    )
+    rows = jnp.asarray([5, 2, 2, 0], jnp.int32)
+
+    @jax.jit
+    def residual(sgd_cache, sgd_take):
+        return cached_block_projections(ChunkStageTables(**{**fields, "residual_sgd_cache": sgd_cache, "residual_sgd_take": sgd_take}), rows)[3]
+
+    for count in (5, 6, 7):
+        positions = np.sort(rng.choice(n_recon, count, replace=False)).astype(np.int32)
+        pixels = (100 + positions).astype(np.int32)
+        sgd = rng.standard_normal((n_rot, count)) + 1j * rng.standard_normal((n_rot, count))
+        padded_positions, padded_pixels = _padded_sgd_residual_rows((positions, pixels))
+        assert padded_positions.size == padded_pixels.size == 8
+        assert_matches(padded_positions[:count], positions)
+        assert_matches(padded_pixels[:count], pixels)
+        assert np.all(padded_pixels[count:] == pixels[-1]) and np.all(padded_positions[count:] == positions[-1])
+        # The padded cache column is the projection of the repeated pixel: the last column again.
+        padded_sgd = np.concatenate([sgd, np.repeat(sgd[:, -1:], 8 - count, axis=1)], axis=1)
+        expected = np.asarray(union).copy()
+        expected[:, positions] = sgd
+        got = residual(jnp.asarray(padded_sgd, dtype=jnp.complex64), jnp.asarray(padded_positions))
+        assert_matches(got, expected[np.asarray(rows)])
+    assert residual._cache_size() == 1
+
+
+@pytest.mark.unit
+def test_padded_window_union_keeps_every_take_and_moves_the_zero_column():
+    from relax.fine_pass.projection_blocks import projection_window_union
+    from relax.fine_pass.resident_pass2 import _padded_window_union
+
+    box, window = 112, 44
+    # Rows around the centre (inside the crop) and a far row (outside it, the zero column).
+    pixels = np.concatenate([np.arange(50 * 57, 62 * 57, 5), np.arange(57, 57 + 30, 3)]).astype(np.int64)
+    union = projection_window_union(pixels, image_shape=(box, box), projector_output_size=window)
+    padded = _padded_window_union(union)
+    n, cap = int(union.indices.shape[0]), int(padded.indices.shape[0])
+    assert cap == 1 << (n - 1).bit_length() and cap >= n
+    assert_matches(np.asarray(padded.indices)[:n], np.asarray(union.indices))
+    take, padded_take = np.asarray(union.score_take), np.asarray(padded.score_take)
+    assert_matches(padded_take, np.where(take == n, cap, take))
+    assert np.any(take == n)  # the case has pixels outside the crop
