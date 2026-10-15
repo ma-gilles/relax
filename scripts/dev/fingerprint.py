@@ -1497,7 +1497,11 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
                 **{
                     name: value() for name, value in (
                         ("variants", lambda: refinement_options.ScoringVariants.from_environ()),
-                        ("precision", lambda: importlib.import_module("relax.steps.scoring_policy").DENSE_PRECISION),
+                        # The command reads it (DensePrecisionPolicy.from_environ); older commits kept it in
+                        # relax.steps.scoring_policy.DENSE_PRECISION.
+                        ("precision", lambda: getattr(
+                            importlib.import_module("relax.steps.scoring_policy"), "DENSE_PRECISION", None,
+                        ) or importlib.import_module("relax.numerics.precision").DensePrecisionPolicy.from_environ()),
                     )
                     if name in {f.name for f in dataclasses.fields(refinement_options.RefinementOptions)}
                 },

@@ -30,6 +30,7 @@ import numpy as np
 
 from relax.commands.refinement_arguments import apply_k1_refine3d_env_defaults
 from relax.diagnostics.gt_metrics import DEFAULT_GT_ALIGN_HEALPIX_ORDER, DEFAULT_GT_ALIGN_MAX_SHELL
+from relax.numerics.precision import DensePrecisionPolicy
 from relax.refinement.iteration_history import add_significant_count_artifacts
 from relax.relion.initial_noise import (
     read_relion_sigma2_noise_by_group,
@@ -1470,7 +1471,6 @@ def main():
         read_relion_sampling_metadata,
         read_relion_sampling_symmetry,
     )
-    from relax.steps import scoring_policy
     from relax.steps.optics_shapes import MultiShapeDataset, optics_shape_class_rows
 
     def _rotation_matrices_from_eulers_deg(eulers_deg):
@@ -2453,7 +2453,7 @@ def main():
         final_pass=FinalPassOptions.from_environ(),
         environment=RefinementEnvironment.from_environ(),
         variants=ScoringVariants.from_environ(),
-        precision=scoring_policy.DENSE_PRECISION,
+        precision=DensePrecisionPolicy.from_environ(),
         adaptive=AdaptiveOptions(
             adaptive_oversampling=oversampling, max_significants=max_significants,
             coarse_engine=args.coarse_engine,

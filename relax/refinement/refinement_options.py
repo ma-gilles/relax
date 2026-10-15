@@ -869,35 +869,11 @@ class RefinementOptions:
     environment: RefinementEnvironment = field(default_factory=RefinementEnvironment)
     solvent: SolventOptions = field(default_factory=SolventOptions)
     expected_accuracy: ExpectedAccuracyOptions = field(default_factory=ExpectedAccuracyOptions)
-    # The dense scoring precision: the command passes the process's (_process_dense_precision), which the
-    # scoring engines read; refine_single_volume refuses another (require_process_precision).
+    # The dense scoring precision: the command reads it (DensePrecisionPolicy.from_environ) and passes it.
     precision: DensePrecisionPolicy
     # The command reads it from the environment (ScoringVariants.from_environ); nothing below reads it again. No
     # default: K=1's x-half M-step default depends on the device, so no plain record equals the unset environment.
     variants: ScoringVariants
-
-
-def _process_dense_precision() -> DensePrecisionPolicy:
-    """The process's dense precision, ``relax.steps.scoring_policy.DENSE_PRECISION``.
-
-    That policy owns the default: ``RELAX_USE_FLOAT64_SCORING`` and ``RELAX_USE_FLOAT64_PROJECTIONS``, read once
-    when ``relax.steps.scoring_policy`` is imported. The scoring engines still read it there, so the
-    refinement refuses options whose precision differs (``require_process_precision``).
-    """
-    from relax.steps import scoring_policy
-
-    return scoring_policy.DENSE_PRECISION
-
-
-def require_process_precision(options: RefinementOptions) -> None:
-    """Refuse options whose ``precision`` is not the process's dense precision, which the engines read."""
-    process = _process_dense_precision()
-    if options.precision != process:
-        raise ValueError(
-            f"options.precision={options.precision!r} differs from the process's dense precision {process!r} "
-            "(relax.steps.scoring_policy.DENSE_PRECISION), which the scoring engines read; build the options "
-            "after setting RELAX_USE_FLOAT64_SCORING / RELAX_USE_FLOAT64_PROJECTIONS"
-        )
 
 
 def _validate_relion_healpix_orders(orders, *, max_iter, init_healpix_order, max_healpix_order):

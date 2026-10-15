@@ -494,7 +494,6 @@ def refine_single_volume(
     mapping the archive and reports read.
     """
     options = refinement_options.with_validated_sampling_schedule(options)
-    refinement_options.require_process_precision(options)
 
     # Each set-up phase's cumulative seconds since the set-up started (a result: the archive and the ledger).
     setup_clock = timing.Stopwatch()

@@ -10,6 +10,8 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
+from relax.runtime.env_flags import parse_env_true_flag
+
 logger = logging.getLogger(__name__)
 
 _REPORTED_PRECISION_VIOLATIONS: set[tuple[str, tuple[str, ...]]] = set()
@@ -83,10 +85,23 @@ def audit_operand_precision(policy, operands: Mapping[str, object], *, where: st
 
 @dataclass(frozen=True)
 class DensePrecisionPolicy:
-    """Centralized dtype choices for dense EM scoring/projection paths."""
+    """Centralized dtype choices for dense EM scoring/projection paths.
+
+    The default instance is production float32; :meth:`from_environ` is the run's, which the command reads once
+    and passes down (``RefinementOptions.precision``).
+    """
 
     use_float64_scoring: bool = False
     use_float64_projections: bool = False
+
+    @classmethod
+    def from_environ(cls) -> DensePrecisionPolicy:
+        """``RELAX_USE_FLOAT64_SCORING`` and ``RELAX_USE_FLOAT64_PROJECTIONS`` (``env_flags.parse_env_true_flag``;
+        unset is off): the float64 diagnostic arms of the dense scoring and projections."""
+        return cls(
+            use_float64_scoring=parse_env_true_flag("RELAX_USE_FLOAT64_SCORING"),
+            use_float64_projections=parse_env_true_flag("RELAX_USE_FLOAT64_PROJECTIONS"),
+        )
 
     def for_local_pass(self, iteration: int | None, *, pass_index: int, float64_pass2_iterations: frozenset[int]):
         if pass_index == 2 and _diagnostic_float64_pass2_matches(iteration, float64_pass2_iterations):

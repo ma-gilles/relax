@@ -6,7 +6,6 @@ overrides are resolved before half scoring. See docs/math/zero_coarse_geometry.m
 """
 
 import inspect
-from dataclasses import replace
 from types import SimpleNamespace
 
 import numpy as np
@@ -14,6 +13,7 @@ import pytest
 from helpers.run_options import stand_in
 from helpers.tiny_refinement import CallTrace, run_tiny_refinement
 
+from relax.numerics.precision import DensePrecisionPolicy
 from relax.refinement import (
     dense_half,
     expectation,
@@ -23,7 +23,6 @@ from relax.refinement import (
     local_sampling,
 )
 from relax.sampling.device_rotations import DevicePass1Source
-from relax.steps import scoring_policy
 
 pytestmark = pytest.mark.unit
 
@@ -101,15 +100,12 @@ def _gate_run(monkeypatch, trace, oversampling, n_classes, cc, float64):
     parity = {}
     if cc:
         parity.update(emulate_relion_firstiter_cc=True, relion_firstiter_ini_high_angstrom=8.0)
-    if float64:
-        monkeypatch.setattr(
-            scoring_policy, "DENSE_PRECISION", replace(scoring_policy.DENSE_PRECISION, use_float64_scoring=True),
-        )
     trace.wrap(local_sampling, "iteration_trial_grid", "iteration")
     trace.wrap(local_sampling, "coarse_pass1_rotations", "coarse_rotations")
     run_tiny_refinement(
         monkeypatch, n_classes=n_classes, final_after_max_iter=False, parity=parity,
         adaptive=stand_in.adaptive(adaptive_oversampling=oversampling),
+        precision=DensePrecisionPolicy(use_float64_scoring=float64),
     )
 
 

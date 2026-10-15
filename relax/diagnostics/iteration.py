@@ -211,10 +211,8 @@ def write_numbered_half_manifest(save_dir, scored: DenseHalfScored) -> None:
     ``random_perturbation``, the half's direction and translation log priors, ``particles`` (corrections),
     ``half`` (reference, prior and noise) and the engine's per-image maximum posterior.
     """
-    from relax.steps import scoring_policy
-
     (iteration, half_index, grid, sampling, direction_priors, translation_log_prior, particles,
-     translation_search_base, previous_translations, half, image_window_size, perturb_factor, result) = scored
+     translation_search_base, previous_translations, half, image_window_size, perturb_factor, result, _) = scored
     _manifest_path = os.path.join(save_dir, f"manifest_iter{iteration}_half{half_index}.npz")
     _manifest = {
         "effective_rotations": np.asarray(grid.rotations),
@@ -239,7 +237,7 @@ def write_numbered_half_manifest(save_dir, scored: DenseHalfScored) -> None:
         "noise_variance": np.asarray(half.noise_variance),
         "current_size": np.int32(image_window_size) if image_window_size is not None else np.int32(-1),
         "half_spectrum_scoring": np.bool_(True),
-        "use_float64_scoring": np.bool_(scoring_policy.DENSE_PRECISION.use_float64_scoring),
+        "use_float64_scoring": np.bool_(scored.use_float64_scoring),
         "projection_padding_factor": np.int32(PROJECTION_PADDING_FACTOR),
         "reconstruction_padding_factor": np.int32(RECONSTRUCTION_PADDING_FACTOR),
         "score_with_masked_images": np.bool_(True),

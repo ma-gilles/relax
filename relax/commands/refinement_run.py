@@ -36,7 +36,7 @@ import relax
 from relax.commands import refinement_arguments, refinement_particles
 from relax.commands.refinement_arguments import apply_k1_refine3d_env_defaults
 from relax.diagnostics import observers, parity_dump
-from relax.numerics.precision import use_float32_matmuls
+from relax.numerics.precision import DensePrecisionPolicy, use_float32_matmuls
 from relax.parity import (
     archive_provenance,
     frozen_boundary_cli,
@@ -66,7 +66,6 @@ from relax.runtime import xla_memory_reserve
 from relax.runtime.compilation_cache import activate_recovar_compilation_cache
 from relax.star import input_particle_table, input_poses
 from relax.star import metadata as relion_metadata
-from relax.steps import scoring_policy
 
 logging.basicConfig(
     level=logging.INFO,
@@ -392,6 +391,8 @@ def main(command=None):
         logger.info("Persistent JAX compilation cache: %s", cache_directory)
     if int(args.n_classes) == 1:
         apply_k1_refine3d_env_defaults()
+    # The dense scoring precision, read once here and passed down (RefinementOptions.precision).
+    dense_precision: DensePrecisionPolicy = DensePrecisionPolicy.from_environ()
     job = refinement_arguments.resolve_job_defaults(args)
     relion_half_sets_from_input = refinement_arguments.resolve_standalone_k1_start(args)
     refinement_arguments.validate_sigma_ang(args)
@@ -660,7 +661,7 @@ def main(command=None):
     # widen again (a float32 volume cannot be recovered). Gated on
     # use_float64_projections alone, as projection_complex_dtype is, so float64 scoring alone costs no
     # projection memory. The process's precision policy owns the flag (RefinementOptions.precision is it).
-    _init_volume_use_float64 = scoring_policy.DENSE_PRECISION.use_float64_projections
+    _init_volume_use_float64 = dense_precision.use_float64_projections
     _init_volume_dtype = np.float64 if _init_volume_use_float64 else np.float32
     _init_volume_complex_dtype = np.complex128 if _init_volume_use_float64 else np.complex64
 
@@ -1274,7 +1275,7 @@ def main(command=None):
         final_pass=refinement_options.FinalPassOptions.from_environ(),
         environment=refinement_options.RefinementEnvironment.from_environ(),
         variants=refinement_options.ScoringVariants.from_environ(),
-        precision=scoring_policy.DENSE_PRECISION,
+        precision=dense_precision,
         adaptive=adaptive_options,
         optics_geometry=OpticsGeometry(
             relion_optics_image_sizes=half_sets.optics_image_sizes,

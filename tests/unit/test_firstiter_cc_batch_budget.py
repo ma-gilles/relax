@@ -14,6 +14,7 @@ from helpers.run_options import cli
 from relax.classification import k_class_results
 from relax.classification.k_class_results import KClassEMResult
 from relax.local_search import records
+from relax.numerics.precision import DensePrecisionPolicy
 from relax.refinement import dense_half, local_half, local_sampling
 from relax.runtime import batch_planning
 from relax.runtime.batch_planning import (
@@ -24,7 +25,7 @@ from relax.runtime.batch_planning import (
 from relax.runtime.engine_tuning import EngineTuning
 from relax.runtime.scoring_overrides import ScoringOverrides
 from relax.sampling import oversampling
-from relax.steps import half_inputs, scoring_policy, shape_class_scoring
+from relax.steps import half_inputs, shape_class_scoring
 from relax.steps.half_inputs import HalfSet
 from relax.types import NoiseStats, make_relion_stats
 
@@ -85,7 +86,7 @@ def _dense_owners(**values):
             bpref_device_signature_active=values.pop("bpref_device_signature_active", False),
             debug_iteration=values.pop("debug_iteration", None),
             relion_x_half_mstep=cli.variants().relion_x_half_mstep(k_class=k_class_enabled),
-            precision=scoring_policy.DENSE_PRECISION,
+            precision=DensePrecisionPolicy(),
         ),
         shape_class_scoring.OpticsSpec.single_shape(),
     )

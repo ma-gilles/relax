@@ -58,8 +58,8 @@ reason; the sections after this one hold the detail.
      variables during the denominator pass; `expectation`: whether a BPref dump of the engines is armed. The
      variables belong to the engine packages, which read them.
    - `expectation_batches`: `RELAX_DIAGNOSTIC_FLOAT64_PASS2_ITERATIONS` (owned by
-     `relax.numerics.precision`); `commands.refinement_particles`: `RELAX_USE_FLOAT64_SCORING` (the precision policy
-     `relax.steps.scoring_policy.DENSE_PRECISION` reads it at import; particle loading runs at the command)
+     `relax.numerics.precision`); `commands.refinement_particles`: `RELAX_USE_FLOAT64_SCORING` (the command reads it into the
+     precision policy, `DensePrecisionPolicy.from_environ`; particle loading runs at the command)
      and the RECOVAR native softmask switch, which is how the setting reaches RECOVAR.
    - The scoring and reconstruction route variants (x-half M-step, local adaptive pass-2 support, the
      support-width convergence gate, the reconstruction's stable windows and host inverse FFT) are one
@@ -67,10 +67,10 @@ reason; the sections after this one hold the detail.
      receive its values in their execution policies and `ReconstructionSettings.programs` (deep2 c1). The
      resident engine (`relax/sparse_pass2`) and the K-class engine still read the stable-windows switch
      themselves.
-   - The dense precision: the engines receive `options.precision` (`DenseExecutionPolicy`,
-     `LocalExecutionPolicy`, `BatchPlanner`, dtype arguments). `relax/parity/relion_replay_source.py` and
-     `relax/diagnostics/iteration.py` still read `DENSE_PRECISION`, and `require_process_precision` refuses
-     options whose precision differs, so the two cannot disagree.
+   - The dense precision: the command reads it once (`DensePrecisionPolicy.from_environ`) and the engines receive
+     `options.precision` (`DenseExecutionPolicy`, `LocalExecutionPolicy`, `BatchPlanner`, dtype arguments); the
+     replay source takes its dtype from the options and the dense manifest dump from `DenseHalfScored`
+     (2026-10-15: the import-time `scoring_policy.DENSE_PRECISION` and `require_process_precision` are gone).
 3. **The controller loop (rule 6, shared steps).** `refine_single_volume` spans 1,782 lines (2026-10-07). Its mode
    decisions, read by the rules (2026-10-05): 24 tests of `k_class_enabled`. None makes a step take a
    mode flag; each either selects one of two contract functions (image size: `plan_class_image_size` or

@@ -1,7 +1,7 @@
 """Execution defaults and existing diagnostic selectors for half-set scoring.
 
-Global precision and fine-scoring policy retain their import-time environment
-snapshot. The scoring route variants are read once per run, when the refinement's options are built
+The dense precision is read by the command (``relax.numerics.precision.DensePrecisionPolicy.from_environ``)
+and passed down. The scoring route variants are read once per run, when the refinement's options are built
 (``relax.refinement.refinement_options.ScoringVariants``); this module keeps their variable names and
 K=1's x-half default. This module performs no scoring or scheduling.
 """
@@ -13,7 +13,6 @@ import jax
 import numpy as np
 
 from relax.numerics.precision import DensePrecisionPolicy
-from relax.runtime.env_flags import parse_env_true_flag
 
 logger = logging.getLogger(__name__)
 
@@ -39,13 +38,6 @@ LOCAL_ADAPTIVE_PASS2_DENOMINATOR_MODES = {
 # FFTW half image, but the likelihood support is the nonzero Minvsigma2 mask:
 # rounded radial shells, no DC, no redundant negative-row kx=0 entries.
 RELION_FOURIER_WINDOW_SQUARE = False
-
-# Resolve the diagnostic switches once, at the existing import boundary.
-DENSE_PRECISION = DensePrecisionPolicy(
-    use_float64_scoring=parse_env_true_flag("RELAX_USE_FLOAT64_SCORING"),
-    use_float64_projections=parse_env_true_flag("RELAX_USE_FLOAT64_PROJECTIONS"),
-)
-
 
 def local_precision(
     precision: DensePrecisionPolicy, iteration: int | None, *, pass_index: int, float64_pass2_iterations: frozenset[int]
@@ -82,21 +74,3 @@ def k1_relion_x_half_mstep_default_available() -> bool:
         return jax.default_backend() == "gpu"
     except Exception:
         return False
-
-
-def _dense_global_scoring_dtype() -> np.dtype:
-    """Dtype for the dense/global (``use_local=False``) scoring path's
-    float64-sensitive operands: the pass-1 rotation grid built by
-    ``relion_scoring_rotation_grid``, and the offset/orientation log-prior
-    arrays built by ``make_relion_translation_log_prior`` /
-    ``make_relion_direction_log_prior`` and their prior-center helpers.
-
-    None of these have a per-iteration diagnostic override (see
-    ``local_precision`` for the local-search analog), so this
-    collapses the global float64-scoring/-projections switches directly,
-    matching RELION's ``ACC_DOUBLE_PRECISION`` build where the corresponding
-    host ``RFLOAT`` values are never narrowed to float before the (no-op)
-    ``XFLOAT`` cast.
-    """
-
-    return DENSE_PRECISION.rotation_real_dtype

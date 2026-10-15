@@ -57,7 +57,6 @@ from relax.refinement.trial_grids import CoarseGrids, FinalSamplingSettings, nat
 from relax.runtime.env_flags import parse_env_true_flag
 from relax.sampling import grids as sampling_grids
 from relax.star.metadata import read_relion_sampling_metadata
-from relax.steps.scoring_policy import _dense_global_scoring_dtype
 
 # The controller's log: what the replay installs is logged under its name, as before.
 logger = logging.getLogger("relax.refinement.iteration_loop")
@@ -278,6 +277,7 @@ class RelionReplaySource(InputSource):
             initialized_healpix_order=initialized_healpix_order,
             voxel_size=voxel_size,
             symmetry=symmetry,
+            dtype=self.options.precision.rotation_real_dtype,
             log=logger,
         )
 
@@ -475,7 +475,7 @@ class RelionReplaySource(InputSource):
                     healpix_order=healpix_order,
                     image_shape=image_geometry.image_shape,
                     symmetry=options.symmetry.point_group,
-                    dtype=_dense_global_scoring_dtype(),
+                    dtype=options.precision.rotation_real_dtype,
                     override_index=override_index,
                     log=logger,
                 )
@@ -656,7 +656,7 @@ class RelionReplaySource(InputSource):
         sealed_meta = None
         if sealed is not None:
             current_size, prior_translations, sealed_meta = _install_sealed_sampling(
-                state, sealed, iteration=iteration, image_geometry=image_geometry, dtype=_dense_global_scoring_dtype(),
+                state, sealed, iteration=iteration, image_geometry=image_geometry, dtype=options.precision.rotation_real_dtype,
             )
             inputs = inputs._replace(current_size=current_size, prior_translations=prior_translations)
         slot = self._slot(iteration)
@@ -677,7 +677,7 @@ class RelionReplaySource(InputSource):
             current_sigma_offset_angstrom_per_half=inputs.sigma_offset.per_half_angstrom,
             direction_priors=direction_priors,
             preserve_existing_direction_prior=self.replay.preserve_initial_direction_prior,
-            dtype=_dense_global_scoring_dtype(),
+            dtype=options.precision.rotation_real_dtype,
             symmetry=options.symmetry.point_group,
         )
         mean_variance = inputs.mean_variance
@@ -721,14 +721,16 @@ def build_sealed_initial_coarse_grids(
     initialized_healpix_order,
     voxel_size,
     symmetry: str,
+    dtype,
     log: logging.Logger,
 ) -> CoarseGrids:
-    """Materialize and validate a schema-v3 sealed initial sampling grid."""
+    """Materialize and validate a schema-v3 sealed initial sampling grid, its operands in ``dtype`` (the run's
+    ``precision.rotation_real_dtype``)."""
 
     rotations, rotation_eulers, current_translations = _sealed_sampling_base_grids(
         sealed_sampling_state,
         voxel_size_angstrom=voxel_size,
-        dtype=_dense_global_scoring_dtype(),
+        dtype=dtype,
     )
     healpix_order = int(sealed_sampling_state["healpix_order_original"])
     if healpix_order != int(initialized_healpix_order):

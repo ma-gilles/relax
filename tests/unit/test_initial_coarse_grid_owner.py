@@ -22,7 +22,6 @@ from relax.parity.relion_replay import _sealed_sampling_base_grids
 from relax.refinement import trial_grids
 from relax.sampling import grids as grids_module
 from relax.sampling.grids import _translation_grid_for_class_count
-from relax.steps.scoring_policy import _dense_global_scoring_dtype
 
 pytestmark = pytest.mark.unit
 
@@ -70,6 +69,7 @@ def _initial_grids(**overrides):
             initialized_healpix_order=initialized_healpix_order,
             voxel_size=kwargs["voxel_size"],
             symmetry=kwargs.get("symmetry", "C1"),
+            dtype=np.float32,
             log=logging.getLogger("test_initial_coarse_grid_owner"),
         )
     return trial_grids.build_initial_coarse_grids(
@@ -77,7 +77,7 @@ def _initial_grids(**overrides):
         kwargs.pop("translations"),
         translation_range=translation_range,
         translation_step=translation_step,
-        dtype=_dense_global_scoring_dtype(),
+        dtype=np.float32,
         **kwargs,
     )
 
@@ -118,14 +118,14 @@ def test_sealed_state_must_sit_at_the_initialized_order():
 def test_relion_translation_grid_pairs_with_the_canonical_rotation_grid(monkeypatch):
     monkeypatch.setattr(grids_module, "relion_scoring_rotation_grid", _fake_rotation_grid)
     grids = _initial_grids(n_classes=4)
-    _rotation_grid_rotations = _fake_rotation_grid(3, dtype=_dense_global_scoring_dtype())
+    _rotation_grid_rotations = _fake_rotation_grid(3, dtype=np.float32)
     rotations = _rotation_grid_rotations.rotations
     eulers = _rotation_grid_rotations.rotation_eulers
     assert _same(grids.rotation_grid.rotations, rotations) and _same(grids.rotation_grid.rotation_eulers, eulers)
     expected = grids_module.relion_base_translation_grid(4.25, 1.416667, n_classes=4, voxel_size=2.0)
     assert _same(grids.base_translations, expected)
     assert isinstance(grids.translations, jnp.ndarray)
-    assert _same(grids.translations, jnp.asarray(expected, dtype=_dense_global_scoring_dtype()))
+    assert _same(grids.translations, jnp.asarray(expected, dtype=np.float32))
     assert grids.rotation_grid.healpix_order == 3
 
 
@@ -134,7 +134,7 @@ def test_caller_translation_table_is_kept_as_the_base_grid(monkeypatch):
     table = np.asarray([[0.5, -1.0], [0.0, 0.0]], dtype=np.float32)
     grids = _initial_grids(translations=table)
     assert grids.base_translations.dtype == np.float64 and _same(grids.base_translations, table.astype(np.float64))
-    assert _same(grids.translations, jnp.asarray(table, dtype=_dense_global_scoring_dtype()))
+    assert _same(grids.translations, jnp.asarray(table, dtype=np.float32))
 
 
 def test_controller_materializes_explicit_coarse_grid_variants():
@@ -155,6 +155,7 @@ def test_controller_materializes_explicit_coarse_grid_variants():
         "initialized_healpix_order",
         "voxel_size",
         "symmetry",
+        "dtype",
         "log",
     )
     for name in ("InitialGridSampling", "_sealed_sampling_base_grids", "_translation_grid_for_class_count"):

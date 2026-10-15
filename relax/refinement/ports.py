@@ -78,7 +78,7 @@ class DenseHalfScored(NamedTuple):
 
     ``half`` is the half's ``HalfScoringData`` (reference, prior, noise), ``particles`` its ``HalfSet``,
     ``grid`` the iteration's trial grid, ``sampling`` its ``DenseSamplingSpec`` and ``result`` the engine's
-    result for the half.
+    result for the half. ``use_float64_scoring`` is the run's dense precision's (``RefinementOptions.precision``).
     """
 
     iteration: int
@@ -94,6 +94,7 @@ class DenseHalfScored(NamedTuple):
     image_window_size: Any
     perturb_factor: float
     result: Any
+    use_float64_scoring: bool
 
 
 class NumberedHalfRecorded(NamedTuple):

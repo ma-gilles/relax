@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from relax.numerics.precision import DensePrecisionPolicy
 from relax.reconstruction import regularization
 from relax.reconstruction.volume_solver import ReconstructionPrograms
 from relax.refinement.refinement_options import (
@@ -89,12 +90,12 @@ class OptionsFactory:
 
     def options(self, **groups) -> RefinementOptions:
         """``RefinementOptions`` with every preset group the caller did not pass built from the preset, the
-        unset environment's scoring variants (:meth:`variants`) and the process's dense precision."""
+        unset environment's scoring variants (:meth:`variants`) and the production dense precision (float32)."""
         for group in self.preset:
             if group not in groups:
                 groups[group] = getattr(self, group)()
         groups.setdefault("variants", self.variants())
-        groups.setdefault("precision", scoring_policy.DENSE_PRECISION)
+        groups.setdefault("precision", DensePrecisionPolicy())
         return RefinementOptions(**groups)
 
 

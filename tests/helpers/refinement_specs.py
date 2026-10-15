@@ -6,6 +6,7 @@ from helpers.run_options import cli
 
 from relax.classification.probes import NoProbe as KClassNoProbe
 from relax.local_search import records
+from relax.numerics.precision import DensePrecisionPolicy
 from relax.refinement import dense_half, local_half, local_sampling
 from relax.refinement.ports import NoProbe
 from relax.refinement.refinement_options import LocalAdaptivePass2Support
@@ -205,10 +206,11 @@ def local_half_owners(**values):
                 rotation_only=values.pop("adaptive_pass2_rotation_only", False),
                 denominator_mode=values.pop("adaptive_pass2_denominator_mode", None),
             ),
-            # The process precision, and pass 2's for the debug iteration (iteration + 1 by default).
-            precision=scoring_policy.DENSE_PRECISION,
+            # The run's precision (production float32 unless given), and pass 2's for the debug iteration
+            # (iteration + 1 by default).
+            precision=(precision := values.pop("precision", DensePrecisionPolicy())),
             fine_precision=scoring_policy.local_precision(
-                scoring_policy.DENSE_PRECISION,
+                precision,
                 values["iteration"] + 1 if values.get("debug_iteration") is None else values["debug_iteration"],
                 pass_index=2,
                 # The command's default (no float64 pass-2 iterations) unless the test gives them.

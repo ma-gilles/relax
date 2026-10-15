@@ -816,7 +816,7 @@ def score_numbered_half(
                 translation_log_prior=translation_log_prior, particles=particle_half,
                 translation_search_base=translation_search_base, previous_translations=previous_translations_k,
                 half=half.data, image_window_size=image_window_size, perturb_factor=options.parity.perturb_factor,
-                result=dense_result,
+                result=dense_result, use_float64_scoring=options.precision.use_float64_scoring,
             ))
 
     score_result.translation_search_base = translation_search_base

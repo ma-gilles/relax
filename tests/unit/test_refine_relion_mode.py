@@ -209,131 +209,77 @@ def test_diagnostic_float64_pass2_iteration_selector():
     assert dtype_policy_module._diagnostic_float64_pass2_matches(None, frozenset({4})) is False
 
 
-def test_local_search_precision_defaults_to_production_float32(monkeypatch):
-    monkeypatch.setattr(
-        scoring_policy,
-        "DENSE_PRECISION",
-        replace(scoring_policy.DENSE_PRECISION, use_float64_scoring=False),
-    )
-    monkeypatch.setattr(
-        scoring_policy,
-        "DENSE_PRECISION",
-        replace(scoring_policy.DENSE_PRECISION, use_float64_projections=False),
-    )
+def test_local_search_precision_defaults_to_production_float32():
+    precision = dtype_policy_module.DensePrecisionPolicy(use_float64_scoring=False, use_float64_projections=False)
     listed = frozenset()
 
     assert scoring_policy.local_precision(
-        scoring_policy.DENSE_PRECISION,
+        precision,
         12,
         pass_index=1,
         float64_pass2_iterations=listed,
     ) == dtype_policy_module.DensePrecisionPolicy()
     assert scoring_policy.local_precision(
-        scoring_policy.DENSE_PRECISION,
+        precision,
         12,
         pass_index=2,
         float64_pass2_iterations=listed,
     ) == dtype_policy_module.DensePrecisionPolicy()
 
 
-def test_local_search_precision_targeted_diagnostic_upgrades_only_pass2(monkeypatch):
-    monkeypatch.setattr(
-        scoring_policy,
-        "DENSE_PRECISION",
-        replace(scoring_policy.DENSE_PRECISION, use_float64_scoring=False),
-    )
-    monkeypatch.setattr(
-        scoring_policy,
-        "DENSE_PRECISION",
-        replace(scoring_policy.DENSE_PRECISION, use_float64_projections=False),
-    )
+def test_local_search_precision_targeted_diagnostic_upgrades_only_pass2():
+    precision = dtype_policy_module.DensePrecisionPolicy(use_float64_scoring=False, use_float64_projections=False)
     listed = frozenset({12})
 
     assert scoring_policy.local_precision(
-        scoring_policy.DENSE_PRECISION,
+        precision,
         12,
         pass_index=1,
         float64_pass2_iterations=listed,
     ) == dtype_policy_module.DensePrecisionPolicy()
     assert scoring_policy.local_precision(
-        scoring_policy.DENSE_PRECISION,
+        precision,
         12,
         pass_index=2,
         float64_pass2_iterations=listed,
     ) == dtype_policy_module.DensePrecisionPolicy(use_float64_scoring=True, use_float64_projections=True)
     assert scoring_policy.local_precision(
-        scoring_policy.DENSE_PRECISION,
+        precision,
         11,
         pass_index=2,
         float64_pass2_iterations=listed,
     ) == dtype_policy_module.DensePrecisionPolicy()
 
 
-def test_local_search_precision_global_switches_upgrade_both_passes(monkeypatch):
-    monkeypatch.setattr(
-        scoring_policy,
-        "DENSE_PRECISION",
-        replace(scoring_policy.DENSE_PRECISION, use_float64_scoring=True),
-    )
-    monkeypatch.setattr(
-        scoring_policy,
-        "DENSE_PRECISION",
-        replace(scoring_policy.DENSE_PRECISION, use_float64_projections=True),
-    )
+def test_local_search_precision_global_switches_upgrade_both_passes():
+    precision = dtype_policy_module.DensePrecisionPolicy(use_float64_scoring=True, use_float64_projections=True)
     listed = frozenset()
 
     assert scoring_policy.local_precision(
-        scoring_policy.DENSE_PRECISION,
+        precision,
         12,
         pass_index=1,
         float64_pass2_iterations=listed,
     ) == dtype_policy_module.DensePrecisionPolicy(use_float64_scoring=True, use_float64_projections=True)
     assert scoring_policy.local_precision(
-        scoring_policy.DENSE_PRECISION,
+        precision,
         12,
         pass_index=2,
         float64_pass2_iterations=listed,
     ) == dtype_policy_module.DensePrecisionPolicy(use_float64_scoring=True, use_float64_projections=True)
 
 
-def test_dense_global_scoring_dtype_tracks_global_float64_switches(monkeypatch):
+def test_dense_global_scoring_dtype_tracks_global_float64_switches():
     """The coarse pass-1 scorer grid has no per-iteration diagnostic path.
 
-    Unlike ``local_precision``, this dtype selector must react
-    to either global switch alone -- there is no pass-2-only diagnostic
-    override to reason about at pass 1.
+    Unlike ``local_precision``, the run's rotation dtype (``DensePrecisionPolicy.rotation_real_dtype``) reacts
+    to either global switch alone -- there is no pass-2-only diagnostic override to reason about at pass 1.
     """
 
-    monkeypatch.setattr(
-        scoring_policy,
-        "DENSE_PRECISION",
-        replace(scoring_policy.DENSE_PRECISION, use_float64_scoring=False),
-    )
-    monkeypatch.setattr(
-        scoring_policy,
-        "DENSE_PRECISION",
-        replace(scoring_policy.DENSE_PRECISION, use_float64_projections=False),
-    )
-    assert scoring_policy._dense_global_scoring_dtype() == np.float32
-
-    monkeypatch.setattr(
-        scoring_policy,
-        "DENSE_PRECISION",
-        replace(scoring_policy.DENSE_PRECISION, use_float64_scoring=True),
-    )
-    assert scoring_policy._dense_global_scoring_dtype() == np.float64
-
-    monkeypatch.setattr(
-        scoring_policy,
-        "DENSE_PRECISION",
-        replace(scoring_policy.DENSE_PRECISION, use_float64_scoring=False),
-    )
-    monkeypatch.setattr(
-        scoring_policy,
-        "DENSE_PRECISION",
-        replace(scoring_policy.DENSE_PRECISION, use_float64_projections=True),
-    )
-    assert scoring_policy._dense_global_scoring_dtype() == np.float64
+    policy = dtype_policy_module.DensePrecisionPolicy
+    assert policy().rotation_real_dtype == np.float32
+    assert policy(use_float64_scoring=True).rotation_real_dtype == np.float64
+    assert policy(use_float64_projections=True).rotation_real_dtype == np.float64
 
 
 def test_relion_scoring_rotation_grid_honors_explicit_float64_dtype(monkeypatch):
@@ -467,7 +413,7 @@ def test_local_search_precision_rejects_unknown_pass(monkeypatch):
     listed = frozenset()
     with pytest.raises(ValueError, match="pass_index"):
         scoring_policy.local_precision(
-            scoring_policy.DENSE_PRECISION,
+            dtype_policy_module.DensePrecisionPolicy(),
             12,
                 pass_index=3,
             float64_pass2_iterations=frozenset(),
@@ -2200,21 +2146,12 @@ def test_score_half_local_forwards_mstep_grid(monkeypatch, rng):
         captured.update(data=data, grid=grid, kernel=kernel, support=support)
         raise DispatchCaptured
 
-    monkeypatch.setattr(
-        scoring_policy,
-        "DENSE_PRECISION",
-        replace(scoring_policy.DENSE_PRECISION, use_float64_scoring=True),
-    )
-    monkeypatch.setattr(
-        scoring_policy,
-        "DENSE_PRECISION",
-        replace(scoring_policy.DENSE_PRECISION, use_float64_projections=True),
-    )
     listed = frozenset()
     monkeypatch.setattr(local_half, "_run_local_search_iteration", fake_run_local_search_iteration)
     with pytest.raises(DispatchCaptured):
         local_half._score_half_local(*local_half_owners(
             k=0,
+            precision=dtype_policy_module.DensePrecisionPolicy(use_float64_scoring=True, use_float64_projections=True),
             experiment_dataset=dataset,
             means_k=jnp.zeros(VOLUME_SIZE, dtype=jnp.complex64),
             noise_variance_k=jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
@@ -6900,12 +6837,6 @@ class TestRelionModeSmokeTest:
         """RELION mode should compute tau2 from Ft_ctf weights + FSC (RELION order)."""
         from relax.reconstruction import regularization as regularization_relion
 
-        monkeypatch.setattr(
-            scoring_policy,
-            "DENSE_PRECISION",
-            replace(scoring_policy.DENSE_PRECISION, use_float64_scoring=double_scoring),
-        )
-        monkeypatch.setenv("RELAX_USE_FLOAT64_SCORING", "1" if double_scoring else "0")
         called = {"tau2": 0}
 
         original_tau2 = regularization_relion.compute_relion_tau2_from_weights
@@ -6957,6 +6888,7 @@ class TestRelionModeSmokeTest:
                 execution=stand_in.execution(image_batch_size=N_IMAGES, rotation_block_size=N_ROTATIONS),
                 adaptive=stand_in.adaptive(adaptive_oversampling=0),
                 parity=stand_in.parity(use_per_half_mean_variance=per_half),
+                precision=dtype_policy_module.DensePrecisionPolicy(use_float64_scoring=double_scoring),
             ),
             observer=IntermediatesObserver(tmp_path),
             source=fsc_seeded_source,

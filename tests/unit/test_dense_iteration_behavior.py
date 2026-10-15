@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from dataclasses import replace
 from types import SimpleNamespace
 
 import numpy as np
@@ -10,6 +9,7 @@ import pytest
 from helpers.float_compare import assert_matches
 from helpers.refinement_specs import local_half_owners
 
+from relax.numerics.precision import DensePrecisionPolicy
 from relax.refinement import local_half
 from relax.refinement.local_half import LocalSearchResult
 from relax.refinement.refinement_options import LocalAdaptivePass2Support, ScoringVariants
@@ -117,16 +117,11 @@ def test_per_half_update_from_half_score_result_updates_only_score_payload():
     assert outs.mstep_accumulator_shape == [None, (17, 17, 17)]
 
 
-def test_per_half_update_preserves_double_posterior_state_in_double_mode(monkeypatch):
+def test_per_half_update_preserves_double_posterior_state_in_double_mode():
     class _Stats:
         max_posterior_per_image = np.array([0.123456789012345], dtype=np.float64)
         rotation_posterior_sums = np.array([0.987654321098765], dtype=np.float64)
 
-    monkeypatch.setattr(
-        scoring_policy,
-        "DENSE_PRECISION",
-        replace(scoring_policy.DENSE_PRECISION, use_float64_scoring=True),
-    )
     outs = score_outputs.PerHalfOutputs()
     outs.update_from(
         0,
@@ -137,7 +132,7 @@ def test_per_half_update_preserves_double_posterior_state_in_double_mode(monkeyp
             em_stats=_Stats(),
             noise_stats=None,
         ),
-        dtype=scoring_policy._dense_global_scoring_dtype(),
+        dtype=DensePrecisionPolicy(use_float64_scoring=True).rotation_real_dtype,
     )
 
     assert outs.max_posterior[0].dtype == np.float64

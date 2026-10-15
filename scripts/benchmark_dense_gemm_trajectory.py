@@ -27,6 +27,7 @@ from recovar.data_io.cryoem_dataset import load_dataset
 from recovar.reconstruction import noise as recon_noise
 from recovar.utils.helpers import load_relion_volume
 
+from relax.numerics.precision import DensePrecisionPolicy
 from relax.runtime.engine_tuning import EngineTuning
 from relax.star.blocks import read_star_blocks
 
@@ -191,7 +192,6 @@ def build_fixed_fixture_grid(dataset, checkpoint, model_dir, *, rotations, trans
     from relax.sampling.oversampling import prepare_adaptive_pass2_grids
     from relax.scoring.coarse_layout import plan_coarse_gaussian_square_layout
     from relax.star.metadata import read_relion_sampling_metadata, read_relion_sampling_symmetry
-    from relax.steps import scoring_policy
 
     sampling_path = model_dir / "run_it001_sampling.star"
     sampling_state = read_relion_sampling_metadata(sampling_path)
@@ -204,7 +204,7 @@ def build_fixed_fixture_grid(dataset, checkpoint, model_dir, *, rotations, trans
         translation_range=float(sampling_state["offset_range"]) / pixel_size,
         translation_step=float(sampling_state["offset_step"]) / pixel_size,
         n_classes=1, voxel_size=pixel_size, symmetry="C1",
-        dtype=scoring_policy.DENSE_PRECISION.rotation_real_dtype,
+        dtype=DensePrecisionPolicy.from_environ().rotation_real_dtype,
     )
     pose_grid = prepare_adaptive_pass2_grids(
         base.rotation_grid.rotations, base.translations, base.base_translations,

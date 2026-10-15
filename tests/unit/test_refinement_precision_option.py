@@ -1,30 +1,27 @@
-"""The refinement's dense precision is an option taken when the options are built (code rule 5)."""
-
-from dataclasses import replace
+"""The refinement's dense precision is an option the command reads once and passes down (code rule 5)."""
 
 import numpy as np
 import pytest
 from helpers.run_options import stand_in
 
 from relax.numerics.precision import DensePrecisionPolicy
-from relax.refinement.ports import InputSource, RunObserver
-from relax.steps import scoring_policy
 
 pytestmark = pytest.mark.unit
 
 
-def test_options_take_the_process_precision_when_built(monkeypatch):
+def test_options_carry_the_given_precision():
     float64 = DensePrecisionPolicy(use_float64_scoring=True)
-    monkeypatch.setattr(scoring_policy, "DENSE_PRECISION", float64)
-    options = stand_in.options()
+    options = stand_in.options(precision=float64)
     assert options.precision is float64
     assert options.precision.rotation_real_dtype == np.float64
+    assert stand_in.options().precision == DensePrecisionPolicy()
 
 
-def test_refinement_refuses_a_precision_the_engines_do_not_read():
-    from relax.refinement import iteration_loop
-
-    process = scoring_policy.DENSE_PRECISION
-    other = replace(process, use_float64_scoring=not process.use_float64_scoring)
-    with pytest.raises(ValueError, match="differs from the process's dense precision"):
-        iteration_loop.refine_single_volume(*([None] * 4), options=stand_in.options(precision=other), observer=RunObserver(), source=InputSource())
+def test_from_environ_reads_the_float64_switches(monkeypatch):
+    monkeypatch.delenv("RELAX_USE_FLOAT64_SCORING", raising=False)
+    monkeypatch.delenv("RELAX_USE_FLOAT64_PROJECTIONS", raising=False)
+    assert DensePrecisionPolicy.from_environ() == DensePrecisionPolicy()
+    monkeypatch.setenv("RELAX_USE_FLOAT64_SCORING", "1")
+    assert DensePrecisionPolicy.from_environ() == DensePrecisionPolicy(use_float64_scoring=True)
+    monkeypatch.setenv("RELAX_USE_FLOAT64_PROJECTIONS", "1")
+    assert DensePrecisionPolicy.from_environ() == DensePrecisionPolicy(use_float64_scoring=True, use_float64_projections=True)

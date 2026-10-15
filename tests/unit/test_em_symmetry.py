@@ -12,6 +12,7 @@ from helpers.float_compare import assert_matches, matches
 from helpers.refinement_specs import local_half_owners
 from helpers.run_options import cli, stand_in
 
+from relax.numerics.precision import DensePrecisionPolicy
 from relax.runtime.engine_tuning import EngineTuning
 from relax.runtime.scoring_overrides import ScoringOverrides
 from relax.sampling.symmetry import (
@@ -21,7 +22,7 @@ from relax.sampling.symmetry import (
     rotational_operators,
     symmetry_operator_sha256,
 )
-from relax.steps import scoring_policy, shape_class_scoring
+from relax.steps import shape_class_scoring
 from relax.steps.half_inputs import HalfScoringData, HalfSet
 
 pytestmark = pytest.mark.unit
@@ -906,7 +907,7 @@ def _symmetric_dense_owners(dense_half, values):
             relion_x_half_mstep=values.pop("relion_x_half_mstep")
             if "relion_x_half_mstep" in values
             else cli.variants().relion_x_half_mstep(k_class=k_class_enabled),
-            precision=scoring_policy.DENSE_PRECISION,
+            precision=DensePrecisionPolicy(),
         ),
         shape_class_scoring.OpticsSpec.single_shape(),
     )
