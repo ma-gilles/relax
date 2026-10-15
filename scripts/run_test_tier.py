@@ -844,6 +844,7 @@ def _env_lines(run_root: Path, natives: Path) -> str:
         "RECOVAR_CUDA_LIB": f"{natives}/libcuda_backproject.so",
         "RELAX_CUDA_LIB": f"{natives}/librelax_cuda.so",
         "RECOVAR_RELION_BIND_BUILD_DIR": f"{natives}/relion_bind",
+        "RELAX_HOST_MATH_LIB": f"{natives}/librelax_host_math.so",
         "RELAX_REQUIRE_CUSTOM_CUDA_FOR_TESTS": "1",
         "RELION_SRC_DIR": "/scratch/gpfs/GILLES/mg6942/relion/src",
         "PYTHONPATH": str(src),

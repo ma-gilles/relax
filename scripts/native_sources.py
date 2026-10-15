@@ -41,7 +41,7 @@ import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-NATIVE_SOURCE_DIRS = ("relax/cuda", "relax/relion_bind")
+NATIVE_SOURCE_DIRS = ("relax/cuda", "relax/host_math", "relax/relion_bind")
 NATIVE_SOURCE_FILES = ("scripts/build_test_natives.sh",)
 SKIP_PARTS = {"__pycache__", "build"}
 SKIP_SUFFIXES = {".pyc", ".so", ".o", ".log"}

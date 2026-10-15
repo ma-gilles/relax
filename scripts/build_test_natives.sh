@@ -4,12 +4,13 @@
 #   scripts/build_test_natives.sh <out_dir>
 #
 # Builds the recovar custom CUDA library (libcuda_backproject.so), relax's EM CUDA library
-# (librelax_cuda.so) and the RELION binding (_relion_bind_core*.so) for A100 and H100, then
+# (librelax_cuda.so), relax's host math library (librelax_host_math.so, no CUDA) and the RELION binding
+# (_relion_bind_core*.so) for A100 and H100, then
 # writes <out_dir>/NATIVE.json with their sha256. cudatoolkit is loaded for the make steps
 # only and unloaded afterwards, so the tests run against the pixi environment's CUDA runtime.
 # Point a run at the result with:
 #   RECOVAR_CUDA_LIB=<out_dir>/libcuda_backproject.so RELAX_CUDA_LIB=<out_dir>/librelax_cuda.so
-#   RECOVAR_RELION_BIND_BUILD_DIR=<out_dir>/relion_bind
+#   RECOVAR_RELION_BIND_BUILD_DIR=<out_dir>/relion_bind RELAX_HOST_MATH_LIB=<out_dir>/librelax_host_math.so
 set -euo pipefail
 
 OUT="${1:?usage: build_test_natives.sh <out_dir>}"
@@ -38,8 +39,9 @@ if not recovar.__file__.startswith(sys.prefix):
     sys.exit(f"recovar imports from {recovar.__file__}, not the pixi environment {sys.prefix}")
 PY
 
-# The RELION binding is host code; build it before the CUDA module is loaded.
+# The RELION binding and the host math library are host code; build them before the CUDA module is loaded.
 RECOVAR_RELION_BIND_BUILD_DIR="${OUT}/relion_bind" "${PY}" "${ROOT}/relax/relion_bind/build.py" > "${OUT}/build_relion_bind.log" 2>&1
+make -B -C "${ROOT}/relax/host_math" LIB="${OUT}/librelax_host_math.so" all > "${OUT}/build_relax_host_math.log" 2>&1
 
 set +u
 source /etc/profile.d/modules.sh
@@ -59,9 +61,14 @@ import hashlib, json, subprocess, sys
 from pathlib import Path
 
 out, root, module = Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3]
-libs = [out / "libcuda_backproject.so", out / "librelax_cuda.so", *sorted((out / "relion_bind").glob("_relion_bind_core*.so"))]
+libs = [
+    out / "libcuda_backproject.so",
+    out / "librelax_cuda.so",
+    out / "librelax_host_math.so",
+    *sorted((out / "relion_bind").glob("_relion_bind_core*.so")),
+]
 missing = [str(p) for p in libs if not p.is_file()]
-if missing or len(libs) != 3:
+if missing or len(libs) != 4:
     sys.exit(f"native build incomplete: missing {missing or 'RELION binding'}")
 record = {
     "source_head": subprocess.check_output(["git", "-C", str(root), "rev-parse", "HEAD"], text=True).strip(),

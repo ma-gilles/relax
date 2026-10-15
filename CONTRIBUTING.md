@@ -42,6 +42,9 @@ RELION_SRC_DIR=/path/to/relion/src pixi run build-relion-bind   # the RELION 5.0
 
 - Load a CUDA toolkit module (`module load cudatoolkit/12.8`) only for a `make` step, in its own shell. With
   the module loaded, the pixi environment's JAX finds no CUDA-enabled jaxlib and falls back to the CPU.
+- The sampling code's `acos`/`atan2` come from `librelax_host_math.so` (`relax/host_math`, host C, no CUDA), built
+  on first use with the host compiler (`make -C relax/host_math`); `RELAX_HOST_MATH_LIB` pins a built one, as the
+  tiers do.
 - `RELAX_CUDA_LIB` and `RECOVAR_CUDA_LIB` name an explicit library. The loaders never build or rewrite an
   explicit path: they load it when it exists and exports the required symbols, and stop otherwise.
 - An unpinned cache build is rebuilt only when the sha256 of its sources differs from
