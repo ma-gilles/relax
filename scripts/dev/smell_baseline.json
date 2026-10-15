@@ -1286,7 +1286,6 @@
   "single-use-import:relax.vdam.driver:ParticleReadPolicy",
   "single-use-import:relax.vdam.driver:TOMO_INITIAL_MODEL_OPTICS_FEATURES",
   "single-use-import:relax.vdam.driver:TomoDataset",
-  "single-use-import:relax.vdam.driver:VDAM_STABLE_FOURIER_WINDOW_QUANTUM",
   "single-use-import:relax.vdam.driver:VdamUpdate",
   "single-use-import:relax.vdam.driver:_experiment_read_order",
   "single-use-import:relax.vdam.driver:_load_native_vdam_continuation",
