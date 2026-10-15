@@ -1,4 +1,4 @@
-"""Unit tests for ``relax.parity.relion_replay._build_replay_iteration_overrides``.
+"""Unit tests for ``relax.parity.replay_inputs._build_replay_iteration_overrides``.
 
 Locks down the parity-critical contract that the per-iter replay override
 dict always carries ``translation_sigma_angstrom`` sourced from RELION's
@@ -30,12 +30,10 @@ from relax.commands.refinement_run import (
     _resolve_tau2_fudge,
     _use_fresh_auto_refine_particle_order,
 )
-from relax.parity import frozen_boundary_cli
+from relax.parity import frozen_boundary_cli, replay_inputs
 from relax.parity.frozen_boundary import (
     FROZEN_BOUNDARY_NUMERICAL_CLASSIFICATION_SCOPE,
     FROZEN_BOUNDARY_PROVENANCE_VERIFICATION_SCOPE,
-    _assert_frozen_scoring_state_unchanged,
-    _frozen_scoring_state_arrays,
 )
 from relax.parity.frozen_boundary_cli import (
     _fixed_diagnostic_source_paths,
@@ -48,10 +46,8 @@ from relax.parity.frozen_boundary_cli import (
     validate_empty_replay_slots,
 )
 from relax.parity.initial_model_replay import read_initial_model
-from relax.parity.relion_replay import (
-    _build_replay_iteration_overrides,
-    _format_replay_mean_for_log,
-)
+from relax.parity.relion_replay_source import _assert_frozen_scoring_state_unchanged, _frozen_scoring_state_arrays
+from relax.parity.replay_inputs import _build_replay_iteration_overrides, _format_replay_mean_for_log
 from relax.refinement.iteration_history import _load_init_noise_radial_npz
 from relax.refinement.reference_state import ReferenceModel, _updated_mean_variance_per_half
 from relax.refinement.startup_noise import (
@@ -1866,7 +1862,6 @@ def test_full_refinement_requests_max_iter_replay_state_for_final_all_data(monke
     from helpers.tiny_main import controller_inputs, write_tiny_data_dir
     from helpers.tiny_refinement import write_replay_dir
 
-    from relax.parity import relion_replay
 
     requested = []
 
@@ -1874,7 +1869,7 @@ def test_full_refinement_requests_max_iter_replay_state_for_final_all_data(monke
         requested.append(int(max_iter))
         return [None] * (int(max_iter) + 1)
 
-    monkeypatch.setattr(relion_replay, "_build_replay_iteration_overrides", build)
+    monkeypatch.setattr(replay_inputs, "_build_replay_iteration_overrides", build)
     data = write_tiny_data_dir(tmp_path / "data", extra_columns={"rlnRandomSubset": np.arange(12) % 2 + 1})
     inputs = controller_inputs(
         monkeypatch, tmp_path, "refine", "--max_iter", "3",

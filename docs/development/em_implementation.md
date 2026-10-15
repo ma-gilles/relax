@@ -134,9 +134,9 @@ Replay and finalization have separate selection and mutation boundaries:
 | Final-pass admission | [`finalization.py`](../../relax/refinement/finalization.py) | Admission receives convergence/cap state and the controller logger and does not mutate state. The same owner executes final accuracy/sampling, expectation and reconstruction, with explicit final state/history writes. |
 | Replay numbering and cutoff | [`relion_replay.py`](../../relax/parity/relion_replay.py) | `_numbered_relion_iteration` maps restart-local indices; `_native_sampling_boundary_for_iteration` checks cutoff and sealed state. The controller retains scheduling. |
 | Numbered optimiser accuracy override | `relion_replay.read_optimiser_accuracy_replay` | Selects this iteration's numbered optimiser STAR when replay is active and unsealed; finite RELION rotation/translation accuracies replace the reported and convergence accuracies. Read or parse failures warn and keep values assigned before the failure. Returns `OptimiserAccuracyReplay`; the controller passes its metadata to `apply_optimiser_convergence_replay` after the state update. |
-| Class3D captured tau2 selection | `relion_replay._class_tau2_replay` | Selects same-iteration captured spectra when the diagnostic is enabled, preserves fallback logging and validates captured shapes even when disabled. Returns spectra, enable flag and source label; M-step arithmetic stays in refinement. |
-| Final override selection | `relion_replay._select_final_replay_override` | Receives the requested index, explicit override, recorded history and its already-computed presence flag. Returns an index and the original override object; no copying or state updates. |
-| Final reference substitution | `relion_replay._prepare_final_replay_references` | Validates source iteration, K1 restriction, two-map count and shapes in order; casts each map to its half's dtype. With no maps, returns the original reference list. |
+| Class3D captured tau2 selection | `relion_replay.class_tau2_replay` | Selects same-iteration captured spectra when the diagnostic is enabled, preserves fallback logging and validates captured shapes even when disabled. Returns spectra, enable flag and source label; M-step arithmetic stays in refinement. |
+| Final override selection | `relion_replay_source._select_final_replay_override` | Receives the requested index, explicit override, recorded history and its already-computed presence flag. Returns an index and the original override object; no copying or state updates. |
+| Final reference substitution | `relion_replay_source._prepare_final_replay_references` | Validates source iteration, K1 restriction, two-map count and shapes in order; casts each map to its half's dtype. With no maps, returns the original reference list. |
 | Applying selected state | [`iteration_loop.py`](../../relax/refinement/iteration_loop.py) | Retains sigma, pose, corrections, noise and direction-prior updates in their original order, including casts and half-set handling. |
 
 Read `_should_run_final_all_data_iteration` in decision order: forced-cap mode
@@ -231,7 +231,7 @@ convert to half images and back-project. In [`vdam.estep_common`](../../relax/vd
 dense and the RELION-x-half BPref converters, and `_bpref_slab_outputs` applies RELION's
 double-precision cast and denormal-weight clamp
 ([`test_covariance_rhs_and_bpref_source_owner.py`](../../tests/unit/test_covariance_rhs_and_bpref_source_owner.py)).
-[`state_swap_runtime._apply_state_swap_probe`](../../relax/parity/state_swap_runtime.py)
+[`state_swap_runtime.apply_state_swap_probe`](../../relax/parity/state_swap_runtime.py)
 returns a `_StateSwapValues` named tuple (current size, maps, tau2, noise, poses, sigma offset and
 direction priors), which `RelionReplaySource.swapped_state` hands to the controller as a `ScoringState`
 read by field; the unchanged value is built once from the

@@ -82,6 +82,7 @@ from relax.local_search.layout import (
     selected_rotation_matrices,
 )
 from relax.numerics import precision as dtype_policy_module
+from relax.parity import relion_replay_source
 from relax.parity.relion_replay import _replay_control_model_iteration
 from relax.parity.relion_replay_source import RelionReplay
 from relax.reconstruction import regularization as regularization_relion
@@ -329,10 +330,10 @@ def test_sealed_sampling_base_grids_honors_explicit_float64_dtype():
         "translations_y_angstrom": np.array([0.0, -1.5], dtype=np.float64),
     }
 
-    rotations_f32, eulers_f32, translations_f32 = relion_replay_module._sealed_sampling_base_grids(
+    rotations_f32, eulers_f32, translations_f32 = relion_replay_module.sealed_sampling_base_grids(
         sealed_state, voxel_size_angstrom=1.0
     )
-    rotations_f64, eulers_f64, translations_f64 = relion_replay_module._sealed_sampling_base_grids(
+    rotations_f64, eulers_f64, translations_f64 = relion_replay_module.sealed_sampling_base_grids(
         sealed_state, voxel_size_angstrom=1.0, dtype=np.float64
     )
 
@@ -525,7 +526,7 @@ def test_past_perturb_replay_max_iter_matches_one_indexed_cutoff(
     iteration, perturb_replay_max_iter, expected_past_cutoff
 ):
     assert (
-        relion_replay_module._past_perturb_replay_max_iter(iteration, perturb_replay_max_iter)
+        relion_replay_source._past_perturb_replay_max_iter(iteration, perturb_replay_max_iter)
         is expected_past_cutoff
     )
 

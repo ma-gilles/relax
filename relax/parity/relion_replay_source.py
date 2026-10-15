@@ -15,6 +15,8 @@ The command resolves what to replay into a ``RelionReplay`` and builds the sourc
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 import os
 from dataclasses import dataclass
@@ -23,31 +25,23 @@ from typing import Any
 import jax.numpy as jnp
 import numpy as np
 
-from relax.parity.frozen_boundary import (
-    _assert_frozen_scoring_state_unchanged,
-    _frozen_scoring_state_arrays,
-    _restore_diagnostic_frozen_boundary_state,
-)
+from relax.parity.frozen_boundary import restore_diagnostic_frozen_boundary_state
 from relax.parity.relion_replay import (
-    _class_tau2_replay,
-    _install_sealed_sampling,
-    _past_perturb_replay_max_iter,
-    _perturbation_restart_state_iteration,
-    _prepare_final_replay_references,
-    _resolve_replay_random_perturbation,
-    _restore_convergence_state_from_replay_restart,
-    _sealed_sampling_base_grids,
-    _select_final_replay_override,
     apply_final_replay_state,
     apply_iter_replay_overrides,
     apply_optimiser_convergence_replay,
+    class_tau2_replay,
+    install_sealed_sampling,
     read_optimiser_accuracy_replay,
     replay_class_relion_references,
     replay_k1_relion_references,
+    resolve_replay_random_perturbation,
+    restore_convergence_state_from_replay_restart,
     sealed_rotation_ids_for_scoring,
+    sealed_sampling_base_grids,
     select_final_sampling_star,
 )
-from relax.parity.state_swap_runtime import _apply_state_swap_probe, _snapshot_state_swap_inputs
+from relax.parity.state_swap_runtime import apply_state_swap_probe, snapshot_state_swap_inputs
 from relax.refinement.image_size_plans import CoarseImageSize
 from relax.refinement.ports import ClassTau2, FinalState, InputSource, NumberedState, ScoringState, StartSeeds
 from relax.refinement.reference_state import class_mixture_from_weights
@@ -56,13 +50,323 @@ from relax.refinement.sigma_offset import SigmaOffset
 from relax.refinement.trial_grids import CoarseGrids, FinalSamplingSettings, native_final_sampling_settings
 from relax.runtime.env_flags import parse_env_true_flag
 from relax.sampling import grids as sampling_grids
-from relax.star.metadata import read_relion_sampling_metadata
+from relax.star.metadata import (
+    read_relion_sampling_metadata,
+)
 
 # The controller's log: what the replay installs is logged under its name, as before.
 logger = logging.getLogger("relax.refinement.iteration_loop")
+# The replay readers moved here from relion_replay log under its name, so their log rows keep it.
+_replay_logger = logging.getLogger("relax.diagnostics.relion_replay")
 
 FINAL_ALL_DATA_REPLAY_LAST_NUMBERED_STATE_ENV = "RELAX_FINAL_ALL_DATA_REPLAY_LAST_NUMBERED_STATE"
 FINAL_ALL_DATA_DISABLE_REPLAY_LAST_NUMBERED_STATE_ENV = "RELAX_FINAL_ALL_DATA_DISABLE_REPLAY_LAST_NUMBERED_STATE"
+
+
+def _select_final_replay_override(*, requested_index, diagnostic_override, replay_overrides, has_overrides, logger):
+    """Select a final-pass state without copying it or applying its fields.
+
+    Explicit diagnostic state wins, including an empty dictionary. Otherwise
+    clamp to the last recorded slot; a missing slot in a nonempty history is
+    an error. The caller retains replay admission and mutation ordering.
+    """
+    override_index = requested_index
+    if diagnostic_override is not None:
+        override = diagnostic_override
+        logger.info(
+            "Diagnostic final-only RELION state substitution at previous-state index %d (fields=%s)",
+            requested_index,
+            ",".join(sorted(override)) or "<none>",
+        )
+    else:
+        override = None
+    if diagnostic_override is None and has_overrides:
+        override_index = min(requested_index, int(len(replay_overrides)) - 1)
+        override = replay_overrides[override_index]
+        if override_index != requested_index:
+            logger.info(
+                "RELION replay: final all-data requested previous-state index %d, using last available numbered replay override index %d",
+                requested_index,
+                override_index,
+            )
+    if override is None:
+        if has_overrides:
+            raise RuntimeError(
+                f"Strict RELION final all-data replay is missing the requested previous-state override at index {requested_index}"
+            )
+        logger.info(
+            "RELION replay: final all-data requested last numbered state replay, but no replay override exists for previous-state index %d",
+            requested_index,
+        )
+    return override_index, override
+
+
+def _check_final_replay_source_iteration(*, replay, diagnostic_override, numbered_iteration_count) -> None:
+    """Refuse a final-only substitution whose source is not the boundary the numbered iterations reached."""
+    if (
+        (diagnostic_override is not None or replay.final_replay_reference_maps is not None)
+        and replay.final_replay_source_iteration is not None
+        and numbered_iteration_count != int(replay.final_replay_source_iteration)
+    ):
+        raise RuntimeError(
+            "Diagnostic final-only substitution source does not match autonomous convergence boundary: "
+            f"source_iteration={int(replay.final_replay_source_iteration)} "
+            f"numbered_iteration_count={numbered_iteration_count}"
+        )
+
+
+def _prepare_k1_final_replay_references(
+    *,
+    replay,
+    diagnostic_override,
+    numbered_iteration_count,
+    means,
+    final_join_means,
+    logger,
+):
+    """Validate the K=1 final-only substitution boundary and prepare the two half references.
+
+    Without supplied reference maps, return the existing reference list itself.
+    Supplied maps retain each half's current dtype. Override-state application
+    remains in the controller after this selection and validation boundary.
+    """
+    _check_final_replay_source_iteration(
+        replay=replay, diagnostic_override=diagnostic_override, numbered_iteration_count=numbered_iteration_count
+    )
+    if replay.final_replay_reference_maps is not None:
+        if len(replay.final_replay_reference_maps) != 2:
+            raise ValueError("Diagnostic final-only RELION reference substitution requires exactly two half maps")
+        expected_reference_shape = tuple(np.asarray(means[0]).shape)
+        candidate_reference_shapes = [
+            tuple(np.asarray(reference).shape) for reference in replay.final_replay_reference_maps
+        ]
+        if any(shape != expected_reference_shape for shape in candidate_reference_shapes):
+            raise ValueError(
+                "Diagnostic final-only RELION reference shape mismatch: "
+                f"expected={expected_reference_shape} got={candidate_reference_shapes}"
+            )
+        final_join_means = [
+            jnp.asarray(reference, dtype=means[half_idx].dtype)
+            for half_idx, reference in enumerate(replay.final_replay_reference_maps)
+        ]
+        logger.info(
+            "Diagnostic final-only RELION reference substitution at numbered boundary %d",
+            numbered_iteration_count,
+        )
+    return final_join_means
+
+
+def _validate_class_final_replay_boundary(*, replay, diagnostic_override, numbered_iteration_count) -> None:
+    """Validate the Class3D final-only substitution boundary; Class3D has no reference substitution."""
+    _check_final_replay_source_iteration(
+        replay=replay, diagnostic_override=diagnostic_override, numbered_iteration_count=numbered_iteration_count
+    )
+    if replay.final_replay_reference_maps is not None:
+        raise RuntimeError("Diagnostic final-only RELION reference substitution is currently K=1 only")
+
+
+def _prepare_final_replay_references(
+    *,
+    replay,
+    diagnostic_override,
+    numbered_iteration_count,
+    means,
+    final_join_means,
+    k_class_enabled,
+    logger,
+):
+    """Validate the final-only substitution boundary and prepare half references.
+
+    This is the one remaining mode decision of the final reference
+    preparation, to be removed when the K=1 trajectory calls
+    ``_prepare_k1_final_replay_references`` and the Class3D trajectory calls
+    ``_validate_class_final_replay_boundary`` directly. Class3D keeps the
+    reference list it was given.
+    """
+    if k_class_enabled:
+        _validate_class_final_replay_boundary(
+            replay=replay, diagnostic_override=diagnostic_override, numbered_iteration_count=numbered_iteration_count
+        )
+        return final_join_means
+    return _prepare_k1_final_replay_references(
+        replay=replay,
+        diagnostic_override=diagnostic_override,
+        numbered_iteration_count=numbered_iteration_count,
+        means=means,
+        final_join_means=final_join_means,
+        logger=logger,
+    )
+
+
+def _perturbation_restart_state_iteration(
+    restart_state_iterations,
+    relion_iteration: int,
+) -> int | None:
+    """Return the latest explicit restart boundary preceding an iteration."""
+    if restart_state_iterations is None:
+        return None
+    candidates = [
+        int(value)
+        for value in restart_state_iterations
+        if int(value) < int(relion_iteration)
+    ]
+    return max(candidates) if candidates else None
+
+
+def _past_perturb_replay_max_iter(iteration: int, perturb_replay_max_iter: int | None) -> bool:
+    """Return whether ``iteration`` (0-indexed) is past the diagnostic replay cutoff.
+
+    ``perturb_replay_max_iter`` is 1-indexed to match
+    ``scripts/run_multi_iter_parity.py``'s ``--replay-override-max-iter``
+    (and ``replay_iteration_overrides``, which the same flag also gates).
+    ``None`` means "no cutoff": every iteration stays in range.
+    """
+
+    if perturb_replay_max_iter is None:
+        return False
+    return (int(iteration) + 1) > int(perturb_replay_max_iter)
+
+
+def _frozen_scoring_state_arrays(
+    *,
+    means,
+    mean_variance,
+    mean_variance_per_half=None,
+    relion_half_inputs,
+    noise_variance_per_half,
+    current_sigma_offset_angstrom_per_half,
+    direction_priors,
+    experiment_datasets=None,
+    sealed_sampling_state=None,
+    sealed_scoring_context=None,
+):
+    """Materialize every K=1 scoring primitive owned by a frozen restart."""
+
+    pair_fields = {
+        "mean": means,
+        "previous_best_rotation_eulers": [particle_half.rotation_eulers for particle_half in relion_half_inputs],
+        "previous_best_translations": [particle_half.translations for particle_half in relion_half_inputs],
+        "image_corrections": [particle_half.image_corrections for particle_half in relion_half_inputs],
+        "scale_corrections": [particle_half.scale_corrections for particle_half in relion_half_inputs],
+        "noise_variance": noise_variance_per_half,
+        "direction_prior": [p.values for p in direction_priors],
+    }
+    arrays = {}
+    for field_name, values in pair_fields.items():
+        if values is None or len(values) != 2:
+            raise RuntimeError(
+                f"Frozen scoring-state ownership requires two {field_name} arrays"
+            )
+        for half_index, value in enumerate(values):
+            if value is None:
+                raise RuntimeError(
+                    "Frozen scoring-state ownership requires "
+                    f"{field_name} for half {half_index + 1}"
+                )
+            array = np.asarray(value)
+            if not np.issubdtype(array.dtype, np.number):
+                raise RuntimeError(
+                    f"Frozen scoring-state field {field_name} half {half_index + 1} "
+                    f"must be numeric, got {array.dtype}"
+                )
+            if not np.all(np.isfinite(array)):
+                raise RuntimeError(
+                    f"Frozen scoring-state field {field_name} half {half_index + 1} "
+                    "contains non-finite values"
+                )
+            arrays[f"{field_name}.half{half_index + 1}"] = np.ascontiguousarray(array).copy()
+
+    if mean_variance_per_half is None:
+        tau2 = np.asarray(mean_variance)
+        if not np.issubdtype(tau2.dtype, np.number) or not np.all(np.isfinite(tau2)):
+            raise RuntimeError("Frozen scoring-state mean_variance must be a finite numeric array")
+        arrays["mean_variance"] = np.ascontiguousarray(tau2).copy()
+    else:
+        if len(mean_variance_per_half) != 2:
+            raise RuntimeError("Frozen scoring-state ownership requires two mean_variance arrays")
+        for half_index, value in enumerate(mean_variance_per_half):
+            tau2 = np.asarray(value)
+            if not np.issubdtype(tau2.dtype, np.number) or not np.all(np.isfinite(tau2)):
+                raise RuntimeError(
+                    f"Frozen scoring-state mean_variance half {half_index + 1} must be finite numeric"
+                )
+            arrays[f"mean_variance.half{half_index + 1}"] = np.ascontiguousarray(tau2).copy()
+
+    sigma_pair = np.asarray(current_sigma_offset_angstrom_per_half, dtype=np.float64)
+    if sigma_pair.shape != (2,) or not np.all(np.isfinite(sigma_pair)):
+        raise RuntimeError(
+            "Frozen scoring-state ownership requires two finite translation sigmas"
+        )
+    arrays["translation_sigma_angstrom_per_half"] = sigma_pair
+    if experiment_datasets is not None:
+        if len(experiment_datasets) != 2:
+            raise RuntimeError("Frozen scoring-state ownership requires two datasets")
+        for half_index, dataset in enumerate(experiment_datasets):
+            ctf_params = np.asarray(dataset.CTF_params)
+            if not np.issubdtype(ctf_params.dtype, np.number) or not np.all(np.isfinite(ctf_params)):
+                raise RuntimeError(
+                    f"Frozen scoring-state CTF parameters half {half_index + 1} must be finite numeric"
+                )
+            arrays[f"ctf_params.half{half_index + 1}"] = np.ascontiguousarray(ctf_params).copy()
+    if sealed_sampling_state is not None:
+        for key, value in sorted(sealed_sampling_state.items()):
+            if isinstance(value, np.ndarray):
+                array = np.asarray(value)
+            elif isinstance(value, (bool, int, float, np.bool_, np.integer, np.floating)):
+                array = np.asarray(value)
+            else:
+                array = np.frombuffer(str(value).encode("utf-8"), dtype=np.uint8)
+            arrays[f"sampling.{key}"] = np.ascontiguousarray(array).copy()
+    if sealed_scoring_context is not None:
+        context_bytes = json.dumps(
+            sealed_scoring_context,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        arrays["sealed_scoring_context_json"] = np.frombuffer(context_bytes, dtype=np.uint8).copy()
+    return arrays
+
+
+def _assert_frozen_scoring_state_unchanged(expected, actual):
+    """Fail closed if replay or setup mutated a sealed scoring primitive."""
+
+    if set(expected) != set(actual):
+        missing = sorted(set(expected) - set(actual))
+        extra = sorted(set(actual) - set(expected))
+        raise RuntimeError(
+            "Frozen scoring-state fields changed: "
+            f"missing={missing}, extra={extra}"
+        )
+    hashes = {}
+    for field_name in sorted(expected):
+        expected_array = np.asarray(expected[field_name])
+        actual_array = np.asarray(actual[field_name])
+        if expected_array.shape != actual_array.shape:
+            raise RuntimeError(
+                f"Frozen scoring-state field {field_name} shape changed: "
+                f"{expected_array.shape} != {actual_array.shape}"
+            )
+        if expected_array.dtype != actual_array.dtype:
+            raise RuntimeError(
+                f"Frozen scoring-state field {field_name} dtype changed: "
+                f"{expected_array.dtype} != {actual_array.dtype}"
+            )
+        if not np.all(np.isfinite(actual_array)):
+            raise RuntimeError(
+                f"Frozen scoring-state field {field_name} contains non-finite values"
+            )
+        if not np.array_equal(expected_array, actual_array):
+            raise RuntimeError(
+                f"Frozen scoring-state field {field_name} was overwritten before scoring"
+            )
+        hashes[field_name] = {
+            "dtype": str(actual_array.dtype),
+            "shape": list(actual_array.shape),
+            "sha256": hashlib.sha256(
+                np.ascontiguousarray(actual_array).view(np.uint8)
+            ).hexdigest(),
+        }
+    return hashes
 
 
 @dataclass(frozen=True)
@@ -265,7 +569,7 @@ class RelionReplaySource(InputSource):
         """A frozen boundary's ``RefinementState`` fields, installed over the initial ones (the start FSC's
         resolution among them)."""
         if self.replay.frozen_refinement_state_fields is not None:
-            _restore_diagnostic_frozen_boundary_state(state, self.replay.frozen_refinement_state_fields)
+            restore_diagnostic_frozen_boundary_state(state, self.replay.frozen_refinement_state_fields)
 
     def initial_coarse_grids(self, *, initialized_healpix_order, voxel_size, symmetry):
         """A sealed sampling state's captured grids, checked against the initialized HEALPix order (None without
@@ -339,7 +643,7 @@ class RelionReplaySource(InputSource):
     def state_swap_snapshot(self, iteration, scoring):
         """The run's own state at the probe's target iteration, before RELION's is installed (a copy)."""
         if self._swaps_at(iteration):
-            self._state_swap_snapshot = _snapshot_state_swap_inputs(**_state_swap_keywords(scoring))
+            self._state_swap_snapshot = snapshot_state_swap_inputs(**_state_swap_keywords(scoring))
 
     def scoring_references(self, iteration, reference_model, *, volume_shape):
         """RELION's maps at the probe's target iteration when the probe replays references, else the model's."""
@@ -355,7 +659,7 @@ class RelionReplaySource(InputSource):
         run's own snapshot. The ``state`` and ``halves`` it restores are updated in place."""
         if not self._swaps_at(iteration):
             return None
-        swapped = _apply_state_swap_probe(
+        swapped = apply_state_swap_probe(
             probe=self.replay.state_swap_probe,
             iteration=iteration,
             recovar_snapshot=self._state_swap_snapshot,
@@ -508,7 +812,7 @@ class RelionReplaySource(InputSource):
         if star is not None:
             metadata = read_relion_sampling_metadata(star)
             replay_iteration = last_numbered_iteration if source == "last-numbered" else relion_iteration
-            perturbation, perturbation_source = _resolve_replay_random_perturbation(
+            perturbation, perturbation_source = resolve_replay_random_perturbation(
                 star_value=metadata["random_perturbation"],
                 perturbation_factor=metadata["perturbation_factor"],
                 relion_iteration=replay_iteration,
@@ -558,7 +862,7 @@ class RelionReplaySource(InputSource):
 
     def class_tau2(self, iteration, n_classes):
         """The slot's captured Class3D prior, used when RELAX_KCLASS_REPLAY_TAU2 asks for it (validated always)."""
-        shells, enabled, label = _class_tau2_replay(
+        shells, enabled, label = class_tau2_replay(
             iteration=iteration, n_classes=n_classes, iter_replay_override=self._slot(iteration),
             replay=self.replay, logger=logger,
         )
@@ -574,7 +878,7 @@ class RelionReplaySource(InputSource):
             or int(options.schedule.init_relion_iteration) <= 0
         ):
             return False
-        _restore_convergence_state_from_replay_restart(state, self.replay, options.schedule.init_relion_iteration)
+        restore_convergence_state_from_replay_restart(state, self.replay, options.schedule.init_relion_iteration)
         return True
 
     def convergence_accuracy(self, iteration, accuracy):
@@ -626,7 +930,7 @@ class RelionReplaySource(InputSource):
         restart_iteration = _perturbation_restart_state_iteration(
             self.replay.perturb_replay_restart_state_iterations, relion_iteration,
         )
-        perturbation, source = _resolve_replay_random_perturbation(
+        perturbation, source = resolve_replay_random_perturbation(
             star_value=float(sampling_meta["random_perturbation"]),
             perturbation_factor=float(sampling_meta["perturbation_factor"]),
             relion_iteration=relion_iteration,
@@ -655,7 +959,7 @@ class RelionReplaySource(InputSource):
         sealed = self.replay.sealed_sampling_state
         sealed_meta = None
         if sealed is not None:
-            current_size, prior_translations, sealed_meta = _install_sealed_sampling(
+            current_size, prior_translations, sealed_meta = install_sealed_sampling(
                 state, sealed, iteration=iteration, image_geometry=image_geometry, dtype=options.precision.rotation_real_dtype,
             )
             inputs = inputs._replace(current_size=current_size, prior_translations=prior_translations)
@@ -713,8 +1017,6 @@ class RelionReplaySource(InputSource):
         )
 
 
-
-
 def build_sealed_initial_coarse_grids(
     sealed_sampling_state,
     *,
@@ -727,7 +1029,7 @@ def build_sealed_initial_coarse_grids(
     """Materialize and validate a schema-v3 sealed initial sampling grid, its operands in ``dtype`` (the run's
     ``precision.rotation_real_dtype``)."""
 
-    rotations, rotation_eulers, current_translations = _sealed_sampling_base_grids(
+    rotations, rotation_eulers, current_translations = sealed_sampling_base_grids(
         sealed_sampling_state,
         voxel_size_angstrom=voxel_size,
         dtype=dtype,

@@ -14,7 +14,7 @@ Arrays are host NumPy arrays in the loop's own layouts and frames:
   class stack per half (K>1, ``(K, V)``; Class3D keeps one stack, so half 2
   is half 1).
 * Spectra are in relax's frame, which is RELION's times ``ori_size**4``
-  (``relion_replay._build_replay_iteration_overrides`` reads RELION's model
+  (``replay_inputs._build_replay_iteration_overrides`` reads RELION's model
   STAR with the same factor).
 * Per-particle arrays are per half, in the half's local particle order.
 * Norm corrections are in relax's frame too, RELION's times ``ori_size**2``

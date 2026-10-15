@@ -9,14 +9,12 @@ from __future__ import annotations
 
 import logging
 import os
-import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import jax.numpy as jnp
 import numpy as np
-from recovar import utils
 
 from relax.refinement.noise_updates import (
     NoiseModel,
@@ -24,10 +22,6 @@ from relax.refinement.noise_updates import (
 )
 from relax.refinement.ports import OptimiserAccuracyReplay
 from relax.refinement.sigma_offset import SigmaOffset
-from relax.relion.initial_noise import (
-    read_relion_sigma2_noise_by_group,
-    relion_mpi_process_start_scoring_noise_pair,
-)
 from relax.runtime.env_flags import parse_env_flag_or_false
 from relax.sampling.grids import translation_grid_for_class_count
 from relax.sampling.healpix import angular_sampling_deg
@@ -40,7 +34,6 @@ from relax.sampling.orientation_priors import (
     normalize_direction_prior_per_half,
 )
 from relax.sampling.perturbation import relion_sampling_perturbation_for_iteration
-from relax.star import metadata as relion_metadata
 from relax.star.metadata import (
     read_relion_direction_prior,
     read_relion_direction_priors,
@@ -56,10 +49,170 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("relax.diagnostics.relion_replay")  # the name before the move to relax.parity: log rows keep it
 
+
 _KCLASS_REPLAY_TAU2_ENV = "RELAX_KCLASS_REPLAY_TAU2"
 
 
-def _class_tau2_replay(*, iteration, n_classes, iter_replay_override, replay, logger):
+def sealed_sampling_base_grids(sealed_sampling_state, *, voxel_size_angstrom, dtype: np.dtype = np.float32):
+    """Construct scorer grids directly from a schema-v3 captured sampling state.
+
+    ``dtype`` controls the returned rotation matrices, working Euler grid, and
+    translations, matching ``relion_scoring_rotation_grid``'s policy: pass ``np.float64`` under
+    float64 scoring/projections so a restart from a sealed boundary keeps the
+    same coarse-grid precision as a fresh (non-restarted) run.
+    """
+
+    state = sealed_sampling_state
+    directions = np.asarray(state["directions_ipix"], dtype=np.int64)
+    rot = np.asarray(state["rot_angles_deg"], dtype=np.float64)
+    tilt = np.asarray(state["tilt_angles_deg"], dtype=np.float64)
+    psi = np.asarray(state["psi_angles_deg"], dtype=np.float64)
+    if directions.ndim != 1 or directions.size < 1:
+        raise ValueError("sealed sampling directions must be a nonempty vector")
+    if rot.shape != directions.shape or tilt.shape != directions.shape or psi.ndim != 1 or psi.size < 1:
+        raise ValueError("sealed sampling Euler component shapes are inconsistent")
+    source_eulers = np.stack(
+        [
+            np.tile(rot, psi.size),
+            np.tile(tilt, psi.size),
+            np.repeat(psi, directions.size),
+        ],
+        axis=1,
+    )
+    from relax.sampling.grids import relion_mstep_rotations_from_eulers
+
+    rotations = relion_mstep_rotations_from_eulers(source_eulers, dtype=dtype)
+    eulers = source_eulers.astype(dtype)
+    voxel_size = float(voxel_size_angstrom)
+    if not np.isfinite(voxel_size) or voxel_size <= 0.0:
+        raise ValueError("sealed sampling requires a finite positive voxel size")
+    tx = np.asarray(state["translations_x_angstrom"], dtype=np.float64)
+    ty = np.asarray(state["translations_y_angstrom"], dtype=np.float64)
+    if tx.shape != ty.shape or tx.ndim != 1 or tx.size < 1:
+        raise ValueError("sealed sampling translation component shapes are inconsistent")
+    translations = np.stack([tx / voxel_size, ty / voxel_size], axis=1).astype(dtype)
+    return rotations, eulers, jnp.asarray(translations, dtype=dtype)
+
+
+def restore_convergence_state_from_replay_restart(state, replay, init_relion_iteration) -> None:
+    """Restore convergence counters from a RELION optimiser/model STAR at a
+    perturbation-replay restart iteration.
+
+    RELION's convergence counters are not initialized against an infinite
+    previous resolution -- a replay restart resumes them from the previous
+    optimiser/model STAR instead of the fresh-run FSC/ini_high state. This is
+    the loop-boundary counterpart to ``apply_iter_replay_overrides`` below,
+    which handles the same ``perturb_replay_relion_dir`` source per mid-loop
+    iteration.
+    """
+    init_opt_star = os.path.join(
+        replay.perturb_replay_relion_dir,
+        f"{replay.perturb_replay_relion_prefix}_it{init_relion_iteration:03d}_optimiser.star",
+    )
+    init_model_star = os.path.join(
+        replay.perturb_replay_relion_dir,
+        f"{replay.perturb_replay_relion_prefix}_it{init_relion_iteration:03d}_half1_model.star",
+    )
+    if os.path.exists(init_model_star):
+        model_meta = read_relion_model_metadata(init_model_star)
+        resolution_angstrom = float(model_meta["current_resolution"])
+        if np.isfinite(resolution_angstrom) and resolution_angstrom > 0.0:
+            state.current_resolution = resolution_angstrom
+            state.previous_resolution = resolution_angstrom
+    if os.path.exists(init_opt_star):
+        opt_meta = read_relion_optimiser_metadata(init_opt_star)
+        state.nr_iter_wo_resol_gain = int(opt_meta.get("number_iter_without_resolution_gain") or 0)
+        hidden_variable_changes = int(opt_meta.get("number_iter_without_changing_assignments") or 0)
+        state.nr_iter_wo_large_hidden_variable_changes = hidden_variable_changes
+        state.nr_iter_wo_assignment_changes = hidden_variable_changes
+        if opt_meta.get("overall_accuracy_rotations") is not None:
+            state.acc_rot = float(opt_meta["overall_accuracy_rotations"])
+        if opt_meta.get("overall_accuracy_translations_angst") is not None:
+            state.acc_trans = float(opt_meta["overall_accuracy_translations_angst"])
+        if opt_meta.get("smallest_changes_orientations") is not None:
+            state.smallest_changes_optimal_orientations = float(opt_meta["smallest_changes_orientations"])
+        if opt_meta.get("smallest_changes_offsets") is not None:
+            state.smallest_changes_optimal_offsets_angstrom = float(opt_meta["smallest_changes_offsets"])
+        if opt_meta.get("smallest_changes_classes") is not None:
+            state.smallest_changes_optimal_classes = float(opt_meta["smallest_changes_classes"])
+        if opt_meta.get("has_converged") is not None:
+            state.has_converged = bool(int(opt_meta["has_converged"]))
+    logger.info(
+        "Replay convergence init from RELION iter %03d: res=%.2f A, "
+        "stalls=(res=%d,hvc=%d), smallest=(rot=%.3f deg, trans=%.3f A, class=%.3f)",
+        init_relion_iteration,
+        state.current_resolution,
+        state.nr_iter_wo_resol_gain,
+        state.nr_iter_wo_large_hidden_variable_changes,
+        state.smallest_changes_optimal_orientations,
+        state.smallest_changes_optimal_offsets_angstrom,
+        state.smallest_changes_optimal_classes,
+    )
+
+
+def _replay_perturbation_seed(
+    replay_dir: str,
+    relion_iteration: int,
+    explicit_seed: int | None,
+    replay_prefix: str = "run",
+) -> int | None:
+    """Return the RELION optimiser seed that generated a sampling state."""
+    if explicit_seed is not None:
+        return int(explicit_seed)
+    candidates = [
+        os.path.join(replay_dir, f"{replay_prefix}_it{int(relion_iteration):03d}_optimiser.star"),
+        os.path.join(replay_dir, f"{replay_prefix}_optimiser.star"),
+    ]
+    for path in candidates:
+        if not os.path.exists(path):
+            continue
+        seed = read_relion_optimiser_metadata(path).get("random_seed")
+        if seed is not None:
+            return int(seed)
+    return None
+
+
+def resolve_replay_random_perturbation(
+    *,
+    star_value: float,
+    perturbation_factor: float,
+    relion_iteration: int,
+    replay_dir: str,
+    replay_prefix: str = "run",
+    explicit_seed: int | None,
+    restart_state_iteration: int | None = None,
+) -> tuple[float, str]:
+    """Recover RELION's live perturbation without STAR decimal truncation (the STAR value without a seed)."""
+    seed = _replay_perturbation_seed(
+        replay_dir,
+        relion_iteration,
+        explicit_seed,
+        replay_prefix=replay_prefix,
+    )
+    if seed is None:
+        return float(star_value), "star-fallback"
+
+    exact = relion_sampling_perturbation_for_iteration(
+        float(perturbation_factor),
+        int(seed),
+        int(relion_iteration),
+        restart_state_iteration=restart_state_iteration,
+    )
+    # RELION writes this field with as few as five digits after the decimal.
+    # Treat the STAR value as a provenance guard, not as the arithmetic input.
+    if not np.isclose(exact, float(star_value), rtol=0.0, atol=5.1e-6):
+        raise ValueError(
+            "Seed-reconstructed SamplingPerturbation disagrees with replay STAR: "
+            f"iteration={relion_iteration} seed={seed} exact={exact:+.12g} "
+            f"star={float(star_value):+.12g}"
+        )
+    source = "seed-exact"
+    if restart_state_iteration is not None:
+        source = f"seed-exact-restart@{int(restart_state_iteration)}"
+    return float(exact), source
+
+
+def class_tau2_replay(*, iteration, n_classes, iter_replay_override, replay, logger):
     """Select captured Class3D priors without changing the normal Iref-derived policy.
 
     Return spectra, the diagnostic enable flag and its source label. A captured
@@ -115,155 +268,6 @@ def _class_tau2_replay(*, iteration, n_classes, iter_replay_override, replay, lo
                 replay_class_tau2_shape,
             )
     return replay_class_tau2, replay_tau2_enabled, kclass_tau2_source
-
-
-def _past_perturb_replay_max_iter(iteration: int, perturb_replay_max_iter: int | None) -> bool:
-    """Return whether ``iteration`` (0-indexed) is past the diagnostic replay cutoff.
-
-    ``perturb_replay_max_iter`` is 1-indexed to match
-    ``scripts/run_multi_iter_parity.py``'s ``--replay-override-max-iter``
-    (and ``replay_iteration_overrides``, which the same flag also gates).
-    ``None`` means "no cutoff": every iteration stays in range.
-    """
-
-    if perturb_replay_max_iter is None:
-        return False
-    return (int(iteration) + 1) > int(perturb_replay_max_iter)
-
-
-def _check_final_replay_source_iteration(*, replay, diagnostic_override, numbered_iteration_count) -> None:
-    """Refuse a final-only substitution whose source is not the boundary the numbered iterations reached."""
-    if (
-        (diagnostic_override is not None or replay.final_replay_reference_maps is not None)
-        and replay.final_replay_source_iteration is not None
-        and numbered_iteration_count != int(replay.final_replay_source_iteration)
-    ):
-        raise RuntimeError(
-            "Diagnostic final-only substitution source does not match autonomous convergence boundary: "
-            f"source_iteration={int(replay.final_replay_source_iteration)} "
-            f"numbered_iteration_count={numbered_iteration_count}"
-        )
-
-
-def _prepare_k1_final_replay_references(
-    *,
-    replay,
-    diagnostic_override,
-    numbered_iteration_count,
-    means,
-    final_join_means,
-    logger,
-):
-    """Validate the K=1 final-only substitution boundary and prepare the two half references.
-
-    Without supplied reference maps, return the existing reference list itself.
-    Supplied maps retain each half's current dtype. Override-state application
-    remains in the controller after this selection and validation boundary.
-    """
-    _check_final_replay_source_iteration(
-        replay=replay, diagnostic_override=diagnostic_override, numbered_iteration_count=numbered_iteration_count
-    )
-    if replay.final_replay_reference_maps is not None:
-        if len(replay.final_replay_reference_maps) != 2:
-            raise ValueError("Diagnostic final-only RELION reference substitution requires exactly two half maps")
-        expected_reference_shape = tuple(np.asarray(means[0]).shape)
-        candidate_reference_shapes = [
-            tuple(np.asarray(reference).shape) for reference in replay.final_replay_reference_maps
-        ]
-        if any(shape != expected_reference_shape for shape in candidate_reference_shapes):
-            raise ValueError(
-                "Diagnostic final-only RELION reference shape mismatch: "
-                f"expected={expected_reference_shape} got={candidate_reference_shapes}"
-            )
-        final_join_means = [
-            jnp.asarray(reference, dtype=means[half_idx].dtype)
-            for half_idx, reference in enumerate(replay.final_replay_reference_maps)
-        ]
-        logger.info(
-            "Diagnostic final-only RELION reference substitution at numbered boundary %d",
-            numbered_iteration_count,
-        )
-    return final_join_means
-
-
-def _validate_class_final_replay_boundary(*, replay, diagnostic_override, numbered_iteration_count) -> None:
-    """Validate the Class3D final-only substitution boundary; Class3D has no reference substitution."""
-    _check_final_replay_source_iteration(
-        replay=replay, diagnostic_override=diagnostic_override, numbered_iteration_count=numbered_iteration_count
-    )
-    if replay.final_replay_reference_maps is not None:
-        raise RuntimeError("Diagnostic final-only RELION reference substitution is currently K=1 only")
-
-
-def _prepare_final_replay_references(
-    *,
-    replay,
-    diagnostic_override,
-    numbered_iteration_count,
-    means,
-    final_join_means,
-    k_class_enabled,
-    logger,
-):
-    """Validate the final-only substitution boundary and prepare half references.
-
-    This is the one remaining mode decision of the final reference
-    preparation, to be removed when the K=1 trajectory calls
-    ``_prepare_k1_final_replay_references`` and the Class3D trajectory calls
-    ``_validate_class_final_replay_boundary`` directly. Class3D keeps the
-    reference list it was given.
-    """
-    if k_class_enabled:
-        _validate_class_final_replay_boundary(
-            replay=replay, diagnostic_override=diagnostic_override, numbered_iteration_count=numbered_iteration_count
-        )
-        return final_join_means
-    return _prepare_k1_final_replay_references(
-        replay=replay,
-        diagnostic_override=diagnostic_override,
-        numbered_iteration_count=numbered_iteration_count,
-        means=means,
-        final_join_means=final_join_means,
-        logger=logger,
-    )
-
-
-def _select_final_replay_override(*, requested_index, diagnostic_override, replay_overrides, has_overrides, logger):
-    """Select a final-pass state without copying it or applying its fields.
-
-    Explicit diagnostic state wins, including an empty dictionary. Otherwise
-    clamp to the last recorded slot; a missing slot in a nonempty history is
-    an error. The caller retains replay admission and mutation ordering.
-    """
-    override_index = requested_index
-    if diagnostic_override is not None:
-        override = diagnostic_override
-        logger.info(
-            "Diagnostic final-only RELION state substitution at previous-state index %d (fields=%s)",
-            requested_index,
-            ",".join(sorted(override)) or "<none>",
-        )
-    else:
-        override = None
-    if diagnostic_override is None and has_overrides:
-        override_index = min(requested_index, int(len(replay_overrides)) - 1)
-        override = replay_overrides[override_index]
-        if override_index != requested_index:
-            logger.info(
-                "RELION replay: final all-data requested previous-state index %d, using last available numbered replay override index %d",
-                requested_index,
-                override_index,
-            )
-    if override is None:
-        if has_overrides:
-            raise RuntimeError(
-                f"Strict RELION final all-data replay is missing the requested previous-state override at index {requested_index}"
-            )
-        logger.info(
-            "RELION replay: final all-data requested last numbered state replay, but no replay override exists for previous-state index %d",
-            requested_index,
-        )
-    return override_index, override
 
 
 def _state_swap_reference_dir(probe, perturb_replay_relion_dir, *, iteration: int):
@@ -389,86 +393,6 @@ def replay_class_relion_references(
     ]
 
 
-def _replay_perturbation_seed(
-    replay_dir: str,
-    relion_iteration: int,
-    explicit_seed: int | None,
-    replay_prefix: str = "run",
-) -> int | None:
-    """Return the RELION optimiser seed that generated a sampling state."""
-    if explicit_seed is not None:
-        return int(explicit_seed)
-    candidates = [
-        os.path.join(replay_dir, f"{replay_prefix}_it{int(relion_iteration):03d}_optimiser.star"),
-        os.path.join(replay_dir, f"{replay_prefix}_optimiser.star"),
-    ]
-    for path in candidates:
-        if not os.path.exists(path):
-            continue
-        seed = read_relion_optimiser_metadata(path).get("random_seed")
-        if seed is not None:
-            return int(seed)
-    return None
-
-
-def _resolve_replay_random_perturbation(
-    *,
-    star_value: float,
-    perturbation_factor: float,
-    relion_iteration: int,
-    replay_dir: str,
-    replay_prefix: str = "run",
-    explicit_seed: int | None,
-    restart_state_iteration: int | None = None,
-) -> tuple[float, str]:
-    """Recover RELION's live perturbation without STAR decimal truncation (the STAR value without a seed)."""
-    seed = _replay_perturbation_seed(
-        replay_dir,
-        relion_iteration,
-        explicit_seed,
-        replay_prefix=replay_prefix,
-    )
-    if seed is None:
-        return float(star_value), "star-fallback"
-
-    exact = relion_sampling_perturbation_for_iteration(
-        float(perturbation_factor),
-        int(seed),
-        int(relion_iteration),
-        restart_state_iteration=restart_state_iteration,
-    )
-    # RELION writes this field with as few as five digits after the decimal.
-    # Treat the STAR value as a provenance guard, not as the arithmetic input.
-    if not np.isclose(exact, float(star_value), rtol=0.0, atol=5.1e-6):
-        raise ValueError(
-            "Seed-reconstructed SamplingPerturbation disagrees with replay STAR: "
-            f"iteration={relion_iteration} seed={seed} exact={exact:+.12g} "
-            f"star={float(star_value):+.12g}"
-        )
-    source = "seed-exact"
-    if restart_state_iteration is not None:
-        source = f"seed-exact-restart@{int(restart_state_iteration)}"
-    return float(exact), source
-
-
-def _perturbation_restart_state_iteration(
-    restart_state_iterations,
-    relion_iteration: int,
-) -> int | None:
-    """Return the latest explicit restart boundary preceding an iteration."""
-    if restart_state_iterations is None:
-        return None
-    candidates = [
-        int(value)
-        for value in restart_state_iterations
-        if int(value) < int(relion_iteration)
-    ]
-    return max(candidates) if candidates else None
-
-
-
-
-
 def _replay_control_model_iteration(init_relion_iteration: int, loop_iteration: int) -> int:
     """Return the RELION model.star index whose control state governs this replay step."""
     return int(init_relion_iteration) + int(loop_iteration) + 1
@@ -488,7 +412,7 @@ def _install_final_replay_particle_state(
     The translation prior width, the previous poses and corrections of ``halves`` (written in place) and the
     noise model. An absent field keeps the argument's value.
     """
-    from relax.parity.state_swap_runtime import _copy_half_pair
+    from relax.parity.state_swap_runtime import copy_half_pair
 
     _final_replay_fields = []
     _final_replay_sigma_per_half = final_replay_override.get("translation_sigma_angstrom_per_half")
@@ -501,12 +425,12 @@ def _install_final_replay_particle_state(
         _final_replay_fields.append("translation_sigma_angstrom")
     _final_replay_prev_trans = final_replay_override.get("previous_best_translations")
     if _final_replay_prev_trans is not None:
-        for particle_half, value_for_half in zip(halves, _copy_half_pair(_final_replay_prev_trans), strict=True):
+        for particle_half, value_for_half in zip(halves, copy_half_pair(_final_replay_prev_trans), strict=True):
             particle_half.translations = value_for_half
         _final_replay_fields.append("previous_best_translations")
     _final_replay_prev_eulers = final_replay_override.get("previous_best_rotation_eulers")
     if _final_replay_prev_eulers is not None:
-        for particle_half, value_for_half in zip(halves, _copy_half_pair(_final_replay_prev_eulers), strict=True):
+        for particle_half, value_for_half in zip(halves, copy_half_pair(_final_replay_prev_eulers), strict=True):
             particle_half.rotation_eulers = value_for_half
         _final_replay_fields.append("previous_best_rotation_eulers")
     _final_replay_fields.extend(
@@ -783,47 +707,6 @@ class ReplayOverrideResult:
     class_weights: np.ndarray | None = None
 
 
-def _sealed_sampling_base_grids(sealed_sampling_state, *, voxel_size_angstrom, dtype: np.dtype = np.float32):
-    """Construct scorer grids directly from a schema-v3 captured sampling state.
-
-    ``dtype`` controls the returned rotation matrices, working Euler grid, and
-    translations, matching ``relion_scoring_rotation_grid``'s policy: pass ``np.float64`` under
-    float64 scoring/projections so a restart from a sealed boundary keeps the
-    same coarse-grid precision as a fresh (non-restarted) run.
-    """
-
-    state = sealed_sampling_state
-    directions = np.asarray(state["directions_ipix"], dtype=np.int64)
-    rot = np.asarray(state["rot_angles_deg"], dtype=np.float64)
-    tilt = np.asarray(state["tilt_angles_deg"], dtype=np.float64)
-    psi = np.asarray(state["psi_angles_deg"], dtype=np.float64)
-    if directions.ndim != 1 or directions.size < 1:
-        raise ValueError("sealed sampling directions must be a nonempty vector")
-    if rot.shape != directions.shape or tilt.shape != directions.shape or psi.ndim != 1 or psi.size < 1:
-        raise ValueError("sealed sampling Euler component shapes are inconsistent")
-    source_eulers = np.stack(
-        [
-            np.tile(rot, psi.size),
-            np.tile(tilt, psi.size),
-            np.repeat(psi, directions.size),
-        ],
-        axis=1,
-    )
-    from relax.sampling.grids import relion_mstep_rotations_from_eulers
-
-    rotations = relion_mstep_rotations_from_eulers(source_eulers, dtype=dtype)
-    eulers = source_eulers.astype(dtype)
-    voxel_size = float(voxel_size_angstrom)
-    if not np.isfinite(voxel_size) or voxel_size <= 0.0:
-        raise ValueError("sealed sampling requires a finite positive voxel size")
-    tx = np.asarray(state["translations_x_angstrom"], dtype=np.float64)
-    ty = np.asarray(state["translations_y_angstrom"], dtype=np.float64)
-    if tx.shape != ty.shape or tx.ndim != 1 or tx.size < 1:
-        raise ValueError("sealed sampling translation component shapes are inconsistent")
-    translations = np.stack([tx / voxel_size, ty / voxel_size], axis=1).astype(dtype)
-    return rotations, eulers, jnp.asarray(translations, dtype=dtype)
-
-
 def sealed_rotation_ids_for_scoring(sealed_sampling_state, trial_grid, *, use_local: bool):
     """A sealed capture's rotation ids for a global scorer grid, checked against the trial grid; else None."""
     if sealed_sampling_state is None or use_local:
@@ -846,62 +729,6 @@ def _sealed_sampling_rotation_ids(sealed_sampling_state):
     return np.concatenate(
         [direction_ids + psi_index * n_pixels for psi_index in range(n_psi)]
     ).astype(np.int64, copy=False)
-
-
-def _restore_convergence_state_from_replay_restart(state, replay, init_relion_iteration) -> None:
-    """Restore convergence counters from a RELION optimiser/model STAR at a
-    perturbation-replay restart iteration.
-
-    RELION's convergence counters are not initialized against an infinite
-    previous resolution -- a replay restart resumes them from the previous
-    optimiser/model STAR instead of the fresh-run FSC/ini_high state. This is
-    the loop-boundary counterpart to ``apply_iter_replay_overrides`` below,
-    which handles the same ``perturb_replay_relion_dir`` source per mid-loop
-    iteration.
-    """
-    init_opt_star = os.path.join(
-        replay.perturb_replay_relion_dir,
-        f"{replay.perturb_replay_relion_prefix}_it{init_relion_iteration:03d}_optimiser.star",
-    )
-    init_model_star = os.path.join(
-        replay.perturb_replay_relion_dir,
-        f"{replay.perturb_replay_relion_prefix}_it{init_relion_iteration:03d}_half1_model.star",
-    )
-    if os.path.exists(init_model_star):
-        model_meta = read_relion_model_metadata(init_model_star)
-        resolution_angstrom = float(model_meta["current_resolution"])
-        if np.isfinite(resolution_angstrom) and resolution_angstrom > 0.0:
-            state.current_resolution = resolution_angstrom
-            state.previous_resolution = resolution_angstrom
-    if os.path.exists(init_opt_star):
-        opt_meta = read_relion_optimiser_metadata(init_opt_star)
-        state.nr_iter_wo_resol_gain = int(opt_meta.get("number_iter_without_resolution_gain") or 0)
-        hidden_variable_changes = int(opt_meta.get("number_iter_without_changing_assignments") or 0)
-        state.nr_iter_wo_large_hidden_variable_changes = hidden_variable_changes
-        state.nr_iter_wo_assignment_changes = hidden_variable_changes
-        if opt_meta.get("overall_accuracy_rotations") is not None:
-            state.acc_rot = float(opt_meta["overall_accuracy_rotations"])
-        if opt_meta.get("overall_accuracy_translations_angst") is not None:
-            state.acc_trans = float(opt_meta["overall_accuracy_translations_angst"])
-        if opt_meta.get("smallest_changes_orientations") is not None:
-            state.smallest_changes_optimal_orientations = float(opt_meta["smallest_changes_orientations"])
-        if opt_meta.get("smallest_changes_offsets") is not None:
-            state.smallest_changes_optimal_offsets_angstrom = float(opt_meta["smallest_changes_offsets"])
-        if opt_meta.get("smallest_changes_classes") is not None:
-            state.smallest_changes_optimal_classes = float(opt_meta["smallest_changes_classes"])
-        if opt_meta.get("has_converged") is not None:
-            state.has_converged = bool(int(opt_meta["has_converged"]))
-    logger.info(
-        "Replay convergence init from RELION iter %03d: res=%.2f A, "
-        "stalls=(res=%d,hvc=%d), smallest=(rot=%.3f deg, trans=%.3f A, class=%.3f)",
-        init_relion_iteration,
-        state.current_resolution,
-        state.nr_iter_wo_resol_gain,
-        state.nr_iter_wo_large_hidden_variable_changes,
-        state.smallest_changes_optimal_orientations,
-        state.smallest_changes_optimal_offsets_angstrom,
-        state.smallest_changes_optimal_classes,
-    )
 
 
 def read_optimiser_accuracy_replay(
@@ -1110,7 +937,7 @@ def _read_replay_sampling_star(
     )
 
 
-def _install_sealed_sampling(state, sealed_sampling_state, *, iteration: int, image_geometry: ImageGeometry, dtype):
+def install_sealed_sampling(state, sealed_sampling_state, *, iteration: int, image_geometry: ImageGeometry, dtype):
     """Install a sealed frozen-boundary sampling state on ``state``.
 
     Returns ``(current size, prior translations, replay meta)``.
@@ -1500,7 +1327,7 @@ def apply_k1_iter_replay_overrides(
     )
 
     if sealed_sampling_state is not None:
-        cs, _replay_prior_translations, _replay_meta = _install_sealed_sampling(
+        cs, _replay_prior_translations, _replay_meta = install_sealed_sampling(
             state, sealed_sampling_state, iteration=iteration, image_geometry=image_geometry, dtype=dtype
         )
     elif perturb_replay_relion_dir is not None:
@@ -1643,7 +1470,7 @@ def apply_class_iter_replay_overrides(
     )
 
     if sealed_sampling_state is not None:
-        cs, _replay_prior_translations, _replay_meta = _install_sealed_sampling(
+        cs, _replay_prior_translations, _replay_meta = install_sealed_sampling(
             state, sealed_sampling_state, iteration=iteration, image_geometry=image_geometry, dtype=dtype
         )
     elif perturb_replay_relion_dir is not None:
@@ -1871,463 +1698,3 @@ def select_final_sampling_star(
         if os.path.exists(path):
             return path, source, candidates
     return None, None, candidates
-
-
-def _build_replay_iteration_overrides(
-    relion_dir,
-    half1_idx,
-    half2_idx,
-    max_iter,
-    ds_voxel,
-    ds_grid,
-    *,
-    include_normcorr,
-    init_relion_iteration=0,
-    particle_names=None,
-    include_initial_state=False,
-    include_k1_mean_variance=False,
-    include_k1_scoring_scale=False,
-    strict=False,
-    process_start_noise_broadcast=True,
-    noise_dtype=np.float32,
-):
-    """Build per-iter replay overrides keyed on recovar iteration index.
-
-    For each recovar iteration k >= 1 (i.e. iter 2 onwards in RELION terms),
-    reads RELION's run_it{k:03d}_data.star + half1/half2 model.star
-    (or the shared Class3D run_it{k:03d}_model.star) and builds an
-    override dict containing:
-      * image_corrections: per-image (avg_norm/normcorr) * group_scale
-      * serialized_scale_corrections: per-image model-STAR group scale,
-        retained as provenance rather than forced onto the live scorer
-      * scoring_scale_corrections: optional exact K=1 split-half scorer scale
-        for state-swap diagnostics whose half-specific model STARs are owned
-        by the two scoring ranks
-      * previous_best_translations / previous_best_rotation_eulers: RELION's
-        previous hard assignments for local-search centering
-
-    This matches scripts/run_multi_iter_parity.py::_load_relion_iteration_override
-    (the proven replay logic). The recovar iter-k override is read from
-    RELION iter-k's model+data (since recovar iter-k corresponds to RELION
-    iter-(k+1), and the per-image scalings used at the start of RELION
-    iter-(k+1) are the ones written by RELION iter-k's M-step).
-
-    ``init_relion_iteration`` is normally zero. Diagnostic profile runs can
-    set it to a later RELION iteration to jump directly into local search; in
-    that case override slot 0 is sourced from the upstream RELION iteration
-    instead of being left empty.
-
-    When ``include_initial_state`` is true, slot 0 is loaded from RELION
-    iteration 0 as well. This is required for a strict cold-start replay:
-    run_it000 carries the particle pre-centering offsets, initial orientations,
-    image/scale corrections, and direction prior that RELION uses in its first
-    expectation step.
-
-    ``noise_dtype`` controls only the expanded pixel representation of the
-    RFLOAT model-STAR spectrum. Double-scoring replays must retain float64 so
-    the reciprocal is not narrowed before construction of ``Minvsigma2``.
-    """
-    import re as _re
-    from pathlib import Path as _Path
-
-    import starfile as _sf
-
-    relion_dir = _Path(relion_dir).resolve()
-
-    def _model_has_class_direction_priors(model):
-        return any(str(key).startswith("model_pdf_orient_class_") for key in model)
-
-    def _read_model_direction_prior(model_path, model):
-        if not _model_has_class_direction_priors(model):
-            return None
-        from relax.star.metadata import (
-            read_relion_direction_prior,
-            read_relion_direction_priors,
-        )
-
-        has_multiple_classes = any(
-            str(key).startswith("model_pdf_orient_class_") and not str(key).endswith("_1")
-            for key in model
-        )
-        if has_multiple_classes:
-            return read_relion_direction_priors(model_path)
-        return read_relion_direction_prior(model_path)
-
-    noise_dtype = np.dtype(noise_dtype)
-    if noise_dtype not in (np.dtype(np.float32), np.dtype(np.float64)):
-        raise TypeError(f"noise_dtype must be float32 or float64, got {noise_dtype}")
-
-    def _read_model_noise_variance(model, *, image_shape):
-        """One half's pixel noise: flat for one optics group, ``[G, P]`` rows for G > 1.
-
-        RELION keeps ``sigma2_noise`` per optics group (subtomograms: one group
-        per tilt); ``[G, P]`` is the noise model's per-group layout (relion/optics_groups.py).
-        """
-        radial_by_group = read_relion_sigma2_noise_by_group(
-            model,
-            context="replay model",
-        )
-        if radial_by_group is None:
-            return None
-        rows = [
-            np.asarray(
-                utils.make_radial_image(
-                    jnp.asarray(radial * float(ds_grid) ** 4), image_shape, extend_last_frequency=True,
-                ),
-                dtype=noise_dtype,
-            ).reshape(-1)
-            for radial in radial_by_group
-        ]
-        return rows[0] if len(rows) == 1 else np.stack(rows)
-
-    def _read_model_class_tau2(model):
-        if not isinstance(model, dict):
-            return None
-        class_tau2 = []
-        for key, table in model.items():
-            match = _re.fullmatch(r"model_class_(\d+)", str(key))
-            if match is None:
-                continue
-            col = "rlnReferenceTau2" if "rlnReferenceTau2" in table.columns else None
-            if col is None and "rlnReferenceSigma2" in table.columns:
-                col = "rlnReferenceSigma2"
-            if col is None:
-                continue
-            class_tau2.append(
-                (
-                    int(match.group(1)),
-                    np.asarray(table[col], dtype=np.float64) * float(ds_grid) ** 4,
-                )
-            )
-        if not class_tau2:
-            return None
-        class_tau2.sort(key=lambda item: item[0])
-        return np.stack([tau2 for _, tau2 in class_tau2], axis=0)
-
-    # Index i is consumed by iteration_loop for recovar iter i+1 during the
-    # numbered refinement, and by the final all-data pass as len(current_sizes).
-    # Allocate one extra slot so convergence on the last configured numbered
-    # iteration can replay RELION run_it{max_iter:03d}_data.star.
-    overrides = [None] * (max_iter + 1)
-    for recovar_iter in range(0, max_iter + 1):
-        # recovar iter k uses corrections computed by RELION iter k (which were
-        # written into run_it{k}_data.star). Fresh non-replay runs retain the
-        # historical empty slot 0; strict cold-start replay explicitly loads
-        # run_it000 because it contains nonzero particle pre-centering offsets
-        # and the other state consumed by RELION's first expectation step.
-        relion_iter = init_relion_iteration + recovar_iter
-        if relion_iter < 0 or (relion_iter == 0 and not include_initial_state):
-            continue
-        data_star = relion_dir / f"run_it{relion_iter:03d}_data.star"
-        model_h1 = relion_dir / f"run_it{relion_iter:03d}_half1_model.star"
-        model_h2 = relion_dir / f"run_it{relion_iter:03d}_half2_model.star"
-        model_shared = relion_dir / f"run_it{relion_iter:03d}_model.star"
-        if model_h1.exists() and model_h2.exists():
-            model_paths = (model_h1, model_h2)
-        elif model_shared.exists():
-            model_paths = (model_shared, model_shared)
-        else:
-            model_paths = None
-        if not data_star.exists() or model_paths is None:
-            missing = []
-            if not data_star.exists():
-                missing.append(str(data_star))
-            if model_paths is None:
-                missing.append(f"{model_h1} + {model_h2} or {model_shared}")
-            message = (
-                f"Replay override for recovar iter {recovar_iter + 1} "
-                f"(RELION iter {relion_iter:03d}) is missing {'; '.join(missing)}"
-            )
-            if strict:
-                raise ValueError(message)
-            logger.warning("%s — leaving unset", message)
-            continue
-
-        data = _sf.read(str(data_star))
-        parts = data["particles"] if isinstance(data, dict) else data
-        m1 = _sf.read(str(model_paths[0]))
-        m2 = _sf.read(str(model_paths[1]))
-
-        replay_identity_rows = relion_metadata.particle_identity_rows(
-            parts,
-            label=f"RELION replay STAR {data_star}",
-        )
-
-        nc = np.asarray(parts["rlnNormCorrection"], dtype=np.float64)
-
-        def _scalar(table, key):
-            v = table[key]
-            return float(v if isinstance(v, (int, float)) else v.iloc[0] if hasattr(v, "iloc") else v[0])
-
-        avg_norm_h1 = _scalar(m1["model_general"], "rlnNormCorrectionAverage")
-        avg_norm_h2 = _scalar(m2["model_general"], "rlnNormCorrectionAverage")
-
-        # rlnSigmaOffsetsAngst is RELION's per-iter translation sigma. RELION
-        # iter (k+1) loads it from the iter-k model.star and uses it to build
-        # pdf_offset (acc_ml_optimiser_impl.h::pdf_offset). recovar's iter-1
-        # does not accumulate sigma2_offset moments (no per-image prior centers
-        # exist yet), so without an explicit override the iter-2 E-step uses
-        # the default init sigma (10 Å) instead of the data-driven RELION
-        # value, which is ~6× too wide and depresses iter-2 Pmax by ~22%.
-        sigma_offset_h1 = _scalar(m1["model_general"], "rlnSigmaOffsetsAngst")
-        sigma_offset_h2 = _scalar(m2["model_general"], "rlnSigmaOffsetsAngst")
-        sigma_offset_per_half = [float(sigma_offset_h1), float(sigma_offset_h2)]
-        sigma_offset_avg = 0.5 * (sigma_offset_per_half[0] + sigma_offset_per_half[1])
-        noise_h1 = _read_model_noise_variance(m1, image_shape=(int(ds_grid), int(ds_grid)))
-        noise_h2 = _read_model_noise_variance(m2, image_shape=(int(ds_grid), int(ds_grid)))
-        direction_prior_h1 = _read_model_direction_prior(model_paths[0], m1)
-        direction_prior_h2 = _read_model_direction_prior(model_paths[1], m2)
-        class_tau2 = _read_model_class_tau2(m1)
-
-        groups_h1 = m1.get("model_groups")
-        groups_h2 = m2.get("model_groups")
-        scale_h1 = (
-            np.asarray(groups_h1["rlnGroupScaleCorrection"], dtype=np.float64)
-            if groups_h1 is not None and "rlnGroupScaleCorrection" in groups_h1.columns
-            else np.array([1.0])
-        )
-        scale_h2 = (
-            np.asarray(groups_h2["rlnGroupScaleCorrection"], dtype=np.float64)
-            if groups_h2 is not None and "rlnGroupScaleCorrection" in groups_h2.columns
-            else np.array([1.0])
-        )
-        group_no = (
-            np.asarray(parts["rlnGroupNumber"], dtype=int)
-            if "rlnGroupNumber" in parts.columns
-            else np.ones(len(parts), dtype=int)
-        )
-        pp_scale_h1 = scale_h1[np.clip(group_no - 1, 0, len(scale_h1) - 1)]
-        pp_scale_h2 = scale_h2[np.clip(group_no - 1, 0, len(scale_h2) - 1)]
-        combined_h1 = (avg_norm_h1 / nc) * pp_scale_h1
-        combined_h2 = (avg_norm_h2 / nc) * pp_scale_h2
-
-        # Map RELION particle order to recovar's half1/half2 ordering.
-        # half1_idx / half2_idx are row positions in RECOVAR's input STAR,
-        # Match the complete ``(index, stack path)`` identity. Numeric stack
-        # indices can repeat across multi-stack real-data STAR files.
-        if particle_names is None:
-            particle_identities = None
-        else:
-            particle_identities = [
-                relion_metadata.relion_image_identity(name, label="RECOVAR input STAR")
-                for name in particle_names
-            ]
-            if len(set(particle_identities)) != len(particle_identities):
-                raise ValueError("RECOVAR input contains duplicate rlnImageName/stack identities")
-
-        def _to_half(values, half_idx):
-            rows = np.asarray(half_idx, dtype=np.int64)
-            if particle_identities is None:
-                return np.asarray(values, dtype=np.float32)[rows]
-            identities = [particle_identities[int(row)] for row in rows]
-            missing = sorted({identity for identity in identities if identity not in replay_identity_rows})
-            if missing:
-                preview = ", ".join(f"{index}@{stack}" for index, stack in missing[:8])
-                raise ValueError(
-                    f"RELION replay STAR is missing {len(missing)} RECOVAR particle identities "
-                    f"(preview: {preview})"
-                )
-            return np.asarray(
-                [values[replay_identity_rows[identity]] for identity in identities],
-                dtype=np.float32,
-            )
-
-        corr_h1 = _to_half(combined_h1, half1_idx)
-        corr_h2 = _to_half(combined_h2, half2_idx)
-        scale_corr_h1 = _to_half(pp_scale_h1, half1_idx)
-        scale_corr_h2 = _to_half(pp_scale_h2, half2_idx)
-
-        trans_h1 = None
-        trans_h2 = None
-        if "rlnOriginXAngst" in parts.columns and "rlnOriginYAngst" in parts.columns:
-            offsets = np.stack(
-                [
-                    np.asarray(parts["rlnOriginXAngst"], dtype=np.float64) / float(ds_voxel),
-                    np.asarray(parts["rlnOriginYAngst"], dtype=np.float64) / float(ds_voxel),
-                ],
-                axis=1,
-            )
-            trans_h1 = _to_half(offsets, half1_idx)
-            trans_h2 = _to_half(offsets, half2_idx)
-        elif "rlnOriginX" in parts.columns and "rlnOriginY" in parts.columns:
-            offsets = np.stack(
-                [
-                    np.asarray(parts["rlnOriginX"], dtype=np.float64),
-                    np.asarray(parts["rlnOriginY"], dtype=np.float64),
-                ],
-                axis=1,
-            )
-            trans_h1 = _to_half(offsets, half1_idx)
-            trans_h2 = _to_half(offsets, half2_idx)
-
-        angle_cols = ("rlnAngleRot", "rlnAngleTilt", "rlnAnglePsi")
-        rot_h1 = None
-        rot_h2 = None
-        euler_h1 = None
-        euler_h2 = None
-        if all(col in parts.columns for col in angle_cols):
-            eulers = np.stack([np.asarray(parts[col], dtype=np.float64) for col in angle_cols], axis=1)
-            rotations = utils.R_from_relion(eulers, degrees=True).astype(np.float32)
-            rot_h1 = _to_half(rotations, half1_idx)
-            rot_h2 = _to_half(rotations, half2_idx)
-            euler_h1 = _to_half(eulers, half1_idx)
-            euler_h2 = _to_half(eulers, half2_idx)
-
-        override_k = {
-            "translation_sigma_angstrom": sigma_offset_avg,
-            "translation_sigma_angstrom_per_half": sigma_offset_per_half,
-            "previous_best_translations": [trans_h1, trans_h2],
-            "previous_best_rotations": [rot_h1, rot_h2],
-            "previous_best_rotation_eulers": [euler_h1, euler_h2],
-        }
-        if noise_h1 is not None and noise_h2 is not None:
-            override_k["noise_variance"] = relion_mpi_process_start_scoring_noise_pair(
-                noise_h1,
-                noise_h2,
-                # RELION performs this broadcast once in MPI initialise().
-                # Later uninterrupted iterations update each follower's noise
-                # independently, so only replay slot 0 is process-start state.
-                split_random_halves=(
-                    bool(process_start_noise_broadcast)
-                    and recovar_iter == 0
-                    and model_paths[0] != model_paths[1]
-                ),
-            )
-        if direction_prior_h1 is not None and direction_prior_h2 is not None:
-            override_k["direction_prior"] = [direction_prior_h1, direction_prior_h2]
-        if class_tau2 is not None and class_tau2.shape[0] > 1:
-            override_k["class_tau2"] = class_tau2
-        elif class_tau2 is not None and include_k1_mean_variance:
-            override_k["mean_variance"] = np.asarray(
-                utils.make_radial_image(
-                    class_tau2[0],
-                    (int(ds_grid), int(ds_grid), int(ds_grid)),
-                    extend_last_frequency=True,
-                ),
-                dtype=np.float64,
-            ).reshape(-1)
-        if include_normcorr:
-            override_k["image_corrections"] = [corr_h1, corr_h2]
-            override_k["serialized_scale_corrections"] = [scale_corr_h1, scale_corr_h2]
-            if include_k1_scoring_scale:
-                if model_paths[0] == model_paths[1]:
-                    raise ValueError(
-                        "exact K=1 scoring-scale replay requires distinct half-specific "
-                        f"model STARs; got shared source {model_paths[0]}"
-                    )
-                override_k["scoring_scale_corrections"] = [scale_corr_h1, scale_corr_h2]
-        overrides[recovar_iter] = override_k
-        if include_normcorr:
-            logger.info(
-                "Replay override recovar iter %d: image_corr means=(%s, %s), serialized_scale_corr means=(%s, %s), "
-                "sigma_offset=(half1 %.4f Å, half2 %.4f Å, mean %.4f Å)",
-                recovar_iter + 1,
-                _format_replay_mean_for_log(corr_h1),
-                _format_replay_mean_for_log(corr_h2),
-                _format_replay_mean_for_log(scale_corr_h1),
-                _format_replay_mean_for_log(scale_corr_h2),
-                sigma_offset_per_half[0],
-                sigma_offset_per_half[1],
-                sigma_offset_avg,
-            )
-        else:
-            logger.info(
-                "Replay override recovar iter %d: sigma_offset=(half1 %.4f Å, half2 %.4f Å, mean %.4f Å) "
-                "(normcorr replay disabled)",
-                recovar_iter + 1,
-                sigma_offset_per_half[0],
-                sigma_offset_per_half[1],
-                sigma_offset_avg,
-            )
-
-    return overrides
-
-
-
-def _format_replay_mean_for_log(values) -> str:
-    arr = np.asarray(values)
-    if arr.size == 0:
-        return "empty"
-    return f"{float(arr.mean()):.4f}"
-
-
-def _load_final_replay_reference_maps(relion_dir, source_iteration, volume_shape):
-    """Load the exact K=1 half references consumed by RELION finalization."""
-    from recovar.core import fourier_transform_utils
-    from recovar.utils.helpers import load_relion_volume
-
-    relion_dir = Path(relion_dir)
-    references = []
-    for half_number in (1, 2):
-        map_path = relion_dir / (
-            f"run_it{int(source_iteration):03d}_half{half_number}_class001.mrc"
-        )
-        if not map_path.is_file():
-            raise ValueError(
-                "diagnostic final-only reference substitution is missing "
-                f"{map_path}"
-            )
-        reference_real = np.asarray(load_relion_volume(str(map_path)), dtype=np.float32)
-        if tuple(reference_real.shape) != tuple(volume_shape):
-            raise ValueError(
-                f"diagnostic final-only reference {map_path} has shape "
-                f"{reference_real.shape}, expected {tuple(volume_shape)}"
-            )
-        references.append(
-            jnp.asarray(fourier_transform_utils.get_dft3(reference_real).reshape(-1))
-        )
-        logger.info(
-            "Diagnostic final-only reference half %d <- %s",
-            half_number,
-            map_path,
-        )
-    return references
-
-
-def _resolve_final_replay_source_iteration(
-    *, configured_max_iter, explicit_source_iteration, complete_iterations
-):
-    """Bind a finite RELION oracle to one exact last-numbered boundary."""
-    complete = sorted({int(value) for value in complete_iterations})
-    if not complete:
-        raise ValueError("final replay oracle has no complete numbered RELION states")
-    source_iteration = (
-        max(complete)
-        if explicit_source_iteration is None
-        else int(explicit_source_iteration)
-    )
-    if source_iteration not in complete:
-        raise ValueError(
-            f"requested final replay source iteration {source_iteration} is not a complete oracle state; "
-            f"available={complete}"
-        )
-    if source_iteration > int(configured_max_iter):
-        raise ValueError(
-            f"final replay source iteration {source_iteration} exceeds configured max_iter={configured_max_iter}"
-        )
-    missing_prefix = sorted(set(range(0, source_iteration + 1)) - set(complete))
-    if missing_prefix:
-        raise ValueError(
-            f"final replay oracle is not contiguous through iteration {source_iteration}; missing={missing_prefix}"
-        )
-    return source_iteration
-
-
-def _complete_relion_numbered_state_iterations(relion_dir):
-    """Return iterations with data, sampling, and half/shared model state."""
-    relion_dir = Path(relion_dir).resolve()
-    complete = []
-    for data_path in relion_dir.glob("run_it[0-9][0-9][0-9]_data.star"):
-        match = re.fullmatch(r"run_it([0-9]{3})_data\.star", data_path.name)
-        if match is None:
-            continue
-        iteration = int(match.group(1))
-        sampling = relion_dir / f"run_it{iteration:03d}_sampling.star"
-        half_models = (
-            relion_dir / f"run_it{iteration:03d}_half1_model.star",
-            relion_dir / f"run_it{iteration:03d}_half2_model.star",
-        )
-        shared_model = relion_dir / f"run_it{iteration:03d}_model.star"
-        if sampling.is_file() and (all(path.is_file() for path in half_models) or shared_model.is_file()):
-            complete.append(iteration)
-    return sorted(complete)

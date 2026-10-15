@@ -13,7 +13,7 @@ from helpers.float_compare import assert_matches
 
 from relax.commands import refinement_arguments
 from relax.commands import refinement_run as run_full_refinement
-from relax.parity import relion_replay
+from relax.parity import replay_inputs
 
 pytestmark = pytest.mark.unit
 
@@ -51,7 +51,7 @@ def _slot0_noise(tmp_path, *, semantics, init_relion_iteration):
         init_relion_iteration,
         tmp_path,
     )
-    overrides = relion_replay._build_replay_iteration_overrides(
+    overrides = replay_inputs._build_replay_iteration_overrides(
         tmp_path,
         half1_idx=np.asarray([0], dtype=np.int64),
         half2_idx=np.asarray([1], dtype=np.int64),
@@ -118,7 +118,6 @@ def test_cli_passes_selected_noise_semantics_to_replay_overrides(monkeypatch, tm
     from helpers.tiny_main import controller_inputs, write_tiny_data_dir
     from helpers.tiny_refinement import write_replay_dir
 
-    from relax.parity import relion_replay
 
     broadcasts = []
 
@@ -126,7 +125,7 @@ def test_cli_passes_selected_noise_semantics_to_replay_overrides(monkeypatch, tm
         broadcasts.append(kwargs["process_start_noise_broadcast"])
         return [None] * (int(max_iter) + 1)
 
-    monkeypatch.setattr(relion_replay, "_build_replay_iteration_overrides", build)
+    monkeypatch.setattr(replay_inputs, "_build_replay_iteration_overrides", build)
     data = write_tiny_data_dir(tmp_path / "data", extra_columns={"rlnRandomSubset": np.arange(12) % 2 + 1})
     init_iteration = 0 if semantics == "continuation" else 1
     replay_dir = write_replay_dir(tmp_path / "relion", max_iter=3)

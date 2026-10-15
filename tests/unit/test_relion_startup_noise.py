@@ -10,6 +10,7 @@ from helpers.float_compare import assert_matches
 
 from relax.commands import refinement_arguments
 from relax.commands import refinement_run as driver
+from relax.parity import replay_inputs
 from relax.refinement import startup_noise
 from relax.steps.half_inputs import HalfPair
 
@@ -158,7 +159,7 @@ def test_cli_selects_noise_source_before_image_estimation(source, monkeypatch, t
     from helpers.tiny_main import controller_inputs, run_tiny_main, write_tiny_data_dir
     from helpers.tiny_refinement import CallTrace, write_replay_dir
 
-    from relax.parity import initial_model_replay, relion_replay
+    from relax.parity import initial_model_replay
 
     # The consistency option is refused with RELION-seeded or replayed state: only a fresh start sets it.
     pair_counting = "once" if source == "fresh" else "relion"
@@ -170,7 +171,7 @@ def test_cli_selects_noise_source_before_image_estimation(source, monkeypatch, t
     if source in {"replay", "model"}:
         data = write_tiny_data_dir(tmp_path / "data", extra_columns={"rlnRandomSubset": np.arange(12) % 2 + 1})
         arguments += ["--relion_half_sets", "<DATA>/particles.star"]
-        monkeypatch.setattr(relion_replay, "_build_replay_iteration_overrides",
+        monkeypatch.setattr(replay_inputs, "_build_replay_iteration_overrides",
                             lambda *args, **kwargs: [None] * (int(args[3]) + 1))
     if source == "replay":
         arguments += ["--perturb_replay_relion_dir", write_replay_dir(tmp_path / "relion", max_iter=2)]

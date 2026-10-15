@@ -71,7 +71,7 @@ def mode_lines(loop: ast.While) -> tuple[set[int], set[int]]:
             names = {target.id for target in node.targets if isinstance(target, ast.Name)}
             if names & CLASS_NAMES:
                 cl |= _lines(node)
-            is_probe = isinstance(node.value, ast.Call) and ast.unparse(node.value.func) == "_apply_state_swap_probe"
+            is_probe = isinstance(node.value, ast.Call) and ast.unparse(node.value.func) == "apply_state_swap_probe"
             if names & K1_NAMES or is_probe:
                 k1 |= _lines(node)
     body = set(range(loop.lineno + 1, loop.end_lineno + 1))

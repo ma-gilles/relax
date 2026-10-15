@@ -13,7 +13,7 @@ from typing import NamedTuple
 import jax.numpy as jnp
 import numpy as np
 
-from relax.parity.state_swap_probe import _STATE_SWAP_VARIANT_COMPONENTS
+from relax.parity.state_swap_probe import STATE_SWAP_VARIANT_COMPONENTS
 from relax.refinement.noise_updates import NoiseModel
 from relax.refinement.reference_state import ReferenceModel
 from relax.sampling.orientation_priors import DirectionPrior
@@ -85,7 +85,7 @@ def _copy_optional_float_pair(values):
     return [float(values[0]), float(values[1])]
 
 
-def _copy_half_pair(values):
+def copy_half_pair(values):
     return [_copy_optional_array(value) for value in values]
 
 
@@ -102,7 +102,7 @@ def _restore_state_fields(state, state_fields, fields):
             setattr(state, field_name, state_fields[field_name])
 
 
-def _snapshot_state_swap_inputs(
+def snapshot_state_swap_inputs(
     *,
     state,
     cs,
@@ -120,15 +120,15 @@ def _snapshot_state_swap_inputs(
         "cs": int(cs),
         "means": [_copy_optional_array(mean) for mean in reference_model.maps],
         "mean_variance": _copy_optional_array(reference_model.tau2),
-        "noise_variance_per_half": _copy_half_pair(noise_model.variance_per_half),
+        "noise_variance_per_half": copy_half_pair(noise_model.variance_per_half),
         "noise_variance": _copy_optional_array(noise_model.average_variance),
-        "previous_noise_radial_per_half": _copy_half_pair(noise_model.radial_per_half),
+        "previous_noise_radial_per_half": copy_half_pair(noise_model.radial_per_half),
         "previous_noise_radial": _copy_optional_array(noise_model.average_radial),
-        "image_corrections": _copy_half_pair([particle_half.image_corrections for particle_half in relion_half_inputs]),
-        "scale_corrections": _copy_half_pair([particle_half.scale_corrections for particle_half in relion_half_inputs]),
-        "previous_best_translations": _copy_half_pair([particle_half.translations for particle_half in relion_half_inputs]),
-        "previous_best_rotation_eulers": _copy_half_pair([particle_half.rotation_eulers for particle_half in relion_half_inputs]),
-        "previous_best_rotations": _copy_half_pair(previous_best_rotations),
+        "image_corrections": copy_half_pair([particle_half.image_corrections for particle_half in relion_half_inputs]),
+        "scale_corrections": copy_half_pair([particle_half.scale_corrections for particle_half in relion_half_inputs]),
+        "previous_best_translations": copy_half_pair([particle_half.translations for particle_half in relion_half_inputs]),
+        "previous_best_rotation_eulers": copy_half_pair([particle_half.rotation_eulers for particle_half in relion_half_inputs]),
+        "previous_best_rotations": copy_half_pair(previous_best_rotations),
         "current_sigma_offset_angstrom": float(current_sigma_offset_angstrom),
         "current_sigma_offset_angstrom_per_half": _copy_optional_float_pair(current_sigma_offset_angstrom_per_half),
         "direction_prior_per_half": priors,
@@ -255,7 +255,7 @@ def _scale_state_swap_reference_maps(
     return scaled_means, summaries
 
 
-def _apply_state_swap_probe(
+def apply_state_swap_probe(
     *,
     probe,
     iteration,
@@ -289,11 +289,11 @@ def _apply_state_swap_probe(
         return unchanged
 
     variant = str(probe.get("variant", "all_relion"))
-    components = _STATE_SWAP_VARIANT_COMPONENTS.get(variant)
+    components = STATE_SWAP_VARIANT_COMPONENTS.get(variant)
     if components is None:
         raise ValueError(
             f"Unknown state_swap_probe variant {variant!r}; expected one of "
-            f"{sorted(['all_relion', *_STATE_SWAP_VARIANT_COMPONENTS])}",
+            f"{sorted(['all_relion', *STATE_SWAP_VARIANT_COMPONENTS])}",
         )
     logger.warning(
         "STATE-SWAP diagnostic: iteration=%d variant=%s restoring RECOVAR components=%s after RELION replay",
@@ -372,25 +372,25 @@ def _apply_state_swap_probe(
     if "tau2_noise" in components or "previous_noise_radial" in components:
         noise_model = replace(
             noise_model,
-            radial_per_half=_copy_half_pair(recovar_snapshot["previous_noise_radial_per_half"]),
+            radial_per_half=copy_half_pair(recovar_snapshot["previous_noise_radial_per_half"]),
             average_radial=_copy_optional_array(recovar_snapshot["previous_noise_radial"]),
         )
     if "image_scale" in components or "image_correction" in components:
-        for particle_half, value_for_half in zip(relion_half_inputs, _copy_half_pair(recovar_snapshot["image_corrections"]), strict=True):
+        for particle_half, value_for_half in zip(relion_half_inputs, copy_half_pair(recovar_snapshot["image_corrections"]), strict=True):
             particle_half.image_corrections = value_for_half
     if "image_scale" in components or "scale_correction" in components:
-        for particle_half, value_for_half in zip(relion_half_inputs, _copy_half_pair(recovar_snapshot["scale_corrections"]), strict=True):
+        for particle_half, value_for_half in zip(relion_half_inputs, copy_half_pair(recovar_snapshot["scale_corrections"]), strict=True):
             particle_half.scale_corrections = value_for_half
     if "poses" in components:
-        for particle_half, value_for_half in zip(relion_half_inputs, _copy_half_pair(
+        for particle_half, value_for_half in zip(relion_half_inputs, copy_half_pair(
             recovar_snapshot["previous_best_translations"],
         ), strict=True):
             particle_half.translations = value_for_half
-        for particle_half, value_for_half in zip(relion_half_inputs, _copy_half_pair(
+        for particle_half, value_for_half in zip(relion_half_inputs, copy_half_pair(
             recovar_snapshot["previous_best_rotation_eulers"],
         ), strict=True):
             particle_half.rotation_eulers = value_for_half
-        previous_best_rotations = _copy_half_pair(recovar_snapshot["previous_best_rotations"])
+        previous_best_rotations = copy_half_pair(recovar_snapshot["previous_best_rotations"])
     if "direction_prior" in components:
         direction_priors = [
             DirectionPrior(

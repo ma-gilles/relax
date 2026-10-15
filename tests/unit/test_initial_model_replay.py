@@ -7,6 +7,7 @@ import pytest
 from helpers.float_compare import assert_matches
 
 from relax.parity import initial_model_replay as replay
+from relax.parity import replay_inputs
 from relax.steps.half_inputs import HalfPair
 
 
@@ -158,7 +159,6 @@ def _relion_init_run(monkeypatch, tmp_path, n_classes, trace=None, **stand_ins):
     reads are stood in for (a model with a 256-pixel noise image and a 4096-voxel prior)."""
     from helpers.tiny_main import controller_inputs, write_tiny_data_dir
 
-    from relax.parity import relion_replay
 
     data = write_tiny_data_dir(tmp_path / "data", n_classes=n_classes,
                                extra_columns={"rlnRandomSubset": np.arange(12) % 2 + 1})
@@ -169,7 +169,7 @@ def _relion_init_run(monkeypatch, tmp_path, n_classes, trace=None, **stand_ins):
         first = {"previous_best_translations": [np.zeros((len(half1_rows), 2)), np.zeros((len(half2_rows), 2))]}
         return [first] + [None] * int(max_iter)
 
-    monkeypatch.setattr(relion_replay, "_build_replay_iteration_overrides", overrides)
+    monkeypatch.setattr(replay_inputs, "_build_replay_iteration_overrides", overrides)
     defaults = dict(
         read_initial_model=lambda directory, *, n_classes: "model",
         prepare_noise=lambda model, **kwargs: replay.NoiseReplay(HalfPair.shared(np.full(256, 2.0, np.float32)), [np.ones(9)], 16**4),

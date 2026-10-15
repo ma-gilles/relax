@@ -48,7 +48,7 @@ def test_state_swap_values_keep_the_controller_order():
 def test_unchanged_paths_return_the_input_objects():
     kw = _inputs()
     for probe, snapshot in ((None, {"x": 1}), ({"iteration": 6}, None), ({"iteration": 7, "variant": "recovar_sigma_offset"}, {"x": 1})):
-        out = state_swap_runtime._apply_state_swap_probe(probe=probe, iteration=6, recovar_snapshot=snapshot, **kw)
+        out = state_swap_runtime.apply_state_swap_probe(probe=probe, iteration=6, recovar_snapshot=snapshot, **kw)
         assert isinstance(out, state_swap_runtime._StateSwapValues)
         assert out.cs is kw["cs"] and out.reference_model is kw["reference_model"]
         assert out.current_sigma_offset_angstrom_per_half is kw["current_sigma_offset_angstrom_per_half"]
@@ -61,11 +61,11 @@ def test_missing_prior_keeps_its_saved_order_through_snapshot_and_restore():
     inputs["direction_priors"][0] = DirectionPrior(None, 3)
     snapshot_inputs = dict(inputs)
     snapshot_inputs.pop("volume_shape")
-    snapshot = state_swap_runtime._snapshot_state_swap_inputs(**snapshot_inputs)
+    snapshot = state_swap_runtime.snapshot_state_swap_inputs(**snapshot_inputs)
     assert snapshot["direction_prior_per_half"][0] is None
     assert snapshot["direction_prior_order_per_half"][0] == 3
 
-    restored = state_swap_runtime._apply_state_swap_probe(
+    restored = state_swap_runtime.apply_state_swap_probe(
         probe={"iteration": 6, "variant": "recovar_direction_prior"},
         iteration=6, recovar_snapshot=snapshot, **inputs,
     )
@@ -78,11 +78,11 @@ def test_noise_probe_can_restore_one_representation_without_recomputing_the_othe
     inputs = _inputs()
     snapshot_inputs = dict(inputs)
     snapshot_inputs.pop("volume_shape")
-    snapshot = state_swap_runtime._snapshot_state_swap_inputs(**snapshot_inputs)
+    snapshot = state_swap_runtime.snapshot_state_swap_inputs(**snapshot_inputs)
     original = inputs["noise_model"]
     snapshot["noise_variance"][:] = 111.0
     snapshot["previous_noise_radial"][:] = 222.0
-    restored = state_swap_runtime._apply_state_swap_probe(
+    restored = state_swap_runtime.apply_state_swap_probe(
         probe={"iteration": 6, "variant": variant}, iteration=6, recovar_snapshot=snapshot, **inputs,
     ).noise_model
     if variant == "recovar_noise_variance_only":

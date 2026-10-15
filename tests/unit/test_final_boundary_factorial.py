@@ -3,12 +3,10 @@ import inspect
 
 import pytest
 
-from relax.parity.relion_replay import (
-    _complete_relion_numbered_state_iterations,
-    _resolve_final_replay_source_iteration,
-)
 from relax.parity.relion_replay_source import RelionReplay
 from relax.parity.replay_inputs import (
+    _complete_relion_numbered_state_iterations,
+    _resolve_final_replay_source_iteration,
     select_final_replay_fields,
 )
 from relax.refinement.iteration_loop import refine_single_volume

@@ -156,7 +156,7 @@ def test_replay_uses_its_sampling_iteration_without_advancing_native_rng(prepara
         resolutions.append(kwargs)
         return kwargs["star_value"], "star"
 
-    monkeypatch.setattr(relion_replay_source, "_resolve_replay_random_perturbation", resolve)
+    monkeypatch.setattr(relion_replay_source, "resolve_replay_random_perturbation", resolve)
     result = trial_grids.prepare_final_sampling(**inputs)
     assert [name for name, _ in events] == ["perturb"]
     assert resolutions[0]["relion_iteration"] == replay_iteration

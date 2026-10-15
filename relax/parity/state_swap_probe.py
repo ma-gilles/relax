@@ -2,7 +2,7 @@
 
 from collections.abc import Mapping, Sequence
 
-_STATE_SWAP_VARIANT_COMPONENTS = {
+STATE_SWAP_VARIANT_COMPONENTS = {
     "all_relion": set(),
     "all_recovar": {
         "state",
@@ -74,7 +74,7 @@ REQUIRED_STATE_SWAP_REPLAY_KEYS = frozenset(
 
 def state_swap_variant_choices() -> tuple[str, ...]:
     """Return the supported resident-state diagnostic variants."""
-    return tuple(sorted(_STATE_SWAP_VARIANT_COMPONENTS))
+    return tuple(sorted(STATE_SWAP_VARIANT_COMPONENTS))
 
 
 def add_state_swap_probe_arguments(parser) -> None:

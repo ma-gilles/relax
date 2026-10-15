@@ -18,7 +18,7 @@ from helpers.float_compare import matches
 import relax.refinement.finalization as finalization
 import relax.refinement.iteration_loop as iteration_loop
 from relax.parity import relion_replay_source
-from relax.parity.relion_replay import _sealed_sampling_base_grids
+from relax.parity.relion_replay import sealed_sampling_base_grids
 from relax.refinement import trial_grids
 from relax.sampling import grids as grids_module
 from relax.sampling.grids import translation_grid_for_class_count
@@ -100,7 +100,7 @@ def test_base_translation_grid_falls_back_to_pixel_units_without_a_voxel_size():
 def test_sealed_state_supplies_the_initial_grid(caplog, symmetry):
     caplog.set_level(logging.INFO, logger="test_initial_coarse_grid_owner")
     grids = _initial_grids(sealed_sampling_state=SEALED, symmetry=symmetry)
-    rotations, eulers, translations = _sealed_sampling_base_grids(SEALED, voxel_size_angstrom=2.0, dtype=np.float32)
+    rotations, eulers, translations = sealed_sampling_base_grids(SEALED, voxel_size_angstrom=2.0, dtype=np.float32)
     assert _same(grids.rotation_grid.rotations, rotations) and _same(grids.rotation_grid.rotation_eulers, eulers)
     assert isinstance(grids.translations, jnp.ndarray) and _same(grids.translations, translations)
     assert grids.base_translations.dtype == np.float64
@@ -158,7 +158,7 @@ def test_controller_materializes_explicit_coarse_grid_variants():
         "dtype",
         "log",
     )
-    for name in ("InitialGridSampling", "_sealed_sampling_base_grids", "translation_grid_for_class_count"):
+    for name in ("InitialGridSampling", "sealed_sampling_base_grids", "translation_grid_for_class_count"):
         assert not hasattr(iteration_loop, name)
 
 

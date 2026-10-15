@@ -9,6 +9,7 @@ from helpers.float_compare import assert_matches
 
 import relax.parity.relion_replay as relion_replay_module
 import relax.sampling.orientation_priors as orientation_priors_module
+from relax.parity import relion_replay_source
 from relax.reconstruction.resolution import ImageGeometry
 from relax.refinement.noise_updates import NoiseModel
 from relax.refinement.refinement_options import RefinementSchedule
@@ -60,7 +61,7 @@ def _sealed_sampling_fixture():
 def test_sealed_sampling_directly_materializes_restricted_eulers_and_translations():
     sampling = _sealed_sampling_fixture()
 
-    _, eulers, translations = relion_replay_module._sealed_sampling_base_grids(
+    _, eulers, translations = relion_replay_module.sealed_sampling_base_grids(
         sampling,
         voxel_size_angstrom=2.0,
     )
@@ -287,7 +288,7 @@ def test_final_numbered_sampling_does_not_bypass_required_final_state(tmp_path, 
 def test_final_replay_selection_preserves_explicit_state_and_history_identity(
     requested, diagnostic, history, expected_index, expected
 ):
-    index, selected = relion_replay_module._select_final_replay_override(
+    index, selected = relion_replay_source._select_final_replay_override(
         requested_index=requested,
         diagnostic_override=diagnostic,
         replay_overrides=history,
@@ -305,7 +306,7 @@ def test_final_replay_selection_preserves_explicit_state_and_history_identity(
 @pytest.mark.parametrize("history", [[None], [{"x": 1}, None]])
 def test_final_replay_missing_recorded_slot_fails_with_requested_index(history):
     with pytest.raises(RuntimeError, match="previous-state override at index 5"):
-        relion_replay_module._select_final_replay_override(
+        relion_replay_source._select_final_replay_override(
             requested_index=5,
             diagnostic_override=None,
             replay_overrides=history,
@@ -318,7 +319,7 @@ def test_final_replay_missing_recorded_slot_fails_with_requested_index(history):
 def test_final_reference_substitution_preserves_each_half_dtype(dtype):
     means = [jnp.zeros(4, dtype=dtype), jnp.zeros(4, dtype=np.float64)]
     refs = [np.arange(4, dtype=np.float64) + 0.125, np.arange(4, dtype=np.float32)]
-    result = relion_replay_module._prepare_final_replay_references(
+    result = relion_replay_source._prepare_final_replay_references(
         replay=SimpleNamespace(final_replay_reference_maps=refs, final_replay_source_iteration=2),
         diagnostic_override=None,
         numbered_iteration_count=2,
@@ -335,7 +336,7 @@ def test_final_reference_substitution_preserves_each_half_dtype(dtype):
 def test_absent_final_reference_substitution_preserves_list_identity():
     means = [jnp.zeros(4), jnp.ones(4)]
     assert (
-        relion_replay_module._prepare_final_replay_references(
+        relion_replay_source._prepare_final_replay_references(
             replay=SimpleNamespace(final_replay_reference_maps=None, final_replay_source_iteration=99),
             diagnostic_override=None,
             numbered_iteration_count=2,
@@ -359,7 +360,7 @@ def test_absent_final_reference_substitution_preserves_list_identity():
 def test_k1_final_reference_substitution_rejects_invalid_boundary_and_maps(refs, source, diagnostic, error, match):
     means = [jnp.zeros(4), jnp.zeros(4)]
     with pytest.raises(error, match=match):
-        relion_replay_module._prepare_k1_final_replay_references(
+        relion_replay_source._prepare_k1_final_replay_references(
             replay=SimpleNamespace(final_replay_reference_maps=refs, final_replay_source_iteration=source),
             diagnostic_override=diagnostic,
             numbered_iteration_count=2,
@@ -378,7 +379,7 @@ def test_k1_final_reference_substitution_rejects_invalid_boundary_and_maps(refs,
 )
 def test_class_final_boundary_rejects_a_mismatched_source_and_reference_maps(refs, source, diagnostic, error, match):
     with pytest.raises(error, match=match):
-        relion_replay_module._validate_class_final_replay_boundary(
+        relion_replay_source._validate_class_final_replay_boundary(
             replay=SimpleNamespace(final_replay_reference_maps=refs, final_replay_source_iteration=source),
             diagnostic_override=diagnostic,
             numbered_iteration_count=2,

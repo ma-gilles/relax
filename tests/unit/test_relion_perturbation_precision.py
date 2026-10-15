@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from relax.parity.relion_replay import _resolve_replay_random_perturbation
+from relax.parity.relion_replay import resolve_replay_random_perturbation
 from relax.star.metadata import read_relion_optimiser_metadata
 
 
@@ -18,7 +18,7 @@ def test_optimizer_metadata_reads_random_seed(tmp_path):
 
 def test_seed_exact_replay_recovers_unrounded_relion_value(tmp_path):
     _write_optimizer(tmp_path / "run_it002_optimiser.star", 20260712)
-    value, source = _resolve_replay_random_perturbation(
+    value, source = resolve_replay_random_perturbation(
         star_value=0.405200,
         perturbation_factor=0.5,
         relion_iteration=2,
@@ -31,7 +31,7 @@ def test_seed_exact_replay_recovers_unrounded_relion_value(tmp_path):
 
 
 def test_auto_replay_falls_back_to_star_without_seed(tmp_path):
-    value, source = _resolve_replay_random_perturbation(
+    value, source = resolve_replay_random_perturbation(
         star_value=-0.04961,
         perturbation_factor=0.5,
         relion_iteration=1,
@@ -45,7 +45,7 @@ def test_auto_replay_falls_back_to_star_without_seed(tmp_path):
 def test_seed_reconstruction_checks_star_consistency(tmp_path):
     _write_optimizer(tmp_path / "run_it002_optimiser.star", 20260712)
     with pytest.raises(ValueError, match="disagrees with replay STAR"):
-        _resolve_replay_random_perturbation(
+        resolve_replay_random_perturbation(
             star_value=0.4,
             perturbation_factor=0.5,
             relion_iteration=2,
@@ -57,7 +57,7 @@ def test_seed_reconstruction_checks_star_consistency(tmp_path):
 def test_seed_exact_replay_supports_explicit_restart_boundary(tmp_path):
     _write_optimizer(tmp_path / "run_it012_optimiser.star", 1778628798)
 
-    value, source = _resolve_replay_random_perturbation(
+    value, source = resolve_replay_random_perturbation(
         star_value=-0.06873,
         perturbation_factor=0.5,
         relion_iteration=12,

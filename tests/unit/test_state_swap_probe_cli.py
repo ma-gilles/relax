@@ -5,18 +5,19 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
+from relax.parity import replay_inputs
 from relax.parity.state_swap_probe import (
-    _STATE_SWAP_VARIANT_COMPONENTS,
     REQUIRED_STATE_SWAP_REPLAY_KEYS,
+    STATE_SWAP_VARIANT_COMPONENTS,
     build_state_swap_probe,
     state_swap_probe_loop_index,
     state_swap_variant_choices,
     validate_state_swap_probe_application,
 )
 from relax.parity.state_swap_runtime import (
-    _apply_state_swap_probe,
     _scale_state_swap_reference_maps,
-    _snapshot_state_swap_inputs,
+    apply_state_swap_probe,
+    snapshot_state_swap_inputs,
 )
 from relax.refinement.noise_updates import NoiseModel
 from relax.refinement.reference_state import ReferenceModel
@@ -148,7 +149,7 @@ def test_state_swap_cli_rejects_target_outside_emitted_iterations(target):
 
 
 def test_state_swap_cli_choices_match_iteration_loop_variants():
-    assert state_swap_variant_choices() == tuple(sorted(_STATE_SWAP_VARIANT_COMPONENTS))
+    assert state_swap_variant_choices() == tuple(sorted(STATE_SWAP_VARIANT_COMPONENTS))
     args = _parse_state_swap_args(
         "--state-swap-target-relion-iteration",
         "2",
@@ -226,14 +227,13 @@ def test_full_runner_propagates_and_serializes_state_swap_probe(monkeypatch, tmp
     from helpers.tiny_refinement import CallTrace, write_replay_dir
 
     from relax.commands import refinement_run
-    from relax.parity import relion_replay
     from relax.parity.state_swap_probe import REQUIRED_STATE_SWAP_REPLAY_KEYS
 
     def overrides(relion_dir, half1_rows, half2_rows, max_iter, **kwargs):
         complete = dict.fromkeys(REQUIRED_STATE_SWAP_REPLAY_KEYS, object())
         return [complete for _ in range(int(max_iter) + 1)]
 
-    monkeypatch.setattr(relion_replay, "_build_replay_iteration_overrides", overrides)
+    monkeypatch.setattr(replay_inputs, "_build_replay_iteration_overrides", overrides)
     trace = CallTrace(monkeypatch).wrap(refinement_run, "build_state_swap_probe", "probe")
     data = write_tiny_data_dir(tmp_path / "data", extra_columns={"rlnRandomSubset": np.arange(12) % 2 + 1})
     inputs = controller_inputs(
@@ -294,7 +294,7 @@ def test_relion_references_are_applied_before_state_restoration(monkeypatch):
 
     trace = CallTrace(monkeypatch)
     trace.wrap(relion_replay_source, "replay_k1_relion_references", "references")
-    trace.wrap(relion_replay_source, "_apply_state_swap_probe", "swap")
+    trace.wrap(relion_replay_source, "apply_state_swap_probe", "swap")
     _state_swap_run(monkeypatch, trace)
     assert trace.labels() == ["references", "references", "swap", "references"]
 
@@ -308,8 +308,8 @@ def test_state_swap_snapshot_is_bounded_to_target_iteration(monkeypatch):
 
     trace = CallTrace(monkeypatch)
     trace.wrap(RelionReplaySource, "numbered_state", "replay")
-    trace.wrap(relion_replay_source, "_snapshot_state_swap_inputs", "snapshot")
-    trace.wrap(relion_replay_source, "_apply_state_swap_probe", "swap")
+    trace.wrap(relion_replay_source, "snapshot_state_swap_inputs", "snapshot")
+    trace.wrap(relion_replay_source, "apply_state_swap_probe", "swap")
     _state_swap_run(monkeypatch, trace)
     assert trace.labels() == ["replay", "snapshot", "replay", "swap", "replay"]
     snapshot = trace.calls("snapshot")[0].result
@@ -328,7 +328,7 @@ def test_sigma_offset_state_swap_preserves_asymmetric_half_values():
     )
     direction_priors = [DirectionPrior(np.array([0.4]), 3), DirectionPrior(np.array([0.6]), 3)]
     snapshot_tau2 = np.array([5.0])
-    snapshot = _snapshot_state_swap_inputs(
+    snapshot = snapshot_state_swap_inputs(
         state=state,
         cs=52,
         reference_model=ReferenceModel(
@@ -350,7 +350,7 @@ def test_sigma_offset_state_swap_preserves_asymmetric_half_values():
 
     direction_priors = [DirectionPrior(np.array([0.5]), 4), DirectionPrior(np.array([0.5]), 4)]
     current_tau2 = np.array([50.0])
-    restored = _apply_state_swap_probe(
+    restored = apply_state_swap_probe(
         probe={"iteration": 6, "variant": "recovar_sigma_offset"},
         iteration=6,
         recovar_snapshot=snapshot,

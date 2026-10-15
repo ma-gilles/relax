@@ -663,7 +663,7 @@ def estimate_class_priors(
     # before the Wiener solve. The same frame conversion is documented
     # in docs/math/ab_initio_initial_model_algorithm.md.
     kclass_tau2_frame_scale = float(settings.grid_size) ** 4
-    replay_class_tau2, replay_tau2_enabled, kclass_tau2_source = replay_policy._class_tau2_replay(
+    replay_class_tau2, replay_tau2_enabled, kclass_tau2_source = replay_policy.class_tau2_replay(
         iteration=iteration,
         n_classes=n_classes,
         iter_replay_override=iter_replay_override,
@@ -5184,7 +5184,7 @@ if k_class_enabled:
     # before the Wiener solve. The same frame conversion is documented
     # in docs/math/ab_initio_initial_model_algorithm.md.
     kclass_tau2_frame_scale = float(grid_size) ** 4
-    replay_class_tau2, replay_tau2_enabled, kclass_tau2_source = replay_policy._class_tau2_replay(
+    replay_class_tau2, replay_tau2_enabled, kclass_tau2_source = replay_policy.class_tau2_replay(
         iteration=iteration,
         n_classes=n_classes,
         iter_replay_override=iter_replay_override,
@@ -7127,7 +7127,7 @@ def resolve_numbered_perturbation(
             restart_iteration = _perturbation_restart_state_iteration(
                 parity.perturb_replay_restart_state_iterations, relion_iteration,
             )
-            perturbation, source = _resolve_replay_random_perturbation(
+            perturbation, source = resolve_replay_random_perturbation(
                 star_value=float(replay_metadata["random_perturbation"]),
                 perturbation_factor=float(replay_metadata["perturbation_factor"]),
                 relion_iteration=relion_iteration,
