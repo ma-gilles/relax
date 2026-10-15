@@ -53,7 +53,8 @@ def relion_projector_texture_bytes(model_box: int, padding_factor: int) -> int:
 
     The slab is ``(2 r pf + 3) x (2 r pf + 3) x (r pf + 2)`` complex values with
     ``r = model_box // 2`` (``Projector::data``, the half-storage layout the
-    texture projector uploads), stored as two float32 arrays: 8 bytes a value.
+    texture projector uploads), stored as two float32 values (two float arrays, or the capacity
+    texture's one float2 array): 8 bytes a value.
     """
 
     r = int(model_box) // 2

@@ -607,9 +607,11 @@ def test_direct_rows_are_the_one_image_kernels_rows_in_slot_order(gpu_device, mo
 
 
 @pytest.mark.gpu
-def test_packed_rows_are_the_complex_projections_split(gpu_device):
+@pytest.mark.parametrize("n_rot", [300, 301, 303], ids=["whole_blocks", "one_in_the_last_block", "three_in_the_last_block"])
+def test_packed_rows_are_the_complex_projections_split(gpu_device, n_rot):
     """The persistent texture's packed ``[Re | Im]`` rows are the complex coarse projections (the same texture
-    reads and dense scale, in one kernel), so the GEMM's reference operand does not change."""
+    reads and dense scale, in one kernel), so the GEMM's reference operand does not change, also for a last
+    block holding fewer than the kernel's rotations per block."""
 
     import jax
     from recovar.cuda_backproject import custom_cuda_requested
@@ -617,7 +619,7 @@ def test_packed_rows_are_the_complex_projections_split(gpu_device):
     if not custom_cuda_requested():
         pytest.skip("custom CUDA is disabled")
     with jax.default_device(gpu_device):
-        f = _gemm_fixture(np.random.default_rng(23), n_images=1, n_rot=300)
+        f = _gemm_fixture(np.random.default_rng(23), n_images=1, n_rot=n_rot)
         layout, rotations = f["layout"], jnp.asarray(f["rotations"])
         texture = tomo_coarse._coarse_capacity_texture(
             f["half"], layout, model_max_r=f["max_r"], padding_factor=f["pad"], class_index=0

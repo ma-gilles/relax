@@ -8,18 +8,18 @@
 // chunks, so each chunk paid a full texture staging and a host-device
 // synchronization. This owner stages the texture once, exactly as
 // launch_project_texture_float<true> does, and each projection launches the
-// same project_texture_kernel<true, true> on it without a synchronization.
+// same projection as project_texture_kernel<true, true> on it without a synchronization.
+// The texture holds Re and Im as one float2 texel: one fetch per sample, and the
+// hardware filters each channel with the weights it uses for a single float texture,
+// so the values are those of the float texture pair it replaces.
 // Handles are monotonic and resolved through a guarded registry, as for the
 // persistent host-uploaded texture above.
 
 struct CapacityRelionHalfTextureF32 {
-    cudaArray_t array_real = nullptr;
-    cudaArray_t array_imag = nullptr;
-    cudaTextureObject_t texture_real = 0;
-    cudaTextureObject_t texture_imag = 0;
+    cudaArray_t array = nullptr;            // float2 (Re, Im) texels
+    cudaTextureObject_t texture = 0;
     int32_t* logical_radius = nullptr;  // device scalar the fill kernel read
-    float* staging_real = nullptr;
-    float* staging_imag = nullptr;
+    float2* staging = nullptr;
     bool reusable_staging = false;
     int half_z = 0;
     int half_y = 0;
@@ -85,17 +85,14 @@ struct CapacityRelionHalfTextureF32 {
         /* Launched projections may still be reading the texture. */
         if (err == cudaSuccess) err = cudaDeviceSynchronize();
         cudaError_t cleanup = cudaSuccess;
-        if (texture_real) cleanup = cudaDestroyTextureObject(texture_real);
-        if (texture_imag) { const auto e = cudaDestroyTextureObject(texture_imag); if (cleanup == cudaSuccess) cleanup = e; }
-        if (array_real) { const auto e = cudaFreeArray(array_real); if (cleanup == cudaSuccess) cleanup = e; }
-        if (array_imag) { const auto e = cudaFreeArray(array_imag); if (cleanup == cudaSuccess) cleanup = e; }
+        if (texture) cleanup = cudaDestroyTextureObject(texture);
+        if (array) { const auto e = cudaFreeArray(array); if (cleanup == cudaSuccess) cleanup = e; }
         if (logical_radius) { const auto e = cudaFree(logical_radius); if (cleanup == cudaSuccess) cleanup = e; }
-        if (staging_real) { const auto e = cudaFree(staging_real); if (cleanup == cudaSuccess) cleanup = e; }
-        if (staging_imag) { const auto e = cudaFree(staging_imag); if (cleanup == cudaSuccess) cleanup = e; }
-        texture_real = texture_imag = 0;
-        array_real = array_imag = nullptr;
+        if (staging) { const auto e = cudaFree(staging); if (cleanup == cudaSuccess) cleanup = e; }
+        texture = 0;
+        array = nullptr;
         logical_radius = nullptr;
-        staging_real = staging_imag = nullptr;
+        staging = nullptr;
         if (err == cudaSuccess) err = cleanup;
         if (original_device >= 0 && original_device != device) {
             const cudaError_t restore = cudaSetDevice(original_device);
@@ -113,11 +110,11 @@ static std::unordered_map<uint64_t, std::shared_ptr<CapacityRelionHalfTextureF32
 static std::atomic<uint64_t> capacity_relion_half_texture_f32_next_handle{1};
 
 /* fill_relion_texture_capacity_kernel (recovar_cuda_common.cuh) for the texture
- * z-planes [z_begin, z_begin + n_planes): the same texel values, written into a
- * plane-sized staging buffer and addressed with 64-bit indices. */
+ * z-planes [z_begin, z_begin + n_planes): the same texel values, written as
+ * (Re, Im) pairs into a plane-sized staging buffer and addressed with 64-bit indices. */
 __global__ void __launch_bounds__(BLOCK_SIZE)
 fill_relion_texture_capacity_planes_kernel(
-    const float2* __restrict__ vol, float* real, float* imag,
+    const float2* __restrict__ vol, float2* texels,
     const int32_t* logical_radius, int upsampling,
     int texX, int texY, int texZ, int z_begin, int n_planes)
 {
@@ -136,19 +133,18 @@ fill_relion_texture_capacity_planes_kernel(
             value = vol[(iz * texY + iy) * texX + x];
         }
     }
-    real[idx] = value.x;
-    imag[idx] = value.y;
+    texels[idx] = value;
 }
 
-// Staging buffers are at most this many texels per plane group (two float
-// buffers of 512 MiB), so the transient beside the texture stays inside the
+// The staging buffer is at most this many texels per plane group (one float2
+// buffer of 1 GiB), so the transient beside the texture stays inside the
 // XLA pool reserve's slack (relax/runtime/xla_memory_reserve.py).
 constexpr int64_t kCapacityTextureStagingTexels = int64_t(1) << 27;
 
 /* The staging of launch_project_texture_float<true> (recovar_cuda_common.cuh):
- * the same texel values into the same float texture pair, filled and copied a
- * group of z-planes at a time so the staging transient is bounded rather than
- * a second copy of the slab. */
+ * the same texel values, as one float2 texture rather than its float pair, filled
+ * and copied a group of z-planes at a time so the staging transient is bounded
+ * rather than a second copy of the slab. */
 static cudaError_t stage_capacity_relion_half_texture_f32(
     const float2* projector_half, int logical_radius, CapacityRelionHalfTextureF32* owner)
 {
@@ -157,60 +153,47 @@ static cudaError_t stage_capacity_relion_half_texture_f32(
     const int texZ = owner->half_z;
     const int64_t plane = static_cast<int64_t>(texX) * texY;
     const int group = static_cast<int>(std::max<int64_t>(1, std::min<int64_t>(texZ, kCapacityTextureStagingTexels / plane)));
-    float* real = owner->staging_real;
-    float* imag = owner->staging_imag;
+    float2* staging = owner->staging;
     cudaStream_t stream = nullptr;
     cudaError_t err = cudaStreamCreateWithFlags(&stream, cudaStreamNonBlocking);
     if (err == cudaSuccess && !owner->logical_radius)
         err = cudaMalloc(reinterpret_cast<void**>(&owner->logical_radius), sizeof(int32_t));
     if (err == cudaSuccess)
         err = cudaMemcpy(owner->logical_radius, &logical_radius, sizeof(int32_t), cudaMemcpyHostToDevice);
-    if (err == cudaSuccess && !real) err = cudaMalloc(reinterpret_cast<void**>(&real), plane * group * sizeof(float));
-    if (err == cudaSuccess && !imag) err = cudaMalloc(reinterpret_cast<void**>(&imag), plane * group * sizeof(float));
-    if (owner->reusable_staging) {
-        owner->staging_real = real;
-        owner->staging_imag = imag;
-    }
-    cudaChannelFormatDesc desc = cudaCreateChannelDesc(32, 0, 0, 0, cudaChannelFormatKindFloat);
+    if (err == cudaSuccess && !staging)
+        err = cudaMalloc(reinterpret_cast<void**>(&staging), plane * group * sizeof(float2));
+    if (owner->reusable_staging) owner->staging = staging;
+    cudaChannelFormatDesc desc = cudaCreateChannelDesc(32, 32, 0, 0, cudaChannelFormatKindFloat);
     cudaExtent extent = make_cudaExtent((size_t)texX, (size_t)texY, (size_t)texZ);
-    if (err == cudaSuccess && !owner->array_real) err = cudaMalloc3DArray(&owner->array_real, &desc, extent);
-    if (err == cudaSuccess && !owner->array_imag) err = cudaMalloc3DArray(&owner->array_imag, &desc, extent);
+    if (err == cudaSuccess && !owner->array) err = cudaMalloc3DArray(&owner->array, &desc, extent);
     for (int z_begin = 0; z_begin < texZ && err == cudaSuccess; z_begin += group) {
         const int n_planes = std::min(group, texZ - z_begin);
         const int64_t texels = plane * n_planes;
         fill_relion_texture_capacity_planes_kernel<<<static_cast<unsigned>((texels + BLOCK_SIZE - 1) / BLOCK_SIZE), BLOCK_SIZE, 0, stream>>>(
-            projector_half, real, imag, owner->logical_radius, owner->padding_factor, texX, texY, texZ, z_begin, n_planes);
+            projector_half, staging, owner->logical_radius, owner->padding_factor, texX, texY, texZ, z_begin, n_planes);
         err = cudaGetLastError();
         cudaMemcpy3DParms copy_params = {0};
         copy_params.extent = make_cudaExtent((size_t)texX, (size_t)texY, (size_t)n_planes);
         copy_params.dstPos = make_cudaPos(0, 0, (size_t)z_begin);
         copy_params.kind = cudaMemcpyDeviceToDevice;
-        copy_params.dstArray = owner->array_real;
-        copy_params.srcPtr = make_cudaPitchedPtr(real, (size_t)texX * sizeof(float), (size_t)texX, (size_t)texY);
-        if (err == cudaSuccess) err = cudaMemcpy3DAsync(&copy_params, stream);
-        copy_params.dstArray = owner->array_imag;
-        copy_params.srcPtr = make_cudaPitchedPtr(imag, (size_t)texX * sizeof(float), (size_t)texX, (size_t)texY);
+        copy_params.dstArray = owner->array;
+        copy_params.srcPtr = make_cudaPitchedPtr(staging, (size_t)texX * sizeof(float2), (size_t)texX, (size_t)texY);
         if (err == cudaSuccess) err = cudaMemcpy3DAsync(&copy_params, stream);
     }
-    if (err == cudaSuccess && !owner->texture_real) {
-        cudaResourceDesc resource_real, resource_imag;
+    if (err == cudaSuccess && !owner->texture) {
+        cudaResourceDesc resource;
         cudaTextureDesc texture_desc;
-        memset(&resource_real, 0, sizeof(resource_real));
-        memset(&resource_imag, 0, sizeof(resource_imag));
+        memset(&resource, 0, sizeof(resource));
         memset(&texture_desc, 0, sizeof(texture_desc));
-        resource_real.resType = cudaResourceTypeArray;
-        resource_real.res.array.array = owner->array_real;
-        resource_imag.resType = cudaResourceTypeArray;
-        resource_imag.res.array.array = owner->array_imag;
+        resource.resType = cudaResourceTypeArray;
+        resource.res.array.array = owner->array;
         texture_desc.filterMode = cudaFilterModeLinear;
         texture_desc.readMode = cudaReadModeElementType;
         texture_desc.normalizedCoords = false;
         texture_desc.addressMode[0] = cudaAddressModeClamp;
         texture_desc.addressMode[1] = cudaAddressModeClamp;
         texture_desc.addressMode[2] = cudaAddressModeClamp;
-        err = cudaCreateTextureObject(&owner->texture_real, &resource_real, &texture_desc, nullptr);
-        if (err == cudaSuccess)
-            err = cudaCreateTextureObject(&owner->texture_imag, &resource_imag, &texture_desc, nullptr);
+        err = cudaCreateTextureObject(&owner->texture, &resource, &texture_desc, nullptr);
     }
     /* The texture is complete before create returns; the staging buffers go.
      * Each plane group's buffers are reused only after its copies, which are
@@ -220,10 +203,7 @@ static cudaError_t stage_capacity_relion_half_texture_f32(
         if (err == cudaSuccess) err = sync;
         cudaStreamDestroy(stream);
     }
-    if (!owner->reusable_staging) {
-        if (real) cudaFree(real);
-        if (imag) cudaFree(imag);
-    }
+    if (!owner->reusable_staging && staging) cudaFree(staging);
     return err;
 }
 
@@ -372,6 +352,75 @@ extern "C" int relax_relion_capacity_half_texture_f32_destroy(uint64_t owner_han
     }
 }
 
+/* project_texture_kernel<true, true> (recovar_cuda_common.cuh) on the float2 capacity texture: the same
+ * source order, radius tests and texture coordinates, one float2 fetch per pixel. */
+__global__ void __launch_bounds__(BLOCK_SIZE)
+project_capacity_texture_half_kernel(
+    cudaTextureObject_t texture, float* __restrict__ img, const float* __restrict__ rot,
+    int n_pixels, int image_h, int image_w, int upsampling,
+    const int32_t* logical_radius, int capacity_radius, const int32_t* image_radius)
+{
+    __shared__ float R[6];
+
+    const int img_idx = blockIdx.x;
+    const int pix = blockIdx.y * BLOCK_SIZE + threadIdx.x;
+
+    if (threadIdx.x < 6) R[threadIdx.x] = rot[img_idx * 6 + threadIdx.x];
+    __syncthreads();
+    if (pix >= n_pixels) return;
+
+    const int k0_idx = pix / image_w;
+    const int k1_idx = pix % image_w;
+    // RELION keeps both even-box Nyquist axes positive in its accelerated half-spectrum projector.
+    const float k0_unscaled = (float)(k0_idx == 0 ? image_h / 2 : k0_idx - image_h / 2);
+    const float k1_unscaled = (float)k1_idx;
+
+    float2* img2 = reinterpret_cast<float2*>(img);
+    const int img_off = img_idx * n_pixels + pix;
+    const int radius = *logical_radius;
+    if (radius < 0 || radius > capacity_radius / upsampling) {
+        img2[img_off] = make_float2(nanf(""), nanf(""));
+        return;
+    }
+    const int padded_radius = radius * upsampling;
+    int maxR2_padded = padded_radius * padded_radius;
+    const int tex_yinit = -(padded_radius + 1);
+    const int tex_zinit = -(padded_radius + 1);
+
+    if (image_radius != nullptr) {
+        const int image_r = *image_radius;
+        if (image_r < 0 || image_r > image_h / 2) {
+            img2[img_off] = make_float2(nanf(""), nanf(""));
+            return;
+        }
+        const int padded_image_r = image_r * upsampling;
+        // AccProjectorKernel::makeKernel clips at the smaller image/model radius.
+        maxR2_padded = min(maxR2_padded, padded_image_r * padded_image_r);
+    }
+
+    // RELION's AccProjectorKernel source order (matrix-x * source-x first): reversing the addends changes the
+    // contracted FMA association and can cross a texture interpolation fraction-bin boundary.
+    const float rk0 = (R[3] * k1_unscaled + R[0] * k0_unscaled) * (float)upsampling;
+    const float rk1 = (R[4] * k1_unscaled + R[1] * k0_unscaled) * (float)upsampling;
+    const float rk2 = (R[5] * k1_unscaled + R[2] * k0_unscaled) * (float)upsampling;
+
+    if ((int)(rk0 * rk0 + rk1 * rk1 + rk2 * rk2) > maxR2_padded) {
+        img2[img_off] = make_float2(0.0f, 0.0f);
+        return;
+    }
+
+    float xp = rk0, yp = rk1, zp = rk2, imag_sign = 1.0f;
+    if (xp < 0.0f) {
+        xp = -xp;
+        yp = -yp;
+        zp = -zp;
+        imag_sign = -1.0f;
+    }
+    const float2 value =
+        tex3D<float2>(texture, xp + 0.5f, yp - (float)tex_yinit + 0.5f, zp - (float)tex_zinit + 0.5f);
+    img2[img_off] = make_float2(value.x, imag_sign * value.y);
+}
+
 /* ProjectRelionHalfImageRadius on a persistent capacity texture: the launch of
  * launch_project_texture_float<true> with its max_r2_x4 = -1 geometry. */
 ffi::Error ProjectRelionHalfCapacityTextureImpl(
@@ -407,16 +456,12 @@ ffi::Error ProjectRelionHalfCapacityTextureImpl(
 
     const float max_r2 = (float)((owner->half_z / 2 - 1) * (owner->half_z / 2 - 1));
     const int maxR = (int)floorf(sqrtf(max_r2) + 0.5f);
-    const int texYInit = -(maxR + 1);
-    const int texZInit = -(maxR + 1);
     const int n_pixels = static_cast<int>(o[1]);
     dim3 grid((int)r[0], (n_pixels + BLOCK_SIZE - 1) / BLOCK_SIZE);
     dim3 block(BLOCK_SIZE);
-    project_texture_kernel<true, true><<<grid, block, 0, stream>>>(
-        owner->texture_real, owner->texture_imag,
-        static_cast<float*>(output->untyped_data()), static_cast<const float*>(rot.untyped_data()),
-        n_pixels, (int)image_h, (int)(image_w / 2 + 1), texYInit, texZInit,
-        owner->padding_factor, (int)image_w, maxR * maxR, owner->logical_radius, maxR,
+    project_capacity_texture_half_kernel<<<grid, block, 0, stream>>>(
+        owner->texture, static_cast<float*>(output->untyped_data()), static_cast<const float*>(rot.untyped_data()),
+        n_pixels, (int)image_h, (int)(image_w / 2 + 1), owner->padding_factor, owner->logical_radius, maxR,
         has_image_radius ? static_cast<const int32_t*>(image_radius.untyped_data()) : nullptr);
     const cudaError_t err = cudaGetLastError();
     if (err != cudaSuccess)
@@ -442,50 +487,65 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(
 // the coarse GEMM scorer. Each listed pixel is projected with project_texture_kernel<true, true>'s
 // arithmetic (the image-radius test included); a pixel index of -1 is a zero row entry. This is the
 // projection plus the crop gather and the dense scale of compute_relion_projector_projections_block,
-// without the full crop and the real/imaginary copies.
+// without the full crop and the real/imaginary copies. A block projects its pixels for
+// kCompactPackedRotationsPerBlock consecutive rotations (each sample's arithmetic is unchanged): a
+// coarse pass's rows are short (about a thousand pixels), so one rotation per block spent much of
+// each block on its setup (1.34x on H100 at 924 pixels, etobspeed 2026-10-15).
+constexpr int kCompactPackedRotationsPerBlock = 4;
+
 __global__ void __launch_bounds__(BLOCK_SIZE)
 project_capacity_texture_compact_packed_kernel(
-    cudaTextureObject_t texReal, cudaTextureObject_t texImag,
+    cudaTextureObject_t texture,
     float* __restrict__ out, const float* __restrict__ rot, const int32_t* __restrict__ crop_index,
-    int n_compact, int image_h, int image_w, int tex_yinit, int tex_zinit, int upsampling,
+    int n_rotations, int n_compact, int image_h, int image_w, int tex_yinit, int tex_zinit, int upsampling,
     int maxR2_padded, const int32_t* image_radius, float scale)
 {
-    __shared__ float R[6];
-    const int img_idx = blockIdx.x;
+    __shared__ float R[kCompactPackedRotationsPerBlock][6];
+    const int first = blockIdx.x * kCompactPackedRotationsPerBlock;
+    const int n_block = min(kCompactPackedRotationsPerBlock, n_rotations - first);
     const int j = blockIdx.y * BLOCK_SIZE + threadIdx.x;
-    if (threadIdx.x < 6) R[threadIdx.x] = rot[img_idx * 6 + threadIdx.x];
+    if (threadIdx.x < 6 * n_block) R[threadIdx.x / 6][threadIdx.x % 6] = rot[first * 6 + threadIdx.x];
     __syncthreads();
     if (j >= n_compact) return;
-    float* row = out + static_cast<int64_t>(img_idx) * 2 * n_compact;
     const int pix = crop_index[j];
-    float re = 0.0f, im = 0.0f;
-    bool live = pix >= 0;
-    if (live) {
-        const int radius = *image_radius;
-        if (radius < 0 || radius > image_h / 2) {
+    const bool live = pix >= 0;
+    const int radius = *image_radius;
+    if (live && (radius < 0 || radius > image_h / 2)) {
+        for (int n = 0; n < n_block; ++n) {
+            float* row = out + static_cast<int64_t>(first + n) * 2 * n_compact;
             row[j] = nanf("");
             row[n_compact + j] = nanf("");
-            return;
         }
-        const int padded_radius = radius * upsampling;
-        const int max_r2 = min(maxR2_padded, padded_radius * padded_radius);
-        const int k0_idx = pix / image_w;
-        const int k1_idx = pix % image_w;
-        const float k0_unscaled = (float)(k0_idx == 0 ? image_h / 2 : k0_idx - image_h / 2);
-        const float k1_unscaled = (float)k1_idx;
-        const float rk0 = (R[3] * k1_unscaled + R[0] * k0_unscaled) * (float)upsampling;
-        const float rk1 = (R[4] * k1_unscaled + R[1] * k0_unscaled) * (float)upsampling;
-        const float rk2 = (R[5] * k1_unscaled + R[2] * k0_unscaled) * (float)upsampling;
-        if ((int)(rk0 * rk0 + rk1 * rk1 + rk2 * rk2) <= max_r2) {
-            float xp = rk0, yp = rk1, zp = rk2, imag_sign = 1.0f;
-            if (xp < 0.0f) { xp = -xp; yp = -yp; zp = -zp; imag_sign = -1.0f; }
-            re = tex3D<float>(texReal, xp + 0.5f, yp - (float)tex_yinit + 0.5f, zp - (float)tex_zinit + 0.5f);
-            im = imag_sign * tex3D<float>(texImag, xp + 0.5f, yp - (float)tex_yinit + 0.5f, zp - (float)tex_zinit + 0.5f);
-        }
+        return;
     }
-    // compute_relion_projector_projections_block's complex64 * float32 dense scale, per component.
-    row[j] = __fmul_rn(re, scale);
-    row[n_compact + j] = __fmul_rn(im, scale);
+    const int padded_radius = radius * upsampling;
+    const int max_r2 = min(maxR2_padded, padded_radius * padded_radius);
+    const int k0_idx = live ? pix / image_w : 0;
+    const int k1_idx = live ? pix % image_w : 0;
+    const float k0_unscaled = (float)(k0_idx == 0 ? image_h / 2 : k0_idx - image_h / 2);
+    const float k1_unscaled = (float)k1_idx;
+#pragma unroll
+    for (int n = 0; n < kCompactPackedRotationsPerBlock; ++n) {
+        if (n >= n_block) break;
+        float re = 0.0f, im = 0.0f;
+        if (live) {
+            const float rk0 = (R[n][3] * k1_unscaled + R[n][0] * k0_unscaled) * (float)upsampling;
+            const float rk1 = (R[n][4] * k1_unscaled + R[n][1] * k0_unscaled) * (float)upsampling;
+            const float rk2 = (R[n][5] * k1_unscaled + R[n][2] * k0_unscaled) * (float)upsampling;
+            if ((int)(rk0 * rk0 + rk1 * rk1 + rk2 * rk2) <= max_r2) {
+                float xp = rk0, yp = rk1, zp = rk2, imag_sign = 1.0f;
+                if (xp < 0.0f) { xp = -xp; yp = -yp; zp = -zp; imag_sign = -1.0f; }
+                const float2 value =
+                    tex3D<float2>(texture, xp + 0.5f, yp - (float)tex_yinit + 0.5f, zp - (float)tex_zinit + 0.5f);
+                re = value.x;
+                im = imag_sign * value.y;
+            }
+        }
+        // compute_relion_projector_projections_block's complex64 * float32 dense scale, per component.
+        float* row = out + static_cast<int64_t>(first + n) * 2 * n_compact;
+        row[j] = __fmul_rn(re, scale);
+        row[n_compact + j] = __fmul_rn(im, scale);
+    }
 }
 
 ffi::Error ProjectRelionHalfCapacityTextureCompactPackedImpl(
@@ -522,11 +582,13 @@ ffi::Error ProjectRelionHalfCapacityTextureCompactPackedImpl(
     const float max_r2 = (float)((owner->half_z / 2 - 1) * (owner->half_z / 2 - 1));
     const int maxR = (int)floorf(sqrtf(max_r2) + 0.5f);
     const int n_compact = static_cast<int>(c[0]);
-    dim3 grid((int)r[0], (n_compact + BLOCK_SIZE - 1) / BLOCK_SIZE);
+    const int n_rotations = static_cast<int>(r[0]);
+    dim3 grid((n_rotations + kCompactPackedRotationsPerBlock - 1) / kCompactPackedRotationsPerBlock,
+              (n_compact + BLOCK_SIZE - 1) / BLOCK_SIZE);
     project_capacity_texture_compact_packed_kernel<<<grid, BLOCK_SIZE, 0, stream>>>(
-        owner->texture_real, owner->texture_imag, static_cast<float*>(output->untyped_data()),
+        owner->texture, static_cast<float*>(output->untyped_data()),
         static_cast<const float*>(rot.untyped_data()), static_cast<const int32_t*>(crop_index.untyped_data()),
-        n_compact, (int)image_h, (int)(image_w / 2 + 1), -(maxR + 1), -(maxR + 1), owner->padding_factor,
+        n_rotations, n_compact, (int)image_h, (int)(image_w / 2 + 1), -(maxR + 1), -(maxR + 1), owner->padding_factor,
         maxR * maxR, static_cast<const int32_t*>(image_radius.untyped_data()), scale);
     const cudaError_t err = cudaGetLastError();
     if (err != cudaSuccess) return ffi::Error::Internal(std::string("CUDA: ") + cudaGetErrorString(err));
