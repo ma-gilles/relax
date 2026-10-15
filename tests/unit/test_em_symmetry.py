@@ -10,9 +10,8 @@ import pytest
 from helpers import refinement_specs
 from helpers.float_compare import assert_matches, matches
 from helpers.refinement_specs import local_half_owners
-from helpers.run_options import stand_in
+from helpers.run_options import cli, stand_in
 
-from relax.refinement.refinement_options import ScoringVariants
 from relax.runtime.engine_tuning import EngineTuning
 from relax.runtime.scoring_overrides import ScoringOverrides
 from relax.sampling.symmetry import (
@@ -906,7 +905,7 @@ def _symmetric_dense_owners(dense_half, values):
             disc_type=values.pop("disc_type"),
             relion_x_half_mstep=values.pop("relion_x_half_mstep")
             if "relion_x_half_mstep" in values
-            else ScoringVariants.from_environ().relion_x_half_mstep(k_class=k_class_enabled),
+            else cli.variants().relion_x_half_mstep(k_class=k_class_enabled),
             precision=scoring_policy.DENSE_PRECISION,
         ),
         shape_class_scoring.OpticsSpec.single_shape(),

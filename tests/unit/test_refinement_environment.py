@@ -174,13 +174,11 @@ def test_fsc_packed_stream_threshold_reaches_the_command(monkeypatch, tmp_path):
 
 
 def test_fsc_packed_stream_threshold_reaches_the_fsc(monkeypatch):
-    from dataclasses import replace
+    from helpers.run_options import cli, reconstruction_programs
 
     from relax.reconstruction import regularization
-    from relax.refinement.refinement_options import ScoringVariants
 
-    variants = ScoringVariants.from_environ()
-    variants = replace(variants, reconstruction=replace(variants.reconstruction, fsc_packed_stream_min_elements=7))
+    variants = cli.variants(reconstruction=reconstruction_programs(fsc_packed_stream_min_elements=7))
     seen = _received(monkeypatch, regularization, "compute_relion_fsc_from_backprojector", "packed_stream_min_elements",
                      RefinementEnvironment(), variants=variants)
     assert seen and set(seen) == {7}
@@ -208,14 +206,12 @@ def test_lowres_join_route_reaches_the_command(monkeypatch, tmp_path):
 
 
 def test_lowres_join_route_reaches_the_join(monkeypatch):
-    from dataclasses import replace
+    from helpers.run_options import cli, reconstruction_programs
 
     from relax.reconstruction import regularization
-    from relax.refinement.refinement_options import ScoringVariants
 
     route = regularization.LowResolutionJoinRoute(forced_host=False, host_min_elements=11)
-    variants = ScoringVariants.from_environ()
-    variants = replace(variants, reconstruction=replace(variants.reconstruction, lowres_join=route))
+    variants = cli.variants(reconstruction=reconstruction_programs(lowres_join=route))
     seen = _received(monkeypatch, regularization, "join_halves_at_low_resolution", "route",
                      RefinementEnvironment(), variants=variants, parity={"low_resol_join_halves_angstrom": 40.0})
     assert seen and set(seen) == {route}
@@ -331,6 +327,29 @@ def test_reconstruction_programs_helper_is_the_unset_environment(monkeypatch):
     assert ReconstructionPrograms.from_environ() == reconstruction_programs()
 
 
+@pytest.mark.parametrize(("value", "expected"), [(None, False), ("0", False), ("1", True)])
+def test_approx_acc_rot_for_convergence_is_read_once(monkeypatch, value, expected):
+    from relax.refinement.refinement_options import ScoringVariants
+
+    if value is None:
+        monkeypatch.delenv("RELAX_EM_USE_APPROX_ACC_ROT_FOR_CONVERGENCE", raising=False)
+    else:
+        monkeypatch.setenv("RELAX_EM_USE_APPROX_ACC_ROT_FOR_CONVERGENCE", value)
+    assert ScoringVariants.from_environ().approx_acc_rot_for_convergence is expected
+
+
+def test_scoring_variants_helper_is_the_unset_environment(monkeypatch):
+    """``helpers.run_options.cli.variants()`` is what the command reads with no variable set (K=1's x-half M-step
+    default is the device's, so ``ScoringVariants`` has no all-defaults constructor) and one host FFT thread."""
+    from helpers.run_options import cli
+
+    from relax.refinement.refinement_options import ScoringVariants
+
+    _unset_relax_environment(monkeypatch)
+    monkeypatch.delenv("SLURM_CPUS_PER_TASK", raising=False)
+    assert ScoringVariants.from_environ() == cli.variants()
+
+
 def test_fsc_dump_reaches_the_command(monkeypatch, tmp_path):
     monkeypatch.setenv("RELAX_MSTEP_FSC_DUMP_DIR", str(tmp_path / "fsc"))
     options = controller_inputs(monkeypatch, tmp_path, "refine")["options"]
@@ -338,15 +357,12 @@ def test_fsc_dump_reaches_the_command(monkeypatch, tmp_path):
 
 
 def test_fsc_dump_writes_the_split_half_fsc(monkeypatch, tmp_path):
-    from dataclasses import replace
+    from helpers.run_options import cli, reconstruction_programs
 
     from relax.reconstruction.regularization import FscDump
-    from relax.refinement.refinement_options import ScoringVariants
 
-    monkeypatch.delenv("RELAX_MSTEP_FSC_DUMP_DIR", raising=False)
-    variants = ScoringVariants.from_environ()
-    variants = replace(variants, reconstruction=replace(
-        variants.reconstruction, fsc_dump=FscDump(directory=str(tmp_path), tag="tiny", average=False)))
+    variants = cli.variants(reconstruction=reconstruction_programs(
+        fsc_dump=FscDump(directory=str(tmp_path), tag="tiny", average=False)))
     run_tiny_refinement(monkeypatch, max_iter=1, final_after_max_iter=False, environment=RefinementEnvironment(),
                         variants=variants)
     assert (tmp_path / "tiny_downsampled_fsc.txt").exists()

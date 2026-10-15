@@ -9,12 +9,12 @@ import numpy as np
 import pytest
 from helpers import refinement_specs
 from helpers.float_compare import assert_matches
+from helpers.run_options import cli
 
 from relax.classification import k_class_results
 from relax.classification.k_class_results import KClassEMResult
 from relax.local_search import records
 from relax.refinement import dense_half, local_half, local_sampling
-from relax.refinement.refinement_options import ScoringVariants
 from relax.runtime import batch_planning
 from relax.runtime.batch_planning import (
     estimate_relion_em_batch_sizes,
@@ -84,7 +84,7 @@ def _dense_owners(**values):
             disc_type=values.pop("disc_type"),
             bpref_device_signature_active=values.pop("bpref_device_signature_active", False),
             debug_iteration=values.pop("debug_iteration", None),
-            relion_x_half_mstep=ScoringVariants.from_environ().relion_x_half_mstep(k_class=k_class_enabled),
+            relion_x_half_mstep=cli.variants().relion_x_half_mstep(k_class=k_class_enabled),
             precision=scoring_policy.DENSE_PRECISION,
         ),
         shape_class_scoring.OpticsSpec.single_shape(),

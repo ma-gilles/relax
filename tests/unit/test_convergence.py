@@ -1492,11 +1492,11 @@ class TestRefinementPolicy:
         assert _exhaustive_grid_order_for_state(nonlocal_state) == 4
 
     def test_approx_acc_rot_convergence_policy_is_diagnostic_by_default(self, monkeypatch):
-        from relax.refinement import refinement_state as convergence_helpers
-        from relax.refinement.refinement_options import ScoringVariants
+        from helpers.run_options import cli
 
-        monkeypatch.delenv("RELAX_EM_USE_APPROX_ACC_ROT_FOR_CONVERGENCE", raising=False)
-        enabled = ScoringVariants.from_environ().approx_acc_rot_for_convergence
+        from relax.refinement import refinement_state as convergence_helpers
+
+        enabled = cli.variants().approx_acc_rot_for_convergence
         allow, reason = convergence_helpers.approx_acc_rot_policy_for_convergence(enabled)
 
         assert not allow
@@ -1504,10 +1504,7 @@ class TestRefinementPolicy:
 
     def test_approx_acc_rot_convergence_policy_opt_in(self, monkeypatch):
         from relax.refinement import refinement_state as convergence_helpers
-        from relax.refinement.refinement_options import ScoringVariants
-
-        monkeypatch.setenv("RELAX_EM_USE_APPROX_ACC_ROT_FOR_CONVERGENCE", "1")
-        enabled = ScoringVariants.from_environ().approx_acc_rot_for_convergence
+        enabled = True  # RELAX_EM_USE_APPROX_ACC_ROT_FOR_CONVERGENCE=1 (test_refinement_environment parses it)
         allow, reason = convergence_helpers.approx_acc_rot_policy_for_convergence(enabled)
         assert allow
         assert reason == "forced-by-env"

@@ -2,11 +2,13 @@
 
 import dataclasses
 
+from helpers.run_options import cli
+
 from relax.classification.probes import NoProbe as KClassNoProbe
 from relax.local_search import records
 from relax.refinement import dense_half, local_half, local_sampling
 from relax.refinement.ports import NoProbe
-from relax.refinement.refinement_options import LocalAdaptivePass2Support, ScoringVariants
+from relax.refinement.refinement_options import LocalAdaptivePass2Support
 from relax.runtime.engine_tuning import EngineTuning
 from relax.runtime.scoring_overrides import ScoringOverrides
 from relax.steps import half_inputs, scoring_policy, shape_class_scoring
@@ -195,10 +197,10 @@ def local_half_owners(**values):
             source_faithful_spectrum_norm=values.pop("source_faithful_spectrum_norm", False),
             relion_translation_angle_scale=values.pop("relion_translation_angle_scale", 1.0),
             nyquist_column_counting=values.pop("nyquist_column_counting", "relion"),
-            # The run's ScoringVariants, read from the environment as the options would be, unless given.
+            # The unset environment's ScoringVariants (K=1's default is the device's), unless given.
             relion_x_half_mstep=values.pop("relion_x_half_mstep", None)
             if "relion_x_half_mstep" in values
-            else ScoringVariants.from_environ().k1_relion_x_half_mstep,
+            else cli.variants().k1_relion_x_half_mstep,
             adaptive_pass2=LocalAdaptivePass2Support(
                 full_parent=values.pop("adaptive_pass2_full_parent", False),
                 rotation_only=values.pop("adaptive_pass2_rotation_only", False),

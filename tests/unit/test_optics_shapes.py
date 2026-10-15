@@ -14,9 +14,9 @@ import pytest
 from helpers import refinement_specs
 from helpers.float_compare import assert_matches
 from helpers.refinement_specs import local_half_owners
+from helpers.run_options import cli
 
 from relax.refinement import dense_half, local_half
-from relax.refinement.refinement_options import ScoringVariants
 from relax.steps import half_inputs, optics_shapes, scoring_policy, shape_class_scoring
 from relax.steps.half_inputs import HalfSet
 from relax.steps.score_outputs import ClassScoreSummary, HalfScoreResult, PerHalfOutputs
@@ -184,7 +184,7 @@ def _dense_owners(half, optics, *, class_batch_overrides=None):
         ),
         refinement_specs.dense_execution_policy(
             disc_type="linear_interp",
-            relion_x_half_mstep=ScoringVariants.from_environ().k1_relion_x_half_mstep,
+            relion_x_half_mstep=cli.variants().k1_relion_x_half_mstep,
             precision=scoring_policy.DENSE_PRECISION,
         ),
         optics,
