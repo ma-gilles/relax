@@ -62,6 +62,51 @@ def test_noise_block_per_group_equals_one_group_blocks():
         np.testing.assert_allclose(np.asarray(per_group[g]), np.asarray(expected), rtol=1e-12, atol=1e-12)
 
 
+def _dense_per_group_noise(proj, proj_abs2, summed, ctf_probs, table, row_groups, shells, n_shells):
+    """The masked reduction over all G groups at once, ``[rows, G, P]``, that compute_noise_block_per_optics_group
+    did before its one-hot matrix product."""
+
+    from relax.fourier.half_spectrum import bin_shell_values_jax
+
+    n_groups = int(table.shape[0])
+    noise_rows = table[row_groups]
+    has = ctf_probs != 0.0
+    a2_terms = jnp.where(has, proj_abs2 * jnp.where(has, ctf_probs * noise_rows, 0.0), 0.0)
+    member = row_groups[:, None] == jnp.arange(n_groups, dtype=row_groups.dtype)[None, :]
+    a2 = jnp.sum(jnp.where(member[:, :, None], a2_terms[:, None, :], 0.0), axis=0)
+    cross_terms = jnp.where(summed != 0.0, proj * jnp.conj(summed), 0.0)
+    cross = jnp.sum(jnp.where(member[:, :, None], cross_terms[:, None, :], 0.0), axis=0)
+    xa = jnp.where(cross.real != 0.0, table * cross.real, 0.0)
+    return np.stack([np.asarray(bin_shell_values_jax(v, shells, n_shells)) for v in (a2 - 2.0 * xa)])
+
+
+@pytest.mark.unit
+def test_noise_block_groups_match_the_masked_reduction():
+    """Many optics groups, a few in the block (the real subtomogram case has 130): the present groups' shells
+    agree with the masked reduction to float32 reordering, the absent groups' are exactly zero."""
+
+    rng = np.random.default_rng(2)
+    rows, n_groups = 64, 130
+    shells = make_relion_noise_shell_indices_half(IMAGE_SHAPE)
+    proj = _complex(rng, (rows, P_HALF)).astype(np.complex64)
+    summed = _complex(rng, (rows, P_HALF)).astype(np.complex64)
+    ctf_probs = (rng.uniform(0.0, 1.0, (rows, P_HALF)) * (rng.uniform(size=(rows, P_HALF)) > 0.2)).astype(np.float32)
+    table = rng.uniform(0.5, 2.0, (n_groups, P_HALF)).astype(np.float32)
+    present = np.array([3, 77, 129], dtype=np.int32)
+    row_groups = jnp.asarray(rng.choice(present, rows).astype(np.int32))
+    args = (
+        jnp.asarray(proj), jnp.asarray(np.abs(proj) ** 2), jnp.asarray(summed), jnp.asarray(ctf_probs),
+        jnp.asarray(table), row_groups, shells, N_SHELLS,
+    )
+
+    per_group = np.asarray(compute_noise_block_per_optics_group(*args))
+    dense = _dense_per_group_noise(*args)
+    assert per_group.shape == (n_groups, N_SHELLS)
+    absent = np.setdiff1d(np.arange(n_groups), present)
+    assert np.all(per_group[absent] == 0.0)
+    assert_matches(per_group[present], dense[present], rtol=1e-6)
+
+
 @pytest.mark.unit
 def test_block_norm_terms_use_each_rows_group_noise():
     rng = np.random.default_rng(1)
