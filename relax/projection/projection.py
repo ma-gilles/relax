@@ -21,14 +21,13 @@ logger = logging.getLogger(__name__)
 DEFAULT_PROJECTION_MAX_R = object()
 
 
-@partial(jax.jit, static_argnums=(2, 3, 4, 5))
+@partial(jax.jit, static_argnums=(2, 3, 4))
 def project_relion_projector_half_spectrum(
     volume_relion_half,
     rotations_block,
     image_shape,
     r_max: int,
     padding_factor: int = 1,
-    relion_acc_double_floorf_quirk: bool = False,
 ):
     """Forward-project RELION Projector storage into full half-image layout.
 
@@ -36,10 +35,6 @@ def project_relion_projector_half_spectrum(
     recovar's centered full Fourier volume. This path is used by InitialModel
     parity code where RELION's pass-1/pass-2 scores must consume the exact
     ``PPref`` representation.
-
-    ``relion_acc_double_floorf_quirk`` reproduces RELION's GPU-accelerated
-    projector's float32-narrowing floor (see ``recovar.core.relion_project``
-    module docstring); it is off by default.
     """
 
     from relax.relion.project import relion_project_half
@@ -53,7 +48,6 @@ def project_relion_projector_half_spectrum(
             box_size,
             int(r_max),
             int(padding_factor),
-            relion_acc_double_floorf_quirk,
         )
 
     proj_fftw = jax.vmap(project_one)(rotations_block)
@@ -68,7 +62,6 @@ def _relion_projector_fftw_block(
     r_max: int,
     padding_factor: int,
     projector_output_size: int | None,
-    relion_acc_double_floorf_quirk: bool,
 ):
     """Project one rotation block through RELION's Projector in FFTW row order.
 
@@ -88,12 +81,11 @@ def _relion_projector_fftw_block(
         (projector_image_size, projector_image_size),
         int(r_max),
         int(padding_factor),
-        relion_acc_double_floorf_quirk,
     ).reshape((rotations_block.shape[0], projector_image_size, projector_image_size // 2 + 1))
     return proj_fftw, projector_image_size
 
 
-@partial(jax.jit, static_argnums=(2, 3, 4, 5, 6))
+@partial(jax.jit, static_argnums=(2, 3, 4, 5))
 def project_relion_projector_half_spectrum_centered_rows(
     volume_relion_half,
     rotations_block,
@@ -101,7 +93,6 @@ def project_relion_projector_half_spectrum_centered_rows(
     r_max: int,
     padding_factor: int = 1,
     projector_output_size: int | None = None,
-    relion_acc_double_floorf_quirk: bool = False,
 ) -> jnp.ndarray:
     """Project RELION ``PPref`` data and return recovar-centered row order.
 
@@ -121,7 +112,6 @@ def project_relion_projector_half_spectrum_centered_rows(
         r_max,
         padding_factor,
         projector_output_size,
-        relion_acc_double_floorf_quirk,
     )
     if projector_image_size == box_size:
         row_order = jnp.fft.fftshift(jnp.arange(box_size, dtype=jnp.int32))
@@ -164,7 +154,7 @@ def project_relion_projector_half_spectrum_centered_rows(
     return jnp.where(covered[None, :], gathered, jnp.zeros((), dtype=proj_fftw.dtype))
 
 
-@partial(jax.jit, static_argnums=(2, 3, 4, 5, 7))
+@partial(jax.jit, static_argnums=(2, 3, 4, 5))
 def project_relion_projector_half_spectrum_centered_rows_at_indices(
     volume_relion_half,
     rotations_block,
@@ -173,7 +163,6 @@ def project_relion_projector_half_spectrum_centered_rows_at_indices(
     padding_factor: int = 1,
     projector_output_size: int | None = None,
     pixel_indices=None,
-    relion_acc_double_floorf_quirk: bool = False,
 ) -> jnp.ndarray:
     """Project RELION ``PPref`` data and gather centered-row half-image pixels.
 
@@ -190,7 +179,6 @@ def project_relion_projector_half_spectrum_centered_rows_at_indices(
         r_max,
         padding_factor,
         projector_output_size,
-        relion_acc_double_floorf_quirk,
     )
 
     indices = jnp.asarray(pixel_indices, dtype=jnp.int32)
@@ -821,7 +809,6 @@ def compute_relion_projector_projections_block(
     pixel_indices=None,
     relion_texture_interp: bool | None = None,
     texture_interp_default: bool | None = None,
-    relion_acc_double_floorf_quirk: bool = False,
     mask_current_image_disk: bool = False,
     current_image_mask_size=None,
     projector_capacity: bool = False,
@@ -838,10 +825,6 @@ def compute_relion_projector_projections_block(
     fallback (False); None takes ``texture_interp_default``, the run's
     ``ScoringOverrides.projector_texture_interp`` (RELAX_RELION_PROJECTOR_TEXTURE_INTERP=0 forces the
     manual/JAX diagnostic fallback there).
-
-    ``relion_acc_double_floorf_quirk`` only applies to that manual/JAX
-    fallback (the texture path is float32-only hardware interpolation, unrelated
-    to this quirk); see ``recovar.core.relion_project`` module docstring.
 
     ``relion_kernel`` ("fine", "coarse" or "sgd") names the RELION kernel whose row rule
     applies when the image window is wider than the model sphere, as for an
@@ -985,7 +968,6 @@ def compute_relion_projector_projections_block(
             int(padding_factor),
             projector_output_size,
             pixel_indices,
-            relion_acc_double_floorf_quirk,
         )
     elif centered_rows:
         proj_half = project_relion_projector_half_spectrum_centered_rows(
@@ -995,7 +977,6 @@ def compute_relion_projector_projections_block(
             int(r_max),
             int(padding_factor),
             projector_output_size,
-            relion_acc_double_floorf_quirk,
         )
     else:
         proj_half = project_relion_projector_half_spectrum(
@@ -1004,7 +985,6 @@ def compute_relion_projector_projections_block(
             image_shape,
             int(r_max),
             int(padding_factor),
-            relion_acc_double_floorf_quirk,
         )
     if zero_rows is not None:
         if not centered_rows:
@@ -1038,7 +1018,6 @@ def compute_relion_projector_projections_block(
                 int(padding_factor),
                 grid,
                 coarse_relabel.grid_indices,
-                relion_acc_double_floorf_quirk,
             )
         proj_half = proj_half.at[:, jnp.asarray(coarse_relabel.positions)].set(moved.astype(proj_half.dtype))
     if dense_scale:

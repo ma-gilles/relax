@@ -88,7 +88,6 @@ def local_iteration_owners(*args, **values):
             half_spectrum_scoring=values.pop("half_spectrum_scoring", False),
             relion_exact_score_translation=values.pop("relion_exact_score_translation", False),
             projection_relion_texture_interp=values.pop("projection_relion_texture_interp", False),
-            projection_relion_acc_double_floorf_quirk=values.pop("projection_relion_acc_double_floorf_quirk", False),
             projection_relion_kernel=values.pop("projection_relion_kernel", "fine"),
             relion_projector_half=values.pop("relion_projector_half", None),
             relion_projector_r_max=values.pop("relion_projector_r_max", None),

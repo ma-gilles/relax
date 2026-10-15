@@ -57,19 +57,6 @@ def local_precision(
     return precision.for_local_pass(iteration, pass_index=pass_index, float64_pass2_iterations=float64_pass2_iterations)
 
 
-# Off by default: reproduces RELION's GPU-accelerated projector/backprojector
-# narrowing coordinates to float32 before flooring, unconditionally, even under
-# ``ACC_DOUBLE_PRECISION`` (see ``relax.relion.project`` module
-# docstring). Set ``RELAX_RELION_ACC_DOUBLE_FLOORF_QUIRK=1`` to bit-match
-# that GPU-double quirk in the local-search fine-pass projector fallback (it
-# only has an effect when the texture path is unavailable, e.g. under
-# ``use_float64_scoring``/``use_float64_projections``, since CUDA textures
-# cannot hold complex128).
-RELION_ACC_DOUBLE_FLOORF_QUIRK = parse_env_true_flag(
-    "RELAX_RELION_ACC_DOUBLE_FLOORF_QUIRK"
-)
-
-
 def _jax_cpu_forced_from_env() -> bool:
     """Return whether JAX has been forced to CPU by environment."""
 

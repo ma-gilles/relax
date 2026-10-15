@@ -27,13 +27,8 @@ precision. RELION's separate GPU-accelerated kernel (``AccProjectorKernel``'s
 backprojector (``BP.cuh``) implement the *same* cascaded-lerp formula but floor
 with CUDA's ``floorf()`` -- the single-precision floor -- on ``xp``/``yp``/``zp``
 even when ``ACC_DOUBLE_PRECISION`` makes those doubles; there is no ``#ifdef``
-guard on that call. ``relion_acc_double_floorf_quirk=True`` reproduces that GPU
-quirk here: it narrows ``xp``/``yp``/``zp`` to float32 before flooring (deriving
-``x0``/``y0``/``z0`` from the narrowed value), while the fractional part
-``fx = xp - x0`` still subtracts that (possibly off-by-one) integer from the
-original double ``xp``, exactly as RELION's kernel does. This is off by default;
-it exists only to bit-match RELION's GPU-double build, not because it is
-numerically preferable -- it is a narrowing bug being reproduced, not fixed.
+guard on that call. This port floors at double precision, as ``Projector::project`` does; it does not reproduce
+that GPU-double narrowing (a switch that did, set by nothing, was retired 2026-10-15).
 
 Radius test. RELION's oracles run on the GPU, so the radius test follows the
 accelerated kernel, not ``Projector::project``. ``AccProjectorKernel::makeKernel``
@@ -65,14 +60,13 @@ import jax
 import jax.numpy as jnp
 
 
-@functools.partial(jax.jit, static_argnums=(2, 3, 4, 5))
+@functools.partial(jax.jit, static_argnums=(2, 3, 4))
 def relion_project_half(
     volume_relion_half: jnp.ndarray,
     R_relion: jnp.ndarray,
     box_size: int,
     r_max: int,
     padding_factor: int = 1,
-    relion_acc_double_floorf_quirk: bool = False,
 ) -> jnp.ndarray:
     """Project a RELION-frame Fourier volume to a 2D half-image.
 
@@ -85,10 +79,6 @@ def relion_project_half(
     box_size : 2D output image size (assumed square).
     r_max : RELION's `r_max` field on the projector (= ori_size//2 - 1 typically).
     padding_factor : projector padding (1 or 2 typically).
-    relion_acc_double_floorf_quirk : reproduce RELION's GPU-accelerated
-        ``no_tex3D`` kernel narrowing ``xp``/``yp``/``zp`` to float32 before
-        flooring (see module docstring). Default False matches RELION's CPU
-        ``Projector::project``, which floors at native double precision.
 
     Returns
     -------
@@ -139,18 +129,10 @@ def relion_project_half(
     # radius test (module docstring, "Radius test").
     r2_ref = (xp * xp + yp * yp + zp * zp).astype(jnp.int32)
 
-    # Floor + fractional. RELION's GPU kernel floors the (double) coordinate
-    # with CUDA's single-precision floorf(); the fractional part still
-    # subtracts that (possibly off-by-one) integer from the original double
-    # coordinate. See module docstring.
-    if relion_acc_double_floorf_quirk:
-        x0 = jnp.floor(xp.astype(jnp.float32)).astype(jnp.int32)
-        y0 = jnp.floor(yp.astype(jnp.float32)).astype(jnp.int32)
-        z0 = jnp.floor(zp.astype(jnp.float32)).astype(jnp.int32)
-    else:
-        x0 = jnp.floor(xp).astype(jnp.int32)
-        y0 = jnp.floor(yp).astype(jnp.int32)
-        z0 = jnp.floor(zp).astype(jnp.int32)
+    # Floor + fractional, at double precision (module docstring).
+    x0 = jnp.floor(xp).astype(jnp.int32)
+    y0 = jnp.floor(yp).astype(jnp.int32)
+    z0 = jnp.floor(zp).astype(jnp.int32)
     fx = xp - x0.astype(jnp.float64)
     fy = yp - y0.astype(jnp.float64)
     fz = zp - z0.astype(jnp.float64)

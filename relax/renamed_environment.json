@@ -276,7 +276,6 @@
   "RECOVAR_REFERENCE": "RELAX_REFERENCE",
   "RECOVAR_REFERENCE_SHA256": "RELAX_REFERENCE_SHA256",
   "RECOVAR_RELAX_CUDA_LIB": "RELAX_CUDA_LIB",
-  "RECOVAR_RELION_ACC_DOUBLE_FLOORF_QUIRK": "RELAX_RELION_ACC_DOUBLE_FLOORF_QUIRK",
   "RECOVAR_RELION_BIND_COPY_TO_PACKAGE": "RELAX_RELION_BIND_COPY_TO_PACKAGE",
   "RECOVAR_RELION_BIND_JOBS": "RELAX_RELION_BIND_JOBS",
   "RECOVAR_RELION_BPREF_SYMMETRY_CHUNK_VOXELS": "RELAX_RELION_BPREF_SYMMETRY_CHUNK_VOXELS",
@@ -732,6 +731,8 @@
   "RECOVAR_EM_PROTOTYPE_SOFT_POSTERIOR_BLOCK_BPREF": "no non-default user: the soft-posterior block BPref is the one path; off only made the resident drivers refuse a per-particle BPref order, and only tests set the default (2026-10-15)",
   "RELAX_EM_PROTOTYPE_SOFT_POSTERIOR_BLOCK_BPREF": "no non-default user: the soft-posterior block BPref is the one path; off only made the resident drivers refuse a per-particle BPref order, and only tests set the default (2026-10-15)",
   "RECOVAR_DISABLE_RELION_EXACT_FINE_GAUSSIAN": "no user: launchers only unset it; the fine pass scores with RELION's exact Gaussian unless the run scores in float64 (2026-10-15)",
-  "RELAX_DISABLE_RELION_EXACT_FINE_GAUSSIAN": "no user: launchers only unset it; the fine pass scores with RELION's exact Gaussian unless the run scores in float64 (2026-10-15)"
+  "RELAX_DISABLE_RELION_EXACT_FINE_GAUSSIAN": "no user: launchers only unset it; the fine pass scores with RELION's exact Gaussian unless the run scores in float64 (2026-10-15)",
+  "RECOVAR_RELION_ACC_DOUBLE_FLOORF_QUIRK": "no user: nothing set it; the local-search projector fallback floors at double precision, as RELION's Projector::project, and no longer reproduces the GPU-double floorf narrowing (2026-10-15)",
+  "RELAX_RELION_ACC_DOUBLE_FLOORF_QUIRK": "no user: nothing set it; the local-search projector fallback floors at double precision, as RELION's Projector::project, and no longer reproduces the GPU-double floorf narrowing (2026-10-15)"
  }
 }

@@ -49,7 +49,6 @@ class LocalSearchKernelPolicy:
     half_spectrum_scoring: bool
     relion_exact_score_translation: bool = False
     projection_relion_texture_interp: bool | None = False
-    projection_relion_acc_double_floorf_quirk: bool = False
     projection_relion_kernel: str = "fine"
     relion_projector_half: object | None
     relion_projector_r_max: int | None

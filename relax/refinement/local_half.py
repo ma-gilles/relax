@@ -59,7 +59,6 @@ from relax.steps.score_outputs import (
     class_em_to_half_result,
 )
 from relax.steps.scoring_policy import (
-    RELION_ACC_DOUBLE_FLOORF_QUIRK,
     RELION_ADAPTIVE_FRACTION,
     RELION_FOURIER_WINDOW_SQUARE,
 )
@@ -717,7 +716,6 @@ def _score_half_local_one_shape(
                 # RELION's GPU pass 1 projects through the projector texture, as the
                 # global pass 1 and pass 2 do.
                 projection_relion_texture_interp=None,
-                projection_relion_acc_double_floorf_quirk=RELION_ACC_DOUBLE_FLOORF_QUIRK,
                 # RELION pass 1 uses the coarse diff2 kernel's row rule.
                 projection_relion_kernel="coarse",
             ),
@@ -825,7 +823,6 @@ def _score_half_local_one_shape(
             # uses manual supplied-PPref projection, while fine pass 2 follows
             # the user-switchable texture default.
             projection_relion_texture_interp=None,
-            projection_relion_acc_double_floorf_quirk=RELION_ACC_DOUBLE_FLOORF_QUIRK,
         ),
         replace(
             local_support,

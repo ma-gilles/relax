@@ -710,14 +710,11 @@ def compute_local_search_resident(
         use_relion_projector=True,
         current_size=current_size,
     )
-    # The exact local engine passes all four of these to the same projector;
+    # The exact local engine passes all three of these to the same projector;
     # ``relion_texture_interp=None`` means "resolve as strict parity does":
     # the run's ScoringOverrides.projector_texture_interp (RELION's CUDA texture interpolator by default).
     projection_kwargs["relion_texture_interp"] = kernel.projection_relion_texture_interp
     projection_kwargs["texture_interp_default"] = support.scoring_overrides.projector_texture_interp
-    projection_kwargs["relion_acc_double_floorf_quirk"] = bool(
-        kernel.projection_relion_acc_double_floorf_quirk
-    )
     projection_kwargs["force_jax"] = False
     projection_kwargs["mask_current_image_disk"] = False
     projection_kwargs["relion_kernel"] = kernel.projection_relion_kernel

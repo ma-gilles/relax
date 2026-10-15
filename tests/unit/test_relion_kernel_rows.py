@@ -171,7 +171,7 @@ def test_coarse_projection_in_the_band_projects_relions_relabelled_rows(compact)
     # Reference: the plain projector on a grid large enough to hold every kernel coordinate.
     grid = 4 * window
     plain = np.asarray(
-        project_relion_projector_half_spectrum_centered_rows(projector, rotations, (grid, grid), r_max, 1, grid, False)
+        project_relion_projector_half_spectrum_centered_rows(projector, rotations, (grid, grid), r_max, 1, grid)
     ).reshape(3, grid, grid // 2 + 1)
     label = np.arange(window) - window // 2
     label[0] = window // 2
@@ -215,7 +215,7 @@ def test_sgd_kernel_projects_every_row_inside_the_sphere(scale, r_max):
     kwargs = dict(r_max=r_max, padding_factor=1, centered_rows=True, projector_output_size=window, relion_texture_interp=False)
     sgd, _ = compute_relion_projector_projections_block(projector, rotations, (window, window), relion_kernel="sgd", **kwargs, texture_interp_default=True)
     fine, _ = compute_relion_projector_projections_block(projector, rotations, (window, window), **kwargs, texture_interp_default=True)
-    plain = project_relion_projector_half_spectrum_centered_rows(projector, rotations, (window, window), r_max, 1, window, False)
+    plain = project_relion_projector_half_spectrum_centered_rows(projector, rotations, (window, window), r_max, 1, window)
     sgd, fine, plain = (np.asarray(a).reshape(3, window, window // 2 + 1) for a in (sgd, fine, plain))
     label = np.arange(window) - window // 2
     label[0] = window // 2
