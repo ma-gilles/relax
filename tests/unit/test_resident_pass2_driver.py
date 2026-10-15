@@ -141,8 +141,8 @@ def test_gate_refuses_a_diagnostic_dump(monkeypatch):
     assert EngineTuning.from_environ().resident_diagnostics == ()
     monkeypatch.setenv("RELAX_PASS2_DUMP_DIR", "/tmp/does-not-matter")
     monkeypatch.setenv("RELAX_RELION_X_HALF_BP_FUSED_ATOMICS", "1")
-    requested = EngineTuning.from_environ().resident_diagnostics
-    assert requested == ("RELAX_PASS2_DUMP_DIR", "RELAX_RELION_X_HALF_BP_FUSED_ATOMICS")
+    requested = ("RELAX_PASS2_DUMP_DIR", "RELAX_RELION_X_HALF_BP_FUSED_ATOMICS")
+    assert EngineTuning.from_environ().resident_diagnostics == requested
     with pytest.raises(NotImplementedError, match="diagnostic dump RELAX_PASS2_DUMP_DIR"):
         resident_configuration.require_resident_production_configuration(
             **_production_gate_kwargs(requested_diagnostics=requested)
@@ -2244,9 +2244,10 @@ def test_chunk_timing_is_read_once_at_the_boundary(monkeypatch):
 
     monkeypatch.delenv("RELAX_SPARSE_PASS2_RESIDENT_CHUNK_TIMING", raising=False)
     assert EngineTuning.from_environ().chunk_timing is False
-    assert _global_chunk_loop_pipelined(False, chunk_timing=EngineTuning.from_environ().chunk_timing)
+    assert _global_chunk_loop_pipelined(False, chunk_timing=False)
     monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_CHUNK_TIMING", "1")
-    assert not _global_chunk_loop_pipelined(False, chunk_timing=EngineTuning.from_environ().chunk_timing)
+    assert EngineTuning.from_environ().chunk_timing is True
+    assert not _global_chunk_loop_pipelined(False, chunk_timing=True)
     for raw, expected in (("", False), ("off", False), ("yes", True)):
         monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_CHUNK_TIMING", raw)
         assert EngineTuning.from_environ().chunk_timing is expected
@@ -2272,8 +2273,7 @@ def test_resident_operands_switch_is_read_once_at_the_boundary(monkeypatch):
         else:
             monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_OPERANDS", raw)
         assert EngineTuning.from_environ().resident_operands is expected
-    monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_OPERANDS", "0")
     assert not resident_chunk_inputs.chunk_unshifted_operands_supported(
         {}, window_indices=None, recon_window_indices=None, firstiter_cc=False, relion_native_fine_units=False,
-        relion_exact_bpref_operands=False, requested=EngineTuning.from_environ().resident_operands,
+        relion_exact_bpref_operands=False, requested=False,
     )

@@ -1459,12 +1459,11 @@ def test_local_chunk_profile_is_read_once_at_the_boundary(monkeypatch):
     from relax.local_search import resident_pass2 as local_resident
 
     monkeypatch.delenv("RELAX_LOCAL_SEARCH_RESIDENT_CHUNK_PROFILE", raising=False)
-    tuning = EngineTuning.from_environ()
-    assert tuning.local_chunk_profile is False
-    assert local_resident._local_chunk_loop_pipelined(chunk_profile=tuning.local_chunk_profile)
+    assert EngineTuning.from_environ().local_chunk_profile is False
+    assert local_resident._local_chunk_loop_pipelined(chunk_profile=False)
     monkeypatch.setenv("RELAX_LOCAL_SEARCH_RESIDENT_CHUNK_PROFILE", "1")
-    tuning = EngineTuning.from_environ()
-    assert not local_resident._local_chunk_loop_pipelined(chunk_profile=tuning.local_chunk_profile)
+    assert EngineTuning.from_environ().local_chunk_profile is True
+    assert not local_resident._local_chunk_loop_pipelined(chunk_profile=True)
 
 
 def test_local_block_row_program_is_read_once_at_the_boundary(monkeypatch):

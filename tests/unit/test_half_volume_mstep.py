@@ -118,34 +118,25 @@ def test_relion_x_half_public_layout_guard_avoids_full_expand_when_forced(monkey
     np.testing.assert_allclose(actual.reshape(-1), expected, rtol=1e-6, atol=1e-5)
 
 
-def test_relion_x_half_native_half_threshold_keeps_default_256_padded_grid_off(monkeypatch):
-    monkeypatch.delenv("RELAX_RELION_X_HALF_TO_NATIVE_HALF", raising=False)
-    monkeypatch.delenv("RELAX_RELION_X_HALF_TO_NATIVE_HALF_MIN_VOXELS", raising=False)
-
-    assert not EngineTuning.from_environ().x_half_large_grid.to_native_half.on(512**3)
-    assert EngineTuning.from_environ().x_half_large_grid.to_native_half.on(768**3)
+def test_relion_x_half_native_half_threshold_keeps_default_256_padded_grid_off():
+    # The unset environment's switch (EngineTuning(), test_engine_tuning_defaults_are_the_unset_environment).
+    assert not EngineTuning().x_half_large_grid.to_native_half.on(512**3)
+    assert EngineTuning().x_half_large_grid.to_native_half.on(768**3)
 
 
-def test_relion_x_half_full_host_threshold_enables_default_256_padded_grid(monkeypatch):
-    monkeypatch.delenv("RELAX_RELION_X_HALF_FULL_HOST", raising=False)
-    monkeypatch.delenv("RELAX_RELION_X_HALF_FULL_HOST_MIN_VOXELS", raising=False)
-
-    assert not EngineTuning.from_environ().x_half_large_grid.full_host.on(259**3)
-    assert EngineTuning.from_environ().x_half_large_grid.full_host.on(512**3)
-    assert EngineTuning.from_environ().x_half_large_grid.full_host.on(768**3)
+def test_relion_x_half_full_host_threshold_enables_default_256_padded_grid():
+    assert not EngineTuning().x_half_large_grid.full_host.on(259**3)
+    assert EngineTuning().x_half_large_grid.full_host.on(512**3)
+    assert EngineTuning().x_half_large_grid.full_host.on(768**3)
 
 
-def test_relion_x_half_host_x0_threshold_is_memory_safety_default(monkeypatch):
-    monkeypatch.delenv("RELAX_RELION_X_HALF_HOST_X0", raising=False)
-    monkeypatch.delenv("RELAX_RELION_X_HALF_TO_NATIVE_HALF_MIN_VOXELS", raising=False)
-    monkeypatch.delenv("RELAX_RELION_X_HALF_HOST_X0_MIN_VOXELS", raising=False)
-    monkeypatch.setenv("RELAX_RELION_X_HALF_TO_NATIVE_HALF", "0")
+def test_relion_x_half_host_x0_threshold_is_memory_safety_default():
+    host_x0 = EngineTuning().x_half_large_grid.host_x0
+    assert not host_x0.on(512**3)
+    assert host_x0.on(768**3)
 
-    assert not EngineTuning.from_environ().x_half_large_grid.host_x0.on(512**3)
-    assert EngineTuning.from_environ().x_half_large_grid.host_x0.on(768**3)
-
-    monkeypatch.setenv("RELAX_RELION_X_HALF_HOST_X0", "0")
-    assert not EngineTuning.from_environ().x_half_large_grid.host_x0.on(768**3)
+    # RELAX_RELION_X_HALF_HOST_X0=0 (test_large_grid_switches_read_once_at_the_boundary parses it).
+    assert not replace(host_x0, forced=False).on(768**3)
 
 
 @pytest.mark.parametrize("name", ["TO_NATIVE_HALF", "FULL_HOST", "HOST_X0"])
@@ -161,7 +152,7 @@ def test_large_grid_switches_read_once_at_the_boundary(monkeypatch, name):
     assert (switch.forced, switch.on(999), switch.on(1000)) == (None, False, True)
     monkeypatch.setenv(f"{variable}_MIN_VOXELS", "lots")
     assert getattr(EngineTuning.from_environ().x_half_large_grid, field) == getattr(XHalfLargeGrid(), field)
-    for raw, forced in (("", True), (" OFF ", False), ("no", False), ("anything", True)):
+    for raw, forced in (("", True), (" OFF ", False), ("no", False), ("0", False), ("anything", True)):
         monkeypatch.setenv(variable, raw)
         assert getattr(EngineTuning.from_environ().x_half_large_grid, field).on(1) is forced
 

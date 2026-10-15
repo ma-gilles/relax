@@ -281,16 +281,15 @@ def test_pass2_projection_cache_override_supports_matched_dump_ab(monkeypatch):
             fine_rotations_override=rotations, dump_pass2_operands=dump, requested=request,
         )
 
-    auto = requested(None)
-    assert auto is None and EngineTuning().pass2_projection_cache is None
-    assert enabled(auto, fine_rotations, False)
-    assert not enabled(auto, fine_rotations, True)
-    on = requested("on")
-    assert enabled(on, fine_rotations, False) and enabled(on, fine_rotations, True)
-    off = requested("off")
-    assert not enabled(off, fine_rotations, False) and not enabled(off, fine_rotations, True)
-    assert not enabled(off, None, False)
+    # The command's reading: unset and "auto" are None (the default), "on" True, "off" False.
+    assert requested(None) is None and EngineTuning().pass2_projection_cache is None
+    assert requested("on") is True and requested("off") is False
     assert requested("AUTO") is None and requested("Yes") is True
+    assert enabled(None, fine_rotations, False)
+    assert not enabled(None, fine_rotations, True)
+    assert enabled(True, fine_rotations, False) and enabled(True, fine_rotations, True)
+    assert not enabled(False, fine_rotations, False) and not enabled(False, fine_rotations, True)
+    assert not enabled(False, None, False)
     with pytest.raises(ValueError, match="must be 'auto', 'on', or 'off'"):
         requested("invalid")
 

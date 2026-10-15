@@ -152,7 +152,8 @@ def test_stable_window_runtime_quantum_is_diagnostic_and_fail_closed(monkeypatch
     assert stable_fourier_window_quantum() == DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM == 8
 
     monkeypatch.setenv(STABLE_FOURIER_WINDOW_QUANTUM_ENV, "16")
-    with stable_fourier_window_quantum_scope(EngineTuning.from_environ().stable_window_quantum):
+    assert EngineTuning.from_environ().stable_window_quantum == 16
+    with stable_fourier_window_quantum_scope(16):
         assert stable_fourier_window_quantum() == 16
 
     for invalid in ("0", "3", "nope"):
