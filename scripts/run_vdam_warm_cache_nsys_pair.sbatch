@@ -62,7 +62,6 @@ nvidia-smi -q > "${OUTPUT_ROOT}/provenance/nvidia_smi.txt"
 env | LC_ALL=C sort > "${OUTPUT_ROOT}/provenance/submission_environment.txt"
 
 export RELAX_INITIALMODEL_SKIP_EXPECTED_ACCURACY=0
-export RELAX_INITIALMODEL_EXPECTED_ACCURACY_SUBPROCESS=0
 
 for repeat in 1 2; do
   run_root=$(printf '%s/repeat-%02d' "${OUTPUT_ROOT}" "${repeat}")
@@ -108,5 +107,4 @@ for repeat in 1 2; do
 done
 
 unset RELAX_INITIALMODEL_SKIP_EXPECTED_ACCURACY
-unset RELAX_INITIALMODEL_EXPECTED_ACCURACY_SUBPROCESS
 touch "${OUTPUT_ROOT}/COMPLETED"

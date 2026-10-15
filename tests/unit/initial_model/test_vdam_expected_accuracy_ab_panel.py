@@ -27,7 +27,7 @@ def test_expected_accuracy_ab_panel_is_same_allocation_and_fail_closed() -> None
     )
     assert "RELAX_INITIALMODEL_SKIP_EXPECTED_ACCURACY=1" in text
     assert "RELAX_INITIALMODEL_SKIP_EXPECTED_ACCURACY=0" in text
-    assert "RELAX_INITIALMODEL_EXPECTED_ACCURACY_SUBPROCESS=0" in text
+    assert "EXPECTED_ACCURACY_SUBPROCESS" not in text  # retired: the estimate always runs in the command
     assert 'TARGET_GPU_UUID="${TARGET_GPU_UUID}"' in text
     assert 'test "${GPU_MISS_HOLD_SECONDS}" -le 60' in text
     assert 'source "${REPO_ROOT}/scripts/vdam_gpu_selection.sh"' in text

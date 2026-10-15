@@ -337,52 +337,6 @@ class TestRandomiseParticlesOrderBinding:
 
 
 class TestAutoRefineExpectedAccuracyBinding:
-    def test_spawned_expected_accuracy_matches_direct_result(self, bind):
-        from relax.steps.expected_accuracy import (
-            estimate_relion_expected_accuracy_from_prepared_inputs,
-            estimate_relion_expected_accuracy_in_spawned_process_from_prepared_inputs,
-        )
-
-        rng = np.random.default_rng(9)
-        reference = rng.standard_normal((8, 8, 8)).astype(np.float64)
-        kwargs = {
-            "references_relion": np.stack([reference, reference], axis=0),
-            "trial_eulers_deg": np.asarray([[0.0, 35.0, 10.0], [75.0, 60.0, -20.0]], dtype=np.float64),
-            "trial_local_indices": np.arange(2, dtype=np.int64),
-            "trial_class_ids": np.asarray([0, 0], dtype=np.int32),
-            "class_weights": np.asarray([0.5, 0.5], dtype=np.float64),
-            "sigma2_noise_relion": np.ones(5, dtype=np.float64),
-            "defocus_u": np.zeros(2, dtype=np.float64),
-            "defocus_v": np.zeros(2, dtype=np.float64),
-            "defocus_angle": np.zeros(2, dtype=np.float64),
-            "phase_shift": np.zeros(2, dtype=np.float64),
-            "voltage": 300.0,
-            "spherical_aberration": 2.7,
-            "amplitude_contrast": 0.07,
-            "pixel_size": 1.0,
-            "model_box_size": 8,
-            "current_image_size": 8,
-            "padding_factor": 1,
-            "sigma2_fudge": 1.0,
-            "random_seed": 17,
-            "do_ctf_correction": False,
-            "random_seed_particle_ids": np.asarray([101, 205], dtype=np.int64),
-            "stable_window_quantum": DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM,
-        }
-        direct = estimate_relion_expected_accuracy_from_prepared_inputs(**kwargs, device_memory_override=None)
-        isolated = estimate_relion_expected_accuracy_in_spawned_process_from_prepared_inputs(**kwargs, device_memory_override=None)
-
-        assert isolated.acc_rot == direct.acc_rot
-        assert isolated.acc_trans_angstrom == direct.acc_trans_angstrom
-        assert_matches(isolated.acc_rot_per_class, direct.acc_rot_per_class)
-        assert_matches(
-            isolated.acc_trans_per_class_angstrom,
-            direct.acc_trans_per_class_angstrom,
-        )
-        assert_matches(isolated.class_counts, direct.class_counts)
-        assert_matches(isolated.trial_local_indices, direct.trial_local_indices)
-        assert_matches(isolated.trial_particle_ids, direct.trial_particle_ids)
-
     def test_supplied_projector_data_matches_the_binding_transform(self, bind):
         """The scoring projector's slabs stand in for the binding's own transform."""
 

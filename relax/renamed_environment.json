@@ -144,7 +144,6 @@
   "RECOVAR_HOST_REPLAY_COPY_OUTPUT": "RELAX_HOST_REPLAY_COPY_OUTPUT",
   "RECOVAR_INITIALMODEL_EXPECTED_ACCURACY_DUMP_DIR": "RELAX_INITIALMODEL_EXPECTED_ACCURACY_DUMP_DIR",
   "RECOVAR_INITIALMODEL_EXPECTED_ACCURACY_DUMP_ITERATIONS": "RELAX_INITIALMODEL_EXPECTED_ACCURACY_DUMP_ITERATIONS",
-  "RECOVAR_INITIALMODEL_EXPECTED_ACCURACY_SUBPROCESS": "RELAX_INITIALMODEL_EXPECTED_ACCURACY_SUBPROCESS",
   "RECOVAR_INITIALMODEL_IREF_REPLAY_TEMPLATE": "RELAX_INITIALMODEL_IREF_REPLAY_TEMPLATE",
   "RECOVAR_INITIALMODEL_ITER10_RELION_REF": "RELAX_INITIALMODEL_ITER10_RELION_REF",
   "RECOVAR_INITIALMODEL_NOISE_FAILURE_DUMP_DIR": "RELAX_INITIALMODEL_NOISE_FAILURE_DUMP_DIR",
@@ -735,6 +734,8 @@
   "RECOVAR_EM_JIT_STAGE_GLUE": "no reader on a path that set it: the K=1 entry points set it, but only the PPCA dense preprocessing (preprocess_batch) read it, where nothing set it; that preprocessing runs its elementwise chain eagerly, the default (2026-10-15)",
   "RELAX_EM_JIT_STAGE_GLUE": "no reader on a path that set it: the K=1 entry points set it, but only the PPCA dense preprocessing (preprocess_batch) read it, where nothing set it; that preprocessing runs its elementwise chain eagerly, the default (2026-10-15)",
   "RECOVAR_RELION_X_HALF_SEQUENTIAL_TRANSLATION_REDUCTION": "no relax path computes with it: the resident drivers refused it, and it only armed direct BPref planning; the scripts/lib bucketed pass 2 takes sequential_translation_reduction as an argument (2026-10-15)",
-  "RELAX_RELION_X_HALF_SEQUENTIAL_TRANSLATION_REDUCTION": "no relax path computes with it: the resident drivers refused it, and it only armed direct BPref planning; the scripts/lib bucketed pass 2 takes sequential_translation_reduction as an argument (2026-10-15)"
+  "RELAX_RELION_X_HALF_SEQUENTIAL_TRANSLATION_REDUCTION": "no relax path computes with it: the resident drivers refused it, and it only armed direct BPref planning; the scripts/lib bucketed pass 2 takes sequential_translation_reduction as an argument (2026-10-15)",
+  "RECOVAR_INITIALMODEL_EXPECTED_ACCURACY_SUBPROCESS": "no user: no script or tier set it to 1 (two sbatch files exported the default 0 or unset it); the InitialModel expected accuracy always runs in the command's process (2026-10-15)",
+  "RELAX_INITIALMODEL_EXPECTED_ACCURACY_SUBPROCESS": "no user: no script or tier set it to 1 (two sbatch files exported the default 0 or unset it); the InitialModel expected accuracy always runs in the command's process (2026-10-15)"
  }
 }

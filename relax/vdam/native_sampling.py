@@ -16,7 +16,7 @@ from recovar.utils.helpers import R_to_relion, recovar_volume_to_relion
 
 from relax.relion import optics_groups
 from relax.relion.optics_aberrations import expected_accuracy_optics
-from relax.runtime.engine_tuning import DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM, EngineTuning
+from relax.runtime.engine_tuning import EngineTuning
 from relax.sampling import grids, oversampled_grids, perturbation
 from relax.steps.convergence import (
     compute_relion_offset_changes_angstrom,
@@ -27,7 +27,6 @@ from relax.steps.expected_accuracy import (
     ExpectedAccuracy,
     _combine_group_expected_accuracies,
     estimate_relion_expected_accuracy_from_prepared_inputs,
-    estimate_relion_expected_accuracy_in_spawned_process_from_prepared_inputs,
 )
 from relax.steps.optics_shapes import MultiShapeDataset
 from relax.vdam.native_options import NativeInitialModelOptions
@@ -412,7 +411,6 @@ def estimate_native_sampling_accuracy(
     tilt_images: TiltImageAccuracyInputs | None = None,
     optics_group_ids: np.ndarray | None = None,
     experiment_dataset=None,
-    isolate_in_subprocess: bool = False,
     probe: ExpectationProbe,
     engine: EngineTuning,
 ) -> SamplingAccuracyEstimate | None:
@@ -429,10 +427,7 @@ def estimate_native_sampling_accuracy(
     (:func:`relax.relion.optics_aberrations.expected_accuracy_optics`: CTF^2 of premultiplied
     images, even Zernike terms); None without optics-table terms. ``engine`` (``VdamEnvironment.engine``): its
     ``device_memory_bytes`` replaces the device memory probe of the estimate's slab bound, and
-    ``stable_window_quantum`` is the estimate's window class step in this process. The isolated subprocess
-    (``isolate_in_subprocess``) keeps the default quantum
-    (:data:`relax.runtime.engine_tuning.DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM`), which the context variable
-    that held the quantum before never reached in a spawned process.
+    ``stable_window_quantum`` is the estimate's window class step.
     """
     n_trials = min(100, int(particle_order.size))
     if n_trials <= 0:
@@ -467,11 +462,6 @@ def estimate_native_sampling_accuracy(
         axis=0,
     )
     current_image_size = int(state.effective_current_size)
-    accuracy_estimator = (
-        estimate_relion_expected_accuracy_in_spawned_process_from_prepared_inputs
-        if isolate_in_subprocess
-        else estimate_relion_expected_accuracy_from_prepared_inputs
-    )
     def group_constant(values, trials, name, n_rows=len(particle_state.translation_offsets)):
         """The one value of an optics constant over ``trials`` (rows of ``values``, a scalar or ``n_rows`` values)."""
         unique = np.unique(np.broadcast_to(np.asarray(values, dtype=np.float64), (n_rows,))[trials])
@@ -548,7 +538,7 @@ def estimate_native_sampling_accuracy(
                     projector_current_size=current_image_size,
                 ),
             )
-        return accuracy_estimator(
+        return estimate_relion_expected_accuracy_from_prepared_inputs(
             references_relion=refs_relion,
             trial_eulers_deg=eulers[trials],
             trial_local_indices=ids,
@@ -566,9 +556,7 @@ def estimate_native_sampling_accuracy(
             # not the original input-table row ids carried by RECOVAR's dataset.
             random_seed_particle_ids=random_seed_particle_ids[trials],
             device_memory_override=engine.device_memory_bytes,
-            stable_window_quantum=(
-                DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM if isolate_in_subprocess else engine.stable_window_quantum
-            ),
+            stable_window_quantum=engine.stable_window_quantum,
         )
 
     sigma2_noise = np.asarray(state.sigma2_noise, dtype=np.float64)

@@ -2050,13 +2050,11 @@ def test_native_expectation_step_estimates_sampling_accuracy_before_update(monke
         tilt_images,
         optics_group_ids,
         experiment_dataset,
-        isolate_in_subprocess,
         probe,
         engine,
     ):
         assert tilt_images is None  # single particles
         assert optics_group_ids is None  # one optics group
-        assert isolate_in_subprocess is False
         assert engine.device_memory_bytes is None  # the options' default EngineTuning
         assert engine.stable_window_quantum == 24  # VDAM's own quantum (VdamEnvironment's default EngineTuning)
         event_order.append("estimate_accuracy")
@@ -2178,13 +2176,7 @@ def test_native_expectation_step_estimates_sampling_accuracy_before_update(monke
     assert event_order == ["prepare_projector", "estimate_accuracy", "run_estep"]
 
 
-@pytest.mark.parametrize(
-    "name, field",
-    [
-        ("RELAX_INITIALMODEL_SKIP_EXPECTED_ACCURACY", "skip_expected_accuracy"),
-        ("RELAX_INITIALMODEL_EXPECTED_ACCURACY_SUBPROCESS", "isolate_expected_accuracy"),
-    ],
-)
+@pytest.mark.parametrize("name, field", [("RELAX_INITIALMODEL_SKIP_EXPECTED_ACCURACY", "skip_expected_accuracy")])
 def test_expected_accuracy_diagnostic_switches_are_explicit_and_strict(monkeypatch, name, field):
     monkeypatch.delenv(name, raising=False)
     assert getattr(native_options.VdamEnvironment.from_environ(), field) is False

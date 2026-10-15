@@ -4,10 +4,8 @@ from __future__ import annotations
 
 import dataclasses
 import logging
-import multiprocessing
-import traceback
 from dataclasses import dataclass
-from typing import Any, NamedTuple
+from typing import NamedTuple
 
 import numpy as np
 from recovar.core.ctf import CTFParamIndex
@@ -483,67 +481,6 @@ def _trial_ctf_images(trial_local, *, defocus, optics, pixel_size, box_size, cur
             freq_sq = fftw_half_freq_sq(box_size, box_size, pixel_size)
             rows[dosed] = rows[dosed] * relion_tomo_damping(freq_sq, c[dosed, 6])
     return _window_fftw_half(rows, int(current_image_size))
-
-
-def _estimate_relion_expected_accuracy_spawn_worker(
-    connection,
-    kwargs: dict[str, Any],
-) -> None:
-    """Run the authoritative binding behind an isolated spawn boundary."""
-    try:
-        result = estimate_relion_expected_accuracy_from_prepared_inputs(**kwargs)
-        connection.send(("ok", result))
-    except BaseException:  # pragma: no cover - exercised through the parent error
-        connection.send(("error", traceback.format_exc()))
-    finally:
-        connection.close()
-
-
-def estimate_relion_expected_accuracy_in_spawned_process_from_prepared_inputs(
-    **kwargs,
-) -> ExpectedAccuracy:
-    """Evaluate expected accuracy without mutating the caller's process state.
-
-    The numerical owner remains
-    :func:`estimate_relion_expected_accuracy_from_prepared_inputs`.  This
-    wrapper exists for trajectory diagnostics where RELION's process-global
-    RNG, FFT, or allocator state must not leak from the temporary
-    expected-accuracy projectors into the production E/M-step process.
-    ``spawn`` is deliberate: forking a process after JAX has created worker
-    threads or a CUDA context is unsafe.
-    """
-    context = multiprocessing.get_context("spawn")
-    parent_connection, child_connection = context.Pipe(duplex=False)
-    process = context.Process(
-        target=_estimate_relion_expected_accuracy_spawn_worker,
-        args=(child_connection, kwargs),
-        name="recovar-relion-expected-accuracy",
-    )
-    process.start()
-    child_connection.close()
-    try:
-        status, payload = parent_connection.recv()
-    except EOFError as error:
-        process.join()
-        raise RuntimeError(
-            "isolated RELION expected-accuracy worker exited without a result "
-            f"(exit code {process.exitcode})"
-        ) from error
-    finally:
-        parent_connection.close()
-    process.join()
-    if process.exitcode != 0:
-        raise RuntimeError(
-            "isolated RELION expected-accuracy worker failed after returning "
-            f"a result (exit code {process.exitcode})"
-        )
-    if status != "ok":
-        raise RuntimeError(f"isolated RELION expected-accuracy worker failed:\n{payload}")
-    if not isinstance(payload, ExpectedAccuracy):
-        raise RuntimeError(
-            "isolated RELION expected-accuracy worker returned an invalid payload"
-        )
-    return payload
 
 
 def _constant_selected(values: np.ndarray, indices: np.ndarray, name: str) -> float:

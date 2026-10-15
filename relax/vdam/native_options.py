@@ -87,9 +87,8 @@ class VdamEnvironment:
 
     :meth:`from_environ` reads them (the command calls it); the default instance has every switch off.
     ``clear_jax_caches_per_iteration`` (RELAX_CLEAR_JAX_CACHES_PER_ITER: a strict flag) releases JAX's
-    buffers after each iteration (CUFFT_ALLOC_FAILED at 50k x 256^2); ``skip_expected_accuracy`` and
-    ``isolate_expected_accuracy`` (RELAX_INITIALMODEL_SKIP_EXPECTED_ACCURACY and
-    RELAX_INITIALMODEL_EXPECTED_ACCURACY_SUBPROCESS: 0 or 1) skip the estimate or run it in a spawned process.
+    buffers after each iteration (CUFFT_ALLOC_FAILED at 50k x 256^2); ``skip_expected_accuracy``
+    (RELAX_INITIALMODEL_SKIP_EXPECTED_ACCURACY: 0 or 1) skips the estimate.
     Two engine diagnostics: ``adaptive_fraction`` (RELAX_ADAPTIVE_FRACTION, a float; ``None`` when unset or
     empty keeps the engine's RELION 0.999) and ``subtract_projected_reference`` (``False`` when
     RELAX_DISABLE_SUBTRACT_PROJECTED_REFERENCE is on, a strict flag: back-project the images, not the residuals).
@@ -105,7 +104,6 @@ class VdamEnvironment:
 
     clear_jax_caches_per_iteration: bool = False
     skip_expected_accuracy: bool = False
-    isolate_expected_accuracy: bool = False
     adaptive_fraction: float | None = None
     subtract_projected_reference: bool = True
     cuda_allocator: str = "default"
@@ -129,7 +127,6 @@ class VdamEnvironment:
 
         return cls(parse_env_strict_flag("RELAX_CLEAR_JAX_CACHES_PER_ITER"),
                    strict("RELAX_INITIALMODEL_SKIP_EXPECTED_ACCURACY"),
-                   strict("RELAX_INITIALMODEL_EXPECTED_ACCURACY_SUBPROCESS"),
                    float(adaptive_fraction) if (adaptive_fraction := env.get("RELAX_ADAPTIVE_FRACTION")) else None,
                    not parse_env_strict_flag("RELAX_DISABLE_SUBTRACT_PROJECTED_REFERENCE"),
                    read_env_text("TF_GPU_ALLOCATOR", "default"),

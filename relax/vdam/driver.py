@@ -142,7 +142,6 @@ def _native_expectation_step(
                 tilt_images=tilt_images,
                 optics_group_ids=optics_group_ids,
                 experiment_dataset=accuracy_dataset,
-                isolate_in_subprocess=opts.environment.isolate_expected_accuracy,
                 probe=probe, engine=opts.environment.engine,
             )
             if accuracy_estimate is not None:
@@ -322,7 +321,6 @@ def _native_expectation_step(
     ):
         result.meta["sampling_accuracy_estimated"] = accuracy_estimate is not None
         result.meta["sampling_accuracy_skipped_by_diagnostic"] = bool(opts.environment.skip_expected_accuracy)
-        result.meta["sampling_accuracy_isolated_by_diagnostic"] = bool(opts.environment.isolate_expected_accuracy)
         if accuracy_estimate is not None:
             result.meta.update(accuracy_estimate.meta())
         result.meta.update(
