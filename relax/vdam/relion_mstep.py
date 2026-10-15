@@ -25,10 +25,6 @@ from recovar.reconstruction.relion_functions import (
 )
 
 from relax.fourier.fourier_window import stable_fourier_window_current_size, stable_fourier_window_quantum
-from relax.numerics.deterministic_reduce import (
-    fixed_order_shell_sums,
-    static_shell_voxel_lists,
-)
 from relax.numerics.shells import shell_of_radius_sq
 from relax.relion.projector_setup import (
     setup_relion_projector,
@@ -74,7 +70,7 @@ def _first_moment(old, data, initialize, valid):
 @partial(
     jax.jit,
     static_argnames=(
-        "box_size", "padding_factor", "pseudo_halfsets", "return_intermediates", "compute_dtype", "deterministic_reductions"
+        "box_size", "padding_factor", "pseudo_halfsets", "return_intermediates", "compute_dtype"
     ),
 )
 def relion_vdam_m_step_device(
@@ -100,10 +96,8 @@ def relion_vdam_m_step_device(
     pseudo_halfsets: bool = True,
     return_intermediates: bool = False,
     compute_dtype=jnp.float64,
-    deterministic_reductions: bool,
 ):
-    """Return device arrays matching the native transaction's final outputs (``deterministic_reductions``:
-    ``ScoringOverrides.deterministic_reductions``, the shell sums' fixed order).
+    """Return device arrays matching the native transaction's final outputs.
 
     Data/weights have shape (pf*N+3, pf*N+3, pf*N//2+2); moments retain their
     original (pf*N, pf*N, pf*N//2+1) layout. ``compute_dtype`` selects working
@@ -160,24 +154,13 @@ def relion_vdam_m_step_device(
     shell_indices = jnp.where(valid, shells, n_shells).reshape(-1)
     shell_lookup = jnp.minimum(shells, n_shells - 1)
 
-    if deterministic_reductions:
-        # Static per-shell voxel lists (shell membership depends only on the
-        # static grid); the traced radius mask is applied before gathering.
-        shell_lists = static_shell_voxel_lists(capacity, padding_factor, n_shells)
-
-        def shell_sum(values):
-            flat = jnp.where(valid, values, 0.0).reshape(-1)
-            return fixed_order_shell_sums(flat, shell_lists, real_dtype)
-
-    else:
-
-        def shell_sum(values):
-            # Invalid elements are dropped, rather than contending on a final bin.
-            return (
-                jnp.zeros(n_shells, real_dtype)
-                .at[shell_indices]
-                .add(jnp.where(valid, values, 0.0).reshape(-1), mode="drop")
-            )
+    def shell_sum(values):
+        # Invalid elements are dropped, rather than contending on a final bin.
+        return (
+            jnp.zeros(n_shells, real_dtype)
+            .at[shell_indices]
+            .add(jnp.where(valid, values, 0.0).reshape(-1), mode="drop")
+        )
 
     counts = shell_sum(jnp.ones(half_shape, real_dtype))
     safe_counts = jnp.maximum(counts, 1.0)
@@ -239,7 +222,6 @@ def relion_vdam_m_step_device(
             box_size=box_size,
             padding_factor=padding_factor,
             do_gridding=False,
-            deterministic_reductions=deterministic_reductions,
         )
     else:
         projector, _unused_power = setup_relion_projector_uncorrected(
@@ -248,7 +230,6 @@ def relion_vdam_m_step_device(
             box_size=box_size,
             padding_factor=padding_factor,
             compute_dtype=real_dtype,
-            deterministic_reductions=deterministic_reductions,
         )
     previous_power = shell_sum(jnp.sqrt(_norm(projector))) / safe_counts
     snr = jnp.where(noise_power > 0.0, 2.0 * fudge * previous_power / noise_power, 0.0)
@@ -391,10 +372,8 @@ def relion_vdam_m_step_host(
     recovar_layout: bool = False,
     device_volumes: bool = False,
     average_ctf2=None,
-    deterministic_reductions: bool,
 ):
-    """Host-facing adapter of the device VDAM M-step transaction (FFT grids of at least 16;
-    ``deterministic_reductions``: ``ScoringOverrides.deterministic_reductions``).
+    """Host-facing adapter of the device VDAM M-step transaction (FFT grids of at least 16).
 
     ``fsc_ssnr`` is unused with native update_tau2_with_fsc=false.
     ``min_resol_shell`` is unused in the pinned native reconstructGrad body.
@@ -470,7 +449,6 @@ def relion_vdam_m_step_host(
         padding_factor=padding_factor,
         pseudo_halfsets=pseudo,
         compute_dtype=real_dtype,
-        deterministic_reductions=deterministic_reductions,
     )
     if recovar_layout:
         result["iref"] = swap_relion_volume_layout(result["iref"], real_dtype)

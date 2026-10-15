@@ -823,7 +823,6 @@ def compute_local_search_resident(
             # significance only, no M-step and no accumulators. See _run_resident_parent_probe.
             return _run_resident_parent_probe(
                 tables=tables,
-                deterministic_reductions=support.scoring_overrides.deterministic_reductions,
                 experiment_dataset=data.experiment_dataset,
                 bucket_io_kwargs=dict(bucket_io_kwargs, score_only=True),
                 fine_translation_prior_2d=np.asarray(
@@ -1056,7 +1055,6 @@ def compute_local_search_resident(
             n_optics_groups=n_optics_groups,
             n_classes=tables.n_classes,
             float32_bucketed_image_sums=False,
-            deterministic_reductions=support.scoring_overrides.deterministic_reductions,
         )
         stats = make_resident_statistics(
             stats_config, max_posterior_dtype=precision_policy.score_real_dtype
@@ -1432,7 +1430,6 @@ def _prepare_chunk_score_operands(
     current_size,
     source_faithful_spectrum_norm,
     normalized_cc=False,
-    deterministic_reductions: bool,
 ):
     """One probe chunk's score operands, from the same preparation as pass 2.
 
@@ -1476,7 +1473,6 @@ def _prepare_chunk_score_operands(
         use_exact_relion_gaussian=True,
         accumulate_noise=False,
         source_faithful_spectrum_norm=source_faithful_spectrum_norm,
-        deterministic_reductions=deterministic_reductions,
     )
     permutation = jnp.asarray(order, dtype=jnp.int32)
     valid_images = jnp.asarray(np.arange(chunk.image_capacity) < chunk.n_valid_images, dtype=bool)
@@ -1626,7 +1622,6 @@ def _run_resident_parent_probe(
     window_union=None,
     class_projectors=None,
     engine_tuning,
-    deterministic_reductions: bool,
 ) -> LocalEMResult:
     """RELION's local pass 1 (the adaptive parent probe) on the resident stages.
 
@@ -1740,7 +1735,6 @@ def _run_resident_parent_probe(
             current_size=current_size,
             source_faithful_spectrum_norm=source_faithful_spectrum_norm,
             normalized_cc=bool(firstiter_cc),
-            deterministic_reductions=deterministic_reductions,
         )
         # Host rotations: the coarse kernel's wrapped-row check reads each
         # block's first rotation, which on a device array waits for the queue.
@@ -2305,7 +2299,6 @@ def _start_resident_local_chunk(
             image_indices,
             image_capacity=chunk.image_capacity,
             bucket_io_kwargs=bucket_io_kwargs,
-            deterministic_reductions=stats_config.deterministic_reductions,
             window_indices=window_indices,
             recon_window_indices=recon_window_indices,
             rect_indices_device=rect_indices_device,
@@ -2332,7 +2325,6 @@ def _start_resident_local_chunk(
             image_indices=image_indices,
             experiment_dataset=experiment_dataset,
             bucket_io_kwargs=bucket_io_kwargs,
-            deterministic_reductions=stats_config.deterministic_reductions,
             windowed_prepare=windowed_prepare,
             recon_window_indices=recon_window_indices,
             n_fine_trans=int(n_fine_trans),
@@ -2686,7 +2678,6 @@ def _start_resident_local_chunk(
                 n_shells=int(stats_config.n_shells),
                 n_recon_windowed=int(n_recon_windowed),
                 glue_jit=engine_tuning.resident_glue_jit,
-                deterministic_reductions=stats_config.deterministic_reductions,
                 noise_variance_for_noise=noise_variance_for_noise,
                 shell_indices_noise=shell_indices_noise,
                 exact_positions_device=exact_positions_device,

@@ -1107,7 +1107,6 @@ def _resident_pass2(
             relion_parent_execution_order=use_relion_f32_fine_posterior,
             current_size=int(current_size), mstep_current_size=int(mstep_current_size),
             n_half=n_half, window_spec_kwargs=window_spec_kwargs, engine_tuning=engine_tuning,
-            deterministic_reductions=scoring_overrides.deterministic_reductions,
             disc_type=disc_type, projector_r_max=relion_projector_r_max,
             projection_padding_factor=projection_padding_factor,
             reconstruction_padding_factor=reconstruction_padding_factor,
@@ -2328,7 +2327,6 @@ def _resident_pass2(
         n_optics_groups=n_optics_groups,
         n_classes=n_classes,
         float32_bucketed_image_sums=_FLOAT32_BUCKETED_IMAGE_SUMS,
-        deterministic_reductions=scoring_overrides.deterministic_reductions,
     )
     stats = make_resident_statistics(
         stats_config, max_posterior_dtype=precision_policy.score_real_dtype
@@ -2368,7 +2366,6 @@ def _resident_pass2(
     warmup = None
     resident_operand_kwargs = dict(
         bucket_io_kwargs=bucket_io_kwargs,
-        deterministic_reductions=scoring_overrides.deterministic_reductions,
         window_indices=window_indices,
         recon_window_indices=recon_window_indices,
         wavg_rect_indices=relion_wavg_rectangle.centered_indices,
@@ -3519,7 +3516,6 @@ def _run_resident_chunk(
             image_indices,
             image_capacity=chunk.image_capacity,
             bucket_io_kwargs=bucket_io_kwargs,
-            deterministic_reductions=stats_config.deterministic_reductions,
             window_indices=window_indices,
             recon_window_indices=recon_window_indices,
             rect_indices_device=rect_indices_device,
@@ -3546,7 +3542,6 @@ def _run_resident_chunk(
             image_indices=image_indices,
             experiment_dataset=experiment_dataset,
             bucket_io_kwargs=bucket_io_kwargs,
-            deterministic_reductions=stats_config.deterministic_reductions,
             windowed_prepare=windowed_prepare,
             recon_window_indices=recon_window_indices,
             score_window_indices=window_indices,
@@ -3592,7 +3587,6 @@ def _run_resident_chunk(
                     image_indices=image_indices,
                     experiment_dataset=experiment_dataset,
                     bucket_io_kwargs=bucket_io_kwargs,
-                    deterministic_reductions=stats_config.deterministic_reductions,
                     windowed_prepare=windowed_prepare,
                     recon_window_indices=recon_window_indices,
                     score_window_indices=window_indices,
@@ -3620,7 +3614,6 @@ def _run_resident_chunk(
                 image_shape=image_shape,
                 n_recon_pixels=int(n_recon_windowed),
                 bpref_recon_operand=resident_operands.recon_weight is not None,
-                deterministic_reductions=stats_config.deterministic_reductions,
                 label=f"chunk images {chunk.image_start}-{chunk.image_stop}",
             )
     # The unshifted operands, the half's or this chunk's, carry recon_image; the

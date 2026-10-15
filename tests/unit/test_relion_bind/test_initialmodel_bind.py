@@ -422,7 +422,7 @@ class TestAutoRefineExpectedAccuracyBinding:
 
         builders = {
             "native": native_reference_to_relion_projector_half_maps_and_power,
-            "jax": partial(reference_to_relion_projector_half_maps_and_power, deterministic_reductions=False),
+            "jax": partial(reference_to_relion_projector_half_maps_and_power),
         }
         for backend, build in builders.items():
             slabs, _power, _r_max = build(

@@ -325,7 +325,6 @@ def test_unmasked_scoring_is_refused():
             use_exact_relion_gaussian=False,
             accumulate_noise=False,
             source_faithful_spectrum_norm=False,
-            deterministic_reductions=False,
         )
 
 
@@ -360,7 +359,6 @@ def _resident_operands(case, image_indices=None, *, staged_batch=None):
         source_faithful_spectrum_norm=False,
         image_batch_size=4, prefetch_depth=2,
         staged_batch=staged_batch,
-        deterministic_reductions=False,
     )
 
 
@@ -413,7 +411,6 @@ def test_native_fine_units_keep_the_score_modes_distinct(monkeypatch, score_mode
             accumulate_noise=False, source_faithful_spectrum_norm=False,
             image_batch_size=2, prefetch_depth=2, relion_native_fine_units=native_units,
             allow_normalized_cc=True,
-            deterministic_reductions=False,
         )
 
     ordinary, native = prepared(False), prepared(True)
@@ -669,7 +666,7 @@ def test_chunk_gather_reproduces_the_capacity_padding(
 
 
 @pytest.mark.gpu
-def test_shell_binning_is_a_racing_scatter_and_the_opt_in_fixes_it(
+def test_shell_binning_is_a_racing_scatter_within_one_float32_ulp(
     monkeypatch, custom_cuda_lib, gpu_device
 ):
     """``relion_norm_high_shell`` is the one operand that is not reproducible run to run.
@@ -678,9 +675,7 @@ def test_shell_binning_is_a_racing_scatter_and_the_opt_in_fixes_it(
     duplicate indices, and it races: two calls on the *same* array in one
     process disagree. That is why the once-per-half preparation of it is not
     compared with a per-chunk preparation -- no two preparations of it are
-    equal, including two of the per-chunk path. Under
-    ``RELAX_EM_DETERMINISTIC_REDUCTIONS=1`` the binning becomes a fixed-order
-    masked reduction and all three comparisons below match in the float64 band.
+    equal, including two of the per-chunk path.
     """
 
     from relax.fine_pass.scoring import _relion_powerclass_noise_terms
@@ -700,36 +695,27 @@ def test_shell_binning_is_a_racing_scatter_and_the_opt_in_fixes_it(
             use_exact_relion_gaussian=True,
             accumulate_noise=True,
             source_faithful_spectrum_norm=True,
-            deterministic_reductions=deterministic,
         )
 
-    for deterministic in (False, True):
-        # ScoringOverrides.deterministic_reductions; a static argument, so each value traces its own program.
-        with jax.default_device(gpu_device):
-            device = jnp.asarray(values)
-            _x1, first = terms(device)
-            _x2, second = terms(device)
-            _x3, gathered = terms(device[jnp.arange(rows, dtype=jnp.int32)])
-            _x4, halved = terms(device[: rows // 2])
-        first, second, gathered, halved = (
-            np.asarray(x, dtype=np.float64) for x in (first, second, gathered, halved)
-        )
-        scale = np.maximum(np.abs(first), 1e-30)
-        half_scale = scale[: rows // 2]
-        worst = max(
-            float((np.abs(first - second) / scale).max()),
-            float((np.abs(first - gathered) / scale).max()),
-            float((np.abs(first[: rows // 2] - halved) / half_scale).max()),
-        )
-        if deterministic:
-            # float32 outputs (cast to float64 above) get the float32 band.
-            assert_matches(second, first, rtol=1e-6)
-            assert_matches(gathered, first, rtol=1e-6)
-            assert_matches(halved, first[: rows // 2], rtol=1e-6)
-        else:
-            # Not asserted to differ -- a small fixture may happen to agree --
-            # but bounded well inside one float32 ulp of the shell power.
-            assert worst <= 7e-7, worst
+    with jax.default_device(gpu_device):
+        device = jnp.asarray(values)
+        _x1, first = terms(device)
+        _x2, second = terms(device)
+        _x3, gathered = terms(device[jnp.arange(rows, dtype=jnp.int32)])
+        _x4, halved = terms(device[: rows // 2])
+    first, second, gathered, halved = (
+        np.asarray(x, dtype=np.float64) for x in (first, second, gathered, halved)
+    )
+    scale = np.maximum(np.abs(first), 1e-30)
+    half_scale = scale[: rows // 2]
+    worst = max(
+        float((np.abs(first - second) / scale).max()),
+        float((np.abs(first - gathered) / scale).max()),
+        float((np.abs(first[: rows // 2] - halved) / half_scale).max()),
+    )
+    # Not asserted to differ -- a small fixture may happen to agree --
+    # but bounded well inside one float32 ulp of the shell power.
+    assert worst <= 7e-7, worst
 
 
 def test_operand_budget_is_half_of_what_the_allocator_can_hand_out(monkeypatch):

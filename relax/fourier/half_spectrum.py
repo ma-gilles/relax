@@ -9,7 +9,6 @@ import jax.numpy as jnp
 import numpy as np
 import recovar.core.fourier_transform_utils as fourier_transform_utils
 
-from relax.numerics.deterministic_reduce import fixed_order_segment_sum
 from relax.numerics.shells import shell_index
 
 
@@ -252,18 +251,12 @@ def mask_relion_noise_shell_indices_to_current_window(
     return jnp.asarray(masked_shell_indices)
 
 
-def bin_shell_values_jax(values, shell_indices, n_shells, *, deterministic: bool):
-    """Bin per-pixel values into shell indices, dropping RELION sentinel pixels.
-
-    ``deterministic`` (``ScoringOverrides.deterministic_reductions``) replaces the scatter-add by a fixed-order
-    masked reduction with the same operands and dtype.
-    """
+def bin_shell_values_jax(values, shell_indices, n_shells):
+    """Bin per-pixel values into shell indices, dropping RELION sentinel pixels."""
 
     shell_count = int(n_shells)
     values = jnp.asarray(values)
     shell_indices = jnp.asarray(shell_indices, dtype=jnp.int32)
-    if deterministic:
-        return fixed_order_segment_sum(values, shell_indices, shell_count)
     sentinel = jnp.asarray(shell_count, dtype=jnp.int32)
     safe_indices = jnp.where(
         (shell_indices >= 0) & (shell_indices < shell_count),

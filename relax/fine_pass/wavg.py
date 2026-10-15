@@ -338,10 +338,8 @@ def _replace_low_shell_noise_with_relion_wavg_direct_residual_jnp(
     *,
     exclusive_shell_stop: "int | jax.Array",
     shell_count: int,
-    deterministic: bool,
 ):
-    """``jax.numpy`` twin of the numpy direct-residual replacement above (``deterministic``:
-    ``ScoringOverrides.deterministic_reductions``, the shell binning's fixed-order sum).
+    """``jax.numpy`` twin of the numpy direct-residual replacement above.
 
     Same contract, same float32 -> float64 widening of the atomic Wavg
     ``diff2`` stream and the same shell-stop clamping as
@@ -386,7 +384,6 @@ def _replace_low_shell_noise_with_relion_wavg_direct_residual_jnp(
         jnp.sum(atomic_diff2.astype(jnp.float64), axis=0),
         covered_shells,
         shell_count,
-        deterministic=deterministic,
     )
     replaced = jnp.arange(shell_count, dtype=jnp.int32) < shell_stop
     return (

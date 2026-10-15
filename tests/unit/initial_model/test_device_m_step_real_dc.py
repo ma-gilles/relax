@@ -58,7 +58,7 @@ def test_m_step_c2r_input_has_real_dc(dtype, sign, monkeypatch):
 
     monkeypatch.setattr(mstep.ftu, "get_idft3_real", inspect_inverse)
     with jax.disable_jit():
-        mstep.relion_vdam_m_step_device(**_imaginary_dc_case(dtype, sign), deterministic_reductions=False)
+        mstep.relion_vdam_m_step_device(**_imaginary_dc_case(dtype, sign))
     assert calls == [(16, 16, 9)]
 
 
@@ -68,8 +68,8 @@ def test_m_step_c2r_input_has_real_dc(dtype, sign, monkeypatch):
 def test_m_step_imaginary_dc_preserves_exact_constant_map(dtype, sign):
     """Actual GPU C2R must preserve real DC and ignore an invalid imaginary DC."""
     assert jax.default_backend() == "gpu"
-    result = mstep.relion_vdam_m_step_device(**_imaginary_dc_case(dtype, sign), deterministic_reductions=False)
-    control = mstep.relion_vdam_m_step_device(**_imaginary_dc_case(dtype, 0), deterministic_reductions=False)
+    result = mstep.relion_vdam_m_step_device(**_imaginary_dc_case(dtype, sign))
+    control = mstep.relion_vdam_m_step_device(**_imaginary_dc_case(dtype, 0))
     # Unit step and FSC1/2 leave projector DC8. Inverse norm='forward'
     # yields constant8; the transaction divides by N16, giving exact1/2.
     expected = np.full((16, 16, 16), 0.5, dtype)

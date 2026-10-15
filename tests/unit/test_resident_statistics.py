@@ -54,7 +54,6 @@ def _config():
         relion_wavg_atomic_scale_aa=True,
         accumulate_scale=True,
         source_faithful_spectrum_norm=True,
-        deterministic_reductions=False,
     )
 
 
@@ -69,7 +68,7 @@ def test_segment_sum_by_image_matches_numpy_add_at():
     values = rng.standard_normal((17, 3)).astype(np.float64)
     expected = np.zeros((4, 3), dtype=np.float64)
     np.add.at(expected, row_image, values)
-    got = np.asarray(segment_sum_by_image(jnp.asarray(values), jnp.asarray(row_image), 4, deterministic=False))
+    got = np.asarray(segment_sum_by_image(jnp.asarray(values), jnp.asarray(row_image), 4))
     np.testing.assert_allclose(got, expected, rtol=1e-14, atol=0.0)
 
 
@@ -91,7 +90,6 @@ def test_bucketed_float32_posterior_keeps_image_mass_and_index_semantics(monkeyp
     np.add.at(expected, canonical_ids[live], values[live].astype(np.float64))
     got = np.asarray(segment_sum_by_image(
         jnp.asarray(values), jnp.asarray(ids), capacity, float32_posterior_bucket_size=128,
-        deterministic=False,
     ))
     np.testing.assert_allclose(got, expected, rtol=5e-7, atol=2e-7)
     assert got.dtype == np.float32
@@ -100,7 +98,6 @@ def test_bucketed_float32_posterior_keeps_image_mass_and_index_semantics(monkeyp
     got_scalar = np.asarray(segment_sum_by_image(
         jnp.asarray(values[:, 0]), jnp.asarray(ids), capacity,
         float32_scalar_bucket_size=128,
-        deterministic=False,
     ))
     np.testing.assert_allclose(got_scalar, expected[:, 0], rtol=5e-7, atol=2e-7)
     assert got_scalar.dtype == np.float32
@@ -109,13 +106,7 @@ def test_bucketed_float32_posterior_keeps_image_mass_and_index_semantics(monkeyp
     )
     with pytest.raises(ValueError, match="float32"):
         segment_sum_by_image(jnp.asarray(values, jnp.float64), jnp.asarray(ids), capacity,
-                             float32_posterior_bucket_size=128, deterministic=False)
-    fixed = np.asarray(segment_sum_by_image(jnp.asarray(values), jnp.asarray(ids), capacity, deterministic=True))
-    opted_fixed = np.asarray(segment_sum_by_image(
-        jnp.asarray(values), jnp.asarray(ids), capacity, float32_posterior_bucket_size=128,
-        deterministic=True,
-    ))
-    np.testing.assert_allclose(opted_fixed, fixed, rtol=5e-7, atol=2e-7)
+                             float32_posterior_bucket_size=128)
 
 
 def test_flat_row_norm_residual_matches_host_per_image_helper():
@@ -145,8 +136,8 @@ def test_flat_row_norm_residual_matches_host_per_image_helper():
         jnp.asarray(ctf.reshape(batch * n_rot, N_PIX)),
         jnp.asarray(nv),
     )
-    a2 = np.asarray(segment_sum_by_image(a2_row, jnp.asarray(row_image), batch, deterministic=False), dtype=np.float64)
-    xa = np.asarray(segment_sum_by_image(xa_row, jnp.asarray(row_image), batch, deterministic=False), dtype=np.float64)
+    a2 = np.asarray(segment_sum_by_image(a2_row, jnp.asarray(row_image), batch), dtype=np.float64)
+    xa = np.asarray(segment_sum_by_image(xa_row, jnp.asarray(row_image), batch), dtype=np.float64)
     np.testing.assert_allclose(a2 - 2.0 * xa, expected, rtol=1e-6, atol=0.0)
 
 
@@ -182,8 +173,8 @@ def test_flat_row_scale_terms_match_host_scale_helper():
         jnp.asarray(nv),
         pixel_mask=jnp.asarray(mask),
     )
-    a2 = segment_sum_by_image(a2_row, jnp.asarray(row_image), batch, deterministic=False)
-    xa = segment_sum_by_image(xa_row, jnp.asarray(row_image), batch, deterministic=False)
+    a2 = segment_sum_by_image(a2_row, jnp.asarray(row_image), batch)
+    xa = segment_sum_by_image(xa_row, jnp.asarray(row_image), batch)
     np.testing.assert_allclose(
         np.asarray(xa, dtype=np.float64) / safe, np.asarray(expected_xa, dtype=np.float64),
         rtol=1e-6, atol=0.0,

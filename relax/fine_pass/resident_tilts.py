@@ -1410,7 +1410,7 @@ def accumulate_tilt_chunk_terms(
 
     # --- 1/2. offset and support mass: once per particle --------------------
     translation_posterior = segment_sum_by_image(
-        row_posterior, row_unit_local, unit_capacity, deterministic=config.deterministic_reductions
+        row_posterior, row_unit_local, unit_capacity
     )
     sigma2_offset = stats.sigma2_offset
     if unit_translation_sqdist_ang is not None:
@@ -1460,7 +1460,6 @@ def accumulate_tilt_chunk_terms(
             tables.wavg_shell_indices,
             exclusive_shell_stop=int(config.direct_noise_exclusive_shell_stop),
             shell_count=config.n_shells,
-            deterministic=config.deterministic_reductions,
         )
     else:
         image_optics = jnp.asarray(operands.optics_groups, dtype=jnp.int32)
@@ -1484,7 +1483,6 @@ def accumulate_tilt_chunk_terms(
                 tables.wavg_shell_indices,
                 exclusive_shell_stop=int(config.direct_noise_exclusive_shell_stop),
                 shell_count=config.n_shells,
-                deterministic=config.deterministic_reductions,
             )
             residual_per_group.append(group_residual)
             power_per_group.append(group_power)

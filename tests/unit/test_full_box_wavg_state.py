@@ -54,7 +54,6 @@ def test_full_box_powerclass_noise_terms_has_zero_high_shell():
         image_shape=(8, 8), current_size=None,
         use_exact_relion_gaussian=True, accumulate_noise=True,
         source_faithful_spectrum_norm=False,
-        deterministic_reductions=False,
     )
     assert_matches(np.asarray(highres), np.zeros(2, dtype=np.float32))
     # Keep the existing caller-level absence contract; direct Wavg norm fills
@@ -67,8 +66,8 @@ def test_full_box_resident_statistics_replaces_all_shells_without_norm_cutoff():
 
     common = dict(n_shells=5, n_fine_trans=1, n_images=2,
                   n_coarse_rot=3, n_scale_groups=1)
-    full = resolve_statistics_config(current_size=None, **common, deterministic_reductions=False)
-    cropped = resolve_statistics_config(current_size=4, **common, deterministic_reductions=False)
+    full = resolve_statistics_config(current_size=None, **common)
+    cropped = resolve_statistics_config(current_size=4, **common)
     assert full.direct_noise_exclusive_shell_stop == 5
     assert full.norm_unweighted_shell_cutoff is None
     assert cropped.direct_noise_exclusive_shell_stop == 3

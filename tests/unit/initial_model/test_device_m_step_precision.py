@@ -43,7 +43,7 @@ def _case(dtype=np.float32):
 def test_constant_reference_zero_update_and_dtype_contract(dtype):
     case = _case(dtype)
     original = deepcopy(case)
-    result = relion_vdam_m_step_device(**case, compute_dtype=dtype, deterministic_reductions=False)
+    result = relion_vdam_m_step_device(**case, compute_dtype=dtype)
     real_fields = ("iref", "sigma2", "data_vs_prior", "fourier_coverage", "mom1_noise_power", "fsc_estimate")
     complex_fields = ("mom1_h0", "mom1_h1", "mom2", "gradient", "projector", "updated_projector")
     for key in real_fields:
@@ -77,7 +77,7 @@ def test_explicit_first_moment_certificate_and_inactive_moments(dtype):
     case["mom1_h1"].fill(4)
     case["first_initializes_h0"] = np.bool_(True)
     case["first_initializes_h1"] = np.bool_(False)
-    result = relion_vdam_m_step_device(**case, compute_dtype=dtype, deterministic_reductions=False)
+    result = relion_vdam_m_step_device(**case, compute_dtype=dtype)
     center = (8, 8, 0)
     # Explicit certificates, rather than a recomputed parallel sum, choose EMA.
     assert result["mom1_h0"][center] == dtype(2)
@@ -89,8 +89,8 @@ def test_explicit_first_moment_certificate_and_inactive_moments(dtype):
 
 def test_default_precision_is_explicit_float64():
     case = _case(np.float64)
-    default = relion_vdam_m_step_device(**case, deterministic_reductions=False)
-    explicit = relion_vdam_m_step_device(**case, compute_dtype=jnp.float64, deterministic_reductions=False)
+    default = relion_vdam_m_step_device(**case)
+    explicit = relion_vdam_m_step_device(**case, compute_dtype=jnp.float64)
     for key in default:
         assert_matches(default[key], explicit[key])
 
@@ -99,14 +99,14 @@ def test_default_precision_is_explicit_float64():
 def test_invalid_precision_rejected_before_native_or_device_work(dtype):
     case = _case()
     with pytest.raises(ValueError, match="compute_dtype"):
-        relion_vdam_m_step_device(**case, compute_dtype=dtype, deterministic_reductions=False)
+        relion_vdam_m_step_device(**case, compute_dtype=dtype)
     host = dict(case)
     host.pop("first_initializes_h0")
     host.pop("first_initializes_h1")
     host.pop("return_intermediates")
     host["fsc_ssnr"] = case["fsc_reconstruct"]
     with pytest.raises(ValueError, match="compute_dtype"):
-        relion_vdam_m_step_host(**host, compute_dtype=dtype, deterministic_reductions=False)
+        relion_vdam_m_step_host(**host, compute_dtype=dtype)
 
 
 @pytest.mark.parametrize("dtype", [np.float32, np.float64])
@@ -114,19 +114,19 @@ def test_small_fft_grid_is_refused(dtype):
     case = _case()
     case["box_size"] = 8
     with pytest.raises(ValueError, match="FFT grid >=16"):
-        relion_vdam_m_step_device(**case, compute_dtype=dtype, deterministic_reductions=False)
+        relion_vdam_m_step_device(**case, compute_dtype=dtype)
     case.pop("first_initializes_h0")
     case.pop("first_initializes_h1")
     case.pop("return_intermediates")
     case["fsc_ssnr"] = case["fsc_reconstruct"]
     with pytest.raises(ValueError, match="FFT grid"):
-        relion_vdam_m_step_host(**case, compute_dtype=dtype, deterministic_reductions=False)
+        relion_vdam_m_step_host(**case, compute_dtype=dtype)
 
 
 def test_float32_fft_ir_has_no_double_payload():
     case = _case()
     ir = str(
-        relion_vdam_m_step_device.lower(**case, compute_dtype=np.float32, deterministic_reductions=False).compiler_ir()
+        relion_vdam_m_step_device.lower(**case, compute_dtype=np.float32).compiler_ir()
     )
     fft_lines = [line for line in ir.splitlines() if "stablehlo.fft " in line]
     # The projector build's three one-axis transforms (x RFFT, y and z FFT) and the inverse.
@@ -146,6 +146,6 @@ def test_float32_fft_ir_has_no_double_payload():
 def test_authoritative_negative_tau_cannot_round_away(dtype):
     case = _case(dtype)
     case["tau2"][0] = -1e-100
-    result = relion_vdam_m_step_device(**case, compute_dtype=dtype, deterministic_reductions=False)
+    result = relion_vdam_m_step_device(**case, compute_dtype=dtype)
     assert result["_invalid_tau2"]
     assert_matches(result["tau2"], case["tau2"])

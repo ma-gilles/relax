@@ -306,7 +306,6 @@ def _prepare_resident(case, native):
         source_faithful_spectrum_norm=True,
         image_batch_size=2, prefetch_depth=2,
         relion_native_fine_units=native,
-        deterministic_reductions=False,
     )
 
 
@@ -411,7 +410,6 @@ def test_per_chunk_operands_match_the_resident_native_operands(monkeypatch, curr
             relion_native_fine_units=native,
             noise_shell_indices_half=make_relion_noise_shell_indices_half(case["shape"]),
             n_noise_shells=case["shape"][0] // 2 + 1,
-            deterministic_reductions=False,
         )
 
     chunk = per_chunk(True)

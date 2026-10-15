@@ -26,9 +26,6 @@ def test_medium_plan_covers_fast_tier_sweep_and_end_to_end():
     swept = [a for i in items.values() if i.name.startswith("unit_") for a in i.argv if a.endswith(".py")]
     assert len(swept) == len(set(swept)), "a sweep file is in two shards"
     assert run_test_tier.FAST not in swept and run_test_tier.E2E not in swept
-    for isolated in run_test_tier.ISOLATE:
-        shard = [i for i in items.values() if isolated in i.argv]
-        assert len(shard) == 1 and [a for a in shard[0].argv if a.endswith(".py")] == [isolated]
     assert all(items[c].required for c in collected)
     assert not any(i.required for n, i in items.items() if n.startswith("unit_"))
 

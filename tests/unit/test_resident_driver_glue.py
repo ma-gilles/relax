@@ -52,7 +52,7 @@ def _spec(**overrides):
         image_shape=(16, 16),
         recon_volume_shape=(16, 16, 16),
         max_adjoint_block_bytes=1 << 30,
-        stats_config=resident_mstep_blocks._MstepOnlyStatsConfig(n_shells=9, deterministic_reductions=False),
+        stats_config=resident_mstep_blocks._MstepOnlyStatsConfig(n_shells=9),
         use_rfloat_ctf_wavg=False,
         use_translate_sum_kernel=False,
         bpref_recon_operand=False,

@@ -171,7 +171,6 @@ def _local_driver(monkeypatch, weights, row_partial):
         relion_x_half_recon_indices=None,
         max_adjoint_block_bytes=1 << 20,
         row_partial=row_partial,
-        deterministic_reductions=False,
     )
     return out[0], out[1]
 

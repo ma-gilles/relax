@@ -494,7 +494,6 @@ def test_resident_operands_match_a_single_image_prepare(
                 use_exact_relion_gaussian=True,
                 accumulate_noise=False,
                 source_faithful_spectrum_norm=False,
-                deterministic_reductions=False,
             )
             assert_matches(
                 np.asarray(operands.score_input[image]), np.asarray(expected_input)[0]

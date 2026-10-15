@@ -62,7 +62,6 @@
   "RECOVAR_EM_BPREF_FINITE_GUARD": "RELAX_EM_BPREF_FINITE_GUARD",
   "RECOVAR_EM_COMPILE_AHEAD": "RELAX_EM_COMPILE_AHEAD",
   "RECOVAR_EM_COMPILE_AHEAD_MAX_PROGRAMS": "RELAX_EM_COMPILE_AHEAD_MAX_PROGRAMS",
-  "RECOVAR_EM_DETERMINISTIC_REDUCTIONS": "RELAX_EM_DETERMINISTIC_REDUCTIONS",
   "RECOVAR_EM_FINITE_CHECK": "RELAX_EM_FINITE_CHECK",
   "RECOVAR_EM_FINITE_CHECK_WARN": "RELAX_EM_FINITE_CHECK_WARN",
   "RECOVAR_EM_JIT_STAGE_GLUE": "RELAX_EM_JIT_STAGE_GLUE",
@@ -729,6 +728,8 @@
   "RECOVAR_K1_BPREF_EXECUTION_GROUP_BY_BUCKET_SIZE": "no reader: the K=1 BPref execution-order switches went with the compact pass 2 (2026-09-26); their unread name constants were deleted (2026-10-14)",
   "RELAX_K1_BPREF_EXECUTION_GROUP_BY_BUCKET_SIZE": "no reader: the K=1 BPref execution-order switches went with the compact pass 2 (2026-09-26); their unread name constants were deleted (2026-10-14)",
   "RECOVAR_RELION_FINE_ROTATION_EXECUTION_ORDER": "retired after a RELION A/B (2026-10-14): K=1 auto-refine with RELION's fine parent execution order matched RELION no better than without it, within the run-to-run spread; the order still follows the float32 fine posterior",
-  "RELAX_RELION_FINE_ROTATION_EXECUTION_ORDER": "retired after a RELION A/B (2026-10-14): K=1 auto-refine with RELION's fine parent execution order matched RELION no better than without it, within the run-to-run spread; the order still follows the float32 fine posterior"
+  "RELAX_RELION_FINE_ROTATION_EXECUTION_ORDER": "retired after a RELION A/B (2026-10-14): K=1 auto-refine with RELION's fine parent execution order matched RELION no better than without it, within the run-to-run spread; the order still follows the float32 fine posterior",
+  "RECOVAR_EM_DETERMINISTIC_REDUCTIONS": "no user: the fixed-order duplicate-index sums were set by no script, tier or production path and did not remove the run-to-run differences they were meant to fix (em_status.md); the scatter-adds are the one path (2026-10-15)",
+  "RELAX_EM_DETERMINISTIC_REDUCTIONS": "no user: the fixed-order duplicate-index sums were set by no script, tier or production path and did not remove the run-to-run differences they were meant to fix (em_status.md); the scatter-adds are the one path (2026-10-15)"
  }
 }

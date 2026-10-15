@@ -204,7 +204,6 @@ def prepare_resident_image_operands(
             use_exact_relion_gaussian=use_exact_relion_gaussian,
             accumulate_noise=accumulate_noise,
             source_faithful_spectrum_norm=source_faithful_spectrum_norm,
-            deterministic_reductions=False,
         )
         if highres_available is None:
             highres_available = highres_xi2_half is not None

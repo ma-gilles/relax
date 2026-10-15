@@ -99,7 +99,6 @@ def vdam_m_step(
     mstep_compute_dtype: Literal["float32", "float64"],
     average_ctf2=None,
     single_class_m_step: Callable[..., InitialModelState],
-    deterministic_reductions: bool,
 ) -> InitialModelState:
     """Full VDAM M-step over K classes.
 
@@ -125,7 +124,6 @@ def vdam_m_step(
             padding_factor=padding_factor,
             mstep_compute_dtype=mstep_compute_dtype,
             average_ctf2=average_ctf2,
-            deterministic_reductions=deterministic_reductions,
         )
     return out
 
@@ -228,7 +226,6 @@ def _run_m_step_transaction(
     min_resol_shell: float,
     mstep_compute_dtype: Literal["float32", "float64"],
     average_ctf2,
-    deterministic_reductions: bool,
 ) -> InitialModelState:
     """Apply one shared-layout transaction and publish the new state on the device.
 
@@ -240,7 +237,7 @@ def _run_m_step_transaction(
     from relax.vdam.relion_mstep import relion_vdam_m_step_host
 
     host_options = dict(
-        recovar_layout=True, device_volumes=True, average_ctf2=average_ctf2, deterministic_reductions=deterministic_reductions
+        recovar_layout=True, device_volumes=True, average_ctf2=average_ctf2
     )
     if mstep_compute_dtype == "float32":
         host_options["compute_dtype"] = np.float32
@@ -322,7 +319,6 @@ def vdam_m_step_single_class(
     padding_factor: int,
     mstep_compute_dtype: Literal["float32", "float64"],
     average_ctf2=None,
-    deterministic_reductions: bool,
 ) -> InitialModelState:
     """VDAM M-step for one class: the transaction of
     :func:`relax.vdam.relion_mstep.relion_vdam_m_step_host`.
@@ -354,5 +350,4 @@ def vdam_m_step_single_class(
         min_resol_shell=min_resol_shell,
         mstep_compute_dtype=mstep_compute_dtype,
         average_ctf2=average_ctf2,
-        deterministic_reductions=deterministic_reductions,
     )

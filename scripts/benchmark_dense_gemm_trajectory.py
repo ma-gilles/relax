@@ -28,7 +28,6 @@ from recovar.reconstruction import noise as recon_noise
 from recovar.utils.helpers import load_relion_volume
 
 from relax.runtime.engine_tuning import EngineTuning
-from relax.runtime.scoring_overrides import ScoringOverrides
 from relax.star.blocks import read_star_blocks
 
 log = logging.getLogger(__name__)
@@ -355,7 +354,6 @@ def prepare_real_batch(dataset, checkpoint, half_index, metadata, geometry, loca
     )
     resident = prepare_resident_half_operands(
         dataset, local_indices, bucket_io_kwargs=bucket_kwargs,
-        deterministic_reductions=ScoringOverrides.from_environ().deterministic_reductions,
         window_indices=window.window_indices,
         recon_window_indices=window.recon_window_indices,
         wavg_rect_indices=rect.centered_indices,
@@ -489,7 +487,6 @@ def _projector_slab(fourier_map, volume_shape, current_size):
     slabs, _power, radius = reference_to_relion_projector_half_maps_and_power(
         real_map[None, ...], current_size=current_size, padding_factor=2,
         projector_data_dtype=np.complex64,
-        deterministic_reductions=ScoringOverrides.from_environ().deterministic_reductions,
     )
     if radius != current_size // 2 or slabs.shape[0] != 1:
         raise ValueError("checkpoint projector has the wrong radius or class count")

@@ -789,10 +789,7 @@ def test_ctf_probs_matches_the_resident_block_reduction(
     # 21-term non-negative sum, which is this file's own ``probs_sum_t`` bound.
     # Bit equality was an observation, not a contract: it held in most sessions
     # and failed in others at 3.8e-07 relative, because the XLA side's
-    # reduction plan for this expression is not fixed across sessions, with or
-    # without ``RELAX_EM_DETERMINISTIC_REDUCTIONS=1`` (the flag pins recovar's
-    # own racing scatters, not the XLA reduction inside
-    # ``resident_block_weighted_sums``).
+    # reduction plan for this expression is not fixed across sessions.
     mass_scale = np.abs(operands["posterior"]).sum(axis=1).astype(np.float64)
     _assert_close(
         np.asarray(ctf_probs),

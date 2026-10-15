@@ -399,7 +399,7 @@ def test_statistics_carry_keeps_float64_noise_norm_partials():
             include_unweighted_high_shell=True, disable_cuda_binning=False,
             deterministic_norm_reduction=False, use_exact_relion_gaussian=True,
             relion_wavg_atomic_direct_noise=True, relion_wavg_atomic_scale_aa=True,
-            direct_noise_exclusive_shell_stop=2, accumulate_scale=False, deterministic_reductions=False,
+            direct_noise_exclusive_shell_stop=2, accumulate_scale=False,
         )
         plan = DenseGemmStatisticsPlan(
             image_shape=(4, 4), image_capacity=4, rotation_tile=2,

@@ -17,7 +17,7 @@ The root guide applies. Tier budgets, contents and pass criteria are in CONTRIBU
 
 1. Fix the code, not the test. Do not widen an `rtol`, an `atol`, a threshold or a flip fraction, and do not
    add a skip or an ignore, to make a test pass. Propose the change to the owner and wait.
-2. No test requires bitwise or ULP-exact float equality, not even under `RELAX_EM_DETERMINISTIC_REDUCTIONS=1`.
+2. No test requires bitwise or ULP-exact float equality.
    Compare floats with `helpers.float_compare.assert_matches` or `matches` (relative to the array's largest
    magnitude; defaults 1e-6 for float32, 1e-13 for float64). Pass a larger `rtol` only with the measured noise
    cited beside it. Tie-dependent discrete outputs use `flip_fraction`. Byte equality is only for data no float
@@ -65,8 +65,6 @@ variables such as `RELAX_TEST_RECEIPTS` (`RUN_CONTROL_ENV`); it seeds NumPy with
   `skipif`; a file that skips on some other condition is counted as a CPU file.
 - A green CPU run can be mostly skips. Read the skip reasons (`-ra` is on) before reporting a pass.
 - `pixi run test-fast` is `pytest tests/ -q` over the whole tree. It is not a fast loop.
-- `unit/test_em_deterministic_reductions.py` changes process-wide JAX state at import and must run in its own
-  pytest process; the tier runner isolates it (`ISOLATE`).
 - A subprocess that imports `relax` must use `conftest.repo_python_command` with `repo_subprocess_env()`
   (or `gpu_subprocess_env()` for a GPU child): the shared environment's editable install can resolve to
   another checkout, and `python scripts/x.py` does not put the repository root on `sys.path`.

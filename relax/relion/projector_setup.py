@@ -22,10 +22,6 @@ import jax.numpy as jnp
 import numpy as np
 
 from relax.fourier.fourier_window import stable_fourier_window_current_size, stable_fourier_window_quantum
-from relax.numerics.deterministic_reduce import (
-    fixed_order_shell_sums,
-    static_shell_voxel_lists,
-)
 from relax.numerics.shells import shell_of_radius_sq
 from relax.relion.project import gridding_correct_volume_real, gridding_correct_volume_real_separable
 from relax.runtime.xla_memory_reserve import single_working_set_bytes
@@ -45,14 +41,13 @@ def swap_relion_volume_layout(volume, dtype=jnp.float64):
 
 
 @partial(
-    jax.jit, static_argnames=("box_size", "padding_factor", "compute_dtype", "window_radius", "deterministic_reductions")
+    jax.jit, static_argnames=("box_size", "padding_factor", "compute_dtype", "window_radius")
 )
 def setup_relion_projector(
     reference_relion,
     r_max,
     *,
     box_size: int,
-    deterministic_reductions: bool,
     padding_factor: int = 1,
     do_gridding=True,
     compute_dtype=jnp.float64,
@@ -82,17 +77,16 @@ def setup_relion_projector(
     )
     window = box_size // 2 if window_radius is None else window_radius
     return _build_projector_window(
-        reference, r_max, box_size, padding_factor, window, deterministic_reductions=deterministic_reductions
+        reference, r_max, box_size, padding_factor, window
     )
 
 
-@partial(jax.jit, static_argnames=("box_size", "padding_factor", "compute_dtype", "deterministic_reductions"))
+@partial(jax.jit, static_argnames=("box_size", "padding_factor", "compute_dtype"))
 def setup_relion_projector_uncorrected(
     reference_relion,
     r_max,
     *,
     box_size: int,
-    deterministic_reductions: bool,
     padding_factor: int = 1,
     compute_dtype=jnp.float64,
 ):
@@ -105,7 +99,7 @@ def setup_relion_projector_uncorrected(
     """
     reference = _checked_reference(reference_relion, box_size, padding_factor, compute_dtype)
     return _build_projector_window(
-        reference, r_max, box_size, padding_factor, box_size // 2, deterministic_reductions=deterministic_reductions
+        reference, r_max, box_size, padding_factor, box_size // 2
     )
 
 
@@ -119,7 +113,6 @@ def setup_relion_projector_on_host(
     chunk_bytes: int | None = None,
     gridding_kernel: str = "radial",
     shell_pair_counting: str = "relion",
-    deterministic_reductions: bool,
 ) -> tuple[np.ndarray, np.ndarray]:
     """:func:`setup_relion_projector` for one ``r_max``, dispatched chunk by chunk to host arrays.
 
@@ -156,7 +149,6 @@ def setup_relion_projector_on_host(
     return _build_projector_window(
         reference, radius, box_size, padding_factor, window,
         chunk_bytes=chunk_bytes, to_host=True, output_radius=radius, pair_once=shell_pair_counting == "once",
-        deterministic_reductions=deterministic_reductions,
     )
 
 
@@ -217,7 +209,7 @@ def _host_build_chunk_bytes(working_set_bytes: int | None) -> int:
 
 def _build_projector_window(
     reference, r_max, box_size, padding_factor, window_radius, *, chunk_bytes=None, to_host=False, output_radius=None,
-    pair_once=False, deterministic_reductions: bool,
+    pair_once=False,
 ):
     """RELION's computeFourierTransformMap evaluated inside a static window, one axis at a time.
 
@@ -235,8 +227,7 @@ def _build_projector_window(
     the float64 bound. ``to_host`` collects each chunk on the host (eager calls
     only), cropped to the window of ``output_radius`` when that is smaller.
     ``pair_once`` counts each Hermitian pair once in the shell power
-    (:func:`_mask_and_shell_power`); the projector data does not depend on it, nor on
-    ``deterministic_reductions`` (``ScoringOverrides.deterministic_reductions``: the shell sums' fixed order).
+    (:func:`_mask_and_shell_power`); the projector data does not depend on it.
     """
     n, pf = int(box_size), int(padding_factor)
     m = pf * n
@@ -267,14 +258,12 @@ def _build_projector_window(
             (0,)
             + _window_in_one_program(
                 reference, yz_index, r_max, box_size=n, padding_factor=pf, size=size, n_x=n_x, pair_once=pair_once,
-                deterministic_reductions=deterministic_reductions,
             )
         ]
     else:
         stages = _window_in_chunks(
             reference, yz_index, r_max, box_size=n, padding_factor=pf, size=size, n_x=n_x,
             cz=cz, cy=cy, to_host=to_host, pair_once=pair_once, xy_on_host=xy_on_host,
-            deterministic_reductions=deterministic_reductions,
         )
     blocks, slab, sums, counts = [], None, None, None
     for y0, block, block_sums, block_counts in stages:
@@ -304,10 +293,10 @@ def _build_projector_window(
 
 
 @partial(
-    jax.jit, static_argnames=("box_size", "padding_factor", "size", "n_x", "pair_once", "deterministic_reductions")
+    jax.jit, static_argnames=("box_size", "padding_factor", "size", "n_x", "pair_once")
 )
 def _window_in_one_program(
-    reference, yz_index, r_max, *, box_size, padding_factor, size, n_x, pair_once, deterministic_reductions
+    reference, yz_index, r_max, *, box_size, padding_factor, size, n_x, pair_once
 ):
     """The window of a reference that fits one chunk on both axes: ``(block, sums, counts)``."""
 
@@ -316,13 +305,11 @@ def _window_in_one_program(
     block = _transform_z(xy, yz_index, fft_size=fft_size)
     return _mask_and_shell_power(
         block, r_max, box_size=box_size, padding_factor=padding_factor, size=size, y_start=0, pair_once=pair_once,
-        deterministic_reductions=deterministic_reductions,
     )
 
 
 def _window_in_chunks(
-    reference, yz_index, r_max, *, box_size, padding_factor, size, n_x, cz, cy, to_host, pair_once,
-    deterministic_reductions, xy_on_host=False,
+    reference, yz_index, r_max, *, box_size, padding_factor, size, n_x, cz, cy, to_host, pair_once, xy_on_host=False,
 ):
     """The window in z-slabs, then y-slabs: yields ``(y_start, block, sums, counts)`` per y-slab.
 
@@ -358,7 +345,6 @@ def _window_in_chunks(
         del y_slab
         yield (y0,) + _mask_and_shell_power(
             block, r_max, box_size=n, padding_factor=padding_factor, size=size, y_start=y0, pair_once=pair_once,
-            deterministic_reductions=deterministic_reductions,
         )
         del block
 
@@ -406,10 +392,10 @@ def _transform_z(block, yz_index, *, fft_size: int):
 
 @partial(
     jax.jit,
-    static_argnames=("box_size", "padding_factor", "size", "y_start", "pair_once", "deterministic_reductions"),
+    static_argnames=("box_size", "padding_factor", "size", "y_start", "pair_once"),
 )
 def _mask_and_shell_power(
-    block, r_max, *, box_size: int, padding_factor: int, size: int, y_start: int, deterministic_reductions: bool,
+    block, r_max, *, box_size: int, padding_factor: int, size: int, y_start: int,
     pair_once: bool = False,
 ):
     """Scale, mask and shell-sum window rows ``y_start:`` (``block`` is ``[L, cy, n_x]``).
@@ -450,21 +436,12 @@ def _mask_and_shell_power(
         power = power * pair_weight
         counted = counted * pair_weight
     n_shells = box_size // 2 + 1
-    if deterministic_reductions:
-        # ``bincount`` lowers to a scatter-add with duplicate shells (float
-        # atomics); use static per-shell gathers with fixed-order reductions.
-        shell_lists = static_shell_voxel_lists(
-            size, padding_factor, n_shells, clamp_to_last=True, rows=(y_start, y_start + rows)
-        )
-        sums = fixed_order_shell_sums(power.reshape(-1), shell_lists, real_dtype)
-        counts = fixed_order_shell_sums(counted.reshape(-1), shell_lists, real_dtype)
-    else:
-        shells = shell_of_radius_sq(
-            r2, rule="half_up", real_dtype=real_dtype, padding_factor=padding_factor, index_dtype=jnp.int32, xp=jnp
-        )
-        shells = jnp.minimum(shells, box_size // 2).reshape(-1)
-        sums = jnp.bincount(shells, weights=power.reshape(-1), length=n_shells)
-        counts = jnp.bincount(shells, weights=counted.reshape(-1), length=n_shells)
+    shells = shell_of_radius_sq(
+        r2, rule="half_up", real_dtype=real_dtype, padding_factor=padding_factor, index_dtype=jnp.int32, xp=jnp
+    )
+    shells = jnp.minimum(shells, box_size // 2).reshape(-1)
+    sums = jnp.bincount(shells, weights=power.reshape(-1), length=n_shells)
+    counts = jnp.bincount(shells, weights=counted.reshape(-1), length=n_shells)
     return projector, sums, counts
 
 
@@ -478,10 +455,8 @@ def reference_to_relion_projector_half_maps_and_power(
     compute_dtype=np.float64,
     gridding_kernel: str = "radial",
     shell_pair_counting: str = "relion",
-    deterministic_reductions: bool,
 ) -> tuple[np.ndarray, np.ndarray, int]:
-    """Convert references to native-layout half maps and their corrected spectrum (``deterministic_reductions``:
-    ``ScoringOverrides.deterministic_reductions``, the spectrum's fixed-order shell sums).
+    """Convert references to native-layout half maps and their corrected spectrum.
 
     The device build of :func:`setup_relion_projector_on_host`, which uses
     ``compute_dtype`` for gridding correction, FFT and power. It reproduces
@@ -519,7 +494,6 @@ def reference_to_relion_projector_half_maps_and_power(
             swap_relion_volume_layout(ref), r_max, box_size=n,
             padding_factor=int(padding_factor), compute_dtype=compute_dtype.type,
             gridding_kernel=gridding_kernel, shell_pair_counting=shell_pair_counting,
-            deterministic_reductions=deterministic_reductions,
         )
         dtype = np.complex64 if projector_data_dtype is None else np.dtype(projector_data_dtype)
         halves.append(np.asarray(projector_data).astype(dtype, copy=False))

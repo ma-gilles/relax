@@ -154,10 +154,7 @@ class ResidentHalfOperands:
         shell binning is a scatter-add over duplicate indices, which races. Two
         calls on the same array in one process differ by about 6e-8 relative,
         and a different batch size differs by the same amount, so preparing it
-        once per half is inside its own run-to-run spread. Under
-        ``RELAX_EM_DETERMINISTIC_REDUCTIONS=1`` the binning becomes a
-        fixed-order masked reduction and every one of those comparisons is
-        exact, which is how the driver's verification arm checks it.
+        once per half is inside its own run-to-run spread.
     """
 
     n_images: int
@@ -732,7 +729,6 @@ def prepare_resident_half_operands(
     log_summary: bool = True,
     staged_batch=None,
     allow_normalized_cc: bool = False,
-    deterministic_reductions: bool,
 ) -> ResidentHalfOperands:
     """Run the per-image preparation once for ``image_indices`` and keep it resident.
 
@@ -968,7 +964,6 @@ def prepare_resident_half_operands(
                 use_exact_relion_gaussian=use_exact_relion_gaussian,
                 accumulate_noise=accumulate_noise,
                 source_faithful_spectrum_norm=source_faithful_spectrum_norm,
-                deterministic_reductions=deterministic_reductions,
             )
             if highres_xi2_half is not None:
                 extra_arrays["highres_xi2_half"] = highres_xi2_half

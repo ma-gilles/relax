@@ -455,7 +455,7 @@ def test_resolve_class_inputs_takes_the_refreshed_projector_and_no_dense_means(m
         lambda *args, **kwargs: (projector_half, np.ones((1, 5)), 2),
     )
     state = initialise_denovo_state(box_size=8, pixel_size=1.0, K=1, nr_iter=1, n_directions=4)
-    prepared, _ = prepare_relion_projector_class_inputs_and_power(state, padding_factor=1, projector_dump_dir=None, deterministic_reductions=False)
+    prepared, _ = prepare_relion_projector_class_inputs_and_power(state, padding_factor=1, projector_dump_dir=None)
     half, r_max = prepared.half_by_class, prepared.r_max
     config = InitialModelEstepConfig(
         noise_variance=np.ones(8 * 8, dtype=np.float32),
@@ -529,7 +529,7 @@ def test_projector_refresh_can_dump_exact_projector_operand(monkeypatch, tmp_pat
     environment = VdamEnvironment.from_environ()
     assert environment.projector_dump_dir == str(tmp_path)
 
-    IterationProjectorContext(environment).refresh(state, padding_factor=1)
+    IterationProjectorContext(projector_dump_dir=environment.projector_dump_dir).refresh(state, padding_factor=1)
 
     with np.load(tmp_path / "iter007_relion_projector_half.npz") as dumped:
         assert_matches(dumped["projector_half"], projector_half)

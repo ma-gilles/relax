@@ -75,8 +75,6 @@ class _MstepOnlyStatsConfig(NamedTuple):
     """
 
     n_shells: int
-    # ScoringOverrides.deterministic_reductions (the caller's statistics config's).
-    deterministic_reductions: bool
     n_optics_groups: int = 1
     float32_bucketed_image_sums: bool = False
 
@@ -248,7 +246,6 @@ def _resident_mstep_block(
         n_shells=int(spec.stats_config.n_shells),
         image_capacity=int(spec.image_capacity),
         float32_bucketed_image_sums=spec.stats_config.float32_bucketed_image_sums,
-        deterministic_reductions=spec.stats_config.deterministic_reductions,
     )
 
     if spec.presum_adjoint:
@@ -418,7 +415,6 @@ def _probe_mstep_block_output_avals(
             n_shells=int(spec.stats_config.n_shells),
             image_capacity=spec.image_capacity,
             float32_bucketed_image_sums=spec.stats_config.float32_bucketed_image_sums,
-            deterministic_reductions=spec.stats_config.deterministic_reductions,
         )
 
     return jax.eval_shape(
@@ -663,7 +659,6 @@ def run_resident_mstep_blocks(
     relion_x_half_recon_indices,
     max_adjoint_block_bytes,
     glue_jit: bool,
-    deterministic_reductions: bool,
     n_optics_groups: int = 1,
     row_ids=None,
     recon_pixel_indices=None,
@@ -760,7 +755,7 @@ def run_resident_mstep_blocks(
         recon_volume_shape=tuple(int(v) for v in recon_volume_shape),
         max_adjoint_block_bytes=int(max_adjoint_block_bytes),
         stats_config=_MstepOnlyStatsConfig(
-            n_shells=int(n_shells), deterministic_reductions=deterministic_reductions, n_optics_groups=int(n_optics_groups)
+            n_shells=int(n_shells), n_optics_groups=int(n_optics_groups)
         ),
         use_rfloat_ctf_wavg=recon["direct_ctf_rfloat_recon"] is not None,
         # Unshifted per-image operands take T15's kernel, which translates them

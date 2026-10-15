@@ -143,8 +143,6 @@ CPU_MERGE_UNITS = (
     "tests/unit/test_refine_relion_mode.py::test_relion_mode_k_class_writes_absolute_translations_from_previous_offset",
 )
 SWEEP_EXCLUDE = {FAST, E2E}
-# Files that change process-wide JAX state at import and must not share a pytest process.
-ISOLATE = {"tests/unit/test_em_deterministic_reductions.py"}
 SHARD_TARGET_S = 600
 # One job per tier: GPUs, wall limit and memory. 8 CPUs per GPU; memory is 128G per GPU
 # except long, whose concurrent arms peak at 180G (K1 100k, 135 GB measured), 160G (K4 100k,
@@ -364,11 +362,11 @@ def sweep_shards(src: Path, py: str) -> list[Item]:
     loads: list[float] = []
     for f in files:
         cost = seconds.get(f, 10)
-        if cost >= SHARD_TARGET_S or f in ISOLATE:
+        if cost >= SHARD_TARGET_S:
             shards.append([f])
             loads.append(cost)
             continue
-        open_shards = [i for i, s in enumerate(shards) if loads[i] + cost <= SHARD_TARGET_S and s[0] not in ISOLATE]
+        open_shards = [i for i, s in enumerate(shards) if loads[i] + cost <= SHARD_TARGET_S]
         if open_shards:
             i = min(open_shards, key=lambda i: loads[i])
             shards[i].append(f)

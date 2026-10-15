@@ -889,11 +889,10 @@ maintained callers migrate together; main heterogeneity APIs and serialized
 formats remain compatible. Production EM is float32; double precision is a
 labeled diagnostic only.
 
-Diagnostic switches, off by default: `RELAX_EM_DETERMINISTIC_REDUCTIONS=1` (fixed-order duplicate-index sums)
-and `RELAX_EM_EXACT_FLOAT32_ACCUMULATION=1` (2026-10-11, relax#65: the per-row backprojection goes through a
-float32 partial pair flushed every 32,768 rows, for one-to-one comparison with RELION builds that backproject
-in double; production keeps the direct accumulation, which loses the same low-resolution weight as stock GPU
-RELION, 1e-2 at shell 0 of a soft pass; see "Exact float32 accumulation" in
+Diagnostic switch, off by default: `RELAX_EM_EXACT_FLOAT32_ACCUMULATION=1` (2026-10-11, relax#65: the per-row
+backprojection goes through a float32 partial pair flushed every 32,768 rows, for one-to-one comparison with
+RELION builds that backproject in double; production keeps the direct accumulation, which loses the same
+low-resolution weight as stock GPU RELION, 1e-2 at shell 0 of a soft pass; see "Exact float32 accumulation" in
 [the algorithm map](../math/relion_refinement_algorithm.md)).
 
 ## Feature gaps (moved from the README, 2026-09-29)
@@ -971,7 +970,8 @@ how it was qualified.
   on both sides, not against one run. relax (main b4845c2, jobs 14978430, 14986271): iteration 1's E-step
   outputs are identical; its M-step shell sums differ in the last bits (tau2 shell sum 1e-7, class maps
   1.8e-7 relative), and at iteration 2 Pmax differs for 95% of the images (max 4e-6), the significant count for
-  10-16 images and one best rotation. `RELAX_EM_DETERMINISTIC_REDUCTIONS=1` does not change this. Two RELION
+  10-16 images and one best rotation. `RELAX_EM_DETERMINISTIC_REDUCTIONS=1` (fixed-order duplicate-index sums,
+  retired 2026-10-15) did not change this. Two RELION
   5.0.1 GPU runs (non-MPI, seed 1, the oracle command, 5 iterations, job 14978654), run a against run b:
 
   | Iteration | Significant count differs | Pmax differs (max) | Poses differ | Class maps, relative L2 |

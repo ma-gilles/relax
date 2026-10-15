@@ -26,6 +26,5 @@ def reference_to_relion_projector_half_maps(
         interpolator=interpolator,
         projector_data_dtype=projector_data_dtype,
         compute_dtype=compute_dtype,
-        deterministic_reductions=False,
     )
     return half_maps, r_max

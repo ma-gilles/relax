@@ -1,7 +1,6 @@
 """The integer Fourier shell of every voxel: the one home of the per-voxel shell rule.
 
-Callers keep their own shell sums (``bincount``, ``np.add.at`` and the fixed-order
-reductions of :mod:`relax.numerics.deterministic_reduce` sum in different orders), their
+Callers keep their own shell sums (``bincount`` and ``np.add.at`` sum in different orders), their
 masks and their pair weights; they take the shell labels from here.
 
 Rules (radii are non-negative):

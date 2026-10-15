@@ -159,7 +159,6 @@ def projector_power_refresh(state, *, padding_factor):
         state.Iref,
         current_size=int(state.current_size if state.current_size > 0 else state.box_size),
         padding_factor=int(padding_factor),
-        deterministic_reductions=False,
     )
     return replace(state, tau2_class=np.asarray(power, dtype=np.float64))
 

@@ -36,7 +36,7 @@ def test_centred_half_float32_half_even_matches_half_spectrum_plan(shape):
 
 @pytest.mark.parametrize("capacity", SIZES_3D)
 @pytest.mark.parametrize("padding_factor", [1, 2, 3])
-def test_centred_half_3d_padded_half_up_matches_static_shell_voxel_lists(capacity, padding_factor):
+def test_centred_half_3d_padded_half_up_matches_relion_round(capacity, padding_factor):
     coord = np.arange(capacity, dtype=np.int64) - capacity // 2
     x = np.arange(capacity // 2 + 1, dtype=np.int64)
     r2 = coord[:, None, None] ** 2 + coord[None, :, None] ** 2 + x[None, None, :] ** 2

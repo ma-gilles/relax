@@ -600,7 +600,7 @@ def run_native_initial_model(
             ),
         )
     profile.record("state_setup")
-    projector_context = estep_setup.IterationProjectorContext(opts.environment)
+    projector_context = estep_setup.IterationProjectorContext(projector_dump_dir=opts.environment.projector_dump_dir)
     expectation_step = _native_expectation_step(
         dataset,
         opts,
@@ -708,7 +708,6 @@ def run_native_initial_model(
                 VdamUpdate(
                     padding_factor=int(opts.padding_factor), mstep_compute_dtype=opts.mstep_compute_dtype,
                     probe=maximization_probe, single_class_m_step=source.single_class_m_step,
-                    deterministic_reductions=opts.environment.scoring.deterministic_reductions,
                 )
                 if opts.optimizer == "vdam"
                 else MomentumSgdUpdate(learning_rate=float(opts.sgd_learning_rate), padding_factor=int(opts.padding_factor))

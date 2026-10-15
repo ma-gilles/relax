@@ -293,7 +293,6 @@ def test_m_step_matches_relion_fsc_routing_for_ssnr_and_reconstruct(monkeypatch)
         accum_h1=None,
         grad_current_stepsize=0.5,
         tau2_fudge_factor=4.0,
-        deterministic_reductions=False,
     )
 
     np.testing.assert_allclose(captured["ssnr_fsc"], state.fsc_halves_class[0])
@@ -360,7 +359,6 @@ def test_oracle_runs_one_m_step_as_the_command_wires_it(monkeypatch, average_ctf
         mstep_compute_dtype="float64",
         average_ctf2=spectrum,
         single_class_m_step=source.single_class_m_step,
-        deterministic_reductions=False,
     )
 
     assert [call[0] for call in calls] == ["ssnr", "reconstruct"]
@@ -455,7 +453,6 @@ class TestMstepSingleClass:
             grad_current_stepsize=0.5,
             tau2_fudge_factor=1.0,
             padding_factor=1,
-            deterministic_reductions=False,
         )
         # Iref updated (and finite)
         assert new_state.Iref.shape == state.Iref.shape
@@ -509,7 +506,6 @@ class TestMstepSingleClass:
             grad_current_stepsize=0.5,
             tau2_fudge_factor=1.0,
             padding_factor=1,
-            deterministic_reductions=False,
         )
 
         assert_matches(new_state.Iref, iref_before)
@@ -539,7 +535,6 @@ class TestMstepSingleClass:
             grad_current_stepsize=0.5,
             tau2_fudge_factor=1.0,
             padding_factor=1,
-            deterministic_reductions=False,
         )
         assert_matches(state.Iref, iref_before)
         assert_matches(state.Igrad1, igrad1_before)
@@ -566,7 +561,6 @@ class TestMstepSingleClass:
                 grad_current_stepsize=0.5,
                 tau2_fudge_factor=1.0,
                 padding_factor=1,
-                deterministic_reductions=False,
                 )
 
     def test_pseudo_halfsets_off_without_halfsets(self, bind):
@@ -588,7 +582,6 @@ class TestMstepSingleClass:
             grad_current_stepsize=0.5,
             tau2_fudge_factor=1.0,
             padding_factor=1,
-            deterministic_reductions=False,
         )
         # Igrad1 has K slots, not 2K
         assert new_state.Igrad1.shape == (1, 16, 16, 9)
@@ -606,7 +599,6 @@ class TestMstepSingleClass:
                 grad_current_stepsize=0.5,
                 tau2_fudge_factor=1.0,
                 padding_factor=1,
-                deterministic_reductions=False,
                 )
 
 
@@ -638,7 +630,6 @@ class TestMstepFull:
             grad_current_stepsize=0.5,
             tau2_fudge_factor=1.0,
             padding_factor=1,
-            deterministic_reductions=False,
         )
         assert new_state.Iref.shape == (K, ori, ori, ori)
         assert np.all(np.isfinite(new_state.Iref))
@@ -664,5 +655,4 @@ class TestMstepFull:
                 grad_current_stepsize=0.5,
                 tau2_fudge_factor=1.0,
                 padding_factor=1,
-                deterministic_reductions=False,
                 )

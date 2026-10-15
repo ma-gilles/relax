@@ -49,8 +49,6 @@ class Half1AccuracyInputs(NamedTuple):
     projector_files: object
     # EngineTuning.device_memory_bytes: the device memory the slab bound takes instead of the probe.
     device_memory_override: int | None
-    # ScoringOverrides.deterministic_reductions, for the shared projector built here.
-    deterministic_reductions: bool
     # Each half-1 image's row of a per-optics-group noise table; None for one group.
     optics_group_ids: object = None
     # The projector's gridding-correction window when the transform is built here.
@@ -209,7 +207,6 @@ def estimate_iteration_accuracy(
                         dump_label=f"iter{iteration:03d}_half0",
                         gridding_kernel=inputs.gridding_kernel,
                         files=inputs.projector_files,
-                        deterministic_reductions=inputs.deterministic_reductions,
                     ),
                 )
             # A failure raises: an infinite accuracy would hide it behind a changed
@@ -419,8 +416,6 @@ def _projector_data(
         slab = setup_relion_projector_on_host(
             reference, int(current_size) // 2, box_size=model_box_size, padding_factor=int(padding_factor),
             gridding_kernel=gridding_kernel,
-            # Only the slab is kept: the shell power, whose summation order the override sets, is discarded.
-            deterministic_reductions=False,
         )[0]
         if data is None:
             data = np.empty((len(references_relion),) + slab.shape, dtype=np.complex128)

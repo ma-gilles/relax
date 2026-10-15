@@ -64,11 +64,11 @@ def test_projector_setup_divides_by_the_selected_window(kernel, n, r_max):
     """Full and cropped radius, two box sizes: the slab is the transform of reference / window."""
     reference = _reference(n)
     slab, power = setup.setup_relion_projector_on_host(
-        reference, r_max, box_size=n, padding_factor=PF, gridding_kernel=kernel, deterministic_reductions=False
+        reference, r_max, box_size=n, padding_factor=PF, gridding_kernel=kernel
     )
     corrected = jnp.asarray(reference / WINDOWS[kernel](n))
     expected_slab, expected_power = setup._build_projector_window(
-        corrected, r_max, n, PF, r_max, chunk_bytes=None, to_host=True, output_radius=r_max, deterministic_reductions=False
+        corrected, r_max, n, PF, r_max, chunk_bytes=None, to_host=True, output_radius=r_max
     )
     assert_matches(slab, expected_slab, rtol=1e-12)
     assert_matches(power, expected_power, rtol=1e-12)
@@ -76,10 +76,10 @@ def test_projector_setup_divides_by_the_selected_window(kernel, n, r_max):
 
 def test_projector_setup_default_is_relions_radial_window():
     reference = _reference(8)
-    default = setup.setup_relion_projector_on_host(reference, 3, box_size=8, padding_factor=PF, deterministic_reductions=False)
-    radial = setup.setup_relion_projector_on_host(reference, 3, box_size=8, padding_factor=PF, gridding_kernel="radial", deterministic_reductions=False)
+    default = setup.setup_relion_projector_on_host(reference, 3, box_size=8, padding_factor=PF)
+    radial = setup.setup_relion_projector_on_host(reference, 3, box_size=8, padding_factor=PF, gridding_kernel="radial")
     separable = setup.setup_relion_projector_on_host(
-        reference, 3, box_size=8, padding_factor=PF, gridding_kernel="separable", deterministic_reductions=False
+        reference, 3, box_size=8, padding_factor=PF, gridding_kernel="separable"
     )
     assert_matches(default[0], radial[0])
     assert_matches(default[1], radial[1])
@@ -96,7 +96,7 @@ def test_separable_window_is_larger_off_axis_and_equal_on_axis():
 
 def test_projector_setup_rejects_an_unknown_kernel():
     with pytest.raises(ValueError, match="gridding_kernel"):
-        setup.setup_relion_projector_on_host(_reference(8), 3, box_size=8, padding_factor=PF, gridding_kernel="x", deterministic_reductions=False)
+        setup.setup_relion_projector_on_host(_reference(8), 3, box_size=8, padding_factor=PF, gridding_kernel="x")
 
 
 def _scoring_projector(reference_real, r_max=3, files=projector_preparation.ProjectorFiles(), **kwargs):
@@ -107,7 +107,6 @@ def _scoring_projector(reference_real, r_max=3, files=projector_preparation.Proj
     return projector_preparation.prepare_scoring_projector(
         reference_ft, volume_shape=(n, n, n), current_size=2 * r_max, padding_factor=PF, n_classes=1, **kwargs,
         files=files,
-        deterministic_reductions=False,
     )
 
 
@@ -125,7 +124,6 @@ def test_scoring_projector_hands_the_setup_the_kernel(monkeypatch):
     expected, _ = setup._build_projector_window(
         jnp.asarray(relion_layout / _separable_window(8)), radial.r_max, 8, PF, radial.r_max,
         chunk_bytes=None, to_host=True, output_radius=radial.r_max,
-        deterministic_reductions=False,
     )
     # The reference goes through a Fourier round trip before the setup.
     assert_matches(separable.data[0], expected, rtol=1e-11)
@@ -164,7 +162,7 @@ def test_expected_accuracy_projector_uses_the_selected_window(kernel):
     references = _reference(8)[None]
     built = expected_accuracy._projector_data(references, 6, PF, kernel)
     expected, _ = setup._build_projector_window(
-        jnp.asarray(references[0] / WINDOWS[kernel](8)), 3, 8, PF, 3, chunk_bytes=None, to_host=True, output_radius=3, deterministic_reductions=False
+        jnp.asarray(references[0] / WINDOWS[kernel](8)), 3, 8, PF, 3, chunk_bytes=None, to_host=True, output_radius=3
     )
     assert_matches(built[0], expected, rtol=1e-12)
 
@@ -186,7 +184,6 @@ def test_expected_accuracy_inputs_hand_the_estimator_the_kernel(monkeypatch, ker
         gridding_kernel=kernel,
         projector_files=ProjectorFiles(),
         device_memory_override=None,
-        deterministic_reductions=False,
     )
     inputs.estimate(
         reference_fourier="ref",

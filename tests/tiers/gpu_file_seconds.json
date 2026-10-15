@@ -148,7 +148,6 @@
 "tests/unit/test_em_batch_planning.py": 0,
 "tests/unit/test_em_compile_ahead.py": 1,
 "tests/unit/test_em_compile_ahead_consumer.py": 1,
-"tests/unit/test_em_deterministic_reductions.py": 3,
 "tests/unit/test_em_fast_guardrail.py": 1,
 "tests/unit/test_em_finite_check.py": 1,
 "tests/unit/test_em_half_texture_staging.py": 2,

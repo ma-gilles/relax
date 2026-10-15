@@ -998,7 +998,7 @@ def test_numbered_projectors_skip_the_empty_diagnostic_half(monkeypatch, caplog)
     )
     halves = [SimpleNamespace(index=k, dataset=SimpleNamespace(n_units=n)) for k, n in enumerate((3, 0))]
     settings = SimpleNamespace(
-        volume_shape=(8, 8, 8), projection_padding_factor=2, gridding_kernel="radial", deterministic_reductions=False
+        volume_shape=(8, 8, 8), projection_padding_factor=2, gridding_kernel="radial"
     )
     log = logging.getLogger("test_numbered_projectors_skip")
     with caplog.at_level(logging.INFO, logger=log.name):

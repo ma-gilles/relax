@@ -186,7 +186,6 @@ def _make_case(args):
         padding_factor=padding_factor,
         do_gridding=False,
         compute_dtype=jnp.float32,
-        deterministic_reductions=False,  # the shell power is discarded
     )
     # The CUDA texture path consumes the logical r_max slab including one
     # ghost texel on each side, not setup's full Nyquist-capacity slab.

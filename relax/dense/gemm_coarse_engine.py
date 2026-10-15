@@ -318,7 +318,7 @@ def run_dense_gemm_full_grid(state: DenseGemmPreparedState):
         relion_wavg_atomic_scale_aa=state.relion_wavg_atomic_scale_aa,
         accumulate_scale=state.accumulate_scale,
         source_faithful_spectrum_norm=state.source_faithful_spectrum_norm,
-        n_optics_groups=n_optics, n_classes=k, deterministic_reductions=state.deterministic_reductions,
+        n_optics_groups=n_optics, n_classes=k,
     )
     stats = make_resident_statistics(stats_config, max_posterior_dtype=jnp.float32)
 
@@ -432,7 +432,7 @@ def run_dense_gemm_full_grid(state: DenseGemmPreparedState):
             group_ids_np=scale_group_ids, precision_policy=state.precision_policy,
             image_batch_size=b, prefetch_depth=state.engine_tuning.prefetch_depth, optics_groups_np=optics,
             relion_native_fine_units=state.relion_native_fine_units,
-            log_summary=False, allow_normalized_cc=True, deterministic_reductions=state.deterministic_reductions,
+            log_summary=False, allow_normalized_cc=True,
         )
         score_weight = _relion_cuda_fine_pixel_weights(resident.corr_img_score[:count], half_weights_score)
         initial_diff2 = (jnp.zeros((count,), jnp.float32) if resident.highres_xi2_half is None

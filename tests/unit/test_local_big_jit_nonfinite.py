@@ -81,7 +81,6 @@ def test_compute_noise_block_zero_weight_nonfinite_projection_is_zero():
         shell_indices,
         3,
         True,
-        deterministic=False,
     )
 
     assert_matches(np.asarray(noise_shells), np.zeros(3, dtype=np.float32))

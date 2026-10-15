@@ -127,7 +127,6 @@ def test_capped_accuracy_projects_at_the_current_size(monkeypatch):
         expected_accuracy=SimpleNamespace(half1_particle_ids=None, half1_ctf_params=None, do_ctf_correction=True),
         projector_files=ProjectorFiles(),
         device_memory_override=None,
-        deterministic_reductions=False,
     )
     common = dict(reference_fourier=None, best_eulers_deg=None, class_ids=None, class_weights=None,
                   sigma2_noise_native=None)

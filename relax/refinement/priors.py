@@ -122,7 +122,6 @@ def _class_tau2_from_iref_power_spectrum(
     frame_scale: float,
     projector_power_spectrum=None,
     shell_pair_counting="relion",
-    deterministic_reductions: bool,
 ):
     """Class3D tau2 for one class from its previous ``Iref`` power spectrum.
 
@@ -144,7 +143,6 @@ def _class_tau2_from_iref_power_spectrum(
         return_details=True,
         projector_power_spectrum=projector_power_spectrum,
         shell_pair_counting=shell_pair_counting,
-        deterministic_reductions=deterministic_reductions,
     )
     mean_signal_variance = mean_signal_variance_relion * jnp.asarray(
         frame_scale,
@@ -289,7 +287,6 @@ def estimate_class_prior(
                 else projector_power_spectrum[class_index]
             ),
             shell_pair_counting=settings.shell_pair_counting,
-            deterministic_reductions=settings.deterministic_reductions,
         )
     weight_shells = regularization.compute_relion_weight_shell_stats(
         denominators[class_index],

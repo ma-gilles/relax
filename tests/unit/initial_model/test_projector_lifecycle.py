@@ -40,7 +40,7 @@ def test_shared_device_projector_matches_both_native_calls(
 
     monkeypatch.setattr(bind, "compute_fourier_transform_map", counted_projector)
     inputs, power = adapter.prepare_relion_projector_class_inputs_and_power(
-        state, padding_factor=padding, projector_dump_dir=str(tmp_path), deterministic_reductions=False
+        state, padding_factor=padding, projector_dump_dir=str(tmp_path)
     )
     assert not builds  # VDAM prepares the projector on the device only.
     with np.load(tmp_path / "iter000_relion_projector_half.npz") as dumped:
@@ -75,13 +75,13 @@ def test_context_builds_once_and_consumes_once(monkeypatch):
     )
     calls = []
 
-    def prepare(current, *, padding_factor, projector_dump_dir, deterministic_reductions):
-        assert projector_dump_dir is None and deterministic_reductions is False
+    def prepare(current, *, padding_factor, projector_dump_dir):
+        assert projector_dump_dir is None
         calls.append((current.iter, current.Iref.copy()))
         return adapter.RelionProjectorInputs(current.Iref.copy(), 4), np.full((1, 5), current.iter)
 
     monkeypatch.setattr(adapter, "prepare_relion_projector_class_inputs_and_power", prepare)
-    ctx = adapter.IterationProjectorContext(VdamEnvironment())
+    ctx = adapter.IterationProjectorContext(projector_dump_dir=None)
     for iteration in (1, 2):
         state = replace(state, iter=iteration, Iref=state.Iref + 1)
         before = state.tau2_class.copy()
@@ -105,7 +105,7 @@ def test_context_rejects_stale_handoff_and_clears(monkeypatch, change):
     )
     monkeypatch.setattr(adapter, "prepare_relion_projector_class_inputs_and_power",
                         lambda *a, **k: (adapter.RelionProjectorInputs(None, 4), np.ones((1, 5))))
-    ctx = adapter.IterationProjectorContext(VdamEnvironment())
+    ctx = adapter.IterationProjectorContext(projector_dump_dir=None)
     current = ctx.refresh(state, padding_factor=1)
     kwargs = {"padding_factor": 1}
     if change == "reference":
@@ -148,7 +148,7 @@ def test_loop_callback_is_once_before_estep(monkeypatch, mstep_compute_dtype):
         grad_ini_subset_size=10, grad_fin_subset_size=10, tau2_fudge_arg=4.0,
         grad_em_iters=0, random_seed=29,
         expectation_step=estep,
-        projector_refresh_fn=refresh, update=loop.VdamUpdate(padding_factor=1, mstep_compute_dtype=mstep_compute_dtype, probe=NoProbe(), deterministic_reductions=False),
+        projector_refresh_fn=refresh, update=loop.VdamUpdate(padding_factor=1, mstep_compute_dtype=mstep_compute_dtype, probe=NoProbe()),
         grad_ini_frac=0.3,
         grad_fin_frac=0.2,
         mu=DEFAULT_GRAD_MU,

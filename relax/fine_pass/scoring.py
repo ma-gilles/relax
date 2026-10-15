@@ -552,17 +552,15 @@ def _powerclass_norm_units_jit(highres, pixel_count_sq: float):
     return highres * jnp.asarray(pixel_count_sq, dtype=highres.dtype)
 
 
-@partial(jax.jit, static_argnames=("image_shape", "current_size", "deterministic_reductions"))
+@partial(jax.jit, static_argnames=("image_shape", "current_size"))
 def _relion_cuda_powerclass_spectrum_highres_norm_units(
     processed_score_half,
     *,
     image_shape,
     current_size,
-    deterministic_reductions: bool,
     runtime_current_size=None,
 ):
-    """Reproduce the high-shell norm term from RELION's power spectrum (``deterministic_reductions``:
-    ``ScoringOverrides.deterministic_reductions``, the spectrum binning's fixed-order sum).
+    """Reproduce the high-shell norm term from RELION's power spectrum.
 
     RELION's ``powerClass`` kernel produces two independently reduced values:
     a block-tree ``highres_Xi2`` scalar used by fine scoring, and an
@@ -586,7 +584,7 @@ def _relion_cuda_powerclass_spectrum_highres_norm_units(
     power = jax.lax.optimization_barrier(power)
     power = power + relion_image.imag * relion_image.imag
     spectrum = jax.vmap(
-        lambda row: bin_shell_values_jax(row, jnp.asarray(shell), half_width, deterministic=deterministic_reductions)
+        lambda row: bin_shell_values_jax(row, jnp.asarray(shell), half_width)
     )(power)
 
     # RELION copies the float32 spectrum to the host and adds the selected
@@ -658,10 +656,8 @@ def _relion_powerclass_noise_terms(
     use_exact_relion_gaussian,
     accumulate_noise,
     source_faithful_spectrum_norm,
-    deterministic_reductions: bool,
 ):
-    """RELION ``powerClass`` terms one sparse pass-2 batch needs (``deterministic_reductions``:
-    ``ScoringOverrides.deterministic_reductions``).
+    """RELION ``powerClass`` terms one sparse pass-2 batch needs.
 
     Exact fine Gaussian scoring adds half of the block-tree ``highres_Xi2``
     to every hypothesis, and norm correction at a current size consumes the
@@ -697,7 +693,6 @@ def _relion_powerclass_noise_terms(
             relion_norm_high_shell = _relion_cuda_powerclass_spectrum_highres_norm_units(
                 processed_score_half_for_noise,
                 image_shape=image_shape,
-                deterministic_reductions=deterministic_reductions,
                 **size_kwargs,
             )
         else:

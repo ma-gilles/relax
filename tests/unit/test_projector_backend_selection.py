@@ -19,7 +19,7 @@ def _build(**kwargs):
 
     rng = np.random.default_rng(0)
     reference = rng.standard_normal((1, 32, 32, 32)).astype(np.float64)
-    return reference_to_relion_projector_half_maps_and_power(reference, current_size=16, **kwargs, deterministic_reductions=False)
+    return reference_to_relion_projector_half_maps_and_power(reference, current_size=16, **kwargs)
 
 
 def test_refinement_has_no_projector_backend_option():
@@ -76,9 +76,9 @@ def test_the_projector_cache_round_trips(tmp_path):
     # Fourier references are validated even when real_references supplies the volume.
     flat_ft = np.zeros((1, 32**3), dtype=np.complex128)
     kwargs = dict(volume_shape=(32, 32, 32), current_size=16, padding_factor=2, n_classes=1, real_references=reference)
-    built = prepare_scoring_projector(flat_ft, **kwargs, files=files, deterministic_reductions=False)
+    built = prepare_scoring_projector(flat_ft, **kwargs, files=files)
     assert len(sorted(tmp_path.glob("projector_*.npz"))) == 1
-    cached = prepare_scoring_projector(flat_ft, **kwargs, files=files, deterministic_reductions=False)
+    cached = prepare_scoring_projector(flat_ft, **kwargs, files=files)
     assert_matches(cached.data, built.data)
     assert cached.r_max == built.r_max
     assert_matches(cached.power_spectrum, built.power_spectrum)
@@ -114,7 +114,6 @@ def test_accuracy_projector_reuse_bypasses_conversion_cache_and_dump(
         padding_factor=2, n_classes=1, reusable=reusable,
         real_references=UnconvertibleReference(), dump_label="reuse",
         files=ProjectorFiles(cache_dir=str(tmp_path / "cache"), dump_dir=str(tmp_path / "dump")),
-        deterministic_reductions=False,
     )
 
     assert result is projector
@@ -148,8 +147,8 @@ def test_accuracy_projector_reuse_misses_build_the_requested_transform(
     )
     calls = []
 
-    def transform(real, *, current_size, padding_factor, projector_data_dtype, gridding_kernel, deterministic_reductions):
-        assert real is real_references and gridding_kernel == "radial" and deterministic_reductions is False
+    def transform(real, *, current_size, padding_factor, projector_data_dtype, gridding_kernel):
+        assert real is real_references and gridding_kernel == "radial"
         calls.append((current_size, padding_factor, projector_data_dtype))
         return (
             np.ones((n_classes, 3, 3, 2), dtype=np.complex128),
@@ -163,7 +162,6 @@ def test_accuracy_projector_reuse_misses_build_the_requested_transform(
         padding_factor=2, n_classes=n_classes, reusable=reusable,
         real_references=real_references,
         files=ProjectorFiles(),
-        deterministic_reductions=False,
     )
 
     assert calls == [(transform_size, 2, "complex128")]

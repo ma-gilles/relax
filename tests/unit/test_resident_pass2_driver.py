@@ -1172,8 +1172,7 @@ def test_resident_driver_repeats_itself(_resident_production_env):
     # wsum_norm_correction adds the per-image relion_norm_high_shell term,
     # whose shell binning is the same racing scatter-add (resident_operands.py:
     # about 6e-8 relative between identical calls). H100 repeats missed by
-    # 3.5e-8 on one image. Band approved by the user 2026-09-24; the exact
-    # check is the deterministic-reductions arm below.
+    # 3.5e-8 on one image. Band approved by the user 2026-09-24.
     assert rel_l2(
         first.noise_stats.wsum_norm_correction, second.noise_stats.wsum_norm_correction
     ) < 1e-7
@@ -1228,8 +1227,7 @@ def test_glue_programs_match_the_loose_dispatch(_resident_production_env, monkey
     # ``wsum_sigma2_noise`` and ``wsum_norm_correction`` are shell sums fed by
     # the CUDA binning scatter of float32 terms, so they move at float32
     # precision between two identical runs: 3.5e-08 relative on one entry of
-    # twelve in long GPU sessions. They get a 1e-6 relative band in every mode,
-    # RELAX_EM_DETERMINISTIC_REDUCTIONS=1 included.
+    # twelve in long GPU sessions. They get a 1e-6 relative band in every mode.
     for field in ("wsum_sigma2_noise", "wsum_norm_correction"):
         candidate = np.asarray(getattr(programs.noise_stats, field), dtype=np.float64)
         reference = np.asarray(getattr(loose.noise_stats, field), dtype=np.float64)
@@ -1253,11 +1251,6 @@ def test_glue_programs_match_the_loose_dispatch(_resident_production_env, monkey
             loose_repeat.noise_stats.wsum_img_power,
         ),
     ):
-        if scoring.deterministic_reductions:
-            assert_matches(
-                np.asarray(candidate), np.asarray(reference), err_msg=name
-            )
-            continue
         band = rel_l2(reference, repeat)
         observed = rel_l2(reference, candidate)
         assert observed <= max(band, float(np.finfo(np.float32).eps)), (
@@ -1339,7 +1332,7 @@ def test_chunk_operands_are_padded_on_the_host(monkeypatch):
                         "image_shape", "current_size", "use_exact_relion_gaussian", "accumulate_noise",
                         "source_faithful_spectrum_norm", "relion_score_translation_angles",
                         "rect_indices_device", "exact_positions_device", "scale_corrections_np",
-                        "group_ids_np", "deterministic_reductions",
+                        "group_ids_np",
                     )
                 ),
             )

@@ -72,8 +72,6 @@ class ReconstructionSettings:
     solvent_phase_stream: object = field(compare=False, repr=False)
     # The run's reconstruction programs (ScoringVariants.reconstruction): no effect on values.
     programs: ReconstructionPrograms
-    # ScoringOverrides.deterministic_reductions: the projector power behind tau2 sums its shells in a fixed order.
-    deterministic_reductions: bool
 
     def __post_init__(self):
         # Python floats, so the solvent-mask radius is the same double arithmetic for every caller.

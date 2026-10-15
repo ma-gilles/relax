@@ -34,7 +34,7 @@ from relax.vdam.state import VdamAccumulator
 from relax.vdam.subset_schedule import restore_subset_order_for_continuation, select_subset_for_iter
 
 # The loop tests run real M-steps on float64 states: the float64 diagnostic precision.
-run_vdam_iterations = partial(run_vdam_iterations, update=VdamUpdate(padding_factor=1, mstep_compute_dtype="float64", probe=NoProbe(), deterministic_reductions=False))
+run_vdam_iterations = partial(run_vdam_iterations, update=VdamUpdate(padding_factor=1, mstep_compute_dtype="float64", probe=NoProbe()))
 
 pytestmark = pytest.mark.unit
 
@@ -216,9 +216,8 @@ def test_projector_refresh_updates_tau2_of_all_classes(bind):
     state.current_size = 6
 
     from relax.vdam.estep_setup import IterationProjectorContext
-    from relax.vdam.native_options import VdamEnvironment
 
-    out = IterationProjectorContext(VdamEnvironment()).refresh(state, padding_factor=1)
+    out = IterationProjectorContext(projector_dump_dir=None).refresh(state, padding_factor=1)
 
     assert out is not state
     assert out.tau2_class.shape == (2, ori // 2 + 1)
@@ -510,7 +509,7 @@ class TestRunVdamIterations:
             expectation_step=estep,
             projector_refresh_fn=keep_tau2,
             projector_padding_factor=2,
-            update=VdamUpdate(padding_factor=2, mstep_compute_dtype="float64", probe=NoProbe(), deterministic_reductions=False),
+            update=VdamUpdate(padding_factor=2, mstep_compute_dtype="float64", probe=NoProbe()),
             grad_ini_frac=0.3,
             grad_fin_frac=0.2,
             mu=DEFAULT_GRAD_MU,
@@ -813,7 +812,7 @@ class TestRunVdamIterations:
         observer = vdam_command_observer(
             {"RELAX_INITIALMODEL_NOISE_UPDATE_DUMP_DIR": str(tmp_path), "RELAX_INITIALMODEL_NOISE_UPDATE_DUMP_ITERATION": "1"}
         )
-        update = VdamUpdate(padding_factor=1, mstep_compute_dtype="float64", probe=observer.maximization_probe(), deterministic_reductions=False)
+        update = VdamUpdate(padding_factor=1, mstep_compute_dtype="float64", probe=observer.maximization_probe())
         out = update.update_noise(state, estep_sums(meta), meta, do_grad=False, mu=DEFAULT_GRAD_MU)
 
         dump_path = tmp_path / "initialmodel_noise_update_it001.npz"

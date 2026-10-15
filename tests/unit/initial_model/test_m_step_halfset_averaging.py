@@ -90,7 +90,6 @@ def test_k1_pseudo_halfsets_uses_primary_weight(_bind_module, monkeypatch):
         accum_h1=a1,
         grad_current_stepsize=0.5,
         tau2_fudge_factor=1.0,
-        deterministic_reductions=False,
     )
 
     assert rec.call_count == 1
@@ -115,7 +114,6 @@ def test_k1_no_halfsets_uses_h0_weight(_bind_module, monkeypatch):
         accum_h1=None,
         grad_current_stepsize=0.5,
         tau2_fudge_factor=1.0,
-        deterministic_reductions=False,
     )
 
     assert rec.call_count == 1
@@ -141,7 +139,6 @@ def test_k_class_pseudo_halfsets_uses_h0_weight(_bind_module, monkeypatch, K):
         accum_h1=a1,
         grad_current_stepsize=0.5,
         tau2_fudge_factor=1.0,
-        deterministic_reductions=False,
     )
 
     assert rec.call_count == 1

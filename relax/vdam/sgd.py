@@ -59,8 +59,6 @@ def _bandlimit_real_map(volume_relion, radius, *, box_size, padding_factor):
     projector, _ = setup_relion_projector_uncorrected(
         volume_relion,
         radius,
-        # The shell power is discarded; only its summation order depends on the run's override.
-        deterministic_reductions=False,
         box_size=box_size,
         padding_factor=padding_factor,
         compute_dtype=jnp.float32,

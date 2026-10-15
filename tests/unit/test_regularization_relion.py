@@ -611,7 +611,6 @@ def test_compute_relion_tau2_from_iref_power_spectrum_matches_relion_binding_sca
         padding_factor=2,
         current_size=56,
         return_details=True,
-        deterministic_reductions=False,
     )
 
     expected_tau2 = []
@@ -665,7 +664,6 @@ def test_tau2_from_the_scoring_projector_spectrum_matches_the_relion_transform()
             padding_factor=2,
             n_classes=1,
             files=ProjectorFiles(),
-            deterministic_reductions=False,
         )
         _, relion_power, *_ = bind.compute_fourier_transform_map(
             recovar_volume_to_relion(np.asarray(vol_real, dtype=np.float64)),
@@ -681,10 +679,9 @@ def test_tau2_from_the_scoring_projector_spectrum_matches_the_relion_transform()
             current_size=current_size,
             return_details=True,
             projector_power_spectrum=np.asarray(relion_power) * float(n) ** 2,
-            deterministic_reductions=False,
         )
         rebuilt = regularization_relion.compute_relion_tau2_from_iref_power_spectrum(
-            ft_recovar, vol_recovar.shape, padding_factor=2, current_size=current_size, return_details=True, deterministic_reductions=False
+            ft_recovar, vol_recovar.shape, padding_factor=2, current_size=current_size, return_details=True
         )
         reused = regularization_relion.compute_relion_tau2_from_iref_power_spectrum(
             None,
@@ -693,7 +690,6 @@ def test_tau2_from_the_scoring_projector_spectrum_matches_the_relion_transform()
             current_size=current_size,
             return_details=True,
             projector_power_spectrum=projector.power_spectrum[0],
-            deterministic_reductions=False,
         )
         for candidate in (reused, rebuilt):
             assert_matches(np.asarray(candidate[0]), np.asarray(oracle[0]))
