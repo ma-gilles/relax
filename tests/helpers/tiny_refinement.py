@@ -314,11 +314,9 @@ def run_tiny_refinement(
     for name in ("RELAX_PARITY_DUMP_DIR", "RELAX_PARITY_TIMING_DIR"):
         monkeypatch.delenv(name, raising=False)
     # K=1: run the final all-data pass after the last numbered iteration without waiting for convergence
-    # (RELAX_FINAL_ALL_DATA_AFTER_MAX_ITER); its other options are read as the command does.
+    # (RELAX_FINAL_ALL_DATA_AFTER_MAX_ITER); its other option at its default (the unset environment).
     # Class3D refuses the option at set-up (require_final_pass_route), so only K=1 sets it.
-    option_groups["final_pass"] = replace(
-        FinalPassOptions.from_environ(), after_max_iter=final_after_max_iter and n_classes == 1,
-    )
+    option_groups["final_pass"] = FinalPassOptions(after_max_iter=final_after_max_iter and n_classes == 1)
     # The controller's environment switches at their defaults (the unset environment), unless the caller gives them.
     option_groups.setdefault("environment", RefinementEnvironment())
     rng = np.random.default_rng(42)

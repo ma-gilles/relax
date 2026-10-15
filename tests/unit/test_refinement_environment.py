@@ -407,6 +407,15 @@ def test_refinement_environment_defaults_are_the_unset_environment(monkeypatch):
     assert RefinementEnvironment.from_environ() == RefinementEnvironment()
 
 
+def test_final_pass_options_defaults_are_the_unset_environment(monkeypatch):
+    """``FinalPassOptions()`` is what the command reads with no variable set; the tiny refinement passes it with
+    ``after_max_iter`` set."""
+    from relax.refinement.refinement_options import FinalPassOptions
+
+    _unset_relax_environment(monkeypatch)
+    assert FinalPassOptions.from_environ() == FinalPassOptions()
+
+
 def test_engine_tuning_reaches_the_dense_engine(monkeypatch):
     from relax.runtime.compile_ahead import CompileAheadConfig
     from relax.runtime.engine_tuning import EngineTuning
