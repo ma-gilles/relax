@@ -368,7 +368,6 @@ def score_tomo_half(
         relion_x_half_mstep=True,
         relion_fine_mstep_prune=True,
         relion_exact_fine_gaussian=True,
-        relion_fine_diff2_fused_ffi=True,
         relion_f32_fine_posterior=True,
         relion_projector_half=relion_projector_half,
         relion_projector_r_max=int(relion_projector_r_max),

@@ -16,12 +16,9 @@ import jax.numpy as jnp
 import numpy as np
 from recovar.core.configs import ForwardModelConfig
 
-from relax.fine_pass.posterior import relion_x_half_f32_fine_posterior_enabled
-from relax.fine_pass.scoring import _RELION_FINE_DIFF2_FUSED_FFI_ENV
 from relax.fourier.fourier_window import centered_half_indices_to_fftw_half_indices, make_fourier_window_spec
 from relax.fourier.half_spectrum import make_scoring_half_image_weights
 from relax.numerics.precision import DensePrecisionPolicy
-from relax.runtime.env_flags import parse_env_flag
 from relax.runtime.memory_budget import (
     _device_memory_limit_bytes,
     _max_projected_rotations_per_call_for_pass,
@@ -127,26 +124,19 @@ def _sparse_pass2_window_setup(
     )
 
 
-def _pass2_relion_flags(*, relion_exact_fine_gaussian, relion_firstiter_score_mode, relion_fine_diff2_fused_ffi, relion_f32_fine_posterior):
-    """The three RELION fine-scoring flags of a pass 2: exact Gaussian scoring, fused-FFI diff2, float32 fine posterior.
+def _pass2_relion_flags(*, relion_exact_fine_gaussian, relion_firstiter_score_mode, relion_f32_fine_posterior, f32_fine_posterior_override):
+    """The two RELION fine-scoring flags of a pass 2: exact Gaussian scoring and the float32 fine posterior.
 
-    The fused-FFI and float32-posterior flags may also be switched on by their
-    environment variables, read here in the same order as before.
+    The float32 fine posterior is on when the caller's arithmetic asks for it (``relion_f32_fine_posterior``) or the
+    run's ``ScoringOverrides.f32_fine_posterior`` (``f32_fine_posterior_override``) forces it.
     """
 
     use_exact_relion_gaussian = bool(
         relion_exact_fine_gaussian
         and relion_firstiter_score_mode == "gaussian"
     )
-    use_relion_fine_diff2_fused_ffi = bool(
-        relion_fine_diff2_fused_ffi
-        or parse_env_flag(_RELION_FINE_DIFF2_FUSED_FFI_ENV, default=False)
-    )
-    use_relion_f32_fine_posterior = bool(
-        relion_f32_fine_posterior
-        or relion_x_half_f32_fine_posterior_enabled()
-    )
-    return use_exact_relion_gaussian, use_relion_fine_diff2_fused_ffi, use_relion_f32_fine_posterior
+    use_relion_f32_fine_posterior = bool(relion_f32_fine_posterior or f32_fine_posterior_override)
+    return use_exact_relion_gaussian, use_relion_f32_fine_posterior
 
 
 def _pass2_half_weights(

@@ -701,7 +701,6 @@ def _resident_pass2(
     relion_firstiter_score_mode="gaussian",
     relion_firstiter_winner_take_all=False,
     relion_exact_fine_gaussian=True,
-    relion_fine_diff2_fused_ffi=False,
     relion_f32_fine_posterior=False,
     relion_exact_fine_normalized_cc=False,
     relion_projector_half=None,
@@ -799,13 +798,12 @@ def _resident_pass2(
     overall_t0 = time.time()
     (
         use_exact_relion_gaussian,
-        _use_relion_fine_diff2_fused_ffi,
         use_relion_f32_fine_posterior,
     ) = _pass2_relion_flags(
         relion_exact_fine_gaussian=relion_exact_fine_gaussian,
         relion_firstiter_score_mode=relion_firstiter_score_mode,
-        relion_fine_diff2_fused_ffi=relion_fine_diff2_fused_ffi,
         relion_f32_fine_posterior=relion_f32_fine_posterior,
+        f32_fine_posterior_override=scoring_overrides.f32_fine_posterior,
     )
     firstiter_cc = relion_firstiter_score_mode == "normalized_cc"
     if classes is None:
@@ -3149,7 +3147,6 @@ def compute_pass2_stats_resident(
     relion_firstiter_score_mode="gaussian",
     relion_firstiter_winner_take_all=False,
     relion_exact_fine_gaussian=True,
-    relion_fine_diff2_fused_ffi=False,
     relion_f32_fine_posterior=False,
     relion_exact_fine_normalized_cc=False,
     relion_projector_half=None,

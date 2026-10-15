@@ -905,11 +905,6 @@ def _driver_fixture_args(seed=20260918):
         relion_fine_mstep_prune=True,
         relion_f32_fine_posterior=True,
         relion_exact_fine_gaussian=True,
-        # Production K=1 runs the exact rectangular CUDA reduction (k_class.py
-        # sets this whenever the custom library is available). Without it the
-        # compact engine takes the XLA 256-lane emulation, which differs from
-        # every CUDA scorer by a few ULP and would confound the comparison.
-        relion_fine_diff2_fused_ffi=True,
         preserve_bpref_particle_order=True,
         source_faithful_spectrum_norm=False,
         return_score_log_z=True,

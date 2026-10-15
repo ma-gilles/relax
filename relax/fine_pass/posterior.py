@@ -12,10 +12,7 @@ from functools import partial
 import jax
 import jax.numpy as jnp
 
-from relax.runtime.env_flags import parse_env_flag
 from relax.sampling.oversampling import _relion_cuda_f32_tail_target
-
-_RELION_X_HALF_F32_FINE_POSTERIOR_ENV = "RELAX_RELION_X_HALF_F32_FINE_POSTERIOR"
 
 
 @partial(jax.jit, static_argnames=("adaptive_fraction", "keep_all"))
@@ -126,15 +123,3 @@ def relion_f32_fine_probabilities(
         sum_weight,
         threshold,
     )
-
-
-def relion_x_half_f32_fine_posterior_enabled(*, default: bool = False) -> bool:
-    """Return whether the RELION float32 fine posterior is enabled.
-
-    Preserve the PR179 production default; enable this separately qualified
-    arithmetic path explicitly for boundary experiments.
-    """
-
-    return parse_env_flag(_RELION_X_HALF_F32_FINE_POSTERIOR_ENV, default=default)
-
-

@@ -271,11 +271,6 @@ def _run_sparse_k_class_adaptive_pass2(
     base_engine_kwargs = dict(engine_kwargs)
     relion_projector_half_by_class = base_engine_kwargs.get("relion_projector_half")
     relion_projector_r_max = base_engine_kwargs.get("relion_projector_r_max")
-    use_k1_fine_diff2_ffi = False
-    if n_classes == 1:
-        from recovar import cuda_backproject
-
-        use_k1_fine_diff2_ffi = cuda_backproject.cuda_available()
     source_faithful_spectrum_norm = bool(
         base_engine_kwargs.get("source_faithful_spectrum_norm", False)
     )
@@ -348,7 +343,6 @@ def _run_sparse_k_class_adaptive_pass2(
         # The exact rectangular/pair CUDA reduction is qualified for K=1.
         # Preserve the existing K>1 scorer until its independent boundary is
         # localized.
-        relion_fine_diff2_fused_ffi=use_k1_fine_diff2_ffi,
         # RELION's float32 exp/sort/scan significance path is now qualified
         # for K=1.  Keep K>1 byte-preserving until its separate posterior
         # boundary is diagnosed.
@@ -552,7 +546,6 @@ def _resident_production_arithmetic(options: dict) -> dict:
         preserve_bpref_particle_order=True,
         relion_f32_fine_posterior=True,
         relion_fine_mstep_prune=True,
-        relion_fine_diff2_fused_ffi=True,
         relion_exact_fine_normalized_cc=True,
     )
     return options
