@@ -70,7 +70,7 @@ import relax.steps.projector_preparation as projector_preparation
 from relax.classification.k_class_results import (
     KClassEMResult,
     _resolve_class_mstep_posterior_sums,
-    _sum_noise_stats,
+    sum_noise_stats,
 )
 from relax.diagnostics.observers import IntermediatesObserver
 from relax.fourier.image_shifts import apply_relion_integer_pre_shifts, integer_pre_shifts_or_none
@@ -4928,7 +4928,7 @@ class TestRelionModeSmokeTest:
             wsum_scale_correction_aa=jnp.array([80.0], dtype=jnp.float32),
         )
 
-        summed = _sum_noise_stats((stats0, stats1))
+        summed = sum_noise_stats((stats0, stats1))
         combined = _combined_noise_stats([stats0, stats1])
 
         np.testing.assert_allclose(np.asarray(summed.wsum_norm_correction), [55.0, 66.0])

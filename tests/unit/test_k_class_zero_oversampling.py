@@ -104,7 +104,7 @@ def test_adaptive_engine_hands_the_coarse_state_to_pass_2_for_classes_on_request
 
     import relax.classification.k_class as k_class_module
     from relax.classification.k_class import run_dense_k_class_em_adaptive
-    from relax.classification.k_class_results import _assemble_result
+    from relax.classification.k_class_results import assemble_result
     from relax.scoring import significance
     from relax.scoring.pass1_results import Pass1Result, Pass1Stats
     from relax.types import make_relion_stats
@@ -128,7 +128,7 @@ def test_adaptive_engine_hands_the_coarse_state_to_pass_2_for_classes_on_request
         log_evidence_per_image=np.zeros(1, dtype=np.float32), best_log_score_per_image=np.zeros(1, dtype=np.float32),
         max_posterior_per_image=np.ones(1, dtype=np.float32), rotation_posterior_sums=np.zeros(1, dtype=np.float32),
     )
-    result = _assemble_result(
+    result = assemble_result(
         class_log_evidence=np.zeros((n_classes, 1)), new_means=None,
         Ft_y=[jnp.ones(4, dtype=jnp.complex64)] * n_classes, Ft_ctf=[jnp.ones(4, dtype=jnp.float32)] * n_classes,
         per_class_hard_assignments=np.zeros((n_classes, 1), dtype=np.int32),

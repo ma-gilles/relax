@@ -13,22 +13,22 @@ from recovar.utils.nvtx_shim import nvtx
 
 import relax.runtime.engine_tuning
 from relax.classification.k_class_inputs import (
-    _as_class_means,
-    _class_log_priors,
-    _select_class_value,
-    _select_required_class_value,
+    as_class_means,
+    resolve_class_log_priors,
     seed_iteration_first_class,
     seed_iteration_supports,
+    select_class_value,
     select_projector_half_for_class,
+    select_required_class_value,
 )
 from relax.classification.k_class_results import (
     KClassEMResult,
-    _assemble_result,
-    _expand_subset_noise_stats,
-    _expand_subset_pose_details,
-    _full_stats_from_subset,
-    _with_coarse_significance_diagnostics,
-    _zero_subset_noise_stats,
+    assemble_result,
+    expand_subset_noise_stats,
+    expand_subset_pose_details,
+    full_stats_from_subset,
+    with_coarse_significance_diagnostics,
+    zero_subset_noise_stats,
 )
 from relax.classification.probes import KClassProbe, NoProbe
 from relax.fine_pass.significant_samples import ComplementSignificantSampleIndices
@@ -280,7 +280,7 @@ def _run_sparse_k_class_adaptive_pass2(
     def _class_rotation_prior(class_index: int):
         class_prior = base_engine_kwargs.get("class_rotation_log_prior")
         if class_prior is not None:
-            rot_prior = _select_required_class_value(
+            rot_prior = select_required_class_value(
                 class_prior,
                 class_index,
                 n_classes,
@@ -437,7 +437,7 @@ def _run_sparse_k_class_adaptive_pass2(
     result = compute_pass2_stats_sparse(
         experiment_dataset,
         means_array[0],
-        _select_class_value(mean_variance, 0, n_classes),
+        select_class_value(mean_variance, 0, n_classes),
         noise_variance,
         coarse_translations_np,
         sig_sample_indices_by_class[0],
@@ -489,7 +489,7 @@ def single_class_pass2_em_result(
 ) -> KClassEMResult:
     """The K-class result of one K=1 resident pass 2 (``SparsePass2Output``; SPA images or tomo particles)."""
 
-    return _assemble_result(
+    return assemble_result(
         class_log_evidence=np.asarray(result.relion_stats.log_evidence_per_image, dtype=np.float64)[None],
         new_means=None,
         Ft_y=[_as_host_accumulator(result.Ft_y)],
@@ -609,7 +609,7 @@ def _run_resident_k_class_pass2(
         _dataset_image_count(experiment_dataset),
         time.time() - t0,
     )
-    return _class_segmented_em_result(
+    return class_segmented_em_result(
         output,
         n_classes=n_classes,
         class_posterior_sums_from_noise=True,
@@ -622,7 +622,7 @@ def _run_resident_k_class_pass2(
     )
 
 
-def _class_segmented_em_result(
+def class_segmented_em_result(
     output,
     *,
     n_classes: int,
@@ -634,7 +634,7 @@ def _class_segmented_em_result(
 
     ``output`` is the class-segmented result of the exact-local engine or of the
     resident pass 2 (``ResidentKClassPass2Output``, the same field names).
-    ``accumulator_layout`` is passed to ``_assemble_result`` as is.
+    ``accumulator_layout`` is passed to ``assemble_result`` as is.
     """
 
     # Follow the existing K-class convention: the class log evidence is float64 for
@@ -675,10 +675,10 @@ def _class_segmented_em_result(
         )
         for class_index in range(n_classes)
     )
-    return _assemble_result(
+    return assemble_result(
         class_log_evidence=class_log_evidence,
         # One engine call scored every class jointly, so its joint max posterior is
-        # authoritative; see _assemble_result for why it is not rebuilt downstream.
+        # authoritative; see assemble_result for why it is not rebuilt downstream.
         joint_max_posterior_per_image=np.asarray(output.stats.max_posterior_per_image),
         new_means=None,
         Ft_y=[output.Ft_y[class_index] for class_index in range(n_classes)],
@@ -736,7 +736,7 @@ def _run_dense_k_class_joint_firstiter_score_probe(
     from relax.projection.projection import compact_relion_projector_half_for_centered_indices
     from relax.scoring.significance import _compute_k_class_significance_batched
 
-    means_array = _as_class_means(means_array)
+    means_array = as_class_means(means_array)
     n_classes = int(means_array.shape[0])
     n_rot = int(np.asarray(rotations).shape[0])
     n_images = _dataset_image_count(experiment_dataset)
@@ -991,7 +991,7 @@ class _PerClassSubsetResults:
         )
         if self.per_class_noise is not None:
             self.per_class_noise.append(
-                _zero_subset_noise_stats(
+                zero_subset_noise_stats(
                     noise_variance,
                     n_images=self.n_images,
                     full_group_count=self.full_group_count,
@@ -1007,7 +1007,7 @@ class _PerClassSubsetResults:
         self.Ft_ctf.append(_as_host_accumulator(Ft_ctf) if host_accumulators else Ft_ctf)
         self.hard_assignments.append(hard_full)
         self.per_class_stats.append(
-            _full_stats_from_subset(
+            full_stats_from_subset(
                 stats_subset,
                 image_indices,
                 self.n_images,
@@ -1016,7 +1016,7 @@ class _PerClassSubsetResults:
         )
         if self.per_class_noise is not None:
             self.per_class_noise.append(
-                _expand_subset_noise_stats(
+                expand_subset_noise_stats(
                     noise,
                     image_indices,
                     self.n_images,
@@ -1025,7 +1025,7 @@ class _PerClassSubsetResults:
             )
         if self.return_best_pose_details:
             best_rots, best_trans, best_rot_ids = best_pose
-            best_rots_full, best_trans_full, best_rot_ids_full = _expand_subset_pose_details(
+            best_rots_full, best_trans_full, best_rot_ids_full = expand_subset_pose_details(
                 best_rots, best_trans, best_rot_ids, image_indices, self.n_images
             )
             self.best_pose_rotations.append(best_rots_full)
@@ -1047,7 +1047,7 @@ class _PerClassSubsetResults:
                 self.Ft_ctf[k] = np.zeros_like(np.asarray(self.Ft_ctf[scored]))
                 if self.per_class_noise is not None:
                     self.per_class_noise[k] = _zero_noise_stats_like(self.per_class_noise[scored])
-        return _assemble_result(
+        return assemble_result(
             class_log_evidence=class_log_evidence,
             new_means=None,
             Ft_y=self.Ft_y,
@@ -1249,7 +1249,7 @@ def _run_sparse_firstiter_global_winner_subset_pass2(
         result = compute_pass2_stats_sparse(
             subset_dataset,
             means_array[class_index],
-            _select_class_value(mean_variance, class_index, n_classes),
+            select_class_value(mean_variance, class_index, n_classes),
             noise_variance,
             coarse_translations_np,
             subset_sig,
@@ -1597,9 +1597,9 @@ def run_dense_k_class_em_adaptive(
         relion_projector_half is not None,
         coarse_relion_projector_texture_interp,
     )
-    means_array = _as_class_means(means)
+    means_array = as_class_means(means)
     n_classes = int(means_array.shape[0])
-    log_priors = _class_log_priors(n_classes, class_log_priors)
+    log_priors = resolve_class_log_priors(n_classes, class_log_priors)
     # Per-optics-group noise rows score every class (coarse significance, then the
     # device-resident pass 2); images on another grid than the reference carry their
     # scale in the rotations and fill each class's backprojector at the reference size.
@@ -1951,7 +1951,7 @@ def run_dense_k_class_em_adaptive(
                     dtype=jnp.int32,
                 ),
             )
-        result = _with_coarse_significance_diagnostics(
+        result = with_coarse_significance_diagnostics(
             result,
             support_audit=coarse_significance_support_audit,
         )

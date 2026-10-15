@@ -3265,7 +3265,7 @@ class ResidentKClassPass2Output(NamedTuple):
     """A K-class resident pass, in the class-segmented result's field names.
 
     The same names as the exact-local engine's class-segmented output, so one
-    adapter (``k_class._class_segmented_em_result``) turns either into the
+    adapter (``k_class.class_segmented_em_result``) turns either into the
     K-class result. Class axes come first.
     """
 

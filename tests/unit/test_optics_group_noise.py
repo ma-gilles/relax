@@ -204,7 +204,7 @@ def test_k1_class_mass_and_sums_take_per_group_weight_sums():
         assert_matches(mass, [7.5])
     assert_matches(results._summed_sumw((groups, groups)), [6.0, 9.0])
     assert results._summed_sumw((single, single)) == 15.0 and type(results._summed_sumw((single,))) is float
-    assert_matches(results._sum_noise_stats((groups,), host_arrays=True).sumw, [3.0, 4.5])
+    assert_matches(results.sum_noise_stats((groups,), host_arrays=True).sumw, [3.0, 4.5])
 
 
 @pytest.mark.unit

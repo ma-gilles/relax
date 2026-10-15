@@ -25,9 +25,9 @@ from relax.classification.k_class import (
     sparse_pose_ids_to_fine_grid,
 )
 from relax.classification.k_class_results import (
-    _assemble_result,
-    _expand_subset_noise_stats,
-    _zero_subset_noise_stats,
+    assemble_result,
+    expand_subset_noise_stats,
+    zero_subset_noise_stats,
 )
 from relax.classification.probes import NoProbe
 from relax.fine_pass.bucket_io import relion_translation_angles_f32
@@ -109,7 +109,7 @@ def test_adaptive_coarse_state_activation_is_zero_soft_k1_only(
                 make_pass1_stats(significant_cutoff_counts=np.ones(1, dtype=np.int32),
                                  relion_f32_sum_weight=coarse_sum, relion_f32_max_posterior=coarse_pmax))
 
-    result = _assemble_result(
+    result = assemble_result(
         class_log_evidence=np.zeros((n_classes, 1)), new_means=None,
         Ft_y=[jnp.ones(4, dtype=jnp.complex64)] * n_classes,
         Ft_ctf=[jnp.ones(4, dtype=jnp.float32)] * n_classes,
@@ -192,7 +192,7 @@ def _adaptive_run_with_fake_coarse(monkeypatch, engine_tuning=EngineTuning()):
             make_pass1_stats(significant_cutoff_counts=np.full(1, 5, dtype=np.int32)),
         )
 
-    sparse_result = _assemble_result(
+    sparse_result = assemble_result(
         class_log_evidence=np.zeros((1, 1), dtype=np.float64),
         new_means=None,
         Ft_y=[jnp.asarray([1, 2, 3, 4], dtype=jnp.complex64)],
@@ -288,7 +288,7 @@ def test_k_class_result_publishes_the_winning_class_fine_pose():
     hard = [sparse_pose_ids_to_fine_grid(trans_ids[k], rot_ids[k], n_trans) for k in range(2)]
     assert_matches(np.stack(hard), np.asarray([[0, 3], [5, 2]], dtype=np.int32))
 
-    result = _assemble_result(
+    result = assemble_result(
         class_log_evidence=np.zeros((2, 2), dtype=np.float64),
         new_means=None,
         Ft_y=[jnp.zeros(4, dtype=jnp.complex64)] * 2,
@@ -309,7 +309,7 @@ def test_k_class_result_publishes_the_winning_class_fine_pose():
 
 
 def test_k_class_hard_assignment_uses_joint_best_pose_not_marginal_class():
-    result = _assemble_result(
+    result = assemble_result(
         class_log_evidence=np.asarray([[0.0], [-0.2]], dtype=np.float64),
         new_means=[jnp.zeros(2), jnp.zeros(2)],
         Ft_y=[jnp.zeros(2), jnp.zeros(2)],
@@ -333,7 +333,7 @@ def test_k_class_hard_assignment_uses_joint_best_pose_not_marginal_class():
 
 
 def test_k_class_assemble_result_reports_joint_pmax_not_per_class_pmax():
-    result = _assemble_result(
+    result = assemble_result(
         class_log_evidence=np.asarray([[0.0], [0.0]], dtype=np.float64),
         new_means=[jnp.zeros(2), jnp.zeros(2)],
         Ft_y=[jnp.zeros(2), jnp.zeros(2)],
@@ -357,7 +357,7 @@ def test_k_class_assemble_result_reports_joint_pmax_not_per_class_pmax():
 
 def test_single_class_assemble_result_preserves_authoritative_kernel_pmax():
     kernel_pmax = np.float32(0.97628003)
-    result = _assemble_result(
+    result = assemble_result(
         class_log_evidence=np.asarray([[-100000.0]], dtype=np.float64),
         new_means=[jnp.zeros(2)],
         Ft_y=[jnp.zeros(2)],
@@ -379,7 +379,7 @@ def test_single_class_assemble_result_preserves_authoritative_kernel_pmax():
 
 def test_k_class_assemble_result_clips_inconsistent_pmax_before_exp_overflow():
     with np.errstate(over="raise"):
-        result = _assemble_result(
+        result = assemble_result(
             class_log_evidence=np.asarray([[-1000.0]], dtype=np.float64),
             new_means=[jnp.zeros(2)],
             Ft_y=[jnp.zeros(2)],
@@ -398,7 +398,7 @@ def test_k_class_assemble_result_clips_inconsistent_pmax_before_exp_overflow():
 
 
 def test_k_class_assemble_result_can_keep_full_accumulators_on_host():
-    result = _assemble_result(
+    result = assemble_result(
         class_log_evidence=np.asarray([[0.0], [-0.2]], dtype=np.float64),
         new_means=None,
         Ft_y=[jnp.asarray([1.0, 2.0]), jnp.asarray([3.0, 4.0])],
@@ -472,7 +472,7 @@ def test_k_class_assemble_result_publishes_singleton_host_accumulators_without_c
 
     Ft_y = np.asarray([1.0 + 2.0j, 3.0 - 1.0j], dtype=np.complex64)
     Ft_ctf = np.asarray([5.0, 6.0], dtype=np.float32)
-    result = _assemble_result(
+    result = assemble_result(
         class_log_evidence=np.asarray([[0.0]], dtype=np.float64),
         new_means=None,
         Ft_y=[Ft_y],
@@ -532,7 +532,7 @@ def test_k_class_noise_aggregate_uses_joint_relion_sum_weight():
         ),
     )
 
-    result = _assemble_result(
+    result = assemble_result(
         class_log_evidence=np.asarray(
             [
                 [np.log(0.25), np.log(0.75)],
@@ -583,7 +583,7 @@ def test_k_class_noise_aggregate_keeps_exact_mass_image_power():
         ),
     )
 
-    result = _assemble_result(
+    result = assemble_result(
         class_log_evidence=np.asarray(
             [
                 [np.log(0.25), np.log(0.25)],
@@ -631,25 +631,25 @@ def test_subset_noise_stats_expand_optional_fields_to_parent_axes():
         wsum_scale_correction_xa=np.asarray([29.0], dtype=np.float32),
         wsum_scale_correction_aa=np.asarray([31.0], dtype=np.float32),
     )
-    expanded0 = _expand_subset_noise_stats(
+    expanded0 = expand_subset_noise_stats(
         stats0,
         np.asarray([0, 2], dtype=np.int64),
         4,
         full_group_count=3,
     )
-    expanded1 = _expand_subset_noise_stats(
+    expanded1 = expand_subset_noise_stats(
         stats1,
         np.asarray([1], dtype=np.int64),
         4,
         full_group_count=3,
     )
-    expanded_empty = _zero_subset_noise_stats(
+    expanded_empty = zero_subset_noise_stats(
         np.asarray([0.0], dtype=np.float32),
         n_images=4,
         full_group_count=3,
     )
 
-    summed = k_class_results._sum_noise_stats((expanded0, expanded1, expanded_empty))
+    summed = k_class_results.sum_noise_stats((expanded0, expanded1, expanded_empty))
 
     np.testing.assert_allclose(np.asarray(summed.wsum_norm_correction), [5.0, 23.0, 7.0, 0.0])
     np.testing.assert_allclose(np.asarray(summed.wsum_scale_correction_xa), [40.0, 13.0, 0.0])
@@ -819,7 +819,7 @@ def test_adaptive_k_class_firstiter_uses_coarse_current_size_for_probe(monkeypat
     def fake_subset_pass2(*_args, **kwargs):
         subset_calls.append(kwargs["pass2_kwargs"])
         n_images = TinyDataset.n_images
-        return _assemble_result(
+        return assemble_result(
             class_log_evidence=np.zeros((2, n_images), dtype=np.float64),
             new_means=None,
             Ft_y=[jnp.zeros(4, dtype=jnp.complex64) for _ in range(2)],
@@ -1487,7 +1487,7 @@ def _k4_assembly_inputs():
 
 def test_k4_assembly_matches_float64_joint_posterior_and_all_class_pose_winners():
     inputs = _k4_assembly_inputs()
-    result = _assemble_result(**inputs)
+    result = assemble_result(**inputs)
 
     expected_responsibilities = np.exp(inputs["class_log_evidence"])
     np.testing.assert_allclose(
@@ -1523,12 +1523,12 @@ def test_k4_assembly_rejects_missing_or_duplicated_class_rows():
     missing = _k4_assembly_inputs()
     missing["per_class_stats"] = missing["per_class_stats"][:-1]
     with pytest.raises(ValueError, match="per_class_stats must contain exactly 4 classes, got 3"):
-        _assemble_result(**missing)
+        assemble_result(**missing)
 
     duplicated = _k4_assembly_inputs()
     duplicated["Ft_y"] = [*duplicated["Ft_y"], duplicated["Ft_y"][-1]]
     with pytest.raises(ValueError, match="Ft_y must contain exactly 4 classes, got 5"):
-        _assemble_result(**duplicated)
+        assemble_result(**duplicated)
 
 
 @pytest.mark.parametrize("texture_interp", [True, False])

@@ -527,7 +527,7 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
         patch(shape_class_estep, "run_dense_k_class_em_adaptive", stand_in_engine)
         patch(tomo_scoring, "score_tomo_half", stand_in_tomo_scoring)
         patch(k_class, "single_class_pass2_em_result", stand_in_pass2_result)
-        patch(k_class, "_class_segmented_em_result", stand_in_pass2_result)
+        patch(k_class, "class_segmented_em_result", stand_in_pass2_result)
         original_run = driver.run_native_initial_model
 
         def run_and_keep(opts, **keywords):

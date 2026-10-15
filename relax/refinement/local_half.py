@@ -906,9 +906,9 @@ def _class_local_half_result(
     sums are over the layout's posterior grid, which is the direction-prior grid of the local search.
     """
 
-    from relax.classification.k_class import _class_segmented_em_result
+    from relax.classification.k_class import class_segmented_em_result
 
-    k_class_result = _class_segmented_em_result(
+    k_class_result = class_segmented_em_result(
         outputs.class_pass,
         n_classes=n_classes,
         class_posterior_sums_from_noise=True,

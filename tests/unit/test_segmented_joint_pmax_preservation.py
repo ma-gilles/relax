@@ -2,7 +2,7 @@
 
 Measured motivation (job 14028280, original image 2468, iteration 1): the segmented
 engine produced joint Pmax 0.8218123316764832 in its own score coordinates, while
-``_assemble_result`` rebuilt it as ``max(best) - logsumexp(class_log_evidence)`` from
+``assemble_result`` rebuilt it as ``max(best) - logsumexp(class_log_evidence)`` from
 operands already quantized to the float32 grid at absolute magnitude ~16455, where the
 ULP is 1.953125e-3 instead of 1.907e-6, and published 0.8230574131011963.
 
@@ -15,7 +15,7 @@ import pytest
 from helpers.float_compare import matches
 
 from relax.classification import k_class_results
-from relax.classification.k_class_results import _assemble_result
+from relax.classification.k_class_results import assemble_result
 from relax.types import make_relion_stats
 
 # Real operands captured at row 20 of group 1, iteration 1, job 14028280.
@@ -49,7 +49,7 @@ def _assemble(**overrides):
         noise_stats=None,
     )
     kwargs.update(overrides)
-    return _assemble_result(**kwargs)
+    return assemble_result(**kwargs)
 
 
 def test_large_offset_rebuild_is_the_defect_this_repair_removes():
@@ -114,7 +114,7 @@ def test_firstiter_winner_take_all_still_wins_over_the_engine_value():
 def test_k1_branch_is_unchanged():
     """K=1 keeps taking its own branch even if an engine value is supplied."""
     single = _stats(LARGE_OFFSET_CLASS_BEST[3], max_posterior=0.5)
-    result = _assemble_result(
+    result = assemble_result(
         class_log_evidence=LARGE_OFFSET_CLASS_LOG_EVIDENCE[3:4],
         new_means=None,
         Ft_y=[np.zeros(1, dtype=np.complex64)],
@@ -131,7 +131,7 @@ def test_branch_order_is_firstiter_then_k1_then_segmented_then_generic():
     """Guard the ordering the three tests above depend on."""
     import inspect
 
-    src = inspect.getsource(k_class_results._assemble_result)
+    src = inspect.getsource(k_class_results.assemble_result)
     order = [
         src.index("if firstiter_winner_take_all:"),
         src.index("elif len(per_class_stats) == 1:"),

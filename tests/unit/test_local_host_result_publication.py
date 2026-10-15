@@ -79,8 +79,8 @@ def test_single_class_reduction_preserves_payloads_and_scalar_sum(optional):
         dtype=np.uint32,
     ).view(np.float32)
     stats = _noise(values, optional=optional)
-    actual = k_class_results._sum_noise_stats((stats,), host_arrays=True)
-    expected = k_class_results._sum_noise_stats((stats,))
+    actual = k_class_results.sum_noise_stats((stats,), host_arrays=True)
+    expected = k_class_results.sum_noise_stats((stats,))
     _same_bytes(actual, expected)
     assert isinstance(actual.wsum_sigma2_noise, np.ndarray)
     _same_bytes(np.asarray(jnp.sum(jnp.stack([jnp.asarray(values)]), axis=0)), values)
@@ -109,8 +109,8 @@ def test_complete_result_publication_matches_device_result(host):
         per_class_best_pose_translations=[np.zeros((3, 2), dtype=np.float32)],
         per_class_best_pose_rotations=[np.tile(np.eye(3, dtype=np.float32), (3, 1, 1))],
     )
-    expected = k_class_results._assemble_result(**kwargs)
-    actual = k_class_results._assemble_result(
+    expected = k_class_results.assemble_result(**kwargs)
+    actual = k_class_results.assemble_result(
         **kwargs,
         host_accumulators=True,
         host_stats_publication=True,

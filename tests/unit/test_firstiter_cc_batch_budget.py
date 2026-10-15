@@ -291,7 +291,7 @@ def test_firstiter_winner_take_all_assembly_reports_unit_pmax_across_score_norma
         ),
     )
 
-    result = k_class_results._assemble_result(
+    result = k_class_results.assemble_result(
         class_log_evidence=np.array([[1_000.0]], dtype=np.float64),
         new_means=None,
         Ft_y=[jnp.zeros(1, dtype=jnp.complex64)],

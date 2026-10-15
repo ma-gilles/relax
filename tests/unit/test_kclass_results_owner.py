@@ -103,7 +103,7 @@ def test_subset_pass_uses_the_owner():
     assert "host_accumulators=True,\n        )" in source
     assert "per_class_best_pose_rotations.append(" not in source
     assert "Ft_y = []" not in source
-    assert "results.assemble(" in source and "_assemble_result(" not in source
+    assert "results.assemble(" in source and "assemble_result(" not in source
     assert "class_posterior_sums_override=np.asarray(self.subset_counts, dtype=np.float64)" in inspect.getsource(
         k_class._PerClassSubsetResults.assemble
     )
@@ -121,5 +121,5 @@ def test_rules_and_assembly_are_not_repeated():
     assert src.count('kwargs.get("use_float64_projections", False)') == 1
     assert src.count("_pose_dtype_from_kwargs(") == 2 and src.count("_score_dtype_from_kwargs(") == 3
     body = inspect.getsource(k_class._run_sparse_firstiter_global_winner_subset_pass2)
-    assert "results.assemble(" in body and "_assemble_result(" not in body
+    assert "results.assemble(" in body and "assemble_result(" not in body
     assert "firstiter_winner_take_all=True" in inspect.getsource(k_class._PerClassSubsetResults.assemble)

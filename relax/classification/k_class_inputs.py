@@ -12,7 +12,7 @@ import jax.numpy as jnp
 import numpy as np
 
 
-def _class_log_priors(n_classes: int, class_log_priors) -> np.ndarray:
+def resolve_class_log_priors(n_classes: int, class_log_priors) -> np.ndarray:
     if class_log_priors is None:
         return np.full(n_classes, -np.log(float(n_classes)), dtype=np.float64)
     priors = np.asarray(class_log_priors, dtype=np.float64)
@@ -24,7 +24,7 @@ def _class_log_priors(n_classes: int, class_log_priors) -> np.ndarray:
     return priors
 
 
-def _as_class_means(means) -> jax.Array:
+def as_class_means(means) -> jax.Array:
     means_array = jnp.asarray(means)
     if means_array.ndim != 2:
         raise ValueError(f"means must have shape (n_classes, volume_size), got {means_array.shape}")
@@ -33,7 +33,7 @@ def _as_class_means(means) -> jax.Array:
     return means_array
 
 
-def _select_class_value(value, class_index: int, n_classes: int):
+def select_class_value(value, class_index: int, n_classes: int):
     value_array = jnp.asarray(value)
     if value_array.ndim >= 2 and int(value_array.shape[0]) == n_classes:
         return value_array[class_index]
@@ -69,7 +69,7 @@ def select_projector_half_for_class(value, class_index: int, n_classes: int):
     return value
 
 
-def _select_required_class_value(value, class_index: int, n_classes: int, name: str):
+def select_required_class_value(value, class_index: int, n_classes: int, name: str):
     value_array = jnp.asarray(value)
     if value_array.ndim < 2 or int(value_array.shape[0]) != n_classes:
         raise ValueError(f"{name} must have leading class axis of length {n_classes}, got {value_array.shape}")

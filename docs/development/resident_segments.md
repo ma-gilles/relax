@@ -88,6 +88,6 @@ images.
 [`compute_k_class_pass2_stats_resident`](../../relax/fine_pass/resident_pass2.py) runs the class axis;
 `compute_pass2_stats_resident` is its one-class case. The K-class
 output has the field names of the exact-local engine's class-segmented output, so
-`k_class._class_segmented_em_result` builds the K-class result from either. Every K-class pass runs on it
+`k_class.class_segmented_em_result` builds the K-class result from either. Every K-class pass runs on it
 with the K=1 production arithmetic, since RELION's does not depend on the class count. The first iteration's `--firstiter_cc` winner, the zero-oversampling reuse and several optics groups are
 still K=1 only.

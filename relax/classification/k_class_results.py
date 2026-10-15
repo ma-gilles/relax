@@ -97,7 +97,7 @@ def _stacked_sum(values):
     return jnp.sum(jnp.stack(values, axis=0), axis=0)
 
 
-def _sum_noise_stats(noise_stats: tuple[NoiseStats, ...] | None, *, host_arrays=False) -> NoiseStats | None:
+def sum_noise_stats(noise_stats: tuple[NoiseStats, ...] | None, *, host_arrays=False) -> NoiseStats | None:
     if not noise_stats:
         return None
     if host_arrays:
@@ -172,7 +172,7 @@ def _sum_k_class_noise_stats(
     rescaling.
     """
 
-    aggregate = _sum_noise_stats(noise_stats, host_arrays=host_arrays)
+    aggregate = sum_noise_stats(noise_stats, host_arrays=host_arrays)
     if aggregate is None:
         return None
     responsibilities = np.asarray(class_posterior_sums, dtype=np.float64).reshape(-1)
@@ -237,7 +237,7 @@ def _resolve_class_mstep_posterior_sums(
     return resolved
 
 
-def _assemble_result(
+def assemble_result(
     *,
     class_log_evidence: np.ndarray,
     new_means,
@@ -523,7 +523,7 @@ def _assemble_result(
     )
 
 
-def _expand_subset_noise_stats(
+def expand_subset_noise_stats(
     noise: NoiseStats,
     image_indices: np.ndarray,
     n_images: int,
@@ -575,7 +575,7 @@ def _expand_subset_noise_stats(
     )
 
 
-def _zero_subset_noise_stats(
+def zero_subset_noise_stats(
     noise_variance,
     *,
     n_images: int,
@@ -598,7 +598,7 @@ def _zero_subset_noise_stats(
     )
 
 
-def _full_stats_from_subset(
+def full_stats_from_subset(
     subset_stats: RelionStats,
     image_indices: np.ndarray,
     n_images: int,
@@ -619,7 +619,7 @@ def _full_stats_from_subset(
     )
 
 
-def _expand_subset_pose_details(best_rots, best_trans, best_rot_ids, image_indices, n_images):
+def expand_subset_pose_details(best_rots, best_trans, best_rot_ids, image_indices, n_images):
     """Scatter scored poses to parent image rows, leaving unvisited rows zero.
 
     Preserve the rotation/translation dtypes and the int32 published pose IDs.
@@ -634,7 +634,7 @@ def _expand_subset_pose_details(best_rots, best_trans, best_rot_ids, image_indic
     return best_rots_full, best_trans_full, best_rot_ids_full
 
 
-def _with_coarse_significance_diagnostics(result, *, support_audit: dict | None):
+def with_coarse_significance_diagnostics(result, *, support_audit: dict | None):
     """Propagate exact coarse-support telemetry to InitialModel."""
 
     if support_audit is None:

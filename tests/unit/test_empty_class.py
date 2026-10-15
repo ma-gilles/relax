@@ -305,10 +305,10 @@ def test_run_files_of_an_emptied_class_read_back_for_a_continued_run():
 
 def test_the_adaptive_engine_takes_the_minus_infinite_log_prior_of_an_emptied_class():
     """A global or given-pose Class3D iteration after a class emptied: the engine scores it at pdf_class == 0."""
-    from relax.classification.k_class_inputs import _class_log_priors
+    from relax.classification.k_class_inputs import resolve_class_log_priors
 
     priors_with_dead = np.array([np.log(0.6), -np.inf, np.log(0.4)])
-    assert_matches(_class_log_priors(3, priors_with_dead), priors_with_dead, rtol=0)
+    assert_matches(resolve_class_log_priors(3, priors_with_dead), priors_with_dead, rtol=0)
     for bad in ([0.0, np.nan, 0.0], [0.0, np.inf, 0.0], [-np.inf, -np.inf, -np.inf]):
         with pytest.raises(ValueError, match="must be finite"):
-            _class_log_priors(3, np.array(bad))
+            resolve_class_log_priors(3, np.array(bad))
