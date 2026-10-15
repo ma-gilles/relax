@@ -712,7 +712,7 @@ def _score_half_local_one_shape(
                 use_float64_scoring=execution.precision.use_float64_scoring,
                 use_float64_projections=execution.precision.use_float64_projections,
                 relion_exact_score_translation=bool(
-                    scoring_policy.RELION_EXACT_FINE_GAUSSIAN and not execution.precision.use_float64_scoring
+                    not execution.precision.use_float64_scoring
                 ),
                 # RELION's GPU pass 1 projects through the projector texture, as the
                 # global pass 1 and pass 2 do.
@@ -776,7 +776,7 @@ def _score_half_local_one_shape(
                 use_float64_scoring=execution.fine_precision.use_float64_scoring,
                 use_float64_projections=execution.fine_precision.use_float64_projections,
                 relion_exact_score_translation=bool(
-                    scoring_policy.RELION_EXACT_FINE_GAUSSIAN and not execution.fine_precision.use_float64_scoring
+                    not execution.fine_precision.use_float64_scoring
                 ),
             ),
             replace(
@@ -819,7 +819,7 @@ def _score_half_local_one_shape(
             use_float64_scoring=execution.fine_precision.use_float64_scoring,
             use_float64_projections=execution.fine_precision.use_float64_projections,
             relion_exact_score_translation=bool(
-                scoring_policy.RELION_EXACT_FINE_GAUSSIAN and not execution.fine_precision.use_float64_scoring
+                not execution.fine_precision.use_float64_scoring
             ),
             # RELION local execution is intentionally hybrid: parent pass 1
             # uses manual supplied-PPref projection, while fine pass 2 follows

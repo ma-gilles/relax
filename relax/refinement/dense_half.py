@@ -43,7 +43,6 @@ from relax.sampling.oversampling import (
 )
 from relax.sampling.perturbation import apply_relion_translation_perturbation
 from relax.sampling.symmetry import canonicalize_rotational_symmetry
-from relax.steps import scoring_policy
 from relax.steps.half_inputs import HalfScoringData
 from relax.steps.score_outputs import (
     HalfScoreResult,
@@ -658,7 +657,7 @@ def _score_half_dense_one_shape(
         "reconstruction_padding_factor": RECONSTRUCTION_PADDING_FACTOR,
         "use_float64_scoring": execution.precision.use_float64_scoring,
         "use_float64_projections": execution.precision.use_float64_projections,
-        "relion_exact_fine_gaussian": scoring_policy.RELION_EXACT_FINE_GAUSSIAN,
+        "relion_exact_fine_gaussian": True,
         "do_gridding_correction": True,
         "square_window": RELION_FOURIER_WINDOW_SQUARE,
         "image_batch_size": (

@@ -45,9 +45,7 @@ DENSE_PRECISION = DensePrecisionPolicy(
     use_float64_scoring=parse_env_true_flag("RELAX_USE_FLOAT64_SCORING"),
     use_float64_projections=parse_env_true_flag("RELAX_USE_FLOAT64_PROJECTIONS"),
 )
-RELION_EXACT_FINE_GAUSSIAN = not parse_env_true_flag(
-    "RELAX_DISABLE_RELION_EXACT_FINE_GAUSSIAN"
-)
+
 
 def local_precision(
     precision: DensePrecisionPolicy, iteration: int | None, *, pass_index: int, float64_pass2_iterations: frozenset[int]

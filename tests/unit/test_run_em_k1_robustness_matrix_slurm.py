@@ -534,7 +534,6 @@ def test_case_jobs_reuse_setup_relion_binding_build_dir(tmp_path):
 def test_queued_jobs_unset_inherited_non_matrix_refinement_overrides(tmp_path):
     inherited_overrides = {
         "RELAX_FINAL_ALL_DATA_AFTER_MAX_ITER": "1",
-        "RELAX_DISABLE_RELION_EXACT_FINE_GAUSSIAN": "1",
         "RELAX_USE_FLOAT64_SCORING": "1",
         "RELAX_USE_FLOAT64_PROJECTIONS": "1",
     }
@@ -544,10 +543,7 @@ def test_queued_jobs_unset_inherited_non_matrix_refinement_overrides(tmp_path):
     job_texts = [path.read_text() for path in sorted((scratch / "jobs").glob("*.sh"))]
     assert len(job_texts) == 3
     for text in job_texts:
-        assert (
-            "unset RELAX_FINAL_ALL_DATA_AFTER_MAX_ITER "
-            "RELAX_DISABLE_RELION_EXACT_FINE_GAUSSIAN"
-        ) in text
+        assert "unset RELAX_FINAL_ALL_DATA_AFTER_MAX_ITER\n" in text
         assert "unset RELAX_USE_FLOAT64_SCORING RELAX_USE_FLOAT64_PROJECTIONS" in text
         for name, value in inherited_overrides.items():
             assert f"export {name}={value}" not in text
