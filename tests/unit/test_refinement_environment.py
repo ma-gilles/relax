@@ -416,6 +416,15 @@ def test_final_pass_options_defaults_are_the_unset_environment(monkeypatch):
     assert FinalPassOptions.from_environ() == FinalPassOptions()
 
 
+def test_execution_options_defaults_are_the_unset_environment(monkeypatch):
+    """``ExecutionOptions()`` is what the command reads with no variable set (no JAX cache clearing, no BPref
+    device-signature capture) for the default batch sizes."""
+    from relax.refinement.refinement_options import ExecutionOptions
+
+    _unset_relax_environment(monkeypatch)
+    assert ExecutionOptions.from_environ() == ExecutionOptions()
+
+
 def test_engine_tuning_reaches_the_dense_engine(monkeypatch):
     from relax.runtime.compile_ahead import CompileAheadConfig
     from relax.runtime.engine_tuning import EngineTuning
