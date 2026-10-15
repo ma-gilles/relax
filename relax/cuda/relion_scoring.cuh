@@ -955,6 +955,13 @@ cudaError_t launch_relion_coarse_diff2_projector_f32_impl(
     const int score_max_r = min(model_max_r, current_size / 2);
     const float padding_factor_f = static_cast<float>(padding_factor);
     const int voxel_count = tex_x * tex_y * tex_z;
+    // Every block scores kRelionCoarseEulersPerBlock rotations, the last one fewer: a rotation's outputs are its
+    // own block's (the same projected references, shifted pixels, pixel order and lane reduction whatever block
+    // holds it), so a partial block changes no value. A remainder used to run one rotation per block, repeating
+    // the image shift of every pixel and translation for each rotation (5.3x the time per rotation in the
+    // exact cut's final-iteration rescores, etobspeed 2026-10-15).
+    const int rotation_blocks =
+        (rotation_count + kRelionCoarseEulersPerBlock - 1) / kRelionCoarseEulersPerBlock;
     float* real = nullptr;
     float* imag = nullptr;
     cudaArray_t array_real = nullptr;
@@ -1046,10 +1053,8 @@ cudaError_t launch_relion_coarse_diff2_projector_f32_impl(
     }
 
     if (worker_stream_count == 0) {
-        const int main_rotation_count = (rotation_count / 128) * 128;
-        if (main_rotation_count > 0) {
-            const int blocks =
-                batch_size * (main_rotation_count / kRelionCoarseEulersPerBlock);
+        if (rotation_count > 0) {
+            const int blocks = batch_size * rotation_blocks;
             launch_relion_coarse_diff2_projector_f32_variant<
                 kRelionCoarseEulersPerBlock,
                 CAPTURE_LANES,
@@ -1062,30 +1067,9 @@ cudaError_t launch_relion_coarse_diff2_projector_f32_impl(
                     launch_texture_real, launch_texture_imag, rotations, images,
                     translation_angles, weight, full_to_compact, output,
                     lane_partials,
-                    0, main_rotation_count, rotation_count, batch_size, translation_count,
+                    0, rotation_count, rotation_count, batch_size, translation_count,
                     compact_pixel_count, current_size, tex_yinit, tex_zinit,
                     score_max_r, projector_scale, padding_factor_f);
-            err = cudaGetLastError();
-            if (err != cudaSuccess) goto cleanup;
-        }
-        const int tail_count = rotation_count - main_rotation_count;
-        if (tail_count > 0) {
-            launch_relion_coarse_diff2_projector_f32_variant<
-                1,
-                CAPTURE_LANES,
-                CANONICAL_REDUCTION,
-                SINGLE_LANE_CANONICAL,
-                PREHALF_WEIGHT,
-                PER_IMAGE_POSES>(
-                    batch_size * tail_count,
-                    stream,
-                    launch_texture_real, launch_texture_imag, rotations, images,
-                    translation_angles, weight, full_to_compact, output,
-                    lane_partials,
-                    main_rotation_count, tail_count, rotation_count, batch_size,
-                    translation_count, compact_pixel_count, current_size,
-                    tex_yinit, tex_zinit, score_max_r,
-                    projector_scale, padding_factor_f);
             err = cudaGetLastError();
             if (err != cudaSuccess) goto cleanup;
         }
@@ -1102,8 +1086,6 @@ cudaError_t launch_relion_coarse_diff2_projector_f32_impl(
         err = initialize_relion_vdam_worker_streams(
             stream, worker_streams, &worker_inputs_ready);
         if (err != cudaSuccess) goto cleanup;
-        const int main_rotation_count = (rotation_count / 128) * 128;
-        const int tail_count = rotation_count - main_rotation_count;
         const int64_t output_stride =
             static_cast<int64_t>(rotation_count) * translation_count;
         const int64_t lane_stride =
@@ -1121,44 +1103,24 @@ cudaError_t launch_relion_coarse_diff2_projector_f32_impl(
                 float* particle_lane_partials = lane_partials == nullptr
                     ? nullptr
                     : lane_partials + particle * lane_stride;
-                if (main_rotation_count > 0) {
+                if (rotation_count > 0) {
                     launch_relion_coarse_diff2_projector_f32_variant<
                         kRelionCoarseEulersPerBlock,
                         CAPTURE_LANES,
                         CANONICAL_REDUCTION,
                         SINGLE_LANE_CANONICAL,
                         PREHALF_WEIGHT>(
-                        main_rotation_count / kRelionCoarseEulersPerBlock,
+                        rotation_blocks,
                         worker_streams[worker],
                             launch_texture_real, launch_texture_imag, rotations,
                             particle_images, translation_angles,
                             particle_weight, full_to_compact, particle_output,
                             particle_lane_partials,
-                            0, main_rotation_count, rotation_count, 1,
+                            0, rotation_count, rotation_count, 1,
                             translation_count, compact_pixel_count,
                             current_size, tex_yinit, tex_zinit,
                             score_max_r, projector_scale, padding_factor_f);
                     cudaError_t launch_error = cudaGetLastError();
-                    if (launch_error != cudaSuccess) return launch_error;
-                }
-                if (tail_count > 0) {
-                    launch_relion_coarse_diff2_projector_f32_variant<
-                        1,
-                        CAPTURE_LANES,
-                        CANONICAL_REDUCTION,
-                        SINGLE_LANE_CANONICAL,
-                        PREHALF_WEIGHT>(
-                        tail_count,
-                        worker_streams[worker],
-                            launch_texture_real, launch_texture_imag, rotations,
-                            particle_images, translation_angles,
-                            particle_weight, full_to_compact, particle_output,
-                            particle_lane_partials,
-                            main_rotation_count, tail_count, rotation_count, 1,
-                            translation_count, compact_pixel_count,
-                            current_size, tex_yinit, tex_zinit,
-                            score_max_r, projector_scale, padding_factor_f);
-                    const cudaError_t launch_error = cudaGetLastError();
                     if (launch_error != cudaSuccess) return launch_error;
                 }
                 return cudaSuccess;

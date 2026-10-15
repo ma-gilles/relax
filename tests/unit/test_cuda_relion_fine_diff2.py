@@ -408,7 +408,9 @@ def test_relion_fused_coarse_projector_source_pins_vdam_support_and_segmentation
     assert "relion_coarse_diff2_projector_body.inc" in prehalf_kernel
     assert "prehalved coarse weights require native atomic reduction" in source
     assert "const int score_max_r = min(model_max_r, current_size / 2);" in launcher
-    assert "(rotation_count / 128) * 128" in launcher
+    # Every block holds kRelionCoarseEulersPerBlock rotations, the last one fewer (no one-rotation remainder blocks).
+    assert "(rotation_count + kRelionCoarseEulersPerBlock - 1) / kRelionCoarseEulersPerBlock" in launcher
+    assert "(rotation_count / 128) * 128" not in launcher
     assert "SINGLE_LANE_CANONICAL" in launcher
     assert "if constexpr (CAPTURE_LANES)" in block
     assert "if constexpr (CANONICAL_REDUCTION)" in block
