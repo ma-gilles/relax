@@ -51,7 +51,11 @@
 namespace recovar_relion_translate_sum {
 
 constexpr int kBlockThreads = 256;
-constexpr int kMaxSharedBytes = 32 * 1024;
+// Dynamic shared tables, below the 48 KB a block gets without an opt-in
+// (the kernel's few static shared words take the rest).
+constexpr int kMaxSharedBytes = 48 * 1024 - 256;
+// Blocks a launch aims for: the pixel axis is split until the grid has them.
+constexpr int64_t kTargetBlocks = 8192;
 
 // The phase of relion_score_translate_f32, verbatim: one rounded y product
 // followed by an x FMA.  relion_translate_bpref_f32_kernel writes the same
@@ -120,9 +124,19 @@ translate_sum_flat_rows_f32_kernel(
     int image_half_width,
     int64_t angle_image_stride)
 {
+    // blockIdx.x owns ROWS_PER_BLOCK rows; blockIdx.y a span of the pixels
+    // (the grid splits them so a launch with few rows still fills the GPU).
     const int64_t row_base =
         static_cast<int64_t>(blockIdx.x) * ROWS_PER_BLOCK;
     if (row_base >= row_count) return;
+    const int64_t pixels_per_span =
+        ((pixel_capacity + gridDim.y - 1) / gridDim.y + kBlockThreads - 1) /
+        kBlockThreads * kBlockThreads;
+    const int64_t span_begin = static_cast<int64_t>(blockIdx.y) * pixels_per_span;
+    const int64_t span_end = min(pixel_capacity, span_begin + pixels_per_span);
+    // The per-row scalars (probs_sum_t, the fail-closed sentinels) belong to
+    // the first span.
+    const bool first_span = blockIdx.y == 0;
 
     const int64_t valid_rows = runtime_valid_rows == nullptr
         ? row_count
@@ -133,7 +147,7 @@ translate_sum_flat_rows_f32_kernel(
     if (valid_rows < 0 || valid_rows > row_count ||
         logical_pixels < 0 || logical_pixels > pixel_capacity) {
         // Fail closed exactly as the runtime flat-row kernels do.
-        if (blockIdx.x == 0 && threadIdx.x == 0) {
+        if (blockIdx.x == 0 && first_span && threadIdx.x == 0) {
             summed[0] = make_float2(nanf(""), nanf(""));
             summed_masked[0] = make_float2(nanf(""), nanf(""));
             probs_sum_t[0] = nanf("");
@@ -155,14 +169,14 @@ translate_sum_flat_rows_f32_kernel(
             const int32_t id = row_image_ids[row];
             if (id >= static_cast<int32_t>(batch_size)) {
                 // Out-of-range map: fail closed on this row's outputs.
-                for (int64_t pixel = threadIdx.x;
-                     pixel < pixel_capacity;
+                for (int64_t pixel = span_begin + threadIdx.x;
+                     pixel < span_end;
                      pixel += kBlockThreads) {
                     const int64_t base = row * pixel_capacity + pixel;
                     summed[base] = make_float2(nanf(""), nanf(""));
                     summed_masked[base] = make_float2(nanf(""), nanf(""));
                 }
-                if (threadIdx.x == 0) probs_sum_t[row] = nanf("");
+                if (first_span && threadIdx.x == 0) probs_sum_t[row] = nanf("");
                 continue;
             }
             // A negative id is padding: it reads nothing and stays zero.
@@ -175,23 +189,25 @@ translate_sum_flat_rows_f32_kernel(
     }
     if (!any_live) return;
 
-    // Shared copies of the two block-uniform tables.  Without them the inner
-    // translation loop re-reads them once per pixel pass.
+    // Shared copies of the block's posterior rows, its active-translation
+    // list and, with one table for every image, the angles.  Without them the
+    // inner translation loop re-reads them once per pixel pass.  Tilt images
+    // carry one [T, 2] table each (angle_image_stride = 2T), read from global
+    // memory for the image of the row being visited.
+    const bool shared_table = angle_image_stride == 0;
     extern __shared__ float translate_sum_shared[];
-    float* shared_angles = translate_sum_shared;                     // [2T]
-    float* shared_posterior = shared_angles + 2 * translation_count;  // [R, T]
+    float* shared_posterior = translate_sum_shared;                         // [R, T]
     int32_t* shared_active = reinterpret_cast<int32_t*>(
-        shared_posterior + ROWS_PER_BLOCK * translation_count);      // [T]
+        shared_posterior + ROWS_PER_BLOCK * translation_count);             // [T]
+    float* shared_angles = reinterpret_cast<float*>(
+        shared_active + translation_count);                                 // [2T] when shared_table
     __shared__ int32_t active_count;
-    // Tilt images carry one [T, 2] table each (angle_image_stride = 2T); the launcher then runs one
-    // row per block, so the block's table is its row's image's.
-    const float* block_angles = angle_image_stride == 0
-        ? translation_angles
-        : translation_angles + static_cast<int64_t>(image_ids[0]) * angle_image_stride;
-    for (int64_t index = threadIdx.x;
-         index < 2 * translation_count;
-         index += kBlockThreads) {
-        shared_angles[index] = block_angles[index];
+    if (shared_table) {
+        for (int64_t index = threadIdx.x;
+             index < 2 * translation_count;
+             index += kBlockThreads) {
+            shared_angles[index] = translation_angles[index];
+        }
     }
     for (int64_t index = threadIdx.x;
          index < ROWS_PER_BLOCK * translation_count;
@@ -212,39 +228,51 @@ translate_sum_flat_rows_f32_kernel(
     // significant samples (acc_ml_optimiser_impl.h:4819), so most translations
     // of a row add exact zeros: w * v is +-0 for finite v, and adding it to an
     // accumulator that starts at +0 leaves it unchanged, so skipping them keeps
-    // every sum bitwise and saves their sincosf and rotations.
-    if (threadIdx.x == 0) {
+    // every sum bitwise and saves their sincosf and rotations.  One warp builds
+    // the list with ballots, 32 translations at a time.
+    if (threadIdx.x < 32) {
         int32_t count = 0;
-        for (int64_t t = 0; t < translation_count; ++t) {
+        for (int64_t first = 0; first < translation_count; first += 32) {
+            const int64_t t = first + threadIdx.x;
             bool any = false;
+            if (t < translation_count) {
 #pragma unroll
-            for (int i = 0; i < ROWS_PER_BLOCK; ++i) {
-                any = any || (live[i] && shared_posterior[i * translation_count + t] != 0.0f);
+                for (int i = 0; i < ROWS_PER_BLOCK; ++i) {
+                    any = any || (live[i] && shared_posterior[i * translation_count + t] != 0.0f);
+                }
             }
-            if (any) shared_active[count++] = static_cast<int32_t>(t);
+            const unsigned mask = __ballot_sync(0xffffffffu, any);
+            if (any)
+                shared_active[count + __popc(mask & ((1u << threadIdx.x) - 1u))] =
+                    static_cast<int32_t>(t);
+            count += __popc(mask);
         }
-        active_count = count;
+        if (threadIdx.x == 0) active_count = count;
     }
 
-    // probs_sum_t is the same sequential translation sum, one row per lane.
-    // ctf_probs needs it on every lane, so it also lands in shared memory.
+    __syncthreads();
+
+    // probs_sum_t is the same sequential translation sum, one row per lane,
+    // over the active translations: the others add exact zeros.  ctf_probs
+    // needs it on every lane, so it also lands in shared memory.
     __shared__ float shared_mass[ROWS_PER_BLOCK];
-    if (threadIdx.x < ROWS_PER_BLOCK) {
+    if (threadIdx.x < ROWS_PER_BLOCK && (first_span || ctf_probs != nullptr)) {
         const int i = threadIdx.x;
         float mass = 0.0f;
         if (live[i]) {
-            for (int64_t t = 0; t < translation_count; ++t) {
+            for (int32_t active = 0; active < active_count; ++active) {
                 mass = __fadd_rn(
-                    mass, shared_posterior[i * translation_count + t]);
+                    mass,
+                    shared_posterior[i * translation_count + shared_active[active]]);
             }
-            probs_sum_t[row_base + i] = mass;
+            if (first_span) probs_sum_t[row_base + i] = mass;
         }
         shared_mass[i] = mass;
     }
     __syncthreads();
 
-    for (int64_t pixel = threadIdx.x;
-         pixel < logical_pixels;
+    for (int64_t pixel = span_begin + threadIdx.x;
+         pixel < min(span_end, logical_pixels);
          pixel += kBlockThreads)
     {
         const int pixel_index = pixel_indices[pixel];
@@ -276,27 +304,48 @@ translate_sum_flat_rows_f32_kernel(
             }
         }
 
-        for (int32_t active = 0; active < active_count; ++active)
+        const int32_t n_active = active_count;
+        for (int32_t active = 0; active < n_active; ++active)
         {
             const int64_t translation = shared_active[active];
-            const float tx = shared_angles[2 * translation];
-            const float ty = shared_angles[2 * translation + 1];
-            const float phase = translate_phase_f32(x, y, tx, ty);
-            float sine;
-            float cosine;
-            sincosf(phase, &sine, &cosine);
+            // The phase depends on the translation and, for tilt images, on
+            // the image's table; the shifted operands on the image too.
+            // Rows of one image (consecutive in a block) reuse both, so a
+            // block evaluates one sincosf and one pair of rotations per
+            // (image, translation, pixel) instead of per row (relax#91).
+            int32_t phase_image = -2;
+            float sine = 0.0f;
+            float cosine = 0.0f;
+            int32_t shifted_image = -1;
+            float2 recon_shifted = make_float2(0.0f, 0.0f);
+            float2 noise_shifted = make_float2(0.0f, 0.0f);
 #pragma unroll
             for (int i = 0; i < ROWS_PER_BLOCK; ++i) {
                 if (!live[i]) continue;
                 const float weight =
                     shared_posterior[i * translation_count + translation];
                 if (weight == 0.0f) continue;
-                const float2 recon_shifted = BPREF_RECON
-                    ? translate_rotate_bpref_f32(
-                          recon_value[i], sine, cosine, recon_factor[i])
-                    : translate_rotate_f32(recon_value[i], sine, cosine);
-                const float2 noise_shifted =
-                    translate_rotate_f32(noise_value[i], sine, cosine);
+                const int32_t table_image = shared_table ? -1 : image_ids[i];
+                if (table_image != phase_image) {
+                    const float* angles = shared_table
+                        ? shared_angles
+                        : translation_angles +
+                              static_cast<int64_t>(image_ids[i]) * angle_image_stride;
+                    const float phase = translate_phase_f32(
+                        x, y, angles[2 * translation], angles[2 * translation + 1]);
+                    sincosf(phase, &sine, &cosine);
+                    phase_image = table_image;
+                    shifted_image = -1;
+                }
+                if (image_ids[i] != shifted_image) {
+                    recon_shifted = BPREF_RECON
+                        ? translate_rotate_bpref_f32(
+                              recon_value[i], sine, cosine, recon_factor[i])
+                        : translate_rotate_f32(recon_value[i], sine, cosine);
+                    noise_shifted =
+                        translate_rotate_f32(noise_value[i], sine, cosine);
+                    shifted_image = image_ids[i];
+                }
                 recon_acc[i].x = __fadd_rn(
                     recon_acc[i].x, __fmul_rn(weight, recon_shifted.x));
                 recon_acc[i].y = __fadd_rn(
@@ -332,28 +381,44 @@ translate_sum_flat_rows_f32_kernel(
     }
 }
 
-inline int64_t shared_bytes_for(int rows_per_block, int64_t translation_count)
+inline int64_t shared_bytes_for(
+    int rows_per_block, int64_t translation_count, bool shared_table)
 {
-    // Angles, the block's posterior rows and its active-translation list.
+    // The block's posterior rows, its active-translation list and, with one
+    // table for every image, the angles.
     return static_cast<int64_t>(
-        (2 + rows_per_block) * translation_count * sizeof(float)
-        + translation_count * sizeof(int32_t));
+        rows_per_block * translation_count * sizeof(float)
+        + translation_count * sizeof(int32_t)
+        + (shared_table ? 2 * translation_count * sizeof(float) : 0));
 }
 
-// Rows a block owns.  More rows share one sincosf but cost registers; the
-// launcher keeps the shared tables inside kMaxSharedBytes and never asks for
-// more rows than the problem has.
+// Rows a block owns.  More rows share one sincosf and one pair of rotations
+// per image but cost registers and visit the union of the rows' translations.
+// The default is one: measured on an H100 (relax#91), one row per block with
+// the pixel spans was faster than four rows at every SPA and sparse tilt
+// shape, and 1.15x against four rows' 1.54x only for a flat posterior over
+// 1,176 translations.  The launcher keeps the shared tables inside
+// kMaxSharedBytes and never asks for more rows than the problem has.
 inline int choose_rows_per_block(
-    int requested, int64_t row_count, int64_t translation_count)
+    int requested, int64_t row_count, int64_t translation_count, bool shared_table)
 {
-    int rows = requested > 0 ? requested : 4;
-    if (rows != 1 && rows != 2 && rows != 4 && rows != 8) rows = 4;
+    int rows = requested > 0 ? requested : 1;
+    if (rows != 1 && rows != 2 && rows != 4 && rows != 8) rows = 1;
     while (rows > 1 && static_cast<int64_t>(rows) > row_count) rows /= 2;
     while (rows > 1 &&
-           shared_bytes_for(rows, translation_count) > kMaxSharedBytes) {
+           shared_bytes_for(rows, translation_count, shared_table) > kMaxSharedBytes) {
         rows /= 2;
     }
     return rows;
+}
+
+// Pixel spans per row block: enough that a launch has about kTargetBlocks
+// blocks, never more spans than 256-pixel passes.
+inline int64_t choose_pixel_spans(int64_t row_blocks, int64_t pixel_capacity)
+{
+    const int64_t passes = (pixel_capacity + kBlockThreads - 1) / kBlockThreads;
+    int64_t spans = (kTargetBlocks + row_blocks - 1) / row_blocks;
+    return spans < 1 ? 1 : (spans > passes ? passes : spans);
 }
 
 template <int ROWS_PER_BLOCK, bool BPREF_RECON>
@@ -384,9 +449,12 @@ cudaError_t launch_templated(
     const int64_t blocks =
         (row_count + ROWS_PER_BLOCK - 1) / ROWS_PER_BLOCK;
     const size_t shared = static_cast<size_t>(
-        shared_bytes_for(ROWS_PER_BLOCK, translation_count));
+        shared_bytes_for(ROWS_PER_BLOCK, translation_count, angle_image_stride == 0));
+    const dim3 grid(
+        static_cast<unsigned>(blocks),
+        static_cast<unsigned>(choose_pixel_spans(blocks, pixel_capacity)));
     translate_sum_flat_rows_f32_kernel<ROWS_PER_BLOCK, BPREF_RECON>
-        <<<static_cast<unsigned>(blocks), kBlockThreads, shared, stream>>>(
+        <<<grid, kBlockThreads, shared, stream>>>(
             recon_image,
             noise_image,
             recon_weight,
@@ -467,10 +535,10 @@ inline cudaError_t launch(
     }
     if (translation_count == 0) return cudaSuccess;
 
-    const int rows = angle_image_stride == 0
-        ? choose_rows_per_block(requested_rows_per_block, row_count, translation_count)
-        : 1;
-    if (shared_bytes_for(rows, translation_count) > kMaxSharedBytes)
+    const bool shared_table = angle_image_stride == 0;
+    const int rows = choose_rows_per_block(
+        requested_rows_per_block, row_count, translation_count, shared_table);
+    if (shared_bytes_for(rows, translation_count, shared_table) > kMaxSharedBytes)
         return cudaErrorInvalidValue;
 
 #define RELAX_TRANSLATE_SUM_DISPATCH(R, BPREF)                  \
@@ -606,7 +674,7 @@ ffi::Error impl(
         return ffi::Error::InvalidArgument(
             "RelionTranslateSumFlatRowsF32: invalid image dimensions");
 
-    const int64_t rows_per_grid_block = per_image_angles ? 1 : (rows_per_block > 0 ? rows_per_block : 1);
+    const int64_t rows_per_grid_block = rows_per_block > 0 ? rows_per_block : 1;
     const int64_t blocks_needed =
         (row_count + rows_per_grid_block - 1) / rows_per_grid_block;
     if (blocks_needed > std::numeric_limits<int>::max())

@@ -1233,8 +1233,9 @@ def unit_mstep_translations(
     return UnitMstepTranslations(index=index, valid=valid)
 
 
-# The flat-row translate-and-sum keeps a block's angle, posterior and active-translation tables in
-# 32 KB of shared memory: 16 T bytes at one row per block, the tilt launch (relion_translate_sum.cuh).
+# The flat-row translate-and-sum keeps a block's posterior rows and active-translation list in under
+# 48 KB of shared memory: 8 T bytes at one row per block for tilt images, whose angle tables stay in
+# global memory (relion_translate_sum.cuh).
 TILT_MSTEP_MAX_TRANSLATIONS = 2048
 
 

@@ -831,6 +831,47 @@ def test_per_image_angle_tables_equal_one_call_per_image(monkeypatch, custom_cud
             assert_matches(np.asarray(a)[rows], np.asarray(b)[rows])
 
 
+@pytest.mark.gpu
+@pytest.mark.parametrize("rows_per_block", [0, 1, 2, 4, 8])
+@pytest.mark.parametrize("bpref", [False, True], ids=["score", "bpref"])
+def test_per_image_tables_with_rows_of_one_image_per_block(
+    monkeypatch, custom_cuda_lib, gpu_device, rows_per_block, bpref
+):
+    """Blocks of rows reuse one phase and one pair of rotations per (image, translation, pixel) (relax#91).
+
+    Runs of rows of one image (as a tilt slot lays them out), runs that start inside a block, padding inside a
+    run and sparse posteriors (a row skips a translation its neighbour of the same image visits) must give each
+    row the result of a call with its image's table alone.
+    """
+
+    cuda_backproject = _cuda_backproject(monkeypatch, custom_cuda_lib)
+    rng = np.random.default_rng(9191)
+    image_capacity, n_trans = 4, 37
+    operands = _operands(rng, rows=45, image_capacity=image_capacity, n_trans=n_trans, n_pixels=600)
+    ids = np.repeat(np.arange(image_capacity, dtype=np.int32), [13, 3, 18, 11])
+    ids[[5, 20]] = -1
+    posterior = np.asarray(operands["posterior"]).copy()
+    posterior[rng.random(posterior.shape) < 0.5] = 0.0
+    per_image = (
+        -2.0 * np.pi * rng.uniform(-4.0, 4.0, size=(image_capacity, n_trans, 2)) / float(IMAGE_SHAPE[0])
+    ).astype(np.float32)
+    operands = dict(operands, row_image_ids=ids, posterior=posterior)
+    got = _kernel(
+        cuda_backproject, dict(operands, translation_angles=per_image), n_valid_rows=43, logical_pixels=555,
+        rows_per_block=rows_per_block, bpref=bpref, with_ctf=True,
+    )
+    for image in range(image_capacity):
+        rows = ids == image
+        one = _kernel(
+            cuda_backproject, dict(operands, translation_angles=per_image[image]), n_valid_rows=43,
+            logical_pixels=555, rows_per_block=1, bpref=bpref, with_ctf=True,
+        )
+        for a, b in zip(got, one):
+            assert_matches(np.asarray(a)[rows], np.asarray(b)[rows])
+    for a in got:
+        assert np.all(np.asarray(a)[ids < 0] == 0)
+
+
 def _reference_float64(cuda_backproject, operands, *, bpref=False):
     """The production tile builder, then the weighted sums in float64 (NumPy), independent of the kernel's order.
 
