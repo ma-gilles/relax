@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from relax.classification.k_class import _apply_bpref_particle_order_policy
-from relax.refinement.setup_checks import _validate_bpref_particle_order_scope
+from relax.refinement.setup_checks import validate_bpref_particle_order_scope
 from scripts.lib.bucket_shapes import plan_consecutive_padded_batches
 from scripts.lib.bucketed_pass2 import _bucket_pass2_inputs
 
@@ -302,7 +302,7 @@ def test_sparse_pass_order_policy_is_k1_only_and_dormant_by_default():
 def test_fresh_k1_bpref_order_scope_accepts_perturbation_replay_from_iteration_zero():
     """A fresh run that replays RELION's perturbations keeps RELION's order."""
 
-    _validate_bpref_particle_order_scope(
+    validate_bpref_particle_order_scope(
         preserve_bpref_particle_order=True,
         n_classes=1,
         init_relion_iteration=0,
@@ -323,7 +323,7 @@ def test_fresh_k1_bpref_order_scope_accepts_only_unsealed_iteration_zero():
         "sealed_sampling_state": None,
         "sealed_scoring_context": None,
     }
-    _validate_bpref_particle_order_scope(**kwargs)
+    validate_bpref_particle_order_scope(**kwargs)
 
     for override, match in (
         ({"n_classes": 4}, "K=1-only"),
@@ -335,11 +335,11 @@ def test_fresh_k1_bpref_order_scope_accepts_only_unsealed_iteration_zero():
         invalid = dict(kwargs)
         invalid.update(override)
         with pytest.raises(ValueError, match=match):
-            _validate_bpref_particle_order_scope(**invalid)
+            validate_bpref_particle_order_scope(**invalid)
 
 
 def test_bpref_order_scope_is_dormant_when_preservation_is_disabled():
-    _validate_bpref_particle_order_scope(
+    validate_bpref_particle_order_scope(
         preserve_bpref_particle_order=False,
         n_classes=4,
         init_relion_iteration=9,
@@ -361,7 +361,7 @@ def test_state_swap_fresh_k1_bpref_order_scope_requires_complete_unsealed_replay
         "sealed_scoring_context": None,
         "allow_state_swap_fresh_bpref_particle_order": True,
     }
-    _validate_bpref_particle_order_scope(**kwargs)
+    validate_bpref_particle_order_scope(**kwargs)
 
     for override, match in (
         ({"init_relion_iteration": 1}, "fresh iteration-0"),
@@ -372,4 +372,4 @@ def test_state_swap_fresh_k1_bpref_order_scope_requires_complete_unsealed_replay
         invalid = dict(kwargs)
         invalid.update(override)
         with pytest.raises(ValueError, match=match):
-            _validate_bpref_particle_order_scope(**invalid)
+            validate_bpref_particle_order_scope(**invalid)

@@ -21,7 +21,7 @@ from relax.refinement.dense_half import (
     DensePriorSpec,
     DenseSamplingSpec,
     DenseVariantPolicy,
-    _score_half_dense_in_bpref_scope,
+    score_half_dense_in_bpref_scope,
 )
 from relax.refinement.expectation_batches import BatchPlanner, prepare_half_batches
 from relax.refinement.firstiter_bpref import NumberedBPrefHalf
@@ -30,7 +30,7 @@ from relax.refinement.local_half import (
     LocalDiagnosticPolicy,
     LocalExecutionPolicy,
     LocalPriorSpec,
-    _score_half_local_in_bpref_scope,
+    score_half_local_in_bpref_scope,
 )
 from relax.refinement.ports import DenseHalfScored, ExpectationProbe, NumberedHalfRecorded
 from relax.refinement.refinement_options import RefinementOptions
@@ -736,7 +736,7 @@ def score_numbered_half(
             dtype=scoring_dtype,
             single_shape_projection_scale=relion_projection_scale,
         )
-        local_result = _score_half_local_in_bpref_scope(
+        local_result = score_half_local_in_bpref_scope(
             half=replace(half.data, mean_variance=None, image_seed_classes=seed_classes_k),
             sampling=sampling,
             priors=LocalPriorSpec(
@@ -836,7 +836,7 @@ def score_numbered_half(
             engine_tuning=options.environment.engine,
             scoring_overrides=options.environment.scoring,
         )
-        dense_result = _score_half_dense_in_bpref_scope(
+        dense_result = score_half_dense_in_bpref_scope(
             dense_half,
             dense_sampling,
             dense_priors,

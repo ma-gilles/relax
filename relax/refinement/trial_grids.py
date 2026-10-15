@@ -16,7 +16,7 @@ from relax.reconstruction.resolution import ImageGeometry
 from relax.refinement.ports import InputSource
 from relax.refinement.refinement_state import (
     RefinementState,
-    _exhaustive_grid_order_for_state,
+    exhaustive_grid_order_for_state,
     native_final_perturbation_healpix_order,
 )
 from relax.sampling import device_rotations
@@ -99,7 +99,7 @@ def refresh_coarse_grids(
     base_translations = grids.base_translations
     current_translations = grids.translations
     if state.healpix_order != current_rotation_grid.healpix_order:
-        new_order = _exhaustive_grid_order_for_state(state)
+        new_order = exhaustive_grid_order_for_state(state)
         if new_order != current_rotation_grid.healpix_order:
             log.info(
                 "Regenerating rotation grid: order %d -> %d",
@@ -343,7 +343,7 @@ def prepare_final_sampling(
     ``options.k_class.n_classes``, ``schedule.init_relion_iteration`` and the fields
     ``native_final_sampling_settings`` and ``advance_final_perturbation`` name.
     """
-    grid_order = _exhaustive_grid_order_for_state(state)
+    grid_order = exhaustive_grid_order_for_state(state)
     symmetry = previous_rotation_grid.symmetry
     if grid_order == previous_rotation_grid.healpix_order:
         rotation_grid = previous_rotation_grid

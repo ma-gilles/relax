@@ -5,7 +5,7 @@ import pandas as pd
 import pytest
 import starfile
 
-from relax.refinement.reference_state import _initialize_class_log_priors
+from relax.refinement.reference_state import initialize_class_log_priors
 from relax.star.metadata import read_relion_reference_star
 
 pytestmark = pytest.mark.unit
@@ -36,7 +36,7 @@ def test_reference_star_without_reference_images_is_rejected(tmp_path):
 def test_fresh_class3d_class_distribution_is_uniform():
     # MlModel::initialise sets pdf_class = 1/K (ml_model.cpp:53); a --ref STAR
     # distribution is not read for a fresh run.
-    log_priors, weights = _initialize_class_log_priors(4)
+    log_priors, weights = initialize_class_log_priors(4)
     np.testing.assert_allclose(weights, np.full(4, 0.25))
     np.testing.assert_allclose(log_priors, np.full(4, -np.log(4.0)))
 

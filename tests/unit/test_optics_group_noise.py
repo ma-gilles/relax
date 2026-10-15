@@ -33,7 +33,7 @@ def _update(stats_per_half, noise_per_half, radial_per_half):
         noise_updates.NoiseModel(
             variance_per_half=list(noise_per_half),
             radial_per_half=radial_per_half,
-            average_variance=noise_updates._mean_noise_variance(noise_per_half),
+            average_variance=noise_updates.mean_noise_variance(noise_per_half),
             average_radial=np.mean(np.stack(radial_per_half), axis=0),
         ),
         SHAPE,
@@ -179,7 +179,7 @@ def test_noise_state_layout_per_group():
     assert [a.shape for a in one] == [(256,), (256,)]
     rows = noise_updates._normalize_noise_variance_per_half([np.ones((2, 256)), 2 * np.ones((2, 256))])
     assert [a.shape for a in rows] == [(2, 256), (2, 256)]
-    assert_matches(np.asarray(noise_updates._mean_noise_variance(rows)), 1.5 * np.ones((2, 256)))
+    assert_matches(np.asarray(noise_updates.mean_noise_variance(rows)), 1.5 * np.ones((2, 256)))
     per_half, mean = noise_updates._noise_radial_history(rows, SHAPE, dtype=np.float64)
     assert per_half[0].shape == (2, N_SHELLS) and np.asarray(mean).shape == (2, N_SHELLS)
 

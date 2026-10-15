@@ -394,7 +394,7 @@ The whole M-step decision, from the ordering comment to the stage mark.
             del class_priors
             history.data_vs_prior_trajectory.append(data_vs_prior_iter)
             previous_data_vs_prior_for_scheduling = data_vs_prior_iter
-            tau2_update_details = _stack_class_tau2_update_details(tau2_update_details_per_class)
+            tau2_update_details = stack_class_tau2_update_details(tau2_update_details_per_class)
             del tau2_update_details_per_class
             logger.info(
                 "Computed iter-%d Class3D tau2 from %s: %.1fs",
@@ -2934,7 +2934,7 @@ def score_numbered_half(
             zero_cold_center=not k_class_enabled,
             dtype=scoring_dtype,
         )
-        local_result = _score_half_local_in_bpref_scope(
+        local_result = score_half_local_in_bpref_scope(
             half=replace(half, mean_variance=None),
             sampling=sampling,
             priors=LocalPriorSpec(
@@ -3016,7 +3016,7 @@ def score_numbered_half(
             source_faithful_spectrum_norm=source_faithful_spectrum_norm,
             relion_translation_angle_scale=relion_translation_angle_scale,
         )
-        dense_result = _score_half_dense_in_bpref_scope(
+        dense_result = score_half_dense_in_bpref_scope(
             dense_half,
             dense_sampling,
             dense_priors,
@@ -3621,7 +3621,7 @@ if can_update_norm_scale:
             half.scale_corrections = scales
         correction_report.group_scale_corrections_per_half = norm_scale_update.group_scale_corrections_per_half
     else:
-        correction_report.group_scale_corrections_per_half = _update_relion_follower_corrections(
+        correction_report.group_scale_corrections_per_half = update_relion_follower_corrections(
             follower_setup,
             noise_stats_per_half=noise_stats_per_half,
             norm_scale_update=norm_scale_update,
@@ -4271,7 +4271,7 @@ def score_numbered_half(
             zero_cold_center=not k_class_enabled,
             dtype=scoring_dtype,
         )
-        local_result = _score_half_local_in_bpref_scope(
+        local_result = score_half_local_in_bpref_scope(
             half=replace(half, mean_variance=None),
             sampling=sampling,
             priors=LocalPriorSpec(
@@ -4353,7 +4353,7 @@ def score_numbered_half(
             source_faithful_spectrum_norm=source_faithful_spectrum_norm,
             relion_translation_angle_scale=relion_translation_angle_scale,
         )
-        dense_result = _score_half_dense_in_bpref_scope(
+        dense_result = score_half_dense_in_bpref_scope(
             dense_half,
             dense_sampling,
             dense_priors,
@@ -5270,7 +5270,7 @@ if k_class_enabled:
     )
     history.data_vs_prior_trajectory.append(data_vs_prior_iter)
     previous_data_vs_prior_for_scheduling = data_vs_prior_iter
-    tau2_update_details = _stack_class_tau2_update_details(tau2_update_details_per_class)
+    tau2_update_details = stack_class_tau2_update_details(tau2_update_details_per_class)
     logger.info(
         "Computed iter-%d Class3D tau2 from %s: %.1fs",
         iteration + 1,
@@ -5564,14 +5564,14 @@ final_mstep_full_half_axis = _resolve_mstep_full_half_axis(
     default_axis=-1,
 )
 if k_class_enabled:
-    class_weights = _class_weights_from_posterior(
+    class_weights = class_weights_from_posterior(
         final_outs.class_posterior,
         n_classes,
         class_weights,
     )
     history.record_class_weights(
         class_weights,
-        _class_weights_from_posterior(
+        class_weights_from_posterior(
             final_outs.class_full_posterior,
             n_classes,
             class_weights,
@@ -6363,7 +6363,7 @@ def compute_final_class_priors(
         data_vs_prior=np.stack(
             [np.asarray(value, dtype=np.float32) for value in data_vs_prior], axis=0,
         ),
-        details=mean_helpers._stack_class_tau2_update_details(details),
+        details=mean_helpers.stack_class_tau2_update_details(details),
     )
 
 
@@ -6760,7 +6760,7 @@ proposed replacement loop.
         # rely on local search + oversampling to achieve finer angular steps.
         # The order is still tracked for sigma calculation.
         if state.healpix_order != current_rotation_grid.healpix_order:
-            new_order = _exhaustive_grid_order_for_state(state)
+            new_order = exhaustive_grid_order_for_state(state)
             if new_order != current_rotation_grid.healpix_order:
                 logger.info(
                     "Regenerating rotation grid: order %d -> %d",

@@ -4,9 +4,7 @@ Per-iteration trajectory bookkeeping for ``refine_single_volume``.
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass, field
-from pathlib import Path
 
 import numpy as np
 
@@ -27,7 +25,6 @@ def add_significant_count_artifacts(save_dict, significant_counts, half_indices,
         counts_by_image = np.full(int(n_images), -1, dtype=flat_counts.dtype)
         counts_by_image[half_order_indices] = flat_counts
         save_dict[f"sig_counts_by_image_iter_{iteration:03d}"] = counts_by_image
-
 
 
 @dataclass(frozen=True)
@@ -294,7 +291,6 @@ def _pose_history_half_arrays(iter_entry, *, dtype=np.float32):
     return [None if arr is None else np.asarray(arr, dtype=dtype) for arr in iter_entry]
 
 
-
 def _pose_history_by_image(iter_entry, half_indices, n_images, *, dtype=np.float32):
     """One half-ordered pose array per half, placed in image order; the trailing shape is the data's.
 
@@ -489,35 +485,3 @@ def add_refinement_history_artifacts(save_dict, result, half1_idx, half2_idx, n_
         by_image = _pose_history_by_image(final_values, half_indices, n_images, dtype=np.float32)
         if by_image is not None:
             save_dict[f"{prefix}_final_all_data_by_image"] = by_image
-
-
-def _load_init_noise_radial_npz(path, noise_iter="last"):
-    """Load a diagnostic initial noise spectrum from refinement_results.npz."""
-
-    noise_path = Path(path)
-    with np.load(noise_path, allow_pickle=False) as npz:
-        if str(noise_iter).lower() in {"last", "latest"}:
-            pattern = re.compile(r"^noise_radial_iter_(\d{3})$")
-            available = sorted(
-                int(match.group(1)) for key in npz.files if (match := pattern.match(key)) is not None
-            )
-            if not available:
-                raise ValueError(f"No numbered noise_radial_iter arrays found in {noise_path}")
-            iter_label = f"{available[-1]:03d}"
-        else:
-            iter_label = f"{int(noise_iter):03d}"
-        key = f"noise_radial_iter_{iter_label}"
-        if key not in npz.files:
-            raise ValueError(f"Missing {key} in {noise_path}")
-        noise_radial = np.asarray(npz[key], dtype=np.float64)
-
-    if noise_radial.ndim != 1:
-        raise ValueError(f"{key} must be a 1D radial spectrum, got shape {noise_radial.shape}")
-    if not np.all(np.isfinite(noise_radial)):
-        raise ValueError(f"{key} contains non-finite values")
-    if np.any(noise_radial <= 0.0):
-        raise ValueError(f"{key} must be strictly positive")
-    return {
-        "iteration": iter_label,
-        "noise_radial": noise_radial,
-    }

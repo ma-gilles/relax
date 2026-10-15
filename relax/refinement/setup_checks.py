@@ -277,7 +277,7 @@ def expected_accuracy_inputs_for_run(
     )
 
 
-def _has_numbered_replay_iteration_overrides(replay_iteration_overrides) -> bool:
+def has_numbered_replay_iteration_overrides(replay_iteration_overrides) -> bool:
     """Return whether replay contains state beyond the cold-start boundary.
 
     Override slot zero is also used by ``--relion_init_dir`` to seed RELION's
@@ -332,13 +332,13 @@ def _validate_k1_bpref_particle_order_scope(
             raise ValueError(
                 "state-swap RELION BPref particle-order preservation requires perturbation replay"
             )
-        if not _has_numbered_replay_iteration_overrides(replay_iteration_overrides):
+        if not has_numbered_replay_iteration_overrides(replay_iteration_overrides):
             raise ValueError(
                 "state-swap RELION BPref particle-order preservation requires numbered replay state"
             )
         return
     if int(init_relion_iteration) > 0 and continues_own_run:
-        if perturb_replay_relion_dir is not None or _has_numbered_replay_iteration_overrides(
+        if perturb_replay_relion_dir is not None or has_numbered_replay_iteration_overrides(
             replay_iteration_overrides
         ):
             raise ValueError("a continued run cannot also replay a RELION trajectory")
@@ -355,7 +355,7 @@ def _validate_k1_bpref_particle_order_scope(
             )
         return
     if (
-        _has_numbered_replay_iteration_overrides(replay_iteration_overrides)
+        has_numbered_replay_iteration_overrides(replay_iteration_overrides)
         and perturb_replay_relion_dir is None
     ):
         raise ValueError(
@@ -363,7 +363,7 @@ def _validate_k1_bpref_particle_order_scope(
         )
 
 
-def _validate_bpref_particle_order_scope(
+def validate_bpref_particle_order_scope(
     *,
     preserve_bpref_particle_order: bool,
     n_classes: int,

@@ -1063,7 +1063,7 @@ def test_final_all_data_replay_uses_shared_live_scale_correction_contract():
     ],
 )
 def test_final_all_data_replay_ignores_cold_start_only_overrides(overrides, expected):
-    assert setup_checks._has_numbered_replay_iteration_overrides(overrides) is expected
+    assert setup_checks.has_numbered_replay_iteration_overrides(overrides) is expected
 
 
 
@@ -6861,7 +6861,7 @@ class TestRelionModeSmokeTest:
             trial_grids, "relion_adaptive_pass1_rotations",
             lambda eulers, *args, **kwargs: euler_angles_to_matrix(eulers).astype(np.float32),
         )
-        score_half = finalization._score_half_dense_in_bpref_scope
+        score_half = finalization.score_half_dense_in_bpref_scope
 
         def record_scoring_prior(half, sampling, priors, batching, variant, execution, optics):
             scoring_priors.append(np.asarray(half.mean_variance))
@@ -6871,8 +6871,8 @@ class TestRelionModeSmokeTest:
             )
             return score_half(half, sampling, priors, batching, variant, execution, optics)
 
-        monkeypatch.setattr(finalization, "_score_half_dense_in_bpref_scope", record_scoring_prior)
-        monkeypatch.setattr(expectation_module, "_score_half_dense_in_bpref_scope", record_scoring_prior)
+        monkeypatch.setattr(finalization, "score_half_dense_in_bpref_scope", record_scoring_prior)
+        monkeypatch.setattr(expectation_module, "score_half_dense_in_bpref_scope", record_scoring_prior)
         initial_tau2 = jnp.ones(VOLUME_SIZE, dtype=jnp.float32) * 100.0
         if per_half:
             initial_tau2 = jnp.stack([initial_tau2, 2 * initial_tau2])
@@ -7156,8 +7156,8 @@ class TestRelionModeSmokeTest:
             captured["execution"] = execution
             raise _Captured
 
-        monkeypatch.setattr(finalization, "_score_half_dense_in_bpref_scope", capture)
-        monkeypatch.setattr(expectation_module, "_score_half_dense_in_bpref_scope", capture)
+        monkeypatch.setattr(finalization, "score_half_dense_in_bpref_scope", capture)
+        monkeypatch.setattr(expectation_module, "score_half_dense_in_bpref_scope", capture)
         model_pixel = float(half_datasets[0].voxel_size)
         geometry = (
             OpticsGeometry()

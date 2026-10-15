@@ -439,7 +439,7 @@ def test_stack_class_tau2_update_details_keeps_key_layout():
         record["fsc_shells"] = None
         records.append(record)
 
-    stacked = priors._stack_class_tau2_update_details(records)
+    stacked = priors.stack_class_tau2_update_details(records)
 
     assert list(stacked) == list(priors._CLASS_TAU2_DETAIL_KEYS)
     assert stacked["fsc_shells"] is None

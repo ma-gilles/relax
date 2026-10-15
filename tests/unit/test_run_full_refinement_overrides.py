@@ -48,8 +48,9 @@ from relax.parity.frozen_boundary_cli import (
 from relax.parity.initial_model_replay import read_initial_model
 from relax.parity.relion_replay_source import _assert_frozen_scoring_state_unchanged, _frozen_scoring_state_arrays
 from relax.parity.replay_inputs import _build_replay_iteration_overrides, _format_replay_mean_for_log
-from relax.refinement.iteration_history import _load_init_noise_radial_npz
-from relax.refinement.reference_state import ReferenceModel, _updated_mean_variance_per_half
+from relax.parity.startup_noise_inputs import _load_init_noise_radial_npz
+from relax.refinement.maximization import _updated_mean_variance_per_half
+from relax.refinement.reference_state import ReferenceModel
 from relax.refinement.startup_noise import (
     estimate_startup_sigma2,
     scoring_noise_from_sigma2,

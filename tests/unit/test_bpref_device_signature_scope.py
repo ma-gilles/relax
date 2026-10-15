@@ -140,7 +140,7 @@ def test_target_dense_half_keeps_block_topology_inactive_for_live_work(monkeypat
         return "ordinary-live"
 
     monkeypatch.setattr(dense_half, "_score_half_dense", fake_dense)
-    assert dense_half._score_half_dense_in_bpref_scope(
+    assert dense_half.score_half_dense_in_bpref_scope(
         None,
         None,
         None,
@@ -178,11 +178,11 @@ def test_target_half2_cannot_leak_into_local_search(monkeypatch):
         return "ordinary-local"
 
     monkeypatch.setattr(local_half, "_score_half_local", fake_local)
-    assert local_half._score_half_local_in_bpref_scope(
+    assert local_half.score_half_local_in_bpref_scope(
         None, None, None, None, None, SimpleNamespace(bpref_device_signature_active=False), None
     ) == "ordinary-local"
     with pytest.raises(RuntimeError, match="sparse adaptive pass 2"):
-        local_half._score_half_local_in_bpref_scope(
+        local_half.score_half_local_in_bpref_scope(
             None, None, None, None, None, SimpleNamespace(bpref_device_signature_active=True), None
         )
 

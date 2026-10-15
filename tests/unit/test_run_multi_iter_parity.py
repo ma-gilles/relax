@@ -9,7 +9,7 @@ import starfile
 from helpers.float_compare import assert_matches
 
 from relax.refinement.iteration_history import add_significant_count_artifacts
-from relax.refinement.setup_checks import _validate_bpref_particle_order_scope
+from relax.refinement.setup_checks import validate_bpref_particle_order_scope
 from scripts import diff_relion_recovar_per_iter as parity_diff
 from scripts.postprocess_multi_iter_gt import resolve_intermediates_dir
 from scripts.run_multi_iter_parity import (
@@ -569,9 +569,9 @@ def test_replayed_bpref_particle_order_requires_explicit_diagnostic_scope():
         "sealed_scoring_context": None,
     }
     with pytest.raises(ValueError, match="requires the native RELION order"):
-        _validate_bpref_particle_order_scope(**kwargs)
+        validate_bpref_particle_order_scope(**kwargs)
 
-    _validate_bpref_particle_order_scope(
+    validate_bpref_particle_order_scope(
         **kwargs,
         allow_replayed_bpref_particle_order=True,
     )
@@ -590,7 +590,7 @@ def test_complete_table_replays_default_to_the_native_relion_order():
 
 def test_replayed_bpref_particle_order_cannot_alter_sealed_boundary():
     with pytest.raises(ValueError, match="cannot alter a sealed boundary"):
-        _validate_bpref_particle_order_scope(
+        validate_bpref_particle_order_scope(
             preserve_bpref_particle_order=True,
             n_classes=1,
             init_relion_iteration=1,

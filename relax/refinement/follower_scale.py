@@ -575,7 +575,7 @@ def validate_relion_follower_scale_replay_application(
     )
 
 
-def _finalize_relion_follower_scale_replay_telemetry(
+def finalize_relion_follower_scale_replay_telemetry(
     replay: RelionFollowerScaleReplay | None,
     *,
     applied_iterations,
@@ -1768,7 +1768,7 @@ def _remap_relion_follower_runtime_inputs(
     return stats_group_ids_per_half
 
 
-def _dispatch_relion_follower_scale_for_numbered_iteration(
+def dispatch_relion_follower_scale_for_numbered_iteration(
     setup: RelionFollowerScaleSetup,
     history: RefinementHistory,
     *,
@@ -1835,7 +1835,7 @@ def _dispatch_relion_follower_scale_for_numbered_iteration(
 
 
 
-def _dispatch_relion_follower_scale_for_final_all_data(
+def dispatch_relion_follower_scale_for_final_all_data(
     setup: RelionFollowerScaleSetup,
     *,
     init_relion_iteration: int,
@@ -1876,7 +1876,7 @@ def _dispatch_relion_follower_scale_for_final_all_data(
     )
 
 
-def _update_relion_follower_corrections(
+def update_relion_follower_corrections(
     follower_setup: RelionFollowerScaleSetup,
     *,
     noise_stats_per_half,

@@ -220,7 +220,7 @@ def _class_tau2_update_details(
     return data_vs_prior, details
 
 
-def _stack_class_tau2_update_details(details_per_class):
+def stack_class_tau2_update_details(details_per_class):
     """Stack per-class tau2 detail records along a leading class axis.
 
     ``fsc_shells`` stays ``None``: Class3D has no half-set FSC.

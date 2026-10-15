@@ -82,7 +82,7 @@ def _flat_noise_rows(noise_k):
     return noise_k.reshape(-1)
 
 
-def _mean_noise_variance(noise_variance_per_half):
+def mean_noise_variance(noise_variance_per_half):
     """Average per-half image noise for diagnostics and compatibility outputs."""
     return jnp.mean(
         jnp.stack([_flat_noise_rows(noise_k) for noise_k in noise_variance_per_half], axis=0),
@@ -238,7 +238,7 @@ def initialize_noise_model(variance_per_half, *, average_variance, image_shape, 
 def noise_model_from_pixels(noise_variance, image_shape, *, dtype):
     """Normalize input/replay pixel noise and derive its diagnostic shell profiles."""
     variance_per_half = _normalize_noise_variance_per_half(noise_variance)
-    average_variance = _mean_noise_variance(variance_per_half)
+    average_variance = mean_noise_variance(variance_per_half)
     return initialize_noise_model(
         variance_per_half, average_variance=average_variance, image_shape=image_shape, dtype=dtype,
     )
@@ -262,7 +262,7 @@ def noise_pixel_rows(noise_shells, image_shape):
 def noise_model_from_shells(noise_shells, image_shape):
     """Restore checkpoint spectra without the initialization scoring-dtype cast."""
     variance_per_half = [noise_pixel_rows(shells, image_shape) for shells in noise_shells]
-    average_variance = _mean_noise_variance(variance_per_half)
+    average_variance = mean_noise_variance(variance_per_half)
     radial_per_half = [np.asarray(shells, dtype=np.float64) for shells in noise_shells]
     average_radial = jnp.asarray(np.mean(np.stack(radial_per_half, axis=0), axis=0))
     return NoiseModel(variance_per_half, radial_per_half, average_variance, average_radial)
@@ -323,7 +323,7 @@ def _noise_update_keeping_previous_spectra(model: NoiseModel) -> NoiseUpdateResu
         model=NoiseModel(
             noise_variance_per_half,
             previous_noise_radial_per_half,
-            _mean_noise_variance(noise_variance_per_half),
+            mean_noise_variance(noise_variance_per_half),
             model.average_radial,
         ),
         noise_from_res=noise_from_res,
@@ -368,7 +368,7 @@ def _noise_update_result(
         ", ".join(f"{float(x):.3e}" for x in new_noise_radial[:n_log]),
     )
     new_previous_noise_radial = jnp.asarray(noise_from_res)
-    noise_variance = _mean_noise_variance(noise_variance_per_half)
+    noise_variance = mean_noise_variance(noise_variance_per_half)
     return NoiseUpdateResult(
         model=NoiseModel(
             noise_variance_per_half,

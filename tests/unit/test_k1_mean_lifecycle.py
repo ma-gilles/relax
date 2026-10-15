@@ -25,7 +25,7 @@ def test_snapshot_and_release_previous_k1_means_owns_host_copies(complex_dtype):
     first = np.arange(12, dtype=np.float64).astype(complex_dtype).reshape(3, 4)
     second = (first + complex_dtype(2.0 + 3.0j)).copy()
     means = [first, second]
-    snapshots = reference_state._snapshot_and_release_previous_k1_means(means)
+    snapshots = maximization._snapshot_and_release_previous_k1_means(means)
 
     assert means == [None, None]
     for snapshot, original in zip(snapshots, (first, second), strict=True):
@@ -43,7 +43,7 @@ def test_snapshot_of_device_k1_means_is_their_host_value(complex_dtype):
     """A device map's snapshot is its one host transfer: a NumPy array of the same dtype and values."""
     expected = np.arange(12, dtype=np.float64).astype(complex_dtype)
     means = [jnp.asarray(expected), None]
-    snapshots = reference_state._snapshot_and_release_previous_k1_means(means)
+    snapshots = maximization._snapshot_and_release_previous_k1_means(means)
 
     assert means == [None, None]
     assert snapshots[1] is None
@@ -167,7 +167,7 @@ def test_reference_owner_keeps_no_extra_map_alias_after_k1_release(complex_dtype
         maps=[expected.copy(), expected.copy()], tau2=None, tau2_per_half=[None, None],
     )
     references = [weakref.ref(value) for value in model.maps]
-    previous = reference_state._snapshot_and_release_previous_k1_means(model.maps)
+    previous = maximization._snapshot_and_release_previous_k1_means(model.maps)
     assert model.maps == [None, None]
     assert all(reference() is None for reference in references)
     for value in previous:

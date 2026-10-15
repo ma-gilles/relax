@@ -6,7 +6,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import NamedTuple
 
-import jax
 import jax.numpy as jnp
 import numpy as np
 
@@ -87,42 +86,6 @@ class HostTau2(NamedTuple):
     per_half: list
 
 
-def _host_tau2_volumes(mean_variance, mean_variance_per_half):
-    """Move the K1 tau2 volumes that are read again to host, copying each distinct device array once.
-
-    The per-half reconstruction volumes are not among them: nothing reads them
-    after the reconstruction unless per-half scoring is on, and then they are
-    the entries of ``mean_variance_per_half``.
-    """
-    host = {}
-
-    def to_host(value):
-        if value is None or isinstance(value, np.ndarray):
-            return value
-        key = id(value)
-        if key not in host:
-            host[key] = np.asarray(jax.device_get(value))
-        return host[key]
-
-    return HostTau2(
-        to_host(mean_variance),
-        [to_host(value) for value in mean_variance_per_half],
-    )
-
-
-def _updated_mean_variance_per_half(updated_mean_variance_per_half, *, use_per_half_mean_variance):
-    """Each half's own scoring tau2 when per-half scoring is on; None (the shared tau2) otherwise."""
-
-    if use_per_half_mean_variance:
-        if len(updated_mean_variance_per_half) != 2:
-            raise ValueError("per-half scoring tau2 update requires exactly two halves")
-        return [
-            jnp.asarray(updated_mean_variance_per_half[0]),
-            jnp.asarray(updated_mean_variance_per_half[1]),
-        ]
-    return None
-
-
 class ClassMixture(NamedTuple):
     """The class log priors scored against and the class weights they come from, both ``[K]`` float64."""
 
@@ -145,7 +108,7 @@ def emptied_classes(scored_weights, new_weights) -> list[int]:
     return [int(k) for k in np.flatnonzero((scored > 0.0) & (new == 0.0))]
 
 
-def _initialize_class_log_priors(n_classes: int, init_direction_prior=None) -> ClassMixture:
+def initialize_class_log_priors(n_classes: int, init_direction_prior=None) -> ClassMixture:
     """Return normalized log priors for the class axis and class weights: uniform, or (K > 1) the class weights
     a RELION direction prior's row sums imply."""
     if n_classes < 1:
@@ -160,23 +123,6 @@ def _initialize_class_log_priors(n_classes: int, init_direction_prior=None) -> C
             class_weights = inferred_class_weights
             class_log_priors = np.log(class_weights)
     return ClassMixture(class_log_priors, class_weights)
-
-
-def _snapshot_and_release_previous_k1_means(means):
-    """Copy both K1 references to host before releasing their active buffers.
-
-    One host copy per map: a device map's transfer is that copy (a read-only array); a host map is copied.
-    """
-    previous_means = [
-        None if mean is None else mean.copy() if isinstance(mean, np.ndarray) else np.asarray(mean)
-        for mean in means
-    ]
-    # Dropping the list's references frees the device buffers; there is no
-    # cycle for a collection to break (every explicit gc.collect() of the 5k
-    # K=1 run found nothing and freed no device memory, job 14503450).
-    for half_index in range(2):
-        means[half_index] = None
-    return previous_means
 
 
 def initial_half_references(init_volume, n_classes: int) -> list:
@@ -204,7 +150,7 @@ def initial_half_references(init_volume, n_classes: int) -> list:
     return list(init_volume.map(as_class_array))
 
 
-def _class_weights_from_posterior(class_posterior_per_half, n_classes: int, previous_weights: np.ndarray) -> np.ndarray:
+def class_weights_from_posterior(class_posterior_per_half, n_classes: int, previous_weights: np.ndarray) -> np.ndarray:
     """Normalize class posterior sums across both half-sets.
 
     A class that received no weight gets exactly zero, as RELION's ``pdf_class`` does

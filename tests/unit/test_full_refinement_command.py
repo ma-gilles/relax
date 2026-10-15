@@ -17,6 +17,7 @@ from helpers.tiny_main import controller_inputs, run_tiny_main, write_tiny_data_
 from helpers.tiny_refinement import CallTrace
 
 from relax.commands import refinement_run
+from relax.parity import startup_noise_inputs
 
 pytestmark = pytest.mark.unit
 
@@ -171,7 +172,7 @@ def test_native_group_ids_are_available_to_k_class_refinement(monkeypatch, tmp_p
 
 def test_init_noise_from_npz_replaces_the_startup_estimate(monkeypatch, tmp_path):
     """A fresh run estimates the start-up noise from the images; --init_noise_from_npz loads an archive's."""
-    from relax.refinement import iteration_history, startup_noise
+    from relax.refinement import startup_noise
 
     archive = run_tiny_main(monkeypatch, tmp_path, "refine", "--max_iter", "1", output="first") / "refinement_results.npz"
     trace = CallTrace(monkeypatch).wrap(startup_noise, "prepare_startup_noise", "estimate")
@@ -182,7 +183,7 @@ def test_init_noise_from_npz_replaces_the_startup_estimate(monkeypatch, tmp_path
     assert len(trace.calls("estimate")) == 1
     from recovar.reconstruction import noise as recon_noise
 
-    radial = iteration_history._load_init_noise_radial_npz(str(archive), "last")["noise_radial"]
+    radial = startup_noise_inputs._load_init_noise_radial_npz(str(archive), "last")["noise_radial"]
     expected = recon_noise.make_radial_noise(radial, loaded["experiment_datasets"][0].image_shape)
     assert_matches(np.asarray(loaded["init_noise_variance"].half1), np.asarray(expected))
 

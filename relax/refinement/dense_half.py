@@ -1155,7 +1155,7 @@ def _score_half_dense(
     return merge_shape_class_results(results, experiment_half)
 
 
-def _score_half_dense_in_bpref_scope(
+def score_half_dense_in_bpref_scope(
     half: HalfScoringData,
     sampling: DenseSamplingSpec,
     priors: DensePriorSpec,

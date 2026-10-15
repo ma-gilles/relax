@@ -51,7 +51,7 @@ def test_updates_are_visible_through_owner(correction_inputs, firstiter, dtype):
         kwargs["noise_stats_per_half"][0].wsum_scale_correction_xa = None
         kwargs["noise_stats_per_half"][0].wsum_scale_correction_aa = None
     for _ in range(2):
-        diagnostic = scale._update_relion_follower_corrections(
+        diagnostic = scale.update_relion_follower_corrections(
             setup,
             **kwargs,
             relion_firstiter_cc_this_iter=firstiter,
@@ -76,7 +76,7 @@ def test_missing_statistics_leave_owner_and_corrections_untouched(correction_inp
     original = setup.follower_scale_state
     kwargs["noise_stats_per_half"][0].wsum_scale_correction_xa = None
     with pytest.raises(RuntimeError, match="requires expanded XA/AA"):
-        scale._update_relion_follower_corrections(
+        scale.update_relion_follower_corrections(
             setup,
             **kwargs,
             relion_firstiter_cc_this_iter=False,

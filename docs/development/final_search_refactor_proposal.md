@@ -94,7 +94,7 @@ else:
 ```
 
 Use `final_search.sampling` directly as the `sampling=` argument of
-`_score_half_local_in_bpref_scope`; it is built once and shared read-only by the
+`score_half_local_in_bpref_scope`; it is built once and shared read-only by the
 two half calls. Use `final_search.pass1_step_deg` in `_optics_group_kwargs`.
 For tomography, select fields explicitly:
 

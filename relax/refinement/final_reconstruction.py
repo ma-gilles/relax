@@ -156,7 +156,7 @@ def compute_final_class_priors(
         data_vs_prior=np.stack(
             [np.asarray(value, dtype=np.float32) for value in data_vs_prior], axis=0,
         ),
-        details=priors._stack_class_tau2_update_details(details),
+        details=priors.stack_class_tau2_update_details(details),
     )
 
 

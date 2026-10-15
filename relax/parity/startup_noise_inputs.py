@@ -7,10 +7,45 @@ diagnostic). The command chooses one; the run's own start-up noise is ``relax.re
 
 from __future__ import annotations
 
+import re
+from pathlib import Path
+
 import numpy as np
 
 from relax.refinement.startup_noise import StartupNoise, estimate_startup_sigma2, scoring_noise_from_sigma2
 from relax.steps.half_inputs import HalfPair
+
+
+def _load_init_noise_radial_npz(path, noise_iter="last"):
+    """Load a diagnostic initial noise spectrum from refinement_results.npz."""
+
+    noise_path = Path(path)
+    with np.load(noise_path, allow_pickle=False) as npz:
+        if str(noise_iter).lower() in {"last", "latest"}:
+            pattern = re.compile(r"^noise_radial_iter_(\d{3})$")
+            available = sorted(
+                int(match.group(1)) for key in npz.files if (match := pattern.match(key)) is not None
+            )
+            if not available:
+                raise ValueError(f"No numbered noise_radial_iter arrays found in {noise_path}")
+            iter_label = f"{available[-1]:03d}"
+        else:
+            iter_label = f"{int(noise_iter):03d}"
+        key = f"noise_radial_iter_{iter_label}"
+        if key not in npz.files:
+            raise ValueError(f"Missing {key} in {noise_path}")
+        noise_radial = np.asarray(npz[key], dtype=np.float64)
+
+    if noise_radial.ndim != 1:
+        raise ValueError(f"{key} must be a 1D radial spectrum, got shape {noise_radial.shape}")
+    if not np.all(np.isfinite(noise_radial)):
+        raise ValueError(f"{key} contains non-finite values")
+    if np.any(noise_radial <= 0.0):
+        raise ValueError(f"{key} must be strictly positive")
+    return {
+        "iteration": iter_label,
+        "noise_radial": noise_radial,
+    }
 
 
 def frozen_boundary_noise(frozen_boundary, image_shape) -> StartupNoise:
@@ -29,9 +64,8 @@ def archived_noise(path, iteration, image_shape, *, log) -> StartupNoise:
     """The radial noise an earlier run's archive recorded at ``iteration`` (``--init_noise_from_npz``)."""
     from recovar.reconstruction import noise as recon_noise
 
-    from relax.refinement import iteration_history
 
-    init_noise = iteration_history._load_init_noise_radial_npz(path, iteration)
+    init_noise = _load_init_noise_radial_npz(path, iteration)
     radial = init_noise["noise_radial"]
     log.info(
         "Diagnostic init: loaded sigma2_noise from %s iter=%s: min=%.3e median=%.3e max=%.3e",

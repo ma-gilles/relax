@@ -137,7 +137,7 @@ Not yet through the ports, each still read where it was:
 - Port-only parameters still threaded through the algorithm (REVIEW_DEEP #12; None or False natively):
   `NumberedState.prior_translations` -> `score_numbered_half(replay_prior_translations=)` ->
   `LocalPriorSpec.replay_prior_translations`; `source.sealed_sampling_state` -> `relion_direction_log_priors`,
-  `prepare_final_half` and `iteration_trial_grid(sealed_grid=)`; `setup_checks._validate_bpref_particle_order_scope`
+  `prepare_final_half` and `iteration_trial_grid(sealed_grid=)`; `setup_checks.validate_bpref_particle_order_scope`
   reads the replay's fields. `FinalSamplingSettings.sampling_star`/`sampling_star_source` (set only by the replay
   source) reach the archive through `RefinementResult`.
 - The projector disk cache (`RELAX_RELION_PROJECTOR_CACHE_DIR`, deep2 M S43) is read in

@@ -25,12 +25,12 @@ from relax.refinement.refinement_state import (
     MAX_NR_ITER_WO_RESOL_GAIN,
     LowPmaxRefineGuard,
     RefinementState,
-    _exhaustive_grid_order_for_state,
     check_convergence,
     compute_assignment_changes,
     compute_ave_Pmax,
     compute_translation_changes,
     effective_angular_step,
+    exhaustive_grid_order_for_state,
     hard_class_change_fraction,
     refine_angular_sampling,
     resolution_required_angular_sampling,
@@ -1502,11 +1502,11 @@ class TestRefinementPolicy:
         state = RefinementState(healpix_order=4, auto_local_healpix_order=4)
 
         assert state.do_local_search
-        assert _exhaustive_grid_order_for_state(state) == 3
+        assert exhaustive_grid_order_for_state(state) == 3
 
         nonlocal_state = RefinementState(healpix_order=4, auto_local_healpix_order=5)
         assert not nonlocal_state.do_local_search
-        assert _exhaustive_grid_order_for_state(nonlocal_state) == 4
+        assert exhaustive_grid_order_for_state(nonlocal_state) == 4
 
     def test_approx_acc_rot_convergence_policy_is_diagnostic_by_default(self, monkeypatch):
         from helpers.run_options import cli

@@ -26,7 +26,7 @@ from relax.refinement.dense_half import (
     DensePriorSpec,
     DenseSamplingSpec,
     DenseVariantPolicy,
-    _score_half_dense_in_bpref_scope,
+    score_half_dense_in_bpref_scope,
 )
 from relax.refinement.iteration_planning import IterationCarry
 from relax.refinement.local_half import (
@@ -34,13 +34,13 @@ from relax.refinement.local_half import (
     LocalDiagnosticPolicy,
     LocalExecutionPolicy,
     LocalPriorSpec,
-    _score_half_local_in_bpref_scope,
+    score_half_local_in_bpref_scope,
 )
 from relax.refinement.local_sampling import LocalSearchSettings, prepare_final_local_sampling
 from relax.refinement.numbered_reconstruction import merged_half_map, weighted_class_merge
 from relax.refinement.ports import FinalHalfScored, InputSource
 from relax.refinement.priors import join_half_accumulators_at_low_resolution
-from relax.refinement.reference_state import _class_weights_from_posterior
+from relax.refinement.reference_state import class_weights_from_posterior
 from relax.refinement.refinement_options import FINAL_ALL_DATA_AFTER_MAX_ITER_ENV, RefinementOptions
 from relax.refinement.refinement_result import ModelMaps, RefinementResult
 from relax.refinement.refinement_state import update_angular_sampling
@@ -588,7 +588,7 @@ def run_final_all_data(
                 scale_correction_data_vs_prior=carry.previous_data_vs_prior_for_scheduling,
             )
             if final_use_local:
-                final_result = _score_half_local_in_bpref_scope(
+                final_result = score_half_local_in_bpref_scope(
                     half=scoring_half,
                     sampling=final_local_sampling,
                     priors=LocalPriorSpec(
@@ -604,7 +604,7 @@ def run_final_all_data(
                     optics=final_inputs.optics,
                 )
             else:
-                final_result = _score_half_dense_in_bpref_scope(
+                final_result = score_half_dense_in_bpref_scope(
                     half=scoring_half,
                     sampling=final_dense_sampling,
                     priors=DensePriorSpec(
@@ -676,14 +676,14 @@ def run_final_all_data(
         final_outs.Ft_y[0] = final_outs.Ft_y[1] = None
         final_outs.Ft_ctf[0] = final_outs.Ft_ctf[1] = None
         final_mstep_full_half_axis = resolve_mstep_full_half_axis(final_outs.mstep_full_half_axis, default_axis=-1)
-        class_weights = _class_weights_from_posterior(
+        class_weights = class_weights_from_posterior(
             final_outs.class_posterior,
             options.k_class.n_classes,
             class_weights,
         )
         history.record_class_weights(
             class_weights,
-            _class_weights_from_posterior(
+            class_weights_from_posterior(
                 final_outs.class_full_posterior,
                 options.k_class.n_classes,
                 class_weights,

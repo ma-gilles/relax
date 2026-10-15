@@ -932,7 +932,7 @@ def _class_local_half_result(
     return score_result
 
 
-def _score_half_local_in_bpref_scope(
+def score_half_local_in_bpref_scope(
     half: HalfScoringData,
     sampling: LocalSampling,
     priors: LocalPriorSpec,

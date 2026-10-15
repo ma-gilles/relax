@@ -45,7 +45,7 @@ from relax.parity.state_swap_runtime import apply_state_swap_probe, snapshot_sta
 from relax.refinement.image_size_plans import CoarseImageSize
 from relax.refinement.ports import ClassTau2, FinalState, InputSource, NumberedState, ScoringState, StartSeeds
 from relax.refinement.reference_state import class_mixture_from_weights
-from relax.refinement.setup_checks import _has_numbered_replay_iteration_overrides
+from relax.refinement.setup_checks import has_numbered_replay_iteration_overrides
 from relax.refinement.sigma_offset import SigmaOffset
 from relax.refinement.trial_grids import CoarseGrids, FinalSamplingSettings, native_final_sampling_settings
 from relax.runtime.env_flags import parse_env_true_flag
@@ -757,7 +757,7 @@ class RelionReplaySource(InputSource):
             not disabled
             and (
                 self.replay.final_all_data_replay_last_numbered_state
-                or _has_numbered_replay_iteration_overrides(self.replay.replay_iteration_overrides)
+                or has_numbered_replay_iteration_overrides(self.replay.replay_iteration_overrides)
             )
         )
         if replay_last_numbered_state:

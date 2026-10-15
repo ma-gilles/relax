@@ -9,6 +9,7 @@ import logging
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, NamedTuple
 
+import jax
 import jax.numpy as jnp
 import numpy as np
 
@@ -17,20 +18,14 @@ from relax.refinement.iteration_planning import NumberedIteration
 from relax.refinement.numbered_reconstruction import reconstruct_numbered_class_maps, reconstruct_numbered_k1_halfmaps
 from relax.refinement.ports import ClassTau2
 from relax.refinement.priors import (
-    _stack_class_tau2_update_details,
     estimate_class_priors,
     estimate_split_half_prior,
     join_half_accumulators_at_low_resolution,
+    stack_class_tau2_update_details,
     taper_first_cc_class_prior,
     taper_first_cc_k1_prior,
 )
-from relax.refinement.reference_state import (
-    ClassMixture,
-    _host_tau2_volumes,
-    _snapshot_and_release_previous_k1_means,
-    _updated_mean_variance_per_half,
-    class_mixture_from_weights,
-)
+from relax.refinement.reference_state import ClassMixture, HostTau2, class_mixture_from_weights
 from relax.refinement.refinement_options import RefinementOptions
 from relax.relion.geometry import RECONSTRUCTION_PADDING_FACTOR, REFERENCE_FILTER_EDGE_SHELLS
 from relax.runtime.timing import Stopwatch
@@ -43,6 +38,59 @@ if TYPE_CHECKING:
 
 # The M-steps log as part of the controller's iteration.
 logger = logging.getLogger("relax.refinement.iteration_loop")
+
+
+def _updated_mean_variance_per_half(updated_mean_variance_per_half, *, use_per_half_mean_variance):
+    """Each half's own scoring tau2 when per-half scoring is on; None (the shared tau2) otherwise."""
+
+    if use_per_half_mean_variance:
+        if len(updated_mean_variance_per_half) != 2:
+            raise ValueError("per-half scoring tau2 update requires exactly two halves")
+        return [
+            jnp.asarray(updated_mean_variance_per_half[0]),
+            jnp.asarray(updated_mean_variance_per_half[1]),
+        ]
+    return None
+
+
+def _snapshot_and_release_previous_k1_means(means):
+    """Copy both K1 references to host before releasing their active buffers.
+
+    One host copy per map: a device map's transfer is that copy (a read-only array); a host map is copied.
+    """
+    previous_means = [
+        None if mean is None else mean.copy() if isinstance(mean, np.ndarray) else np.asarray(mean)
+        for mean in means
+    ]
+    # Dropping the list's references frees the device buffers; there is no
+    # cycle for a collection to break (every explicit gc.collect() of the 5k
+    # K=1 run found nothing and freed no device memory, job 14503450).
+    for half_index in range(2):
+        means[half_index] = None
+    return previous_means
+
+
+def _host_tau2_volumes(mean_variance, mean_variance_per_half):
+    """Move the K1 tau2 volumes that are read again to host, copying each distinct device array once.
+
+    The per-half reconstruction volumes are not among them: nothing reads them
+    after the reconstruction unless per-half scoring is on, and then they are
+    the entries of ``mean_variance_per_half``.
+    """
+    host = {}
+
+    def to_host(value):
+        if value is None or isinstance(value, np.ndarray):
+            return value
+        key = id(value)
+        if key not in host:
+            host[key] = np.asarray(jax.device_get(value))
+        return host[key]
+
+    return HostTau2(
+        to_host(mean_variance),
+        [to_host(value) for value in mean_variance_per_half],
+    )
 
 
 def _combine_optional_half_accumulators(left, right, *, label: str):
@@ -214,7 +262,7 @@ def class_maximization(
         probe=ctx.maximization_probe,
         stable_window_quantum=options.environment.engine.stable_window_quantum,
     )
-    tau2_update_details = _stack_class_tau2_update_details(class_priors.details_per_class)
+    tau2_update_details = stack_class_tau2_update_details(class_priors.details_per_class)
     logger.info(
         "Computed iter-%d Class3D tau2 from %s: %.1fs",
         this_iteration.iteration + 1,

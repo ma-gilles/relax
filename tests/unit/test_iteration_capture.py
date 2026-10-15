@@ -92,7 +92,7 @@ def test_actual_correction_caller_installs_runtime_arrays_and_keeps_reporting_se
             assert half.image_corrections is images[k] and half.scale_corrections is scales[k]
 
     monkeypatch.setattr(relion_normalization, 'numbered_norm_scale_update', numbered)
-    monkeypatch.setattr(relion_worker_scale, '_update_relion_follower_corrections', update_followers)
+    monkeypatch.setattr(relion_worker_scale, 'update_relion_follower_corrections', update_followers)
     trace = CallTrace(monkeypatch)
     trace.wrap(relion_normalization, 'norm_scale_report', 'report')
     trace.wrap(relion_normalization, 'log_norm_scale_update', 'log', before=installed)

@@ -319,7 +319,7 @@ class _ClassIteration:
         weights, and logged."""
         scored_weights = carry.class_mixture.weights
         carry = replace(carry, class_mixture=reference_state.class_mixture_from_weights(
-            reference_state._class_weights_from_posterior(
+            reference_state.class_weights_from_posterior(
                 per_half.class_posterior, options.k_class.n_classes, carry.class_mixture.weights,
             ),
         ))
@@ -330,7 +330,7 @@ class _ClassIteration:
             )
         history.record_class_weights(
             carry.class_mixture.weights,
-            reference_state._class_weights_from_posterior(
+            reference_state.class_weights_from_posterior(
                 per_half.class_full_posterior, options.k_class.n_classes, carry.class_mixture.weights,
             ),
         )
@@ -438,7 +438,7 @@ def _follower_replay_telemetry(source, history) -> refinement_result.ReplayTelem
     """The follower-scale replay's requested and applied iterations (both None without a replay), validated
     against the iterations the run applied; raises if the replay was not applied as requested."""
 
-    requested, applied = follower_scale._finalize_relion_follower_scale_replay_telemetry(
+    requested, applied = follower_scale.finalize_relion_follower_scale_replay_telemetry(
         source, applied_iterations=history.relion_follower_scale_replay_applied_iterations, logger=logger,
     )
     return refinement_result.ReplayTelemetry(requested_iterations=requested, applied_iterations=applied)
@@ -506,7 +506,7 @@ def refine_single_volume(
     observer.run_started(ctx)
     # The run's one mode decision: the K=1 or the Class3D run's own set-up and iteration statements.
     mode = _ClassIteration() if ctx.k_class_enabled else _K1Iteration()
-    setup_checks._validate_bpref_particle_order_scope(
+    setup_checks.validate_bpref_particle_order_scope(
         preserve_bpref_particle_order=options.parity.preserve_bpref_particle_order,
         n_classes=options.k_class.n_classes,
         init_relion_iteration=options.schedule.init_relion_iteration,
@@ -520,7 +520,7 @@ def refine_single_volume(
         allow_state_swap_fresh_bpref_particle_order=source.swaps_state,
         continues_own_run=options.checkpoint.resume is not None,
     )
-    class_mixture = reference_state._initialize_class_log_priors(options.k_class.n_classes, options.start.init_direction_prior)
+    class_mixture = reference_state.initialize_class_log_priors(options.k_class.n_classes, options.start.init_direction_prior)
 
     setup_phase_seconds["mask_and_image_cache"] = setup_clock.seconds
 
@@ -534,7 +534,7 @@ def refine_single_volume(
     # The refinement schedule owns the initial coarse HEALPix grid; a continuation
     # rebuilds the grid of its restored sampling state.
     initial_grid_order = (
-        int(options.schedule.init_healpix_order) if resume is None else convergence_helpers._exhaustive_grid_order_for_state(state)
+        int(options.schedule.init_healpix_order) if resume is None else convergence_helpers.exhaustive_grid_order_for_state(state)
     )
     coarse_grids = source.initial_coarse_grids(
         initialized_healpix_order=options.schedule.init_healpix_order if resume is None else state.healpix_order,
@@ -592,7 +592,7 @@ def refine_single_volume(
         # Per-shell radial profiles of the input pixel-array noise variances, for the
         # diagnostic log ("noise update per shell: old=... new=...").
         noise_model = noise_updates.initialize_noise_model(
-            initial_noise_variance_per_half, average_variance=noise_updates._mean_noise_variance(initial_noise_variance_per_half),
+            initial_noise_variance_per_half, average_variance=noise_updates.mean_noise_variance(initial_noise_variance_per_half),
             image_shape=ctx.image_geometry.image_shape, dtype=ctx.scoring_dtype,
         )
         # Drop the start-up arrays: where the caller passed temporaries (the parity script), the models
@@ -744,7 +744,7 @@ def refine_single_volume(
         numbered_relion_iteration = options.schedule.numbered_relion_iteration(iteration)
 
         if follower_setup.follower_scale_state is not None:
-            follower_scale._dispatch_relion_follower_scale_for_numbered_iteration(
+            follower_scale.dispatch_relion_follower_scale_for_numbered_iteration(
                 follower_setup, history, iteration=iteration, numbered_relion_iteration=numbered_relion_iteration,
                 relion_half_inputs=halves, relion_follower_scale_replay_source=follower_scale_replay,
                 dtype=ctx.scoring_dtype, logger=logger,
@@ -1186,7 +1186,7 @@ def refine_single_volume(
                 group_scale_corrections = norm_scale_update.group_scale_corrections_per_half
             else:
                 # Class3D follower-scale emulation: the follower state owns the scales and installs them.
-                group_scale_corrections = follower_scale._update_relion_follower_corrections(
+                group_scale_corrections = follower_scale.update_relion_follower_corrections(
                     follower_setup, noise_stats_per_half=expected.per_half.noise_stats, norm_scale_update=norm_scale_update,
                     relion_half_inputs=halves, relion_firstiter_cc_this_iter=this_iteration.first_iteration.relion_firstiter_cc,
                     dtype=ctx.scoring_dtype, logger=logger,
@@ -1339,7 +1339,7 @@ def refine_single_volume(
     final_join_means = final_state.join_means
     carry = replace(carry, sigma_offset=final_state.sigma_offset, noise_model=final_state.noise_model)
     if follower_setup.follower_scale_state is not None:
-        follower_scale._dispatch_relion_follower_scale_for_final_all_data(
+        follower_scale.dispatch_relion_follower_scale_for_final_all_data(
             follower_setup, init_relion_iteration=options.schedule.init_relion_iteration,
             numbered_iteration_count=len(history.current_sizes), relion_half_inputs=halves, dtype=ctx.scoring_dtype,
             logger=logger,

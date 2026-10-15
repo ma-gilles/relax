@@ -43,7 +43,7 @@ def test_numbered_dense_scoring_exposes_owners_without_a_call_only_plan(monkeypa
         assert not hasattr(iteration_loop, name) and not hasattr(expectation, name)
     trace = CallTrace(monkeypatch)
     trace.wrap(expectation, "score_numbered_half", "half")
-    trace.wrap(expectation, "_score_half_dense_in_bpref_scope", "dense")
+    trace.wrap(expectation, "score_half_dense_in_bpref_scope", "dense")
     run_tiny_refinement(monkeypatch, final_after_max_iter=False)
     assert trace.labels() == ["half", "dense"] * 4
     for call in trace.calls("dense"):

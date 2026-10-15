@@ -144,8 +144,8 @@ def test_numbered_sizing_and_optics_consume_the_sampling_and_half_operands(
 
     monkeypatch.setattr(expectation, 'prepare_half_batches', plan)
     monkeypatch.setattr(expectation.shape_class_scoring, 'prepare_optics', optics)
-    monkeypatch.setattr(expectation, '_score_half_dense_in_bpref_scope', lambda *args: engine_result())
-    monkeypatch.setattr(expectation, '_score_half_local_in_bpref_scope', lambda **inputs: engine_result())
+    monkeypatch.setattr(expectation, 'score_half_dense_in_bpref_scope', lambda *args: engine_result())
+    monkeypatch.setattr(expectation, 'score_half_local_in_bpref_scope', lambda **inputs: engine_result())
     score_flat(half, phase, **kwargs)
     assert captured['sizing'][0] is coarse_step
     assert captured['sizing'][1] is diameter
@@ -182,8 +182,8 @@ def test_preserved_particle_order_selects_production_arithmetic_in_replays_too(m
         return engine_result()
 
     monkeypatch.setattr(expectation, 'prepare_half_batches', plan)
-    monkeypatch.setattr(expectation, '_score_half_dense_in_bpref_scope', dense)
-    monkeypatch.setattr(expectation, '_score_half_local_in_bpref_scope', local_scorer)
+    monkeypatch.setattr(expectation, 'score_half_dense_in_bpref_scope', dense)
+    monkeypatch.setattr(expectation, 'score_half_local_in_bpref_scope', local_scorer)
     score_flat(half, phase, **kwargs)
     assert captured == {'batches': preserve_order, 'execution': preserve_order}
 
@@ -333,7 +333,7 @@ def test_dense_pose_grid_preserves_canonical_metadata_and_engine_overrides(
     eulers = np.ones((2, 3), dtype=np.float32)
     result.pose_rotations = matrices if explicit_matrices else None
     result.pose_rotation_eulers = eulers if explicit_eulers else None
-    monkeypatch.setattr(expectation, '_score_half_dense_in_bpref_scope', lambda *args: result)
+    monkeypatch.setattr(expectation, 'score_half_dense_in_bpref_scope', lambda *args: result)
     actual = score_flat(half, phase, **kwargs)
     assert actual.pose_rotations is (matrices if explicit_matrices else phase.grid.rotations)
     expected_eulers = eulers if explicit_eulers else None if adaptive and explicit_matrices else phase.grid.rotation_eulers
@@ -351,7 +351,7 @@ def test_cold_dense_translation_prior_uses_k1_gaussian_and_k4_flat_policy(monkey
         captured['prior'] = priors.translation_log_prior
         return engine_result()
 
-    monkeypatch.setattr(expectation, '_score_half_dense_in_bpref_scope', score)
+    monkeypatch.setattr(expectation, 'score_half_dense_in_bpref_scope', score)
     actual = score_flat(half, phase, **kwargs)
     if n_classes == 1:
         # RELION ACC multiplies the angstrom-grid squared offset by another pixel_size^2.
@@ -373,7 +373,7 @@ def test_local_result_keeps_explicit_coarse_assignments_and_rounded_offset_frame
         captured.update(owners)
         return result
 
-    monkeypatch.setattr(expectation, '_score_half_local_in_bpref_scope', score)
+    monkeypatch.setattr(expectation, 'score_half_local_in_bpref_scope', score)
     actual = score_flat(half, phase, **kwargs)
     assert_matches(actual.translation_search_base, [[1, -2], [1, 0]])
     assert actual.coarse_ha is result.coarse_ha

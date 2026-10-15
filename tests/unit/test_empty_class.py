@@ -22,7 +22,7 @@ pytestmark = pytest.mark.unit
 
 
 def test_a_class_without_weight_gets_exactly_zero_and_a_minus_infinite_log_prior():
-    weights = reference_state._class_weights_from_posterior(
+    weights = reference_state.class_weights_from_posterior(
         [np.array([3.0, 0.0, 1.0]), np.array([1.0, 0.0, 0.0])], 3, np.full(3, 1.0 / 3.0)
     )
     assert_matches(weights, [0.8, 0.0, 0.2], rtol=1e-15)
@@ -31,7 +31,7 @@ def test_a_class_without_weight_gets_exactly_zero_and_a_minus_infinite_log_prior
     assert mixture.log_priors[1] == -np.inf
     assert_matches(mixture.log_priors[[0, 2]], np.log([0.8, 0.2]), rtol=1e-15)
     # An expectation that produced nothing at all keeps the previous weights.
-    kept = reference_state._class_weights_from_posterior([np.zeros(3), None], 3, weights)
+    kept = reference_state.class_weights_from_posterior([np.zeros(3), None], 3, weights)
     assert_matches(kept, weights, rtol=0)
 
 
@@ -100,7 +100,7 @@ def test_class_maximization_freezes_the_curve_of_a_class_without_weight(monkeypa
 
     monkeypatch.setattr(maximization, "estimate_class_priors", estimate_class_priors)
     monkeypatch.setattr(maximization, "reconstruct_numbered_class_maps", reconstruct)
-    monkeypatch.setattr(maximization, "_stack_class_tau2_update_details", lambda details: {})
+    monkeypatch.setattr(maximization, "stack_class_tau2_update_details", lambda details: {})
     reference_model = SimpleNamespace(maps=[previous_maps, previous_maps], tau2=None)
     operands = SimpleNamespace(
         numerators=(Ft_y, None), denominators=(Ft_ctf, None), halves=(), noise_stats=(), image_current_size=8,

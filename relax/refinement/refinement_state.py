@@ -472,7 +472,7 @@ class RefinementState:
 # ---------------------------------------------------------------------------
 
 
-def _exhaustive_grid_order_for_state(state: RefinementState) -> int:
+def exhaustive_grid_order_for_state(state: RefinementState) -> int:
     """Return the global exhaustive HEALPix order for the current state.
 
     Once RELION enables local angular searches, it no longer scores the full
