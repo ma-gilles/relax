@@ -34,7 +34,6 @@ import numpy as np
 
 import relax
 from relax.commands import refinement_arguments, refinement_particles
-from relax.commands.refinement_arguments import apply_k1_refine3d_env_defaults
 from relax.diagnostics import observers, parity_dump
 from relax.numerics.precision import DensePrecisionPolicy, use_float32_matmuls
 from relax.parity import (
@@ -389,8 +388,6 @@ def main(command=None):
     refinement_arguments.require_consistency_arguments(args)
     if cache_directory:
         logger.info("Persistent JAX compilation cache: %s", cache_directory)
-    if int(args.n_classes) == 1:
-        apply_k1_refine3d_env_defaults()
     # The dense scoring precision, read once here and passed down (RefinementOptions.precision).
     dense_precision: DensePrecisionPolicy = DensePrecisionPolicy.from_environ()
     job = refinement_arguments.resolve_job_defaults(args)

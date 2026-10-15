@@ -1,14 +1,12 @@
 """Program-count reductions in the coarse pass that must not move any number.
 
-Three changes are covered, all of them program-count changes only:
+Two changes are covered, both of them program-count changes only:
 
 * ``RELAX_COARSE_PAD_FINAL_IMAGE_BATCH`` pads a half set's last coarse image
   batch up to ``image_batch_size`` by repeating image row zero, so the coarse
   pass, significance and image preprocessing see a single image extent per run
   instead of one per remainder. The repeated rows are dropped from every
   science output.
-* ``RELAX_EM_JIT_STAGE_GLUE`` runs the post-transform preprocessing chain as one
-  jitted program, instead of one XLA program per primitive per extent.
 * ``_collate_batch_to_jax`` builds the host array before the device transfer,
   which removes the ``convert_element_type`` program JAX compiles for every
   distinct Python-list length.
@@ -212,45 +210,6 @@ def test_coarse_pad_env_flag_gives_every_batch_one_image_extent(monkeypatch):
     assert len(set(padded)) == 1
 
 
-def test_preprocess_batch_jitted_elementwise_matches_eager():
-    """The jitted elementwise chain matches the eager one within the float band."""
-
-    from relax.relion import image_preprocessing
-
-    rng = np.random.default_rng(3)
-    n_images, n_half_pixels, n_trans = 4, 9, 3
-    processed = jnp.asarray(
-        rng.standard_normal((n_images, n_half_pixels))
-        + 1j * rng.standard_normal((n_images, n_half_pixels)),
-        dtype=jnp.complex64,
-    )
-    ctf = jnp.asarray(rng.uniform(0.3, 1.7, (n_images, n_half_pixels)), dtype=jnp.float32)
-    noise = jnp.asarray(rng.uniform(0.5, 2.0, n_half_pixels), dtype=jnp.float32)
-    phases = jnp.asarray(
-        rng.standard_normal((n_trans, n_half_pixels))
-        + 1j * rng.standard_normal((n_trans, n_half_pixels)),
-        dtype=jnp.complex64,
-    )
-    weights = jnp.asarray(rng.uniform(1.0, 2.0, n_half_pixels), dtype=jnp.float32)
-
-    common = dict(
-        score_complex_dtype=jnp.complex64,
-        score_real_dtype=jnp.float32,
-        norm_real_dtype=None,
-    )
-    eager = image_preprocessing._preprocess_batch_elementwise(
-        processed, ctf, noise, phases, weights, **common
-    )
-    jitted = image_preprocessing._preprocess_batch_elementwise_jit(
-        processed, ctf, noise, phases, weights, **common
-    )
-    assert len(eager) == len(jitted) == 4
-    for actual, expected in zip(jitted, eager):
-        assert actual.dtype == expected.dtype
-        assert actual.shape == expected.shape
-        assert_matches(np.asarray(actual), np.asarray(expected))
-
-
 def test_collate_list_batch_makes_no_program_and_same_array():
     """``_collate_batch_to_jax`` must stop compiling one program per list length."""
 
@@ -305,11 +264,6 @@ def _coarse_pad_final_image_batch():
             "RELAX_COARSE_PAD_FINAL_IMAGE_BATCH",
             "relax.runtime.engine_tuning:_coarse_pad_final_image_batch",
             True,  # on by default since the K=1 resident flip
-        ),
-        (
-            "RELAX_EM_JIT_STAGE_GLUE",
-            "relax.relion.image_preprocessing:jit_stage_glue_enabled",
-            False,  # the K=1 entry points set it; the shared default stays off
         ),
     ],
 )

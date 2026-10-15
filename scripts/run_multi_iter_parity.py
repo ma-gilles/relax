@@ -28,7 +28,6 @@ os.environ.setdefault("RECOVAR_EM_XLA_DEFAULTS", "1")
 
 import numpy as np
 
-from relax.commands.refinement_arguments import apply_k1_refine3d_env_defaults
 from relax.diagnostics.gt_metrics import DEFAULT_GT_ALIGN_HEALPIX_ORDER, DEFAULT_GT_ALIGN_MAX_SHELL
 from relax.numerics.precision import DensePrecisionPolicy
 from relax.refinement.iteration_history import add_significant_count_artifacts
@@ -1390,7 +1389,6 @@ def main():
         help="Optional persistent JAX compilation cache directory for cross-process warm starts.",
     )
     args = parser.parse_args()
-    apply_k1_refine3d_env_defaults()
     iteration_normalization_overrides = parse_iteration_normalization_factor_overrides(
         args.normalization_factor_override_at_iteration
     )

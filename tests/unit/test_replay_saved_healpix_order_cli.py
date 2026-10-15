@@ -64,7 +64,6 @@ def test_cli_validates_saved_order_before_refinement(tmp_path, monkeypatch):
     monkeypatch.setattr(refinement_arguments, "parse_refinement_args", lambda: args)
     monkeypatch.setattr(run_full_refinement, "activate_recovar_compilation_cache", lambda: None)
     monkeypatch.setattr(run_full_refinement, "_assert_expected_repo_imports", lambda: None)
-    monkeypatch.setattr(run_full_refinement, "apply_k1_refine3d_env_defaults", lambda: None)
 
     def unexpected_boundary(*args, **kwargs):
         raise AssertionError("invalid saved sampling order reached boundary/data preparation")
