@@ -497,8 +497,25 @@ _CTF_BLOCK_ELEMENTS = 1 << 24
 _CTF_BLOCK_ROWS = 256
 
 
+def _ctf_block_rows(n_pixels: int) -> int:
+    """Rows of one CTF program call: a power of two, at most :data:`_CTF_BLOCK_ROWS`, within
+    :data:`_CTF_BLOCK_ELEMENTS` values."""
+
+    cap = max(1, min(_CTF_BLOCK_ROWS, _CTF_BLOCK_ELEMENTS // max(1, n_pixels)))
+    return 1 << (cap.bit_length() - 1)
+
+
+def _ctf_padded_count(n: int, n_pixels: int) -> int:
+    """Rows :func:`_relion_ctf_rows` evaluates for ``n`` particles: whole blocks, the last one a power of two."""
+
+    cap = _ctf_block_rows(n_pixels)
+    rest = int(n) % cap
+    return int(n) - rest + (0 if rest == 0 else 1 << (rest - 1).bit_length())
+
+
 def _relion_ctf_rows(
-    constants, size: int, extent: float, *, pixels=None, mag=None, offset=None, dose=None, square=None, centered_rows=False
+    constants, size: int, extent: float, *, pixels=None, mag=None, offset=None, dose=None, square=None,
+    centered_rows=False, padded=False,
 ):
     """:func:`_relion_ctf_program` of every row of ``constants``, a device ``(n, P)`` float64 array.
 
@@ -506,6 +523,8 @@ def _relion_ctf_rows(
     The particles go through the program in blocks of a power of two of rows, a short block padded with
     its last particle, so one request compiles a few row counts per pixel count; a block holds at most
     :data:`_CTF_BLOCK_ELEMENTS` values. ``dose`` is ``(n, 2)`` and ``square`` ``(n,)`` (see the program).
+    ``padded`` returns the padding rows too, :func:`_ctf_padded_count` rows: no trailing slice, whose shape
+    follows ``n`` and compiled once for every new count.
     """
 
     if not jax.config.jax_enable_x64:
@@ -515,8 +534,7 @@ def _relion_ctf_rows(
     n_pixels = size * (size // 2 + 1) if pixels is None else int(np.asarray(pixels).size)
     if n == 0:
         return jnp.zeros((0, n_pixels), dtype=jnp.float64)
-    cap = max(1, min(_CTF_BLOCK_ROWS, _CTF_BLOCK_ELEMENTS // max(1, n_pixels)))
-    cap = 1 << (cap.bit_length() - 1)
+    cap = _ctf_block_rows(n_pixels)
     shared = (
         None if pixels is None else jnp.asarray(pixels, dtype=jnp.int32),
         np.float64(extent),
@@ -524,6 +542,7 @@ def _relion_ctf_rows(
         None if mag is None else jnp.asarray(mag, dtype=jnp.float64).reshape(2, 2),
         None if offset is None else jnp.asarray(offset, dtype=jnp.float64).reshape(-1),
     )
+    keep_padding = bool(padded)
     blocks = []
     for start in range(0, n, cap):
         rows = min(cap, n - start)
@@ -537,7 +556,7 @@ def _relion_ctf_rows(
             size=size,
             centered_rows=bool(centered_rows),
         )
-        blocks.append(block if padded == rows else jax.lax.slice_in_dim(block, 0, rows))
+        blocks.append(block if padded == rows or keep_padding else jax.lax.slice_in_dim(block, 0, rows))
     return blocks[0] if len(blocks) == 1 else jnp.concatenate(blocks, axis=0)
 
 
@@ -664,7 +683,7 @@ def _exact_ctf_rows(
     if square is not None and not square.any():
         square = None
 
-    def evaluate(group, members):
+    def evaluate(group, members, padded=False):
         gamma, mag = _optics_group_ctf_geometry(cache, int(group), image_h)
         return _relion_ctf_rows(
             constants[members],
@@ -676,6 +695,7 @@ def _exact_ctf_rows(
             dose=None if dose is None else dose[members],
             square=None if square is None else square[members],
             centered_rows=centered_rows,
+            padded=padded,
         )
 
     present = np.unique(groups)
@@ -685,8 +705,20 @@ def _exact_ctf_rows(
     rows = jnp.zeros((original_indices.size, n_pixels), dtype=jnp.float64)
     for group in present:
         members = np.flatnonzero(groups == group)
-        rows = rows.at[jnp.asarray(members)].set(evaluate(group, members))
+        # The group's rows with their padding (each a repeat of its last particle's row) are written to the
+        # padded member list (the padding writes the last member again, with the same value): the writes'
+        # shapes take the few padded counts, where the group's own count compiled a program per new count
+        # (25% of a real subtomogram coarse pass, 130 optics groups).
+        index = members[np.minimum(np.arange(_ctf_padded_count(members.size, n_pixels)), members.size - 1)]
+        rows = _put_ctf_rows(rows, jnp.asarray(index, dtype=jnp.int32), evaluate(group, members, padded=True))
     return rows
+
+
+@functools.partial(jax.jit, donate_argnums=(0,))
+def _put_ctf_rows(rows, index, values):
+    """``rows`` with ``values`` written at rows ``index`` (repeated indices carry equal values), in place."""
+
+    return rows.at[index].set(values)
 
 
 def relion_fftw_ctf_rows(experiment_dataset, image_indices, image_shape, *, square_premultiplied: bool = True):

@@ -308,6 +308,48 @@ def test_block_rows_are_powers_of_two():
     assert set(calls) <= {1 << k for k in range(9)}
 
 
+def test_padded_rows_are_the_rows_and_their_last_particle_repeated():
+    """``padded=True`` returns every program call's rows: the request's rows, then copies of its last row."""
+
+    constants = np.random.default_rng(5).uniform(0.5, 1.5, size=(1000, 9))
+    for n in (1, 3, 37, 256, 300, 1000):
+        rows = np.asarray(relion_ctf._relion_ctf_rows(constants[:n], 8, 12.0))
+        padded = np.asarray(relion_ctf._relion_ctf_rows(constants[:n], 8, 12.0, padded=True))
+        assert padded.shape == (relion_ctf._ctf_padded_count(n, 8 * 5), 8 * 5)
+        assert_matches(padded[:n], rows)
+        assert_matches(padded[n:], np.broadcast_to(rows[-1], padded[n:].shape))
+
+
+def test_groups_are_written_in_padded_counts(empiar_10097, source, tmp_path):
+    """Each optics group's rows are written with a padded index list, so the writes compile per padded count,
+    not per group size; the rows are those of the groups evaluated alone."""
+
+    star, particles, size = _optics_variant(empiar_10097, tmp_path, premultiplied_second_group=True, n=12)
+    dataset = source(star)
+    pixels = np.arange(0, size * (size // 2 + 1), 31)
+    writes = []
+    put = relion_ctf._put_ctf_rows
+
+    def record(rows, index, values):
+        writes.append(int(index.shape[0]))
+        return put(rows, index, values)
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(relion_ctf, "_put_ctf_rows", record)
+        for indices in ([0, 1, 2], [0, 1, 2, 3, 4, 5, 6], np.arange(12)):
+            indices = np.asarray(indices, dtype=np.int64)
+            rows = relion_ctf.relion_exact_ctf_half_from_source_star_host(
+                dataset, indices, (size, size), pixel_indices=pixels
+            )
+            for group in (1, 2):
+                own = indices[np.asarray(particles["rlnOpticsGroup"])[indices] == group]
+                alone = relion_ctf.relion_exact_ctf_half_from_source_star_host(
+                    dataset, own, (size, size), pixel_indices=pixels
+                )
+                assert_matches(rows[np.isin(indices, own)], alone)
+    assert writes and set(writes) <= {1 << k for k in range(9)}
+
+
 def test_nothing_of_a_request_is_kept(empiar_10097, source):
     """RELION evaluates a particle's CTF in every expectation; relax keeps no row on the host or the device."""
 

@@ -114,7 +114,7 @@ def tilt_image_coarse_operands(
 
     from relax.fine_pass.scoring import relion_cuda_powerclass_highres_xi2_half
     from relax.io.batch_fetch import fetch_indexed_batch
-    from relax.relion.ctf import relion_exact_ctf_half_from_source_star_host
+    from relax.relion.ctf import relion_exact_ctf_half_from_source_star
     from relax.relion.image_preprocessing import prepare_batch_preprocess_operands
     from relax.relion.optics_groups import noise_rows
     from relax.scoring.coarse_operands import (
@@ -141,7 +141,8 @@ def tilt_image_coarse_operands(
         relion_preprocess_kwargs=preprocess_kwargs,
         image_indices=image_indices,
     )
-    ctf = relion_exact_ctf_half_from_source_star_host(
+    # On the device, where the operands are built: a host copy waited for the queued coarse batches.
+    ctf = relion_exact_ctf_half_from_source_star(
         experiment_dataset, image_indices, layout.image_shape, pixel_indices=layout.score_indices_np
     )
     unshifted, pixel_weight = relion_exact_coarse_operands(
