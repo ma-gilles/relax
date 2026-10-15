@@ -171,7 +171,6 @@ def _wide_driver_args(n_coarse_trans: int, seed: int = 20260925):
 def _resident_production_env(monkeypatch):
     """The production resident arm, as in ``test_resident_pass2_driver``."""
 
-    monkeypatch.setenv("RELAX_EM_PROTOTYPE_SOFT_POSTERIOR_BLOCK_BPREF", "1")
     monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_ROW_CAPACITIES", "256,1024,4096")
     monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_IMAGE_CAPACITIES", "4,16,64")
     monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_MSTEP_BLOCK_ROWS", "128")

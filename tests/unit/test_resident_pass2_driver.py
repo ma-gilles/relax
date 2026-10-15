@@ -75,8 +75,6 @@ def _production_gate_kwargs(**overrides):
         normalization_other_score_log_z=None,
         relion_f32_normalization_sum_weight=None,
         relion_coarse_hard_assignment=None,
-        preserve_bpref_particle_order=False,
-        soft_posterior_block_bpref=False,
         fine_rotations_override=np.zeros((2, 3, 3), dtype=np.float32),
         fine_rotation_parent_override=np.zeros(2, dtype=np.int32),
         use_window=True,
@@ -106,7 +104,6 @@ def test_production_configuration_is_accepted():
             "finite cross-class score normalization",
         ),
         ({"relion_f32_normalization_sum_weight": np.ones(3)}, "sum, winner and Pmax"),
-        ({"preserve_bpref_particle_order": True}, "per-particle BPref launches"),
         ({"fine_rotations_override": None}, "fine_rotations_override"),
         ({"use_window": False}, "Nyquist row"),
         ({"projection_cache_available": False}, "projection cache"),
@@ -118,16 +115,6 @@ def test_production_configuration_is_accepted():
 def test_gate_names_the_missing_piece(override, expected):
     with pytest.raises(NotImplementedError, match=expected):
         resident_configuration.require_resident_production_configuration(**_production_gate_kwargs(**override))
-
-
-def test_gate_accepts_production_bpref_order_with_the_block_prototype():
-    """``preserve_bpref_particle_order`` is production; the block prototype makes it block-wise."""
-
-    resident_configuration.require_resident_production_configuration(
-        **_production_gate_kwargs(
-            preserve_bpref_particle_order=True, soft_posterior_block_bpref=True
-        )
-    )
 
 
 def test_gate_refuses_a_diagnostic_dump(monkeypatch):
@@ -951,14 +938,9 @@ def _float32_atomic_order_bound(args) -> float:
     return float(np.sqrt(n_images) * np.finfo(np.float32).eps)
 
 
-@pytest.fixture
-def _resident_production_env(monkeypatch):
-    monkeypatch.setenv("RELAX_EM_PROTOTYPE_SOFT_POSTERIOR_BLOCK_BPREF", "1")
-
-
 @requires_resident_gpu
 @pytest.mark.parametrize("masked", [True, False], ids=["unshifted-operands", "per-chunk-tiles"])
-def test_global_chunk_tile_count_matches_the_live_translated_arrays(_resident_production_env, masked):
+def test_global_chunk_tile_count_matches_the_live_translated_arrays(masked):
     """The global pass's planned per-stage tile counts are the translated arrays a chunk
     holds. Unmasked scoring is a configuration the half's resident operands refuse after
     the plan, so that case also covers planning again for the per-chunk preparation
@@ -1048,7 +1030,7 @@ def test_global_chunk_tile_count_matches_the_live_translated_arrays(_resident_pr
 
 
 @requires_resident_gpu
-def test_global_chunks_prepare_their_own_unshifted_operands(_resident_production_env, monkeypatch):
+def test_global_chunks_prepare_their_own_unshifted_operands(monkeypatch):
     """Without the half's resident operands, each chunk prepares its own images' unshifted
     operands, not the translated tiles, and the pass returns what the resident operands give.
 
@@ -1111,7 +1093,7 @@ def test_global_chunks_prepare_their_own_unshifted_operands(_resident_production
 
 
 @requires_resident_gpu
-def test_exact_float32_accumulation_switch_runs_the_global_driver(_resident_production_env, monkeypatch):
+def test_exact_float32_accumulation_switch_runs_the_global_driver(monkeypatch):
     """``RELAX_EM_EXACT_FLOAT32_ACCUMULATION=1`` routes the global pass through the partial pair (relax#65).
 
     On this small case one accumulator loses nothing measurable, so the switched pass must agree with the
@@ -1140,7 +1122,7 @@ def test_exact_float32_accumulation_switch_runs_the_global_driver(_resident_prod
 
 
 @requires_resident_gpu
-def test_resident_driver_repeats_itself(_resident_production_env):
+def test_resident_driver_repeats_itself():
     """The resident driver's own repeat band, the reference for the table above."""
 
     args = _driver_fixture_args()
@@ -1177,7 +1159,7 @@ def test_resident_driver_repeats_itself(_resident_production_env):
 
 
 @requires_resident_gpu
-def test_glue_programs_match_the_loose_dispatch(_resident_production_env, monkeypatch):
+def test_glue_programs_match_the_loose_dispatch(monkeypatch):
     """P3-A: where the chunk loop's JIT boundary sits changes no output.
 
     ``RELAX_SPARSE_PASS2_RESIDENT_GLUE_JIT`` picks between one program per
@@ -1257,7 +1239,7 @@ def test_glue_programs_match_the_loose_dispatch(_resident_production_env, monkey
 
 
 @requires_resident_gpu
-def test_gate_refuses_a_finite_cross_class_normalizer(_resident_production_env):
+def test_gate_refuses_a_finite_cross_class_normalizer():
     args = _driver_fixture_args()
     args["normalization_other_score_log_z"] = np.zeros(
         args["experiment_dataset"].n_units, dtype=np.float64
@@ -1267,7 +1249,7 @@ def test_gate_refuses_a_finite_cross_class_normalizer(_resident_production_env):
 
 
 @requires_resident_gpu
-def test_resident_driver_refuses_an_unsupported_pass(_resident_production_env):
+def test_resident_driver_refuses_an_unsupported_pass():
     """A configuration outside the gate raises instead of silently falling back."""
 
     args = _driver_fixture_args()
@@ -1607,7 +1589,7 @@ def test_stream_slot_count_quantises_and_caps():
 
 
 @requires_resident_gpu
-def test_streamed_projections_match_the_cached_pass(_resident_production_env, monkeypatch):
+def test_streamed_projections_match_the_cached_pass(monkeypatch):
     """Per-chunk streamed projections change no discrete state and stay in the repeat band.
 
     The streamed pass gathers the same projection arrays through chunk-local
@@ -1713,9 +1695,7 @@ def test_streamed_row_ladder_counts_the_padded_copy():
 
 
 @requires_resident_gpu
-def test_streamed_projection_rows_equal_the_cached_rows_exactly(
-    _resident_production_env, monkeypatch
-):
+def test_streamed_projection_rows_equal_the_cached_rows_exactly(monkeypatch):
     """Every on-the-fly projection row matches the fine-grid cache row (float32-tight band).
 
     Records each call of the projection block: the cached pass makes one call
@@ -1820,7 +1800,7 @@ def test_stable_window_reference_volume_on_another_grid(monkeypatch):
 
 
 @requires_resident_gpu
-def test_stable_windows_match_the_logical_window(_resident_production_env):
+def test_stable_windows_match_the_logical_window():
     """Inside a physical window class the resident driver reproduces RELION's logical window.
 
     The fixture box is 8 pixels, so current size 4 gets the physical class 6.
@@ -1915,7 +1895,7 @@ def assert_accumulators_live_at_every_budget_read(budget_reads, accumulators):
 
 
 @requires_resident_gpu
-def test_accumulators_exist_before_the_chunk_budget_is_read(_resident_production_env, monkeypatch):
+def test_accumulators_exist_before_the_chunk_budget_is_read(monkeypatch):
     """The x-half accumulators (15.35 + 7.7 GiB at EMPIAR-10202's full box) are allocated
     before the global pass reads free device memory for its chunk budget, so the budget
     counts them (the local pass: test_resident_local_pass2)."""
@@ -1989,7 +1969,7 @@ def test_plan_counts_a_row_blocked_lone_chunk_by_its_posterior_cells():
 
 @requires_resident_gpu
 @pytest.mark.parametrize("streamed", [False, True], ids=["cached", "streamed"])
-def test_lone_overflow_chunks_match_the_whole_chunk_pass(_resident_production_env, monkeypatch, streamed):
+def test_lone_overflow_chunks_match_the_whole_chunk_pass(monkeypatch, streamed):
     """An image past the largest row class is scored and reconstructed in row blocks.
 
     With a 16-row ladder most images of the fixture overflow and run alone; the scores
@@ -2097,7 +2077,7 @@ def test_projection_cache_row_blocks_gather_the_one_array_rows(monkeypatch):
 
 
 @requires_resident_gpu
-def test_row_blocked_projection_cache_matches_the_one_array_pass(_resident_production_env, monkeypatch):
+def test_row_blocked_projection_cache_matches_the_one_array_pass(monkeypatch):
     """The global pass with its union cache in row blocks gives the one-array pass."""
 
     args = _driver_fixture_args()
@@ -2140,7 +2120,7 @@ def test_only_host_pixel_indices_are_validated_per_call():
 
 
 @requires_resident_gpu
-def test_weighted_sums_keep_the_current_size_when_the_e_step_scores_below_it(_resident_production_env):
+def test_weighted_sums_keep_the_current_size_when_the_e_step_scores_below_it():
     """--strict_highres_exp: the E-step scores at the cap, the noise and Wavg sums stay at the current size.
 
     RELION's storeWeightedSums always uses image_current_size (ml_optimiser.cpp:6803-6806). Scoring at 4

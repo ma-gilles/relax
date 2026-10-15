@@ -64,7 +64,6 @@ def _native_k1_args(monkeypatch, *, seed=20260918):
     from unit.test_resident_pass2_driver import _driver_fixture_args
     from unit.test_resident_relion_reference import _ppref, _tie_free_noise
 
-    monkeypatch.setenv("RELAX_EM_PROTOTYPE_SOFT_POSTERIOR_BLOCK_BPREF", "1")
     args = _driver_fixture_args(seed=seed)
     dataset = args["experiment_dataset"]
     _install_native_preprocessing(dataset)
@@ -669,7 +668,6 @@ def test_k2_square_cc_full_grid_maps_wavg_and_keeps_one_winner(monkeypatch):
     from unit.test_resident_pass2_driver import _driver_fixture_args
     from unit.test_resident_relion_reference import _ppref, _tie_free_noise
 
-    monkeypatch.setenv("RELAX_EM_PROTOTYPE_SOFT_POSTERIOR_BLOCK_BPREF", "1")
     args = _driver_fixture_args(seed=20260929)
     dataset = args.pop("experiment_dataset")
     _install_native_preprocessing(dataset)
@@ -722,7 +720,6 @@ def test_public_k2_dense_engine_runs_joint_full_grid(monkeypatch):
     from unit.test_resident_pass2_driver import _driver_fixture_args
     from unit.test_resident_relion_reference import _ppref, _tie_free_noise
 
-    monkeypatch.setenv("RELAX_EM_PROTOTYPE_SOFT_POSTERIOR_BLOCK_BPREF", "1")
     args = _driver_fixture_args(seed=20260929)
     dataset = args.pop("experiment_dataset")
     _install_native_preprocessing(dataset)
@@ -793,7 +790,6 @@ def test_k4_full_grid_has_one_joint_posterior_and_all_statistics(
     from unit.test_resident_pass2_driver import _driver_fixture_args
     from unit.test_resident_relion_reference import F32, _ppref, _rel_l2, _tie_free_noise
 
-    monkeypatch.setenv("RELAX_EM_PROTOTYPE_SOFT_POSTERIOR_BLOCK_BPREF", "1")
     args = _driver_fixture_args(seed=20260929)
     dataset = args.pop("experiment_dataset")
     _install_native_preprocessing(dataset)

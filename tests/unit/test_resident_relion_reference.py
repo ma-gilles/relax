@@ -260,11 +260,6 @@ requires_resident_gpu = pytest.mark.skipif(not _gpu_available(), reason="every r
 _MANUAL_INTERP = ScoringOverrides(projector_texture_interp=False)
 
 
-@pytest.fixture
-def _resident_env(monkeypatch):
-    monkeypatch.setenv("RELAX_EM_PROTOTYPE_SOFT_POSTERIOR_BLOCK_BPREF", "1")
-
-
 @requires_resident_gpu
 @pytest.mark.parametrize(
     "current_size, noise",
@@ -274,7 +269,7 @@ def _resident_env(monkeypatch):
         (6, 0.8),  # windowed, peaked posteriors
     ],
 )
-def test_resident_driver_is_relions_fine_pass(_resident_env, current_size, noise):
+def test_resident_driver_is_relions_fine_pass(current_size, noise):
     """Scores, posterior, M-step accumulators and noise statistics against the reference.
 
     Measured on an H100 (job 14478445): scores and log-evidence agree to float32 rounding,
@@ -349,7 +344,7 @@ def _assert_k1_pass(
 
 @requires_resident_gpu
 @pytest.mark.parametrize("n_coarse_trans", [9, 33])
-def test_wide_translation_grids_are_relions_fine_pass(_resident_env, n_coarse_trans):
+def test_wide_translation_grids_are_relions_fine_pass(n_coarse_trans):
     """More coarse translations than one 32-bit mask word, and a partial second word."""
 
     from test_resident_wide_translation_mask import _wide_driver_args
@@ -362,7 +357,7 @@ def test_wide_translation_grids_are_relions_fine_pass(_resident_env, n_coarse_tr
 
 @requires_resident_gpu
 @pytest.mark.parametrize("groups", [True, False])
-def test_vdam_residual_backprojection_is_relions_grad_pass(_resident_env, groups):
+def test_vdam_residual_backprojection_is_relions_grad_pass(groups):
     """VDAM's ``--grad`` pass backprojects ``shifted - CTF P``; without groups the scale is 1."""
 
     from test_resident_vdam_estep import _vdam_args
@@ -377,7 +372,7 @@ def test_vdam_residual_backprojection_is_relions_grad_pass(_resident_env, groups
 
 
 @requires_resident_gpu
-def test_zero_oversampling_reuses_relions_coarse_normalization(_resident_env):
+def test_zero_oversampling_reuses_relions_coarse_normalization():
     """At zero oversampling the fine pass reuses the coarse sum and keeps every hypothesis."""
 
     import dataclasses
@@ -422,7 +417,7 @@ def test_zero_oversampling_reuses_relions_coarse_normalization(_resident_env):
 
 
 @requires_resident_gpu
-def test_c4_pass_is_relions_fine_pass_on_the_asymmetric_unit(_resident_env):
+def test_c4_pass_is_relions_fine_pass_on_the_asymmetric_unit():
     """C4: the E-step on the asymmetric-unit grid; the BPref as RELION's BackProjector holds it."""
 
     from test_resident_symmetry import _c4_driver_args
@@ -442,7 +437,7 @@ def _accumulator(actual, half):
 
 @requires_resident_gpu
 @pytest.mark.parametrize("n_classes, current_size", [(2, 6), (3, 6), (2, 8)])
-def test_resident_k_class_pass_is_relions_class3d_fine_pass(_resident_env, n_classes, current_size):
+def test_resident_k_class_pass_is_relions_class3d_fine_pass(n_classes, current_size):
     """The joint class-by-pose posterior, per-class BPrefs and the summed statistics."""
 
     from test_resident_k_class_pass2 import _resident

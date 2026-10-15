@@ -31,7 +31,6 @@ def _run_adaptive_k2(monkeypatch, dataset_edit=None):
     from unit.test_resident_pass2_driver import _driver_fixture_args
     from unit.test_resident_relion_reference import _ppref, _tie_free_noise
 
-    monkeypatch.setenv("RELAX_EM_PROTOTYPE_SOFT_POSTERIOR_BLOCK_BPREF", "1")
     args = _driver_fixture_args(seed=20260929)
     dataset = args.pop("experiment_dataset")
     _install_native_preprocessing(dataset)

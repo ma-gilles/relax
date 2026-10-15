@@ -266,13 +266,8 @@ def _rel_l2(a, b):
     return float(np.linalg.norm(a - b) / den) if den else float(np.linalg.norm(b))
 
 
-@pytest.fixture
-def _resident_production_env(monkeypatch):
-    monkeypatch.setenv("RELAX_EM_PROTOTYPE_SOFT_POSTERIOR_BLOCK_BPREF", "1")
-
-
 @requires_resident_gpu
-def test_duplicated_class_is_the_k1_pass(_resident_production_env):
+def test_duplicated_class_is_the_k1_pass():
     """Two copies of one class at prior 1/2 each are the K=1 pass split in half.
 
     Every duplicated cell carries half the K=1 posterior, so the joint pruning
@@ -369,7 +364,7 @@ def _count_projection_sum_flushes(monkeypatch):
 
 
 @requires_resident_gpu
-def test_projection_sums_backproject_like_every_row(_resident_production_env, monkeypatch):
+def test_projection_sums_backproject_like_every_row(monkeypatch):
     """Summing each projection's rows before one backprojection is the per-row BPref.
 
     The adjoint is linear in its rows, so the two differ only by float32
@@ -393,7 +388,7 @@ def test_projection_sums_backproject_like_every_row(_resident_production_env, mo
 
 
 @requires_resident_gpu
-def test_k1_pass_backprojects_every_row(_resident_production_env, monkeypatch):
+def test_k1_pass_backprojects_every_row(monkeypatch):
     """Auto-refine (K=1) keeps the per-row backprojection even when the sums would fit."""
 
     flushes = _count_projection_sum_flushes(monkeypatch)
@@ -479,7 +474,7 @@ def test_fold_class_scale_sums_allocates_no_accumulator_on_the_device():
     assert grown <= 2 * small_outputs, (grown, small_outputs)
 @requires_resident_gpu
 @pytest.mark.parametrize("streamed", [False, True], ids=["cached", "streamed"])
-def test_lone_overflow_chunks_match_the_whole_chunk_k_class_pass(_resident_production_env, monkeypatch, streamed):
+def test_lone_overflow_chunks_match_the_whole_chunk_k_class_pass(monkeypatch, streamed):
     """K classes through the row-blocked lone chunks give the whole-chunk pass.
 
     A streamed lone chunk keeps its rows' projection ids; its statistics map each class's

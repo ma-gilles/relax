@@ -183,11 +183,6 @@ def _resident_gpu_available() -> bool:
 requires_resident_gpu = pytest.mark.skipif(not _resident_gpu_available(), reason="the resident stages are CUDA FFI targets")
 
 
-@pytest.fixture
-def _resident_production_env(monkeypatch):
-    monkeypatch.setenv("RELAX_EM_PROTOTYPE_SOFT_POSTERIOR_BLOCK_BPREF", "1")
-
-
 def _rel_l2(a, b):
     a, b = np.asarray(a), np.asarray(b)
     den = float(np.linalg.norm(a))
@@ -195,7 +190,7 @@ def _rel_l2(a, b):
 
 
 @requires_resident_gpu
-def test_duplicated_class_at_zero_oversampling_is_the_one_class_pass_split_in_half(_resident_production_env):
+def test_duplicated_class_at_zero_oversampling_is_the_one_class_pass_split_in_half():
     """Two copies of one class at prior 1/2 each, with RELION's kept coarse state.
 
     By the lines in the module docstring: the class prior shifts every score and the second pass's own maximum

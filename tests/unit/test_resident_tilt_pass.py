@@ -19,7 +19,6 @@ from helpers.engine_settings import RESIDENT_PRODUCTION_ENGINE
 from helpers.float_compare import RTOL, assert_matches
 from test_resident_pass2_driver import (
     _driver_fixture_args,
-    _resident_production_env,  # noqa: F401 (fixture)
     requires_resident_gpu,
 )
 
@@ -75,7 +74,7 @@ def _one_image_tilt_inputs(args):
 
 
 @requires_resident_gpu
-def test_one_image_particles_reproduce_the_spa_pass(_resident_production_env):  # noqa: F811
+def test_one_image_particles_reproduce_the_spa_pass():
     from relax.fine_pass import resident_pass2 as rp
 
     # The once-per-half resident operands, which the tilt runner needs, cover masked scoring only.
@@ -90,7 +89,7 @@ def test_one_image_particles_reproduce_the_spa_pass(_resident_production_env):  
 
 
 @requires_resident_gpu
-def test_exact_float32_accumulation_switch_runs_the_tilt_driver(_resident_production_env, monkeypatch):  # noqa: F811
+def test_exact_float32_accumulation_switch_runs_the_tilt_driver(monkeypatch):
     """``RELAX_EM_EXACT_FLOAT32_ACCUMULATION=1`` routes the tilt M-step through the partial pair (relax#65).
 
     With one image per particle the switched tilt pass must still reproduce the SPA pass, as the default one does.
@@ -118,7 +117,7 @@ def test_exact_float32_accumulation_switch_runs_the_tilt_driver(_resident_produc
 
 
 @requires_resident_gpu
-def test_tilt_chunks_prepare_their_own_operands_when_the_half_does_not_fit(_resident_production_env, monkeypatch):  # noqa: F811
+def test_tilt_chunks_prepare_their_own_operands_when_the_half_does_not_fit(monkeypatch):
     """A half whose resident operands exceed the budget: each tilt chunk prepares its own images' operands."""
 
     from relax.fine_pass import resident_pass2 as rp
@@ -172,7 +171,7 @@ def _assert_tilt_pass_matches_spa(spa, tomo):
 
 
 @requires_resident_gpu
-def test_one_image_particles_reproduce_the_spa_k_class_pass(_resident_production_env, monkeypatch):  # noqa: F811
+def test_one_image_particles_reproduce_the_spa_k_class_pass(monkeypatch):
     """Class3D through the tilt runner, one image per particle, is the SPA K-class pass.
 
     Both score every class in the particle's one segment and backproject each class into its own
@@ -222,7 +221,7 @@ def _two_image_particles(args):
 
 
 @requires_resident_gpu
-def test_duplicated_class_of_tilt_particles_is_the_k1_pass(_resident_production_env):  # noqa: F811
+def test_duplicated_class_of_tilt_particles_is_the_k1_pass():
     """Two copies of one class at prior 1/2 each: every particle's K=1 posterior split in half.
 
     With two images per particle, each class's BPref is half the K=1 BPref, its mass half of
@@ -331,7 +330,7 @@ def _assert_accumulators_match(spa_Ft_y, spa_Ft_ctf, tomo_Ft_y, tomo_Ft_ctf):
 
 
 @requires_resident_gpu
-def test_one_image_particles_reproduce_the_spa_vdam_pass(_resident_production_env, monkeypatch):  # noqa: F811
+def test_one_image_particles_reproduce_the_spa_vdam_pass(monkeypatch):
     """VDAM's E-step through the tilt runner, one image per particle, is the SPA VDAM pass.
 
     Each image backprojects its residual into its pseudo-halfset's BPref slot; the SPA pass backprojects
@@ -367,7 +366,7 @@ def test_one_image_particles_reproduce_the_spa_vdam_pass(_resident_production_en
 
 
 @requires_resident_gpu
-def test_one_image_particles_reproduce_the_spa_k_class_vdam_pass(_resident_production_env, monkeypatch):  # noqa: F811
+def test_one_image_particles_reproduce_the_spa_k_class_vdam_pass(monkeypatch):
     """K=2 VDAM through the tilt runner, one image per particle, is the SPA K-class VDAM pass (slots class + K * half)."""
 
     from test_resident_k_class_pass2 import _k_class_args, _resident
@@ -389,7 +388,7 @@ def test_one_image_particles_reproduce_the_spa_k_class_vdam_pass(_resident_produ
 
 
 @requires_resident_gpu
-def test_slot_blocked_tilt_projections_are_the_one_block_pass(_resident_production_env, monkeypatch):  # noqa: F811
+def test_slot_blocked_tilt_projections_are_the_one_block_pass(monkeypatch):
     """A chunk projected one image slot at a time (its projections do not fit at once) is the one-block pass.
 
     The running diff2 keeps its slot order across blocks and each accumulator its slot order, so the
@@ -479,7 +478,7 @@ def _lone_tilt_runs(monkeypatch, args, tilt):
 
 
 @requires_resident_gpu
-def test_lone_tilt_particle_in_row_blocks_is_the_one_chunk_pass(_resident_production_env, monkeypatch):  # noqa: F811
+def test_lone_tilt_particle_in_row_blocks_is_the_one_chunk_pass(monkeypatch):
     """A particle whose rows' projections exceed the chunk budget runs alone in row blocks (a real ribosome
     tilt-series refinement refused at its first HEALPix-3 iteration: 294,912 rows, 82.8 GiB against 42.1).
 
@@ -541,7 +540,7 @@ def test_lone_tilt_plan_fits_the_refused_real_configuration():
 
 
 @requires_resident_gpu
-def test_each_particles_own_translations_are_the_whole_grid_mstep(_resident_production_env, monkeypatch):  # noqa: F811
+def test_each_particles_own_translations_are_the_whole_grid_mstep(monkeypatch):
     """The M-step at each particle's translations with mass (unit_mstep_translations) is the whole-grid M-step.
 
     The translations it drops carry exactly zero posterior, so only the order of the image-power
@@ -593,7 +592,7 @@ def test_each_particles_own_translations_are_the_whole_grid_mstep(_resident_prod
 
 
 @requires_resident_gpu
-def test_translation_blocked_tilt_mstep_is_the_one_block_mstep(_resident_production_env, monkeypatch):  # noqa: F811
+def test_translation_blocked_tilt_mstep_is_the_one_block_mstep(monkeypatch):
     """An M-step split into one-translation blocks is the one-block M-step (relax#27).
 
     The blocks merge each row's partials before its one adjoint, so only float32 reassociation within a
@@ -632,7 +631,7 @@ def test_translation_blocked_tilt_mstep_is_the_one_block_mstep(_resident_product
 
 
 @requires_resident_gpu
-def test_row_partials_merged_before_the_adjoint_keep_their_float32_weight(_resident_production_env):  # noqa: F811
+def test_row_partials_merged_before_the_adjoint_keep_their_float32_weight():
     """The swamping toy of relax#27: many rows into one voxel, each row's weight split over translation blocks.
 
     200k rows of weight 0.5-1 plus four tails (one per block) of up to 2e-3 of it, all at the DC voxel.
@@ -703,7 +702,7 @@ def test_row_partials_merged_before_the_adjoint_keep_their_float32_weight(_resid
 
 
 @requires_resident_gpu
-def test_one_image_particles_reproduce_the_spa_firstiter_cc_pass(_resident_production_env):  # noqa: F811
+def test_one_image_particles_reproduce_the_spa_firstiter_cc_pass():
     """The CC iteration through the tilt runner, one image per particle, is the SPA CC pass.
 
     The tilt runner translates each image's resident CC operands per slot (RELION's score translation) where
@@ -737,7 +736,7 @@ def test_one_image_particles_reproduce_the_spa_firstiter_cc_pass(_resident_produ
 
 
 @requires_resident_gpu
-def test_compiled_tilt_fold_is_the_eager_fold(_resident_production_env, monkeypatch):  # noqa: F811
+def test_compiled_tilt_fold_is_the_eager_fold(monkeypatch):
     """accumulate_tilt_chunk_terms compiled (one program, the optics groups vmapped) gives the eager function's
     statistics, for the chunk of a real tilt pass and for the same chunk split over three optics groups.
 

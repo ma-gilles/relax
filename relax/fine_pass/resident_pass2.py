@@ -74,7 +74,6 @@ import numpy as np
 from recovar.reconstruction import noise as noise_utils
 
 import relax.runtime.engine_tuning
-import relax.runtime.env_flags
 from relax.fine_pass import (
     projection_blocks,
     resident_block_programs,
@@ -187,7 +186,6 @@ logger = logging.getLogger(__name__)
 # the scatter-add; the bucketed segment_sum (and its planned scratch) is the dense
 # GEMM coarse engine's.
 _FLOAT32_BUCKETED_IMAGE_SUMS = False
-_SOFT_POSTERIOR_BLOCK_BPREF_PROTOTYPE_ENV = "RELAX_EM_PROTOTYPE_SOFT_POSTERIOR_BLOCK_BPREF"
 
 # Row capacities are multiples of the M-step block so every chunk decomposes
 # into whole blocks; image capacities follow the design's ladder. The design's
@@ -960,9 +958,6 @@ def _resident_pass2(
     ) and not (firstiter_cc and tilt is not None)  # a tilt CC pass translates its score image (resident_tilts)
     native_fft_size = int(np.prod(image_shape))
 
-    soft_posterior_block_bpref = relax.runtime.env_flags.parse_env_flag(
-        _SOFT_POSTERIOR_BLOCK_BPREF_PROTOTYPE_ENV, default=True
-    )
     projection_cache_enabled = _projection_cache_enabled_for_pass(
         fine_rotations_override=fine_rotations_override,
         dump_pass2_operands=False,
@@ -985,8 +980,6 @@ def _resident_pass2(
         relion_coarse_hard_assignment=relion_coarse_hard_assignment,
         relion_coarse_max_posterior=relion_coarse_max_posterior,
         oversampling_order=oversampling_order,
-        preserve_bpref_particle_order=preserve_bpref_particle_order,
-        soft_posterior_block_bpref=soft_posterior_block_bpref,
         fine_rotations_override=fine_rotations_override,
         fine_rotation_parent_override=fine_rotation_parent_override,
         use_window=budget_window_spec.use_window,

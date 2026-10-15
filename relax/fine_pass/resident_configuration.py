@@ -97,20 +97,6 @@ def require_resident_production_configuration(**kwargs) -> None:
         "the coarse normalization sum is reused only at zero oversampling "
         "(acc_ml_optimiser_impl.h:2868)",
     )
-    # ``preserve_bpref_particle_order`` is the production setting, and on its
-    # own it forces one BPref launch per particle. The production run pairs it
-    # with the soft-posterior block prototype, which turns those launches back
-    # into one block launch per bucket; that is the semantics the resident
-    # driver reproduces with one launch per row block. Without the prototype
-    # the compact engine really would launch per particle, so refuse.
-    require(
-        (not bool(kwargs["preserve_bpref_particle_order"]))
-        or bool(kwargs["soft_posterior_block_bpref"]),
-        "strict per-particle BPref launches are not implemented; set "
-        "RELAX_EM_PROTOTYPE_SOFT_POSTERIOR_BLOCK_BPREF=1 (the production "
-        "setting) so BPref accumulates per block, or clear "
-        "preserve_bpref_particle_order",
-    )
     require(
         kwargs["fine_rotations_override"] is not None
         and kwargs["fine_rotation_parent_override"] is not None,

@@ -1788,7 +1788,7 @@ probe still runs on the deprecated exact-local engine, with a logged reason reco
 in `pass2_engine_trajectory`. The jitted stage glue is set at the K=1 entry
 points (`apply_k1_refine3d_env_defaults`), since VDAM shares that code and qualifies its own defaults. Transitional A/B off switches (not permanent variants;
 `RELAX_SPARSE_PASS2_RESIDENT` and `RELAX_LOCAL_SEARCH_RESIDENT` are retired and setting either is an
-error): `RELAX_EM_PROTOTYPE_SOFT_POSTERIOR_BLOCK_BPREF=0`,
+error, as is `RELAX_EM_PROTOTYPE_SOFT_POSTERIOR_BLOCK_BPREF`, retired 2026-10-15):
 `RELAX_K1_RELION_WAVG_SEQUENTIAL_CUDA=0`, `RELAX_COARSE_PAD_FINAL_IMAGE_BATCH=0`,
 `RELAX_EM_JIT_STAGE_GLUE=0`. Device coarse significance has no
 switch: every class's coarse support is compacted on the device whenever the ids are collected
