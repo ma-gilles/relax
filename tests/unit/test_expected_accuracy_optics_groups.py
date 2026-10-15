@@ -170,7 +170,7 @@ def test_groups_recombine_as_relions_single_trial_loop(split_seed):
     """Per-group estimates add their trial terms in RELION's trial order and divide by the trial count
     (ml_optimiser.cpp:9327-9652), so the result is bitwise RELION's, whatever the groups' sizes; count-weighted group
     means rounded differently and flipped RELION's "no coarser offset step" test on et15 s2 (iteration 60)."""
-    from relax.steps.expected_accuracy import _combine_group_expected_accuracies
+    from relax.steps.expected_accuracy import combine_group_expected_accuracies
 
     rng = np.random.default_rng(split_seed)
     n_trials = 100
@@ -178,7 +178,7 @@ def test_groups_recombine_as_relions_single_trial_loop(split_seed):
     trans = np.where(rng.random((2, n_trials)) < 0.5, 8.5 * 0.1, 8.5 * 0.2)
     groups = rng.integers(0, 4, size=n_trials)
     positions = [np.flatnonzero(groups == g) for g in np.unique(groups)]
-    combined = _combine_group_expected_accuracies(
+    combined = combine_group_expected_accuracies(
         [_group_result(rot[:, p], trans[:, p]) for p in positions], positions, np.arange(n_trials), np.arange(n_trials)
     )
 
@@ -196,12 +196,12 @@ def test_groups_recombine_as_relions_single_trial_loop(split_seed):
 def test_identical_trial_terms_give_the_same_bits_for_every_group_split():
     """Every trial at 0.85 A (RELION's 0.1-pixel shift step at 8.5 A) averages to the same bits however the 100 trials
     split into groups; RELION's sum does not depend on the split either."""
-    from relax.steps.expected_accuracy import _combine_group_expected_accuracies
+    from relax.steps.expected_accuracy import combine_group_expected_accuracies
 
     values = []
     for sizes in ([100], [27, 23, 26, 24], [40, 10, 49, 1]):
         bounds = np.cumsum([0, *sizes])
         positions = [np.arange(bounds[i], bounds[i + 1]) for i in range(len(sizes))]
         results = [_group_result(np.full((1, p.size), 0.3), np.full((1, p.size), 8.5 * 0.1)) for p in positions]
-        values.append(_combine_group_expected_accuracies(results, positions, np.arange(100), np.arange(100)).acc_trans_angstrom)
+        values.append(combine_group_expected_accuracies(results, positions, np.arange(100), np.arange(100)).acc_trans_angstrom)
     assert values[0] == values[1] == values[2]

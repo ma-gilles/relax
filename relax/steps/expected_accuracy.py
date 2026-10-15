@@ -360,7 +360,7 @@ def estimate_relion_expected_accuracy_from_prepared_inputs(
         # The caller's exact CTF rows (premultiplied groups, even Zernike terms, magnification).
         ctf_images = _window_fftw_half(np.asarray(optics["trial_ctf"], dtype=np.float64), int(current_image_size))
     elif do_ctf_correction:
-        ctf_images = _trial_ctf_images(
+        ctf_images = trial_ctf_images(
             trial_local,
             defocus=(defocus_u, defocus_v, defocus_angle, phase_shift),
             optics=(float(voltage), float(spherical_aberration), float(amplitude_contrast)),
@@ -442,7 +442,7 @@ def _window_fftw_half(rows, size: int) -> np.ndarray:
     return rows[:, source_rows, :half]
 
 
-def _trial_ctf_images(trial_local, *, defocus, optics, pixel_size, box_size, current_image_size, tilt_images):
+def trial_ctf_images(trial_local, *, defocus, optics, pixel_size, box_size, current_image_size, tilt_images):
     """RELION's ``Fctf`` of every trial image (``CTF::setValues`` + ``getFftwImage`` with damping).
 
     Evaluated on the full image by :func:`relax.relion.ctf.relion_ctf_fftw_half` and
@@ -492,7 +492,7 @@ def _constant_selected(values: np.ndarray, indices: np.ndarray, name: str) -> fl
     return float(selected[0])
 
 
-def _combine_group_expected_accuracies(per_group, group_positions, trial_local, trial_particle_ids) -> ExpectedAccuracy:
+def combine_group_expected_accuracies(per_group, group_positions, trial_local, trial_particle_ids) -> ExpectedAccuracy:
     """Recombine per-optics-group accuracies as RELION's single trial loop sums them, then the best class.
 
     ``group_positions[g]`` are the positions in ``trial_local`` of group ``g``'s trials, in the order its estimate
@@ -720,7 +720,7 @@ def estimate_relion_expected_accuracy(
                     stable_window_quantum=stable_window_quantum,
                 )
             )
-        return _combine_group_expected_accuracies(per_group, group_positions, trial_local, trial_particle_ids)
+        return combine_group_expected_accuracies(per_group, group_positions, trial_local, trial_particle_ids)
     voltage = _constant_selected(ctf[:, CTFParamIndex.VOLT], trial_local, "voltage")
     cs = _constant_selected(ctf[:, CTFParamIndex.CS], trial_local, "spherical aberration")
     amplitude_contrast = _constant_selected(ctf[:, CTFParamIndex.W], trial_local, "amplitude contrast")
@@ -829,7 +829,7 @@ def _estimate_by_shape_class(half, *, best_eulers_deg, class_ids, trial_order_lo
         return dataclasses.replace(
             per_class[0], trial_local_indices=trial_local.copy(), trial_particle_ids=particle_ids[trial_local]
         )
-    return _combine_group_expected_accuracies(per_class, class_positions, trial_local, particle_ids[trial_local])
+    return combine_group_expected_accuracies(per_class, class_positions, trial_local, particle_ids[trial_local])
 
 
 def _estimate_tomo_half(
@@ -946,7 +946,7 @@ def _estimate_tomo_half(
                 stable_window_quantum=stable_window_quantum,
             )
         )
-    return _combine_group_expected_accuracies(per_group, group_positions, trial_local, particle_ids[trial_local])
+    return combine_group_expected_accuracies(per_group, group_positions, trial_local, particle_ids[trial_local])
 
 
 class PublishedAccuracy(NamedTuple):

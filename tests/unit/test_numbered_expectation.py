@@ -282,7 +282,7 @@ def test_recording_uses_published_half_identity_and_preserves_capture_order(
         captures.append(payload)
         events.append('capture')
 
-    monkeypatch.setattr(expectation, '_record_score_profile', profile)
+    monkeypatch.setattr(expectation, 'record_score_profile', profile)
     monkeypatch.setattr(observers.bpref_diagnostics, 'flush_selected_bpref_device_panel', panel)
     monkeypatch.setattr(observers.parity_dump, 'collect_e_step', capture)
     monkeypatch.setattr(observers.parity_dump, 'is_active', lambda: True)

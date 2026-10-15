@@ -44,20 +44,66 @@ from relax.sampling.oversampling import (
 from relax.sampling.perturbation import apply_relion_translation_perturbation
 from relax.sampling.symmetry import canonicalize_rotational_symmetry
 from relax.steps.half_inputs import HalfScoringData
-from relax.steps.score_outputs import (
-    HalfScoreResult,
-    _collapse_fine_pose_assignments_to_coarse,
-    _collapse_single_class_stats_to_coarse,
-    _select_single_class_accumulator,
-    class_em_to_half_result,
-)
+from relax.steps.score_outputs import HalfScoreResult, class_em_to_half_result
 from relax.steps.scoring_policy import (
     RELION_ADAPTIVE_FRACTION,
     RELION_FOURIER_WINDOW_SQUARE,
 )
 from relax.steps.shape_class_scoring import OpticsSpec, engine_projection_inputs, reference_grid_kwargs
+from relax.types import make_relion_stats
 
 logger = logging.getLogger("relax.dense.half_scoring")
+
+
+def _select_single_class_accumulator(value, *, label: str):
+    shape = getattr(value, "shape", None)
+    if shape is None or len(shape) < 2 or int(shape[0]) != 1:
+        raise RuntimeError(f"K=1 adaptive {label} accumulator must have leading class axis 1; got {shape}")
+    return value[0]
+
+
+def _collapse_single_class_stats_to_coarse(stats, *, rot_parent_map, n_rot_coarse: int, dtype=np.float32):
+    rot_post = np.asarray(stats.rotation_posterior_sums, dtype=np.float64)
+    if rot_post.shape == (n_rot_coarse,):
+        return stats
+    if rot_parent_map is None:
+        raise RuntimeError(
+            f"K=1 adaptive rotation_posterior_sums has shape {rot_post.shape}; expected ({n_rot_coarse},)"
+        )
+    rot_parent = np.asarray(rot_parent_map, dtype=np.int64)
+    if rot_post.shape != rot_parent.shape:
+        raise RuntimeError(
+            "K=1 adaptive rotation posterior and parent map disagree: "
+            f"{rot_post.shape} vs {rot_parent.shape}"
+        )
+    coarse_post = np.zeros(n_rot_coarse, dtype=np.float64)
+    np.add.at(coarse_post, rot_parent, rot_post)
+    runtime_dtype = dtype
+    return make_relion_stats(
+        log_evidence_per_image=np.asarray(stats.log_evidence_per_image, dtype=runtime_dtype),
+        best_log_score_per_image=np.asarray(stats.best_log_score_per_image, dtype=runtime_dtype),
+        max_posterior_per_image=np.asarray(stats.max_posterior_per_image, dtype=runtime_dtype),
+        rotation_posterior_sums=coarse_post.astype(runtime_dtype),
+    )
+
+
+def _collapse_fine_pose_assignments_to_coarse(
+    pose_assignments,
+    *,
+    rot_parent_map,
+    trans_parent_map,
+    n_trans_coarse: int,
+    n_trans_fine: int | None,
+):
+    """Collapse fine pose assignments onto the coarse grid; ``None`` when no fine pass ran."""
+    if trans_parent_map is None or n_trans_fine is None:
+        return None
+    pose = np.asarray(pose_assignments, dtype=np.int64)
+    rot_idx = pose // int(n_trans_fine)
+    trans_idx = pose % int(n_trans_fine)
+    coarse_rot = np.asarray(rot_parent_map, dtype=np.int64)[rot_idx]
+    coarse_trans = np.asarray(trans_parent_map, dtype=np.int64)[trans_idx]
+    return (coarse_rot * int(n_trans_coarse) + coarse_trans).astype(np.int32, copy=False)
 
 
 def expand_significant_samples_to_full_parent_translations(

@@ -45,6 +45,18 @@ if TYPE_CHECKING:
 logger = logging.getLogger("relax.refinement.iteration_loop")
 
 
+def _combine_optional_half_accumulators(left, right, *, label: str):
+    """Combine half accumulators, treating an empty Class3D half as absent."""
+
+    if left is None:
+        if right is None:
+            raise RuntimeError(f"{label} accumulators are missing for both halves")
+        return right
+    if right is None:
+        return left
+    return left + right
+
+
 def _copy_first_class(stacked):
     """``stacked`` (a leading class axis) with every class set to class 0, as the input's array type."""
 
@@ -172,8 +184,8 @@ def class_maximization(
     parity = options.parity
     Ft_y_0, Ft_y_1 = operands.numerators
     Ft_ctf_0, Ft_ctf_1 = operands.denominators
-    Ft_y_combined = score_outputs._combine_optional_half_accumulators(Ft_y_0, Ft_y_1, label="Ft_y")
-    Ft_ctf_combined = score_outputs._combine_optional_half_accumulators(Ft_ctf_0, Ft_ctf_1, label="Ft_ctf")
+    Ft_y_combined = _combine_optional_half_accumulators(Ft_y_0, Ft_y_1, label="Ft_y")
+    Ft_ctf_combined = _combine_optional_half_accumulators(Ft_ctf_0, Ft_ctf_1, label="Ft_ctf")
     # K-class 256px maps are large enough that materializing both
     # previous class stacks on the host immediately after pass 2 can
     # SIGBUS under Slurm/tmp quota pressure.  JAX arrays are immutable;

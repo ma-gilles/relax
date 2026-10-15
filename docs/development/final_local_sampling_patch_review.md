@@ -4883,7 +4883,7 @@ def record_numbered_half(
         )
         return
 
-    _record_score_profile(
+    record_score_profile(
         profile_history,
         score_result,
         phase="iteration",

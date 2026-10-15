@@ -7,7 +7,6 @@ their existing casts and coarse-grid reductions.
 
 from dataclasses import dataclass, field
 
-import jax
 import jax.numpy as jnp
 import numpy as np
 from recovar import utils
@@ -142,51 +141,6 @@ def empty_half_result(
         mstep_accumulator_shape=accumulator_shape,
         classes=classes,
     )
-
-
-def _host_offload_array(value):
-    """Copy a retained accumulator to host memory and release its device buffer."""
-
-    if isinstance(value, np.ndarray):
-        return value
-    host_value = np.asarray(jax.device_get(value))
-    delete = getattr(value, "delete", None)
-    if callable(delete):
-        try:
-            delete()
-        except RuntimeError:
-            pass
-    return host_value
-
-
-def _maybe_host_offload_half0_local_accumulators(
-    *,
-    half_index: int,
-    use_local: bool,
-    score_result: HalfScoreResult,
-    log,
-) -> HalfScoreResult:
-    """Keep finished half-0 local accumulators off GPU while half 1 scores.
-
-    Local search is K=1: the numbered controller rejects it for Class3D.
-    """
-
-    if int(half_index) != 0 or not use_local:
-        return score_result
-    if score_result.mstep_full_half_axis is None:
-        return score_result
-
-    ft_y_nbytes = int(np.size(score_result.Ft_y)) * int(np.dtype(getattr(score_result.Ft_y, "dtype")).itemsize)
-    ft_ctf_nbytes = int(np.size(score_result.Ft_ctf)) * int(np.dtype(getattr(score_result.Ft_ctf, "dtype")).itemsize)
-    score_result.Ft_y = _host_offload_array(score_result.Ft_y)
-    score_result.Ft_ctf = _host_offload_array(score_result.Ft_ctf)
-    log.info(
-        "Offloaded half-1 local RELION M-step accumulators to host before scoring half-2 "
-        "(Ft_y=%.2f GB, Ft_ctf=%.2f GB)",
-        ft_y_nbytes / 1e9,
-        ft_ctf_nbytes / 1e9,
-    )
-    return score_result
 
 
 @dataclass(frozen=True)
@@ -340,58 +294,7 @@ def class_em_to_half_result(
     return result
 
 
-def _collapse_fine_pose_assignments_to_coarse(
-    pose_assignments,
-    *,
-    rot_parent_map,
-    trans_parent_map,
-    n_trans_coarse: int,
-    n_trans_fine: int | None,
-):
-    """Collapse fine pose assignments onto the coarse grid; ``None`` when no fine pass ran."""
-    if trans_parent_map is None or n_trans_fine is None:
-        return None
-    pose = np.asarray(pose_assignments, dtype=np.int64)
-    rot_idx = pose // int(n_trans_fine)
-    trans_idx = pose % int(n_trans_fine)
-    coarse_rot = np.asarray(rot_parent_map, dtype=np.int64)[rot_idx]
-    coarse_trans = np.asarray(trans_parent_map, dtype=np.int64)[trans_idx]
-    return (coarse_rot * int(n_trans_coarse) + coarse_trans).astype(np.int32, copy=False)
-
-
-def _select_single_class_accumulator(value, *, label: str):
-    shape = getattr(value, "shape", None)
-    if shape is None or len(shape) < 2 or int(shape[0]) != 1:
-        raise RuntimeError(f"K=1 adaptive {label} accumulator must have leading class axis 1; got {shape}")
-    return value[0]
-
-
-def _collapse_single_class_stats_to_coarse(stats, *, rot_parent_map, n_rot_coarse: int, dtype=np.float32):
-    rot_post = np.asarray(stats.rotation_posterior_sums, dtype=np.float64)
-    if rot_post.shape == (n_rot_coarse,):
-        return stats
-    if rot_parent_map is None:
-        raise RuntimeError(
-            f"K=1 adaptive rotation_posterior_sums has shape {rot_post.shape}; expected ({n_rot_coarse},)"
-        )
-    rot_parent = np.asarray(rot_parent_map, dtype=np.int64)
-    if rot_post.shape != rot_parent.shape:
-        raise RuntimeError(
-            "K=1 adaptive rotation posterior and parent map disagree: "
-            f"{rot_post.shape} vs {rot_parent.shape}"
-        )
-    coarse_post = np.zeros(n_rot_coarse, dtype=np.float64)
-    np.add.at(coarse_post, rot_parent, rot_post)
-    runtime_dtype = dtype
-    return make_relion_stats(
-        log_evidence_per_image=np.asarray(stats.log_evidence_per_image, dtype=runtime_dtype),
-        best_log_score_per_image=np.asarray(stats.best_log_score_per_image, dtype=runtime_dtype),
-        max_posterior_per_image=np.asarray(stats.max_posterior_per_image, dtype=runtime_dtype),
-        rotation_posterior_sums=coarse_post.astype(runtime_dtype),
-    )
-
-
-def _record_score_profile(
+def record_score_profile(
     profile_history: list,
     score_result,
     *,
@@ -419,18 +322,6 @@ def _record_score_profile(
         }
     )
     profile_history.append(row)
-
-
-def _combine_optional_half_accumulators(left, right, *, label: str):
-    """Combine half accumulators, treating an empty Class3D half as absent."""
-
-    if left is None:
-        if right is None:
-            raise RuntimeError(f"{label} accumulators are missing for both halves")
-        return right
-    if right is None:
-        return left
-    return left + right
 
 
 def resolve_mstep_accumulator_shape(per_half_shapes, default_shape):

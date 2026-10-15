@@ -25,7 +25,7 @@ from relax.steps.convergence import (
 )
 from relax.steps.expected_accuracy import (
     ExpectedAccuracy,
-    _combine_group_expected_accuracies,
+    combine_group_expected_accuracies,
     estimate_relion_expected_accuracy_from_prepared_inputs,
 )
 from relax.steps.optics_shapes import MultiShapeDataset
@@ -567,7 +567,7 @@ def estimate_native_sampling_accuracy(
             raise ValueError(f"{sigma2_noise.shape[0]} optics groups need each particle's optics group")
         trial_groups = np.asarray(optics_group_ids, dtype=np.int64)[trial_particle_ids]
         group_positions = [np.flatnonzero(trial_groups == g) for g in np.unique(trial_groups)]
-        accuracy = _combine_group_expected_accuracies(
+        accuracy = combine_group_expected_accuracies(
             [estimate(positions, sigma2_noise[g]) for g, positions in zip(np.unique(trial_groups), group_positions)],
             group_positions,
             trial_particle_ids,

@@ -482,7 +482,7 @@ def initial_state_from_tomo_particles(dataset, particles_table, opts: NativeInit
 
     from relax.relion.ctf import relion_fftw_ctf_rows
     from relax.relion.optics_aberrations import dataset_needs_exact_ctf
-    from relax.steps.expected_accuracy import _trial_ctf_images
+    from relax.steps.expected_accuracy import trial_ctf_images
     from relax.steps.tomo_half import tilt_image_accuracy_inputs
 
     box_size = int(dataset.grid_size)
@@ -516,7 +516,7 @@ def initial_state_from_tomo_particles(dataset, particles_table, opts: NativeInit
             half.images, np.arange(half.n_images), (box_size, box_size), square_premultiplied=False
         )
     elif bool(opts.do_ctf_correction):
-        ctf_images = _trial_ctf_images(
+        ctf_images = trial_ctf_images(
             np.arange(half.n_units),
             defocus=None,
             optics=None,

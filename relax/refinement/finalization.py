@@ -67,7 +67,7 @@ from relax.steps.optics_shapes import image_translation_factors
 from relax.steps.projector_preparation import prepare_scoring_projector
 from relax.steps.score_outputs import (
     PerHalfOutputs,
-    _record_score_profile,
+    record_score_profile,
     resolve_mstep_accumulator_shape,
     resolve_mstep_full_half_axis,
 )
@@ -628,7 +628,7 @@ def run_final_all_data(
                 dtype=scoring_dtype,
             )
         final_outs.update_from(half.index, final_result, dtype=scoring_dtype)
-        _record_score_profile(
+        record_score_profile(
             history.global_profile_history,
             final_result,
             phase="final_all_data",

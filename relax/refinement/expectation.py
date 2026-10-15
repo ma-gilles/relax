@@ -8,6 +8,7 @@ from dataclasses import dataclass, field, replace
 from functools import partial
 from typing import TYPE_CHECKING
 
+import jax
 import numpy as np
 
 from relax.classification.probes import KClassProbe
@@ -46,9 +47,8 @@ from relax.steps.half_inputs import HalfScoringData
 from relax.steps.score_outputs import (
     HalfScoreResult,
     PerHalfOutputs,
-    _maybe_host_offload_half0_local_accumulators,
-    _record_score_profile,
     empty_half_result,
+    record_score_profile,
 )
 from relax.steps.scoring_policy import local_precision
 from relax.steps.tomo_half import TomoSampling, numbered_iteration_tomo_sampling
@@ -58,6 +58,51 @@ if TYPE_CHECKING:
     from relax.refinement.setup_checks import RunContext
 
 logger = logging.getLogger("relax.refinement.iteration_loop")
+
+
+def _host_offload_array(value):
+    """Copy a retained accumulator to host memory and release its device buffer."""
+
+    if isinstance(value, np.ndarray):
+        return value
+    host_value = np.asarray(jax.device_get(value))
+    delete = getattr(value, "delete", None)
+    if callable(delete):
+        try:
+            delete()
+        except RuntimeError:
+            pass
+    return host_value
+
+
+def _maybe_host_offload_half0_local_accumulators(
+    *,
+    half_index: int,
+    use_local: bool,
+    score_result: HalfScoreResult,
+    log,
+) -> HalfScoreResult:
+    """Keep finished half-0 local accumulators off GPU while half 1 scores.
+
+    Local search is K=1: the numbered controller rejects it for Class3D.
+    """
+
+    if int(half_index) != 0 or not use_local:
+        return score_result
+    if score_result.mstep_full_half_axis is None:
+        return score_result
+
+    ft_y_nbytes = int(np.size(score_result.Ft_y)) * int(np.dtype(getattr(score_result.Ft_y, "dtype")).itemsize)
+    ft_ctf_nbytes = int(np.size(score_result.Ft_ctf)) * int(np.dtype(getattr(score_result.Ft_ctf, "dtype")).itemsize)
+    score_result.Ft_y = _host_offload_array(score_result.Ft_y)
+    score_result.Ft_ctf = _host_offload_array(score_result.Ft_ctf)
+    log.info(
+        "Offloaded half-1 local RELION M-step accumulators to host before scoring half-2 "
+        "(Ft_y=%.2f GB, Ft_ctf=%.2f GB)",
+        ft_y_nbytes / 1e9,
+        ft_ctf_nbytes / 1e9,
+    )
+    return score_result
 
 
 @dataclass
@@ -106,7 +151,7 @@ def record_numbered_half(
         recording.probe.numbered_half_recorded(recorded)
         return
 
-    _record_score_profile(
+    record_score_profile(
         recording.profile_history,
         score_result,
         phase="iteration",

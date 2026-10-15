@@ -3288,7 +3288,7 @@ def test_half0_local_relion_accumulators_offload_to_host():
         mstep_accumulator_shape=(3, 3, 3),
     )
 
-    out = score_outputs._maybe_host_offload_half0_local_accumulators(
+    out = expectation_module._maybe_host_offload_half0_local_accumulators(
         half_index=0,
         use_local=True,
         score_result=result,
@@ -3312,7 +3312,7 @@ def test_half0_local_relion_accumulator_offload_skips_non_x_half():
         mstep_full_half_axis=None,
     )
 
-    out = score_outputs._maybe_host_offload_half0_local_accumulators(
+    out = expectation_module._maybe_host_offload_half0_local_accumulators(
         half_index=0,
         use_local=True,
         score_result=result,

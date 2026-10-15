@@ -13,7 +13,6 @@ from relax.diagnostics import observers
 from relax.numerics import finite_check
 from relax.reconstruction import accumulator_guard
 from relax.refinement import maximization
-from relax.steps import score_outputs
 
 pytestmark = pytest.mark.unit
 
@@ -116,7 +115,7 @@ def test_actual_controller_audits_before_join_and_snapshot(n_classes, monkeypatc
     trace = CallTrace(monkeypatch)
     trace.wrap(accumulator_guard, "check_half_accumulators_before_join", "audit")
     trace.wrap(maximization, "class_maximization", "class")
-    trace.wrap(score_outputs, "_combine_optional_half_accumulators", "combine")
+    trace.wrap(maximization, "_combine_optional_half_accumulators", "combine")
     trace.wrap(maximization, "k1_maximization", "k1")
     trace.wrap(maximization, "join_half_accumulators_at_low_resolution", "join")
     trace.wrap(maximization, "_snapshot_and_release_previous_k1_means", "release")
