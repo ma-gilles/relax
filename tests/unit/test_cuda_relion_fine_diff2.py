@@ -1553,3 +1553,67 @@ def test_relion_runtime_masked_flat_rows_skip_chunks_without_candidates(
     assert live_cells.any() and not live_cells.all()
     assert_matches(masked[live_cells], full[live_cells])
     assert np.all(np.isposinf(masked[~live_cells]))
+
+
+@pytest.mark.gpu
+@pytest.mark.parametrize("per_image_tables", [False, True], ids=["shared_table", "per_image_tables"])
+def test_relion_runtime_flat_rows_blocks_of_rows_score_each_row_alone(
+    monkeypatch,
+    custom_cuda_lib,
+    gpu_device,
+    per_image_tables,
+):
+    """A block scores several consecutive rows and forms each shifted pixel once per image (relax#91).
+
+    Runs of rows of one image, runs that start inside a block, padding rows, an out-of-range image id and rows
+    whose translation chunks are skipped while a neighbour's are not must score every row as a call with that
+    row alone does.
+    """
+
+    import recovar.cuda_backproject as cuda_backproject
+
+    from relax.cuda import fine as cuda_fine
+
+    monkeypatch.setenv("RECOVAR_CUDA_LIB", str(custom_cuda_lib))
+    monkeypatch.delenv("RECOVAR_DISABLE_CUDA", raising=False)
+    monkeypatch.setattr(cuda_backproject, "_cuda_ok", None)
+    rng = np.random.default_rng(9110)
+    size = 32
+    pixels = size * (size // 2 + 1)
+    n_images, n_translations = 3, 11
+    row_image_ids = np.asarray([0, 0, 0, 1, 1, 1, -1, 1, 2, 2, 3, 2, 2, 0, 0], dtype=np.int32)
+    n_rows = row_image_ids.size
+    reference = (rng.normal(0, 0.02, (n_rows, pixels)) + 1j * rng.normal(0, 0.02, (n_rows, pixels))).astype(np.complex64)
+    image = (rng.normal(0, 0.02, (n_images, pixels)) + 1j * rng.normal(0, 0.02, (n_images, pixels))).astype(np.complex64)
+    weight = rng.uniform(0, 150_000, (n_images, pixels)).astype(np.float32)
+    angle_shape = (n_images, n_translations, 2) if per_image_tables else (n_translations, 2)
+    translation_angles = rng.normal(0, 0.2, angle_shape).astype(np.float32)
+    lookup = np.arange(pixels, dtype=np.int32)
+    initial_diff2 = rng.uniform(0.0, 0.05, n_images).astype(np.float32)
+    candidate = rng.random((n_rows, n_translations)) < 0.4
+    candidate[4] = False
+    live = np.asarray(cuda_fine.relion_fine_diff2_translation_chunk_live(jnp.asarray(candidate)))
+
+    def score(rows):
+        out = cuda_fine.relion_fine_diff2_fused_translate_runtime_flat_rows_f32(
+            jnp.asarray(reference[rows]),
+            jnp.asarray(row_image_ids[rows]),
+            jnp.asarray(image),
+            jnp.asarray(translation_angles),
+            jnp.asarray(weight),
+            jnp.asarray(lookup),
+            jnp.asarray(size, dtype=jnp.int32),
+            jnp.asarray(initial_diff2),
+            translation_chunk_live=jnp.asarray(live[rows]),
+        )
+        return np.asarray(jax.block_until_ready(out))
+
+    with jax.default_device(gpu_device):
+        together = score(np.arange(n_rows))
+        alone = np.concatenate([score(np.asarray([row])) for row in range(n_rows)])
+
+    assert np.all(np.isposinf(together[row_image_ids < 0]))
+    assert np.all(np.isposinf(together[row_image_ids >= n_images]))
+    assert np.isfinite(together).any() and np.isposinf(together).any()
+    assert_matches(together, alone)
+
