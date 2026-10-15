@@ -21,7 +21,7 @@ from scripts.audit_vdam_fsc_trajectory import (
     _validate_run_contract,
 )
 from scripts.audit_vdam_particle_state_trajectory import compare_particle_tables
-from scripts.summarize_em_completion_bench import _load_relion_volume
+from scripts.summarize_em_completion_bench import _load_relion_volume, use_cpu_jax
 
 SCHEMA = "recovar.vdam_relion_real_data_trajectory_audit.v2"
 SUITE_SCHEMA = "recovar.vdam_relion_real_data_suite.v1"
@@ -274,6 +274,7 @@ def audit(
 
 
 def main(argv: list[str] | None = None) -> int:
+    use_cpu_jax()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--scorecard", type=Path, required=True)
     parser.add_argument("--case-id", required=True)

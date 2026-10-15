@@ -35,7 +35,12 @@ from typing import Any
 import numpy as np
 
 from scripts.audit_k1_fsc_trajectory import _map_metric
-from scripts.summarize_em_completion_bench import _load_recovar_volume, _load_relax_volume, _load_relion_volume
+from scripts.summarize_em_completion_bench import (
+    _load_recovar_volume,
+    _load_relax_volume,
+    _load_relion_volume,
+    use_cpu_jax,
+)
 
 SCHEMA = "em_k1_scorecard_final_gridding_regeneration_v1"
 GRIDDING_PADDING_FACTOR = 2
@@ -507,6 +512,7 @@ def regenerate_main(args: argparse.Namespace) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    use_cpu_jax()
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     commands = parser.add_subparsers(dest="command", required=True)
 

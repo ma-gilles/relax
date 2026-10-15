@@ -18,7 +18,7 @@ from typing import Any
 import numpy as np
 
 from recovar.data_io.starfile import read_star
-from scripts.summarize_em_completion_bench import _load_relion_volume, normalized_fsc_auc, shell_fsc
+from scripts.summarize_em_completion_bench import _load_relion_volume, normalized_fsc_auc, shell_fsc, use_cpu_jax
 
 SCHEMA = "recovar.vdam_relion_fsc_trajectory_audit.v1"
 SCORECARD_SCHEMA = "recovar.vdam_relion_parity_scorecard.v1"
@@ -374,6 +374,7 @@ def audit(
 
 
 def main(argv: list[str] | None = None) -> int:
+    use_cpu_jax()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--scorecard", type=Path, required=True)
     parser.add_argument("--case-id", required=True)

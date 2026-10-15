@@ -30,14 +30,6 @@ except ModuleNotFoundError as error:
         raise
     from fsc_metrics import centered_corr, first_shell_below, normalized_fsc_auc, shell_fsc
 
-# This reporter only reads files and computes NumPy FSCs. Force CPU before
-# importing RECOVAR helpers so JAX does not initialize a busy Slurm GPU.
-os.environ.setdefault("JAX_PLATFORMS", "cpu")
-if os.environ.get("JAX_PLATFORMS", "").lower() == "cpu":
-    logging.getLogger("jax._src.xla_bridge").setLevel(logging.CRITICAL)
-
-from recovar.utils import helpers
-
 LoadFn = Callable[[Path], np.ndarray]
 DEFAULT_FSC_AUC_PARITY_TOL = 1e-4
 
@@ -92,8 +84,24 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+def use_cpu_jax() -> None:
+    """Run this process's JAX on the CPU unless JAX_PLATFORMS says otherwise.
+
+    The reporter and the audit scripts that import its loaders only read files and compute NumPy FSCs, so their
+    ``main`` calls this before RECOVAR is imported (importing it starts a JAX backend) and JAX does not take a busy
+    Slurm GPU. It is not done at import: a test session that imports these scripts would hand JAX_PLATFORMS=cpu to
+    every child process it starts.
+    """
+
+    os.environ.setdefault("JAX_PLATFORMS", "cpu")
+    if os.environ.get("JAX_PLATFORMS", "").lower() == "cpu":
+        logging.getLogger("jax._src.xla_bridge").setLevel(logging.CRITICAL)
+
+
 def _load_recovar_volume(path: Path) -> np.ndarray:
     """A map in RECOVAR's write_mrc convention (the synthetic GT references)."""
+    from recovar.utils import helpers
+
     return np.asarray(helpers.load_mrc(str(path)), dtype=np.float64)
 
 
@@ -105,6 +113,8 @@ def _load_relax_volume(path: Path) -> np.ndarray:
 
 
 def _load_relion_volume(path: Path) -> np.ndarray:
+    from recovar.utils import helpers
+
     return np.asarray(helpers.load_relion_volume(str(path)), dtype=np.float64)
 
 
@@ -3670,6 +3680,7 @@ def _mark_required_failures(
 
 
 def main(argv: list[str] | None = None) -> int:
+    use_cpu_jax()
     args = parse_args(argv)
     required_cases = _required_cases(args)
     summary = summarize(args)

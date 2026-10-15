@@ -1278,3 +1278,30 @@ def test_k1_relion_repeats_are_scored_against_gt(tmp_path, monkeypatch):
     summarizer._add_k1_relion_repeats(missing, [tmp_path / "absent"], fixture)
     assert missing["metrics"]["relion_repeats_merged_vs_gt"] == {}
     assert any("missing K=1 RELION repeat" in note for note in missing["notes"])
+
+
+def test_importing_the_reporter_leaves_the_jax_platform_to_its_main():
+    """Importing the reporter (as the audit scripts and tests do) neither sets JAX_PLATFORMS nor starts a JAX
+    backend; ``use_cpu_jax``, which the scripts' ``main`` calls, sets it to the CPU unless it is already set."""
+
+    import json
+    import os
+    import subprocess
+
+    from conftest import repo_subprocess_env
+
+    child = (
+        "import json, os; from jax._src import xla_bridge; import scripts.summarize_em_completion_bench as s; "
+        "after_import = (os.environ.get('JAX_PLATFORMS'), sorted(xla_bridge._backends)); s.use_cpu_jax(); "
+        "print(json.dumps({'script': s.__file__, 'after_import': after_import, "
+        "'after_main': os.environ.get('JAX_PLATFORMS')}))"
+    )
+    # A plain child: repo_python_command's launcher requires the child to import relax, which starts a backend.
+    env = repo_subprocess_env({k: v for k, v in os.environ.items() if k != "JAX_PLATFORMS"})
+    out = subprocess.run(
+        [sys.executable, "-c", child], env=env, cwd=SCRIPT_PATH.parents[1], capture_output=True, text=True, check=True
+    )
+    reading = json.loads(out.stdout.strip().splitlines()[-1])
+
+    assert Path(reading.pop("script")).resolve() == SCRIPT_PATH
+    assert reading == {"after_import": [None, []], "after_main": "cpu"}

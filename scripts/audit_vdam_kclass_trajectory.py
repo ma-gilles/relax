@@ -12,7 +12,7 @@ import numpy as np
 from scipy.optimize import linear_sum_assignment
 
 from recovar.data_io.starfile import read_star
-from scripts.summarize_em_completion_bench import _load_relion_volume, normalized_fsc_auc, shell_fsc
+from scripts.summarize_em_completion_bench import _load_relion_volume, normalized_fsc_auc, shell_fsc, use_cpu_jax
 
 
 class AuditError(RuntimeError):
@@ -204,6 +204,7 @@ def audit_trajectory(
 
 
 def main(argv: list[str] | None = None) -> int:
+    use_cpu_jax()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--candidate-dir", type=Path, required=True)
     parser.add_argument("--reference-dir", type=Path, required=True)

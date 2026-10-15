@@ -27,6 +27,7 @@ from scripts.summarize_em_completion_bench import (
     _load_relion_volume,
     normalized_fsc_auc,
     shell_fsc,
+    use_cpu_jax,
 )
 
 SCHEMA = "em_k1_fsc_trajectory_audit_v3"
@@ -583,6 +584,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def main(argv: list[str] | None = None) -> int:
+    use_cpu_jax()
     args = _parse_args(argv)
     analysis_dir = args.case_root.resolve() / "trajectory_analysis"
     output_json = (args.output_json or analysis_dir / "k1_fsc_trajectory.json").resolve()

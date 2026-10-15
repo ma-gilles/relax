@@ -18,7 +18,7 @@ from typing import Any
 
 import numpy as np
 
-from scripts.summarize_em_completion_bench import _load_relion_volume
+from scripts.summarize_em_completion_bench import _load_relion_volume, use_cpu_jax
 
 SCHEMA = "recovar.vdam_direct_repeat_map_spread.v1"
 
@@ -159,6 +159,7 @@ def analyze_direct_repeat_map_spread(
 
 
 def main(argv: list[str] | None = None) -> int:
+    use_cpu_jax()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--candidate-prefix", type=Path, action="append", required=True)
     parser.add_argument("--native-prefix", type=Path, action="append", required=True)
