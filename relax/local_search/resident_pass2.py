@@ -151,9 +151,9 @@ from relax.relion.projector_setup import (
 )
 from relax.relion.scale_groups import prepare_scale_correction_groups
 from relax.runtime.memory_budget import (
-    _max_adjoint_block_bytes_for_pass,
-    _max_translation_tile_bytes_for_pass,
-    _projection_cache_max_bytes_for_pass,
+    max_adjoint_block_bytes_for_pass,
+    max_translation_tile_bytes_for_pass,
+    projection_cache_max_bytes_for_pass,
 )
 from relax.types import LocalEMResult, make_noise_stats, make_relion_stats
 
@@ -892,7 +892,7 @@ def compute_local_search_resident(
             support.engine_tuning.local_row_capacities or _DEFAULT_ROW_CAPACITY_LADDER,
             n_score_pixels=n_windowed,
             n_recon_pixels=n_recon_windowed,
-            max_bytes=_projection_cache_max_bytes_for_pass(
+            max_bytes=projection_cache_max_bytes_for_pass(
                 device_memory_bytes, override=support.engine_tuning.projection_max_bytes,
             ),
         )
@@ -941,7 +941,7 @@ def compute_local_search_resident(
                 image_ladder,
                 n_fine_trans=n_fine_trans,
                 n_recon_pixels=n_recon_windowed,
-                max_tile_bytes=_max_translation_tile_bytes_for_pass(
+                max_tile_bytes=max_translation_tile_bytes_for_pass(
                     device_memory_bytes, override=support.engine_tuning.translation_tile_max_bytes,
                     has_external_normalization=False,
                 ),
@@ -949,7 +949,7 @@ def compute_local_search_resident(
             )
         mstep_block_rows = resident_chunk_memory.resolve_mstep_block_rows(
             n_recon_pixels=n_recon_windowed,
-            max_block_bytes=_max_adjoint_block_bytes_for_pass(
+            max_block_bytes=max_adjoint_block_bytes_for_pass(
                 device_memory_bytes, override=support.engine_tuning.adjoint_block_max_bytes
             ),
             row_capacity_ladder=row_ladder,
@@ -1060,7 +1060,7 @@ def compute_local_search_resident(
         rect_indices_device = jnp.asarray(relion_wavg_rectangle.centered_indices, dtype=jnp.int32)
         noise_variance_for_noise_device = jnp.asarray(noise_variance_for_noise)
         shell_indices_noise_device = jnp.asarray(shell_indices_noise, dtype=jnp.int32)
-        max_adjoint_block_bytes = _max_adjoint_block_bytes_for_pass(
+        max_adjoint_block_bytes = max_adjoint_block_bytes_for_pass(
             device_memory_bytes, override=support.engine_tuning.adjoint_block_max_bytes
         )
 

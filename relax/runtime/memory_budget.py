@@ -18,7 +18,7 @@ import subprocess
 import jax
 import numpy as np
 
-from relax.runtime.xla_memory_reserve import _nvidia_smi_visible_device_memory_bytes
+from relax.runtime.xla_memory_reserve import nvidia_smi_visible_device_memory_bytes
 
 logger = logging.getLogger(__name__)
 
@@ -109,7 +109,7 @@ def _jax_allocator_limit_bytes() -> int | None:
     return None
 
 
-def _device_memory_limit_bytes(override_bytes: int | None) -> int | None:
+def device_memory_limit_bytes(override_bytes: int | None) -> int | None:
     """Return the memory this process can allocate on its accelerator: ``override_bytes``
     (``EngineTuning.device_memory_bytes``) when given, else the probe.
 
@@ -150,7 +150,7 @@ def _device_memory_limit_bytes(override_bytes: int | None) -> int | None:
             timeout=2.0,
         )
         if query.returncode == 0:
-            memory_bytes = _nvidia_smi_visible_device_memory_bytes(
+            memory_bytes = nvidia_smi_visible_device_memory_bytes(
                 query.stdout,
                 os.environ.get("CUDA_VISIBLE_DEVICES"),
             )
@@ -217,7 +217,7 @@ def _nvml_devices():
 def _nvml_memory_bytes(visible_devices: str | None, field: str) -> int | None:
     """``field`` (``"free"`` or ``"total"``) of the first visible GPU's memory from NVML, as nvidia-smi reads it.
 
-    Selects the device as :func:`_nvidia_smi_visible_device_memory_bytes` does;
+    Selects the device as :func:`nvidia_smi_visible_device_memory_bytes` does;
     ``None`` when NVML is unavailable or the device is not found.
     """
 
@@ -248,7 +248,7 @@ def _nvml_free_memory_bytes(visible_devices: str | None) -> int | None:
     return _nvml_memory_bytes(visible_devices, "free")
 
 
-def _device_free_memory_bytes() -> int | None:
+def device_free_memory_bytes() -> int | None:
     """Return current free memory for the selected physical GPU, if known.
 
     NVML answers in microseconds; the ``nvidia-smi`` subprocess it replaces took
@@ -273,7 +273,7 @@ def _device_free_memory_bytes() -> int | None:
             timeout=2.0,
         )
         if query.returncode == 0:
-            return _nvidia_smi_visible_device_memory_bytes(
+            return nvidia_smi_visible_device_memory_bytes(
                 query.stdout,
                 os.environ.get("CUDA_VISIBLE_DEVICES"),
             )
@@ -282,7 +282,7 @@ def _device_free_memory_bytes() -> int | None:
     return None
 
 
-def _jax_allocator_free_memory_bytes() -> int | None:
+def jax_allocator_free_memory_bytes() -> int | None:
     """Return unused bytes in the active JAX GPU allocator, if reported."""
 
     try:
@@ -316,7 +316,7 @@ def _jax_allocator_free_memory_bytes() -> int | None:
     return max(0, limit - bytes_in_use)
 
 
-def _jax_allocator_pool_free_bytes() -> int | None:
+def jax_allocator_pool_free_bytes() -> int | None:
     """Return bytes the JAX GPU allocator's pool holds but does not use, if reported.
 
     ``nvidia-smi`` counts that memory as used, so a free-memory reading taken
@@ -340,7 +340,7 @@ def _jax_allocator_pool_free_bytes() -> int | None:
     return max(0, int(pool) - int(bytes_in_use))
 
 
-def _dtype_itemsize(dtype) -> int:
+def dtype_itemsize(dtype) -> int:
     return int(np.dtype(dtype).itemsize)
 
 
@@ -351,7 +351,7 @@ def _complex_counterpart_real_dtype(complex_dtype):
     return np.float64
 
 
-def _max_translation_tile_bytes_for_pass(
+def max_translation_tile_bytes_for_pass(
     device_memory_bytes: int | None = None,
     *,
     override: int | None,
@@ -373,7 +373,7 @@ def _max_translation_tile_bytes_for_pass(
     return max(1, int(float(device_memory_bytes) * fraction))
 
 
-def _max_adjoint_block_bytes_for_pass(device_memory_bytes: int | None, *, override: int | None) -> int:
+def max_adjoint_block_bytes_for_pass(device_memory_bytes: int | None, *, override: int | None) -> int:
     """The adjoint block byte budget: ``override`` (``EngineTuning.adjoint_block_max_bytes``), else a share of the
     device, else the fixed default."""
     if override is not None:
@@ -384,10 +384,10 @@ def _max_adjoint_block_bytes_for_pass(device_memory_bytes: int | None, *, overri
 
 
 def accuracy_slab_resident_bytes(device_memory_override: int | None) -> int | None:
-    """The largest expected-accuracy slab kept whole on the device (its memory from :func:`_device_memory_limit_bytes`
+    """The largest expected-accuracy slab kept whole on the device (its memory from :func:`device_memory_limit_bytes`
     with ``device_memory_override``, ``EngineTuning.device_memory_bytes``), or None for no bound (no accelerator)."""
 
-    device_memory_bytes = _device_memory_limit_bytes(device_memory_override)
+    device_memory_bytes = device_memory_limit_bytes(device_memory_override)
     if device_memory_bytes is None:
         return None
     return max(1, int(float(device_memory_bytes) * _AUTO_ACCURACY_SLAB_DEVICE_FRACTION))
@@ -404,7 +404,7 @@ def _projection_bytes_for_pass(device_memory_bytes: int | None, device_fraction:
     return max(1, int(float(device_memory_bytes) * device_fraction))
 
 
-def _projection_cache_max_bytes_for_pass(device_memory_bytes: int | None, *, override: int | None) -> int:
+def projection_cache_max_bytes_for_pass(device_memory_bytes: int | None, *, override: int | None) -> int:
     return _projection_bytes_for_pass(device_memory_bytes, _AUTO_PROJECTION_CACHE_DEVICE_FRACTION, override)
 
 
@@ -412,22 +412,22 @@ def _projection_call_max_bytes_for_pass(device_memory_bytes: int | None, *, over
     return _projection_bytes_for_pass(device_memory_bytes, _AUTO_PROJECTED_ROTATIONS_DEVICE_FRACTION, override)
 
 
-def _projection_cache_transient_bytes(
+def projection_cache_transient_bytes(
     n_rotations: int,
     n_half_pixels: int,
     *,
     projection_complex_dtype=np.complex64,
     include_abs2: bool,
 ) -> int:
-    complex_bytes = _dtype_itemsize(projection_complex_dtype)
+    complex_bytes = dtype_itemsize(projection_complex_dtype)
     total = int(n_rotations) * int(n_half_pixels) * complex_bytes
     if include_abs2:
         real_dtype = _complex_counterpart_real_dtype(projection_complex_dtype)
-        total += int(n_rotations) * int(n_half_pixels) * _dtype_itemsize(real_dtype)
+        total += int(n_rotations) * int(n_half_pixels) * dtype_itemsize(real_dtype)
     return int(total)
 
 
-def _projection_cache_budget_complex_dtype(
+def projection_cache_budget_complex_dtype(
     projection_source_dtype,
     score_complex_dtype,
     *,
@@ -442,11 +442,11 @@ def _projection_cache_budget_complex_dtype(
     return dtype
 
 
-def _projection_cache_fits_budget(transient_bytes: int, max_bytes: int, *, n_classes: int = 1) -> bool:
+def projection_cache_fits_budget(transient_bytes: int, max_bytes: int, *, n_classes: int = 1) -> bool:
     return int(transient_bytes) * max(1, int(n_classes)) <= int(max_bytes)
 
 
-def _max_projected_rotations_per_call_for_pass(
+def max_projected_rotations_per_call_for_pass(
     *,
     device_memory_bytes: int | None,
     n_projection_pixels: int,
@@ -463,7 +463,7 @@ def _max_projected_rotations_per_call_for_pass(
     if device_memory_bytes is None or int(n_projection_pixels) <= 0:
         return None
     max_bytes = _projection_call_max_bytes_for_pass(device_memory_bytes, override=projection_max_bytes)
-    bytes_per_rotation = _projection_cache_transient_bytes(
+    bytes_per_rotation = projection_cache_transient_bytes(
         1,
         int(n_projection_pixels),
         projection_complex_dtype=projection_complex_dtype,
@@ -477,7 +477,7 @@ def _max_projected_rotations_per_call_for_pass(
 _PROJECTION_CACHE_BUILD_ROTATION_MULTIPLIER = 4
 
 
-def _projection_cache_build_max_rotations_per_call(
+def projection_cache_build_max_rotations_per_call(
     per_call_max_rotations: int | None,
     n_fine_rotations: int,
     override: int | None,
@@ -504,7 +504,7 @@ def _projection_cache_build_max_rotations_per_call(
     return max(1, min(int(n_fine_rotations), scaled))
 
 
-def _projection_budget_pixels_for_pass(
+def projection_budget_pixels_for_pass(
     n_half_pixels: int,
     *,
     use_window: bool,
@@ -553,5 +553,5 @@ def current_device_available_bytes() -> float | None:
     headroom and its pool's unused bytes, read in that order; ``None`` when nothing is known."""
 
     return device_available_bytes(
-        _device_free_memory_bytes(), _jax_allocator_free_memory_bytes(), _jax_allocator_pool_free_bytes()
+        device_free_memory_bytes(), jax_allocator_free_memory_bytes(), jax_allocator_pool_free_bytes()
     )

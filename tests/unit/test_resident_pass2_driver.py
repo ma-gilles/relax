@@ -1594,7 +1594,7 @@ def test_streamed_projections_match_the_cached_pass(monkeypatch):
 
     args = _driver_fixture_args()
     cached = rp.compute_pass2_stats_resident(**args, engine_tuning=RESIDENT_PRODUCTION_ENGINE, scoring_overrides=ScoringOverrides())
-    monkeypatch.setattr(rp, "_projection_cache_fits_budget", lambda *a, **k: False)
+    monkeypatch.setattr(rp, "projection_cache_fits_budget", lambda *a, **k: False)
     streamed = rp.compute_pass2_stats_resident(**args, engine_tuning=RESIDENT_PRODUCTION_ENGINE, scoring_overrides=ScoringOverrides())
 
     # Discrete state: integer indices, compared exactly.
@@ -1721,7 +1721,7 @@ def test_streamed_projection_rows_equal_the_cached_rows_exactly(monkeypatch):
     assert no_recon is None
     index = {row.tobytes(): i for i, row in enumerate(grid.reshape(grid.shape[0], -1))}
 
-    monkeypatch.setattr(rp, "_projection_cache_fits_budget", lambda *a, **k: False)
+    monkeypatch.setattr(rp, "projection_cache_fits_budget", lambda *a, **k: False)
     rp.compute_pass2_stats_resident(**args, engine_tuning=RESIDENT_PRODUCTION_ENGINE, scoring_overrides=ScoringOverrides())
     assert calls, "the streamed pass made no projection call"
     compared = 0
@@ -1975,7 +1975,7 @@ def test_lone_overflow_chunks_match_the_whole_chunk_pass(monkeypatch, streamed):
 
     args = _driver_fixture_args()
     if streamed:
-        monkeypatch.setattr(rp, "_projection_cache_fits_budget", lambda *a, **k: False)
+        monkeypatch.setattr(rp, "projection_cache_fits_budget", lambda *a, **k: False)
     whole = rp.compute_pass2_stats_resident(**args, engine_tuning=RESIDENT_PRODUCTION_ENGINE, scoring_overrides=ScoringOverrides())
     lone_calls = []
     real_lone = rp._run_lone_resident_chunk
@@ -2152,15 +2152,15 @@ def test_the_projection_sums_choice_reads_the_allocator_not_the_physical_free_me
     from relax.runtime import memory_budget as budget
 
     gib = 1024**3
-    monkeypatch.setattr(budget, "_device_free_memory_bytes", lambda: 62 * gib)
-    monkeypatch.setattr(budget, "_jax_allocator_free_memory_bytes", lambda: 10 * gib)
-    monkeypatch.setattr(budget, "_jax_allocator_pool_free_bytes", lambda: 1 * gib)
+    monkeypatch.setattr(budget, "device_free_memory_bytes", lambda: 62 * gib)
+    monkeypatch.setattr(budget, "jax_allocator_free_memory_bytes", lambda: 10 * gib)
+    monkeypatch.setattr(budget, "jax_allocator_pool_free_bytes", lambda: 1 * gib)
     assert budget.current_device_available_bytes() == pytest.approx(10 * gib)
     sums = 3.76 * gib
     assert sums > resident_projections.PRESUM_ADJOINT_FREE_FRACTION * budget.current_device_available_bytes()
     assert sums <= resident_projections.PRESUM_ADJOINT_FREE_FRACTION * 62 * gib  # the old physical reading would have taken them
     # On a small physical card the device bounds the allocator's headroom.
-    monkeypatch.setattr(budget, "_device_free_memory_bytes", lambda: 2 * gib)
+    monkeypatch.setattr(budget, "device_free_memory_bytes", lambda: 2 * gib)
     assert budget.current_device_available_bytes() == pytest.approx(3 * gib)
     assert budget.device_available_bytes(None, None, None) is None
 
@@ -2174,9 +2174,9 @@ def test_every_free_memory_budget_honours_the_allocator_pool(monkeypatch):
     gib = 1024**3
     readings = dict(physical=62 * gib, allocator=10 * gib, pool=1 * gib)
     for module in (rp, resident_chunk_memory, resident_projections, budget):
-        monkeypatch.setattr(module, "_device_free_memory_bytes", lambda: readings["physical"], raising=False)
-        monkeypatch.setattr(module, "_jax_allocator_free_memory_bytes", lambda: readings["allocator"], raising=False)
-        monkeypatch.setattr(module, "_jax_allocator_pool_free_bytes", lambda: readings["pool"], raising=False)
+        monkeypatch.setattr(module, "device_free_memory_bytes", lambda: readings["physical"], raising=False)
+        monkeypatch.setattr(module, "jax_allocator_free_memory_bytes", lambda: readings["allocator"], raising=False)
+        monkeypatch.setattr(module, "jax_allocator_pool_free_bytes", lambda: readings["pool"], raising=False)
     assert budget.current_device_available_bytes() <= 10 * gib  # the K-class projection-sums choice
 
 
@@ -2193,7 +2193,7 @@ def test_the_allocator_reading_stays_inside_an_emulated_pool():
         "import json, jax, jax.numpy as jnp; from relax.runtime import memory_budget; "
         "x = jnp.zeros((1 << 20,), jnp.float32).block_until_ready(); "
         "s = jax.devices()[0].memory_stats(); "
-        "print(json.dumps({'available': memory_budget.current_device_available_bytes(), 'physical': memory_budget._device_free_memory_bytes(), "
+        "print(json.dumps({'available': memory_budget.current_device_available_bytes(), 'physical': memory_budget.device_free_memory_bytes(), "
         "'limit': s['bytes_limit']}))"
     )
     from conftest import repo_python_command, repo_subprocess_env

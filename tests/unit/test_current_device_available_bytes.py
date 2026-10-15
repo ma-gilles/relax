@@ -22,9 +22,9 @@ def _readings(monkeypatch, physical, allocator, pool, order=None):
 
         return read
 
-    monkeypatch.setattr(budget, "_device_free_memory_bytes", reading("physical", physical))
-    monkeypatch.setattr(budget, "_jax_allocator_free_memory_bytes", reading("allocator", allocator))
-    monkeypatch.setattr(budget, "_jax_allocator_pool_free_bytes", reading("pool", pool))
+    monkeypatch.setattr(budget, "device_free_memory_bytes", reading("physical", physical))
+    monkeypatch.setattr(budget, "jax_allocator_free_memory_bytes", reading("allocator", allocator))
+    monkeypatch.setattr(budget, "jax_allocator_pool_free_bytes", reading("pool", pool))
 
 
 def test_the_allocator_headroom_bounded_by_the_device(monkeypatch):

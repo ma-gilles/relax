@@ -20,10 +20,10 @@ from relax.fourier.fourier_window import centered_half_indices_to_fftw_half_indi
 from relax.fourier.half_spectrum import make_scoring_half_image_weights
 from relax.numerics.precision import DensePrecisionPolicy
 from relax.runtime.memory_budget import (
-    _device_memory_limit_bytes,
-    _max_projected_rotations_per_call_for_pass,
-    _projection_budget_pixels_for_pass,
-    _projection_cache_budget_complex_dtype,
+    device_memory_limit_bytes,
+    max_projected_rotations_per_call_for_pass,
+    projection_budget_pixels_for_pass,
+    projection_cache_budget_complex_dtype,
 )
 from relax.sampling.translation_prior import expand_fine_translation_prior
 
@@ -197,17 +197,17 @@ def _pass2_projection_budget(
     passes, the fused K-class route only under a window.
     """
 
-    projection_complex_dtype = _projection_cache_budget_complex_dtype(
+    projection_complex_dtype = projection_cache_budget_complex_dtype(
         mean_dtype,
         precision_policy.score_complex_dtype,
         use_relion_projector=use_relion_projector,
     )
-    projection_budget_pixels = _projection_budget_pixels_for_pass(
+    projection_budget_pixels = projection_budget_pixels_for_pass(
         n_half,
         use_window=budget_window_spec.use_window,
         use_relion_projector=use_relion_projector,
     )
-    max_projected_rotations_per_projection_call = _max_projected_rotations_per_call_for_pass(
+    max_projected_rotations_per_projection_call = max_projected_rotations_per_call_for_pass(
         device_memory_bytes=device_memory_bytes,
         n_projection_pixels=projection_budget_pixels,
         projection_complex_dtype=projection_complex_dtype,
@@ -298,7 +298,7 @@ def _pass2_window_setup(
         n_half=n_half,
         window_spec_kwargs=window_spec_kwargs,
         budget_window_spec=budget_window_spec,
-        device_memory_bytes=_device_memory_limit_bytes(device_memory_override),
+        device_memory_bytes=device_memory_limit_bytes(device_memory_override),
         precision_policy=DensePrecisionPolicy(use_float64_scoring=use_float64_scoring),
     )
 

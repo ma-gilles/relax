@@ -65,7 +65,7 @@ def capture_estimates(monkeypatch):
 def test_available_memory_is_read_each_time_a_compact_pass_is_planned(planner, monkeypatch):
     calls = capture_estimates(monkeypatch)
     free = iter([8_000_000_000, 5_000_000_000])
-    monkeypatch.setattr(batches.memory_budget, "_device_free_memory_bytes", lambda: next(free))
+    monkeypatch.setattr(batches.memory_budget, "device_free_memory_bytes", lambda: next(free))
     assert calls == []
     for _ in range(2):
         planner(576, 29, compact_k1_relion_layout=True, current_size_for_batch=12)
@@ -90,9 +90,9 @@ def test_compact_texture_budget_stays_inside_the_allocator_pool(
     """relax#44: the compact K1 budget is min(physical free, allocator available)."""
     calls = capture_estimates(monkeypatch)
     budget = batches.memory_budget
-    monkeypatch.setattr(budget, "_device_free_memory_bytes", lambda: physical)
-    monkeypatch.setattr(budget, "_jax_allocator_free_memory_bytes", lambda: allocator)
-    monkeypatch.setattr(budget, "_jax_allocator_pool_free_bytes", lambda: pool)
+    monkeypatch.setattr(budget, "device_free_memory_bytes", lambda: physical)
+    monkeypatch.setattr(budget, "jax_allocator_free_memory_bytes", lambda: allocator)
+    monkeypatch.setattr(budget, "jax_allocator_pool_free_bytes", lambda: pool)
     planner(10, 3, compact_k1_relion_layout=True)
     assert_matches(calls[0]["runtime_free_memory_gb"], expected_gb)
 
@@ -109,7 +109,7 @@ def test_local_deferred_grids_are_not_inspected_by_batch_preparation(planner, mo
 def test_firstiter_compact_coarse_staging_stays_distinct_from_fine(planner, monkeypatch, rescore_margin):
 
     calls = capture_estimates(monkeypatch)
-    monkeypatch.setattr(batches.memory_budget, "_device_free_memory_bytes", lambda: 8_000_000_000)
+    monkeypatch.setattr(batches.memory_budget, "device_free_memory_bytes", lambda: 8_000_000_000)
     monkeypatch.setattr(batches, "host_relion_projector_texture_enabled", lambda *a, **k: True)
     monkeypatch.setattr(batches.firstiter_bpref, "relion_firstiter_compact_batch_planning_decision",
                         lambda **k: SimpleNamespace(enabled=True, deferred_firstiter_bpref=True))

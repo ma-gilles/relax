@@ -13,10 +13,10 @@ from helpers.float_compare import assert_matches
 
 from relax.runtime.engine_tuning import EngineTuning
 from relax.runtime.memory_budget import (
-    _projection_cache_fits_budget,
-    _projection_cache_max_bytes_for_pass,
-    _projection_cache_transient_bytes,
     _projection_call_max_bytes_for_pass,
+    projection_cache_fits_budget,
+    projection_cache_max_bytes_for_pass,
+    projection_cache_transient_bytes,
 )
 
 _HP3_FINE_ROTATIONS = 294912
@@ -30,7 +30,7 @@ _NO_OVERRIDE = EngineTuning().projection_max_bytes
 
 
 def test_hp3_cs92_cache_estimate_matches_logged_value():
-    transient = _projection_cache_transient_bytes(
+    transient = projection_cache_transient_bytes(
         _HP3_FINE_ROTATIONS, _CS92_HALF_PIXELS, projection_complex_dtype=np.complex64, include_abs2=True,
     )
     # score (complex64) + recon (complex64 shares the score cache when not
@@ -45,25 +45,25 @@ def test_hp3_cs92_cache_estimate_matches_logged_value():
 )
 def test_hp3_cache_admitted_on_80gb_rejected_on_40gb(logged_gib):
     logged_hp3_estimate = int(logged_gib * 1024**3)
-    assert _projection_cache_fits_budget(logged_hp3_estimate, _projection_cache_max_bytes_for_pass(_H100_BYTES, override=_NO_OVERRIDE))
-    assert not _projection_cache_fits_budget(logged_hp3_estimate, _projection_cache_max_bytes_for_pass(_A100_40_BYTES, override=_NO_OVERRIDE))
+    assert projection_cache_fits_budget(logged_hp3_estimate, projection_cache_max_bytes_for_pass(_H100_BYTES, override=_NO_OVERRIDE))
+    assert not projection_cache_fits_budget(logged_hp3_estimate, projection_cache_max_bytes_for_pass(_A100_40_BYTES, override=_NO_OVERRIDE))
 
 
 def test_cache_cap_is_thirty_percent_of_device_memory_without_override():
-    assert _projection_cache_max_bytes_for_pass(_H100_BYTES, override=_NO_OVERRIDE) == int(_H100_BYTES * 0.30)
+    assert projection_cache_max_bytes_for_pass(_H100_BYTES, override=_NO_OVERRIDE) == int(_H100_BYTES * 0.30)
 
 
 def test_cache_cap_change_leaves_per_call_rotation_budget_alone():
     # The per-call projected-rotation budget (809 rotations per call at cs 92 on
     # an H100 in the measured runs) must not grow with the cache admission cap.
     assert _projection_call_max_bytes_for_pass(_H100_BYTES, override=_NO_OVERRIDE) == int(_H100_BYTES * 0.040)
-    assert _projection_call_max_bytes_for_pass(_H100_BYTES, override=_NO_OVERRIDE) < _projection_cache_max_bytes_for_pass(
+    assert _projection_call_max_bytes_for_pass(_H100_BYTES, override=_NO_OVERRIDE) < projection_cache_max_bytes_for_pass(
         _H100_BYTES, override=_NO_OVERRIDE,
     )
 
 
 def test_the_override_wins():
-    assert _projection_cache_max_bytes_for_pass(_H100_BYTES, override=654321) == 654321
+    assert projection_cache_max_bytes_for_pass(_H100_BYTES, override=654321) == 654321
     assert _projection_call_max_bytes_for_pass(_H100_BYTES, override=654321) == 654321
 
 
@@ -85,19 +85,19 @@ def test_the_override_is_read_once(monkeypatch):
 
 
 def test_cache_build_rotations_per_call_scales_scoring_budget():
-    from relax.runtime.memory_budget import _projection_cache_build_max_rotations_per_call
+    from relax.runtime.memory_budget import projection_cache_build_max_rotations_per_call
 
-    assert _projection_cache_build_max_rotations_per_call(
+    assert projection_cache_build_max_rotations_per_call(
         809, 294912, override=EngineTuning().max_projected_rotations,
     ) == 4 * 809
     # never more rotations than the fine grid holds, never below one
-    assert _projection_cache_build_max_rotations_per_call(
+    assert projection_cache_build_max_rotations_per_call(
         809, 1000, override=EngineTuning().max_projected_rotations,
     ) == 1000
-    assert _projection_cache_build_max_rotations_per_call(
+    assert projection_cache_build_max_rotations_per_call(
         None, 294912, override=EngineTuning().max_projected_rotations,
     ) is None
-    assert _projection_cache_build_max_rotations_per_call(
+    assert projection_cache_build_max_rotations_per_call(
         809, 294912, override=4096,
     ) == 4096
 
@@ -207,7 +207,7 @@ def test_projector_build_log_reports_the_slab_dtype(monkeypatch, caplog):
 def test_pass2_memory_overrides_are_read_once(monkeypatch, name):
     """Each override is read by EngineTuning.from_environ: unset or empty is None, a positive integer is taken,
     anything else is refused; the budget functions take the record's value."""
-    from relax.runtime.memory_budget import _max_adjoint_block_bytes_for_pass, _max_translation_tile_bytes_for_pass
+    from relax.runtime.memory_budget import max_adjoint_block_bytes_for_pass, max_translation_tile_bytes_for_pass
 
     field = {
         "RELAX_SPARSE_PASS2_MAX_TRANSLATION_TILE_BYTES": "translation_tile_max_bytes",
@@ -224,5 +224,5 @@ def test_pass2_memory_overrides_are_read_once(monkeypatch, name):
         monkeypatch.setenv(name, bad)
         with pytest.raises(ValueError, match="must be a positive integer"):
             EngineTuning.from_environ()
-    assert _max_translation_tile_bytes_for_pass(_H100_BYTES, override=12345) == 12345
-    assert _max_adjoint_block_bytes_for_pass(_H100_BYTES, override=54321) == 54321
+    assert max_translation_tile_bytes_for_pass(_H100_BYTES, override=12345) == 12345
+    assert max_adjoint_block_bytes_for_pass(_H100_BYTES, override=54321) == 54321

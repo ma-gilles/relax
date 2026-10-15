@@ -56,11 +56,11 @@ class BatchPlanner:
             # CUDA textures allocate outside XLA's reusable pool, so the physical reading bounds them; under a
             # pool limit (XLA_PYTHON_CLIENT_MEM_FRACTION, or a pool holding most of the card) the run may only
             # use what the allocator can still hand out, which is the smaller reading there (relax#44).
-            physical = memory_budget._device_free_memory_bytes()
+            physical = memory_budget.device_free_memory_bytes()
             in_pool = memory_budget.device_available_bytes(
                 physical,
-                memory_budget._jax_allocator_free_memory_bytes(),
-                memory_budget._jax_allocator_pool_free_bytes(),
+                memory_budget.jax_allocator_free_memory_bytes(),
+                memory_budget.jax_allocator_pool_free_bytes(),
             )
             readings = [float(value) for value in (physical, in_pool) if value is not None]
             free_bytes = min(readings) if readings else None

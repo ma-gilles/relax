@@ -518,6 +518,6 @@ def test_device_memory_limit_is_capped_by_the_allocator_limit(monkeypatch):
     )
     total = 81559 * 1024**2
     monkeypatch.setattr(budget, "_jax_allocator_limit_bytes", lambda: 40 * gib)
-    assert budget._device_memory_limit_bytes(None) == 40 * gib
+    assert budget.device_memory_limit_bytes(None) == 40 * gib
     monkeypatch.setattr(budget, "_jax_allocator_limit_bytes", lambda: None)
-    assert budget._device_memory_limit_bytes(None) == total
+    assert budget.device_memory_limit_bytes(None) == total

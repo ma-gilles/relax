@@ -294,9 +294,9 @@ def test_coarse_batch_holds_the_fallback_projection_bytes_within_the_device_shar
     ) == 8
 
     # The device share: a quarter of what the allocator can still hand out (6.6 GiB free beside half 1's state).
-    monkeypatch.setattr(budget, "_device_free_memory_bytes", lambda: int(6.6 * gib))
-    monkeypatch.setattr(budget, "_jax_allocator_free_memory_bytes", lambda: int(9.8 * gib))
-    monkeypatch.setattr(budget, "_jax_allocator_pool_free_bytes", lambda: 0)
+    monkeypatch.setattr(budget, "device_free_memory_bytes", lambda: int(6.6 * gib))
+    monkeypatch.setattr(budget, "jax_allocator_free_memory_bytes", lambda: int(9.8 * gib))
+    monkeypatch.setattr(budget, "jax_allocator_pool_free_bytes", lambda: 0)
     share = tomo_coarse._coarse_pass_budget(0).batch
     assert share == int(0.25 * 0.75 * 6.6 * gib)
     batches = tomo_coarse._coarse_batches(
@@ -313,8 +313,8 @@ def test_coarse_batch_holds_the_fallback_projection_bytes_within_the_device_shar
     )
     assert old_p_pad * old_slot_block * actual_bytes_per_image == pytest.approx(6892094720, rel=0.02)
     # Unknown device readings keep the fixed cap.
-    monkeypatch.setattr(budget, "_device_free_memory_bytes", lambda: None)
-    monkeypatch.setattr(budget, "_jax_allocator_free_memory_bytes", lambda: None)
+    monkeypatch.setattr(budget, "device_free_memory_bytes", lambda: None)
+    monkeypatch.setattr(budget, "jax_allocator_free_memory_bytes", lambda: None)
     assert tomo_coarse._coarse_pass_budget(0).batch == tomo_coarse._COARSE_BATCH_BYTES
 
 
@@ -327,9 +327,9 @@ def test_coarse_batch_plan_on_an_80gb_card_is_the_fixed_2gib_plan(monkeypatch):
     from relax.runtime import memory_budget as budget
 
     gib = 1 << 30
-    monkeypatch.setattr(budget, "_device_free_memory_bytes", lambda: 66 * gib)
-    monkeypatch.setattr(budget, "_jax_allocator_free_memory_bytes", lambda: 70 * gib)
-    monkeypatch.setattr(budget, "_jax_allocator_pool_free_bytes", lambda: 0)
+    monkeypatch.setattr(budget, "device_free_memory_bytes", lambda: 66 * gib)
+    monkeypatch.setattr(budget, "jax_allocator_free_memory_bytes", lambda: 70 * gib)
+    monkeypatch.setattr(budget, "jax_allocator_pool_free_bytes", lambda: 0)
     monkeypatch.setattr(projection, "relion_coarse_packed_rows_serve", lambda *a: True)
     assert tomo_coarse._coarse_pass_budget(0).batch == tomo_coarse._COARSE_BATCH_BYTES
     bytes_per_pixel = tomo_coarse._coarse_projection_bytes_per_pixel(

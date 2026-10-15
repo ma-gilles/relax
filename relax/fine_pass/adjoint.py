@@ -15,7 +15,7 @@ from relax.projection.adjoint import ReferenceSphereClip
 from relax.projection.adjoint import adjoint_slice_volume_half as _adjoint_slice_volume_half
 from relax.projection.adjoint import adjoint_slice_volume_windowed as _adjoint_slice_volume_windowed
 from relax.runtime.memory_budget import (
-    _dtype_itemsize,
+    dtype_itemsize,
 )
 
 logger = logging.getLogger(__name__)
@@ -28,7 +28,7 @@ def _flat_block_row_bytes(flat_block) -> int:
     if flat_block is None or len(flat_block.shape) == 0:
         return 1
     n_pixels = int(flat_block.shape[1]) if len(flat_block.shape) > 1 else 1
-    return max(1, n_pixels * _dtype_itemsize(flat_block.dtype))
+    return max(1, n_pixels * dtype_itemsize(flat_block.dtype))
 
 
 def _adjoint_block_chunk_rows(flat_block, *, max_block_bytes: int) -> int:

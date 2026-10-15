@@ -485,7 +485,7 @@ def test_lone_overflow_chunks_match_the_whole_chunk_k_class_pass(monkeypatch, st
         return _resident(*_k_class_args(3), engine_tuning=engine_tuning)
 
     if streamed:
-        monkeypatch.setattr(rp, "_projection_cache_fits_budget", lambda *a, **k: False)
+        monkeypatch.setattr(rp, "projection_cache_fits_budget", lambda *a, **k: False)
     # The per-row adjoint, which the streamed lone chunk implements.
     monkeypatch.setattr(resident_projections, "PRESUM_ADJOINT_FREE_FRACTION", 0.0)
     whole = run()

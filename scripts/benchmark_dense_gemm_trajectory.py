@@ -697,7 +697,7 @@ def _resident_cuda_fixture_program(
     )
     from relax.fine_pass.adjoint import _accumulate_adjoint_block_chunked
     from relax.fine_pass.resident_block_programs import resident_block_weighted_sums_kernel
-    from relax.runtime.memory_budget import _max_adjoint_block_bytes_for_pass
+    from relax.runtime.memory_budget import max_adjoint_block_bytes_for_pass
     from relax.scoring.coarse_kernels import relion_coarse_gaussian_gemm_scores_jit
     from scripts.lib.dense_gemm_experiment import (
         DenseGemmBatchResult,
@@ -713,7 +713,7 @@ def _resident_cuda_fixture_program(
     row_count = image_capacity * qsize
     padded_rows = -(-row_count // row_tile) * row_tile
     n_row_tiles = padded_rows // row_tile
-    max_adjoint_block_bytes = _max_adjoint_block_bytes_for_pass(
+    max_adjoint_block_bytes = max_adjoint_block_bytes_for_pass(
         None, override=EngineTuning.from_environ().adjoint_block_max_bytes
     )
     exact = mode == "exact"

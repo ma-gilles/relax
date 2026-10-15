@@ -37,7 +37,7 @@ def test_windowed_translation_tile_lifts_the_coarse_pass_image_cap():
     )
 
 def test_kclass_adaptive_planner_requests_windowed_translation_when_supported():
-    from relax.runtime.batch_planning import _plan_kclass_adaptive_grid_batch_sizes
+    from relax.runtime.batch_planning import plan_kclass_adaptive_grid_batch_sizes
 
     seen = []
 
@@ -50,7 +50,7 @@ def test_kclass_adaptive_planner_requests_windowed_translation_when_supported():
         return 7, 11
 
     for fn in (with_kw, without_kw):
-        _plan_kclass_adaptive_grid_batch_sizes(
+        plan_kclass_adaptive_grid_batch_sizes(
             coarse_rotations=np.zeros((576, 3, 3)),
             coarse_translations=np.zeros((29, 2)),
             fine_rotations=np.zeros((4608, 3, 3)),
@@ -67,7 +67,7 @@ def test_kclass_adaptive_planner_requests_windowed_translation_when_supported():
 
 @pytest.mark.parametrize("fine_accepts", [False, True])
 def test_separate_planners_negotiate_window_keyword_independently(fine_accepts):
-    from relax.runtime.batch_planning import _plan_kclass_adaptive_grid_batch_sizes
+    from relax.runtime.batch_planning import plan_kclass_adaptive_grid_batch_sizes
     seen = []
     def accepts(n_rot, n_trans, *, windowed_translation=False, **kwargs):
         seen.append(windowed_translation)
@@ -75,7 +75,7 @@ def test_separate_planners_negotiate_window_keyword_independently(fine_accepts):
     def legacy(n_rot, n_trans, *, classes, image_shape_for_batch, current_size_for_batch):
         seen.append("legacy")
         return 7, 11
-    _plan_kclass_adaptive_grid_batch_sizes(
+    plan_kclass_adaptive_grid_batch_sizes(
         coarse_rotations=np.zeros((576, 3, 3)), coarse_translations=np.zeros((29, 2)),
         fine_rotations=np.zeros((4608, 3, 3)), fine_translations=np.zeros((116, 2)),
         n_classes=4, image_shape=(256, 256), coarse_current_size=14, fine_current_size=38,

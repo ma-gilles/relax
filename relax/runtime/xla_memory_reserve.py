@@ -111,7 +111,7 @@ def _parse_nvidia_smi_memory_rows(output: str) -> dict[str, int]:
     return rows
 
 
-def _nvidia_smi_visible_device_memory_bytes(output: str, visible_devices: str | None) -> int | None:
+def nvidia_smi_visible_device_memory_bytes(output: str, visible_devices: str | None) -> int | None:
     rows = _parse_nvidia_smi_memory_rows(output)
     if not rows:
         return None
@@ -146,7 +146,7 @@ def _visible_device_total_bytes() -> int | None:
         return None
     if query.returncode != 0:
         return None
-    return _nvidia_smi_visible_device_memory_bytes(query.stdout, os.environ.get("CUDA_VISIBLE_DEVICES"))
+    return nvidia_smi_visible_device_memory_bytes(query.stdout, os.environ.get("CUDA_VISIBLE_DEVICES"))
 
 
 def _jax_backend_initialized() -> bool:

@@ -179,7 +179,7 @@ class EngineTuning:
     boundary moves).
     ``device_memory_bytes`` (RELAX_SPARSE_PASS2_DEVICE_MEMORY_GB, GiB through ``env_flags.parse_env_positive_float``,
     which refuses a value that is not a positive number): the accelerator memory the budgets take instead of the
-    probe (``memory_budget._device_memory_limit_bytes``), an operator escape hatch for shared GPUs or a wrong probe;
+    probe (``memory_budget.device_memory_limit_bytes``), an operator escape hatch for shared GPUs or a wrong probe;
     None probes the device.
     ``projection_max_bytes`` (RELAX_SPARSE_PASS2_PROJECTION_CACHE_MAX_BYTES, ``env_flags.parse_env_nonnegative_int``,
     which refuses a value that is not a non-negative integer): the bytes of pass 2's projection cache and of one

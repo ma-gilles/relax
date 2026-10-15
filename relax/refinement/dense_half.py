@@ -28,7 +28,7 @@ from relax.relion.optics_aberrations import (
     reported_rotations,
 )
 from relax.runtime.batch_planning import (
-    _plan_kclass_adaptive_grid_batch_sizes,
+    plan_kclass_adaptive_grid_batch_sizes,
     safe_dense_k_class_rotation_block_size,
     safe_firstiter_cc_image_batch_size,
 )
@@ -246,7 +246,7 @@ def _score_adaptive_kclass_dense(
     pass2_grids = sampling.pass2_grids(adaptive_oversampling=adaptive_os, symmetry=symmetry)
     adaptive_em_kwargs = dict(em_kwargs)
     n_classes = int(np.shape(half.reference)[0]) if np.ndim(half.reference) >= 2 else 1
-    grid_batch_plan = _plan_kclass_adaptive_grid_batch_sizes(
+    grid_batch_plan = plan_kclass_adaptive_grid_batch_sizes(
         coarse_rotations=pass2_grids.coarse_rotations,
         coarse_translations=pass2_grids.coarse_translations,
         fine_rotations=pass2_grids.fine_rotations,
@@ -386,7 +386,7 @@ def _score_kclass_at_given_poses(
         symmetry=symmetry,
     )
     n_classes = int(np.shape(half.reference)[0])
-    plan = _plan_kclass_adaptive_grid_batch_sizes(
+    plan = plan_kclass_adaptive_grid_batch_sizes(
         coarse_rotations=grids.rotations[:1],
         coarse_translations=grids.translations[:1],
         fine_rotations=grids.rotations[:1],
@@ -1242,7 +1242,7 @@ def _score_kclass_firstiter_cc_pass2(
         if not execution.relion_x_half_mstep:
             raise RuntimeError(f"{point_group} requires sparse RELION x-half BPref reconstruction")
     if batching.safe_batch_sizes is not None:
-        batch_plan = _plan_kclass_adaptive_grid_batch_sizes(
+        batch_plan = plan_kclass_adaptive_grid_batch_sizes(
             coarse_rotations=coarse_rot,
             coarse_translations=coarse_trans,
             fine_rotations=fine_rot,

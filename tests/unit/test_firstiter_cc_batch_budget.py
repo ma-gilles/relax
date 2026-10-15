@@ -352,7 +352,7 @@ def test_kclass_adaptive_grid_batch_plan_uses_fine_grid_for_pass2():
             return 50, 576
         raise AssertionError((n_rot, n_trans))
 
-    plan = batch_planning._plan_kclass_adaptive_grid_batch_sizes(
+    plan = batch_planning.plan_kclass_adaptive_grid_batch_sizes(
         coarse_rotations=np.zeros((576, 3, 3), dtype=np.float32),
         coarse_translations=np.zeros((29, 2), dtype=np.float32),
         fine_rotations=np.zeros((4608, 3, 3), dtype=np.float32),

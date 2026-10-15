@@ -156,9 +156,9 @@ def test_memory_plan_bounds_preparation_and_nondivisible_rotation_count(monkeypa
     from relax.dense.gemm_coarse_engine import _memory_tiles
     from relax.runtime import memory_budget as budget
 
-    monkeypatch.setattr(budget, "_device_free_memory_bytes", lambda: 1 << 30)
-    monkeypatch.setattr(budget, "_jax_allocator_free_memory_bytes", lambda: 1 << 30)
-    monkeypatch.setattr(budget, "_jax_allocator_pool_free_bytes", lambda: 0)
+    monkeypatch.setattr(budget, "device_free_memory_bytes", lambda: 1 << 30)
+    monkeypatch.setattr(budget, "jax_allocator_free_memory_bytes", lambda: 1 << 30)
+    monkeypatch.setattr(budget, "jax_allocator_pool_free_bytes", lambda: 0)
     state = SimpleNamespace(
         class_volumes=(None,), class_projector_halves=(np.zeros(64, np.complex64),),
         class_rotation_priors=(np.zeros(29, np.float32),),
@@ -170,8 +170,8 @@ def test_memory_plan_bounds_preparation_and_nondivisible_rotation_count(monkeypa
         state, n_score=20, n_recon=25, n_rect=35, n_groups=1, bp_size=1000,
     )
     assert (b, q, u, qs) == (9, 29, 5, 29)
-    monkeypatch.setattr(budget, "_device_free_memory_bytes", lambda: 1)
-    monkeypatch.setattr(budget, "_jax_allocator_free_memory_bytes", lambda: 1)
+    monkeypatch.setattr(budget, "device_free_memory_bytes", lambda: 1)
+    monkeypatch.setattr(budget, "jax_allocator_free_memory_bytes", lambda: 1)
     with pytest.raises(MemoryError, match="minimum B=Q=U=1"):
         _memory_tiles(state, n_score=20, n_recon=25, n_rect=35, n_groups=1, bp_size=1000)
 
@@ -181,9 +181,9 @@ def test_memory_plan_uses_large_projection_tile_and_full_translation_when_it_fit
     from relax.dense.gemm_coarse_engine import _memory_tiles
     from relax.runtime import memory_budget as budget
 
-    monkeypatch.setattr(budget, "_device_free_memory_bytes", lambda: 16 << 30)
-    monkeypatch.setattr(budget, "_jax_allocator_free_memory_bytes", lambda: 16 << 30)
-    monkeypatch.setattr(budget, "_jax_allocator_pool_free_bytes", lambda: 0)
+    monkeypatch.setattr(budget, "device_free_memory_bytes", lambda: 16 << 30)
+    monkeypatch.setattr(budget, "jax_allocator_free_memory_bytes", lambda: 16 << 30)
+    monkeypatch.setattr(budget, "jax_allocator_pool_free_bytes", lambda: 0)
     state = SimpleNamespace(
         class_volumes=(None,), class_projector_halves=(np.zeros(64, np.complex64),),
         class_rotation_priors=(np.zeros(6144, np.float32),),

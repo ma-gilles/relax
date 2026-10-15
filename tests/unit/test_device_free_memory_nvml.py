@@ -53,7 +53,7 @@ def test_the_subprocess_is_the_fallback_without_nvml(monkeypatch):
 
     monkeypatch.setattr(budget.subprocess, "run", run)
     monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "0")
-    assert budget._device_free_memory_bytes() == 7 * 1024**2
+    assert budget.device_free_memory_bytes() == 7 * 1024**2
     assert calls
 
 
@@ -73,9 +73,9 @@ def test_the_device_total_is_nvidia_smis_whole_mebibytes_without_a_subprocess(mo
     monkeypatch.setattr(budget.subprocess, "run", no_subprocess)
     monkeypatch.setattr(budget, "_jax_allocator_limit_bytes", lambda: None)
     monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "GPU-aaa")
-    assert budget._device_memory_limit_bytes(None) == 81559 * 1024**2
+    assert budget.device_memory_limit_bytes(None) == 81559 * 1024**2
     monkeypatch.setattr(budget, "_jax_allocator_limit_bytes", lambda: 40 * 1024**3)
-    assert budget._device_memory_limit_bytes(None) == 40 * 1024**3
+    assert budget.device_memory_limit_bytes(None) == 40 * 1024**3
 
 
 @pytest.mark.parametrize("value", ["eighty", "80GB", "0", "-4", "nan", "inf", " "])
@@ -91,9 +91,9 @@ def test_a_device_memory_override_is_taken_and_an_empty_one_is_unset(monkeypatch
     monkeypatch.setenv("RELAX_SPARSE_PASS2_DEVICE_MEMORY_GB", "1.5")
     override = EngineTuning.from_environ().device_memory_bytes
     assert override == int(1.5 * 1024**3)
-    assert budget._device_memory_limit_bytes(override) == int(1.5 * 1024**3)
+    assert budget.device_memory_limit_bytes(override) == int(1.5 * 1024**3)
     monkeypatch.setenv("RELAX_SPARSE_PASS2_DEVICE_MEMORY_GB", "")
     assert EngineTuning.from_environ().device_memory_bytes is None is EngineTuning().device_memory_bytes
     monkeypatch.setattr(budget, "_nvml_memory_bytes", lambda *args: 7 * 1024**2)
     monkeypatch.setattr(budget, "_jax_allocator_limit_bytes", lambda: None)
-    assert budget._device_memory_limit_bytes(None) == 7 * 1024**2
+    assert budget.device_memory_limit_bytes(None) == 7 * 1024**2

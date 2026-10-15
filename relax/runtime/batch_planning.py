@@ -204,7 +204,7 @@ def plan_adaptive_dense_batch_sizes(
     )
 
 
-def _plan_kclass_adaptive_grid_batch_sizes(
+def plan_kclass_adaptive_grid_batch_sizes(
     *,
     coarse_rotations,
     coarse_translations,

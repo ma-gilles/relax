@@ -561,17 +561,17 @@ def test_shell_stats_route_to_the_host_when_the_device_copy_does_not_fit(monkeyp
     gib = 1 << 30
     voxels = 512**3
     monkeypatch.setattr(regularization_relion.jax, "default_backend", lambda: "gpu")
-    monkeypatch.setattr(budget, "_jax_allocator_pool_free_bytes", lambda: 0)
-    monkeypatch.setattr(budget, "_jax_allocator_free_memory_bytes", lambda: 60 * gib)
-    monkeypatch.setattr(budget, "_device_free_memory_bytes", lambda: 8 * gib)
+    monkeypatch.setattr(budget, "jax_allocator_pool_free_bytes", lambda: 0)
+    monkeypatch.setattr(budget, "jax_allocator_free_memory_bytes", lambda: 60 * gib)
+    monkeypatch.setattr(budget, "device_free_memory_bytes", lambda: 8 * gib)
     assert regularization_relion._shell_stats_on_host(voxels)
-    monkeypatch.setattr(budget, "_device_free_memory_bytes", lambda: 60 * gib)
+    monkeypatch.setattr(budget, "device_free_memory_bytes", lambda: 60 * gib)
     assert not regularization_relion._shell_stats_on_host(voxels)
     # The fixed voxel ceiling still applies, and unknown readings keep the device path.
     ceiling = regularization_relion._RELION_SHELL_STATS_DEVICE_REDUCTION_MAX_VOXELS
     assert regularization_relion._shell_stats_on_host(ceiling + 1)
-    monkeypatch.setattr(budget, "_device_free_memory_bytes", lambda: None)
-    monkeypatch.setattr(budget, "_jax_allocator_free_memory_bytes", lambda: None)
+    monkeypatch.setattr(budget, "device_free_memory_bytes", lambda: None)
+    monkeypatch.setattr(budget, "jax_allocator_free_memory_bytes", lambda: None)
     assert not regularization_relion._shell_stats_on_host(voxels)
 
 

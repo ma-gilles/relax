@@ -1315,7 +1315,7 @@ def _planned_tile_images(stream, requested, memory_bytes, device_bytes, *, pipel
     if device_bytes is None and stream.static.cuda_kernels:
         from relax.runtime import memory_budget as budget
 
-        device_bytes = budget._device_memory_limit_bytes(None)  # PPCA takes no EngineTuning: the device's own memory
+        device_bytes = budget.device_memory_limit_bytes(None)  # PPCA takes no EngineTuning: the device's own memory
     budget_bytes = memory_bytes - TILE_FRAGMENTATION_HEADROOM * (device_bytes or memory_bytes)
     reader = _reader_bytes(stream)
     requested = int(requested)
@@ -1422,7 +1422,7 @@ def reserve_plan_region(device, counted_bytes) -> int:
 
     stats = device.memory_stats() or {}
     size = plan_region_bytes(
-        counted_bytes, stats.get("bytes_limit"), stats.get("pool_bytes"), budget._device_free_memory_bytes()
+        counted_bytes, stats.get("bytes_limit"), stats.get("pool_bytes"), budget.device_free_memory_bytes()
     )
     megabytes = size // 2**20
     if megabytes == 0:

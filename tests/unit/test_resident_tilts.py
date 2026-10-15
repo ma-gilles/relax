@@ -310,21 +310,21 @@ def test_tilt_mstep_tiles_are_counted_per_unit_so_a_flat_particle_keeps_one_tran
     translations fit one block of an 80 GB card's tile budget. Counted with the M-step's 256 block rows, as
     the tiles were before, they took 74 blocks of 16.
     """
-    from relax.runtime.memory_budget import _max_translation_tile_bytes_for_pass
+    from relax.runtime.memory_budget import max_translation_tile_bytes_for_pass
 
     n_rect, n_exact, k = 11704, 11704, 1176
     kept = resident_tilts.MstepTranslations(index=np.arange(k, dtype=np.int64), valid=np.ones(k, dtype=bool))
     one_unit = resident_tilts.tilt_mstep_tile_bytes(1, n_rect_pixels=n_rect, n_exact_pixels=n_exact)
     assert one_unit == (3 * n_rect + n_exact) * 8
     assert resident_tilts.tilt_mstep_tile_bytes(32, n_rect_pixels=n_rect, n_exact_pixels=n_exact) == 32 * one_unit
-    budget = _max_translation_tile_bytes_for_pass(80 * 1024**3, override=None)
+    budget = max_translation_tile_bytes_for_pass(80 * 1024**3, override=None)
     assert resident_tilts.mstep_translation_blocks(kept, bytes_per_translation=one_unit, tile_budget_bytes=budget) == (kept,)
     with_block_rows = (128 + 256) * (n_rect + n_exact) * 8
     blocks = resident_tilts.mstep_translation_blocks(kept, bytes_per_translation=with_block_rows, tile_budget_bytes=budget)
     assert (len(blocks), int(blocks[0].index.size)) == (74, 16)
     # A 16 GB card's budget still holds the particle's translations in a few blocks.
     small = resident_tilts.mstep_translation_blocks(
-        kept, bytes_per_translation=one_unit, tile_budget_bytes=_max_translation_tile_bytes_for_pass(16 * 1024**3, override=None)
+        kept, bytes_per_translation=one_unit, tile_budget_bytes=max_translation_tile_bytes_for_pass(16 * 1024**3, override=None)
     )
     assert len(small) <= 4
 
@@ -337,9 +337,9 @@ def test_tilt_unit_capacity_at_the_full_box_is_bounded_by_its_gather():
     standalone's full-box iterations 7x slower; the tilt model keeps the default classes that fit.
     """
     from relax.fine_pass.resident_chunk_memory import _cap_image_capacity_ladder
-    from relax.runtime.memory_budget import _max_translation_tile_bytes_for_pass
+    from relax.runtime.memory_budget import max_translation_tile_bytes_for_pass
 
-    n_recon_pixels, slots, budget = 128 * 65, 41, _max_translation_tile_bytes_for_pass(80 * 1024**3, override=None)
+    n_recon_pixels, slots, budget = 128 * 65, 41, max_translation_tile_bytes_for_pass(80 * 1024**3, override=None)
     ladder = (32, 64, 128, 256)
     spa = _cap_image_capacity_ladder(ladder, n_fine_trans=4120, n_recon_pixels=n_recon_pixels, max_tile_bytes=budget)
     tilt = _cap_image_capacity_ladder(ladder, n_fine_trans=slots, n_recon_pixels=n_recon_pixels, max_tile_bytes=budget)

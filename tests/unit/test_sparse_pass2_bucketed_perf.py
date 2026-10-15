@@ -61,12 +61,12 @@ from relax.fourier.fourier_window import make_fourier_window_spec
 from relax.fourier.preprocessing import apply_half_translation_phases, half_translation_phase_table
 from relax.runtime.engine_tuning import EngineTuning
 from relax.runtime.memory_budget import (
-    _max_projected_rotations_per_call_for_pass,
-    _nvidia_smi_visible_device_memory_bytes,
-    _projection_budget_pixels_for_pass,
-    _projection_cache_budget_complex_dtype,
-    _projection_cache_fits_budget,
-    _projection_cache_transient_bytes,
+    max_projected_rotations_per_call_for_pass,
+    nvidia_smi_visible_device_memory_bytes,
+    projection_budget_pixels_for_pass,
+    projection_cache_budget_complex_dtype,
+    projection_cache_fits_budget,
+    projection_cache_transient_bytes,
 )
 from scripts.lib.bucketed_pass2 import _bucket_pass2_inputs, _coalesce_tail_bucket_sizes, compute_local_ctf_sums
 
@@ -669,12 +669,12 @@ def test_sparse_pass2_tail_bucket_coalescing_respects_inflation_cap():
 def test_relion_windowed_projection_budget_accounts_for_centered_full_half_transient():
     large_gpu = 80 * 1024**3
     n_half = 128 * (128 // 2 + 1)
-    default_pixels = _projection_budget_pixels_for_pass(
+    default_pixels = projection_budget_pixels_for_pass(
         n_half,
         use_window=True,
         use_relion_projector=False,
     )
-    relion_pixels = _projection_budget_pixels_for_pass(
+    relion_pixels = projection_budget_pixels_for_pass(
         n_half,
         use_window=True,
         use_relion_projector=True,
@@ -683,7 +683,7 @@ def test_relion_windowed_projection_budget_accounts_for_centered_full_half_trans
     assert default_pixels == n_half
     assert relion_pixels == 8 * n_half
 
-    default_cap = _max_projected_rotations_per_call_for_pass(
+    default_cap = max_projected_rotations_per_call_for_pass(
         device_memory_bytes=large_gpu,
         n_projection_pixels=default_pixels,
         projection_complex_dtype=np.complex64,
@@ -691,12 +691,12 @@ def test_relion_windowed_projection_budget_accounts_for_centered_full_half_trans
         override=EngineTuning().max_projected_rotations,
         projection_max_bytes=EngineTuning().projection_max_bytes,
     )
-    relion_dtype = _projection_cache_budget_complex_dtype(
+    relion_dtype = projection_cache_budget_complex_dtype(
         np.complex64,
         np.complex64,
         use_relion_projector=True,
     )
-    relion_cap = _max_projected_rotations_per_call_for_pass(
+    relion_cap = max_projected_rotations_per_call_for_pass(
         device_memory_bytes=large_gpu,
         n_projection_pixels=relion_pixels,
         projection_complex_dtype=relion_dtype,
@@ -708,7 +708,7 @@ def test_relion_windowed_projection_budget_accounts_for_centered_full_half_trans
     assert default_cap == 51622
     assert relion_cap == 3226
 
-    default_cap64 = _max_projected_rotations_per_call_for_pass(
+    default_cap64 = max_projected_rotations_per_call_for_pass(
         device_memory_bytes=large_gpu,
         n_projection_pixels=default_pixels,
         projection_complex_dtype=np.complex128,
@@ -716,7 +716,7 @@ def test_relion_windowed_projection_budget_accounts_for_centered_full_half_trans
         override=EngineTuning().max_projected_rotations,
         projection_max_bytes=EngineTuning().projection_max_bytes,
     )
-    relion_cap64 = _max_projected_rotations_per_call_for_pass(
+    relion_cap64 = max_projected_rotations_per_call_for_pass(
         device_memory_bytes=large_gpu,
         n_projection_pixels=relion_pixels,
         projection_complex_dtype=np.complex128,
@@ -728,7 +728,7 @@ def test_relion_windowed_projection_budget_accounts_for_centered_full_half_trans
     assert default_cap64 == 25811
     assert relion_cap64 == 3226
 
-    relion_chunk_bytes = _projection_cache_transient_bytes(
+    relion_chunk_bytes = projection_cache_transient_bytes(
         relion_cap,
         n_half,
         projection_complex_dtype=relion_dtype,
@@ -738,7 +738,7 @@ def test_relion_windowed_projection_budget_accounts_for_centered_full_half_trans
 
     # A zero projection budget (EngineTuning.projection_max_bytes) leaves no rotation per call.
     assert (
-        _max_projected_rotations_per_call_for_pass(
+        max_projected_rotations_per_call_for_pass(
             device_memory_bytes=large_gpu,
             n_projection_pixels=relion_pixels,
             projection_complex_dtype=np.complex64,
@@ -825,27 +825,27 @@ def test_sparse_pass2_projection_cache_estimate_accounts_for_projection_dtype():
     n_rot = 11
     n_half = 17
 
-    assert _projection_cache_budget_complex_dtype(jnp.complex64, jnp.complex64) == np.dtype(np.complex64)
-    assert _projection_cache_budget_complex_dtype(jnp.complex64, jnp.complex128) == np.dtype(np.complex128)
-    assert _projection_cache_budget_complex_dtype(jnp.complex128, jnp.complex64) == np.dtype(np.complex128)
-    assert _projection_cache_budget_complex_dtype(
+    assert projection_cache_budget_complex_dtype(jnp.complex64, jnp.complex64) == np.dtype(np.complex64)
+    assert projection_cache_budget_complex_dtype(jnp.complex64, jnp.complex128) == np.dtype(np.complex128)
+    assert projection_cache_budget_complex_dtype(jnp.complex128, jnp.complex64) == np.dtype(np.complex128)
+    assert projection_cache_budget_complex_dtype(
         jnp.complex64,
         jnp.complex64,
         use_relion_projector=True,
     ) == np.dtype(np.complex128)
-    assert _projection_cache_transient_bytes(
+    assert projection_cache_transient_bytes(
         n_rot,
         n_half,
         projection_complex_dtype=jnp.complex64,
         include_abs2=True,
     ) == n_rot * n_half * (np.dtype(np.complex64).itemsize + np.dtype(np.float32).itemsize)
-    assert _projection_cache_transient_bytes(
+    assert projection_cache_transient_bytes(
         n_rot,
         n_half,
         projection_complex_dtype=jnp.complex128,
         include_abs2=True,
     ) == n_rot * n_half * (np.dtype(np.complex128).itemsize + np.dtype(np.float64).itemsize)
-    assert _projection_cache_transient_bytes(
+    assert projection_cache_transient_bytes(
         n_rot,
         n_half,
         projection_complex_dtype=jnp.complex128,
@@ -854,8 +854,8 @@ def test_sparse_pass2_projection_cache_estimate_accounts_for_projection_dtype():
 
 
 def test_sparse_pass2_projection_cache_budget_accounts_for_k_classes():
-    assert _projection_cache_fits_budget(100, 250, n_classes=2)
-    assert not _projection_cache_fits_budget(100, 250, n_classes=3)
+    assert projection_cache_fits_budget(100, 250, n_classes=2)
+    assert not projection_cache_fits_budget(100, 250, n_classes=3)
 
 
 def test_relion_windowed_projection_cache_estimate_admits_retained_window_cache():
@@ -865,25 +865,25 @@ def test_relion_windowed_projection_cache_estimate_admits_retained_window_cache(
     n_recon_windowed = 1_227
     cap_12g = 12 * 1024**3
 
-    retained_window_cache_estimate = _projection_cache_transient_bytes(
+    retained_window_cache_estimate = projection_cache_transient_bytes(
         n_fine_rot,
         n_windowed,
         projection_complex_dtype=np.complex64,
         include_abs2=False,
-    ) + _projection_cache_transient_bytes(
+    ) + projection_cache_transient_bytes(
         n_fine_rot,
         n_recon_windowed,
         projection_complex_dtype=np.complex64,
         include_abs2=True,
     )
-    relion_centered_transient_estimate = _projection_cache_transient_bytes(
+    relion_centered_transient_estimate = projection_cache_transient_bytes(
         n_fine_rot,
-        _projection_budget_pixels_for_pass(
+        projection_budget_pixels_for_pass(
             n_half,
             use_window=True,
             use_relion_projector=True,
         ),
-        projection_complex_dtype=_projection_cache_budget_complex_dtype(
+        projection_complex_dtype=projection_cache_budget_complex_dtype(
             np.complex64,
             np.complex64,
             use_relion_projector=True,
@@ -893,16 +893,16 @@ def test_relion_windowed_projection_cache_estimate_admits_retained_window_cache(
 
     assert retained_window_cache_estimate < cap_12g
     assert relion_centered_transient_estimate > cap_12g
-    assert _projection_cache_fits_budget(retained_window_cache_estimate, cap_12g)
+    assert projection_cache_fits_budget(retained_window_cache_estimate, cap_12g)
 
-    per_call_cap = _max_projected_rotations_per_call_for_pass(
+    per_call_cap = max_projected_rotations_per_call_for_pass(
         device_memory_bytes=80 * 1024**3,
-        n_projection_pixels=_projection_budget_pixels_for_pass(
+        n_projection_pixels=projection_budget_pixels_for_pass(
             n_half,
             use_window=True,
             use_relion_projector=True,
         ),
-        projection_complex_dtype=_projection_cache_budget_complex_dtype(
+        projection_complex_dtype=projection_cache_budget_complex_dtype(
             np.complex64,
             np.complex64,
             use_relion_projector=True,
@@ -955,7 +955,7 @@ def test_single_class_sparse_pass2_bucket_quantum_can_coarsen_pathological_tail(
 
 def test_sparse_pass2_auto_projection_cap_prevents_one_image_tail_oversize():
     n_half = 128 * (128 // 2 + 1)
-    cap = _max_projected_rotations_per_call_for_pass(
+    cap = max_projected_rotations_per_call_for_pass(
         device_memory_bytes=80 * 1024**3,
         n_projection_pixels=n_half,
         projection_complex_dtype=np.complex64,
@@ -967,7 +967,7 @@ def test_sparse_pass2_auto_projection_cap_prevents_one_image_tail_oversize():
     assert cap < 90_112
     assert cap > 10_000
 
-    cap_with_abs2 = _max_projected_rotations_per_call_for_pass(
+    cap_with_abs2 = max_projected_rotations_per_call_for_pass(
         device_memory_bytes=80 * 1024**3,
         n_projection_pixels=n_half,
         projection_complex_dtype=np.complex64,
@@ -979,7 +979,7 @@ def test_sparse_pass2_auto_projection_cap_prevents_one_image_tail_oversize():
     assert cap_with_abs2 < cap
 
     assert (
-        _max_projected_rotations_per_call_for_pass(
+        max_projected_rotations_per_call_for_pass(
             device_memory_bytes=80 * 1024**3,
             n_projection_pixels=n_half,
             projection_complex_dtype=np.complex64,
@@ -1313,7 +1313,7 @@ def test_class_rows_project_in_place_within_the_streamed_chunk_plan(monkeypatch)
     from relax.fine_pass import projection_blocks as sparse_pass2_projection_blocks
     from relax.fine_pass import resident_projections
     from relax.fine_pass.projection_blocks import project_rows_by_class
-    from relax.runtime.memory_budget import _projection_cache_transient_bytes
+    from relax.runtime.memory_budget import projection_cache_transient_bytes
 
     n_classes, rows_per_class, row_capacity, chunk_rotations = 15, 3, 64, 8
     # Windows of realistic width next to the 36-byte rotation matrices a call uploads.
@@ -1375,9 +1375,9 @@ def test_class_rows_project_in_place_within_the_streamed_chunk_plan(monkeypatch)
     assert_matches(np.asarray(recon_abs2)[:n_valid], (expected + np.asarray(recon_indices)) ** 2)
     for values in (score, recon, recon_abs2):
         assert not np.any(np.asarray(values)[n_valid:])
-    bytes_per_rotation = _projection_cache_transient_bytes(
+    bytes_per_rotation = projection_cache_transient_bytes(
         1, int(score_indices.size), projection_complex_dtype=np.complex64, include_abs2=False
-    ) + _projection_cache_transient_bytes(
+    ) + projection_cache_transient_bytes(
         1, int(recon_indices.size), projection_complex_dtype=np.complex64, include_abs2=True
     )
     plan_bytes = resident_projections.STREAM_PEAK_COPIES * row_capacity * bytes_per_rotation
@@ -1899,13 +1899,13 @@ def test_sparse_pass2_device_memory_probe_honors_visible_device():
         ],
     )
 
-    assert _nvidia_smi_visible_device_memory_bytes(smi_output, "1") == 81559 * 1024**2
-    assert _nvidia_smi_visible_device_memory_bytes(smi_output, "GPU-h100") == 81559 * 1024**2
-    assert _nvidia_smi_visible_device_memory_bytes(smi_output, "h100") == 81559 * 1024**2
-    assert _nvidia_smi_visible_device_memory_bytes(smi_output, "-1") is None
+    assert nvidia_smi_visible_device_memory_bytes(smi_output, "1") == 81559 * 1024**2
+    assert nvidia_smi_visible_device_memory_bytes(smi_output, "GPU-h100") == 81559 * 1024**2
+    assert nvidia_smi_visible_device_memory_bytes(smi_output, "h100") == 81559 * 1024**2
+    assert nvidia_smi_visible_device_memory_bytes(smi_output, "-1") is None
     # CUDA_VISIBLE_DEVICES='' hides every device (CPU runs); it is not "unset".
-    assert _nvidia_smi_visible_device_memory_bytes(smi_output, "") is None
-    assert _nvidia_smi_visible_device_memory_bytes(smi_output, None) == 40960 * 1024**2
+    assert nvidia_smi_visible_device_memory_bytes(smi_output, "") is None
+    assert nvidia_smi_visible_device_memory_bytes(smi_output, None) == 40960 * 1024**2
 
 
 def test_half_translation_phase_table_matches_generic_off_relion_nyquist_row_and_column():

@@ -165,17 +165,17 @@ from relax.relion.optics_aberrations import dataset_magnification_is_anisotropic
 from relax.relion.scale_groups import prepare_scale_correction_groups
 from relax.runtime.compile_ahead import CompileAheadPool
 from relax.runtime.memory_budget import (
-    _device_free_memory_bytes,
-    _jax_allocator_free_memory_bytes,
-    _jax_allocator_pool_free_bytes,
-    _max_adjoint_block_bytes_for_pass,
-    _max_translation_tile_bytes_for_pass,
-    _projection_cache_build_max_rotations_per_call,
-    _projection_cache_fits_budget,
-    _projection_cache_max_bytes_for_pass,
-    _projection_cache_transient_bytes,
     current_device_available_bytes,
     device_available_bytes,
+    device_free_memory_bytes,
+    jax_allocator_free_memory_bytes,
+    jax_allocator_pool_free_bytes,
+    max_adjoint_block_bytes_for_pass,
+    max_translation_tile_bytes_for_pass,
+    projection_cache_build_max_rotations_per_call,
+    projection_cache_fits_budget,
+    projection_cache_max_bytes_for_pass,
+    projection_cache_transient_bytes,
 )
 from relax.sampling.translation_prior import validate_translation_prior_centers
 from relax.types import SparsePass2Output, make_noise_stats, make_relion_stats
@@ -1577,12 +1577,12 @@ def _resident_pass2(
         max_projected_rotations_override=engine_tuning.max_projected_rotations,
         projection_max_bytes=engine_tuning.projection_max_bytes,
     )
-    transient_projection_bytes = _projection_cache_transient_bytes(
+    transient_projection_bytes = projection_cache_transient_bytes(
         n_projections,
         n_windowed,
         projection_complex_dtype=precision_policy.score_complex_dtype,
         include_abs2=False,
-    ) + _projection_cache_transient_bytes(
+    ) + projection_cache_transient_bytes(
         n_projections,
         n_recon_windowed,
         projection_complex_dtype=precision_policy.score_complex_dtype,
@@ -1606,13 +1606,13 @@ def _resident_pass2(
         union_indices = jnp.asarray(union_indices_np.astype(np.int32))
         union_score_take = jnp.asarray(np.searchsorted(union_indices_np, score_indices_np).astype(np.int32))
         union_recon_take = jnp.asarray(np.searchsorted(union_indices_np, recon_indices_np).astype(np.int32))
-        cache_projection_bytes = _projection_cache_transient_bytes(
+        cache_projection_bytes = projection_cache_transient_bytes(
             n_projections,
             int(union_indices_np.size),
             projection_complex_dtype=precision_policy.score_complex_dtype,
             include_abs2=False,
         )
-    max_projection_cache_bytes = _projection_cache_max_bytes_for_pass(
+    max_projection_cache_bytes = projection_cache_max_bytes_for_pass(
         device_memory_bytes, override=engine_tuning.projection_max_bytes,
     )
     projection_kwargs = _projection_kwargs_for_relion_score_window(
@@ -1736,7 +1736,7 @@ def _resident_pass2(
             disc_type,
             score_indices=window_indices,
             recon_indices=recon_window_indices,
-            max_projected_rotations=_projection_cache_build_max_rotations_per_call(
+            max_projected_rotations=projection_cache_build_max_rotations_per_call(
                 max_projected_rotations_per_projection_call,
                 int(np.asarray(rotations).shape[0]),
                 engine_tuning.max_projected_rotations,
@@ -1795,9 +1795,9 @@ def _resident_pass2(
     # operands (allocated later): a fraction of the device total alone let the
     # whole-grid cache take memory that earlier iterations or a capped allocator
     # did not have (bench 14445196, K=1 10097 10k at hp3).
-    physical_free_bytes = _device_free_memory_bytes()
-    allocator_free_bytes = _jax_allocator_free_memory_bytes()
-    pool_free_bytes = _jax_allocator_pool_free_bytes()
+    physical_free_bytes = device_free_memory_bytes()
+    allocator_free_bytes = jax_allocator_free_memory_bytes()
+    pool_free_bytes = jax_allocator_pool_free_bytes()
     # The operands are reserved only when the admission below would take them
     # at this reading: operands that stay per chunk are never allocated, and
     # reserving them anyway left a 0.38 GiB chunk budget at EMPIAR-10202
@@ -1831,7 +1831,7 @@ def _resident_pass2(
         reserved_bytes=reserved_operand_bytes,
     )
     # Tilt images project every (image, rotation) pair per chunk (resident_tilts.run_tilt_chunk).
-    stream_projections = tilt is not None or not _projection_cache_fits_budget(
+    stream_projections = tilt is not None or not projection_cache_fits_budget(
         cache_projection_bytes, stream_projection_budget_bytes
     )
     # Streamed chunks keep the per-chunk operand preparation. Their working set
@@ -1851,7 +1851,7 @@ def _resident_pass2(
             pool_free_bytes=pool_free_bytes,
             reserved_bytes=0,
         )
-        if _projection_cache_fits_budget(cache_projection_bytes, unreserved_budget_bytes):
+        if projection_cache_fits_budget(cache_projection_bytes, unreserved_budget_bytes):
             stream_projections = False
             operands_yield_to_cache = True
             stream_projection_budget_bytes = unreserved_budget_bytes
@@ -1926,7 +1926,7 @@ def _resident_pass2(
         # Raw union rows: the native-unit division of the score window runs
         # after the chunk's gather (score_resident_chunk), and the recon window
         # keeps RECOVAR units, as in the three-cache build.
-        rows_per_call = _projection_cache_build_max_rotations_per_call(
+        rows_per_call = projection_cache_build_max_rotations_per_call(
             max_projected_rotations_per_projection_call, cache_rows_per_class, engine_tuning.max_projected_rotations,
         ) or cache_rows_per_class
 
@@ -2075,9 +2075,9 @@ def _resident_pass2(
         # cache is resident; unknown readings do not cap.
         gather_budget_bytes = resident_projections.stream_projection_budget_bytes(
             device_memory_bytes if device_memory_bytes is not None else 1 << 62,
-            physical_free_bytes=_device_free_memory_bytes(),
-            allocator_free_bytes=_jax_allocator_free_memory_bytes(),
-            pool_free_bytes=_jax_allocator_pool_free_bytes(),
+            physical_free_bytes=device_free_memory_bytes(),
+            allocator_free_bytes=jax_allocator_free_memory_bytes(),
+            pool_free_bytes=jax_allocator_pool_free_bytes(),
             reserved_bytes=reserved_operand_bytes,
         )
         row_ladder = resident_projections.cached_row_capacity_ladder(
@@ -2154,7 +2154,7 @@ def _resident_pass2(
                 image_ladder,
                 n_fine_trans=plan_translations,
                 n_recon_pixels=n_recon_windowed,
-                max_tile_bytes=_max_translation_tile_bytes_for_pass(
+                max_tile_bytes=max_translation_tile_bytes_for_pass(
                     device_memory_bytes, override=engine_tuning.translation_tile_max_bytes,
                     has_external_normalization=False,
                 ),
@@ -2162,7 +2162,7 @@ def _resident_pass2(
             )
         mstep_block_rows = resident_chunk_memory.resolve_mstep_block_rows(
             n_recon_pixels=n_recon_windowed,
-            max_block_bytes=_max_adjoint_block_bytes_for_pass(
+            max_block_bytes=max_adjoint_block_bytes_for_pass(
                 device_memory_bytes, override=engine_tuning.adjoint_block_max_bytes
             ),
             row_capacity_ladder=row_ladder_start,
@@ -2418,7 +2418,7 @@ def _resident_pass2(
         mstep_max_r=None if stable_window_plan is None else _runtime_mstep_radius(mstep_max_r),
     )
 
-    max_adjoint_block_bytes = _max_adjoint_block_bytes_for_pass(
+    max_adjoint_block_bytes = max_adjoint_block_bytes_for_pass(
         device_memory_bytes, override=engine_tuning.adjoint_block_max_bytes
     )
     exact_positions_device = jnp.asarray(relion_wavg_rectangle.exact_positions, dtype=jnp.int32)
@@ -2811,7 +2811,7 @@ def _resident_pass2(
                 image_shape=image_shape,
                 rect_indices_device=rect_indices_device,
                 exact_positions_device=exact_positions_device,
-                tile_budget_bytes=_max_translation_tile_bytes_for_pass(
+                tile_budget_bytes=max_translation_tile_bytes_for_pass(
                     device_memory_bytes, override=engine_tuning.translation_tile_max_bytes,
                     has_external_normalization=False,
                 ),
