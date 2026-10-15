@@ -151,8 +151,8 @@ def test_mstep_full_half_axis_resolver_keeps_common_axis_or_default():
 
 
 def test_relion_correction_range_formatter_accepts_empty_halves():
-    assert normalization._format_relion_correction_range(np.array([], dtype=np.float32)) == "empty"
-    assert normalization._format_relion_correction_range(np.array([0.5, 2.0], dtype=np.float32)) == "[0.5, 2]"
+    assert normalization.format_relion_correction_range(np.array([], dtype=np.float32)) == "empty"
+    assert normalization.format_relion_correction_range(np.array([0.5, 2.0], dtype=np.float32)) == "[0.5, 2]"
 
 
 @pytest.mark.parametrize(

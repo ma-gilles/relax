@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from relax.reconstruction.resolution import compute_ini_high_shell
-from relax.relion.initial_noise import _image_sigma2_iter, compute_avg_unaligned_and_sigma2, relion_startup_positions
+from relax.relion.initial_noise import compute_avg_unaligned_and_sigma2, image_sigma2_iter, relion_startup_positions
 from relax.relion.reference_initialization import relion_initial_tau2_and_data_vs_prior
 from relax.steps.optics_shapes import MultiShapeDataset
 from relax.vdam import bootstrap_reconstruction, initial_model_io
@@ -240,7 +240,7 @@ def _bootstrap_gamma_offsets(dataset, image_indices, box_size: int):
     """``(image_group, {group: gamma})`` for the bootstrap CTF, or None without even Zernike terms.
 
     The groups' even Zernike gamma offsets on the model grid, as relax's exact CTF rows
-    use them (:func:`relax.relion.ctf._optics_group_ctf_geometry`). The command refuses
+    use them (:func:`relax.relion.ctf.optics_group_ctf_geometry`). The command refuses
     magnification (:func:`relax.star.metadata.refuse_unsupported_optics`), so a group's
     ``rlnMagMat`` columns can only hold the exact identity here, which leaves the offsets unchanged (relax#66).
     """
@@ -257,7 +257,7 @@ def _bootstrap_gamma_offsets(dataset, image_indices, box_size: int):
     groups = np.asarray(star_column(cache["particles"], "rlnOpticsGroup", required=True), dtype=np.int64)[original]
     gamma_by_group = {}
     for group in np.unique(groups):
-        gamma_by_group[int(group)] = ctf._optics_group_ctf_geometry(cache, int(group), int(box_size))[0]
+        gamma_by_group[int(group)] = ctf.optics_group_ctf_geometry(cache, int(group), int(box_size))[0]
     if all(gamma is None for gamma in gamma_by_group.values()):
         return None
     return groups, gamma_by_group
@@ -312,7 +312,7 @@ def _model_grid_startup_images(dataset, rows, pixel_sizes, opts: NativeInitialMo
     windowed to the model box (ml_optimiser.cpp:2905-2955); the bootstrap transforms these.
     """
 
-    from relax.relion.initial_noise import _rescale_to_model_grid
+    from relax.relion.initial_noise import rescale_to_model_grid
 
     box_size = int(dataset.grid_size)
     out = np.empty((len(rows), box_size, box_size), dtype=np.float64)
@@ -321,7 +321,7 @@ def _model_grid_startup_images(dataset, rows, pixel_sizes, opts: NativeInitialMo
         if bool(opts.do_zero_mask):
             radius = float(opts.particle_diameter) / (2.0 * float(pixel_sizes[i]))
             image = bootstrap_reconstruction.soft_mask_outside_map(image, radius, float(opts.width_mask_edge_px))
-        out[i] = _rescale_to_model_grid(image, float(pixel_sizes[i]), float(model_pixel_size), box_size)
+        out[i] = rescale_to_model_grid(image, float(pixel_sizes[i]), float(model_pixel_size), box_size)
     return out
 
 
@@ -367,7 +367,7 @@ def initial_state_from_particles(
     batch_size = max(1, int(opts.image_batch_size))
     Mavg, sigma2_per_group = compute_avg_unaligned_and_sigma2(
         (
-            _image_sigma2_iter(dataset, noise_order, optics_group_by_particle, batch_size=batch_size)
+            image_sigma2_iter(dataset, noise_order, optics_group_by_particle, batch_size=batch_size)
             if group_pixel_sizes is None
             else (
                 (int(optics_group_by_particle[row]), image)

@@ -141,17 +141,17 @@ def relion_log_likelihood_contributions(
     ``remap_sizes``), and each ``ires`` reads the model shell ``ROUND(remap * ires)``
     (``remap_image_sizes``, ml_optimiser.cpp:9046-9055).
     """
-    from relax.relion.ctf import _fftw_shell_labels
+    from relax.relion.ctf import fftw_shell_labels
     from relax.relion.optics_groups import group_current_size
 
-    shells = _fftw_shell_labels(int(box_size), int(current_size), centered_rows=False)
+    shells = fftw_shell_labels(int(box_size), int(current_size), centered_rows=False)
     sigma2 = np.atleast_2d(np.asarray(sigma2_noise, dtype=np.float64))
     shells = shells[(shells > 0) & (shells < sigma2.shape[1])]
     logsigma2 = np.log(2.0 * np.pi * sigma2[:, shells]).sum(axis=1)
     for group, (box, scale, remap) in (group_grids or {}).items():
         if int(box) == int(box_size) and float(scale) == 1.0 and float(remap) == 1.0:
             continue  # the model's own grid: the shared sum above
-        ires = _fftw_shell_labels(int(box), group_current_size(current_size, box, scale), centered_rows=False)
+        ires = fftw_shell_labels(int(box), group_current_size(current_size, box, scale), centered_rows=False)
         ires = ires[ires > 0]
         # RELION's ROUND of a positive value: (int)(x + 0.5).
         remapped = np.floor(float(remap) * ires + 0.5).astype(np.int64)

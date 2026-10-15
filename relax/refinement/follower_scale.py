@@ -47,7 +47,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from relax.refinement.iteration_history import RefinementHistory
-from relax.relion.normalization import _format_relion_correction_range
+from relax.relion.normalization import format_relion_correction_range
 
 if TYPE_CHECKING:
     from relax.refinement.refinement_options import RefinementOptions
@@ -1935,8 +1935,8 @@ def _update_relion_follower_corrections(
     logger.info(
         "Strict RELION follower-scale update: rank1=%s rank2=%s; "
         "rank1 model-STAR diagnostic retained separately",
-        _format_relion_correction_range(relion_follower_scale_state.scales[0]),
-        _format_relion_correction_range(relion_follower_scale_state.scales[1])
+        format_relion_correction_range(relion_follower_scale_state.scales[0]),
+        format_relion_correction_range(relion_follower_scale_state.scales[1])
         if relion_follower_scale_state.n_followers > 1
         else "none",
     )

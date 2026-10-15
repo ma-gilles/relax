@@ -445,7 +445,7 @@ def norm_scale_report(
     )
 
 
-def _format_relion_correction_range(values):
+def format_relion_correction_range(values):
     arr = np.asarray(values, dtype=np.float64).reshape(-1)
     if arr.size == 0:
         return "empty"
@@ -465,8 +465,8 @@ def log_norm_scale_update(update: NormScaleCorrectionUpdateResult, *, log) -> No
         "RELION norm correction update: avg_norm half1=%s half2=%s; "
         "image_corr ranges half1=%s half2=%s; scale_corr ranges half1=%s half2=%s",
         *("not estimated" if avg is None else f"{float(avg):.6g}" for avg in update.avg_norm_correction_per_half),
-        _format_relion_correction_range(update.image_corrections_per_half[0]),
-        _format_relion_correction_range(update.image_corrections_per_half[1]),
-        _format_relion_correction_range(update.scale_corrections_per_half[0]),
-        _format_relion_correction_range(update.scale_corrections_per_half[1]),
+        format_relion_correction_range(update.image_corrections_per_half[0]),
+        format_relion_correction_range(update.image_corrections_per_half[1]),
+        format_relion_correction_range(update.scale_corrections_per_half[0]),
+        format_relion_correction_range(update.scale_corrections_per_half[1]),
     )

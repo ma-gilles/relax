@@ -97,7 +97,7 @@ def _relion_resize_map(image: np.ndarray, new_size: int) -> np.ndarray:
     return np.fft.irfft2(out, s=(new_size, new_size)) * (new_size * new_size)
 
 
-def _rescale_to_model_grid(image: np.ndarray, pixel_size: float, model_pixel_size: float, box_size: int) -> np.ndarray:
+def rescale_to_model_grid(image: np.ndarray, pixel_size: float, model_pixel_size: float, box_size: int) -> np.ndarray:
     """Bring one optics group's image onto the model grid (ml_optimiser.cpp:2934-2955).
 
     Resize to the model pixel size when the pixel sizes differ by more than 1e-4 A
@@ -163,7 +163,7 @@ def compute_avg_unaligned_and_sigma2(
     """``calculateSumOfPowerSpectra`` + ``setSigmaNoiseEstimates`` (per-group cap defaults to RELION's 1000).
 
     With ``group_pixel_sizes`` (one per optics group, groups on other pixel sizes or boxes) each image is masked
-    with its own group's pixel size and brought onto the model grid (``_rescale_to_model_grid``) before it enters
+    with its own group's pixel size and brought onto the model grid (``rescale_to_model_grid``) before it enters
     the sums, as RELION does. ``power_spectrum(image, n_shells)`` is an image's shell-mean power (RELION's by default).
     """
     n_shells = box_size // 2 + 1
@@ -188,7 +188,7 @@ def compute_avg_unaligned_and_sigma2(
             my_pixel_size = float(group_pixel_sizes[opt_grp])
             if do_zero_mask:
                 img = _softmask_outside_map(img, particle_diameter_ang / (2.0 * my_pixel_size), float(width_mask_edge_px))
-            img = _rescale_to_model_grid(img, my_pixel_size, model_pixel_size, box_size)
+            img = rescale_to_model_grid(img, my_pixel_size, model_pixel_size, box_size)
         elif img.shape != (box_size, box_size):
             raise ValueError(f"image shape {img.shape} != expected {(box_size, box_size)}")
         elif do_zero_mask:
@@ -219,7 +219,7 @@ def compute_avg_unaligned_and_sigma2(
     return Mavg, sigma2_per_group
 
 
-def _image_sigma2_iter(
+def image_sigma2_iter(
     dataset,
     image_indices: np.ndarray,
     optics_group_by_particle: np.ndarray,

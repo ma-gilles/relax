@@ -1137,7 +1137,7 @@ def test_relion_norm_scale_updates_are_not_disabled_for_k_class(monkeypatch, cap
     from helpers.tiny_refinement import CallTrace, run_tiny_refinement
 
     from relax.relion import normalization
-    from relax.relion.normalization import _format_relion_correction_range
+    from relax.relion.normalization import format_relion_correction_range
 
     def statistics(n_images):
         return dict(wsum_norm_correction=np.ones(n_images), wsum_scale_correction_xa=np.ones(1),
@@ -1157,8 +1157,8 @@ def test_relion_norm_scale_updates_are_not_disabled_for_k_class(monkeypatch, cap
     for message, numbered in zip(messages, trace.calls("numbered"), strict=True):
         update = numbered.result
         for half in range(2):
-            assert _format_relion_correction_range(update.image_corrections_per_half[half]) in message
-            assert _format_relion_correction_range(update.scale_corrections_per_half[half]) in message
+            assert format_relion_correction_range(update.image_corrections_per_half[half]) in message
+            assert format_relion_correction_range(update.scale_corrections_per_half[half]) in message
 
 
 def test_sparse_follower_scale_replay_replaces_state_before_remap_and_telemetry(monkeypatch):

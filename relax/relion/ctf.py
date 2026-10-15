@@ -197,7 +197,7 @@ def dataset_has_premultiplied_ctf(experiment_dataset, image_shape) -> bool:
     return bool(_premultiplied_particles(cache).any())
 
 
-def _fftw_shell_labels(size: int, window: int, *, centered_rows: bool) -> np.ndarray:
+def fftw_shell_labels(size: int, window: int, *, centered_rows: bool) -> np.ndarray:
     """RELION's ``Mresol_fine`` of a ``window``-pixel current size on a ``size``-pixel half grid.
 
     Per half-grid pixel ``(ip, jp)``: ``ROUND(|(ip, jp)|)`` for the pixels of the
@@ -226,14 +226,14 @@ def premultiplied_ctf2_shell_sums(experiment_dataset, image_indices, image_shape
     """Per image, RELION's ``Fctf`` summed over each ``Mresol_fine`` shell of the current size.
 
     ``Fctf`` is the image's exact CTF row (CTF^2 for a premultiplied optics group); the
-    shells are those of :func:`_fftw_shell_labels` at ``window``. Returns an
+    shells are those of :func:`fftw_shell_labels` at ``window``. Returns an
     ``(images, window // 2 + 1)`` float64 array, the per-image term RELION adds to
     ``wsum_model.sumw_ctf2`` for premultiplied images (acc_ml_optimiser_impl.h, the
     ``getCtfPremultiplied`` block of storeWeightedSums).
     """
 
     size = int(image_shape[0])
-    labels = _fftw_shell_labels(size, int(window), centered_rows=True)
+    labels = fftw_shell_labels(size, int(window), centered_rows=True)
     pixels = np.flatnonzero(labels >= 0)
     order = np.argsort(labels[pixels], kind="stable")
     pixels = pixels[order]
@@ -296,7 +296,7 @@ def premultiplied_average_ctf2(parts, box_size: int, sumw: float):
     if not float(sumw) > 0.0:
         raise ValueError(f"the average CTF^2 of premultiplied images needs the E-step's sumw, got {sumw}")
     npix = np.bincount(
-        (labels := _fftw_shell_labels(int(box_size), int(box_size), centered_rows=False))[labels >= 0],
+        (labels := fftw_shell_labels(int(box_size), int(box_size), centered_rows=False))[labels >= 0],
         minlength=n_shells,
     )[:n_shells].astype(np.float64)
     denominator = float(sumw) * npix
@@ -580,7 +580,7 @@ def relion_ctf_fftw_half(params, box_size: int, pixel_size: float, *, gamma_offs
     return np.array(rows).reshape(-1, size, size // 2 + 1)
 
 
-def _optics_group_ctf_geometry(cache, group: int, size: int):
+def optics_group_ctf_geometry(cache, group: int, size: int):
     """``(gamma_offset, mag_matrix)`` of one optics group on a ``size`` grid, each None when absent.
 
     The even Zernike gamma offset is ``ObservationModel::getGammaOffset`` on the FFTW
@@ -596,14 +596,14 @@ def _optics_group_ctf_geometry(cache, group: int, size: int):
         row = cache["optics"][int(group)]
         labels = {str(label).lstrip("_") for optics in cache["optics"].values() for label in optics.keys()}
         mag = oa.optics_group_mag_matrix(row) if any(label.startswith("rlnMagMat") for label in labels) else None
-        even = oa.parse_relion_vector(oa._optics_value(row, "rlnEvenZernike", "[]"))
+        even = oa.parse_relion_vector(oa.optics_value(row, "rlnEvenZernike", "[]"))
         gamma = None
         if any(even):
-            box_size = int(oa._optics_value(row, "rlnImageSize", size))
+            box_size = int(oa.optics_value(row, "rlnImageSize", size))
             if box_size != size:
                 raise ValueError(f"even Zernike terms need the optics group's box {box_size}, got an image of {size}")
             gamma = oa.zernike_phase_fftw_half(
-                even, oa.even_index_to_mn, size, float(oa._optics_value(row, "rlnImagePixelSize")), box_size, mag
+                even, oa.even_index_to_mn, size, float(oa.optics_value(row, "rlnImagePixelSize")), box_size, mag
             )
         geometry[key] = (gamma, mag)
     return geometry[key]
@@ -684,7 +684,7 @@ def _exact_ctf_rows(
         square = None
 
     def evaluate(group, members, padded=False):
-        gamma, mag = _optics_group_ctf_geometry(cache, int(group), image_h)
+        gamma, mag = optics_group_ctf_geometry(cache, int(group), image_h)
         return _relion_ctf_rows(
             constants[members],
             image_h,

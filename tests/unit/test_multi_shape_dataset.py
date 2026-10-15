@@ -55,7 +55,7 @@ def test_model_grid_window_keeps_the_centre(size, ori):
     image = np.zeros((size, size))
     image[size // 2, size // 2] = 1.0
     image[size // 2 - 3, size // 2 + 2] = 2.0
-    out = initial_noise._rescale_to_model_grid(image, 2.0, 2.0, ori)
+    out = initial_noise.rescale_to_model_grid(image, 2.0, 2.0, ori)
     assert out.shape == (ori, ori)
     assert out[ori // 2, ori // 2] == 1.0 and out[ori // 2 - 3, ori // 2 + 2] == 2.0
     assert out.sum() == 3.0
@@ -107,7 +107,7 @@ def test_group_on_another_grid_follows_relion_resize_then_window():
                 (0, initial_noise._softmask_outside_map(same, 20.0 / (2 * model_pixel), 2.0)),
                 (
                     1,
-                    initial_noise._rescale_to_model_grid(
+                    initial_noise.rescale_to_model_grid(
                         initial_noise._softmask_outside_map(other, 20.0 / (2 * other_pixel), 2.0),
                         other_pixel,
                         model_pixel,

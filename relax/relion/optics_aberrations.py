@@ -128,7 +128,7 @@ def zernike_phase_fftw_half(coefficients, index_to_mn, size: int, angpix: float,
     return phase
 
 
-def _optics_value(optics_row, name, default=None):
+def optics_value(optics_row, name, default=None):
     for key in (name, f"_{name}"):
         if key in optics_row:
             return optics_row[key]
@@ -142,7 +142,7 @@ def optics_group_mag_matrix(optics_row) -> np.ndarray:
 
     matrix = np.eye(2)
     for (i, j), default in (((0, 0), 1.0), ((0, 1), 0.0), ((1, 0), 0.0), ((1, 1), 1.0)):
-        matrix[i, j] = float(_optics_value(optics_row, f"rlnMagMat{i}{j}", default))
+        matrix[i, j] = float(optics_value(optics_row, f"rlnMagMat{i}{j}", default))
     return matrix
 
 
@@ -205,8 +205,8 @@ def _odd_phase_tables(experiment_dataset, image_shape):
         if not any(coefficients):
             tables[group] = None
             continue
-        box_size = int(_optics_value(row, "rlnImageSize", size))
-        angpix = float(_optics_value(row, "rlnImagePixelSize"))
+        box_size = int(optics_value(row, "rlnImageSize", size))
+        angpix = float(optics_value(row, "rlnImagePixelSize"))
         phase = zernike_phase_fftw_half(
             coefficients, odd_index_to_mn, size, angpix, box_size, optics_group_mag_matrix(row) if has_mag else None
         )
@@ -380,7 +380,7 @@ def dataset_needs_exact_ctf(experiment_dataset) -> bool:
         return True
     _, cache = _source_tables(experiment_dataset, image_shape)
     for row in cache["optics"].values():
-        if any(parse_relion_vector(_optics_value(row, "rlnEvenZernike", "[]"))):
+        if any(parse_relion_vector(optics_value(row, "rlnEvenZernike", "[]"))):
             return True
     return dataset_projection_magnification(experiment_dataset) is not None
 
