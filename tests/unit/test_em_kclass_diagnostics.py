@@ -11,8 +11,7 @@ from helpers.float_compare import assert_matches, matches
 
 import relax.diagnostics.coarse_gaussian_diagnostics as coarse_diagnostics
 import relax.sampling.oversampling as oversampling_mod
-from relax.diagnostics import coarse_gaussian_diagnostics
-from relax.diagnostics import iteration as debug_dumps
+from relax.diagnostics import coarse_gaussian_diagnostics, observers
 from relax.refinement.refinement_options import ScoringVariants
 from relax.steps import score_outputs, scoring_policy
 
@@ -442,13 +441,13 @@ def test_significance_dump_half_selector_is_scoped_to_target_iteration(tmp_path)
         "RELAX_SIGNIFICANCE_DUMP_ORIGINAL_INDICES": "1,3",
     }
 
-    assert debug_dumps._significance_dump_half_indices(
+    assert observers._significance_dump_half_indices(
         numbered_iteration=1,
         n_classes=1,
         experiment_datasets=datasets,
         environ=environ,
     ) == (0, 1)
-    assert debug_dumps._significance_dump_half_indices(
+    assert observers._significance_dump_half_indices(
         numbered_iteration=2,
         n_classes=1,
         experiment_datasets=datasets,
@@ -467,7 +466,7 @@ def test_significance_dump_half_selector_fails_closed(tmp_path):
         "RELAX_SIGNIFICANCE_DUMP_ORIGINAL_INDICES": "1",
     }
     with pytest.raises(RuntimeError, match="STOP_AFTER_TARGET"):
-        debug_dumps._significance_dump_half_indices(
+        observers._significance_dump_half_indices(
             numbered_iteration=2,
             n_classes=1,
             experiment_datasets=datasets,
@@ -478,14 +477,14 @@ def test_significance_dump_half_selector_fails_closed(tmp_path):
     target_missing["RELAX_SIGNIFICANCE_DUMP_STOP_AFTER_TARGET"] = "1"
     target_missing["RELAX_SIGNIFICANCE_DUMP_ORIGINAL_INDICES"] = "2"
     with pytest.raises(RuntimeError, match="not all present"):
-        debug_dumps._significance_dump_half_indices(
+        observers._significance_dump_half_indices(
             numbered_iteration=2,
             n_classes=1,
             experiment_datasets=datasets,
             environ=target_missing,
         )
     with pytest.raises(RuntimeError, match="K=1 diagnostic-only"):
-        debug_dumps._significance_dump_half_indices(
+        observers._significance_dump_half_indices(
             numbered_iteration=2,
             n_classes=4,
             experiment_datasets=datasets,
@@ -506,13 +505,13 @@ def test_pass2_norm_dump_half_selector_reaches_only_target_half(tmp_path):
         "RELAX_PASS2_DUMP_ORIGINAL_INDICES": "1,3",
     }
 
-    assert debug_dumps._significance_dump_half_indices(
+    assert observers._significance_dump_half_indices(
         numbered_iteration=1,
         n_classes=1,
         experiment_datasets=datasets,
         environ=environ,
     ) == (0, 1)
-    assert debug_dumps._significance_dump_half_indices(
+    assert observers._significance_dump_half_indices(
         numbered_iteration=2,
         n_classes=1,
         experiment_datasets=datasets,
@@ -531,21 +530,21 @@ def test_pass2_norm_dump_half_selector_fails_closed(tmp_path):
         "RELAX_PASS2_DUMP_ORIGINAL_INDICES": "1",
     }
     with pytest.raises(RuntimeError, match="NORM_RESIDUAL_INPUTS"):
-        debug_dumps._significance_dump_half_indices(
+        observers._significance_dump_half_indices(
             numbered_iteration=2,
             n_classes=1,
             experiment_datasets=datasets,
             environ=base,
         )
     with pytest.raises(RuntimeError, match="NORM_RESIDUAL_STOP_AFTER_TARGET"):
-        debug_dumps._significance_dump_half_indices(
+        observers._significance_dump_half_indices(
             numbered_iteration=2,
             n_classes=1,
             experiment_datasets=datasets,
             environ={**base, "RELAX_PASS2_DUMP_NORM_RESIDUAL_INPUTS": "1"},
         )
     with pytest.raises(RuntimeError, match="mutually exclusive"):
-        debug_dumps._significance_dump_half_indices(
+        observers._significance_dump_half_indices(
             numbered_iteration=2,
             n_classes=1,
             experiment_datasets=datasets,

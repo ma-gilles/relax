@@ -202,7 +202,7 @@ def _scoped_bpref_diagnostics_active(flags: dict[str, bool]) -> bool:
     )
 
 
-def _relion_firstiter_bpref_diagnostics_active(
+def relion_firstiter_bpref_diagnostics_active(
     *,
     bpref_device_signature_active: bool,
     iteration: int,

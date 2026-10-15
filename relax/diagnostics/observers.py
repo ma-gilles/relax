@@ -19,12 +19,10 @@ import numpy as np
 
 from relax.diagnostics import bpref_diagnostics, parity_dump
 from relax.diagnostics.iteration import (
-    _maybe_dump_noise_update_debug,
-    _save_iteration_intermediates,
-    _save_iteration_particle_states,
-    _significance_dump_half_indices,
-    _source_image_indices,
     dump_numbered_iteration,
+    maybe_dump_noise_update_debug,
+    save_iteration_intermediates,
+    save_iteration_particle_states,
     write_final_half_manifest,
     write_numbered_half_manifest,
 )
@@ -39,6 +37,116 @@ from relax.refinement.ports import RunObserver
 from relax.relion.geometry import RECONSTRUCTION_PADDING_FACTOR
 
 logger = logging.getLogger(__name__)
+
+
+_SIGNIFICANCE_DUMP_TARGET_HALF_ENV = "RELAX_SIGNIFICANCE_DUMP_TARGET_HALF"
+
+
+_PASS2_NORM_DUMP_TARGET_HALF_ENV = "RELAX_PASS2_DUMP_TARGET_HALF"
+
+
+def _source_image_indices(dataset) -> np.ndarray:
+    """Original-stack image indices of a half dataset, in its local order."""
+
+    index_layout = getattr(dataset, "_index_layout", None)
+    if index_layout is None:
+        return np.arange(dataset.n_images, dtype=np.int64)
+    return np.asarray(
+        index_layout.original_image_indices_for_local(np.arange(dataset.n_images, dtype=np.int32)),
+        dtype=np.int64,
+    )
+
+
+def _significance_dump_half_indices(
+    *,
+    numbered_iteration: int,
+    n_classes: int,
+    experiment_datasets,
+    environ=None,
+) -> tuple[int, ...]:
+    """Select one half only at an explicitly terminating diagnostic boundary."""
+
+    env = os.environ if environ is None else environ
+    raw_significance_half = str(env.get(_SIGNIFICANCE_DUMP_TARGET_HALF_ENV, "")).strip()
+    raw_pass2_half = str(env.get(_PASS2_NORM_DUMP_TARGET_HALF_ENV, "")).strip()
+    if raw_significance_half and raw_pass2_half:
+        raise RuntimeError(
+            f"{_SIGNIFICANCE_DUMP_TARGET_HALF_ENV} and "
+            f"{_PASS2_NORM_DUMP_TARGET_HALF_ENV} are mutually exclusive"
+        )
+    if not raw_significance_half and not raw_pass2_half:
+        return (0, 1)
+    pass2_norm_mode = bool(raw_pass2_half)
+    target_half_env = (
+        _PASS2_NORM_DUMP_TARGET_HALF_ENV
+        if pass2_norm_mode
+        else _SIGNIFICANCE_DUMP_TARGET_HALF_ENV
+    )
+    raw_half = raw_pass2_half if pass2_norm_mode else raw_significance_half
+    if pass2_norm_mode:
+        if str(env.get("RELAX_PASS2_DUMP_NORM_RESIDUAL_INPUTS", "")).strip() != "1":
+            raise RuntimeError(
+                f"{_PASS2_NORM_DUMP_TARGET_HALF_ENV} requires "
+                "RELAX_PASS2_DUMP_NORM_RESIDUAL_INPUTS=1"
+            )
+        if str(env.get("RELAX_PASS2_DUMP_NORM_RESIDUAL_STOP_AFTER_TARGET", "")).strip() != "1":
+            raise RuntimeError(
+                f"{_PASS2_NORM_DUMP_TARGET_HALF_ENV} requires "
+                "RELAX_PASS2_DUMP_NORM_RESIDUAL_STOP_AFTER_TARGET=1"
+            )
+    elif str(env.get("RELAX_SIGNIFICANCE_DUMP_STOP_AFTER_TARGET", "")).strip() != "1":
+        raise RuntimeError(
+            f"{_SIGNIFICANCE_DUMP_TARGET_HALF_ENV} requires "
+            "RELAX_SIGNIFICANCE_DUMP_STOP_AFTER_TARGET=1"
+        )
+    if int(n_classes) != 1:
+        raise RuntimeError(f"{target_half_env} is K=1 diagnostic-only")
+    try:
+        target_half = int(raw_half)
+    except ValueError as exc:
+        raise ValueError(f"{target_half_env} must be 1 or 2") from exc
+    if target_half not in {1, 2}:
+        raise ValueError(f"{target_half_env} must be 1 or 2")
+
+    prefix = "RELAX_PASS2_DUMP" if pass2_norm_mode else "RELAX_SIGNIFICANCE_DUMP"
+    raw_iteration = str(env.get(f"{prefix}_ITERATION", "")).strip()
+    raw_targets = str(env.get(f"{prefix}_ORIGINAL_INDICES", "")).strip()
+    dump_dir = str(env.get(f"{prefix}_DIR", "")).strip()
+    if not raw_iteration or not raw_targets or not dump_dir:
+        raise RuntimeError(
+            f"{target_half_env} requires an explicit dump directory, "
+            "iteration, and original-index target set"
+        )
+    try:
+        target_iteration = int(raw_iteration)
+        target_indices = {
+            int(token) for token in raw_targets.replace(",", " ").split()
+        }
+    except ValueError as exc:
+        raise ValueError("significance dump iteration and original indices must be integers") from exc
+    if target_iteration <= 0 or not target_indices:
+        raise ValueError("significance dump iteration and original-index target set must be nonempty")
+    if int(numbered_iteration) != target_iteration:
+        return (0, 1)
+
+    selected_half_indices = set(
+        np.asarray(experiment_datasets[target_half - 1].dataset_indices, dtype=np.int64).tolist()
+    )
+    missing = sorted(target_indices - selected_half_indices)
+    if missing:
+        raise RuntimeError(
+            "significance dump targets are not all present in the selected half: "
+            f"half={target_half} missing={missing}"
+        )
+    logger.info(
+        "RECOVAR %s diagnostic: iteration=%d entering only half=%d "
+        "for %d target particles; completion is mandatory before returning from the half",
+        "pass-2 norm operand" if pass2_norm_mode else "coarse-significance",
+        int(numbered_iteration),
+        target_half,
+        len(target_indices),
+    )
+    return (target_half - 1,)
 
 
 class IntermediatesObserver(RunObserver):
@@ -57,7 +165,7 @@ class IntermediatesObserver(RunObserver):
         return not self.skip_unregularized
 
     def maps_reconstructed(self, maps):
-        _save_iteration_intermediates(
+        save_iteration_intermediates(
             self.directory, maps.numerators, maps.denominators, maps.reference_model, maps.noise_model,
             maps.per_half, maps.trial_grid, maps.sampling_plan, maps.options, iteration=maps.iteration,
             unreg_means=maps.unfiltered_maps, fsc=maps.fsc, cs=maps.current_size, state=maps.state,
@@ -65,7 +173,7 @@ class IntermediatesObserver(RunObserver):
         )
 
     def poses_updated(self, iteration, *, poses, per_half, significance, datasets):
-        _save_iteration_particle_states(
+        save_iteration_particle_states(
             self.directory, poses, per_half, significance, iteration=iteration,
             original_image_indices_per_half=[_source_image_indices(dataset) for dataset in datasets],
         )
@@ -223,7 +331,7 @@ class BpRefDiagnosticsObserver(RunObserver):
     the captures are taken; direct planning matches compact planning to float noise, not bit for bit."""
 
     def bpref_diagnostics_armed(self, iteration, half_index, *, bpref_device_signature_active):
-        return bpref_diagnostics._relion_firstiter_bpref_diagnostics_active(
+        return bpref_diagnostics.relion_firstiter_bpref_diagnostics_active(
             bpref_device_signature_active=bpref_device_signature_active, iteration=iteration + 1, half=half_index + 1,
         )
 
@@ -239,7 +347,7 @@ class NoiseUpdateObserver(RunObserver):
     iterations of ``RELAX_NOISE_DEBUG_DUMP_ITERATION``), read from the environment at each update."""
 
     def noise_updated(self, iteration, **terms):
-        _maybe_dump_noise_update_debug(iteration=iteration, **terms)
+        maybe_dump_noise_update_debug(iteration=iteration, **terms)
 
 
 class ClassDumpObserver(RunObserver):

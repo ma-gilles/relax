@@ -750,14 +750,14 @@ def _write_iteration_debug_metadata(
     symmetry: str | None,
 ):
     from relax.diagnostics.iteration import (
-        _save_iteration_intermediates,
+        save_iteration_intermediates,
     )
     from relax.io import map_io
 
     monkeypatch.setattr(map_io, "write_map_from_ft", lambda *_args, **_kwargs: None)
     from relax.refinement.refinement_options import SymmetryOptions
 
-    _save_iteration_intermediates(
+    save_iteration_intermediates(
         str(output_dir),
         (None, None),
         (None, None),

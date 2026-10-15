@@ -3556,7 +3556,7 @@ class NormScaleCorrectionReport:
 # returns updated radial sigma2_noise + the unrolled
 # ``noise_variance`` representation consumed by the engine.
 noise_debug_dump = partial(
-    _maybe_dump_noise_update_debug,
+    maybe_dump_noise_update_debug,
     iteration=iteration,
     current_size=current_size,
     image_shape=cryo.image_shape,

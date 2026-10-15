@@ -127,7 +127,7 @@ def test_firstiter_fused_bpref_override_can_disable_but_not_expand_scope(monkeyp
 ])
 def test_deferred_firstiter_preserves_requested_capture_route(monkeypatch, name):
     monkeypatch.setenv(name, '/requested/capture')
-    active = bpref_diagnostics._relion_firstiter_bpref_diagnostics_active(
+    active = bpref_diagnostics.relion_firstiter_bpref_diagnostics_active(
         bpref_device_signature_active=False, iteration=1, half=1,
     )
     assert active

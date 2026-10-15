@@ -6,7 +6,8 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
-from relax.diagnostics.iteration import _save_iteration_particle_states, _source_image_indices
+from relax.diagnostics.iteration import save_iteration_particle_states
+from relax.diagnostics.observers import _source_image_indices
 
 pytestmark = pytest.mark.unit
 
@@ -34,7 +35,7 @@ def test_save_iteration_particle_states_preserves_source_aligned_values(tmp_path
     coarse = _per_half([21], [22, 23])
     original = _per_half([101], [205, 207])
 
-    _save_iteration_particle_states(
+    save_iteration_particle_states(
         str(tmp_path),
         _poses(rotations, eulers, relative, absolute),
         SimpleNamespace(max_posterior=pmax, hard_assignments=hard, coarse_ha=coarse),
@@ -60,7 +61,7 @@ def test_save_iteration_particle_states_rejects_misaligned_fields(tmp_path):
     misaligned = _per_half([1, 2], [3])
 
     with pytest.raises(ValueError, match="not source-aligned for half 1"):
-        _save_iteration_particle_states(
+        save_iteration_particle_states(
             str(tmp_path),
             _poses(one, one, one, one),
             SimpleNamespace(max_posterior=misaligned, hard_assignments=one, coarse_ha=one),
