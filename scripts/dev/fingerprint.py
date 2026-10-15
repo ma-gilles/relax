@@ -214,6 +214,19 @@ def default_scoring_overrides(value) -> bool:
     return type(value).__name__ == "ScoringOverrides" and value == type(value)()
 
 
+# Record fields retired at their only value: a tree that still has the field carries that value, so it is not an
+# operand of the stand-ins (a retirement would otherwise reseed them and change every downstream output).
+RETIRED_OPERAND_FIELDS = {
+    "projection_relion_acc_double_floorf_quirk": False,  # RELAX_RELION_ACC_DOUBLE_FLOORF_QUIRK, retired 2026-10-15
+}
+
+
+def retired_operand_field(name, value) -> bool:
+    """Whether ``name`` is a retired record field holding the only value it ever took on the default path."""
+
+    return name in RETIRED_OPERAND_FIELDS and value is RETIRED_OPERAND_FIELDS[name]
+
+
 
 
 # ----------------------------------------------------------------------------- pure logic
@@ -321,6 +334,8 @@ def digest_operands(*values) -> int:
             for key in sorted(value, key=str):
                 if type(value[key]).__name__ == "EngineTuning" or default_scoring_overrides(value[key]):
                     continue  # not an operand (see below), so not its key either
+                if retired_operand_field(key, value[key]):
+                    continue
                 h.update(str(key).encode())
                 feed(value[key], depth + 1)
         elif isinstance(value, (list, tuple)):
