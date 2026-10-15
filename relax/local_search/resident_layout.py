@@ -260,6 +260,14 @@ def tables_from_local_layout(layout, *, rotation_dtype=np.float32) -> ResidentLo
     )
 
 
+# Row capacities are powers of two so a chunk decomposes into whole M-step
+# blocks; the ladder is truncated at run time by the projection byte budget,
+# because the local route projects a chunk's rows rather than gathering a
+# per-iteration cache.
+DEFAULT_ROW_CAPACITY_LADDER = (1024, 4096, 16384, 65536)
+DEFAULT_IMAGE_CAPACITY_LADDER = (32, 128, 512)
+
+
 def plan_local_capacity_chunks(
     tables: ResidentLocalTables,
     *,

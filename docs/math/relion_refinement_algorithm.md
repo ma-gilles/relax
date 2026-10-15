@@ -662,7 +662,7 @@ the three row-block loops run as before: `resident_chunk_stages_finish` in
 [`fine_pass/resident_chunk_stages.py`](../../relax/fine_pass/resident_chunk_stages.py), `_tilt_mstep_program` in
 [`resident_tilts.py`](../../relax/fine_pass/resident_tilts.py) (a row is one tilt image there) and
 `run_resident_mstep_blocks` (local searches and the final pass, from
-[`local_search/resident_pass2.py`](../../relax/local_search/resident_pass2.py)). The flush points are a
+[`local_search/resident_local_chunk.py`](../../relax/local_search/resident_local_chunk.py)). The flush points are a
 static block count, so they depend on the row order alone.
 
 Measured loss of the default accumulation, and what the switch leaves (relax#65):

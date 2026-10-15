@@ -37,6 +37,7 @@ from helpers.refinement_specs import local_iteration_owners
 from helpers.sparse_pass2_mock import IMAGE_SHAPE, VOLUME_SHAPE, MockDataset
 
 from relax.fine_pass import projection_blocks, resident_chunk_memory, resident_image_terms, resident_mstep_blocks
+from relax.local_search import resident_local_admission, resident_local_chunk, resident_parent_probe
 from relax.local_search import resident_pass2 as rlp
 from relax.local_search.layout import (
     build_local_adaptive_pass2_hypothesis_layout,
@@ -345,7 +346,7 @@ def test_gate_names_the_missing_piece(override, expected):
     )
     kwargs.update(override)
     with pytest.raises(NotImplementedError, match=expected):
-        rlp.require_resident_local_configuration(**kwargs)
+        resident_local_admission.require_resident_local_configuration(**kwargs)
 
 
 _PROBE_KWARGS = dict(
@@ -375,7 +376,7 @@ _PROBE_KWARGS = dict(
 def test_parent_probe_configuration_is_accepted_without_the_mstep_pieces():
     """RELION's pass 1 has no M-step: no noise statistics, x-half accumulators or scale groups."""
 
-    rlp.require_resident_local_configuration(**_PROBE_KWARGS)
+    resident_local_admission.require_resident_local_configuration(**_PROBE_KWARGS)
 
 
 @pytest.mark.parametrize(
@@ -397,7 +398,7 @@ def test_parent_probe_gate_names_the_missing_piece(override, expected):
     kwargs = dict(_PROBE_KWARGS)
     kwargs.update(override)
     with pytest.raises(NotImplementedError, match=expected):
-        rlp.require_resident_local_configuration(**kwargs)
+        resident_local_admission.require_resident_local_configuration(**kwargs)
 
 
 def test_projector_call_bound_covers_the_shape_that_ran_out_of_memory():
@@ -527,13 +528,13 @@ def test_resident_local_capacity_texture_matches_the_per_call_texture(monkeypatc
     # texture left no free block for the x-half accumulators, so the chunks of a
     # staged pass get only the slab's geometry.
     chunk_slabs = []
-    real_start = rlp._start_resident_local_chunk
+    real_start = resident_local_chunk.start_resident_local_chunk
 
     def start_spy(*args, **kwargs):
         chunk_slabs.append(type(kwargs["relion_projector_half"]))
         return real_start(*args, **kwargs)
 
-    monkeypatch.setattr(rlp, "_start_resident_local_chunk", start_spy)
+    monkeypatch.setattr(resident_local_chunk, "start_resident_local_chunk", start_spy)
     staged = _run(case, engine_tuning=LOCAL_RESIDENT_ENGINE)
     assert opened == [True]
     assert chunk_slabs and set(chunk_slabs) == {jax.ShapeDtypeStruct}
@@ -572,7 +573,7 @@ def test_local_chunk_tile_count_matches_the_live_translated_arrays(monkeypatch, 
     real_plan = resident_chunk_memory_module.plan_resident_chunk_memory
     real_prepare = resident_chunk_inputs_module.prepare_chunk_reconstruction_operands
     real_rows = resident_chunk_inputs_module._chunk_operand_rows
-    real_unshifted = rlp._unshifted_chunk_operands
+    real_unshifted = resident_local_chunk._unshifted_chunk_operands
     real_gather = resident_chunk_run_module.gather_resident_chunk_operands
 
     def plan(**kwargs):
@@ -633,7 +634,7 @@ def test_local_chunk_tile_count_matches_the_live_translated_arrays(monkeypatch, 
 
     monkeypatch.setattr(resident_chunk_memory_module, "plan_resident_chunk_memory", plan)
     monkeypatch.setattr(resident_chunk_inputs_module, "prepare_chunk_reconstruction_operands", prepare)
-    monkeypatch.setattr(rlp, "_unshifted_chunk_operands", unshifted_operands)
+    monkeypatch.setattr(resident_local_chunk, "_unshifted_chunk_operands", unshifted_operands)
     _run(_case(), engine_tuning=LOCAL_RESIDENT_ENGINE, resident_operands=unshifted)
     assert len(planned) == 1 and len(measured) >= 2
     for key, image_translations, live in measured:
@@ -1139,7 +1140,7 @@ def test_two_identical_classes_split_the_single_class_pass(zero_oversampling):
 
 def test_cc_block_rows_divide_every_capacity():
     for capacity in (64, 96, 256, 1000, 1024, 65536, 7):
-        block = rlp._cc_block_rows(capacity)
+        block = resident_local_chunk.cc_block_rows(capacity)
         assert 1 <= block <= 128 and capacity % block == 0 and block & (block - 1) == 0
 
 
@@ -1292,13 +1293,13 @@ def test_lone_overflow_image_matches_the_one_call_chunk(monkeypatch, firstiter_c
 
     blocked_calls = []
     name = "score_resident_chunk_normalized_cc_in_row_blocks" if firstiter_cc else "score_resident_chunk_in_row_blocks"
-    real_blocked = getattr(rlp, name)
+    real_blocked = getattr(resident_local_chunk, name)
 
     def spy(*args, **kwargs):
         blocked_calls.append(int(kwargs["row_capacity"]))
         return real_blocked(*args, **kwargs)
 
-    monkeypatch.setattr(rlp, name, spy)
+    monkeypatch.setattr(resident_local_chunk, name, spy)
     assert real_blocked is getattr(resident_scoring, name)
     lone = _run(case, engine_tuning=replace(LOCAL_RESIDENT_ENGINE, local_row_capacities=(8,), local_image_capacities=(1, 2)), production_shapes=True, firstiter_cc=firstiter_cc)
 
@@ -1346,13 +1347,13 @@ def test_class3d_lone_overflow_image_matches_the_one_call_chunk(monkeypatch):
     whole = _run(two, engine_tuning=LOCAL_RESIDENT_ENGINE, n_classes=2).class_pass
 
     block_classes = []
-    real_project = rlp._project_class_rows
+    real_project = resident_local_chunk.project_class_rows
 
     def spy(host_chunk, *args, **kwargs):
         block_classes.append(set(np.asarray(host_chunk["row_class"])[: int(kwargs["n_valid_rows"])].tolist()))
         return real_project(host_chunk, *args, **kwargs)
 
-    monkeypatch.setattr(rlp, "_project_class_rows", spy)
+    monkeypatch.setattr(resident_local_chunk, "project_class_rows", spy)
     # 12-row blocks straddle the class boundary (see the docstring).
     lone = _run(two, engine_tuning=replace(LOCAL_RESIDENT_ENGINE, local_row_capacities=(12,), local_image_capacities=(1, 2)), n_classes=2).class_pass
 
@@ -1402,15 +1403,16 @@ def test_lone_overflow_chunk_from_a_smaller_class_replan_matches_the_one_call_ch
         return real_plan(tables, row_capacity_ladder=(8,), image_capacity_ladder=image_capacity_ladder)
 
     monkeypatch.setattr(rlp, "plan_local_capacity_chunks", smaller_class_plan)
+    monkeypatch.setattr(resident_parent_probe, "plan_local_capacity_chunks", smaller_class_plan)
     sizes = []
-    real_start = rlp._start_resident_local_chunk
+    real_start = resident_local_chunk.start_resident_local_chunk
 
     def spy(chunk, **kwargs):
         if kwargs.get("lone_block_rows") is not None:
             sizes.append((int(chunk.row_capacity), int(kwargs["lone_block_rows"])))
         return real_start(chunk, **kwargs)
 
-    monkeypatch.setattr(rlp, "_start_resident_local_chunk", spy)
+    monkeypatch.setattr(resident_local_chunk, "start_resident_local_chunk", spy)
     lone = _run(case, engine_tuning=replace(LOCAL_RESIDENT_ENGINE, local_row_capacities=(8, 16), local_image_capacities=(1, 2)), production_shapes=True)
 
     assert any(rows % 16 for rows, _ in sizes), f"no overflow chunk off the 16-row class: {sizes}"
@@ -1475,12 +1477,12 @@ def test_projector_call_takes_at_most_half_the_chunk_budget(monkeypatch):
     cap = EngineTuning().local_projection_call_max_bytes
     assert cap == 4 * gib
     row = 1_500_000  # bytes per projected row at box 448, full radius
-    assert rlp._projection_block_rows(row, None, cap) == 4 * gib // row
-    assert rlp._projection_block_rows(row, 40 * gib, cap) == 4 * gib // row
-    assert rlp._projection_block_rows(row, int(3.63 * gib), cap) == int(0.5 * 3.63 * gib) // row
-    assert rlp._projection_block_rows(10 * gib, int(3.63 * gib), cap) == 1
+    assert resident_local_chunk.projection_block_rows(row, None, cap) == 4 * gib // row
+    assert resident_local_chunk.projection_block_rows(row, 40 * gib, cap) == 4 * gib // row
+    assert resident_local_chunk.projection_block_rows(row, int(3.63 * gib), cap) == int(0.5 * 3.63 * gib) // row
+    assert resident_local_chunk.projection_block_rows(10 * gib, int(3.63 * gib), cap) == 1
     # The command's override (EngineTuning) replaces the cap; a value that is not positive is refused.
-    assert rlp._projection_block_rows(row, None, gib) == gib // row
+    assert resident_local_chunk.projection_block_rows(row, None, gib) == gib // row
     monkeypatch.setenv("RELAX_LOCAL_SEARCH_RESIDENT_PROJECTION_CALL_MAX_BYTES", str(gib))
     assert EngineTuning.from_environ().local_projection_call_max_bytes == gib
     monkeypatch.setenv("RELAX_LOCAL_SEARCH_RESIDENT_PROJECTION_CALL_MAX_BYTES", "0")

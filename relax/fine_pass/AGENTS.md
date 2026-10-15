@@ -27,7 +27,7 @@ accumulation it feeds. It is the only pass-2 engine and it needs a CUDA GPU.
 | `resident_operands.py`, `resident_scoring.py`, `resident_statistics.py`, `resident_tilts.py` | per-image operands kept on the device; the scoring stage; the float64 device accumulators; tilt images of subtomogram particles |
 | `window.py`, `scoring.py`, `posterior.py`, `projection_blocks.py`, `wavg.py`, `adjoint.py`, `bucket_io.py`, `bucket_arrays.py`, `local_backprojection.py`, `policy.py` | shared pieces the drivers import, and `policy.py` (the environment switches) |
 
-The local-search pass 2 (`resident_pass2.py`, `resident_layout.py`, `records.py`) is in `relax/local_search/`; the memory budget and `compile_ahead.py` (compiling predictable programs on a helper thread) are in `relax/runtime/`; the per-pass engine record is `relax/runtime/engine_record.py`.
+The local-search pass 2 (`resident_pass2.py` and its `resident_local_admission.py`, `resident_local_chunk.py`, `resident_parent_probe.py`; `resident_layout.py`, `records.py`) is in `relax/local_search/`; the memory budget and `compile_ahead.py` (compiling predictable programs on a helper thread) are in `relax/runtime/`; the per-pass engine record is `relax/runtime/engine_record.py`.
 
 ## Rules
 
