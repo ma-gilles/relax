@@ -2109,7 +2109,7 @@ def _build_replay_iteration_overrides(
             particle_identities = None
         else:
             particle_identities = [
-                relion_metadata._relion_image_identity(name, label="RECOVAR input STAR")
+                relion_metadata.relion_image_identity(name, label="RECOVAR input STAR")
                 for name in particle_names
             ]
             if len(set(particle_identities)) != len(particle_identities):

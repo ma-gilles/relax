@@ -90,12 +90,12 @@ def initial_model_data_blocks(input_star, optics, particles) -> dict:
     if general:
         import pandas as pd
 
-        columns = {f"_{label}": value for label, value in _general_columns(general).items()}
+        columns = {f"_{label}": value for label, value in general_columns(general).items()}
         blocks = {"data_general": pd.DataFrame(columns), **blocks}
     return blocks
 
 
-def _general_columns(general: dict) -> dict:
+def general_columns(general: dict) -> dict:
     """``data_general`` as one-row loop columns, the form relion_refine writes, whichever form the input had."""
 
     return {label: value if isinstance(value, list) else [value] for label, value in general.items()}

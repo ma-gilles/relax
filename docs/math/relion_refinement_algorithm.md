@@ -112,7 +112,7 @@ The pieces:
   ([`_load_input_star_class3d_translations`](../../relax/star/input_poses.py)).
   RELION rounds and applies them before the image FFT but does not centre the
   first global search on the input angles. The `--relion_init_dir` route
-  (`_kclass_firstiter_translation_seed`, from `run_it000_data.star`) is kept
+  (`kclass_firstiter_translation_seed`, from `run_it000_data.star`) is kept
   for debug comparison; on the K4 50k/256 fixture the two are bitwise equal, and
   on EMPIAR-10097 (non-zero origins) the input origins equal `run_it000`'s.
 - References and class distribution: `--ref_star` reads relion_refine's `--ref`

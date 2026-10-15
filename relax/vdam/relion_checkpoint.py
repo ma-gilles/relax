@@ -11,7 +11,7 @@ from pathlib import Path
 
 import numpy as np
 
-from relax.star.metadata import _relion_star_list_value
+from relax.star.metadata import relion_star_list_value
 from relax.vdam.native_options import NativeInitialModelOptions
 from relax.vdam.native_sampling import (
     RELION_ORIENTATIONAL_PRIOR_ROTTILT_PSI,
@@ -100,18 +100,18 @@ def _load_native_vdam_continuation(
 
     optimiser_path = Path(optimiser_star).expanduser().resolve(strict=True)
     optimiser_text = optimiser_path.read_text()
-    iteration = _relion_star_list_value(optimiser_text, "rlnCurrentIteration", int)
-    nr_iter = _relion_star_list_value(optimiser_text, "rlnNumberOfIterations", int)
+    iteration = relion_star_list_value(optimiser_text, "rlnCurrentIteration", int)
+    nr_iter = relion_star_list_value(optimiser_text, "rlnNumberOfIterations", int)
     data_path = _resolve_relion_checkpoint_path(
-        _relion_star_list_value(optimiser_text, "rlnExperimentalDataStarFile"),
+        relion_star_list_value(optimiser_text, "rlnExperimentalDataStarFile"),
         owner=optimiser_path,
     )
     model_path = _resolve_relion_checkpoint_path(
-        _relion_star_list_value(optimiser_text, "rlnModelStarFile"),
+        relion_star_list_value(optimiser_text, "rlnModelStarFile"),
         owner=optimiser_path,
     )
     sampling_path = _resolve_relion_checkpoint_path(
-        _relion_star_list_value(optimiser_text, "rlnOrientSamplingStarFile"),
+        relion_star_list_value(optimiser_text, "rlnOrientSamplingStarFile"),
         owner=optimiser_path,
     )
     if data_path != Path(expected_data_star).expanduser().resolve(strict=True):
@@ -129,20 +129,20 @@ def _load_native_vdam_continuation(
         "rlnAdaptiveOversampleOrder": int(opts.oversampling),
     }
     for label, expected in required_optimizer_values.items():
-        observed = _relion_star_list_value(optimiser_text, label, int)
+        observed = relion_star_list_value(optimiser_text, label, int)
         if observed != expected:
             raise ValueError(f"checkpoint _{label}={observed} differs from requested value {expected}")
-    if _relion_star_list_value(optimiser_text, "rlnGradEmIters", int) != int(opts.grad_em_iters):
+    if relion_star_list_value(optimiser_text, "rlnGradEmIters", int) != int(opts.grad_em_iters):
         raise ValueError("checkpoint grad_em_iters differs from requested schedule")
-    if _relion_star_list_value(optimiser_text, "rlnParticleDiameter", float) != float(opts.particle_diameter):
+    if relion_star_list_value(optimiser_text, "rlnParticleDiameter", float) != float(opts.particle_diameter):
         raise ValueError("checkpoint particle diameter differs from requested value")
     unsupported_subset_modes = {
-        "rlnDoFastSubsetOptimisation": _relion_star_list_value(
+        "rlnDoFastSubsetOptimisation": relion_star_list_value(
             optimiser_text,
             "rlnDoFastSubsetOptimisation",
             int,
         ),
-        "rlnGradSubsetOrder": _relion_star_list_value(
+        "rlnGradSubsetOrder": relion_star_list_value(
             optimiser_text,
             "rlnGradSubsetOrder",
             int,
@@ -156,27 +156,27 @@ def _load_native_vdam_continuation(
             "diagnostic native VDAM continuation does not support "
             + ", ".join(enabled_subset_modes)
         )
-    grad_suspended_local_searches_iter = _relion_star_list_value(
+    grad_suspended_local_searches_iter = relion_star_list_value(
         optimiser_text,
         "rlnGradSuspendLocalSamplingIter",
         int,
     )
-    grad_ini_subset_size = _relion_star_list_value(
+    grad_ini_subset_size = relion_star_list_value(
         optimiser_text,
         "rlnSgdInitialSubsetSize",
         int,
     )
-    grad_fin_subset_size = _relion_star_list_value(
+    grad_fin_subset_size = relion_star_list_value(
         optimiser_text,
         "rlnSgdFinalSubsetSize",
         int,
     )
-    grad_ini_frac = _relion_star_list_value(
+    grad_ini_frac = relion_star_list_value(
         optimiser_text,
         "rlnSgdInitialIterationsFraction",
         float,
     )
-    grad_fin_frac = _relion_star_list_value(
+    grad_fin_frac = relion_star_list_value(
         optimiser_text,
         "rlnSgdFinalIterationsFraction",
         float,
@@ -280,21 +280,21 @@ def _load_native_vdam_continuation(
         current_resolution=current_resolution,
         current_resolution_shell=int(np.floor(current_resolution * pixel_size * box_size + 0.5)),
         current_size=current_size,
-        incr_size=_relion_star_list_value(optimiser_text, "rlnIncrementImageSize", int),
+        incr_size=relion_star_list_value(optimiser_text, "rlnIncrementImageSize", int),
         ave_Pmax=_general("rlnAveragePmax", float),
         has_high_fsc_at_limit=bool(
-            _relion_star_list_value(optimiser_text, "rlnHasHighFscAtResolLimit", int)
+            relion_star_list_value(optimiser_text, "rlnHasHighFscAtResolLimit", int)
         ),
-        grad_current_stepsize=_relion_star_list_value(
+        grad_current_stepsize=relion_star_list_value(
             optimiser_text,
             "rlnGradCurrentStepsize",
             float,
         ),
         tau2_fudge_factor=_general("rlnTau2FudgeFactor", float),
-        subset_size=_relion_star_list_value(optimiser_text, "rlnSgdSubsetSize", int),
-        has_converged=bool(_relion_star_list_value(optimiser_text, "rlnHasConverged", int)),
+        subset_size=relion_star_list_value(optimiser_text, "rlnSgdSubsetSize", int),
+        has_converged=bool(relion_star_list_value(optimiser_text, "rlnHasConverged", int)),
         grad_has_converged=bool(
-            _relion_star_list_value(optimiser_text, "rlnGradHasConverged", int)
+            relion_star_list_value(optimiser_text, "rlnGradHasConverged", int)
         ),
     )
     for name in (
@@ -315,72 +315,72 @@ def _load_native_vdam_continuation(
 
     sampling_text = sampling_path.read_text()
     sampling_state = NativeSamplingState(
-        healpix_order=_relion_star_list_value(sampling_text, "rlnHealpixOrder", int),
-        adaptive_oversampling=_relion_star_list_value(
+        healpix_order=relion_star_list_value(sampling_text, "rlnHealpixOrder", int),
+        adaptive_oversampling=relion_star_list_value(
             optimiser_text,
             "rlnAdaptiveOversampleOrder",
             int,
         ),
-        offset_range_angstrom=_relion_star_list_value(sampling_text, "rlnOffsetRange", float),
-        offset_step_angstrom=_relion_star_list_value(sampling_text, "rlnOffsetStep", float),
-        offset_range_ori_angstrom=_relion_star_list_value(
+        offset_range_angstrom=relion_star_list_value(sampling_text, "rlnOffsetRange", float),
+        offset_step_angstrom=relion_star_list_value(sampling_text, "rlnOffsetStep", float),
+        offset_range_ori_angstrom=relion_star_list_value(
             sampling_text,
             "rlnOffsetRangeOriginal",
             float,
         ),
-        offset_step_ori_angstrom=_relion_star_list_value(
+        offset_step_ori_angstrom=relion_star_list_value(
             sampling_text,
             "rlnOffsetStepOriginal",
             float,
         ),
         pixel_size=pixel_size,
-        auto_local_healpix_order=_relion_star_list_value(
+        auto_local_healpix_order=relion_star_list_value(
             optimiser_text,
             "rlnAutoLocalSearchesHealpixOrder",
             int,
         ),
-        acc_rot=_relion_star_list_value(optimiser_text, "rlnOverallAccuracyRotations", float),
-        acc_trans_angstrom=_relion_star_list_value(
+        acc_rot=relion_star_list_value(optimiser_text, "rlnOverallAccuracyRotations", float),
+        acc_trans_angstrom=relion_star_list_value(
             optimiser_text,
             "rlnOverallAccuracyTranslationsAngst",
             float,
         ),
-        current_changes_optimal_offsets_angstrom=_relion_star_list_value(
+        current_changes_optimal_offsets_angstrom=relion_star_list_value(
             optimiser_text,
             "rlnChangesOptimalOffsets",
             float,
         ),
-        current_changes_optimal_orientations=_relion_star_list_value(
+        current_changes_optimal_orientations=relion_star_list_value(
             optimiser_text,
             "rlnChangesOptimalOrientations",
             float,
         ),
-        current_changes_optimal_classes=_relion_star_list_value(
+        current_changes_optimal_classes=relion_star_list_value(
             optimiser_text,
             "rlnChangesOptimalClasses",
             float,
         ),
-        smallest_changes_optimal_offsets_angstrom=_relion_star_list_value(
+        smallest_changes_optimal_offsets_angstrom=relion_star_list_value(
             optimiser_text,
             "rlnSmallestChangesOffsets",
             float,
         ),
-        smallest_changes_optimal_orientations=_relion_star_list_value(
+        smallest_changes_optimal_orientations=relion_star_list_value(
             optimiser_text,
             "rlnSmallestChangesOrientations",
             float,
         ),
-        smallest_changes_optimal_classes=_relion_star_list_value(
+        smallest_changes_optimal_classes=relion_star_list_value(
             optimiser_text,
             "rlnSmallestChangesClasses",
             float,
         ),
-        nr_iter_wo_resol_gain=_relion_star_list_value(
+        nr_iter_wo_resol_gain=relion_star_list_value(
             optimiser_text,
             "rlnNumberOfIterWithoutResolutionGain",
             int,
         ),
-        nr_iter_wo_large_hidden_variable_changes=_relion_star_list_value(
+        nr_iter_wo_large_hidden_variable_changes=relion_star_list_value(
             optimiser_text,
             "rlnNumberOfIterWithoutChangingAssignments",
             int,

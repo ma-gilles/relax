@@ -407,7 +407,7 @@ def test_responsibility_loc_budget(responsibility):
     """Moving code must preserve its accounting; review growth before revising a cap."""
     from recovar.data_io.starfile import star_column
 
-    from relax.star.metadata import _relion_star_list_value
+    from relax.star.metadata import relion_star_list_value
 
     def source_lines(fn):
         return len(inspect.getsourcelines(fn)[0])
@@ -415,7 +415,7 @@ def test_responsibility_loc_budget(responsibility):
     # Preserve the previous accounting for functions moved into shared modules,
     # including their spacing, owner imports, projector alias and filter constant.
     shared = {
-        "input_output": source_lines(star_column) + source_lines(_relion_star_list_value) + 4,
+        "input_output": source_lines(star_column) + source_lines(relion_star_list_value) + 4,
         "controller": source_lines(GuiInitialModelDefaults) + 2,
         "initialization": 3 + sum(source_lines(getattr(reference_initialization, name)) + 2 for name in (
             "initial_low_pass_filter_references", "_relion_power_spectrum_3d",
@@ -546,7 +546,7 @@ def test_initial_model_serialization_owners_and_driver_imports():
     assert output._write_data_star is initial_model_io._write_data_star
     assert output._write_model_star is initial_model_io._write_model_star
     assert initial_model_io.star_column is ctf.star_column is star_column
-    assert relion_checkpoint._relion_star_list_value is metadata._relion_star_list_value
+    assert relion_checkpoint.relion_star_list_value is metadata.relion_star_list_value
     assert not (PACKAGE_DIR / "star_io.py").exists()
 
 

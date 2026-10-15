@@ -8716,14 +8716,14 @@ def read_controls(model, *, log) -> InitialModelControls:
     """Prefer model tau2 fudge; read offset sigma only from the optimiser."""
     sigma_offset_angstrom = None
     model_text = model.reference.path.read_text()
-    tau2_fudge = relion_metadata._parse_relion_tau2_fudge(model_text)
+    tau2_fudge = relion_metadata.parse_relion_tau2_fudge(model_text)
     if tau2_fudge is not None:
         log.info("STRICT-PARITY: tau2_fudge from RELION it000 model.star: %.3f", tau2_fudge)
     optimiser_path = model.reference.path.parent / "run_it000_optimiser.star"
     if optimiser_path.exists():
         optimiser_text = optimiser_path.read_text()
         if tau2_fudge is None:
-            tau2_fudge = relion_metadata._parse_relion_tau2_fudge(optimiser_text)
+            tau2_fudge = relion_metadata.parse_relion_tau2_fudge(optimiser_text)
             if tau2_fudge is not None:
                 log.info("STRICT-PARITY: --tau2_fudge override from RELION it000 optimiser: %.3f", tau2_fudge)
         match = re.search(r"_rlnSigmaOffsetsAngst\s+(\S+)", optimiser_text)

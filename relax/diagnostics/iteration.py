@@ -26,7 +26,7 @@ from relax.relion.geometry import PROJECTION_PADDING_FACTOR, RECONSTRUCTION_PADD
 from relax.runtime.env_flags import parse_int_set
 from relax.sampling.grids import rotation_grid_size
 from relax.sampling.symmetry import canonicalize_rotational_symmetry, symmetry_operator_sha256
-from relax.star.metadata import _relion_half_plane_shell_counts
+from relax.star.metadata import relion_half_plane_shell_counts
 
 if TYPE_CHECKING:
     from relax.refinement.numbered_reconstruction import ReconstructionSettings
@@ -537,7 +537,7 @@ def _maybe_dump_noise_update_debug(
         "shell_index_half": shell_indices_half.astype(np.int32),
         "half_shell_counts": half_counts,
         "half_weighted_shell_counts": half_weighted_counts,
-        "relion_half_plane_shell_counts": _relion_half_plane_shell_counts(image_shape),
+        "relion_half_plane_shell_counts": relion_half_plane_shell_counts(image_shape),
         "mean_sigma2_noise": np.asarray(noise_from_res, dtype=np.float64),
     }
     for half_id, stats_k in enumerate(noise_stats_per_half, start=1):

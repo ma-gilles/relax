@@ -270,7 +270,7 @@ def _load_input_star_class3d_translations(input_particles, rows, *, voxel_size: 
 
     Class3D rounds and applies the input origins before the image FFT but does
     not centre its first global search on the input orientations (see
-    ``_kclass_firstiter_translation_seed``), so only translations are
+    ``kclass_firstiter_translation_seed``), so only translations are
     returned: ``rows`` indexes the input STAR in the order of the single
     all-data accumulator, and the second accumulator is empty. With local
     searches from the start (``--sigma_ang``, ``with_angles``) the input angles
@@ -393,7 +393,7 @@ def _resolve_input_star_pose_seed(
     return True
 
 
-def _kclass_firstiter_translation_seed(
+def kclass_firstiter_translation_seed(
     initial_override,
     *,
     n_classes,

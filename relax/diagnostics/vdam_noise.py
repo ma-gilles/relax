@@ -47,7 +47,7 @@ def dump_noise_update_boundary(
 ) -> str:
     """Write one iteration's VDAM noise sufficient statistics and spectra; returns the file."""
 
-    from relax.star.metadata import _relion_half_plane_shell_counts
+    from relax.star.metadata import relion_half_plane_shell_counts
 
     dump_dir = Path(dump_root)
     dump_dir.mkdir(parents=True, exist_ok=True)
@@ -64,7 +64,7 @@ def dump_noise_update_boundary(
         "iteration": np.asarray([int(state.iter)], dtype=np.int32),
         "current_size": np.asarray([int(state.current_size)], dtype=np.int32),
         "image_shape": np.asarray([int(state.box_size), int(state.box_size)], dtype=np.int32),
-        "relion_half_plane_shell_counts": _relion_half_plane_shell_counts((int(state.box_size), int(state.box_size))),
+        "relion_half_plane_shell_counts": relion_half_plane_shell_counts((int(state.box_size), int(state.box_size))),
         "half0_wsum_sigma2_noise": residual,
         "half0_wsum_img_power": image_power,
         "half0_wsum_total": residual + image_power,

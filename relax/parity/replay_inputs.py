@@ -276,7 +276,7 @@ def class3d_initial_translations(init_dir, target: ReplayTarget, *, n_classes: i
         include_initial_state=True,
         strict=True,
     )
-    translations = input_poses._kclass_firstiter_translation_seed(
+    translations = input_poses.kclass_firstiter_translation_seed(
         initial_overrides[0],
         n_classes=n_classes,
         init_relion_iteration=init_relion_iteration,

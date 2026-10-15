@@ -51,7 +51,7 @@ def relion_metadata_translations(
     return (np.asarray(base, dtype=dtype).reshape(selected.shape) + selected).astype(dtype)
 
 
-def _relion_half_plane_shell_counts(image_shape):
+def relion_half_plane_shell_counts(image_shape):
     """Count RELION's non-redundant FFTW half-plane shell pixels."""
     height, width = int(image_shape[0]), int(image_shape[1])
     n_shells = height // 2 + 1
@@ -246,7 +246,7 @@ def read_relion_direction_priors(model_star_path, n_classes=None, *, dtype=np.fl
     return np.stack(priors, axis=0)
 
 
-def _relion_star_list_value(text: str, label: str, cast=str):
+def relion_star_list_value(text: str, label: str, cast=str):
     """Read one required scalar from a RELION list-style STAR block."""
 
     import re
@@ -380,7 +380,7 @@ def read_relion_mrc_model_pixel_size(path):
 
 
 
-def _parse_relion_tau2_fudge(text):
+def parse_relion_tau2_fudge(text):
     """Extract RELION's tau2_fudge from a model or optimiser STAR text block.
 
     ``_rlnTau2FudgeFactor`` (model.star) is the value RELION actually used.
@@ -406,7 +406,7 @@ def _parse_relion_tau2_fudge(text):
     return val
 
 
-def _relion_image_identity(name, *, label: str) -> tuple[int, str]:
+def relion_image_identity(name, *, label: str) -> tuple[int, str]:
     """Return the exact ``(<1-based index>, <stack>)`` RELION image identity."""
 
     match = re.fullmatch(r"(\d+)@(.+)", str(name))
@@ -424,7 +424,7 @@ def particle_identity_rows(particles, *, label: str) -> dict[tuple[int, str], in
         raise ValueError(f"{label} is missing rlnImageName")
     else:
         identities = [
-            _relion_image_identity(name, label=label)
+            relion_image_identity(name, label=label)
             for name in np.asarray(particles["rlnImageName"]).reshape(-1)
         ]
     if len(set(identities)) != len(identities):

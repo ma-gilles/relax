@@ -53,7 +53,7 @@ from relax.refinement.iteration_snapshot import (
     REFINEMENT_STATE_SCALAR_FIELDS,
     IterationSnapshot,
 )
-from relax.star.blocks import _general_columns, read_star_blocks
+from relax.star.blocks import general_columns, read_star_blocks
 
 logger = logging.getLogger(__name__)
 
@@ -687,7 +687,7 @@ def _write_data_star(root: Path, snapshot: IterationSnapshot, particles, optics,
         table[label] = values
     blocks = []
     if general:
-        blocks.append(_loop_block("general", _general_columns(general)))
+        blocks.append(_loop_block("general", general_columns(general)))
     if optics is not None:
         blocks.append(_loop_block("optics", optics))
     blocks.append(_loop_block("particles", table))

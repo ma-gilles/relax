@@ -980,7 +980,7 @@ def test_run_halfset_em_iteration_heterogeneous_branch_updates_covariance_prior_
 
 @pytest.mark.parametrize("value", ["'path with spaces.star'", '"path with spaces.star"'])
 def test_strict_relion_scalar_preserves_quoted_paths(value):
-    assert relion_metadata._relion_star_list_value(f"_rlnPath {value}\n", "rlnPath") == "path with spaces.star"
+    assert relion_metadata.relion_star_list_value(f"_rlnPath {value}\n", "rlnPath") == "path with spaces.star"
 
 
 @pytest.mark.parametrize("text, message", [
@@ -991,15 +991,15 @@ def test_strict_relion_scalar_preserves_quoted_paths(value):
 ])
 def test_strict_relion_scalar_rejects_missing_duplicate_and_multi_token(text, message):
     with pytest.raises(ValueError) as error:
-        relion_metadata._relion_star_list_value(text, "rlnValue")
+        relion_metadata.relion_star_list_value(text, "rlnValue")
     assert str(error.value) == message
 
 
 def test_strict_relion_scalar_cast_and_literal_hash():
-    assert relion_metadata._relion_star_list_value("_rlnValue 7\n", "rlnValue", int) == 7
-    assert relion_metadata._relion_star_list_value("_rlnValue 'file#1.star'\n", "rlnValue") == "file#1.star"
+    assert relion_metadata.relion_star_list_value("_rlnValue 7\n", "rlnValue", int) == 7
+    assert relion_metadata.relion_star_list_value("_rlnValue 'file#1.star'\n", "rlnValue") == "file#1.star"
     with pytest.raises(ValueError):
-        relion_metadata._relion_star_list_value("_rlnValue invalid\n", "rlnValue", int)
+        relion_metadata.relion_star_list_value("_rlnValue invalid\n", "rlnValue", int)
 
 
 @pytest.mark.parametrize("reader, missing", [

@@ -68,8 +68,8 @@ from relax.sampling.orientation_priors import DirectionPrior
 from relax.star.input_particle_table import prepare_relion_halfset_layout
 from relax.star.input_poses import _load_init_previous_best_poses_npz
 from relax.star.metadata import (
-    _parse_relion_tau2_fudge,
     parse_relion_cli_ini_high,
+    parse_relion_tau2_fudge,
 )
 from relax.steps.half_inputs import HalfSet
 
@@ -1034,7 +1034,7 @@ data_optimiser_general
 _rlnDoSplitRandomHalves                                  0
 _rlnTau2FudgeArg                                          4.000000
 """
-    assert _parse_relion_tau2_fudge(text) == pytest.approx(4.0)
+    assert parse_relion_tau2_fudge(text) == pytest.approx(4.0)
 
 
 
@@ -1359,7 +1359,7 @@ def test_replay_mean_log_formatter_handles_empty_half_without_warning():
 
 def test_relion_tau2_fudge_parser_accepts_factor_label():
     text = "_rlnTau2FudgeFactor 1.000000\n"
-    assert _parse_relion_tau2_fudge(text) == pytest.approx(1.0)
+    assert parse_relion_tau2_fudge(text) == pytest.approx(1.0)
 
 
 def test_relion_tau2_fudge_parser_maps_arg_negative_one_to_none():
@@ -1381,7 +1381,7 @@ data_optimiser_general
 _rlnDoSplitRandomHalves                                  1
 _rlnTau2FudgeArg                                          -1.000000
 """
-    assert _parse_relion_tau2_fudge(text) is None
+    assert parse_relion_tau2_fudge(text) is None
 
 
 def test_relion_tau2_fudge_parser_prefers_factor_over_arg():
@@ -1394,7 +1394,7 @@ def test_relion_tau2_fudge_parser_prefers_factor_over_arg():
 _rlnTau2FudgeFactor 1.000000
 _rlnTau2FudgeArg    -1.000000
 """
-    assert _parse_relion_tau2_fudge(text) == pytest.approx(1.0)
+    assert parse_relion_tau2_fudge(text) == pytest.approx(1.0)
 
 
 def test_tau2_fudge_resolver_matches_relion_mode_defaults():
@@ -2063,10 +2063,10 @@ def test_replay_overrides_respect_init_relion_iteration_offset(tmp_path):
 
 
 def test_fresh_kclass_translation_seed_is_scoped_and_fails_closed():
-    from relax.star.input_poses import _kclass_firstiter_translation_seed
+    from relax.star.input_poses import kclass_firstiter_translation_seed
     override = {"previous_best_translations": [np.zeros((1, 2)), np.zeros((2, 2))]}
     assert (
-        _kclass_firstiter_translation_seed(
+        kclass_firstiter_translation_seed(
             override,
             n_classes=1,
             init_relion_iteration=0,
@@ -2074,7 +2074,7 @@ def test_fresh_kclass_translation_seed_is_scoped_and_fails_closed():
         is None
     )
     assert (
-        _kclass_firstiter_translation_seed(
+        kclass_firstiter_translation_seed(
             override,
             n_classes=4,
             init_relion_iteration=1,
@@ -2082,7 +2082,7 @@ def test_fresh_kclass_translation_seed_is_scoped_and_fails_closed():
         is None
     )
     with pytest.raises(ValueError, match="missing half-2 input origins"):
-        _kclass_firstiter_translation_seed(
+        kclass_firstiter_translation_seed(
             {"previous_best_translations": [np.zeros((1, 2)), None]},
             n_classes=4,
             init_relion_iteration=0,
@@ -2090,7 +2090,7 @@ def test_fresh_kclass_translation_seed_is_scoped_and_fails_closed():
 
 
 def test_fresh_kclass_selects_only_run_it000_translations():
-    from relax.star.input_poses import _kclass_firstiter_translation_seed
+    from relax.star.input_poses import kclass_firstiter_translation_seed
     half1 = np.asarray([[3.9, -0.34], [0.3, -0.34]], dtype=np.float64)
     # Generic replay extraction currently collapses an empty all-data second
     # accumulator to (0,); the translation selector restores (0, 2).
@@ -2105,7 +2105,7 @@ def test_fresh_kclass_selects_only_run_it000_translations():
         "noise_variance": [np.ones(4), np.ones(4)],
     }
 
-    selected = _kclass_firstiter_translation_seed(
+    selected = kclass_firstiter_translation_seed(
         override,
         n_classes=4,
         init_relion_iteration=0,
