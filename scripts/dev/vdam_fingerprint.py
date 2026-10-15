@@ -536,14 +536,14 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
             return result
 
         patch(driver, "run_native_initial_model", run_and_keep)
-        for module in modules_with("_write_model_star"):
-            original_write = getattr(module, fingerprint_cli.either_name(module, "_write_model_star"))
+        for module in modules_with("write_model_star"):
+            original_write = getattr(module, fingerprint_cli.either_name(module, "write_model_star"))
 
             def write_and_record(path, state, class_mrcs, _original=original_write):
                 checkpoints[f"{Path(path).name}"] = flatten(state, scrub=scrub)
                 return _original(path, state, class_mrcs)
 
-            patch(module, "_write_model_star", write_and_record)
+            patch(module, "write_model_star", write_and_record)
         saved_env = {key: os.environ.get(key) for key in (env or {})}
         os.environ.update(env or {})
         handler = Capture()

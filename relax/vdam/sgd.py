@@ -34,7 +34,7 @@ from relax.fourier.half_spectrum import host_half_spectrum_plan
 from relax.reconstruction.noise import normalize_wsum_to_sigma2_noise
 from relax.relion.project import gridding_correct_volume_real
 from relax.relion.projector_setup import setup_relion_projector_uncorrected, swap_relion_volume_layout
-from relax.vdam.relion_mstep import _pad_moment
+from relax.vdam.relion_mstep import pad_moment
 from relax.vdam.state import InitialModelState, VdamAccumulator
 
 MOMENTUM = 0.9
@@ -151,8 +151,8 @@ def sgd_m_step(
             raise ValueError("SGD BPref has invalid capacity")
         if residual.shape[0] // 2 < int(padding_factor) * radius:
             raise ValueError("SGD BPref does not cover the current Fourier radius")
-        residual = _pad_moment(residual, capacity)
-        curvature = _pad_moment(curvature, capacity)
+        residual = pad_moment(residual, capacity)
+        curvature = pad_moment(curvature, capacity)
         if not bool(jnp.all(jnp.isfinite(residual))) or not bool(jnp.all(jnp.isfinite(curvature))):
             raise ValueError("SGD residual/curvature must be finite")
         if bool(jnp.any(curvature < 0.0)):

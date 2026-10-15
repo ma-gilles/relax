@@ -50,7 +50,7 @@ from relax.vdam.bootstrap_iref import (
     load_raw_images,
 )
 from relax.vdam.estep_setup import run_initial_model_estep
-from relax.vdam.initial_model_io import _experiment_read_order
+from relax.vdam.initial_model_io import experiment_read_order
 from relax.vdam.iteration_loop import MomentumSgdUpdate, VdamUpdate, run_vdam_iterations
 from relax.vdam.m_step import prepare_mstep_state_precision, relion_solvent_flatten_state, relion_solvent_mask
 from relax.vdam.native_options import NativeInitialModelOptions
@@ -65,7 +65,7 @@ from relax.vdam.native_sampling import (
 )
 from relax.vdam.output import write_final_outputs, write_iteration_artifacts
 from relax.vdam.ports import ExpectationProbe, VdamInputSource, VdamObserver
-from relax.vdam.relion_checkpoint import _load_native_vdam_continuation, _validate_continuation_order_replay
+from relax.vdam.relion_checkpoint import load_native_vdam_continuation, validate_continuation_order_replay
 from relax.vdam.state import InitialModelState, NativeOpticsState, NativeParticleState
 from relax.vdam.subset_schedule import restore_subset_order_for_continuation
 from relax.vdam.tomo_estep import run_tomo_initial_model_estep
@@ -435,7 +435,7 @@ def run_native_initial_model(
         source=str(opts.fn_img),
         supported=TOMO_INITIAL_MODEL_OPTICS_FEATURES if opts.fn_tomograms is not None else INITIAL_MODEL_OPTICS_FEATURES,
     )
-    particle_order = _experiment_read_order(main_star)
+    particle_order = experiment_read_order(main_star)
     profile.record("input_star")
     particle_read_policy = ParticleReadPolicy(
         preread_images=bool(opts.preread_images),
@@ -497,10 +497,10 @@ def run_native_initial_model(
         estep_setup.configure_relion_image_mask(class_dataset, opts)
     profile.record("dataset_load")
 
-    optics_state = None if tomo else initial_model_io._native_optics_state(main_star, optics_star, dataset)
+    optics_state = None if tomo else initial_model_io.native_optics_state(main_star, optics_star, dataset)
     continuation = None
     if opts.diagnostic_continue_optimiser is not None:
-        continuation = _load_native_vdam_continuation(
+        continuation = load_native_vdam_continuation(
             opts.diagnostic_continue_optimiser,
             expected_data_star=opts.fn_img,
             opts=opts,
@@ -516,12 +516,12 @@ def run_native_initial_model(
         (
             initial_model_io.tomo_checkpoint_particle_state
             if continuation is not None
-            else initial_model_io._tomo_particle_state_from_star
+            else initial_model_io.tomo_particle_state_from_star
         )(
             main_star, pixel_size=float(dataset.voxel_size)
         )
         if tomo
-        else initial_model_io._particle_state_from_star(
+        else initial_model_io.particle_state_from_star(
             main_star,
             dataset,
             allow_unvisited_class_zero=continuation is not None,
@@ -547,7 +547,7 @@ def run_native_initial_model(
         )
         sampling_state.last_current_resolution = float(state.current_resolution)
     else:
-        _validate_continuation_order_replay(continuation)
+        validate_continuation_order_replay(continuation)
         grad_ini_subset_size = continuation.grad_ini_subset_size
         grad_fin_subset_size = continuation.grad_fin_subset_size
         grad_ini_frac = continuation.grad_ini_frac
@@ -557,7 +557,7 @@ def run_native_initial_model(
             grad_ini_frac,
             grad_fin_frac,
         )
-        optics_group_by_particle = initial_model_io._optics_group_indices(main_star)
+        optics_group_by_particle = initial_model_io.optics_group_indices(main_star)
         if int(np.unique(optics_group_by_particle).size) != 1:
             raise NotImplementedError(
                 "diagnostic native VDAM continuation currently supports one optics group"

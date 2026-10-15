@@ -13,7 +13,7 @@ from relax.sampling import grids as sampling_grids
 from relax.vdam.state import InitialModelState, NativeOpticsState, NativeParticleState, ParticleOptics
 
 
-def _optics_group_indices(main_star) -> np.ndarray:
+def optics_group_indices(main_star) -> np.ndarray:
     if "_rlnOpticsGroup" not in main_star.columns:
         return np.zeros(len(main_star), dtype=np.int64)
     raw = main_star["_rlnOpticsGroup"].to_numpy()
@@ -25,7 +25,7 @@ def _optics_group_indices(main_star) -> np.ndarray:
     return indices.astype(np.int64, copy=False)
 
 
-def _particle_optics(main_star, optics_star, ds) -> ParticleOptics:
+def particle_optics(main_star, optics_star, ds) -> ParticleOptics:
     """Each particle's voltage, Cs and amplitude contrast (its optics group's).
 
     Optics groups may differ in their CTF constants; groups on other pixel sizes or boxes need
@@ -63,14 +63,14 @@ def _particle_optics(main_star, optics_star, ds) -> ParticleOptics:
     return ParticleOptics(*values)
 
 
-def _phase_shift(main_star) -> np.ndarray:
+def phase_shift(main_star) -> np.ndarray:
     if "_rlnPhaseShift" not in main_star.columns:
         return np.zeros(len(main_star), dtype=np.float64)
     return np.asarray(main_star["_rlnPhaseShift"].astype(float).to_numpy(), dtype=np.float64)
 
 
-def _native_optics_state(main_star, optics_star, dataset) -> NativeOpticsState:
-    optics = _particle_optics(main_star, optics_star, dataset)
+def native_optics_state(main_star, optics_star, dataset) -> NativeOpticsState:
+    optics = particle_optics(main_star, optics_star, dataset)
     required = ("_rlnDefocusU", "_rlnDefocusV", "_rlnDefocusAngle")
     missing = [name for name in required if name not in main_star.columns]
     if missing:
@@ -91,11 +91,11 @@ def _native_optics_state(main_star, optics_star, dataset) -> NativeOpticsState:
         defU=np.asarray(main_star["_rlnDefocusU"].astype(float).to_numpy(), dtype=np.float64),
         defV=np.asarray(main_star["_rlnDefocusV"].astype(float).to_numpy(), dtype=np.float64),
         defAngle=np.asarray(main_star["_rlnDefocusAngle"].astype(float).to_numpy(), dtype=np.float64),
-        phase_shift=_phase_shift(main_star),
+        phase_shift=phase_shift(main_star),
     )
 
 
-def _experiment_read_order(main_star) -> np.ndarray:
+def experiment_read_order(main_star) -> np.ndarray:
     """RELION Experiment::read order for bootstrap, noise and subset scheduling."""
 
     mic_col = star_column(main_star, "_rlnMicrographName")
@@ -163,7 +163,7 @@ def _star_source_poses(main_star, n: int) -> dict:
     )
 
 
-def _tomo_particle_state_from_star(main_star, *, pixel_size: float) -> NativeParticleState:
+def tomo_particle_state_from_star(main_star, *, pixel_size: float) -> NativeParticleState:
     """Fresh state of subtomogram particles: their 3D offsets (pixels) from ``rlnOrigin{X,Y,Z}Angst``, class 0,
     and the input orientations (:func:`_star_source_poses`)."""
 
@@ -184,10 +184,10 @@ def _tomo_particle_state_from_star(main_star, *, pixel_size: float) -> NativePar
 def tomo_checkpoint_particle_state(main_star, *, pixel_size: float) -> NativeParticleState:
     """Subtomogram particles of a RELION VDAM checkpoint's data STAR (``--diagnostic-continue-optimiser``).
 
-    As :func:`_tomo_particle_state_from_star`, plus each particle's class (0: not yet visited) and Pmax, which the
+    As :func:`tomo_particle_state_from_star`, plus each particle's class (0: not yet visited) and Pmax, which the
     change monitor and the subset bookkeeping read; a fresh run starts every particle in class 0 with Pmax 0.
     """
-    state = _tomo_particle_state_from_star(main_star, pixel_size=pixel_size)
+    state = tomo_particle_state_from_star(main_star, pixel_size=pixel_size)
     numbers = np.asarray(star_column(main_star, "_rlnClassNumber", required=True).astype(int), dtype=np.int32)
     pmax = star_column(main_star, "_rlnMaxValueProbDistribution", required=True).astype(float)
     return replace(
@@ -198,7 +198,7 @@ def tomo_checkpoint_particle_state(main_star, *, pixel_size: float) -> NativePar
     )
 
 
-def _particle_state_from_star(
+def particle_state_from_star(
     main_star,
     dataset,
     *,
@@ -304,7 +304,7 @@ def _particle_state_from_star(
     )
 
 
-def _write_model_star(path: str, state: InitialModelState, class_mrcs: tuple[str, ...]) -> None:
+def write_model_star(path: str, state: InitialModelState, class_mrcs: tuple[str, ...]) -> None:
     current_resolution_angstrom = 1.0 / float(state.current_resolution) if state.current_resolution > 0 else np.inf
     pixel_x_ori = float(state.pixel_size) * float(state.box_size)
     n_shells = int(state.box_size) // 2 + 1
@@ -378,12 +378,12 @@ def _initial_model_random_subsets(main_star) -> np.ndarray:
     """Return RELION's one-based pseudo-halfset for every input-table row.
 
     InitialModel routes ``Experiment`` part ids by ``part_id % 2`` even when
-    ordinary split-half refinement is disabled.  ``_experiment_read_order``
+    ordinary split-half refinement is disabled.  ``experiment_read_order``
     maps those internal part ids to RECOVAR's input-table rows; invert that
     map here so the written data STAR records the same persistent identity.
     """
 
-    order = np.asarray(_experiment_read_order(main_star), dtype=np.int64)
+    order = np.asarray(experiment_read_order(main_star), dtype=np.int64)
     n_images = len(main_star)
     if (
         order.shape != (n_images,)
@@ -397,12 +397,12 @@ def _initial_model_random_subsets(main_star) -> np.ndarray:
     return (part_ids % 2 + 1).astype(np.int32, copy=False)
 
 
-def _write_data_star(path: str, main_star, optics_star, dataset, particle_state: NativeParticleState) -> None:
+def write_data_star(path: str, main_star, optics_star, dataset, particle_state: NativeParticleState) -> None:
     n_images = int(len(particle_state.translation_offsets))
     if len(main_star) != n_images:
         raise ValueError(f"STAR table has {len(main_star)} particles but the particle state has {n_images}")
 
-    output_order = _experiment_read_order(main_star)
+    output_order = experiment_read_order(main_star)
     table = main_star.copy()
     visited = particle_state.visited
     if visited is None:

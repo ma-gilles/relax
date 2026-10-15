@@ -65,7 +65,7 @@ def test_input_star_source_is_valid_before_first_visit():
             _rlnAnglePsi=eulers[:, 2],
         )
     )
-    value = initial_model_io._particle_state_from_star(frame, SimpleNamespace(voxel_size=1.0, n_images=1))
+    value = initial_model_io.particle_state_from_star(frame, SimpleNamespace(voxel_size=1.0, n_images=1))
     assert not value.visited[0] and value.best_pose_eulers_valid[0]
     assert_matches(native_sampling._best_eulers_from_particle_state(value, [0], rotation_grid_order=0), eulers)
     assert value.best_pose_rotations.dtype == np.float32
@@ -86,7 +86,7 @@ def test_subtomogram_input_star_source_is_valid_before_first_visit():
             _rlnAnglePsi=eulers[:, 2],
         )
     )
-    value = initial_model_io._tomo_particle_state_from_star(frame, pixel_size=4.25)
+    value = initial_model_io.tomo_particle_state_from_star(frame, pixel_size=4.25)
     assert value.best_pose_eulers_valid.all() and value.best_pose_rotations.dtype == np.float32
     assert_matches(native_sampling._best_eulers_from_particle_state(value, [1, 0], rotation_grid_order=0), eulers[[1, 0]])
     assert_matches(value.translation_offsets[0], np.array([2.27, 0.68, 0.90]) / 4.25)
@@ -105,7 +105,7 @@ def test_subtomogram_checkpoint_state_reads_class_and_pmax():
     value = initial_model_io.tomo_checkpoint_particle_state(frame, pixel_size=4.25)
     assert value.visited.tolist() == [False, True] and value.class_assignments.tolist() == [0, 0]
     assert_matches(value.max_posterior, np.array([0.0, 0.75], np.float32))
-    assert initial_model_io._tomo_particle_state_from_star(frame, pixel_size=4.25).visited is None
+    assert initial_model_io.tomo_particle_state_from_star(frame, pixel_size=4.25).visited is None
 
 
 @pytest.mark.parametrize("fault", ["narrow", "shape", "nan", "valid_shape", "valid_dtype"])

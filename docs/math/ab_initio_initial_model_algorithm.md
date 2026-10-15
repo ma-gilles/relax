@@ -554,7 +554,7 @@ the K-class replay-specific readers: `_tau_spectrum` reads
 `model_pdf_orient_class_N` table.
 
 Native RECOVAR InitialModel currently writes a much smaller model STAR in
-[`driver.py::_write_model_star`](../../relax/vdam/driver.py):
+[`driver.py::write_model_star`](../../relax/vdam/driver.py):
 `data_model_classes` contains reference map paths and class distributions, and
 `data_model_optics_group_1` contains `_rlnSigma2Noise`. It does not yet write
 per-class `model_class_N` tau2/FSC/data-vs-prior tables or
@@ -705,7 +705,7 @@ BPref rows must not receive that extra conversion.
 
 - Native InitialModel does not currently write full RELION `model_class_N`
   tau2/FSC/data-vs-prior tables or `model_pdf_orient_class_N` prior maps in
-  `_write_model_star`.
+  `write_model_star`.
 - Native InitialModel's effective tau2 update is inside the RELION
   `vdam_reconstruct_grad` binding; Python code schedules `tau2_fudge` and
   supplies BPref weights/noise power but does not expose the resulting tau2

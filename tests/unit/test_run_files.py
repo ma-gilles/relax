@@ -630,7 +630,7 @@ def test_initial_model_data_star_starts_a_subtomogram_refinement(tmp_path, loope
         # A subtomogram dataset (TomoDataset) names its particle STAR; a single-particle dataset has none.
         dataset = SimpleNamespace(voxel_size=2.5, n_images=7, **({"particles_star": str(input_star)} if is_tomo else {}))
         vdam_out = tmp_path / f"vdam_{input_star.stem}" / "run_it003_data.star"
-        initial_model_io._write_data_star(str(vdam_out), main, optics, dataset, state)
+        initial_model_io.write_data_star(str(vdam_out), main, optics, dataset, state)
         assert is_relion5_2d_stack_star(str(vdam_out)) == is_tomo
         written, written_optics = read_star(str(vdam_out))
         assert written_optics is not None and len(written) == 7

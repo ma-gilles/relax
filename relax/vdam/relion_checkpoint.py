@@ -81,7 +81,7 @@ def _second_pseudo_half_moment_path(first_path: Path, *, nr_classes: int) -> Pat
     return first_path.with_name(f"{match.group(1)}{second_index:03d}{match.group(3)}").resolve(strict=True)
 
 
-def _load_native_vdam_continuation(
+def load_native_vdam_continuation(
     optimiser_star: str | Path,
     *,
     expected_data_star: str | Path,
@@ -412,7 +412,7 @@ def _load_native_vdam_continuation(
     )
 
 
-def _validate_continuation_order_replay(checkpoint: NativeContinuationCheckpoint) -> None:
+def validate_continuation_order_replay(checkpoint: NativeContinuationCheckpoint) -> None:
     """Fail closed when native subset-order history is not reconstructible.
 
     The subset order is a pure function of the command and iteration unless

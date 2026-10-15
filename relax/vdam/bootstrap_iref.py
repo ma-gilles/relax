@@ -20,7 +20,7 @@ from relax.relion.initial_noise import compute_avg_unaligned_and_sigma2, image_s
 from relax.relion.reference_initialization import relion_initial_tau2_and_data_vs_prior
 from relax.steps.optics_shapes import MultiShapeDataset
 from relax.vdam import bootstrap_reconstruction, initial_model_io
-from relax.vdam.initial_model_io import _experiment_read_order
+from relax.vdam.initial_model_io import experiment_read_order
 from relax.vdam.native_options import NativeInitialModelOptions
 from relax.vdam.native_sampling import n_directions_for_healpix_order
 from relax.vdam.state import MOM2_INIT_CONSTANT, InitialModelState, half_slot_count
@@ -353,8 +353,8 @@ def initial_state_from_particles(
 
     box_size = int(dataset.grid_size)
     pixel_size = float(dataset.voxel_size)
-    order = _experiment_read_order(main_star)
-    optics_group_by_particle = initial_model_io._optics_group_indices(main_star)
+    order = experiment_read_order(main_star)
+    optics_group_by_particle = initial_model_io.optics_group_indices(main_star)
     nr_optics_groups = int(np.unique(optics_group_by_particle).size)
     ordered_groups = optics_group_by_particle[order]
     ones = np.ones(order.size, dtype=np.int64)
@@ -397,7 +397,7 @@ def initial_state_from_particles(
         )
     profile.record("raw_images")
     sorted_star = main_star.iloc[bootstrap_order]
-    optics = initial_model_io._particle_optics(sorted_star, optics_star, dataset)
+    optics = initial_model_io.particle_optics(sorted_star, optics_star, dataset)
     profile.record("optics_metadata")
 
     # A comparison source's start-up references replace the bootstrap (VdamInputSource.startup_references).
@@ -409,7 +409,7 @@ def initial_state_from_particles(
             defU=np.asarray(sorted_star["_rlnDefocusU"].astype(float).to_numpy(), dtype=np.float64),
             defV=np.asarray(sorted_star["_rlnDefocusV"].astype(float).to_numpy(), dtype=np.float64),
             defAngle=np.asarray(sorted_star["_rlnDefocusAngle"].astype(float).to_numpy(), dtype=np.float64),
-            phase_shift=initial_model_io._phase_shift(sorted_star),
+            phase_shift=initial_model_io.phase_shift(sorted_star),
             voltage=optics.voltage,
             Cs=optics.Cs,
             Q0=optics.Q0,
@@ -487,8 +487,8 @@ def initial_state_from_tomo_particles(dataset, particles_table, opts: NativeInit
 
     box_size = int(dataset.grid_size)
     pixel_size = float(dataset.voxel_size)
-    order = _experiment_read_order(particles_table)
-    optics_group_by_particle = initial_model_io._optics_group_indices(particles_table)
+    order = experiment_read_order(particles_table)
+    optics_group_by_particle = initial_model_io.optics_group_indices(particles_table)
     nr_optics_groups = int(np.unique(optics_group_by_particle).size)
     units = dataset.startup_units(order, unit_groups=optics_group_by_particle[order], minimum_nr_particles=10)
     half = dataset.subset(units)

@@ -289,7 +289,7 @@ def test_native_vdam_diagnostic_continuation_loads_complete_gradient_state(tmp_p
         diagnostic_stop_after_iteration=181,
     )
 
-    checkpoint = relion_checkpoint._load_native_vdam_continuation(
+    checkpoint = relion_checkpoint.load_native_vdam_continuation(
         optimiser,
         expected_data_star=data,
         opts=opts,
@@ -335,7 +335,7 @@ def test_native_vdam_diagnostic_continuation_fails_without_second_pseudo_half(tm
     )
 
     with pytest.raises(FileNotFoundError):
-        relion_checkpoint._load_native_vdam_continuation(
+        relion_checkpoint.load_native_vdam_continuation(
             optimiser,
             expected_data_star=data,
             opts=opts,
@@ -357,7 +357,7 @@ def test_continuation_order_replay_rejects_suspended_local_search_history(
     )
 
     with pytest.raises(NotImplementedError, match="suspended local-search"):
-        relion_checkpoint._validate_continuation_order_replay(checkpoint)
+        relion_checkpoint.validate_continuation_order_replay(checkpoint)
 
 
 @pytest.mark.parametrize("prior_mode", (0, 1))
@@ -367,7 +367,7 @@ def test_continuation_order_replay_accepts_unsuspended_local_searches(prior_mode
         grad_suspended_local_searches_iter=-1,
     )
 
-    relion_checkpoint._validate_continuation_order_replay(checkpoint)
+    relion_checkpoint.validate_continuation_order_replay(checkpoint)
 
 
 def test_continuation_order_replay_accepts_pre_local_checkpoint():
@@ -376,7 +376,7 @@ def test_continuation_order_replay_accepts_pre_local_checkpoint():
         grad_suspended_local_searches_iter=-1,
     )
 
-    relion_checkpoint._validate_continuation_order_replay(checkpoint)
+    relion_checkpoint.validate_continuation_order_replay(checkpoint)
 
 
 def test_iteration_reference_replay_expands_iteration_and_class(monkeypatch, tmp_path):
@@ -428,7 +428,7 @@ def test_experiment_read_order_uses_micrograph_lexicographic_order():
         }
     )
 
-    assert initial_model_io._experiment_read_order(main).tolist() == [0, 2, 3, 4, 1]
+    assert initial_model_io.experiment_read_order(main).tolist() == [0, 2, 3, 4, 1]
 
 
 @pytest.mark.requires_relion_bind
@@ -463,7 +463,7 @@ def test_seed_zero_halfsets_use_relion_experiment_position_parity(monkeypatch):
         optics_group_by_particle=np.zeros(len(main), dtype=np.int64),
         random_seed=0,
         pseudo_halfsets=True,
-        particle_order=initial_model_io._experiment_read_order(main),
+        particle_order=initial_model_io.experiment_read_order(main),
     )
 
     assert_matches(out.subset_particle_ids, [0, 2, 3, 4, 1])
@@ -562,7 +562,7 @@ def test_particle_state_from_star_preserves_class_and_pmax_columns():
         }
     )
 
-    state = initial_model_io._particle_state_from_star(main, SimpleNamespace(voxel_size=1.0, n_images=2))
+    state = initial_model_io.particle_state_from_star(main, SimpleNamespace(voxel_size=1.0, n_images=2))
 
     assert_matches(state.translation_offsets, np.zeros((2, 2), dtype=np.float32))
     assert_matches(state.class_assignments, [1, 0])
@@ -583,7 +583,7 @@ def test_particle_state_from_star_keeps_class_zero_strict_for_fresh_inputs():
     )
 
     with pytest.raises(ValueError, match="one-indexed positive class ids"):
-        initial_model_io._particle_state_from_star(
+        initial_model_io.particle_state_from_star(
             main,
             SimpleNamespace(voxel_size=1.0, n_images=2),
         )
@@ -599,7 +599,7 @@ def test_particle_state_from_star_normalizes_verified_k1_restart_sentinels():
         }
     )
 
-    state = initial_model_io._particle_state_from_star(
+    state = initial_model_io.particle_state_from_star(
         main,
         SimpleNamespace(voxel_size=1.0, n_images=3),
         allow_unvisited_class_zero=True,
@@ -632,7 +632,7 @@ def test_particle_state_from_star_rejects_visited_class_zero_restart_rows(
     )
 
     with pytest.raises(ValueError, match="sentinels disagree with unvisited particle state"):
-        initial_model_io._particle_state_from_star(
+        initial_model_io.particle_state_from_star(
             main,
             SimpleNamespace(voxel_size=1.0, n_images=2),
             allow_unvisited_class_zero=True,
@@ -651,7 +651,7 @@ def test_particle_state_from_star_rejects_positive_class_for_unvisited_restart_r
     )
 
     with pytest.raises(ValueError, match="sentinels disagree with unvisited particle state"):
-        initial_model_io._particle_state_from_star(
+        initial_model_io.particle_state_from_star(
             main,
             SimpleNamespace(voxel_size=1.0, n_images=2),
             allow_unvisited_class_zero=True,
@@ -669,7 +669,7 @@ def test_particle_state_from_star_accepts_k2_restart_sentinels():
         }
     )
 
-    state = initial_model_io._particle_state_from_star(
+    state = initial_model_io.particle_state_from_star(
         main,
         SimpleNamespace(voxel_size=1.0, n_images=3),
         allow_unvisited_class_zero=True,
@@ -691,7 +691,7 @@ def test_particle_state_from_star_rejects_restart_class_above_k():
     )
 
     with pytest.raises(ValueError, match="must be in 0..2"):
-        initial_model_io._particle_state_from_star(
+        initial_model_io.particle_state_from_star(
             main,
             SimpleNamespace(voxel_size=1.0, n_images=2),
             allow_unvisited_class_zero=True,
@@ -709,7 +709,7 @@ def test_particle_state_from_star_seeds_input_euler_orientations_for_all_particl
         }
     )
 
-    state = initial_model_io._particle_state_from_star(main, SimpleNamespace(voxel_size=1.0, n_images=3))
+    state = initial_model_io.particle_state_from_star(main, SimpleNamespace(voxel_size=1.0, n_images=3))
 
     expected_eulers = main[["_rlnAngleRot", "_rlnAngleTilt", "_rlnAnglePsi"]].to_numpy(dtype=np.float64)
     assert_matches(
@@ -745,7 +745,7 @@ def test_sampling_accuracy_uses_seeded_star_eulers_before_particles_are_visited(
             "_rlnAnglePsi": [-20.0, 45.0, 91.0],
         }
     )
-    particle_state = initial_model_io._particle_state_from_star(main, SimpleNamespace(voxel_size=2.0, n_images=3))
+    particle_state = initial_model_io.particle_state_from_star(main, SimpleNamespace(voxel_size=2.0, n_images=3))
     state = initialise_denovo_state(box_size=8, pixel_size=2.0, K=1, nr_iter=200, n_directions=1)
     state.Iref[:] = 1.0
     optics_state = NativeOpticsState(
@@ -798,7 +798,7 @@ def test_sampling_accuracy_runs_on_an_angle_free_star_with_relions_zero_angles(m
 
     monkeypatch.setattr(relion_expected_accuracy, "expected_angular_errors", fake_expected_accuracy)
     main = pd.DataFrame({"_rlnImageName": ["1@stack.mrcs", "2@stack.mrcs", "3@stack.mrcs"]})
-    particle_state = initial_model_io._particle_state_from_star(main, SimpleNamespace(voxel_size=2.0, n_images=3))
+    particle_state = initial_model_io.particle_state_from_star(main, SimpleNamespace(voxel_size=2.0, n_images=3))
     assert_matches(particle_state.best_pose_eulers_deg, np.zeros((3, 3)))
     state = initialise_denovo_state(box_size=8, pixel_size=2.0, K=1, nr_iter=200, n_directions=1)
     state.Iref[:] = 1.0
@@ -886,7 +886,7 @@ def test_particle_state_from_star_fills_each_missing_euler_column_with_relions_z
     given = {"_rlnAngleRot": [10.0, -75.0], "_rlnAngleTilt": [35.0, 120.0], "_rlnAnglePsi": [-20.0, 179.0]}
     main = pd.DataFrame({"_rlnImageName": ["1@stack.mrcs", "2@stack.mrcs"], **given}).drop(columns=list(missing_names))
 
-    state = initial_model_io._particle_state_from_star(main, SimpleNamespace(voxel_size=1.0, n_images=2))
+    state = initial_model_io.particle_state_from_star(main, SimpleNamespace(voxel_size=1.0, n_images=2))
 
     expected = np.stack(
         [np.zeros(2) if name in missing_names else np.asarray(values) for name, values in given.items()], axis=1
@@ -911,7 +911,7 @@ def test_particle_state_from_star_rejects_nonfinite_euler_angles(angle_name):
     main.loc[0, angle_name] = np.nan
 
     with pytest.raises(ValueError, match="Euler angles must be finite"):
-        initial_model_io._particle_state_from_star(main, SimpleNamespace(voxel_size=1.0, n_images=1))
+        initial_model_io.particle_state_from_star(main, SimpleNamespace(voxel_size=1.0, n_images=1))
 
 
 def test_sampling_plan_oversamples_relion_grid():
@@ -2593,7 +2593,7 @@ def test_model_star_uses_relion_model_blocks(tmp_path):
     )
     out = tmp_path / "run_it001_model.star"
 
-    initial_model_io._write_model_star(str(out), state, ("run_it001_class001.mrc", "run_it001_class002.mrc"))
+    initial_model_io.write_model_star(str(out), state, ("run_it001_class001.mrc", "run_it001_class002.mrc"))
 
     text = out.read_text()
     assert "data_model_general" in text
@@ -2704,7 +2704,7 @@ def test_data_star_preserves_optics_and_updates_particle_metadata(tmp_path, monk
     )
     out = tmp_path / "run_it001_data.star"
 
-    initial_model_io._write_data_star(
+    initial_model_io.write_data_star(
         str(out),
         main,
         optics,
@@ -2752,7 +2752,7 @@ def test_data_star_zeros_unvisited_rows_and_writes_best_pose_eulers(tmp_path, mo
     )
     out = tmp_path / "run_it010_data.star"
 
-    initial_model_io._write_data_star(
+    initial_model_io.write_data_star(
         str(out),
         main,
         None,

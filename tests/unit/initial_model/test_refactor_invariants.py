@@ -486,7 +486,7 @@ print(parent_elapsed, initial_model_elapsed)
 
 # Module ownership and adapter routing.
 
-STAR_ADAPTER = ("_optics_group_indices", "_particle_optics", "_phase_shift", "_native_optics_state", "_particle_state_from_star", "_write_model_star", "_write_data_star", "_stack_star_pair", "_experiment_read_order")
+STAR_ADAPTER = ("optics_group_indices", "particle_optics", "phase_shift", "native_optics_state", "particle_state_from_star", "write_model_star", "write_data_star", "_stack_star_pair", "experiment_read_order")
 SAMPLING = ("NativeSamplingPlan", "NativeSamplingState", "build_sampling_plan", "initial_sampling_state", "estimate_native_sampling_accuracy", "_relion_update_native_sampling_state", "prepare_native_sampling_for_iteration", "_random_perturbation_for_iteration")
 
 
@@ -543,8 +543,8 @@ def test_initial_model_serialization_owners_and_driver_imports():
             assert inspect.getmodule(getattr(owner, name)) is owner
             assert f"\ndef {name}(" not in driver_src and f"\nclass {name}(" not in driver_src
     assert driver.write_iteration_artifacts is output.write_iteration_artifacts
-    assert output._write_data_star is initial_model_io._write_data_star
-    assert output._write_model_star is initial_model_io._write_model_star
+    assert output.write_data_star is initial_model_io.write_data_star
+    assert output.write_model_star is initial_model_io.write_model_star
     assert initial_model_io.star_column is ctf.star_column is star_column
     assert relion_checkpoint.relion_star_list_value is metadata.relion_star_list_value
     assert not (PACKAGE_DIR / "star_io.py").exists()

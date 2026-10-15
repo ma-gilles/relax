@@ -48,7 +48,7 @@ def _norm(value):
     return jax.lax.optimization_barrier(value.real * value.real) + value.imag * value.imag
 
 
-def _pad_moment(moment, capacity):
+def pad_moment(moment, capacity):
     before = capacity // 2 - moment.shape[0] // 2
     after = capacity - moment.shape[0] - before
     return jnp.pad(moment, ((before, after), (before, after), (0, capacity // 2 + 1 - moment.shape[2])))
@@ -134,8 +134,8 @@ def relion_vdam_m_step_device(
         raise ValueError("M-step input has incompatible full-capacity shape")
     d0 = jnp.asarray(data_h0, complex_dtype)
     w0 = jnp.asarray(weight_h0, real_dtype)
-    m10 = _pad_moment(jnp.asarray(mom1_h0, complex_dtype), capacity)
-    m2 = _pad_moment(jnp.asarray(mom2, complex_dtype), capacity)
+    m10 = pad_moment(jnp.asarray(mom1_h0, complex_dtype), capacity)
+    m2 = pad_moment(jnp.asarray(mom2, complex_dtype), capacity)
     authoritative_tau2 = jnp.asarray(tau2, jnp.float64) if real_dtype == jnp.float64 else jnp.asarray(tau2)
     tau2 = jnp.asarray(authoritative_tau2, real_dtype)
     fsc_reconstruct = jnp.asarray(fsc_reconstruct, real_dtype)
@@ -171,7 +171,7 @@ def relion_vdam_m_step_device(
         d1 = jnp.asarray(data_h1, complex_dtype)
         denominator = jnp.maximum(1.0, jnp.asarray(weight_h1, real_dtype))
         d1 = jnp.where(valid, _complex(d1.real / denominator, d1.imag / denominator), d1)
-        m11 = _pad_moment(jnp.asarray(mom1_h1, complex_dtype), capacity)
+        m11 = pad_moment(jnp.asarray(mom1_h1, complex_dtype), capacity)
         m11 = _first_moment(m11, d1, first_initializes_h1, valid)
         difference = d1 - d0
         average = _complex((d1.real + d0.real) / 2.0, (d1.imag + d0.imag) / 2.0)

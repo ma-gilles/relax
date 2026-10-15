@@ -14,7 +14,7 @@ from recovar.data_io.cryoem_dataset import load_dataset
 from recovar.data_io.starfile import read_star
 
 from relax.relion_bind import _relion_bind_core as bind
-from relax.vdam.initial_model_io import _experiment_read_order, _native_optics_state
+from relax.vdam.initial_model_io import experiment_read_order, native_optics_state
 
 
 def _column(table, name: str) -> np.ndarray:
@@ -58,10 +58,10 @@ def main() -> None:
     args = parser.parse_args()
 
     input_particles, input_optics = read_star(args.input_star)
-    order = _experiment_read_order(input_particles)
+    order = experiment_read_order(input_particles)
     trials = np.asarray(order[: min(args.max_trials, order.size)], dtype=np.int64)
     dataset = load_dataset(str(args.input_star), lazy=True)
-    optics = _native_optics_state(input_particles, input_optics, dataset)
+    optics = native_optics_state(input_particles, input_optics, dataset)
 
     previous_data, _ = read_star(f"{args.previous_prefix}_data.star")
     target_model = starfile.read(f"{args.target_prefix}_model.star", always_dict=True)

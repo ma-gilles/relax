@@ -161,8 +161,8 @@ def test_native_vdam_subset_order_uses_relion_sorted_idx_base_order():
     iteration_loop = _initial_model_package_source()  # the subset draw lives in its owner module
 
     expected_driver_tokens = [
-        "particle_order = _experiment_read_order(main_star)",
-        "_experiment_read_order(main_star)",
+        "particle_order = experiment_read_order(main_star)",
+        "experiment_read_order(main_star)",
         "particle_order=particle_order",
     ]
     missing = [token for token in expected_driver_tokens if token not in driver]
@@ -708,7 +708,7 @@ def test_native_vdam_tau2_refresh_and_ssnr_diagnostics_are_merge_guarded():
     visible in model.star.
     """
     package = _initial_model_package_source()
-    # 7811f82d5 moved the InitialModel model.star writer (_write_model_star),
+    # 7811f82d5 moved the InitialModel model.star writer (write_model_star),
     # which serializes the sigma2/coverage diagnostics, to the RELION STAR owner.
     star_io = (REPO_ROOT / "relax/vdam/initial_model_io.py").read_text()
     bind = (REPO_ROOT / "relax/relion_bind/initialmodel_bind.cpp").read_text()

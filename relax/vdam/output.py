@@ -12,7 +12,7 @@ from recovar.utils.helpers import recovar_volume_to_relion
 
 from relax.io.map_io import write_map
 from relax.vdam.align_symmetry import align_symmetry, select_largest_class
-from relax.vdam.initial_model_io import _write_data_star, _write_model_star
+from relax.vdam.initial_model_io import write_data_star, write_model_star
 from relax.vdam.state import InitialModelState, NativeParticleState
 
 if TYPE_CHECKING:
@@ -115,13 +115,13 @@ def write_iteration_artifacts(
         write_map(class_mrc, state.Iref[k], voxel_size=float(state.pixel_size))
     profile.record("class_mrc")
     model_star = f"{output_prefix}_it{iteration:03d}_model.star"
-    _write_model_star(model_star, state, class_mrcs)
+    write_model_star(model_star, state, class_mrcs)
     profile.record("model_star")
     meta_path = f"{output_prefix}_it{iteration:03d}_recovar_meta.json"
     with open(meta_path, "w") as f:
         json.dump(_json_ready(meta), f, indent=2, sort_keys=True)
     profile.record("meta_json")
-    _write_data_star(
+    write_data_star(
         f"{output_prefix}_it{iteration:03d}_data.star",
         main_star,
         optics_star,
@@ -179,7 +179,7 @@ def write_final_outputs(
     if iteration not in written_iterations:
         for k, class_mrc in enumerate(class_mrcs):
             write_map(class_mrc, state.Iref[k], voxel_size=float(state.pixel_size))
-        _write_model_star(model_star, state, class_mrcs)
+        write_model_star(model_star, state, class_mrcs)
     final_mrc = _initial_model_mrc_from_prefix(output_prefix)
     best_class = select_largest_class(state.pdf_class)
     # The alignment reads the map as written (RELION's frame); the frame change is its own inverse.
