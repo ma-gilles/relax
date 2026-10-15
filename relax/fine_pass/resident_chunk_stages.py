@@ -274,7 +274,7 @@ def resident_chunk_stages_finish(
     block's ``(proj, |proj|^2, M-step rotations)`` for the block at ``start`` of
     the M-step order, instead of the block gathering them out of the tables'
     caches: a lone overflow chunk of a streamed pass projects each live block's
-    rows (:func:`_run_lone_resident_chunk`); ``projection_dtypes`` are then
+    rows (:func:`~relax.fine_pass.resident_chunk_run.run_lone_resident_chunk`); ``projection_dtypes`` are then
     the ``(proj, |proj|^2)`` dtypes it returns, which the tables' caches
     (absent there) would otherwise give.
 

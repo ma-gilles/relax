@@ -348,9 +348,9 @@ def run_tilt_chunk(
         resident_chunk_stages,
         resident_mstep_blocks,
     )
-    from relax.fine_pass import resident_pass2 as rp
     from relax.fine_pass.policy import ResidentConfigurationUnsupported
     from relax.fine_pass.resident_candidates import expand_chunk_mask_jnp
+    from relax.fine_pass.resident_operands import gather_resident_chunk_operands
     from relax.fine_pass.resident_scoring import tilt_image_rows_raw_diff2, tilt_rows_scores_from_raw
 
     lone = lone_block_rows is not None
@@ -423,7 +423,7 @@ def run_tilt_chunk(
     # The translated Wavg tile is [images, T, P_rect]; with a subtomogram's 3D grid (thousands of
     # translations) it is built per image slot in the M-step below, for C_U images at a time, never
     # for the chunk's C_U * S images. The chunk-wide gather takes one zero translation.
-    recon = rp.gather_resident_chunk_operands(
+    recon = gather_resident_chunk_operands(
         resident_operands,
         operand_slots,
         translation_angles=np.zeros((1, 2), dtype=np.float32),

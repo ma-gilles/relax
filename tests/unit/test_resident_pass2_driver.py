@@ -41,6 +41,7 @@ from relax.fine_pass import (
     resident_chunk_memory,
     resident_chunk_programs,
     resident_chunk_records,
+    resident_chunk_run,
     resident_configuration,
     resident_projections,
     resident_stable_windows,
@@ -955,7 +956,7 @@ def test_global_chunk_tile_count_matches_the_live_translated_arrays(masked):
     real_plan = resident_chunk_memory.plan_resident_chunk_memory
     real_prepare = resident_chunk_inputs.prepare_chunk_reconstruction_operands
     real_rows = resident_chunk_inputs._chunk_operand_rows
-    real_gather = rp.gather_resident_chunk_operands
+    real_gather = resident_chunk_run.gather_resident_chunk_operands
 
     def translated_bytes(capacity, n_trans):
         # Complex arrays only: the fixture's 8 translations equal its 8x8 image rows, so a real
@@ -1007,7 +1008,7 @@ def test_global_chunk_tile_count_matches_the_live_translated_arrays(masked):
     patch = pytest.MonkeyPatch()
     patch.setattr(resident_chunk_memory, "plan_resident_chunk_memory", plan)
     patch.setattr(resident_chunk_inputs, "prepare_chunk_reconstruction_operands", prepare)
-    patch.setattr(rp, "gather_resident_chunk_operands", gather)
+    patch.setattr(resident_chunk_run, "gather_resident_chunk_operands", gather)
     patch.setattr(resident_chunk_inputs, "gather_resident_chunk_operands", gather)
     patch.setattr(resident_chunk_programs, "gather_resident_chunk_operands", gather)
     try:
@@ -1978,13 +1979,13 @@ def test_lone_overflow_chunks_match_the_whole_chunk_pass(monkeypatch, streamed):
         monkeypatch.setattr(rp, "projection_cache_fits_budget", lambda *a, **k: False)
     whole = rp.compute_pass2_stats_resident(**args, engine_tuning=RESIDENT_PRODUCTION_ENGINE, scoring_overrides=ScoringOverrides())
     lone_calls = []
-    real_lone = rp._run_lone_resident_chunk
+    real_lone = resident_chunk_run.run_lone_resident_chunk
 
     def spy(*a, **k):
         lone_calls.append(int(k["spec"].row_capacity))
         return real_lone(*a, **k)
 
-    monkeypatch.setattr(rp, "_run_lone_resident_chunk", spy)
+    monkeypatch.setattr(resident_chunk_run, "run_lone_resident_chunk", spy)
     lone = rp.compute_pass2_stats_resident(
         **args, engine_tuning=replace(RESIDENT_PRODUCTION_ENGINE, resident_row_capacities=(16,), mstep_block_rows=16),
         scoring_overrides=ScoringOverrides(),

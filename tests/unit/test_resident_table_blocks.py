@@ -2,7 +2,7 @@
 
 A pass with the device-compacted CSR plans its chunks from per-image row counts
 (``csr_candidate_rows_per_image``) and builds each image block's tables when the
-chunk loop reaches it (``_candidate_table_blocks``). Every chunk's host rows must
+chunk loop reaches it (``resident_table_blocks.candidate_table_blocks``). Every chunk's host rows must
 be the rows the whole-pass table gives the same chunk, for one class and for the
 merged K-class table, with and without RELION's parent execution order and
 VDAM's reconstruction groups.
@@ -15,8 +15,7 @@ import pytest
 from helpers.float_compare import assert_matches
 from test_resident_significance import _csr_from_supports, _supports
 
-import relax.fine_pass.resident_pass2 as rp
-from relax.fine_pass import resident_chunk_programs
+from relax.fine_pass import resident_chunk_programs, resident_table_blocks
 from relax.fine_pass.resident_candidates import CandidateTableBlocks, plan_capacity_chunks, table_block_starts
 from relax.fine_pass.resident_significance import (
     DeviceCompactedSignificantSamples,
@@ -83,12 +82,12 @@ def test_block_starts_hold_at_most_the_budget_unless_one_image_exceeds_it():
 
 
 def _source(n_classes, *, whole, execution_order, groups, monkeypatch):
-    monkeypatch.setattr(rp, "BLOCK_UNITS", 40)
+    monkeypatch.setattr(resident_table_blocks, "BLOCK_UNITS", 40)
     csrs = [_class_csr(seed=11 + 7 * k) for k in range(n_classes)]
     supports = [DeviceCompactedSignificantSamples(host_support_rows(csr), csr=csr) for csr in csrs]
     priors = [np.linspace(-1.0, 1.0, N_COARSE_ROT, dtype=np.float32) + k for k in range(n_classes)]
     group_ids = (np.arange(N_IMAGES) % 2).astype(np.int32) if groups else None
-    blocks, _, _ = rp._candidate_table_blocks(
+    blocks, _, _ = resident_table_blocks.candidate_table_blocks(
         supports,
         priors,
         whole=whole,

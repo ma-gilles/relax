@@ -328,7 +328,7 @@ def plan_resident_chunk_memory(
     Uncounted, the EMPIAR-10202 final pass planned 1024-row chunks at 16.05 of a
     16.16 GiB budget and ran out of memory in a 2048-row one (bigbox 14607861).
     ``lone_row_bytes`` is set where that chunk runs in blocks of the largest row
-    class (the global pass, :func:`_run_lone_resident_chunk`): it is then a
+    class (the global pass, :func:`~relax.fine_pass.resident_chunk_run.run_lone_resident_chunk`): it is then a
     largest-class chunk of the smallest image class plus ``lone_row_bytes`` for
     each of its rows (the posterior cells every row keeps).
     """
@@ -486,7 +486,7 @@ _LONE_CHUNK_CELL_BYTES = 4 * 7 + 1
 
 
 def lone_chunk_row_bytes(n_fine_trans: int, *, class_rows: bool = False) -> int:
-    """Device bytes each row of a lone overflow chunk keeps beyond its block (:func:`_run_lone_resident_chunk`).
+    """Device bytes each row of a lone overflow chunk keeps beyond its block (:func:`~relax.fine_pass.resident_chunk_run.run_lone_resident_chunk`).
 
     A row's projections live only while its block is scored or reconstructed;
     its ``T`` posterior cells and its row tables live for the whole chunk.

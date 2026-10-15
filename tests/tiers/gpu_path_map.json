@@ -10,6 +10,8 @@
   "relax/fine_pass/resident_pass2.py": ["tests/integration/test_vdam_multishape_smoke.py"],
   "relax/fine_pass/resident_chunk_programs.py": ["tests/integration/test_vdam_multishape_smoke.py"],
   "relax/fine_pass/resident_chunk_stages.py": ["tests/integration/test_vdam_multishape_smoke.py"],
+  "relax/fine_pass/resident_chunk_run.py": ["tests/integration/test_vdam_multishape_smoke.py"],
+  "relax/fine_pass/resident_table_blocks.py": ["tests/integration/test_vdam_multishape_smoke.py"],
   "relax/fine_pass/resident_mstep_blocks.py": ["tests/integration/test_vdam_multishape_smoke.py"],
   "relax/fine_pass/resident_chunk_posterior.py": ["tests/integration/test_vdam_multishape_smoke.py"],
   "relax/fine_pass/resident_chunk_inputs.py": ["tests/integration/test_vdam_multishape_smoke.py"],

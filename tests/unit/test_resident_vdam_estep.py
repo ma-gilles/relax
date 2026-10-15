@@ -14,7 +14,7 @@ from helpers.float_compare import assert_matches
 from test_resident_zero_oversampling import _rel_l2, _resident_production_env, requires_resident_gpu  # noqa: F401
 
 import relax.fine_pass.resident_pass2 as rp
-from relax.fine_pass import resident_block_programs
+from relax.fine_pass import resident_block_programs, resident_table_blocks
 from relax.runtime.scoring_overrides import ScoringOverrides
 
 pytestmark = pytest.mark.unit
@@ -154,14 +154,14 @@ def test_tables_refuse_inconsistent_slot_groups():
 
 
 def test_reconstruction_groups_become_unit_slot_offsets():
-    tables = rp._with_reconstruction_groups(_two_class_tables(), [1, 0, 1], 2, n_images=3)
+    tables = resident_table_blocks.with_reconstruction_groups(_two_class_tables(), [1, 0, 1], 2, n_images=3)
     np.testing.assert_array_equal(tables.unit_slot_offset, [1, 0, 1])
     assert tables.n_slots == 4
-    assert rp._with_reconstruction_groups(_two_class_tables(), None, None, n_images=3).n_slots == 2
+    assert resident_table_blocks.with_reconstruction_groups(_two_class_tables(), None, None, n_images=3).n_slots == 2
     with pytest.raises(ValueError, match="go together"):
-        rp._with_reconstruction_groups(_two_class_tables(), [0, 1, 0], None, n_images=3)
+        resident_table_blocks.with_reconstruction_groups(_two_class_tables(), [0, 1, 0], None, n_images=3)
     with pytest.raises(ValueError, match="one entry per image"):
-        rp._with_reconstruction_groups(_two_class_tables(), [0, 1], 2, n_images=3)
+        resident_table_blocks.with_reconstruction_groups(_two_class_tables(), [0, 1], 2, n_images=3)
 
 
 def test_class_accumulators_stack_the_pseudo_halfsets():

@@ -90,7 +90,7 @@ def test_k_class_tables_on_a_compact_grid_carry_each_class_supports_own_priors()
     the particle's own prior of its parent rotation, and no candidate for a class the particle is not scored
     against (the seed iteration, or a class without a significant sample)."""
 
-    from relax.fine_pass import resident_pass2
+    from relax.fine_pass import resident_table_blocks
     from relax.sampling import grids, oversampled_grids
 
     rng = np.random.default_rng(11)
@@ -116,7 +116,7 @@ def test_k_class_tables_on_a_compact_grid_carry_each_class_supports_own_priors()
         used, order, oversampling_order=1, random_perturbation=0.13, return_mstep_rotations=True,
         return_source_eulers=True, dtype=np.float32,
     )  # fmt: skip
-    blocks, _, _ = resident_pass2._candidate_table_blocks(
+    blocks, _, _ = resident_table_blocks.candidate_table_blocks(
         supports,
         (None, None),
         whole=False,
@@ -159,7 +159,7 @@ def test_k_class_tables_on_a_compact_grid_carry_each_class_supports_own_priors()
         assert n_set == sum(grid_supports[k][unit].size for k in range(n_classes))
 
     with pytest.raises(ValueError, match="each class its particles' priors"):
-        resident_pass2._candidate_table_blocks(
+        resident_table_blocks.candidate_table_blocks(
             supports, (None, None), whole=False, reconstruction_group_ids=None, reconstruction_group_count=None,
             n_images=n_units, n_coarse_rot=used.size, n_coarse_trans=n_trans, coarse_rotation_ids=used,
             per_image_rotation_log_prior=priors[:1],

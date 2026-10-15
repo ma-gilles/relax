@@ -622,7 +622,7 @@ def test_class_mstep_image_radius_is_reference_r_max_times_scale():
 def test_class_mstep_clip_keeps_the_reference_padding():
     import inspect
 
-    from relax.fine_pass import resident_pass2
+    from relax.fine_pass import resident_chunk_run
     from relax.projection import adjoint
 
     # One grid: the reference r_max, from which recovar infers RELION's pad size.
@@ -636,7 +636,7 @@ def test_class_mstep_clip_keeps_the_reference_padding():
     kwargs = adjoint._recovar_clip_kwargs(clip)
     assert kwargs["max_r"] == pytest.approx(28 * 1.12) and kwargs["upsampling"] == 2
     # The resident chunk loop builds its own program spec; it must be handed the clip.
-    parameter = inspect.signature(resident_pass2._run_resident_chunk).parameters["mstep_max_r"]
+    parameter = inspect.signature(resident_chunk_run.run_resident_chunk).parameters["mstep_max_r"]
     assert parameter.default is inspect.Parameter.empty
 
 

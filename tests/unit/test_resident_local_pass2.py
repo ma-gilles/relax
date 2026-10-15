@@ -564,7 +564,7 @@ def test_local_chunk_tile_count_matches_the_live_translated_arrays(monkeypatch, 
     from relax.fine_pass import resident_chunk_inputs as resident_chunk_inputs_module
     from relax.fine_pass import resident_chunk_memory as resident_chunk_memory_module
     from relax.fine_pass import resident_chunk_programs as resident_chunk_programs_module
-    from relax.fine_pass import resident_pass2 as rp_module
+    from relax.fine_pass import resident_chunk_run as resident_chunk_run_module
 
     planned = []
     measured = []
@@ -573,7 +573,7 @@ def test_local_chunk_tile_count_matches_the_live_translated_arrays(monkeypatch, 
     real_prepare = resident_chunk_inputs_module.prepare_chunk_reconstruction_operands
     real_rows = resident_chunk_inputs_module._chunk_operand_rows
     real_unshifted = rlp._unshifted_chunk_operands
-    real_gather = rp_module.gather_resident_chunk_operands
+    real_gather = resident_chunk_run_module.gather_resident_chunk_operands
 
     def plan(**kwargs):
         planned.append(kwargs)
@@ -621,12 +621,12 @@ def test_local_chunk_tile_count_matches_the_live_translated_arrays(monkeypatch, 
             record("prepare_tile_pixels", capacity, n_trans)
             return out
 
-        for module in (rp_module, resident_chunk_inputs_module, resident_chunk_programs_module):
+        for module in (resident_chunk_run_module, resident_chunk_inputs_module, resident_chunk_programs_module):
             monkeypatch.setattr(module, "gather_resident_chunk_operands", gather)
         try:
             result = real_unshifted(*args, **kwargs)
         finally:
-            for module in (rp_module, resident_chunk_inputs_module, resident_chunk_programs_module):
+            for module in (resident_chunk_run_module, resident_chunk_inputs_module, resident_chunk_programs_module):
                 monkeypatch.setattr(module, "gather_resident_chunk_operands", real_gather)
         record("held_tile_pixels", capacity, n_trans)
         return result

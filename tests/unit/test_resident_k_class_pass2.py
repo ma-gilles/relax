@@ -23,6 +23,7 @@ from test_resident_pass2_driver import _driver_fixture_args, requires_resident_g
 from relax.fine_pass import (
     resident_chunk_programs,
     resident_chunk_records,
+    resident_chunk_run,
     resident_chunk_stages,
     resident_mstep_blocks,
     resident_projections,
@@ -490,13 +491,13 @@ def test_lone_overflow_chunks_match_the_whole_chunk_k_class_pass(monkeypatch, st
     monkeypatch.setattr(resident_projections, "PRESUM_ADJOINT_FREE_FRACTION", 0.0)
     whole = run()
     lone_calls = []
-    real_lone = rp._run_lone_resident_chunk
+    real_lone = resident_chunk_run.run_lone_resident_chunk
 
     def spy(*a, **k):
         lone_calls.append(int(k["spec"].row_capacity))
         return real_lone(*a, **k)
 
-    monkeypatch.setattr(rp, "_run_lone_resident_chunk", spy)
+    monkeypatch.setattr(resident_chunk_run, "run_lone_resident_chunk", spy)
     lone = run(replace(RESIDENT_PRODUCTION_ENGINE, resident_row_capacities=(16,), mstep_block_rows=16))
     assert lone_calls, "the 16-row ladder made no lone chunk"
 

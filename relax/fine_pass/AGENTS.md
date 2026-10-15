@@ -8,7 +8,9 @@ accumulation it feeds. It is the only pass-2 engine and it needs a CUDA GPU.
 | Module | Owns |
 | --- | --- |
 | `dispatch.py` | `compute_pass2_stats_sparse`: the one entry the controllers call; it routes to the resident drivers |
-| `resident_pass2.py` | the drivers `compute_pass2_stats_resident`, `compute_k_class_pass2_stats_resident`, `compute_tilt_pass2_stats_resident`; the candidate table blocks, the default capacity ladders and the per-chunk run (`_run_resident_chunk`) |
+| `resident_pass2.py` | the drivers `compute_pass2_stats_resident`, `compute_k_class_pass2_stats_resident`, `compute_tilt_pass2_stats_resident` and the default capacity ladders |
+| `resident_table_blocks.py` | the pass's candidate tables over every class, built in bounded image blocks (`candidate_table_blocks`), and the reconstruction groups (`with_reconstruction_groups`) |
+| `resident_chunk_run.py` | one chunk's run (`run_resident_chunk`): its operands, projections and stage sequence, and the lone overflow chunk run in row blocks (`run_lone_resident_chunk`) |
 | `resident_configuration.py` | the configuration gate `require_resident_production_configuration`: the production configuration the drivers implement, checked before any device work |
 | `resident_chunk_memory.py` | chunk planning: the M-step block rows, the bytes of a chunk, `plan_resident_chunk_memory`, lone overflow chunks and the chunk budget |
 | `resident_stable_windows.py` | the physical window classes a refinement reuses (`stable_window_class_history`), the stable-window plan, the reference-model class and the capacity projection |
@@ -61,7 +63,7 @@ The local-search pass 2 (`resident_pass2.py`, `resident_layout.py`, `records.py`
 - A CPU run of the driver tests passes by skipping. `test_resident_pass2_driver.py` marks its GPU cases with
   `requires_resident_gpu`, a `skipif`, so a green CPU run has not exercised the scoring, posterior, Wavg or
   backprojection stages. Read the skip count.
-- `_resident_pass2` is one function of 2,124 lines with 80 parameters, and `_run_resident_chunk` takes 71. An
+- `_resident_pass2` is one function of 2,124 lines with 80 parameters, and `resident_chunk_run.run_resident_chunk` takes 71. An
   argument is threaded through `dispatch.py`, the gate and the driver; grep its name in all three.
 - `dispatch.py` logs under the logger name `relax.sampling.oversampling`, not its own module name, because
   run-log collectors read that category. Do not "fix" it.
