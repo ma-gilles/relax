@@ -9,7 +9,7 @@ from helpers.float_compare import assert_matches
 
 import relax.parity.relion_replay as relion_replay_module
 import relax.sampling.orientation_priors as orientation_priors_module
-from relax.parity import relion_replay_source
+from relax.parity import final_replay, relion_replay_source
 from relax.reconstruction.resolution import ImageGeometry
 from relax.refinement.noise_updates import NoiseModel
 from relax.refinement.refinement_options import RefinementSchedule
@@ -246,7 +246,7 @@ def test_final_sampling_file_precedence(tmp_path, available):
     for index, name in enumerate(names):
         if available & (1 << index):
             (tmp_path / name).touch()
-    result = relion_replay_module.select_final_sampling_star(
+    result = final_replay.select_final_sampling_star(
         str(tmp_path), "run", final_iteration=21, previous_iteration=20,
         require_final_state=False,
     )
@@ -267,7 +267,7 @@ def test_final_numbered_sampling_does_not_bypass_required_final_state(tmp_path, 
         elif directory:
             path.mkdir()
     with pytest.raises(RuntimeError, match=f"missing .*run_{missing}.star"):
-        relion_replay_module.select_final_sampling_star(
+        final_replay.select_final_sampling_star(
             str(tmp_path), "run", final_iteration=21, previous_iteration=20,
             require_final_state=True,
         )
@@ -503,7 +503,7 @@ def test_final_replay_prior_at_another_order_is_not_remapped(n_classes):
     direction_priors = [DirectionPrior(None, None), DirectionPrior(None, None)]
     sigma_offset = object()
     noise_model = object()
-    out = relion_replay_module.apply_final_replay_state(
+    out = final_replay.apply_final_replay_state(
         {"direction_prior": [replayed, replayed]},
         [SimpleNamespace(image_corrections=None, scale_corrections=None) for _ in range(2)],
         direction_priors,

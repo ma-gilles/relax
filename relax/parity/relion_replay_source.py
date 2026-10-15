@@ -25,21 +25,22 @@ from typing import Any
 import jax.numpy as jnp
 import numpy as np
 
+from relax.parity.convergence_replay import (
+    apply_optimiser_convergence_replay,
+    read_optimiser_accuracy_replay,
+    restore_convergence_state_from_replay_restart,
+)
+from relax.parity.final_replay import apply_final_replay_state, select_final_sampling_star
 from relax.parity.frozen_boundary import restore_diagnostic_frozen_boundary_state
 from relax.parity.relion_replay import (
-    apply_final_replay_state,
     apply_iter_replay_overrides,
-    apply_optimiser_convergence_replay,
     class_tau2_replay,
     install_sealed_sampling,
-    read_optimiser_accuracy_replay,
     replay_class_relion_references,
     replay_k1_relion_references,
     resolve_replay_random_perturbation,
-    restore_convergence_state_from_replay_restart,
     sealed_rotation_ids_for_scoring,
     sealed_sampling_base_grids,
-    select_final_sampling_star,
 )
 from relax.parity.state_swap_runtime import apply_state_swap_probe, snapshot_state_swap_inputs
 from relax.refinement.image_size_plans import CoarseImageSize

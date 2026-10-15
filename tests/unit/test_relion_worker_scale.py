@@ -11,7 +11,7 @@ from helpers.float_compare import assert_matches
 
 import relax.refinement.follower_scale as relion_worker_scale
 import relax.refinement.numbered_transitions as convergence_policy
-from relax.parity.relion_replay import _apply_replay_correction_overrides
+from relax.parity.final_replay import apply_replay_correction_overrides
 from relax.refinement.follower_scale import (
     RELION_SCALE_REDUCTION_ALL_GROUPS,
     RELION_SCALE_REDUCTION_OPTICS_PREFIX,
@@ -180,7 +180,7 @@ def test_serialized_replay_preserves_live_follower_scale_between_iterations():
         optics_group_ids=(None, None),
     )
 
-    applied = _apply_replay_correction_overrides(
+    applied = apply_replay_correction_overrides(
         relion_half_inputs=half_inputs,
         replay_override={
             "image_corrections": [np.asarray([1.3, 1.3]), np.zeros(0)],

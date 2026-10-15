@@ -5,7 +5,7 @@ from dataclasses import asdict
 
 import pytest
 
-from relax.parity import relion_replay
+from relax.parity import convergence_replay
 from relax.refinement.refinement_state import RefinementState
 
 pytestmark = pytest.mark.unit
@@ -21,7 +21,7 @@ def _apply(state, metadata, tmp_path, **overrides):
         logger=logging.getLogger(__name__),
     )
     kwargs.update(overrides)
-    return relion_replay.apply_optimiser_convergence_replay(state, **kwargs)
+    return convergence_replay.apply_optimiser_convergence_replay(state, **kwargs)
 
 
 def test_numbered_metadata_updates_only_supplied_controls(tmp_path):
@@ -96,7 +96,7 @@ def test_final_read_failure_is_logged_after_numbered_controls(tmp_path, monkeypa
     def failed_read(path):
         raise OSError("test unreadable final optimiser")
 
-    monkeypatch.setattr(relion_replay, "read_relion_optimiser_metadata", failed_read)
+    monkeypatch.setattr(convergence_replay, "read_relion_optimiser_metadata", failed_read)
     state = RefinementState()
     _apply(state, {"number_iter_without_resolution_gain": 4}, tmp_path)
     assert state.nr_iter_wo_resol_gain == 4
@@ -108,7 +108,7 @@ def test_numbered_convergence_does_not_read_final_metadata(tmp_path, monkeypatch
     def forbidden_read(path):
         pytest.fail("already converged numbered state must not read final optimiser")
 
-    monkeypatch.setattr(relion_replay, "read_relion_optimiser_metadata", forbidden_read)
+    monkeypatch.setattr(convergence_replay, "read_relion_optimiser_metadata", forbidden_read)
     state = RefinementState()
     _apply(state, {"has_converged": 1}, tmp_path)
     assert state.has_converged
@@ -128,7 +128,7 @@ def _read_accuracy(tmp_path, **overrides):
         logger=logging.getLogger(__name__),
     )
     kwargs.update(overrides)
-    return relion_replay.read_optimiser_accuracy_replay(**kwargs)
+    return convergence_replay.read_optimiser_accuracy_replay(**kwargs)
 
 
 def _unchanged(result, **expected):
@@ -153,7 +153,7 @@ def test_accuracy_replay_selects_numbered_star_and_tolerates_missing_file(tmp_pa
     def forbidden_read(path):
         raise AssertionError(f"unexpected read of {path}")
 
-    monkeypatch.setattr(relion_replay, "read_relion_optimiser_metadata", forbidden_read)
+    monkeypatch.setattr(convergence_replay, "read_relion_optimiser_metadata", forbidden_read)
     result = _read_accuracy(tmp_path)
     assert result.optimiser_iteration == 8
     assert result.optimiser_star == str(tmp_path / "run_it008_optimiser.star")
@@ -165,7 +165,7 @@ def test_accuracy_replay_substitutes_finite_relion_accuracies(tmp_path, monkeypa
     star = tmp_path / "run_it008_optimiser.star"
     star.write_text("data_\n")
     metadata = {"overall_accuracy_rotations": "0.75", "overall_accuracy_translations_angst": "2.5"}
-    monkeypatch.setattr(relion_replay, "read_relion_optimiser_metadata", lambda path: metadata)
+    monkeypatch.setattr(convergence_replay, "read_relion_optimiser_metadata", lambda path: metadata)
     with caplog.at_level(logging.INFO, logger=__name__):
         result = _read_accuracy(tmp_path)
     assert result.metadata is metadata
@@ -179,7 +179,7 @@ def test_accuracy_replay_substitutes_finite_relion_accuracies(tmp_path, monkeypa
 def test_accuracy_replay_ignores_missing_or_nonfinite_fields(tmp_path, monkeypatch, caplog):
     (tmp_path / "run_it008_optimiser.star").write_text("data_\n")
     metadata = {"overall_accuracy_rotations": "inf", "overall_accuracy_translations_angst": None}
-    monkeypatch.setattr(relion_replay, "read_relion_optimiser_metadata", lambda path: metadata)
+    monkeypatch.setattr(convergence_replay, "read_relion_optimiser_metadata", lambda path: metadata)
     with caplog.at_level(logging.INFO, logger=__name__):
         result = _read_accuracy(tmp_path)
     assert result.metadata is metadata
@@ -193,7 +193,7 @@ def test_accuracy_replay_read_failure_warns_and_keeps_inputs(tmp_path, monkeypat
     def failed_read(path):
         raise OSError("truncated")
 
-    monkeypatch.setattr(relion_replay, "read_relion_optimiser_metadata", failed_read)
+    monkeypatch.setattr(convergence_replay, "read_relion_optimiser_metadata", failed_read)
     with caplog.at_level(logging.WARNING, logger=__name__):
         result = _read_accuracy(tmp_path)
     assert result.metadata is None
@@ -207,7 +207,7 @@ def test_accuracy_replay_parse_failure_keeps_metadata_and_partial_override(tmp_p
 
     (tmp_path / "run_it008_optimiser.star").write_text("data_\n")
     metadata = {"overall_accuracy_rotations": "0.5", "overall_accuracy_translations_angst": "n/a"}
-    monkeypatch.setattr(relion_replay, "read_relion_optimiser_metadata", lambda path: metadata)
+    monkeypatch.setattr(convergence_replay, "read_relion_optimiser_metadata", lambda path: metadata)
     with caplog.at_level(logging.WARNING, logger=__name__):
         result = _read_accuracy(tmp_path)
     assert result.metadata is metadata

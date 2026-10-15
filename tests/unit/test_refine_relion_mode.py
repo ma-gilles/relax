@@ -82,7 +82,7 @@ from relax.local_search.layout import (
     selected_rotation_matrices,
 )
 from relax.numerics import precision as dtype_policy_module
-from relax.parity import relion_replay_source
+from relax.parity import final_replay, relion_replay_source
 from relax.parity.relion_replay import _replay_control_model_iteration
 from relax.parity.relion_replay_source import RelionReplay
 from relax.reconstruction import regularization as regularization_relion
@@ -982,12 +982,12 @@ def test_replay_explicit_paired_image_scale_state_remains_exact(with_resident_st
     )
 
     with pytest.raises(ValueError, match="Replay scale requires"):
-        relion_replay_module._apply_replay_correction_overrides(
+        final_replay.apply_replay_correction_overrides(
             relion_half_inputs=relion_half_inputs,
             replay_override={"scale_corrections": [np.asarray([4.0, 5.0]), None]},
         )
 
-    relion_replay_module._apply_replay_correction_overrides(
+    final_replay.apply_replay_correction_overrides(
         relion_half_inputs=relion_half_inputs,
         replay_override={
             "image_corrections": [np.asarray([1.0, 2.0]), np.asarray([], dtype=np.float32)],
@@ -1016,11 +1016,11 @@ def test_final_all_data_replay_uses_shared_live_scale_correction_contract():
         "serialized_scale_corrections": [np.asarray([4.0, 5.0]), np.asarray([], dtype=np.float32)],
     }
     shared, final = halves(), halves()
-    shared_fields = relion_replay_module._apply_replay_correction_overrides(
+    shared_fields = final_replay.apply_replay_correction_overrides(
         relion_half_inputs=shared, replay_override=override,
     )
     sigma_offset, noise_model = object(), object()
-    kept_sigma, kept_noise, final_fields = relion_replay_module._install_final_replay_particle_state(
+    kept_sigma, kept_noise, final_fields = final_replay._install_final_replay_particle_state(
         override, final, sigma_offset=sigma_offset, noise_model=noise_model, image_shape=IMAGE_SHAPE, dtype=np.float32,
     )
     # The final pass installs the corrections through the numbered iterations' contract, and nothing else.
@@ -1038,7 +1038,7 @@ def test_final_all_data_replay_uses_shared_live_scale_correction_contract():
         scale_corrections=[np.asarray([8.0, 10.0]), np.asarray([], dtype=np.float32)],
         optics_group_ids=(None, None), group_ids=None, group_count=None,
     )
-    applied = relion_replay_module._apply_replay_correction_overrides(
+    applied = final_replay.apply_replay_correction_overrides(
         relion_half_inputs=relion_half_inputs,
         replay_override={
             "image_corrections": [np.asarray([1.0, 2.0]), np.asarray([], dtype=np.float32)],
