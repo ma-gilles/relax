@@ -728,7 +728,7 @@ single-volume boundary has 17 parameters.
   seconds with `FFTW/3.3.10-GCC-12.2.0` loaded.
 - Production totals are 15,136 physical and 13,181 nonblank lines. Functions
   with at least 10 parameters fell to 5; excluding the two tomography scoring
-  boundaries, `_reconstruct_volume_eager`, nested `_safe_batch_sizes` and the
+  boundaries, `reconstruct_volume_eager`, nested `_safe_batch_sizes` and the
   run-file reader constructor remain.
 
 ## 2026-09-29 — posterior-noise readability correction

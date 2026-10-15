@@ -275,7 +275,7 @@ def class_current_resolution_shell(data_vs_prior, *, current_size, box_size, dty
     return max(class_resolution_shells(dvp, box_size=box_size))
 
 
-def _firstiter_cc_ini_high_resolution_shell(box_size, voxel_size, ini_high_angstrom):
+def firstiter_cc_ini_high_resolution_shell(box_size, voxel_size, ini_high_angstrom):
     """RELION's firstiter_cc current-resolution shell from ``--ini_high``."""
     px = float(voxel_size if voxel_size > 0 else 1.0)
     shell = int(np.floor(int(box_size) * px / float(ini_high_angstrom) + 0.5))
@@ -304,7 +304,7 @@ def firstiter_cc_scheduling_resolution_shell(
         and ini_high_angstrom is not None
         and int(relion_iteration) == 1
     ):
-        return _firstiter_cc_ini_high_resolution_shell(
+        return firstiter_cc_ini_high_resolution_shell(
             box_size,
             voxel_size,
             ini_high_angstrom,
@@ -421,7 +421,7 @@ def firstiter_cc_ini_high_tau2_taper(
     return taper * taper
 
 
-def _firstiter_cc_ini_high_tapered(
+def firstiter_cc_ini_high_tapered(
     values,
     box_size,
     voxel_size,

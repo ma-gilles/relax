@@ -1305,7 +1305,7 @@ def main() -> None:
     from relax.io.map_io import write_map
     from relax.reconstruction.regularization import RELION_MINRES_MAP
     from relax.reconstruction.volume_solver import ReconstructionPrograms
-    from relax.refinement.numbered_reconstruction import _reconstruct_volume_eager
+    from relax.refinement.numbered_reconstruction import reconstruct_volume_eager
     from relax.sampling.grids import get_relion_rotation_grid_eulers, get_translation_grid, relion_angular_sampling_deg
     from relax.sampling.orientation_priors import (
         make_relion_direction_log_prior,
@@ -1920,7 +1920,7 @@ def main() -> None:
     ):
         real_maps = []
         for class_index in range(n_classes):
-            class_ft = _reconstruct_volume_eager(
+            class_ft = reconstruct_volume_eager(
                 result.Ft_ctf[class_index],
                 result.Ft_y[class_index],
                 ds.volume_shape,

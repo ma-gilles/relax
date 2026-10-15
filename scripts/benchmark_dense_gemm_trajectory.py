@@ -501,7 +501,7 @@ def _finalize_and_reconstruct(result, checkpoint, half, volume_shape, bp_shape):
         relion_x_half_accumulators_to_public_layout,
     )
     from relax.reconstruction.volume_solver import ReconstructionPrograms
-    from relax.refinement.numbered_reconstruction import _reconstruct_volume_eager
+    from relax.refinement.numbered_reconstruction import reconstruct_volume_eager
 
     engine_tuning = EngineTuning.from_environ()
     numerator, denominator = finalize_half_volume_bpref(
@@ -513,7 +513,7 @@ def _finalize_and_reconstruct(result, checkpoint, half, volume_shape, bp_shape):
     numerator, denominator = relion_x_half_accumulators_to_public_layout(
         numerator, denominator, bp_shape, large_grid=engine_tuning.x_half_large_grid,
     )
-    new_map = _reconstruct_volume_eager(
+    new_map = reconstruct_volume_eager(
         denominator, numerator, volume_shape, 2,
         tau=checkpoint.tau_radial[half], tau2_fudge=checkpoint.tau2_fudge,
         projection_padding_factor=2, current_size=checkpoint.current_size,

@@ -50,7 +50,7 @@ class TestResolutionScheduling:
         untapered[:, 8:12] = [[124.6, 45.45, 0.5746, 0.02933], [654.6, 217.5, 3.272, 0.2915]]
         relion = np.array([[124.6, 13.86, 4.311e-6, 0.0], [654.6, 66.35, 2.455e-5, 0.0]])
 
-        tapered = resolution_helpers._firstiter_cc_ini_high_tapered(
+        tapered = resolution_helpers.firstiter_cc_ini_high_tapered(
             untapered, 256, 2.125, 60.0, filter_edgewidth=2
         )
 
@@ -189,7 +189,7 @@ class TestResolutionScheduling:
 
     def test_firstiter_cc_scheduling_uses_ini_high_shell(self):
         """RELION iter-1 firstiter_cc grows from ini_high, not DVP."""
-        shell = resolution_helpers._firstiter_cc_ini_high_resolution_shell(256, 2.125, 30.0)
+        shell = resolution_helpers.firstiter_cc_ini_high_resolution_shell(256, 2.125, 30.0)
         current_size = regularization.compute_current_size_relion(
             shell,
             256,

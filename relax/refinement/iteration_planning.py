@@ -12,7 +12,7 @@ import numpy as np
 from relax.reconstruction.regularization import fsc_to_relion_ssnr, resolution_from_data_vs_prior
 from relax.reconstruction.resolution import (
     ImageGeometry,
-    _firstiter_cc_ini_high_resolution_shell,
+    firstiter_cc_ini_high_resolution_shell,
     shell_index_to_resolution_angstrom,
 )
 from relax.refinement.iteration_snapshot import validate_resume_snapshot
@@ -263,7 +263,7 @@ def initialize_resolution_from_ini_high(
     and compares its own resolution with it for the stall counter (ml_optimiser.cpp:6835).
     """
     pixel_size = float(voxel_size if voxel_size > 0 else 1.0)
-    shell = _firstiter_cc_ini_high_resolution_shell(box_size, pixel_size, ini_high_angstrom)
+    shell = firstiter_cc_ini_high_resolution_shell(box_size, pixel_size, ini_high_angstrom)
     resolution_angstrom = shell_index_to_resolution_angstrom(shell, box_size, pixel_size)
     state.current_resolution = float(resolution_angstrom)
     state.previous_resolution = float(resolution_angstrom)

@@ -13,7 +13,7 @@ from recovar.core import fourier_transform_utils
 
 from relax.reconstruction import regularization
 from relax.reconstruction.resolution import (
-    _firstiter_cc_ini_high_tapered,
+    firstiter_cc_ini_high_tapered,
     firstiter_cc_ini_high_tau2_taper,
     shell_index_to_resolution_angstrom,
 )
@@ -686,7 +686,7 @@ def taper_first_cc_class_prior(
     """
 
     def taper_shells(values):
-        return _firstiter_cc_ini_high_tapered(
+        return firstiter_cc_ini_high_tapered(
             values,
             settings.box_size,
             pixel_size_angstrom,

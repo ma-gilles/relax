@@ -229,10 +229,10 @@ def test_box_scale_reconstruction_caller_keeps_both_half_outputs_on_host(monkeyp
         masks.append(solvent_mask)
         return solvent_mask
 
-    monkeypatch.setattr(numbered_reconstruction, "_reconstruct_volume_eager", fake_reconstruct)
+    monkeypatch.setattr(numbered_reconstruction, "reconstruct_volume_eager", fake_reconstruct)
     monkeypatch.setattr(
         numbered_reconstruction,
-        "_finish_host_staged_reconstruction",
+        "finish_host_staged_reconstruction",
         lambda result, *_accumulators: result,
     )
     monkeypatch.setattr(map_postprocess, "_make_relion_solvent_mask", fake_make_mask)

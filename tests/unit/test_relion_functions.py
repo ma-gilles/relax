@@ -2080,7 +2080,7 @@ def test_large_host_staged_pre_ifft_split_matches_monolith(monkeypatch):
         )
     )
     device_staged = np.asarray(
-        numbered_reconstruction._reconstruct_volume_eager(
+        numbered_reconstruction.reconstruct_volume_eager(
             ft_ctf,
             f_ty,
             volume_shape,
@@ -2092,7 +2092,7 @@ def test_large_host_staged_pre_ifft_split_matches_monolith(monkeypatch):
         )
     )
     host_staged = np.asarray(
-        numbered_reconstruction._reconstruct_volume_eager(
+        numbered_reconstruction.reconstruct_volume_eager(
             ft_ctf,
             f_ty,
             volume_shape,
@@ -2339,7 +2339,7 @@ def test_large_host_staged_compact_padding_matches_monolith(monkeypatch):
         )
     )
     staged = np.asarray(
-        numbered_reconstruction._reconstruct_volume_eager(
+        numbered_reconstruction.reconstruct_volume_eager(
             ft_ctf,
             f_ty,
             volume_shape,
@@ -2463,7 +2463,7 @@ def test_compact_device_accumulator_runs_giant_split_and_normalization(monkeypat
     )
     caplog.set_level("INFO", logger=volume_solver.__name__)
 
-    result = numbered_reconstruction._reconstruct_volume_eager(
+    result = numbered_reconstruction.reconstruct_volume_eager(
         ft_ctf,
         ft_y,
         volume_shape,
@@ -2552,7 +2552,7 @@ def test_compact_full_accumulator_repack_matches_historical_path(monkeypatch):
         )
     )
     staged = np.asarray(
-        numbered_reconstruction._reconstruct_volume_eager(
+        numbered_reconstruction.reconstruct_volume_eager(
             ft_ctf_full,
             ft_y_full,
             volume_shape,
@@ -2632,7 +2632,7 @@ def test_compact_full_device_accumulator_runs_giant_split_and_normalization(monk
     )
     caplog.set_level("INFO", logger=volume_solver.__name__)
 
-    result = numbered_reconstruction._reconstruct_volume_eager(
+    result = numbered_reconstruction.reconstruct_volume_eager(
         ft_ctf_full,
         ft_y_full,
         volume_shape,
@@ -2698,7 +2698,7 @@ def test_large_device_accumulator_does_not_enter_host_staged_split(monkeypatch):
         "finish_large_relion_postprocess_from_fftw_half",
         reject_split,
     )
-    returned = numbered_reconstruction._reconstruct_volume_eager(
+    returned = numbered_reconstruction.reconstruct_volume_eager(
         ft_ctf,
         ft_y,
         volume_shape,
@@ -2768,7 +2768,7 @@ def test_large_device_accumulator_normalizes_monolithic_giant_padded_ifft(monkey
         accumulator_shape,
         rf,
     )
-    result = numbered_reconstruction._reconstruct_volume_eager(
+    result = numbered_reconstruction.reconstruct_volume_eager(
         ft_ctf,
         ft_y,
         volume_shape,
@@ -2864,7 +2864,7 @@ def test_large_host_staged_irfft_uses_backward_transform_then_dynamic_normalizat
         fake_finish,
     )
 
-    result = numbered_reconstruction._reconstruct_volume_eager(
+    result = numbered_reconstruction.reconstruct_volume_eager(
         np.ones((2, 2, 2), dtype=np.float32),
         np.ones((2, 2, 2), dtype=np.complex64),
         (2, 2, 2),
@@ -2960,7 +2960,7 @@ def test_large_host_irfft_is_already_normalized(monkeypatch):
         reject_double_normalization,
     )
 
-    result = numbered_reconstruction._reconstruct_volume_eager(
+    result = numbered_reconstruction.reconstruct_volume_eager(
         np.ones((2, 2, 2), dtype=np.float32),
         np.ones((2, 2, 2), dtype=np.complex64),
         (2, 2, 2),
@@ -3334,7 +3334,7 @@ def test_final_gridding_correction_equals_post_hoc_division_of_uncorrected_map(t
     )
 
     def saved_map(grid_correct):
-        ft = numbered_reconstruction._reconstruct_volume_eager(
+        ft = numbered_reconstruction.reconstruct_volume_eager(
             ft_ctf, f_ty, volume_shape, RECONSTRUCTION_PADDING_FACTOR, grid_correct=grid_correct, **common, programs=reconstruction_programs()
         )
         return np.real(np.asarray(ftu.get_idft3(jnp.asarray(ft).reshape(volume_shape)))).astype(np.float32)

@@ -91,7 +91,7 @@ Steps this controller shares with VDAM live in `relax/steps/`: `half_inputs.py` 
   lifetime is not; state any change and its peak-memory effect. A test holding a traced call's operands keeps
   them alive: trace with `keep_operands=False` or hold weak references.
 - A flag that tells a callee how to read another argument may still have one live caller.
-  `_reconstruct_volume_eager` keeps `tau_is_1d` because the final K=1 solve passes a full volume while the
+  `reconstruct_volume_eager` keeps `tau_is_1d` because the final K=1 solve passes a full volume while the
   numbered operations pass shell curves. Trace every caller before removing such a flag.
 - Stop a deletion at a stored format. The growth history and the snapshots keep their `fsc_for_growth` column
   although for K=1 it is the FSC; the in-memory records hold that curve once (`SplitHalfPrior.fsc`).

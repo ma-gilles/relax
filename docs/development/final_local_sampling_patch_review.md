@@ -144,7 +144,7 @@ only from tests.
 | --- | --- | --- | --- | --- |
 | Split-half maps versus combined class stack | `k_class_enabled = n_classes > 1`, `iteration_loop.py:452`, never reassigned; accumulators combined at `:1953-1955` (class) or joined at `:1957` (K1) | The one dispatch `iteration_loop.py:2103`; `_reconstruct_k1_maps` `mean_helpers.py:1332`, `_reconstruct_class_maps` `:1387`; premask writer layout `diagnostics/reconstruction.py:353` | scientific | live: both modes are production |
 | Prior as shell curves versus full volume, numbered operations | K1: `estimate_split_half_prior` returns `details["prior_shells"]` for both halves (`mean_helpers.py:1318-1325`, always present, `regularization_relion.py:731`). Class3D: `estimate_class_prior` returns shells from the Iref power spectrum (`:481`) or from the diagnostic replay spectrum (`:472`, admitted and shape-checked as `(n_classes, n_shells)` at `parity/relion_replay.py:68-103`), stacked at `:646`. No reassignment between `iteration_loop.py:2019`/`:2074` and the call. K1 replay `mean_variance` (`:1140-1155`) installs a full volume into `reference_model.tau2`, the scoring state, which is overwritten at `:2086` and is never the solve operand. Continuation restores the model state, not this operand | `tau_is_1d` and the `shells if not None else volume` fallback at `iteration_loop.py:2107-2115`, `:2122-2129`; forwarded by both operations and both private solves (`mean_helpers.py:1369`, `:1423`) | input validation | constant in production (always shells); the full-volume arm is reached only through the test builder (`tests/helpers/refinement_specs.py:70,80`) |
-| Prior as shell curves versus full volume, eager solve | Numbered solves (shells); final Class3D (`final_reconstruction.py:177`, shells); final K1 half maps pass the full-volume prior with the default flag (`final_reconstruction.py:210-216`, from `compute_final_halfmap_prior`); unregularized and unfiltered solves pass no prior (`mean_helpers.py:1229`, `:1720`, `:1747`, `final_reconstruction.py:49`); four scripts | `_reconstruct_volume_eager` `mean_helpers.py:729`, stable reconstruction class `:686`, Stage A `:887`, `relion_functions_relion.py:234` | scientific operand layout | live: final K1 is a production full-volume caller, so the eager solve keeps the parameter |
+| Prior as shell curves versus full volume, eager solve | Numbered solves (shells); final Class3D (`final_reconstruction.py:177`, shells); final K1 half maps pass the full-volume prior with the default flag (`final_reconstruction.py:210-216`, from `compute_final_halfmap_prior`); unregularized and unfiltered solves pass no prior (`mean_helpers.py:1229`, `:1720`, `:1747`, `final_reconstruction.py:49`); four scripts | `reconstruct_volume_eager` `mean_helpers.py:729`, stable reconstruction class `:686`, Stage A `:887`, `relion_functions_relion.py:234` | scientific operand layout | live: final K1 is a production full-volume caller, so the eager solve keeps the parameter |
 | First-CC initial low-pass of the new references | `relion_firstiter_cc_this_iter`, `iteration_loop.py:963-965` (first numbered iteration of a fresh run with CC emulation); resolution from `parity.relion_firstiter_ini_high_angstrom` (`:524`) | Filter before flatten in both operations (`mean_helpers.py:1486`, `:1567`); closing log (`:1513`, `:1602`); reporting taper after the solve stays in the controller (`iteration_loop.py:2145-2202`) | scientific | live: iteration-dependent |
 | Solvent flatten | `schedule.particle_diameter_ang`, a Python float or `None` (`full_refinement.py:591`, `scripts/run_multi_iter_parity.py:1617`); voxel size from `ImageGeometry`, a Python float (`helpers/resolution.py:36-39`, `iteration_loop.py:515`) | Radius and mask in both operations (`mean_helpers.py:1494-1507`, `:1581-1592`) | scientific | live. The K1 `float()` wrapping versus the bare class expression is not a case: the two differ only for `np.float32` scalars, which no production producer supplies |
 | Flatten implementation | Mode | K1 `_apply_relion_solvent_flatten_k1` (`mean_helpers.py:2182`); Class3D inline iDFT, multiply, DFT (`:1594-1601`) | execution-storage | live and not interchangeable: at box scale the K1 implementation moves the result to the host and deletes the mask, which the class loop reuses for the next class |
@@ -435,7 +435,7 @@ The whole M-step decision, from the ordering comment to the stage mark.
                 # shells past ini_high into iteration 2's scale correction. The
                 # class tau2 volumes are recomputed from the Iref power next
                 # iteration, so only the shell curves carry the taper.
-                data_vs_prior_iter = _firstiter_cc_ini_high_tapered(
+                data_vs_prior_iter = firstiter_cc_ini_high_tapered(
                     data_vs_prior_iter,
                     grid_size,
                     source_pixel_size_angstrom,
@@ -810,7 +810,7 @@ def _reconstruct_k1_maps(
         # reconstruction operand so 1 / (padding_factor**3 * tau2) is not
         # rounded in float32 before it enters the Wiener denominator.
         reconstruction_tau = jnp.asarray(tau_half, dtype=jnp.float64)
-        reconstructed = _reconstruct_volume_eager(
+        reconstructed = reconstruct_volume_eager(
             Ft_ctf_half,
             Ft_y_half,
             settings.volume_shape,
@@ -831,7 +831,7 @@ def _reconstruct_k1_maps(
             ),
         ).reshape(-1)
         reconstructed_means.append(
-            _finish_host_staged_reconstruction(reconstructed, Ft_ctf_half, Ft_y_half)
+            finish_host_staged_reconstruction(reconstructed, Ft_ctf_half, Ft_y_half)
         )
         if k == 0 and retained_device_numerator is not None:
             retained_device_numerator = None
@@ -866,7 +866,7 @@ def _reconstruct_class_maps(
             n_classes,
             cs_int,
         )
-        class_map = _reconstruct_volume_eager(
+        class_map = reconstruct_volume_eager(
             combined_denominators[class_idx],
             combined_numerators[class_idx],
             settings.volume_shape,
@@ -1177,7 +1177,7 @@ def taper_first_cc_class_prior(
     existing order, preserving the detail mapping's identity.
     """
     def taper_shells(values):
-        return _firstiter_cc_ini_high_tapered(
+        return firstiter_cc_ini_high_tapered(
             values,
             settings.grid_size,
             pixel_size_angstrom,
@@ -5460,7 +5460,7 @@ elif relion_firstiter_cc_this_iter and parity.relion_firstiter_ini_high_angstrom
     # class tau2 volumes are recomputed from the Iref power next
     # iteration, so only the shell curves carry the taper.
     def taper_shells(values):
-        return _firstiter_cc_ini_high_tapered(
+        return firstiter_cc_ini_high_tapered(
             values,
             grid_size,
             cryo.voxel_size,
@@ -5836,7 +5836,7 @@ def estimate_split_half_prior(
         _t_solvent_fsc = time.time()
         unfiltered_half_maps = []
         for Ft_ctf_half, Ft_y_half in ((denominators[0], numerators[0]), (denominators[1], numerators[1])):
-            unfiltered_real = _reconstruct_volume_eager(
+            unfiltered_real = reconstruct_volume_eager(
                 Ft_ctf_half,
                 Ft_y_half,
                 settings.volume_shape,
@@ -5968,7 +5968,7 @@ def reconstruct_k1_means(
         # reconstruction operand so 1 / (padding_factor**3 * tau2) is not
         # rounded in float32 before it enters the Wiener denominator.
         reconstruction_tau = jnp.asarray(tau_half, dtype=jnp.float64)
-        reconstructed = _reconstruct_volume_eager(
+        reconstructed = reconstruct_volume_eager(
             Ft_ctf_half,
             Ft_y_half,
             settings.volume_shape,
@@ -5989,7 +5989,7 @@ def reconstruct_k1_means(
             ),
         ).reshape(-1)
         reconstructed_means.append(
-            _finish_host_staged_reconstruction(reconstructed, Ft_ctf_half, Ft_y_half)
+            finish_host_staged_reconstruction(reconstructed, Ft_ctf_half, Ft_y_half)
         )
         if k == 0 and retained_device_numerator is not None:
             retained_device_numerator = None
@@ -6025,7 +6025,7 @@ def reconstruct_class_means(
             n_classes,
             cs_int,
         )
-        class_map = _reconstruct_volume_eager(
+        class_map = reconstruct_volume_eager(
             combined_denominators[class_idx],
             combined_numerators[class_idx],
             settings.volume_shape,
@@ -6165,7 +6165,7 @@ def reconstruct_unregularized_k1_halfmaps(
     """Reconstruct each K=1 half from its own unregularized accumulator."""
 
     return [
-        _reconstruct_volume_eager(
+        reconstruct_volume_eager(
             Ft_ctf_half,
             Ft_y_half,
             settings.volume_shape,
@@ -6195,7 +6195,7 @@ def reconstruct_unregularized_class_means(
 
     unreg_shared = jnp.stack(
         [
-            _reconstruct_volume_eager(
+            reconstruct_volume_eager(
                 Ft_ctf_combined[class_idx],
                 Ft_y_combined[class_idx],
                 settings.volume_shape,
@@ -6264,7 +6264,7 @@ def reconstruct_unfiltered_halfmaps(
     """Reconstruct host maps before low-frequency joining modifies the halves."""
     return [
         np.asarray(
-            mean_helpers._reconstruct_volume_eager(
+            mean_helpers.reconstruct_volume_eager(
                 half_ctf,
                 half_y,
                 settings.volume_shape,
@@ -6381,7 +6381,7 @@ def reconstruct_final_class_maps(
     """Reconstruct class maps and their posterior-weighted merged map."""
     class_means = jnp.stack(
         [
-            mean_helpers._reconstruct_volume_eager(
+            mean_helpers.reconstruct_volume_eager(
                 denominator[class_idx],
                 numerator[class_idx],
                 settings.volume_shape,
@@ -6425,7 +6425,7 @@ def reconstruct_final_halfmaps(
         backprojections[index] = None
         maps.append(
             np.asarray(
-                mean_helpers._reconstruct_volume_eager(
+                mean_helpers.reconstruct_volume_eager(
                     denominator,
                     numerator,
                     settings.volume_shape,

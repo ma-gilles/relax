@@ -50,12 +50,12 @@ def test_reconstruction_fft_precision_and_exact_dc(dtype, packed):
 
 @pytest.mark.parametrize("dtype", [np.complex64, np.complex128], ids=["production-f32", "diagnostic-f64"])
 def test_em_reconstruction_keeps_fft_precision_with_double_tau_and_gridding(dtype):
-    from relax.refinement.numbered_reconstruction import _reconstruct_volume_eager
+    from relax.refinement.numbered_reconstruction import reconstruct_volume_eager
     numerator = jnp.ones(4096, dtype=dtype)
     weight = jnp.ones(4096, dtype=jnp.float32 if dtype == np.complex64 else jnp.float64)
     tau = jnp.linspace(0.1, 2.0, 512, dtype=jnp.float64)
     def compute(w, y, t):
-        return _reconstruct_volume_eager(w, y, (8, 8, 8), 2, t, 1.0, 2,
+        return reconstruct_volume_eager(w, y, (8, 8, 8), 2, t, 1.0, 2,
                                         preserve_output_precision=True, relion_filter_scale=8**4, programs=reconstruction_programs())
     result = compute(weight, numerator, tau)
     assert result.dtype == dtype

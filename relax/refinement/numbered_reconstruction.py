@@ -12,8 +12,8 @@ import numpy as np
 
 from relax.reconstruction.volume_solver import (
     ReconstructionPrograms,
-    _finish_host_staged_reconstruction,
-    _reconstruct_volume_eager,
+    finish_host_staged_reconstruction,
+    reconstruct_volume_eager,
 )
 from relax.refinement import map_postprocess
 from relax.refinement.ports import MaximizationProbe, NoProbe
@@ -95,10 +95,10 @@ class ReconstructionSettings:
         """One map from one accumulator pair with this run's reconstruction settings.
 
         Forwards ``volume_shape``, ``padding_factor``, ``tau2_fudge``, ``projection_padding_factor``,
-        ``minres_map`` and ``gridding_kernel`` to ``_reconstruct_volume_eager``; ``solve_options`` are its
+        ``minres_map`` and ``gridding_kernel`` to ``reconstruct_volume_eager``; ``solve_options`` are its
         per-call options (``tau_is_1d``, ``preserve_output_precision``, ...).
         """
-        return _reconstruct_volume_eager(
+        return reconstruct_volume_eager(
             Ft_ctf,
             Ft_y,
             self.volume_shape,
@@ -151,7 +151,7 @@ def _reconstruct_k1_maps(
                 else {}
             ),
         ).reshape(-1)
-        reconstructed_means.append(_finish_host_staged_reconstruction(reconstructed, Ft_ctf_half, Ft_y_half))
+        reconstructed_means.append(finish_host_staged_reconstruction(reconstructed, Ft_ctf_half, Ft_y_half))
         if k == 0 and retained_device_numerator is not None:
             retained_device_numerator = None
     return reconstructed_means

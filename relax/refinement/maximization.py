@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, NamedTuple
 import jax.numpy as jnp
 import numpy as np
 
-from relax.reconstruction.resolution import _firstiter_cc_ini_high_tapered
+from relax.reconstruction.resolution import firstiter_cc_ini_high_tapered
 from relax.refinement.iteration_planning import NumberedIteration
 from relax.refinement.numbered_reconstruction import reconstruct_numbered_class_maps, reconstruct_numbered_k1_halfmaps
 from relax.refinement.ports import ClassTau2
@@ -252,7 +252,7 @@ def class_maximization(
         # shells past ini_high into iteration 2's scale correction. The
         # class tau2 volumes are recomputed from the Iref power next
         # iteration, so only the shell curves carry the taper.
-        tapered_data_vs_prior = _firstiter_cc_ini_high_tapered(
+        tapered_data_vs_prior = firstiter_cc_ini_high_tapered(
             class_priors.data_vs_prior,
             ctx.reconstruction_settings.box_size,
             ctx.source_pixel_size_angstrom,

@@ -118,9 +118,9 @@ def _reconstruct_and_flatten(
     from recovar.core import fourier_transform_utils, mask
 
     from relax.reconstruction.volume_solver import ReconstructionPrograms
-    from relax.refinement.numbered_reconstruction import _reconstruct_volume_eager
+    from relax.refinement.numbered_reconstruction import reconstruct_volume_eager
 
-    reconstructed = _reconstruct_volume_eager(
+    reconstructed = reconstruct_volume_eager(
         weight,
         numerator,
         volume_shape,

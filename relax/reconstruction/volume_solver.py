@@ -181,7 +181,7 @@ def _pad_accumulator_to_class(values, logical_shape, physical_shape):
 _RECOVAR_GRIDDING_CORRECT = {"radial": "radial", "separable": "square"}
 
 
-def _reconstruct_volume_eager(
+def reconstruct_volume_eager(
     Ft_ctf,
     Ft_y,
     vol_shape,
@@ -993,7 +993,7 @@ def _device_array_is_deleted(value):
     return bool(is_deleted()) if callable(is_deleted) else None
 
 
-def _finish_host_staged_reconstruction(result, *accumulators):
+def finish_host_staged_reconstruction(result, *accumulators):
     """Finish a host-staged reconstruction before dispatching the next half.
 
     Large RELION accumulators are moved to NumPy before reconstruction so the

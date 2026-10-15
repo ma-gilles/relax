@@ -496,7 +496,7 @@ def test_kclass_final_reconstruction_does_not_predivide_class_accumulators(monke
 
     trace = CallTrace(monkeypatch)
     trace.wrap(finalization.final_reconstruction, "reconstruct_final_class_maps", "final_classes")
-    trace.wrap(numbered_reconstruction_module, "_reconstruct_volume_eager", "solve")
+    trace.wrap(numbered_reconstruction_module, "reconstruct_volume_eager", "solve")
     run_tiny_refinement(monkeypatch, n_classes=2, converge_after=2)
 
     (final,) = trace.calls("final_classes")
@@ -4566,7 +4566,7 @@ class TestRelionModeSmokeTest:
             "firstiter_cc_ini_high_tau2_taper",
             lambda *_args, **_kwargs: taper,
         )
-        monkeypatch.setattr(numbered_reconstruction_module, "_reconstruct_volume_eager", fake_reconstruct)
+        monkeypatch.setattr(numbered_reconstruction_module, "reconstruct_volume_eager", fake_reconstruct)
         monkeypatch.setattr(
             map_postprocess,
             "apply_relion_initial_lowpass_filter",
@@ -5065,7 +5065,7 @@ class TestRelionModeSmokeTest:
     ):
         """The final joined reconstruction still scores each half against its own map."""
         original_update = convergence_policy.update_refinement_state
-        original_reconstruct = numbered_reconstruction_module._reconstruct_volume_eager
+        original_reconstruct = numbered_reconstruction_module.reconstruct_volume_eager
         engine_calls = []
         reconstruction_calls = []
         expected_accuracy_current_sizes = []
@@ -5100,7 +5100,7 @@ class TestRelionModeSmokeTest:
             force_convergence_after_first_iter,
         )
         install_fake_adaptive_engine(monkeypatch, engine_calls, Ft_y=_random_half_maps(engine_calls))
-        monkeypatch.setattr(numbered_reconstruction_module, "_reconstruct_volume_eager", spy_reconstruct)
+        monkeypatch.setattr(numbered_reconstruction_module, "reconstruct_volume_eager", spy_reconstruct)
         monkeypatch.setattr(
             accuracy_trial_order_module,
             "relion_half1_trial_order",
@@ -7000,7 +7000,7 @@ class TestRelionModeSmokeTest:
             solvent_mask_radii.append((radius, radius_p))
             return jnp.ones(volume_shape, dtype=jnp.float64)
 
-        monkeypatch.setattr(numbered_reconstruction_module, "_reconstruct_volume_eager", fake_reconstruct)
+        monkeypatch.setattr(numbered_reconstruction_module, "reconstruct_volume_eager", fake_reconstruct)
         monkeypatch.setattr(map_postprocess, "apply_relion_initial_lowpass_filter", fake_lowpass)
         monkeypatch.setattr(map_postprocess.fourier_transform_utils, "get_idft3", fake_idft3)
         monkeypatch.setattr(map_postprocess.fourier_transform_utils, "get_dft3", fake_dft3)
@@ -7054,7 +7054,7 @@ class TestRelionModeSmokeTest:
             calls.append(kwargs)
             return jnp.ones(VOLUME_SIZE, dtype=jnp.complex64)
 
-        monkeypatch.setattr(numbered_reconstruction_module, "_reconstruct_volume_eager", fake_reconstruct)
+        monkeypatch.setattr(numbered_reconstruction_module, "reconstruct_volume_eager", fake_reconstruct)
 
         n_classes = 2
         n_shells = VOLUME_SHAPE[0] // 2 + 1
@@ -9634,7 +9634,7 @@ def test_large_host_reconstruction_padding_retains_device_window(monkeypatch):
     volume_shape = (2, 2, 2)
     accumulator_shape = (3, 3, 3)
     half_shape = ftu.volume_shape_to_half_volume_shape(accumulator_shape)
-    returned = numbered_reconstruction_module._reconstruct_volume_eager(
+    returned = numbered_reconstruction_module.reconstruct_volume_eager(
         np.ones(half_shape, dtype=np.float32),
         np.ones(half_shape, dtype=np.complex64),
         volume_shape,
@@ -9665,7 +9665,7 @@ def test_k_class_reconstruction_preserves_data_determined_volume_signs(monkeypat
         calls.append(np.asarray(numerator).copy())
         return numerator
 
-    monkeypatch.setattr(numbered_reconstruction_module, "_reconstruct_volume_eager", reconstruct)
+    monkeypatch.setattr(numbered_reconstruction_module, "reconstruct_volume_eager", reconstruct)
     result = (
         numbered_reconstruction_module.reconstruct_unregularized_class_means(
             jnp.asarray(unregularized),

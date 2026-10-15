@@ -136,7 +136,7 @@ def _reconstruct_unregularized_map(replay, boundary):
         relion_x_half_volume_to_native_half,
     )
     from relax.reconstruction.volume_solver import ReconstructionPrograms
-    from relax.refinement.numbered_reconstruction import _reconstruct_volume_eager
+    from relax.refinement.numbered_reconstruction import reconstruct_volume_eager
 
     accumulator_shape = tuple(int(value) for value in np.asarray(boundary["volume_shape"]))
     image_shape = tuple(int(value) for value in np.asarray(boundary["image_shape"]))
@@ -151,7 +151,7 @@ def _reconstruct_unregularized_map(replay, boundary):
     )
     data = relion_x_half_volume_to_native_half(data, accumulator_shape)
     weight = relion_x_half_volume_to_native_half(weight, accumulator_shape)
-    reconstructed = _reconstruct_volume_eager(
+    reconstructed = reconstruct_volume_eager(
         weight,
         data,
         volume_shape,

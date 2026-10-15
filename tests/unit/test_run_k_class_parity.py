@@ -507,7 +507,7 @@ def test_cropped_x_half_accumulator_reconstructs_when_shape_is_explicit():
     from helpers.run_options import reconstruction_programs
     from recovar.core import fourier_transform_utils
 
-    from relax.refinement.numbered_reconstruction import _reconstruct_volume_eager
+    from relax.refinement.numbered_reconstruction import reconstruct_volume_eager
 
     volume_shape = (8, 8, 8)
     accumulator_shape = (5, 5, 5)
@@ -526,9 +526,9 @@ def test_cropped_x_half_accumulator_reconstructs_when_shape_is_explicit():
     )
 
     with pytest.raises(ValueError, match="Could not infer half/full Fourier layout"):
-        _reconstruct_volume_eager(weights, numerator, **common, programs=reconstruction_programs())
+        reconstruct_volume_eager(weights, numerator, **common, programs=reconstruction_programs())
 
-    reconstructed = _reconstruct_volume_eager(
+    reconstructed = reconstruct_volume_eager(
         weights,
         numerator,
         accumulator_volume_shape=accumulator_shape,

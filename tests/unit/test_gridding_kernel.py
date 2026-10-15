@@ -260,7 +260,7 @@ def _accumulators(n, seed=1):
 def _reconstruct(n=8, **kwargs):
     ft_ctf, ft_y = _accumulators(n)
     return np.asarray(
-        numbered_reconstruction._reconstruct_volume_eager(
+        numbered_reconstruction.reconstruct_volume_eager(
             ft_ctf,
             ft_y,
             (n, n, n),
@@ -344,8 +344,8 @@ def test_every_k1_reconstruction_hands_the_solve_the_kernel(monkeypatch, kernel)
         calls.append(kwargs)
         return jnp.ones(8**3, dtype=jnp.complex64)
 
-    monkeypatch.setattr(numbered_reconstruction, "_reconstruct_volume_eager", solve)
-    monkeypatch.setattr(numbered_reconstruction, "_finish_host_staged_reconstruction", lambda result, *_: result)
+    monkeypatch.setattr(numbered_reconstruction, "reconstruct_volume_eager", solve)
+    monkeypatch.setattr(numbered_reconstruction, "finish_host_staged_reconstruction", lambda result, *_: result)
     settings = _settings(gridding_kernel=kernel)
     pair = ("a", "b")
     numbered_reconstruction.reconstruct_numbered_k1_halfmaps(
@@ -384,7 +384,7 @@ def test_class_runs_refuse_separable_before_any_reconstruction():
 @pytest.mark.parametrize("kernel", ["radial", "separable"])
 def test_refinement_hands_every_k1_site_the_kernel(monkeypatch, kernel):
     """Two numbered iterations and the final all-data pass of the real controller."""
-    reconstructions = record_calls(monkeypatch, numbered_reconstruction, "_reconstruct_volume_eager")
+    reconstructions = record_calls(monkeypatch, numbered_reconstruction, "reconstruct_volume_eager")
     numbered_projectors = record_calls(monkeypatch, projector_preparation, "prepare_scoring_projector")
     final_projectors = record_calls(monkeypatch, finalization, "prepare_scoring_projector")
     accuracy_kernels = []

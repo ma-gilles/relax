@@ -1,6 +1,6 @@
 """RELION reconstruction in the full-box class equals the logical reconstruction.
 
-With the resident engine's stable windows on, _reconstruct_volume_eager
+With the resident engine's stable windows on, reconstruct_volume_eager
 zero-pads the current-size accumulator to the full-box cube and passes
 RELION's size as recovar's traced logical_current_size, so one program serves
 the run. The padded voxels lie outside every logical support.
@@ -40,8 +40,8 @@ def test_stable_class_reconstruction_matches_the_logical_one(monkeypatch, half, 
         tau_is_1d=True,
     )
     assert volume_solver._stable_reconstruction_class(current_size, vol_shape, padding_factor, accumulator_shape, True)
-    logical = numbered_reconstruction._reconstruct_volume_eager(weight, numerator, vol_shape, padding_factor, **kwargs, programs=reconstruction_programs(stable_windows=False))
-    stable = numbered_reconstruction._reconstruct_volume_eager(weight, numerator, vol_shape, padding_factor, **kwargs, programs=reconstruction_programs(stable_windows=True))
+    logical = numbered_reconstruction.reconstruct_volume_eager(weight, numerator, vol_shape, padding_factor, **kwargs, programs=reconstruction_programs(stable_windows=False))
+    stable = numbered_reconstruction.reconstruct_volume_eager(weight, numerator, vol_shape, padding_factor, **kwargs, programs=reconstruction_programs(stable_windows=True))
     assert_matches(np.asarray(stable), np.asarray(logical))
 
 
@@ -77,10 +77,10 @@ def test_unregularized_reconstruction_in_the_box_class_matches_the_logical_one(m
         projection_padding_factor=padding_factor,
         accumulator_volume_shape=accumulator_shape,
     )
-    logical = numbered_reconstruction._reconstruct_volume_eager(weight, numerator, vol_shape, padding_factor, **kwargs, programs=reconstruction_programs(stable_windows=False))
+    logical = numbered_reconstruction.reconstruct_volume_eager(weight, numerator, vol_shape, padding_factor, **kwargs, programs=reconstruction_programs(stable_windows=False))
     box_shape = relion_backprojector_volume_shape(vol_shape, padding_factor, current_size=32)
     assert volume_solver._stable_unregularized_class(vol_shape, padding_factor, accumulator_shape, None, None) == box_shape
-    stable = numbered_reconstruction._reconstruct_volume_eager(weight, numerator, vol_shape, padding_factor, **kwargs, programs=reconstruction_programs(stable_windows=True))
+    stable = numbered_reconstruction.reconstruct_volume_eager(weight, numerator, vol_shape, padding_factor, **kwargs, programs=reconstruction_programs(stable_windows=True))
     assert_matches(np.asarray(stable), np.asarray(logical))
 
 

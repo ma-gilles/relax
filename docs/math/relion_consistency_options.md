@@ -79,7 +79,7 @@ with padding 2).
 | --- | --- |
 | scoring projector, every numbered iteration and the final pass | `prepare_scoring_projector` -> `setup_relion_projector_on_host` |
 | expected-accuracy projector | `Half1AccuracyInputs.estimate` -> `_projector_data` |
-| regularized and unregularized half maps, final unfiltered, merged and half maps | `_reconstruct_volume_eager` (device route and both large host-staged finishes) |
+| regularized and unregularized half maps, final unfiltered, merged and half maps | `reconstruct_volume_eager` (device route and both large host-staged finishes) |
 
 A separable projector-cache entry has its own key. Class3D refuses the option: its tau2 is the
 power spectrum of the radially corrected reference.

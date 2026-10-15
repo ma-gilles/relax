@@ -596,7 +596,7 @@ where the Python reconstruction path receives an explicit tau spectrum.
 
 The dense single-volume RELION-parity loop in
 [`relax/refinement/iteration_loop.py`](../../relax/refinement/iteration_loop.py)
-does use explicit tau2-like arrays. `_reconstruct_volume_eager` calls
+does use explicit tau2-like arrays. `reconstruct_volume_eager` calls
 [`relion_functions.post_process_from_filter_v2`](https://github.com/ma-gilles/recovar/blob/c60e3c26f893b6aa88e0f78db4f50c76352afedc/recovar/reconstruction/relion_functions.py)
 with `tau=mean_variance`, `tau2_fudge`, `use_spherical_mask=True`,
 `grid_correct=True`, and `minres_map=RELION_MINRES_MAP` unless a diagnostic
@@ -656,7 +656,7 @@ accepts one mean and one `mean_variance` per class,
 then normalize evidence over class x pose. The parity harness
 [`scripts/run_k_class_parity.py`](../../scripts/run_k_class_parity.py) reads
 per-class tau spectra from target or previous RELION model files, reconstructs
-diagnostic variants through `_reconstruct_volume_eager`, and compares class
+diagnostic variants through `reconstruct_volume_eager`, and compares class
 maps after the best permutation.
 
 Native InitialModel is also K-aware in state layout and in
@@ -681,7 +681,7 @@ Python-side solvent-flattening pass for the final selected InitialModel map in
 this branch.
 
 In dense EM/Class3D replay, solvent/mask effects are explicit and easier to
-audit. The dense loop reconstructs with `_reconstruct_volume_eager`, which uses
+audit. The dense loop reconstructs with `reconstruct_volume_eager`, which uses
 `post_process_from_filter_v2` with the RELION-style spherical mask and gridding
 correction enabled by default. The loop also applies RELION-style
 `solventFlatten` to real-space maps before the next E-step in the relevant

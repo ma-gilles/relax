@@ -63,7 +63,7 @@ def test_final_halfmaps_solve_the_halves_then_their_sum_in_the_first_halfs_array
         seen.append((float(ctf[0]), complex(y[0])))
         return y.copy().reshape(volume_shape)
 
-    monkeypatch.setattr(final_reconstruction.numbered_reconstruction, "_reconstruct_volume_eager", reconstruct)
+    monkeypatch.setattr(final_reconstruction.numbered_reconstruction, "reconstruct_volume_eager", reconstruct)
     maps = final_reconstruction.reconstruct_final_halfmaps(
         backprojections,
         prior,
@@ -89,7 +89,7 @@ def test_final_halfmaps_sum_device_accumulators_without_writing_into_them(monkey
     kept = list(pairs)
     monkeypatch.setattr(
         final_reconstruction.numbered_reconstruction,
-        "_reconstruct_volume_eager",
+        "reconstruct_volume_eager",
         lambda ctf, y, volume_shape, padding_factor, **kwargs: np.asarray(y).reshape(volume_shape),
     )
     maps = final_reconstruction.reconstruct_final_halfmaps(
@@ -113,7 +113,7 @@ def test_final_k4_maps_preserve_classes_and_weighted_mean(monkeypatch):
         assert np.shares_memory(y, numerators)
         return jnp.asarray(y).reshape(volume_shape)
 
-    monkeypatch.setattr(final_reconstruction.numbered_reconstruction, "_reconstruct_volume_eager", reconstruct)
+    monkeypatch.setattr(final_reconstruction.numbered_reconstruction, "reconstruct_volume_eager", reconstruct)
     maps = final_reconstruction.reconstruct_final_class_maps(
         numerators,
         denominators,

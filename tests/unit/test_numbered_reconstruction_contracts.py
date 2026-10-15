@@ -71,7 +71,7 @@ class _Recorder:
             self.events.append("flatten")
             return value
 
-        monkeypatch.setattr(numbered_reconstruction, "_finish_host_staged_reconstruction", lambda value, *_args: value)
+        monkeypatch.setattr(numbered_reconstruction, "finish_host_staged_reconstruction", lambda value, *_args: value)
         class Observer(RunObserver):
             def map_solved(self, iteration, half_index, mean, *, settings, current_size, n_classes):
                 capture(mean, half_index=half_index, n_classes=n_classes)
@@ -136,7 +136,7 @@ def test_numbered_k1_halfmaps_preserve_operands_and_operation_order(monkeypatch,
         assert kwargs.get("retained_device_numerator") is (retained if index == 0 else None)
         return record.solved(numerator, kwargs)
 
-    monkeypatch.setattr(numbered_reconstruction, "_reconstruct_volume_eager", solve)
+    monkeypatch.setattr(numbered_reconstruction, "reconstruct_volume_eager", solve)
     result = numbered_reconstruction.reconstruct_numbered_k1_halfmaps(
         numerators, denominators, priors, settings, retained_first_numerator=retained,
         this_iteration=numbered_iteration(iteration=0, current_size=2, relion_firstiter_cc=first_cc),
@@ -165,7 +165,7 @@ def test_numbered_class_maps_preserve_operands_and_operation_order(monkeypatch, 
         assert "retained_device_numerator" not in kwargs
         return record.solved(numerator, kwargs)
 
-    monkeypatch.setattr(numbered_reconstruction, "_reconstruct_volume_eager", solve)
+    monkeypatch.setattr(numbered_reconstruction, "reconstruct_volume_eager", solve)
     result = numbered_reconstruction.reconstruct_numbered_class_maps(
         numerators, denominators, priors, settings, n_classes=n_classes,
         this_iteration=numbered_iteration(iteration=0, current_size=2, relion_firstiter_cc=first_cc),

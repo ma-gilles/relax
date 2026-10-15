@@ -933,7 +933,7 @@ and repeated mode decisions as well as operation ownership.
   Example: both numbered prior estimators and the class replay always produced
   shell curves, so `tau_is_1d` and the `shells if not None else volume` selection
   left the two numbered operations and their private solves.
-  `_reconstruct_volume_eager` keeps the flag because the final K1 solve passes a
+  `reconstruct_volume_eager` keeps the flag because the final K1 solve passes a
   full volume.
 - A test helper must not repeat the dispatch of the code it tests. A builder
   that accepts every mode's operands and selects the operation lets a test pass

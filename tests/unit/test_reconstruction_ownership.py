@@ -154,8 +154,8 @@ class TestReconstructionOwnership:
             events.append("finish")
             return result
 
-        monkeypatch.setattr(numbered_reconstruction_module, "_reconstruct_volume_eager", fake_reconstruct)
-        monkeypatch.setattr(numbered_reconstruction_module, "_finish_host_staged_reconstruction", fake_finish)
+        monkeypatch.setattr(numbered_reconstruction_module, "reconstruct_volume_eager", fake_reconstruct)
+        monkeypatch.setattr(numbered_reconstruction_module, "finish_host_staged_reconstruction", fake_finish)
         n_shells = VOLUME_SHAPE[0] // 2 + 1
         tau_shells = [jnp.arange(n_shells, dtype=jnp.float32) + 101.0, jnp.arange(n_shells, dtype=jnp.float32) + 201.0]
         retained_half0 = object()
@@ -203,13 +203,13 @@ class TestReconstructionOwnership:
                 events.append("block")
 
         result = Result()
-        returned = numbered_reconstruction_module._finish_host_staged_reconstruction(
+        returned = numbered_reconstruction_module.finish_host_staged_reconstruction(
             result, np.ones(1, dtype=np.float32), jnp.ones(1, dtype=jnp.float32)
         )
         assert returned is result
         assert events == ["block"]
         events.clear()
-        returned = numbered_reconstruction_module._finish_host_staged_reconstruction(
+        returned = numbered_reconstruction_module.finish_host_staged_reconstruction(
             result, jnp.ones(1, dtype=jnp.float32), jnp.ones(1, dtype=jnp.float32)
         )
         assert returned is result
@@ -270,7 +270,7 @@ class TestReconstructionOwnership:
         accumulator_shape = (5, 5, 5)
         half_shape = ftu.volume_shape_to_half_volume_shape(accumulator_shape)
         assert half_shape == host_numerator.shape
-        returned = numbered_reconstruction_module._reconstruct_volume_eager(
+        returned = numbered_reconstruction_module.reconstruct_volume_eager(
             host_ctf,
             host_numerator,
             volume_shape,
@@ -337,7 +337,7 @@ class TestReconstructionOwnership:
         monkeypatch.setattr(relion_functions_relion, "divide_large_relion_half_numerator_donate_numerator", fake_divide)
         monkeypatch.setattr(relion_functions_relion, "finish_large_relion_postprocess_from_fftw_half", fake_finish)
         caplog.set_level("INFO", logger=volume_solver.__name__)
-        half0 = numbered_reconstruction_module._reconstruct_volume_eager(
+        half0 = numbered_reconstruction_module.reconstruct_volume_eager(
             host_ctf,
             host_numerator,
             volume_shape,
@@ -348,7 +348,7 @@ class TestReconstructionOwnership:
             accumulator_volume_shape=accumulator_shape,
             retained_device_numerator=retained_numerator, programs=reconstruction_programs(),
         )
-        half1 = numbered_reconstruction_module._reconstruct_volume_eager(
+        half1 = numbered_reconstruction_module.reconstruct_volume_eager(
             host_ctf,
             host_numerator,
             volume_shape,
@@ -453,9 +453,9 @@ def test_k1_numpy_join_reservation_reaches_first_stage_a_only(monkeypatch):
         calls.append((args, kwargs))
         return jnp.ones(4**3, dtype=jnp.complex128)
 
-    monkeypatch.setattr(numbered_reconstruction_module, "_reconstruct_volume_eager", fake_reconstruct)
+    monkeypatch.setattr(numbered_reconstruction_module, "reconstruct_volume_eager", fake_reconstruct)
     monkeypatch.setattr(
-        numbered_reconstruction_module, "_finish_host_staged_reconstruction", lambda result, *_accumulators: result
+        numbered_reconstruction_module, "finish_host_staged_reconstruction", lambda result, *_accumulators: result
     )
     settings = reconstruction_settings(
         box_size=4,
