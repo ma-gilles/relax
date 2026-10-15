@@ -4,9 +4,9 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 from helpers.reconstruction_settings import reconstruction_settings
+from helpers.run_options import reconstruction_programs
 from recovar.core import mask
 
-from relax.reconstruction.volume_solver import ReconstructionPrograms
 from relax.refinement import map_postprocess, numbered_reconstruction
 
 jnp = pytest.importorskip("jax.numpy")
@@ -253,7 +253,7 @@ def test_box_scale_reconstruction_caller_keeps_both_half_outputs_on_host(monkeyp
         fmask_edge=2,
         tau2_fudge=1.0,
         particle_diameter_angstrom=2.0,
-        first_iteration_lowpass_angstrom=None, programs=ReconstructionPrograms.from_environ(),
+        first_iteration_lowpass_angstrom=None, programs=reconstruction_programs(),
     )
     means = numbered_reconstruction.reconstruct_numbered_k1_halfmaps(
         (jnp.ones(volume_size, dtype=jnp.complex64), jnp.ones(volume_size, dtype=jnp.complex64)),

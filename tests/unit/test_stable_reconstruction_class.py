@@ -10,10 +10,10 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
+from helpers.run_options import reconstruction_programs
 
 from relax.reconstruction import volume_solver
 from relax.reconstruction.half_volume_mstep import relion_backprojector_volume_shape
-from relax.reconstruction.volume_solver import ReconstructionPrograms
 from relax.refinement import numbered_reconstruction
 
 pytestmark = pytest.mark.unit
@@ -40,10 +40,8 @@ def test_stable_class_reconstruction_matches_the_logical_one(monkeypatch, half, 
         tau_is_1d=True,
     )
     assert volume_solver._stable_reconstruction_class(current_size, vol_shape, padding_factor, accumulator_shape, True)
-    monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_STABLE_WINDOWS", "0")
-    logical = numbered_reconstruction._reconstruct_volume_eager(weight, numerator, vol_shape, padding_factor, **kwargs, programs=ReconstructionPrograms.from_environ())
-    monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_STABLE_WINDOWS", "1")
-    stable = numbered_reconstruction._reconstruct_volume_eager(weight, numerator, vol_shape, padding_factor, **kwargs, programs=ReconstructionPrograms.from_environ())
+    logical = numbered_reconstruction._reconstruct_volume_eager(weight, numerator, vol_shape, padding_factor, **kwargs, programs=reconstruction_programs(stable_windows=False))
+    stable = numbered_reconstruction._reconstruct_volume_eager(weight, numerator, vol_shape, padding_factor, **kwargs, programs=reconstruction_programs(stable_windows=True))
     assert_matches(np.asarray(stable), np.asarray(logical))
 
 
@@ -79,13 +77,10 @@ def test_unregularized_reconstruction_in_the_box_class_matches_the_logical_one(m
         projection_padding_factor=padding_factor,
         accumulator_volume_shape=accumulator_shape,
     )
-    monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_STABLE_WINDOWS", "0")
-    assert not ReconstructionPrograms.from_environ().stable_windows
-    logical = numbered_reconstruction._reconstruct_volume_eager(weight, numerator, vol_shape, padding_factor, **kwargs, programs=ReconstructionPrograms.from_environ())
-    monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_STABLE_WINDOWS", "1")
+    logical = numbered_reconstruction._reconstruct_volume_eager(weight, numerator, vol_shape, padding_factor, **kwargs, programs=reconstruction_programs(stable_windows=False))
     box_shape = relion_backprojector_volume_shape(vol_shape, padding_factor, current_size=32)
     assert volume_solver._stable_unregularized_class(vol_shape, padding_factor, accumulator_shape, None, None) == box_shape
-    stable = numbered_reconstruction._reconstruct_volume_eager(weight, numerator, vol_shape, padding_factor, **kwargs, programs=ReconstructionPrograms.from_environ())
+    stable = numbered_reconstruction._reconstruct_volume_eager(weight, numerator, vol_shape, padding_factor, **kwargs, programs=reconstruction_programs(stable_windows=True))
     assert_matches(np.asarray(stable), np.asarray(logical))
 
 

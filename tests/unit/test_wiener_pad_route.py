@@ -4,10 +4,10 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
+from helpers.run_options import lowres_join, reconstruction_programs
 from recovar.reconstruction import relion_functions as rf
 
 from relax.reconstruction import volume_solver
-from relax.reconstruction.volume_solver import ReconstructionPrograms
 from relax.refinement import map_postprocess, numbered_reconstruction
 
 pytestmark = pytest.mark.unit
@@ -61,7 +61,7 @@ def test_cpu_route_matches_the_device_route(monkeypatch):
         projection_padding_factor=1,
         use_spherical_mask=True,
         grid_correct=True,
-        programs=ReconstructionPrograms.from_environ(),
+        programs=reconstruction_programs(),
     )
     calls = []
     real = rf.post_process_from_filter_v2
@@ -211,8 +211,7 @@ def test_device_can_place_answers_on_the_device_and_leaves_nothing(preallocate):
 def test_low_resolution_join_goes_to_the_host_when_its_copies_do_not_fit(monkeypatch):
     from relax.reconstruction import regularization
 
-    monkeypatch.delenv("RELAX_LOWRES_JOIN_HOST_FALLBACK", raising=False)
-    route = _join_route()
+    route = lowres_join()
     seen = []
     monkeypatch.setattr(regularization, "device_fits", lambda nbytes: seen.append(nbytes) or False)
     assert regularization._low_resolution_join_host_fallback_enabled_for_size(1000, 10, itemsize=8, route=route) is True
@@ -222,8 +221,3 @@ def test_low_resolution_join_goes_to_the_host_when_its_copies_do_not_fit(monkeyp
     # A full join (every voxel) never takes the host path; physically large grids always do.
     assert regularization._low_resolution_join_host_fallback_enabled_for_size(1000, 1000, route=route) is False
     assert regularization._low_resolution_join_host_fallback_enabled_for_size(300_000_000, 10, route=route) is True
-
-
-def _join_route():
-    """The low-resolution join route the command reads from the environment (``ReconstructionPrograms``)."""
-    return ReconstructionPrograms.from_environ().lowres_join

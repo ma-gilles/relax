@@ -8,8 +8,8 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 from helpers.reconstruction_settings import reconstruction_settings
+from helpers.run_options import reconstruction_programs
 
-from relax.reconstruction.volume_solver import ReconstructionPrograms
 from relax.refinement import map_postprocess
 
 pytestmark = pytest.mark.unit
@@ -62,7 +62,7 @@ def test_lowpass_class_stack_matches_each_class_filtered_alone():
         tau2_fudge=1,
         particle_diameter_angstrom=None,
         first_iteration_lowpass_angstrom=8.0,
-        programs=ReconstructionPrograms.from_environ(),
+        programs=reconstruction_programs(),
     )
     expected = np.stack(
         [

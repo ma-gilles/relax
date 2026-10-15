@@ -8,11 +8,11 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 from helpers.reconstruction_settings import reconstruction_settings
+from helpers.run_options import lowres_join, reconstruction_programs
 from recovar.core import fourier_transform_utils as ftu
 from recovar.reconstruction import relion_functions as rf
 
 from relax.reconstruction import regularization, volume_solver
-from relax.reconstruction.volume_solver import ReconstructionPrograms
 from relax.refinement import map_postprocess
 
 pytestmark = pytest.mark.unit
@@ -172,7 +172,7 @@ class TestReconstructionOwnership:
             fmask_edge=2,
             tau2_fudge=1.0,
             particle_diameter_angstrom=None,
-            first_iteration_lowpass_angstrom=None, programs=ReconstructionPrograms.from_environ(),
+            first_iteration_lowpass_angstrom=None, programs=reconstruction_programs(),
         )
         means = numbered_reconstruction_module.reconstruct_numbered_k1_halfmaps(
             (jnp.ones(VOLUME_SIZE, dtype=jnp.complex64), jnp.ones(VOLUME_SIZE, dtype=jnp.complex64)),
@@ -283,7 +283,7 @@ class TestReconstructionOwnership:
             tau2_fudge=1.0,
             projection_padding_factor=1,
             accumulator_volume_shape=accumulator_shape,
-            retained_device_numerator=retained_numerator, programs=ReconstructionPrograms.from_environ(),
+            retained_device_numerator=retained_numerator, programs=reconstruction_programs(),
         )
         assert returned is host_boundary
         assert events == ["regularize", "divide", "block", "device_get", "release", "finish"]
@@ -350,7 +350,7 @@ class TestReconstructionOwnership:
             tau2_fudge=1.0,
             projection_padding_factor=1,
             accumulator_volume_shape=accumulator_shape,
-            retained_device_numerator=retained_numerator, programs=ReconstructionPrograms.from_environ(),
+            retained_device_numerator=retained_numerator, programs=reconstruction_programs(),
         )
         half1 = numbered_reconstruction_module._reconstruct_volume_eager(
             host_ctf,
@@ -360,7 +360,7 @@ class TestReconstructionOwnership:
             tau=np.ones(np.prod(volume_shape), dtype=np.float32),
             tau2_fudge=1.0,
             projection_padding_factor=1,
-            accumulator_volume_shape=accumulator_shape, programs=ReconstructionPrograms.from_environ(),
+            accumulator_volume_shape=accumulator_shape, programs=reconstruction_programs(),
         )
         assert half0 is sentinel
         assert half1 is sentinel
@@ -433,7 +433,6 @@ def test_k1_numpy_join_reservation_reaches_first_stage_a_only(monkeypatch):
     ft_y_1 = (rng.standard_normal(half_shape) + 1j * rng.standard_normal(half_shape)).astype(np.complex64)
     ft_ctf_0 = rng.uniform(0.5, 1.5, half_shape).astype(np.float32)
     ft_ctf_1 = rng.uniform(0.5, 1.5, half_shape).astype(np.float32)
-    monkeypatch.setenv("RELAX_LOWRES_JOIN_HOST_FALLBACK", "always")
     joined = regularization.join_halves_at_low_resolution(
         ft_y_0,
         ft_y_1,
@@ -446,7 +445,7 @@ def test_k1_numpy_join_reservation_reaches_first_stage_a_only(monkeypatch):
         padding_factor=2,
         preserve_inputs=False,
         return_retained_first_numerator=True,
-        route=_join_route(),
+        route=lowres_join(forced_host=True),
     )
     retained_half0 = joined[4]
     assert retained_half0 is not None
@@ -473,7 +472,7 @@ def test_k1_numpy_join_reservation_reaches_first_stage_a_only(monkeypatch):
         fmask_edge=2,
         tau2_fudge=1.0,
         particle_diameter_angstrom=None,
-        first_iteration_lowpass_angstrom=None, programs=ReconstructionPrograms.from_environ(),
+        first_iteration_lowpass_angstrom=None, programs=reconstruction_programs(),
     )
     means = numbered_reconstruction_module.reconstruct_numbered_k1_halfmaps(
         (joined[0], joined[1]),
@@ -503,8 +502,6 @@ def test_host_join_threshold_counts_the_physical_grid_of_a_packed_half(monkeypat
     stored, voxels = int(np.prod(half_shape)), int(np.prod(accumulator_shape))
     threshold = (stored + voxels) // 2
     assert stored < threshold <= voxels
-    monkeypatch.setenv("RELAX_LOWRES_JOIN_HOST_FALLBACK", "auto")
-    monkeypatch.setenv("RELAX_LOWRES_JOIN_HOST_FALLBACK_MIN_ELEMENTS", str(threshold))
     rng = np.random.default_rng(20260926)
     ft_y_0 = (rng.standard_normal(half_shape) + 1j * rng.standard_normal(half_shape)).astype(np.complex64)
     ft_y_1 = (rng.standard_normal(half_shape) + 1j * rng.standard_normal(half_shape)).astype(np.complex64)
@@ -518,12 +515,11 @@ def test_host_join_threshold_counts_the_physical_grid_of_a_packed_half(monkeypat
         padding_factor=2,
     )
     host = regularization.join_halves_at_low_resolution(
-        ft_y_0, ft_y_1, ft_ctf_0, ft_ctf_1, **kwargs, route=_join_route(),
+        ft_y_0, ft_y_1, ft_ctf_0, ft_ctf_1, **kwargs, route=lowres_join(forced_host=None, host_min_elements=threshold),
     )
     assert all(isinstance(value, np.ndarray) for value in host)
-    monkeypatch.setenv("RELAX_LOWRES_JOIN_HOST_FALLBACK", "never")
     device = regularization.join_halves_at_low_resolution(
-        ft_y_0, ft_y_1, ft_ctf_0, ft_ctf_1, **kwargs, route=_join_route(),
+        ft_y_0, ft_y_1, ft_ctf_0, ft_ctf_1, **kwargs, route=lowres_join(forced_host=False, host_min_elements=threshold),
     )
     for h, d in zip(host, device, strict=True):
         np.testing.assert_allclose(np.asarray(h), np.asarray(d), rtol=1e-6, atol=0)
@@ -545,8 +541,3 @@ def test_host_wiener_pad_equals_the_device_fftw_pad(old_dim, new_dim):
     assert_matches(host, device)
     # Zero pattern (support and placement) is discrete: exact.
     assert np.array_equal(host == 0, device == 0)
-
-
-def _join_route():
-    """The low-resolution join route the command reads from the environment (``ReconstructionPrograms``)."""
-    return ReconstructionPrograms.from_environ().lowres_join

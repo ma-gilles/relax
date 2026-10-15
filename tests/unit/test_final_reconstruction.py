@@ -7,8 +7,8 @@ import numpy as np
 import pytest
 from helpers import reconstruction_settings as settings_builder
 from helpers.float_compare import assert_matches
+from helpers.run_options import reconstruction_programs
 
-from relax.reconstruction.volume_solver import ReconstructionPrograms
 from relax.refinement import final_reconstruction
 from relax.relion.geometry import (
     IMAGE_MASK_EDGE_PIXELS,
@@ -31,7 +31,7 @@ def reconstruction_settings(*, tau2_fudge=1.0):
         width_mask_edge=IMAGE_MASK_EDGE_PIXELS,
         fmask_edge=REFERENCE_FILTER_EDGE_SHELLS,
         tau2_fudge=tau2_fudge, particle_diameter_angstrom=None,
-        first_iteration_lowpass_angstrom=None, programs=ReconstructionPrograms.from_environ(),
+        first_iteration_lowpass_angstrom=None, programs=reconstruction_programs(),
     )
 
 

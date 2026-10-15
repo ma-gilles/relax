@@ -16,11 +16,11 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 from helpers.reconstruction_settings import reconstruction_settings
+from helpers.run_options import reconstruction_programs
 from helpers.tiny_refinement import record_calls, run_tiny_refinement
 
 from relax.reconstruction import half_volume_mstep
 from relax.reconstruction import regularization as rr
-from relax.reconstruction.volume_solver import ReconstructionPrograms
 from relax.refinement import final_reconstruction, priors, startup_references
 from relax.refinement.refinement_options import RelionConsistencyOptions
 from relax.relion import projector_setup as setup
@@ -581,7 +581,7 @@ def test_final_class_priors_take_the_counting(monkeypatch, counting):
     settings = reconstruction_settings(
         box_size=8, voxel_size=1.0, volume_shape=(8, 8, 8), padding_factor=2, projection_padding_factor=2,
         minres_map=5, width_mask_edge=5, fmask_edge=2, tau2_fudge=1.0, particle_diameter_angstrom=None,
-        first_iteration_lowpass_angstrom=None, shell_pair_counting=counting, programs=ReconstructionPrograms.from_environ(),
+        first_iteration_lowpass_angstrom=None, shell_pair_counting=counting, programs=reconstruction_programs(),
     )
     final_reconstruction.compute_final_class_priors(
         None, None, projector_power_spectrum=None, n_classes=2, settings=settings, current_size=8, accumulator_shape=None,

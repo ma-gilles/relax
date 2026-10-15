@@ -14,11 +14,10 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 from helpers.reconstruction_settings import reconstruction_settings
-from helpers.run_options import stand_in
+from helpers.run_options import reconstruction_programs, stand_in
 from helpers.tiny_refinement import record_calls, run_tiny_refinement, unconverged_accuracy
 
 from relax.commands import refinement_arguments
-from relax.reconstruction.volume_solver import ReconstructionPrograms
 from relax.refinement import final_reconstruction, finalization, iteration_loop, numbered_reconstruction
 from relax.refinement.ports import InputSource, RunObserver
 from relax.refinement.refinement_options import (
@@ -242,7 +241,7 @@ def _reconstruct(n=8, **kwargs):
             projection_padding_factor=PF,
             use_spherical_mask=False,
             return_real_space=True,
-            **kwargs, programs=ReconstructionPrograms.from_environ(),
+            **kwargs, programs=reconstruction_programs(),
         )
     ).reshape(n, n, n)
 
@@ -303,7 +302,7 @@ def _settings(**fields):
         tau2_fudge=1.0,
         particle_diameter_angstrom=None,
         first_iteration_lowpass_angstrom=None,
-        **fields, programs=ReconstructionPrograms.from_environ(),
+        **fields, programs=reconstruction_programs(),
     )
 
 

@@ -106,12 +106,17 @@ def reconstruction_programs(**fields) -> ReconstructionPrograms:
         host_irfft=None,
         host_fft_workers=1,
         fsc_packed_stream_min_elements=regularization.RELION_FSC_PACKED_STREAM_MIN_ELEMENTS,
-        lowres_join=regularization.LowResolutionJoinRoute(
-            forced_host=None, host_min_elements=regularization.LOW_RESOLUTION_JOIN_HOST_FALLBACK_MIN_ELEMENTS,
-        ),
+        lowres_join=lowres_join(),
         fsc_dump=None,
     )
     return ReconstructionPrograms(**{**defaults, **fields})
+
+
+def lowres_join(**fields) -> regularization.LowResolutionJoinRoute:
+    """The low-resolution join route ``ReconstructionPrograms.from_environ`` reads with none of its variables set
+    (by size, above the default threshold), under ``fields``."""
+    defaults = dict(forced_host=None, host_min_elements=regularization.LOW_RESOLUTION_JOIN_HOST_FALLBACK_MIN_ELEMENTS)
+    return regularization.LowResolutionJoinRoute(**{**defaults, **fields})
 
 
 cli = OptionsFactory()

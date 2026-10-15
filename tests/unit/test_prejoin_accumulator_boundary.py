@@ -6,12 +6,12 @@ from unittest.mock import Mock
 import numpy as np
 import pytest
 from helpers.reconstruction_settings import reconstruction_settings
+from helpers.run_options import reconstruction_programs
 from helpers.tiny_refinement import CallTrace, run_tiny_refinement
 
 from relax.diagnostics import observers
 from relax.numerics import finite_check
 from relax.reconstruction import accumulator_guard
-from relax.reconstruction.volume_solver import ReconstructionPrograms
 from relax.refinement import maximization
 from relax.steps import score_outputs
 
@@ -24,7 +24,7 @@ def settings():
         box_size=8, voxel_size=1.5, volume_shape=(8, 8, 8),
         padding_factor=2, projection_padding_factor=1, minres_map=5,
         width_mask_edge=5, fmask_edge=2, tau2_fudge=1.0,
-        particle_diameter_angstrom=None, first_iteration_lowpass_angstrom=None, programs=ReconstructionPrograms.from_environ(),
+        particle_diameter_angstrom=None, first_iteration_lowpass_angstrom=None, programs=reconstruction_programs(),
     )
 
 

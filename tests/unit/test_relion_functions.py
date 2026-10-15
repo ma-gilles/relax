@@ -6,6 +6,7 @@ from helpers.float_compare import assert_matches, matches
 
 pytest.importorskip("jax")
 import jax.numpy as jnp
+from helpers.run_options import lowres_join, reconstruction_programs
 from recovar import core, jax_config
 from recovar.reconstruction import regularization
 from recovar.reconstruction import relion_functions as rf
@@ -13,7 +14,6 @@ from recovar.reconstruction import relion_functions as rf
 from relax.reconstruction import regularization as regularization_relion
 from relax.reconstruction import relion_functions as relion_functions_relion
 from relax.reconstruction import volume_solver
-from relax.reconstruction.volume_solver import ReconstructionPrograms
 from relax.relion.geometry import (
     PROJECTION_PADDING_FACTOR,
     RECONSTRUCTION_PADDING_FACTOR,
@@ -966,7 +966,7 @@ def test_join_halves_at_low_resolution_half_matches_full():
         box_size=volume_shape[0],
         low_resol_join_halves_angstrom=12.0,
         current_resolution_angstrom=18.0,
-        route=_join_route(),
+        route=lowres_join(),
     )
     half_joined = regularization_relion.join_halves_at_low_resolution(
         jnp.array(ft_y_0_half),
@@ -978,7 +978,7 @@ def test_join_halves_at_low_resolution_half_matches_full():
         box_size=volume_shape[0],
         low_resol_join_halves_angstrom=12.0,
         current_resolution_angstrom=18.0,
-        route=_join_route(),
+        route=lowres_join(),
     )
 
     for full_arr, half_arr in zip(full_joined, half_joined):
@@ -1010,7 +1010,7 @@ def test_join_halves_at_low_resolution_uses_relion_squared_radius_boundary():
         voxel_size=10.0,
         box_size=4,
         low_resol_join_halves_angstrom=40.0,
-        route=_join_route(),
+        route=lowres_join(),
     )
 
     joined0 = np.asarray(joined0).reshape(volume_shape)
@@ -1043,24 +1043,22 @@ def test_join_halves_at_low_resolution_host_fallback_matches_join(monkeypatch):
         box_size=4,
         low_resol_join_halves_angstrom=40.0,
     )
-    monkeypatch.setenv("RELAX_LOWRES_JOIN_HOST_FALLBACK", "never")
     device_joined = regularization_relion.join_halves_at_low_resolution(
         jnp.array(ft_y_0.reshape(-1)),
         jnp.array(ft_y_1.reshape(-1)),
         jnp.array(ft_ctf_0.reshape(-1)),
         jnp.array(ft_ctf_1.reshape(-1)),
         **kwargs,
-        route=_join_route(),
+        route=lowres_join(forced_host=False),
     )
 
-    monkeypatch.setenv("RELAX_LOWRES_JOIN_HOST_FALLBACK", "always")
     host_joined = regularization_relion.join_halves_at_low_resolution(
         jnp.array(ft_y_0.reshape(-1)),
         jnp.array(ft_y_1.reshape(-1)),
         jnp.array(ft_ctf_0.reshape(-1)),
         jnp.array(ft_ctf_1.reshape(-1)),
         **kwargs,
-        route=_join_route(),
+        route=lowres_join(forced_host=True),
     )
 
     assert all(isinstance(arr, np.ndarray) for arr in host_joined)
@@ -1082,8 +1080,6 @@ def test_join_halves_at_low_resolution_host_fallback_matches_join(monkeypatch):
 
 
 def test_low_resolution_join_host_fallback_auto_catches_padded_384(monkeypatch):
-    monkeypatch.delenv("RELAX_LOWRES_JOIN_HOST_FALLBACK", raising=False)
-    monkeypatch.delenv("RELAX_LOWRES_JOIN_HOST_FALLBACK_MIN_ELEMENTS", raising=False)
 
     unpadded_384_half_size = 384 * 384 * (384 // 2 + 1)
     padded_384_half_size = (2 * 384) * (2 * 384) * (384 + 1)
@@ -1091,12 +1087,12 @@ def test_low_resolution_join_host_fallback_auto_catches_padded_384(monkeypatch):
     assert not regularization_relion._low_resolution_join_host_fallback_enabled_for_size(
         unpadded_384_half_size,
         1,
-        route=_join_route(),
+        route=lowres_join(),
     )
     assert regularization_relion._low_resolution_join_host_fallback_enabled_for_size(
         padded_384_half_size,
         1,
-        route=_join_route(),
+        route=lowres_join(),
     )
 
 
@@ -2083,7 +2079,6 @@ def test_large_host_staged_pre_ifft_split_matches_monolith(monkeypatch):
             **common,
         )
     )
-    monkeypatch.setenv("RELAX_RELION_HOST_IRFFT", "never")
     device_staged = np.asarray(
         numbered_reconstruction._reconstruct_volume_eager(
             ft_ctf,
@@ -2093,10 +2088,9 @@ def test_large_host_staged_pre_ifft_split_matches_monolith(monkeypatch):
             projection_padding_factor=1,
             use_spherical_mask=True,
             grid_correct=True,
-            **common, programs=ReconstructionPrograms.from_environ(),
+            **common, programs=reconstruction_programs(host_irfft=False),
         )
     )
-    monkeypatch.setenv("RELAX_RELION_HOST_IRFFT", "always")
     host_staged = np.asarray(
         numbered_reconstruction._reconstruct_volume_eager(
             ft_ctf,
@@ -2107,7 +2101,7 @@ def test_large_host_staged_pre_ifft_split_matches_monolith(monkeypatch):
             use_spherical_mask=True,
             grid_correct=True,
             retained_device_numerator=jnp.asarray(f_ty),
-            **common, programs=ReconstructionPrograms.from_environ(),
+            **common, programs=reconstruction_programs(host_irfft=True),
         )
     )
 
@@ -2353,7 +2347,7 @@ def test_large_host_staged_compact_padding_matches_monolith(monkeypatch):
             projection_padding_factor=1,
             use_spherical_mask=True,
             grid_correct=True,
-            **common, programs=ReconstructionPrograms.from_environ(),
+            **common, programs=reconstruction_programs(),
         )
     )
 
@@ -2477,7 +2471,7 @@ def test_compact_device_accumulator_runs_giant_split_and_normalization(monkeypat
         tau=jnp.ones(np.prod(volume_shape), dtype=jnp.float32),
         tau2_fudge=1.0,
         projection_padding_factor=1,
-        accumulator_volume_shape=accumulator_shape, programs=ReconstructionPrograms.from_environ(),
+        accumulator_volume_shape=accumulator_shape, programs=reconstruction_programs(),
     )
 
     assert events == ["stage", "finish"]
@@ -2566,7 +2560,7 @@ def test_compact_full_accumulator_repack_matches_historical_path(monkeypatch):
             projection_padding_factor=1,
             use_spherical_mask=True,
             grid_correct=True,
-            **common, programs=ReconstructionPrograms.from_environ(),
+            **common, programs=reconstruction_programs(),
         )
     )
 
@@ -2646,7 +2640,7 @@ def test_compact_full_device_accumulator_runs_giant_split_and_normalization(monk
         tau=jnp.ones(np.prod(volume_shape), dtype=jnp.float32),
         tau2_fudge=1.0,
         projection_padding_factor=1,
-        accumulator_volume_shape=accumulator_shape, programs=ReconstructionPrograms.from_environ(),
+        accumulator_volume_shape=accumulator_shape, programs=reconstruction_programs(),
     )
 
     assert events == ["stage", "finish"]
@@ -2712,7 +2706,7 @@ def test_large_device_accumulator_does_not_enter_host_staged_split(monkeypatch):
         tau=jnp.ones(np.prod(volume_shape), dtype=jnp.float32),
         tau2_fudge=1.0,
         projection_padding_factor=1,
-        accumulator_volume_shape=accumulator_shape, programs=ReconstructionPrograms.from_environ(),
+        accumulator_volume_shape=accumulator_shape, programs=reconstruction_programs(),
     )
 
     assert returned is sentinel
@@ -2782,7 +2776,7 @@ def test_large_device_accumulator_normalizes_monolithic_giant_padded_ifft(monkey
         tau=jnp.ones(np.prod(volume_shape), dtype=jnp.float32),
         tau2_fudge=1.0,
         projection_padding_factor=1,
-        accumulator_volume_shape=accumulator_shape, programs=ReconstructionPrograms.from_environ(),
+        accumulator_volume_shape=accumulator_shape, programs=reconstruction_programs(),
     )
 
     expected = np.asarray(
@@ -2878,7 +2872,7 @@ def test_large_host_staged_irfft_uses_backward_transform_then_dynamic_normalizat
         tau=np.ones(8, dtype=np.float32),
         tau2_fudge=1.0,
         projection_padding_factor=1,
-        accumulator_volume_shape=(3, 3, 3), programs=ReconstructionPrograms.from_environ(),
+        accumulator_volume_shape=(3, 3, 3), programs=reconstruction_programs(),
     )
 
     assert events == ["stage", "finish"]
@@ -2896,20 +2890,13 @@ def test_padded_irfft_goes_to_the_host_when_its_device_working_set_exceeds_a_qua
     moves to the host on a 16 GB card, where its cuFFT work area could not be found (relax#40)."""
 
 
-    monkeypatch.delenv("RELAX_RELION_HOST_IRFFT", raising=False)
     limit = int(limit_gib * 2**30)
-
-    def forced():
-        return ReconstructionPrograms.from_environ().host_irfft
-
-    assert volume_solver._large_relion_host_irfft_enabled((760, 760, 760), allocator_limit_bytes=limit, forced=forced()) is host
+    assert volume_solver._large_relion_host_irfft_enabled((760, 760, 760), allocator_limit_bytes=limit, forced=None) is host
     # Small grids stay on the device on every card; the int32-overflow grid always goes to the host.
-    assert volume_solver._large_relion_host_irfft_enabled((256, 256, 256), allocator_limit_bytes=limit, forced=forced()) is False
-    assert volume_solver._large_relion_host_irfft_enabled((1600, 1600, 1600), allocator_limit_bytes=limit, forced=forced()) is True
-    monkeypatch.setenv("RELAX_RELION_HOST_IRFFT", "0")
-    assert volume_solver._large_relion_host_irfft_enabled((760, 760, 760), allocator_limit_bytes=limit, forced=forced()) is False
-    monkeypatch.setenv("RELAX_RELION_HOST_IRFFT", "1")
-    assert volume_solver._large_relion_host_irfft_enabled((256, 256, 256), allocator_limit_bytes=limit, forced=forced()) is True
+    assert volume_solver._large_relion_host_irfft_enabled((256, 256, 256), allocator_limit_bytes=limit, forced=None) is False
+    assert volume_solver._large_relion_host_irfft_enabled((1600, 1600, 1600), allocator_limit_bytes=limit, forced=None) is True
+    assert volume_solver._large_relion_host_irfft_enabled((760, 760, 760), allocator_limit_bytes=limit, forced=False) is False
+    assert volume_solver._large_relion_host_irfft_enabled((256, 256, 256), allocator_limit_bytes=limit, forced=True) is True
 
 
 def test_large_host_irfft_is_already_normalized(monkeypatch):
@@ -2940,7 +2927,6 @@ def test_large_host_irfft_is_already_normalized(monkeypatch):
     def reject_double_normalization(*_args, **_kwargs):
         raise AssertionError("SciPy's backward inverse FFT must not be normalized twice")
 
-    monkeypatch.setenv("RELAX_RELION_HOST_FFT_WORKERS", "3")
     monkeypatch.setattr(
         volume_solver,
         "_should_host_stage_large_relion_ifft",
@@ -2982,7 +2968,7 @@ def test_large_host_irfft_is_already_normalized(monkeypatch):
         tau=np.ones(8, dtype=np.float32),
         tau2_fudge=1.0,
         projection_padding_factor=1,
-        accumulator_volume_shape=(3, 3, 3), programs=ReconstructionPrograms.from_environ(),
+        accumulator_volume_shape=(3, 3, 3), programs=reconstruction_programs(host_fft_workers=3),
     )
 
     assert events == ["stage", "host_irfft", "finish"]
@@ -3179,7 +3165,6 @@ def test_join_halves_host_fallback_retains_half0_device_numerator(monkeypatch):
     ft_ctf_0 = rng.uniform(0.5, 1.5, volume_shape).astype(np.float32)
     ft_ctf_1 = rng.uniform(0.5, 1.5, volume_shape).astype(np.float32)
 
-    monkeypatch.setenv("RELAX_LOWRES_JOIN_HOST_FALLBACK", "always")
     joined = regularization_relion.join_halves_at_low_resolution(
         jnp.asarray(ft_y_0).reshape(-1),
         jnp.asarray(ft_y_1).reshape(-1),
@@ -3192,7 +3177,7 @@ def test_join_halves_host_fallback_retains_half0_device_numerator(monkeypatch):
         padding_factor=1,
         preserve_inputs=False,
         return_retained_first_numerator=True,
-        route=_join_route(),
+        route=lowres_join(forced_host=True),
     )
 
     assert len(joined) == 5
@@ -3214,7 +3199,7 @@ def test_join_halves_host_fallback_retains_half0_device_numerator(monkeypatch):
         padding_factor=1,
         preserve_inputs=False,
         return_retained_first_numerator=True,
-        route=_join_route(),
+        route=lowres_join(forced_host=True),
     )
     assert all(isinstance(value, np.ndarray) for value in padding_joined[:4])
     assert padding_joined[4] is None
@@ -3237,7 +3222,6 @@ def test_join_halves_host_fallback_reserves_joined_numpy_half0_for_crop(monkeypa
     ft_ctf_0 = rng.uniform(0.5, 1.5, half_shape).astype(np.float32)
     ft_ctf_1 = rng.uniform(0.5, 1.5, half_shape).astype(np.float32)
 
-    monkeypatch.setenv("RELAX_LOWRES_JOIN_HOST_FALLBACK", "always")
     caplog.set_level("INFO", logger=regularization.__name__)
     joined = regularization_relion.join_halves_at_low_resolution(
         ft_y_0,
@@ -3251,7 +3235,7 @@ def test_join_halves_host_fallback_reserves_joined_numpy_half0_for_crop(monkeypa
         padding_factor=2,
         preserve_inputs=False,
         return_retained_first_numerator=True,
-        route=_join_route(),
+        route=lowres_join(forced_host=True),
     )
 
     assert joined[0] is ft_y_0
@@ -3292,7 +3276,6 @@ def test_join_halves_at_low_resolution_host_fallback_can_reuse_numpy_storage(mon
     ft_y_0[idx_outside] = 20.0
     ft_y_1[idx_outside] = 4.0
 
-    monkeypatch.setenv("RELAX_LOWRES_JOIN_HOST_FALLBACK", "always")
     joined = regularization_relion.join_halves_at_low_resolution(
         ft_y_0,
         ft_y_1,
@@ -3303,7 +3286,7 @@ def test_join_halves_at_low_resolution_host_fallback_can_reuse_numpy_storage(mon
         box_size=4,
         low_resol_join_halves_angstrom=40.0,
         preserve_inputs=False,
-        route=_join_route(),
+        route=lowres_join(forced_host=True),
     )
 
     assert joined[0] is ft_y_0
@@ -3352,7 +3335,7 @@ def test_final_gridding_correction_equals_post_hoc_division_of_uncorrected_map(t
 
     def saved_map(grid_correct):
         ft = numbered_reconstruction._reconstruct_volume_eager(
-            ft_ctf, f_ty, volume_shape, RECONSTRUCTION_PADDING_FACTOR, grid_correct=grid_correct, **common, programs=ReconstructionPrograms.from_environ()
+            ft_ctf, f_ty, volume_shape, RECONSTRUCTION_PADDING_FACTOR, grid_correct=grid_correct, **common, programs=reconstruction_programs()
         )
         return np.real(np.asarray(ftu.get_idft3(jnp.asarray(ft).reshape(volume_shape)))).astype(np.float32)
 
@@ -3390,8 +3373,3 @@ def test_device_projection_padding_keeps_the_input_precision_with_gridding():
     padded, _ = relion_functions_relion.pad_volume_for_projection(ft, (8, 8, 8), 2, do_gridding_correction=True)
     host, _ = relion_functions_relion._pad_volume_for_projection_host(np.asarray(ft), (8, 8, 8), 2, do_gridding_correction=True)
     assert padded.dtype == jnp.complex64 == np.asarray(host).dtype
-
-
-def _join_route():
-    """The low-resolution join route the command reads from the environment (``ReconstructionPrograms``)."""
-    return ReconstructionPrograms.from_environ().lowres_join

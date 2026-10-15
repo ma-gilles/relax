@@ -4,9 +4,8 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
+from helpers.run_options import reconstruction_programs
 from recovar.reconstruction.relion_functions import post_process_from_filter_v2
-
-from relax.reconstruction.volume_solver import ReconstructionPrograms
 
 pytestmark = pytest.mark.unit
 
@@ -57,7 +56,7 @@ def test_em_reconstruction_keeps_fft_precision_with_double_tau_and_gridding(dtyp
     tau = jnp.linspace(0.1, 2.0, 512, dtype=jnp.float64)
     def compute(w, y, t):
         return _reconstruct_volume_eager(w, y, (8, 8, 8), 2, t, 1.0, 2,
-                                        preserve_output_precision=True, relion_filter_scale=8**4, programs=ReconstructionPrograms.from_environ())
+                                        preserve_output_precision=True, relion_filter_scale=8**4, programs=reconstruction_programs())
     result = compute(weight, numerator, tau)
     assert result.dtype == dtype
     assert np.all(np.isfinite(np.asarray(result)))

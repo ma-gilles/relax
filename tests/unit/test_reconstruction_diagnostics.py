@@ -6,9 +6,9 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 from helpers.reconstruction_settings import reconstruction_settings
+from helpers.run_options import reconstruction_programs
 
 from relax.diagnostics import reconstruction as dumps
-from relax.reconstruction.volume_solver import ReconstructionPrograms
 from relax.refinement.image_size_plans import ClassImageSize
 from relax.refinement.priors import ClassPriorEstimate
 
@@ -130,7 +130,7 @@ def test_mstep_class_selection_and_dtype(capture_inputs, monkeypatch, token, pre
         volume_shape=(16, 16, 16), padding_factor=values["PADDING_FACTOR"],
         projection_padding_factor=2, minres_map=5, width_mask_edge=5, fmask_edge=2,
         tau2_fudge=values["tau2_fudge"], particle_diameter_angstrom=None,
-        first_iteration_lowpass_angstrom=None, programs=ReconstructionPrograms.from_environ(),
+        first_iteration_lowpass_angstrom=None, programs=reconstruction_programs(),
     )
 
     def floor_statistics(denominator, shape, **kwargs):

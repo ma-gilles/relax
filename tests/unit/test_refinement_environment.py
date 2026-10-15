@@ -283,6 +283,54 @@ def test_fsc_dump_is_read_once(monkeypatch):
     assert ReconstructionPrograms.from_environ().fsc_dump == FscDump(directory="/fsc", tag="relax", average=True)
 
 
+@pytest.mark.parametrize(("value", "expected"), [(None, True), ("0", False), ("1", True)])
+def test_stable_reconstruction_windows_are_read_once(monkeypatch, value, expected):
+    from relax.reconstruction.volume_solver import ReconstructionPrograms
+
+    if value is None:
+        monkeypatch.delenv("RELAX_SPARSE_PASS2_RESIDENT_STABLE_WINDOWS", raising=False)
+    else:
+        monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_STABLE_WINDOWS", value)
+    assert ReconstructionPrograms.from_environ().stable_windows is expected
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"), [(None, None), ("auto", None), ("never", False), ("0", False), ("always", True), ("1", True)]
+)
+def test_host_irfft_route_is_read_once(monkeypatch, value, expected):
+    from relax.reconstruction.volume_solver import ReconstructionPrograms
+
+    if value is None:
+        monkeypatch.delenv("RELAX_RELION_HOST_IRFFT", raising=False)
+    else:
+        monkeypatch.setenv("RELAX_RELION_HOST_IRFFT", value)
+    assert ReconstructionPrograms.from_environ().host_irfft is expected
+
+
+def test_host_fft_workers_are_read_once(monkeypatch):
+    from relax.reconstruction.volume_solver import ReconstructionPrograms
+
+    monkeypatch.delenv("RELAX_RELION_HOST_FFT_WORKERS", raising=False)
+    monkeypatch.delenv("SLURM_CPUS_PER_TASK", raising=False)
+    assert ReconstructionPrograms.from_environ().host_fft_workers == 1
+    monkeypatch.setenv("SLURM_CPUS_PER_TASK", "5")
+    assert ReconstructionPrograms.from_environ().host_fft_workers == 5
+    monkeypatch.setenv("RELAX_RELION_HOST_FFT_WORKERS", "3")
+    assert ReconstructionPrograms.from_environ().host_fft_workers == 3
+
+
+def test_reconstruction_programs_helper_is_the_unset_environment(monkeypatch):
+    """``helpers.run_options.reconstruction_programs()`` is what the command reads with no variable set and one host
+    FFT thread (no ``SLURM_CPUS_PER_TASK``); tests pass it, or it with the fields they need, for the programs."""
+    from helpers.run_options import reconstruction_programs
+
+    from relax.reconstruction.volume_solver import ReconstructionPrograms
+
+    _unset_relax_environment(monkeypatch)
+    monkeypatch.delenv("SLURM_CPUS_PER_TASK", raising=False)
+    assert ReconstructionPrograms.from_environ() == reconstruction_programs()
+
+
 def test_fsc_dump_reaches_the_command(monkeypatch, tmp_path):
     monkeypatch.setenv("RELAX_MSTEP_FSC_DUMP_DIR", str(tmp_path / "fsc"))
     options = controller_inputs(monkeypatch, tmp_path, "refine")["options"]

@@ -16,10 +16,10 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 from helpers.reconstruction_settings import reconstruction_settings
+from helpers.run_options import lowres_join, reconstruction_programs
 
 from relax.reconstruction import regularization
 from relax.reconstruction.resolution import shell_index_to_resolution_angstrom
-from relax.reconstruction.volume_solver import ReconstructionPrograms
 from relax.refinement import numbered_reconstruction, priors
 
 pytestmark = pytest.mark.unit
@@ -74,7 +74,7 @@ def test_split_half_prior_uses_shared_fsc_and_independent_weights(dtype, diamete
             padding_factor=2, projection_padding_factor=2, minres_map=5,
             width_mask_edge=5, fmask_edge=2,
             tau2_fudge=1.0, particle_diameter_angstrom=diameter,
-            first_iteration_lowpass_angstrom=None, programs=ReconstructionPrograms.from_environ(),
+            first_iteration_lowpass_angstrom=None, programs=reconstruction_programs(),
         ),
         current_size=GRID_SIZE, accumulator_shape=ACCUMULATOR_SHAPE,
         full_half_axes=[None, 2],
@@ -134,7 +134,7 @@ def test_class_prior_view_order_and_replay_do_not_materialize_unused_references(
         padding_factor=PADDING_FACTOR, projection_padding_factor=2,
         minres_map=5, width_mask_edge=5, fmask_edge=2,
         tau2_fudge=4.0, particle_diameter_angstrom=None,
-        first_iteration_lowpass_angstrom=None, programs=ReconstructionPrograms.from_environ(),
+        first_iteration_lowpass_angstrom=None, programs=reconstruction_programs(),
     )
     result = priors.estimate_class_prior(
         Stack("reference"), Stack("denominator"), class_index=2, settings=settings,
@@ -238,7 +238,7 @@ class TestJoinHalfAccumulatorsAtLowResolution:
             pixel_resolutions=[2],
             current_resolution=float("inf"),
             preserve_inputs=True,
-            route=_join_route(),
+            route=lowres_join(),
         )
 
         assert result is sentinel
@@ -251,7 +251,7 @@ class TestJoinHalfAccumulatorsAtLowResolution:
             "padding_factor": PADDING_FACTOR,
             "preserve_inputs": True,
             "return_retained_first_numerator": False,
-            "route": _join_route(),
+            "route": lowres_join(),
         }
 
     @pytest.mark.parametrize(
@@ -274,7 +274,7 @@ class TestJoinHalfAccumulatorsAtLowResolution:
             40.0,
             current_resolution_angstrom=expected_cap,
             padding_factor=PADDING_FACTOR,
-            route=_join_route(),
+            route=lowres_join(),
         )
         result = priors.join_half_accumulators_at_low_resolution(
             ft_y,
@@ -287,7 +287,7 @@ class TestJoinHalfAccumulatorsAtLowResolution:
             pixel_resolutions=pixel_resolutions,
             current_resolution=current_resolution,
             preserve_inputs=True,
-            route=_join_route(),
+            route=lowres_join(),
         )
         assert len(result) == 4
         for got, want in zip(result, expected):
@@ -342,7 +342,7 @@ class TestClassTau2UpdateDetails:
             padding_factor=PADDING_FACTOR, projection_padding_factor=2,
             minres_map=5, width_mask_edge=5, fmask_edge=2,
             tau2_fudge=tau2_fudge, particle_diameter_angstrom=None,
-            first_iteration_lowpass_angstrom=None, programs=ReconstructionPrograms.from_environ(),
+            first_iteration_lowpass_angstrom=None, programs=reconstruction_programs(),
         )
 
     @staticmethod
@@ -445,8 +445,3 @@ def test_stack_class_tau2_update_details_keeps_key_layout():
         want = np.stack([record[key] for record in records], axis=0)
         assert stacked[key].shape == (3, N_SHELLS)
         assert_matches(stacked[key], want, strict=True)
-
-
-def _join_route():
-    """The low-resolution join route the command reads from the environment (``ReconstructionPrograms``)."""
-    return ReconstructionPrograms.from_environ().lowres_join

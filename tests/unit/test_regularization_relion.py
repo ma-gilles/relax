@@ -8,10 +8,10 @@ from helpers.reconstruction_settings import reconstruction_settings
 pytest.importorskip("jax")
 import jax.numpy as jnp  # noqa: E402
 import recovar.core.fourier_transform_utils as fourier_transform_utils
+from helpers.run_options import lowres_join, reconstruction_programs
 from recovar.reconstruction import regularization
 
 from relax.reconstruction import regularization as regularization_relion
-from relax.reconstruction.volume_solver import ReconstructionPrograms
 
 pytestmark = pytest.mark.unit
 
@@ -257,7 +257,7 @@ def test_join_halves_at_low_resolution_uses_explicit_padding_for_current_size_ac
         1.0,
         native_shape[0],
         8.0,
-        route=_join_route(),
+        route=lowres_join(),
     )
     np.testing.assert_allclose(
         np.asarray(legacy_join[0]).reshape(accumulator_shape)[joined_only_with_explicit_padding],
@@ -274,7 +274,7 @@ def test_join_halves_at_low_resolution_uses_explicit_padding_for_current_size_ac
         native_shape[0],
         8.0,
         padding_factor=padding_factor,
-        route=_join_route(),
+        route=lowres_join(),
     )
     expected = np.complex64(0.5 + 0.5j)
     np.testing.assert_allclose(
@@ -845,7 +845,7 @@ def test_final_halfmap_prior_leaves_the_accumulators_unchanged(monkeypatch):
     settings = reconstruction_settings(
         box_size=8, voxel_size=2.0, volume_shape=shape, padding_factor=2, projection_padding_factor=2,
         minres_map=5, width_mask_edge=2, fmask_edge=2, tau2_fudge=1.0, particle_diameter_angstrom=None,
-        first_iteration_lowpass_angstrom=None, programs=ReconstructionPrograms.from_environ(),
+        first_iteration_lowpass_angstrom=None, programs=reconstruction_programs(),
     )
     final_reconstruction.compute_final_halfmap_prior(
         numerators, denominators, settings=settings, current_size=8, accumulator_shape=padded,
@@ -853,8 +853,3 @@ def test_final_halfmap_prior_leaves_the_accumulators_unchanged(monkeypatch):
     )
     for array, copy in zip(numerators + denominators, before, strict=True):
         assert_matches(array, copy)
-
-
-def _join_route():
-    """The low-resolution join route the command reads from the environment (``ReconstructionPrograms``)."""
-    return ReconstructionPrograms.from_environ().lowres_join
