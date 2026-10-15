@@ -712,6 +712,24 @@ def test_resident_local_repeats_itself():
     ) < 1e-6
 
 
+@requires_resident_gpu
+def test_local_accumulators_exist_before_the_chunk_budget_is_read(monkeypatch):
+    """The x-half accumulators (15.35 + 7.7 GiB at EMPIAR-10202's full box) are allocated
+    before the local pass reads free device memory for its chunk budget, so the budget counts
+    them; the local pass allocated them after its plan (the global pass:
+    test_resident_pass2_driver)."""
+
+    from test_resident_pass2_driver import (
+        assert_accumulators_live_at_every_budget_read,
+        record_accumulators_at_budget_reads,
+    )
+
+    case = _case()
+    budget_reads, accumulators = record_accumulators_at_budget_reads(monkeypatch)
+    _run(case, engine_tuning=LOCAL_RESIDENT_ENGINE)
+    assert_accumulators_live_at_every_budget_read(budget_reads, accumulators)
+
+
 def test_mstep_adapter_refuses_unshifted_operands_without_the_kernel_tables():
     """The local M-step entry point fails closed on T16's operand family without its tables.
 

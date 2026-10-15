@@ -1285,24 +1285,72 @@ def test_resident_driver_refuses_an_unsupported_pass(_resident_production_env):
         rp.compute_pass2_stats_resident(**args, engine_tuning=RESIDENT_PRODUCTION_ENGINE, scoring_overrides=ScoringOverrides())
 
 
-def test_chunk_operands_are_padded_on_the_host():
+def test_chunk_operands_are_padded_on_the_host(monkeypatch):
     """Per-chunk shapes must not depend on a chunk's occupancy.
 
     Every traced program is keyed on its operand shapes, so an operand sized
     by the chunk's valid image count compiles once per distinct occupancy. The
     early-state cold arm traced 9352 programs in one iteration for this
-    reason. The batch handed to the preparation is padded on the host instead.
+    reason. The batch handed to the preparation is padded on the host instead:
+    the upload is a host array of the chunk's image capacity, and two chunks
+    of one capacity with different occupancies hand the preparation the same
+    shapes.
     """
 
-    import inspect
+    from types import SimpleNamespace
 
-    source = inspect.getsource(resident_chunk_inputs.prepare_chunk_reconstruction_operands)
-    assert "fetch_capacity_batch(" in source
-    assert "zero_padded_images(" in source
-    # jnp.pad with an occupancy-dependent width is what this replaced.
-    assert "jnp.pad" not in source
-    driver = inspect.getsource(rp)
-    assert "def _pad_image_axis" not in driver
+    stack = np.arange(7 * 3 * 3, dtype=np.float32).reshape(7, 3, 3)
+    ctf = np.arange(7 * 2, dtype=np.float64).reshape(7, 2)
+    dataset = SimpleNamespace(
+        image_source=SimpleNamespace(host_images=lambda indices: stack[np.asarray(indices)], tilt_series=False),
+        metadata=SimpleNamespace(get_batch=lambda indices: (None, None, ctf[np.asarray(indices)])),
+    )
+    uploads, prepared = [], []
+    real_device_put = jax.device_put
+
+    def device_put(value, *args, **kwargs):
+        uploads.append(value.copy() if isinstance(value, np.ndarray) else None)
+        return real_device_put(value, *args, **kwargs)
+
+    class _Prepared(Exception):
+        pass
+
+    def prepare_bucket_io(_dataset, images, ctf_params, indices, **kwargs):
+        prepared.append(
+            [(type(v), tuple(v.shape), np.dtype(v.dtype)) for v in (images, np.asarray(ctf_params), np.asarray(indices))]
+        )
+        raise _Prepared
+
+    monkeypatch.setattr(jax, "device_put", device_put)
+    monkeypatch.setattr(resident_chunk_inputs, "_prepare_bucket_io", prepare_bucket_io)
+    capacity = 4
+    for chunk_indices in ([5, 1], [3, 0, 6]):
+        uploads.clear()
+        with pytest.raises(_Prepared):
+            resident_chunk_inputs.prepare_chunk_reconstruction_operands(
+                chunk=SimpleNamespace(image_capacity=capacity, n_valid_images=len(chunk_indices)),
+                image_indices=np.asarray(chunk_indices, dtype=np.int64),
+                experiment_dataset=dataset,
+                bucket_io_kwargs={},
+                **dict.fromkeys(
+                    (
+                        "windowed_prepare", "recon_window_indices", "score_window_indices",
+                        "fine_translation_prior_2d", "score_real_dtype", "n_fine_trans", "n_recon_windowed",
+                        "image_shape", "current_size", "use_exact_relion_gaussian", "accumulate_noise",
+                        "source_faithful_spectrum_norm", "relion_score_translation_angles",
+                        "rect_indices_device", "exact_positions_device", "scale_corrections_np",
+                        "group_ids_np", "deterministic_reductions",
+                    )
+                ),
+            )
+        # The images reach the device once, already padded on the host with the first image.
+        host_uploads = [u for u in uploads if u is not None and u.ndim == 3]
+        assert len(host_uploads) == 1
+        want = np.concatenate([stack[chunk_indices], np.repeat(stack[chunk_indices[:1]], capacity - len(chunk_indices), 0)])
+        np.testing.assert_array_equal(host_uploads[0], want)
+    first, second = prepared
+    assert first == second
+    assert [shape[0] for _, shape, _ in first] == [capacity] * 3
 
 
 def test_capacity_batch_is_the_padded_fetch(monkeypatch):
@@ -1835,19 +1883,57 @@ def test_stable_windows_match_the_logical_window(_resident_production_env):
         assert rel_l2(getattr(logical.noise_stats, field), getattr(stable.noise_stats, field)) < 1e-7, field
 
 
-def test_accumulators_exist_before_the_chunk_budget_is_read():
+def record_accumulators_at_budget_reads(monkeypatch):
+    """Spy on a resident pass's chunk-budget reads and on the accumulators its plan records.
+
+    Returns ``(budget_reads, accumulators)``: per budget read, the ``(size, dtype)`` of every
+    device array that became live after the spy was installed; and per plan, the
+    ``(volume_size, y_dtype, ctf_dtype, n_slots)`` the plan counts as the pass's BPref
+    accumulators (``resident_accumulator_bytes``).
+    """
+
+    baseline = {id(array) for array in jax.live_arrays()}
+    budget_reads, accumulators = [], []
+    real_budget = resident_chunk_memory.resident_chunk_budget_bytes
+    real_accumulator_bytes = resident_chunk_memory.resident_accumulator_bytes
+
+    def budget(**kwargs):
+        budget_reads.append(
+            [(int(a.size), jnp.dtype(a.dtype)) for a in jax.live_arrays() if id(a) not in baseline]
+        )
+        return real_budget(**kwargs)
+
+    def accumulator_bytes(volume_size, y_dtype, ctf_dtype, *, n_slots=1):
+        accumulators.append((int(volume_size), jnp.dtype(y_dtype), jnp.dtype(ctf_dtype), int(n_slots)))
+        return real_accumulator_bytes(volume_size, y_dtype, ctf_dtype, n_slots=n_slots)
+
+    monkeypatch.setattr(resident_chunk_memory, "resident_chunk_budget_bytes", budget)
+    monkeypatch.setattr(resident_chunk_memory, "resident_accumulator_bytes", accumulator_bytes)
+    return budget_reads, accumulators
+
+
+def assert_accumulators_live_at_every_budget_read(budget_reads, accumulators):
+    """Each budget read sees every class's Ft_y and Ft_ctf the plan counts already on the device."""
+
+    assert budget_reads and accumulators
+    for volume_size, y_dtype, ctf_dtype, n_slots in accumulators:
+        for live in budget_reads:
+            for dtype in (y_dtype, ctf_dtype):
+                count = sum(1 for size, live_dtype in live if size == volume_size and live_dtype == dtype)
+                assert count >= n_slots, (volume_size, dtype, count, live)
+
+
+@requires_resident_gpu
+def test_accumulators_exist_before_the_chunk_budget_is_read(_resident_production_env, monkeypatch):
     """The x-half accumulators (15.35 + 7.7 GiB at EMPIAR-10202's full box) are allocated
-    before either pass reads free device memory for its chunk budget, so the budget counts
-    them; the local pass allocated them after its plan."""
+    before the global pass reads free device memory for its chunk budget, so the budget
+    counts them (the local pass: test_resident_local_pass2)."""
 
-    import inspect
-
-    from relax.local_search import resident_pass2 as rlp
-
-    for source in (inspect.getsource(rp._resident_pass2), inspect.getsource(rlp.compute_local_search_resident)):
-        first_budget_read = source.index("resident_chunk_budget_bytes(")
-        assert source.index("Ft_y_total = ") < first_budget_read
-        assert source.index("Ft_ctf_total = ") < first_budget_read
+    budget_reads, accumulators = record_accumulators_at_budget_reads(monkeypatch)
+    rp.compute_pass2_stats_resident(
+        **_driver_fixture_args(), engine_tuning=RESIDENT_PRODUCTION_ENGINE, scoring_overrides=ScoringOverrides()
+    )
+    assert_accumulators_live_at_every_budget_read(budget_reads, accumulators)
 
 
 def test_plan_counts_a_lone_overflow_chunk():

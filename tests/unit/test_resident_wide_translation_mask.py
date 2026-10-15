@@ -19,7 +19,6 @@ import jax.numpy as jnp
 from oracles.resident_candidates import expand_mask_rows
 from test_resident_significance import _csr_from_supports, _encoded_supports, _supports
 
-from relax.fine_pass import resident_configuration
 from relax.fine_pass.bucket_arrays import _prepare_per_image_pass2_inputs
 from relax.fine_pass.resident_candidates import (
     build_resident_candidate_tables,
@@ -120,15 +119,6 @@ def test_wide_chunk_masks_expand_to_the_compact_dense_mask(n_coarse_trans):
                 np.asarray(per_image_inputs["candidate_mask"][image], dtype=bool),
                 err_msg=f"image {image}",
             )
-
-
-def test_wide_translation_grids_are_in_scope():
-    """The resident gate no longer caps the coarse translation count."""
-
-    import inspect
-
-    source = inspect.getsource(resident_configuration.require_resident_production_configuration)
-    assert "n_coarse_trans" not in source
 
 
 # ---------------------------------------------------------------------------
