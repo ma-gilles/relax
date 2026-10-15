@@ -306,6 +306,7 @@ def test_local_grid_owners_receive_the_point_group(monkeypatch, route):
 
 def test_controller_passes_the_point_group_to_every_grid_owner(monkeypatch):
     """The numbered trial grid and the final pass build their M-step source angles in the run's point group."""
+    from helpers.run_options import stand_in
     from helpers.tiny_refinement import CallTrace, run_tiny_refinement
 
     from relax.refinement.refinement_options import SymmetryOptions
@@ -315,8 +316,10 @@ def test_controller_passes_the_point_group_to_every_grid_owner(monkeypatch):
     trace.wrap(finalization, "prepare_final_sampling", "final")
     trace.wrap(grids_module, "relion_mstep_source_eulers", "source_eulers")
     # A point group other than C1 requires the x-half M-step, which defaults off without a GPU.
-    monkeypatch.setenv("RELAX_K1_RELION_X_HALF_MSTEP", "1")
-    run_tiny_refinement(monkeypatch, parity=dict(perturb_factor=0.5), symmetry=SymmetryOptions(point_group="C4"))
+    run_tiny_refinement(
+        monkeypatch, parity=dict(perturb_factor=0.5), symmetry=SymmetryOptions(point_group="C4"),
+        variants=stand_in.variants(k1_relion_x_half_mstep=True),
+    )
     calls = trace.calls("source_eulers")
     assert [call.inside[-1] for call in calls] == ["numbered", "numbered", "final"]
     assert all(call.kwargs["symmetry"] == "C4" for call in calls)

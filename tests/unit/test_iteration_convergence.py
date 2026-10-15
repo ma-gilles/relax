@@ -144,10 +144,14 @@ def test_fresh_class3d_does_not_reset_the_follower_counter():
     assert result.state.suppress_hidden_variable_increment_once is False
 
 
+# The run that opts in to the support-width accuracy for convergence (RELAX_EM_USE_APPROX_ACC_ROT_FOR_CONVERGENCE).
+def _approx_acc_rot_opted_in():
+    return stand_in.options(variants=stand_in.variants(approx_acc_rot_for_convergence=True))
+
+
 @pytest.mark.parametrize('exact_accuracy', [None, 0.25])
-def test_support_width_only_drives_convergence_when_opted_in_and_exact_is_absent(monkeypatch, exact_accuracy):
-    monkeypatch.setenv('RELAX_EM_USE_APPROX_ACC_ROT_FOR_CONVERGENCE', '1')
-    result = _update_k1(exact_acc_rot=exact_accuracy)
+def test_support_width_only_drives_convergence_when_opted_in_and_exact_is_absent(exact_accuracy):
+    result = _update_k1(options=_approx_acc_rot_opted_in(), exact_acc_rot=exact_accuracy)
     if exact_accuracy is None:
         assert np.isfinite(result.state.acc_rot)
         assert result.state.acc_rot != 1.0
@@ -157,9 +161,8 @@ def test_support_width_only_drives_convergence_when_opted_in_and_exact_is_absent
 
 
 @pytest.mark.parametrize('counts', [None, np.zeros(0, dtype=np.int32)])
-def test_missing_support_counts_do_not_create_an_accuracy_estimate(monkeypatch, counts):
-    monkeypatch.setenv('RELAX_EM_USE_APPROX_ACC_ROT_FOR_CONVERGENCE', '1')
-    result = _update_k1(significant_counts=counts, exact_acc_rot=None)
+def test_missing_support_counts_do_not_create_an_accuracy_estimate(counts):
+    result = _update_k1(options=_approx_acc_rot_opted_in(), significant_counts=counts, exact_acc_rot=None)
     assert_matches(result.state.acc_rot, 1.0)
     assert result.accuracy.acc_rot is None
 

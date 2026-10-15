@@ -1478,6 +1478,11 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
                 parity=refinement_options.RelionParityOptions(**parity),
                 # The environment the case set (env=), read as the command reads it.
                 final_pass=refinement_options.FinalPassOptions.from_environ(),
+                **(
+                    {"variants": refinement_options.ScoringVariants.from_environ()}
+                    if "variants" in {f.name for f in dataclasses.fields(refinement_options.RefinementOptions)}
+                    else {}
+                ),
                 **extra,
             )
             if replay_module is not None and hasattr(replay_module, "RelionReplay"):

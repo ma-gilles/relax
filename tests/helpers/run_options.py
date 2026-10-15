@@ -14,13 +14,18 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from relax.reconstruction import regularization
+from relax.reconstruction.volume_solver import ReconstructionPrograms
 from relax.refinement.refinement_options import (
     AdaptiveOptions,
     ExecutionOptions,
+    LocalAdaptivePass2Support,
     RefinementOptions,
     RefinementSchedule,
     RelionParityOptions,
+    ScoringVariants,
 )
+from relax.steps import scoring_policy
 
 # What the CPU stand-in tests run instead of the command line's defaults (see the module docstring).
 STAND_IN = {
@@ -66,12 +71,46 @@ class OptionsFactory:
     def execution(self, **fields) -> ExecutionOptions:
         return ExecutionOptions(**self._fields("execution", fields))
 
+    def variants(self, **fields) -> ScoringVariants:
+        """``ScoringVariants`` as ``from_environ`` builds them with none of its variables set, under ``fields``.
+
+        K=1's x-half M-step default is the device's (``scoring_policy.k1_relion_x_half_mstep_default_available``:
+        on where custom CUDA runs on a GPU), as the command's; the reconstruction runs its programs on one host FFT
+        thread (``host_fft_workers`` changes no value).
+        """
+        defaults = dict(
+            k1_relion_x_half_mstep=scoring_policy.k1_relion_x_half_mstep_default_available(),
+            k_class_relion_x_half_mstep=True,
+            local_adaptive_pass2=LocalAdaptivePass2Support(full_parent=False, rotation_only=False, denominator_mode=None),
+            approx_acc_rot_for_convergence=False,
+            reconstruction=reconstruction_programs(),
+        )
+        return ScoringVariants(**{**defaults, **fields})
+
     def options(self, **groups) -> RefinementOptions:
-        """``RefinementOptions`` with every preset group the caller did not pass built from the preset."""
+        """``RefinementOptions`` with every preset group the caller did not pass built from the preset and
+        the unset environment's scoring variants (:meth:`variants`)."""
         for group in self.preset:
             if group not in groups:
                 groups[group] = getattr(self, group)()
+        groups.setdefault("variants", self.variants())
         return RefinementOptions(**groups)
+
+
+def reconstruction_programs(**fields) -> ReconstructionPrograms:
+    """``ReconstructionPrograms`` as ``from_environ`` builds them with none of its variables set (one host FFT
+    thread), under ``fields``."""
+    defaults = dict(
+        stable_windows=True,
+        host_irfft=None,
+        host_fft_workers=1,
+        fsc_packed_stream_min_elements=regularization.RELION_FSC_PACKED_STREAM_MIN_ELEMENTS,
+        lowres_join=regularization.LowResolutionJoinRoute(
+            forced_host=None, host_min_elements=regularization.LOW_RESOLUTION_JOIN_HOST_FALLBACK_MIN_ELEMENTS,
+        ),
+        fsc_dump=None,
+    )
+    return ReconstructionPrograms(**{**defaults, **fields})
 
 
 cli = OptionsFactory()

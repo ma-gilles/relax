@@ -1460,6 +1460,7 @@ def main():
         RefinementOptions,
         RefinementSchedule,
         RelionParityOptions,
+        ScoringVariants,
         StartState,
         SymmetryOptions,
     )
@@ -2450,6 +2451,7 @@ def main():
         ),
         final_pass=FinalPassOptions.from_environ(),
         environment=RefinementEnvironment.from_environ(),
+        variants=ScoringVariants.from_environ(),
         adaptive=AdaptiveOptions(
             adaptive_oversampling=oversampling, max_significants=max_significants,
             coarse_engine=args.coarse_engine,

@@ -132,7 +132,6 @@ def test_device_matrix_generation_gate(monkeypatch, case):
 def test_only_coarse_engine_operand_changes(monkeypatch, oversampling, xhalf, expected):
     """K=1 scores pass 1 on the generated coarse device rotations only at oversampling 0 with the x-half
     M-step and Gaussian scoring; the fine operand is always the pass-2 grid's."""
-    monkeypatch.setenv("RELAX_K1_RELION_X_HALF_MSTEP", "1" if xhalf else "0")
     _device_rotations_stand_in(monkeypatch)
     trace = CallTrace(monkeypatch)
     trace.wrap(dense_half, "_score_adaptive_k1_dense", "scorer")
@@ -141,6 +140,7 @@ def test_only_coarse_engine_operand_changes(monkeypatch, oversampling, xhalf, ex
     run_tiny_refinement(
         monkeypatch, final_after_max_iter=False,
         adaptive=stand_in.adaptive(adaptive_oversampling=oversampling),
+        variants=stand_in.variants(k1_relion_x_half_mstep=xhalf),
     )
     scorers, grids, projections = trace.calls("scorer"), trace.calls("grids"), trace.calls("projection")
     assert len(scorers) == len(grids) == len(projections) == 4

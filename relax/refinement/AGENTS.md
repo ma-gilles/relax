@@ -86,8 +86,7 @@ Steps this controller shares with VDAM live in `relax/steps/`: `half_inputs.py` 
   initial translations) live in `relax/parity/replay_inputs.py`, not in the command.
 - An execution or diagnostic environment variable of the controller is a field of an option record
   (`ExecutionOptions`, `FinalPassOptions`), read by its `from_environ` constructor, which the command calls; do
-  not add a `default_factory` that reads the environment (`RefinementOptions.variants`, `ScoringVariants`, is
-  the one left) or an `os.environ` read below the command.
+  not add a `default_factory` that reads the environment or an `os.environ` read below the command.
 - Buffer lifetimes follow code rule 3, not old release points. Releasing earlier is allowed; extending a
   lifetime is not; state any change and its peak-memory effect. A test holding a traced call's operands keeps
   them alive: trace with `keep_operands=False` or hold weak references.

@@ -535,8 +535,8 @@ class LocalAdaptivePass2Support:
 
 @dataclass(frozen=True, kw_only=True)
 class ScoringVariants:
-    """Scoring and M-step route variants chosen by environment variable, read once when the run's options are
-    built (``from_environ``, code rule 5); nothing below reads the variables again. They change what the run
+    """Scoring and M-step route variants chosen by environment variable, read once by ``from_environ``, which the
+    command calls (code rule 5); nothing below reads the variables again. They change what the run
     computes, so they are run options, not diagnostics (code rule 9).
 
     ``k1_relion_x_half_mstep`` / ``k_class_relion_x_half_mstep`` (``RELAX_K1_RELION_X_HALF_MSTEP``,
@@ -871,8 +871,9 @@ class RefinementOptions:
     expected_accuracy: ExpectedAccuracyOptions = field(default_factory=ExpectedAccuracyOptions)
     # The dense scoring precision, taken when the options are built (code rule 5); see _process_dense_precision.
     precision: DensePrecisionPolicy = field(default_factory=lambda: _process_dense_precision())
-    # Read from the environment when the options are built; nothing below reads it again.
-    variants: ScoringVariants = field(default_factory=ScoringVariants.from_environ)
+    # The command reads it from the environment (ScoringVariants.from_environ); nothing below reads it again. No
+    # default: K=1's x-half M-step default depends on the device, so no plain record equals the unset environment.
+    variants: ScoringVariants
 
 
 def _process_dense_precision() -> DensePrecisionPolicy:

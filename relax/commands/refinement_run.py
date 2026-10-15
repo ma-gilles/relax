@@ -1273,6 +1273,7 @@ def main(command=None):
         execution=refinement_arguments.resolve_execution(args),
         final_pass=refinement_options.FinalPassOptions.from_environ(),
         environment=refinement_options.RefinementEnvironment.from_environ(),
+        variants=refinement_options.ScoringVariants.from_environ(),
         adaptive=adaptive_options,
         optics_geometry=OpticsGeometry(
             relion_optics_image_sizes=half_sets.optics_image_sizes,
