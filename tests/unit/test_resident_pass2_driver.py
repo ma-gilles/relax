@@ -2222,8 +2222,11 @@ def test_the_allocator_reading_stays_inside_an_emulated_pool():
     )
     from conftest import repo_python_command, repo_subprocess_env
 
+    # The child runs on the GPU whatever the session's JAX_PLATFORMS: a script imported during collection
+    # (scripts/summarize_em_completion_bench.py) sets JAX_PLATFORMS=cpu in this process, and a CPU child has no
+    # memory_stats().
     env = repo_subprocess_env(
-        dict(os.environ, XLA_PYTHON_CLIENT_MEM_FRACTION="0.1", XLA_PYTHON_CLIENT_PREALLOCATE="false")
+        dict(os.environ, XLA_PYTHON_CLIENT_MEM_FRACTION="0.1", XLA_PYTHON_CLIENT_PREALLOCATE="false", JAX_PLATFORMS="cuda,cpu")
     )
     out = subprocess.run(repo_python_command("-c", probe), env=env, capture_output=True, text=True, check=True)
     reading = json.loads(out.stdout.strip().splitlines()[-1])
