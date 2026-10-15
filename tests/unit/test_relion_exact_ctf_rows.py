@@ -342,12 +342,46 @@ def test_groups_are_written_in_padded_counts(empiar_10097, source, tmp_path):
                 dataset, indices, (size, size), pixel_indices=pixels
             )
             for group in (1, 2):
-                own = indices[np.asarray(particles["rlnOpticsGroup"])[indices] == group]
+                own = indices[np.asarray(particles["rlnOpticsGroup"]).astype(int)[indices] == group]
                 alone = relion_ctf.relion_exact_ctf_half_from_source_star_host(
                     dataset, own, (size, size), pixel_indices=pixels
                 )
                 assert_matches(rows[np.isin(indices, own)], alone)
     assert writes and set(writes) <= {1 << k for k in range(9)}
+
+
+def test_new_group_counts_compile_nothing(empiar_10097, source, tmp_path, caplog):
+    """Requests of one size whose optics groups split it differently: once the padded counts have been seen, a
+    new split compiles no program (the per-count writes compiled one for every new group count)."""
+
+    star, particles, size = _optics_variant(empiar_10097, tmp_path, premultiplied_second_group=True, n=16)
+    dataset = source(star)
+    pixels = np.arange(0, size * (size // 2 + 1), 31)
+    groups = np.asarray(particles["rlnOpticsGroup"]).astype(int)
+    first, second = np.flatnonzero(groups == 1), np.flatnonzero(groups == 2)
+    assert first.size >= 7 and second.size >= 7
+
+    def request(n_first):
+        indices = np.concatenate([first[:n_first], second[: 8 - n_first]])
+        return relion_ctf.relion_exact_ctf_half_from_source_star_host(dataset, indices, (size, size), pixel_indices=pixels)
+
+    def alone(n_first):
+        return np.concatenate(
+            [
+                relion_ctf.relion_exact_ctf_half_from_source_star_host(dataset, part, (size, size), pixel_indices=pixels)
+                for part in (first[:n_first], second[: 8 - n_first])
+            ],
+            axis=0,
+        )
+
+    for n_first in (1, 2, 4, 6, 7):  # the padded counts 1, 2, 4 and 8 of both groups
+        assert_matches(request(n_first), alone(n_first))
+    caplog.clear()
+    with jax.log_compiles(), caplog.at_level("WARNING"):
+        rows = {n_first: request(n_first) for n_first in (3, 5)}
+    assert not [record.getMessage() for record in caplog.records if "Compiling" in record.getMessage()]
+    for n_first, value in rows.items():
+        assert_matches(value, alone(n_first))
 
 
 def test_nothing_of_a_request_is_kept(empiar_10097, source):
