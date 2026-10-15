@@ -302,6 +302,12 @@ class RelionCapacityHalfTextureF32:
         self._last_output = None
         return time.perf_counter() - start
 
+    def refill(self, projector_half: jax.Array, *, logical_r_max: int | None = None) -> float:
+        """:meth:`refresh_after` this owner's last projection (none yet: nothing to wait for); elapsed seconds."""
+
+        completion = self._last_output if self._last_output is not None else jnp.zeros((), dtype=jnp.float32)
+        return self.refresh_after(projector_half, completion, logical_r_max=logical_r_max)
+
     def close(self) -> None:
         if self.closed:
             return

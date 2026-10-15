@@ -470,7 +470,7 @@ def test_row_capacity_ladder_is_capped_by_the_projection_budget():
 
 def test_local_projector_texture_is_not_opened_for_manual_or_double_projection():
     slab = np.zeros((11, 11, 6), dtype=np.complex64)
-    kwargs = dict(relion_projector_r_max=4, projection_padding_factor=1)
+    kwargs = dict(relion_projector_r_max=4, projection_padding_factor=1, class_index=0)
     # The run's choice (texture_interp_default) is the unset RELAX_RELION_PROJECTOR_TEXTURE_INTERP's.
     projection_kwargs = {"projector_output_size": 8, "relion_texture_interp": None, "texture_interp_default": True}
     assert rlp._open_capacity_texture(None, projection_kwargs=projection_kwargs, **kwargs) is None
@@ -682,6 +682,40 @@ def test_exact_float32_accumulation_switch_runs_the_local_driver(monkeypatch):
     assert_matches(np.asarray(default.hard_assignment), np.asarray(exact.hard_assignment))
     a, b = np.asarray(default.Ft_y, dtype=np.complex128), np.asarray(exact.Ft_y, dtype=np.complex128)
     assert float(np.linalg.norm(a - b) / np.linalg.norm(a)) < 1e-6
+
+
+@requires_resident_gpu
+def test_next_pass_refills_the_kept_texture(monkeypatch):
+    """A pass's texture is the previous pass's owner refilled (the compiled projections capture its handle), and
+    it projects what a texture staged fresh from the new slab projects; a slab above the kept size gets a texture
+    of its own, which the pass closes."""
+
+    from relax.cuda.projector import RelionCapacityHalfTextureF32
+
+    case = _case()
+    slab, r_max = case["projector_half"], case["r_max"]
+    projection_kwargs = {"projector_output_size": IMAGE_SHAPE[0], "relion_texture_interp": None, "texture_interp_default": True}
+    kwargs = dict(relion_projector_r_max=r_max, projection_padding_factor=1, projection_kwargs=projection_kwargs)
+    from relax.sampling.healpix import euler_angles_to_matrix
+
+    rotations = jnp.asarray(euler_angles_to_matrix(_prior_eulers(N_IMAGES, 5)), dtype=jnp.float32)
+    for class_index in list(rlp._PASS_TEXTURES):
+        rlp._PASS_TEXTURES.pop(class_index).close()
+    first = rlp._open_capacity_texture(slab, class_index=0, **kwargs)
+    first.project(rotations, image_shape=IMAGE_SHAPE)
+    changed = jnp.asarray(slab * (0.5 + 0.25j))
+    second = rlp._open_capacity_texture(changed, class_index=0, **kwargs)
+    assert second is first and rlp._keeps_texture(second)
+    refilled = np.asarray(second.project(rotations, image_shape=IMAGE_SHAPE))
+    with RelionCapacityHalfTextureF32(changed, r_max, padding_factor=1) as fresh:
+        expected = np.asarray(fresh.project(rotations, image_shape=IMAGE_SHAPE))
+    assert np.count_nonzero(expected) > expected.size // 4
+    assert_matches(refilled, expected)
+    monkeypatch.setattr(rlp, "_KEPT_TEXTURE_MAX_BYTES", 0)
+    large = rlp._open_capacity_texture(changed, class_index=0, **kwargs)
+    assert large is not first and not rlp._keeps_texture(large)
+    large.close()
+    rlp._PASS_TEXTURES.pop(0, first).close()
 
 
 @requires_resident_gpu

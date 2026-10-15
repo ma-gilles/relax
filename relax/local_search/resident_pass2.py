@@ -745,6 +745,7 @@ def compute_local_search_resident(
         relion_projector_r_max=kernel.relion_projector_r_max,
         projection_padding_factor=kernel.projection_padding_factor,
         projection_kwargs=projection_kwargs,
+        class_index=0,
     )
     class_textures = [capacity_texture]
     try:
@@ -755,8 +756,9 @@ def compute_local_search_resident(
                     relion_projector_r_max=kernel.relion_projector_r_max,
                     projection_padding_factor=kernel.projection_padding_factor,
                     projection_kwargs=projection_kwargs,
+                    class_index=k,
                 )
-                for slab in class_slabs[1:]
+                for k, slab in enumerate(class_slabs[1:], start=1)
             ]
         if capacity_texture is not None:
             # The staged texture serves every projection of the pass, which reads
@@ -1181,7 +1183,7 @@ def compute_local_search_resident(
             )
     finally:
         for texture in class_textures:
-            if texture is not None:
+            if texture is not None and not _keeps_texture(texture):
                 texture.close()
 
     # ---- finalize ----------------------------------------------------------
@@ -1971,12 +1973,28 @@ def _live_rows_first(row_posterior, row_is_valid, row_image_local, kernel_row_im
     return rows, jnp.sum(live, dtype=jnp.int32)
 
 
+# Each class's projector texture, kept from pass to pass and refilled with the pass's slab while the slab's shape
+# holds (one refinement iteration): the compiled projection programs capture the texture's native handle, so a
+# new texture per pass compiled them again (381 compiles, 15 s of EMPIAR-10299's 10 local passes per iteration;
+# scoring/tomo_coarse.py keeps its coarse textures the same way). Only slabs up to _KEPT_TEXTURE_MAX_BYTES are
+# kept: a texture lives outside the XLA pool, and a large box's (7.9 GB at EMPIAR-10202) must not outlive its pass.
+_PASS_TEXTURES: dict = {}
+_KEPT_TEXTURE_MAX_BYTES = 1 << 30
+
+
+def _keeps_texture(texture) -> bool:
+    """Whether ``texture`` is one of the kept pass textures (the pass leaves it open)."""
+
+    return any(kept is texture for kept in _PASS_TEXTURES.values())
+
+
 def _open_capacity_texture(
     relion_projector_half,
     *,
     relion_projector_r_max,
     projection_padding_factor,
     projection_kwargs,
+    class_index: int,
 ):
     """One staged projector texture for a half's chunks, or None where it does not apply.
 
@@ -1985,7 +2003,10 @@ def _open_capacity_texture(
     (:func:`~relax.cuda.projector.project_relion_half_capacity`). Where that
     half-storage kernel is the one the projection takes
     (:func:`~relax.projection.projection.relion_capacity_texture_serves`), the
-    texture is staged once here instead; the caller closes it after the loop.
+    texture is staged once here instead. A slab of at most
+    ``_KEPT_TEXTURE_MAX_BYTES`` refills class ``class_index``'s kept texture
+    when the shapes agree (``_PASS_TEXTURES``) and stays open after the pass;
+    the caller closes any other texture after the loop.
     """
 
     from relax.projection.projection import relion_capacity_texture_serves
@@ -2006,11 +2027,33 @@ def _open_capacity_texture(
         return None
     from relax.cuda.projector import RelionCapacityHalfTextureF32
 
-    return RelionCapacityHalfTextureF32(
-        relion_projector_half,
-        int(relion_projector_r_max),
-        padding_factor=int(projection_padding_factor),
-    )
+    relion_projector_half = jnp.asarray(relion_projector_half)
+    if relion_projector_half.nbytes > _KEPT_TEXTURE_MAX_BYTES:
+        return RelionCapacityHalfTextureF32(
+            relion_projector_half,
+            int(relion_projector_r_max),
+            padding_factor=int(projection_padding_factor),
+        )
+    texture = _PASS_TEXTURES.pop(int(class_index), None)
+    if (
+        texture is not None
+        and not texture.closed
+        and texture.shape == tuple(int(n) for n in relion_projector_half.shape)
+        and texture.padding_factor == int(projection_padding_factor)
+        and texture.device in relion_projector_half.devices()
+    ):
+        texture.refill(relion_projector_half, logical_r_max=int(relion_projector_r_max))
+    else:
+        if texture is not None:
+            texture.close()
+        texture = RelionCapacityHalfTextureF32(
+            relion_projector_half,
+            int(relion_projector_r_max),
+            padding_factor=int(projection_padding_factor),
+            reusable_staging=True,
+        )
+    _PASS_TEXTURES[int(class_index)] = texture
+    return texture
 
 
 # The K=1 rotation posterior's used-bin count changes with every local pass, and the
