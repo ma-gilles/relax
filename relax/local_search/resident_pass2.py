@@ -107,11 +107,6 @@ from relax.fine_pass.resident_scoring import (
     score_resident_projected_chunk,
     score_resident_projected_chunk_normalized_cc,
 )
-from relax.fine_pass.resident_statistics import (
-    finalize_statistics,
-    make_resident_statistics,
-    resolve_statistics_config,
-)
 from relax.fine_pass.scoring import (
     _relion_cuda_fine_full_to_compact_lookup,
     _relion_powerclass_noise_terms,
@@ -1035,7 +1030,7 @@ def compute_local_search_resident(
             # The class axis needs the whole class-major histogram ([K, n_bins] at finalize).
             posterior_bin_ids = np.arange(tables.n_posterior_bins, dtype=np.int64)
             row_posterior_bin = np.asarray(tables.row_posterior_id, dtype=np.int32)
-        stats_config = resolve_statistics_config(
+        stats_config = resident_statistics.resolve_statistics_config(
             n_shells=n_shells,
             n_fine_trans=n_fine_trans,
             n_images=n_images,
@@ -1051,7 +1046,7 @@ def compute_local_search_resident(
             n_classes=tables.n_classes,
             float32_bucketed_image_sums=False,
         )
-        stats = make_resident_statistics(
+        stats = resident_statistics.make_resident_statistics(
             stats_config, max_posterior_dtype=precision_policy.score_real_dtype
         )
         image_tables = resident_image_terms.ChunkImageTables(
@@ -1226,7 +1221,7 @@ def compute_local_search_resident(
         large_grid=support.engine_tuning.x_half_large_grid,
     )
 
-    finalized = finalize_statistics(stats, config=stats_config, n_images=n_images)
+    finalized = resident_statistics.finalize_statistics(stats, config=stats_config, n_images=n_images)
     # ``best_fine_rotation_indices`` carries the winner's position in the
     # layout's flat row order, because that is what the chunk wrote into
     # ``best_fine_rot``. Every pose field is a lookup at that row.
@@ -1345,7 +1340,7 @@ def _finalize_class_local_pass(
         Ft_y_public.append(y)
         Ft_ctf_public.append(ctf)
 
-    finalized = finalize_statistics(stats, config=stats_config, n_images=n_images)
+    finalized = resident_statistics.finalize_statistics(stats, config=stats_config, n_images=n_images)
     if np.any(np.asarray(finalized.best_fine_rotation_indices) < 0):
         raise RuntimeError("Resident local pass 2: an image has no winning candidate row")
     per_class = finalized.classes

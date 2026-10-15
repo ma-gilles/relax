@@ -127,13 +127,6 @@ from relax.fine_pass.resident_significance import (
     resident_candidate_tables,
     resident_significance_csr,
 )
-from relax.fine_pass.resident_statistics import (
-    FinalizedStatistics,
-    finalize_statistics,
-    make_resident_statistics,
-    resident_image_capacity,
-    resolve_statistics_config,
-)
 from relax.fine_pass.scoring import (
     _relion_cuda_fine_full_to_compact_lookup,
     _relion_native_fine_units_enabled,
@@ -316,7 +309,7 @@ def _coarse_normalization_reuse(
     # Stored at the image capacity like every per-image device array, so the
     # chunk programs that read them are not keyed on the subset size. Chunks
     # only read real image ids.
-    padding = resident_image_capacity(tables.n_images) - tables.n_images
+    padding = resident_statistics.resident_image_capacity(tables.n_images) - tables.n_images
     return resident_chunk_records.CoarseNormalizationReuse(
         sum_weight=jnp.asarray(np.pad(sum_weight, (0, padding)), dtype=jnp.float64),
         max_posterior=jnp.asarray(np.pad(max_posterior, (0, padding)), dtype=max_posterior_dtype),
@@ -2309,7 +2302,7 @@ def _resident_pass2(
     )
 
     # ---- statistics accumulators ------------------------------------------
-    stats_config = resolve_statistics_config(
+    stats_config = resident_statistics.resolve_statistics_config(
         n_shells=n_shells,
         n_fine_trans=n_fine_trans,
         n_images=n_units,
@@ -2326,7 +2319,7 @@ def _resident_pass2(
         n_classes=n_classes,
         float32_bucketed_image_sums=_FLOAT32_BUCKETED_IMAGE_SUMS,
     )
-    stats = make_resident_statistics(
+    stats = resident_statistics.make_resident_statistics(
         stats_config, max_posterior_dtype=precision_policy.score_real_dtype
     )
     image_tables = resident_image_terms.ChunkImageTables(
@@ -2936,7 +2929,7 @@ def _resident_pass2(
         Ft_y_out.append(class_Ft_y)
         Ft_ctf_out.append(class_Ft_ctf)
 
-    finalized = finalize_statistics(stats, config=stats_config, n_images=n_units)
+    finalized = resident_statistics.finalize_statistics(stats, config=stats_config, n_images=n_units)
     noise_stats = make_noise_stats(
         wsum_sigma2_noise=finalized.wsum_sigma2_noise,
         wsum_img_power=finalized.wsum_img_power,
@@ -3012,7 +3005,7 @@ class _ResidentPass2Result(NamedTuple):
     Ft_ctf: tuple
     n_classes: int
     n_slot_groups: int
-    finalized: FinalizedStatistics
+    finalized: resident_statistics.FinalizedStatistics
     noise_stats: object  # one total over classes (ml_optimiser.cpp:10470, :11010)
     fine_translations: np.ndarray  # score dtype
     score_real_dtype: object
