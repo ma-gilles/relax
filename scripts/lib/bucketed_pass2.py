@@ -16,7 +16,6 @@ import numpy as np
 from relax.fine_pass.local_backprojection import (
     compute_local_ctf_sums_from_probs_sum_t,
     compute_local_weighted_sums,
-    relion_x_half_sequential_translation_reduction_enabled,
 )
 from relax.runtime.env_flags import parse_env_binary_flag, parse_env_flag
 from relax.runtime.shape_buckets import pow2_ceil, pow2_floor
@@ -674,16 +673,11 @@ def compute_local_mstep_sums(
     *,
     relion_x_half: bool,
     default_probs_sum_t=None,
-    sequential_translation_reduction: bool | None = None,
+    sequential_translation_reduction: bool = False,
 ):
     """Compute numerator/denominator sums, optionally using the x-half diagnostic."""
 
-    use_sequential_reduction = (
-        relion_x_half_sequential_translation_reduction_enabled()
-        if sequential_translation_reduction is None
-        else bool(sequential_translation_reduction)
-    )
-    if relion_x_half and use_sequential_reduction:
+    if relion_x_half and sequential_translation_reduction:
         return compute_relion_sequential_mstep_sums(probs, shifted, ctf2_over_nv)
     denominator = (
         compute_local_ctf_sums(probs, ctf2_over_nv)

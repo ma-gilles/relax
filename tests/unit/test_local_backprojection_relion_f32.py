@@ -71,17 +71,14 @@ def test_local_weighted_sums_match_explicit_highest_precision_matmul():
     "real_dtype,complex_dtype",
     [(np.float32, np.complex64), (np.float64, np.complex128)],
 )
-def test_local_mstep_sums_env_gate_preserves_xfloat_precision(
-    monkeypatch, real_dtype, complex_dtype
-):
-    monkeypatch.setenv("RELAX_RELION_X_HALF_SEQUENTIAL_TRANSLATION_REDUCTION", "1")
+def test_local_mstep_sums_sequential_reduction_preserves_xfloat_precision(real_dtype, complex_dtype):
     probs = np.array([[[1.0, 1.0, 1.0]]], dtype=real_dtype)
     shifted = np.array(
         [[[1.0e8 + 0j], [1.0 + 0j], [-1.0e8 + 0j]]], dtype=complex_dtype
     )
     ctf2_over_nv = np.array([[2.0]], dtype=real_dtype)
 
-    xhalf_y, xhalf_ctf = compute_local_mstep_sums(probs, shifted, ctf2_over_nv, relion_x_half=True)
+    xhalf_y, xhalf_ctf = compute_local_mstep_sums(probs, shifted, ctf2_over_nv, relion_x_half=True, sequential_translation_reduction=True)
     normal_y, normal_ctf = compute_local_mstep_sums(probs, shifted, ctf2_over_nv, relion_x_half=False)
 
     assert xhalf_y.dtype == np.dtype(complex_dtype)
@@ -93,13 +90,12 @@ def test_local_mstep_sums_env_gate_preserves_xfloat_precision(
     assert_matches(np.asarray(normal_ctf), np.array([[[6.0]]], dtype=real_dtype))
 
 
-def test_local_mstep_sums_preserve_promoted_precision_for_mixed_operands(monkeypatch):
-    monkeypatch.setenv("RELAX_RELION_X_HALF_SEQUENTIAL_TRANSLATION_REDUCTION", "1")
+def test_local_mstep_sums_preserve_promoted_precision_for_mixed_operands():
     probs = np.array([[[1.0, 1.0, 1.0]]], dtype=np.float64)
     shifted = np.array([[[1.0e8 + 0j], [1.0 + 0j], [-1.0e8 + 0j]]], dtype=np.complex64)
     ctf2_over_nv = np.array([[2.0]], dtype=np.float64)
 
-    xhalf_y, xhalf_ctf = compute_local_mstep_sums(probs, shifted, ctf2_over_nv, relion_x_half=True)
+    xhalf_y, xhalf_ctf = compute_local_mstep_sums(probs, shifted, ctf2_over_nv, relion_x_half=True, sequential_translation_reduction=True)
     normal_y, normal_ctf = compute_local_mstep_sums(probs, shifted, ctf2_over_nv, relion_x_half=False)
 
     assert xhalf_y.dtype == np.dtype(np.complex128)

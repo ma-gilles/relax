@@ -58,7 +58,6 @@ run_repeat() {
   mode_env=(
     env
     -u RELAX_RELION_X_HALF_BP_PER_PARTICLE_LAUNCH
-    -u RELAX_RELION_X_HALF_SEQUENTIAL_TRANSLATION_REDUCTION
     -u RELAX_RELION_X_HALF_BP_FUSED_ATOMICS
     -u RECOVAR_RELION_X_HALF_BP_BLOCK_TOPOLOGY
   )
@@ -68,14 +67,6 @@ run_repeat() {
     fused_block)
       mode_env+=(
         RELAX_RELION_X_HALF_BP_PER_PARTICLE_LAUNCH=1
-        RELAX_RELION_X_HALF_BP_FUSED_ATOMICS=1
-        RECOVAR_RELION_X_HALF_BP_BLOCK_TOPOLOGY=1
-      )
-      ;;
-    sequential_fused_block)
-      mode_env+=(
-        RELAX_RELION_X_HALF_BP_PER_PARTICLE_LAUNCH=1
-        RELAX_RELION_X_HALF_SEQUENTIAL_TRANSLATION_REDUCTION=1
         RELAX_RELION_X_HALF_BP_FUSED_ATOMICS=1
         RECOVAR_RELION_X_HALF_BP_BLOCK_TOPOLOGY=1
       )
@@ -105,7 +96,7 @@ run_repeat() {
   test "$(nvidia-smi --query-gpu=uuid --format=csv,noheader | head -n 1 | tr -d '[:space:]')" = "${gpu_uuid_before}"
 }
 
-IFS=, read -r -a reduction_modes <<< "${REDUCTION_MODES:-production,fused_block,sequential_fused_block}"
+IFS=, read -r -a reduction_modes <<< "${REDUCTION_MODES:-production,fused_block}"
 for mode in "${reduction_modes[@]}"; do
   for repeat in a b; do
     run_repeat "${mode}" "${repeat}"

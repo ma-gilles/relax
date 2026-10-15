@@ -72,7 +72,6 @@ def test_deferred_firstiter_bpref_gate_uses_texture_peak():
 def test_scoped_bpref_configured_target_is_not_an_active_diagnostic():
     flags = {
         "device_signature_configured": True,
-        "sequential_translation_reduction": False,
         "per_particle_launches": False,
         "fused_atomics": False,
         "high_precision_operand_bundle": False,

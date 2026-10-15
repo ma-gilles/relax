@@ -2,21 +2,8 @@
 
 from __future__ import annotations
 
-import os
-
 import jax
 import jax.numpy as jnp
-
-_RELION_X_HALF_SEQUENTIAL_TRANSLATION_REDUCTION_ENV = (
-    "RELAX_RELION_X_HALF_SEQUENTIAL_TRANSLATION_REDUCTION"
-)
-
-
-def relion_x_half_sequential_translation_reduction_enabled() -> bool:
-    """Return whether the diagnostic RELION-order translation reduction is enabled."""
-
-    raw = os.environ.get(_RELION_X_HALF_SEQUENTIAL_TRANSLATION_REDUCTION_ENV)
-    return raw is not None and raw.strip().lower() not in {"", "0", "false", "no", "off"}
 
 
 @jax.jit

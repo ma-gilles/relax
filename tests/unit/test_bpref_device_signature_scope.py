@@ -70,7 +70,6 @@ def test_scoped_capture_ignores_all_process_flags_off_target(monkeypatch):
     for name in (
         "RELAX_RELION_X_HALF_BP_PER_PARTICLE_LAUNCH",
         "RELAX_RELION_X_HALF_BP_FUSED_ATOMICS",
-        "RELAX_RELION_X_HALF_SEQUENTIAL_TRANSLATION_REDUCTION",
         "RECOVAR_RELION_X_HALF_BP_BLOCK_TOPOLOGY",
         "RELAX_BPREF_HIGH_PRECISION_OPERAND_BUNDLE",
     ):
@@ -79,7 +78,6 @@ def test_scoped_capture_ignores_all_process_flags_off_target(monkeypatch):
     inactive = bpref_diagnostics._scoped_bpref_diagnostic_flags(active=False)
     assert inactive == {
         "device_signature_configured": True,
-        "sequential_translation_reduction": False,
         "per_particle_launches": False,
         "fused_atomics": False,
         "high_precision_operand_bundle": False,
@@ -159,7 +157,6 @@ def test_standalone_diagnostics_keep_legacy_flags_without_device_capture(monkeyp
     for name in (
         "RELAX_RELION_X_HALF_BP_PER_PARTICLE_LAUNCH",
         "RELAX_RELION_X_HALF_BP_FUSED_ATOMICS",
-        "RELAX_RELION_X_HALF_SEQUENTIAL_TRANSLATION_REDUCTION",
         "RECOVAR_RELION_X_HALF_BP_BLOCK_TOPOLOGY",
         "RELAX_BPREF_HIGH_PRECISION_OPERAND_BUNDLE",
     ):

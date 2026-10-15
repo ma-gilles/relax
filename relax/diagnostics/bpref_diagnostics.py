@@ -14,10 +14,6 @@ from pathlib import Path
 import jax
 import numpy as np
 
-from relax.fine_pass.local_backprojection import (
-    _RELION_X_HALF_SEQUENTIAL_TRANSLATION_REDUCTION_ENV,
-    relion_x_half_sequential_translation_reduction_enabled,
-)
 from relax.runtime.env_flags import parse_env_flag
 
 _BPREF_MEMBERSHIP_DUMP_DIR_ENV = "RELAX_BPREF_MEMBERSHIP_DUMP_DIR"
@@ -38,7 +34,6 @@ BPREF_DIAGNOSTIC_ENVS = (
     "RELAX_BPREF_CONTRIBUTION_DUMP_HALF",
     "RELAX_BPREF_CONTRIBUTION_DUMP_DIR",
     _BPREF_MEMBERSHIP_DUMP_DIR_ENV,
-    _RELION_X_HALF_SEQUENTIAL_TRANSLATION_REDUCTION_ENV,
     _RELION_X_HALF_BP_PER_PARTICLE_LAUNCH_ENV,
     _RELION_X_HALF_BP_FUSED_ATOMICS_ENV,
     "RELAX_BPREF_HIGH_PRECISION_OPERAND_BUNDLE",
@@ -161,9 +156,6 @@ def _scoped_bpref_diagnostic_flags(*, active: bool) -> dict[str, bool]:
     scope_active = bool(active or not device_signature_configured)
     return {
         "device_signature_configured": device_signature_configured,
-        "sequential_translation_reduction": bool(
-            scope_active and relion_x_half_sequential_translation_reduction_enabled()
-        ),
         "per_particle_launches": bool(scope_active and relion_x_half_bp_per_particle_launch_enabled()),
         "fused_atomics": bool(scope_active and relion_x_half_bp_fused_atomics_enabled()),
         "high_precision_operand_bundle": bool(
@@ -203,7 +195,6 @@ def _scoped_bpref_diagnostics_active(flags: dict[str, bool]) -> bool:
     return any(
         bool(flags[name])
         for name in (
-            "sequential_translation_reduction",
             "per_particle_launches",
             "fused_atomics",
             "high_precision_operand_bundle",
