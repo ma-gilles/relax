@@ -103,7 +103,7 @@ class BatchPlanner:
 
     def for_expectation(self, *, diagnostic_float64_pass2: bool):
         """The planner of one expectation: itself, or float64 sizes when the scoring side runs this iteration's
-        pass 2 in float64 (``precision._diagnostic_float64_pass2_matches`` of the same iteration)."""
+        pass 2 in float64 (``precision.diagnostic_float64_pass2_matches`` of the same iteration)."""
         return partial(self, diagnostic_float64_pass2=True) if diagnostic_float64_pass2 else self
 
 

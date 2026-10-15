@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from relax.classification.probes import KClassProbe
-from relax.numerics.precision import _diagnostic_float64_pass2_matches
+from relax.numerics.precision import diagnostic_float64_pass2_matches
 from relax.reconstruction.resolution import ImageGeometry
 from relax.refinement import image_size_plans, iteration_planning, local_sampling
 from relax.refinement.dense_half import (
@@ -534,7 +534,7 @@ def score_numbered_half(
         previous_translations_k, dtype=scoring_dtype
     )
     # Resolved once per half: the batch plan and the execution policy read the same answer.
-    diagnostic_float64_pass2 = _diagnostic_float64_pass2_matches(
+    diagnostic_float64_pass2 = diagnostic_float64_pass2_matches(
         numbered_relion_iteration, options.environment.diagnostic_float64_pass2_iterations,
     )
     half_batching = prepare_half_batches(

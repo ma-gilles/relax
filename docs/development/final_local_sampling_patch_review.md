@@ -3009,7 +3009,7 @@ def score_numbered_half(
             disable_adjoint_ctf=options.debug.disable_adjoint_ctf,
             bpref_device_signature_active=bpref_device_signature_active,
             debug_iteration=numbered_relion_iteration,
-            diagnostic_float64_pass2=_diagnostic_float64_pass2_matches(
+            diagnostic_float64_pass2=diagnostic_float64_pass2_matches(
                 numbered_relion_iteration
             ),
             preserve_bpref_particle_order=options.parity.preserve_bpref_particle_order,
@@ -4346,7 +4346,7 @@ def score_numbered_half(
             disable_adjoint_ctf=options.debug.disable_adjoint_ctf,
             bpref_device_signature_active=bpref_device_signature_active,
             debug_iteration=numbered_relion_iteration,
-            diagnostic_float64_pass2=_diagnostic_float64_pass2_matches(
+            diagnostic_float64_pass2=diagnostic_float64_pass2_matches(
                 numbered_relion_iteration
             ),
             preserve_bpref_particle_order=options.parity.preserve_bpref_particle_order,

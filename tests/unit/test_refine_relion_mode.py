@@ -202,11 +202,11 @@ def test_relion_optimizer_average_pmax_preserves_double_particle_values():
 
 
 def test_diagnostic_float64_pass2_iteration_selector():
-    assert dtype_policy_module._diagnostic_float64_pass2_matches(4, frozenset()) is False
-    assert dtype_policy_module._diagnostic_float64_pass2_matches(3, frozenset({4, 7})) is False
-    assert dtype_policy_module._diagnostic_float64_pass2_matches(4, frozenset({4, 7})) is True
-    assert dtype_policy_module._diagnostic_float64_pass2_matches(7, frozenset({4, 7})) is True
-    assert dtype_policy_module._diagnostic_float64_pass2_matches(None, frozenset({4})) is False
+    assert dtype_policy_module.diagnostic_float64_pass2_matches(4, frozenset()) is False
+    assert dtype_policy_module.diagnostic_float64_pass2_matches(3, frozenset({4, 7})) is False
+    assert dtype_policy_module.diagnostic_float64_pass2_matches(4, frozenset({4, 7})) is True
+    assert dtype_policy_module.diagnostic_float64_pass2_matches(7, frozenset({4, 7})) is True
+    assert dtype_policy_module.diagnostic_float64_pass2_matches(None, frozenset({4})) is False
 
 
 def test_local_search_precision_defaults_to_production_float32():

@@ -95,10 +95,10 @@ def test_diagnostic_float64_pass2_iterations_reach_the_expectation(monkeypatch):
     from relax.refinement import expectation
 
     monkeypatch.delenv("RELAX_DIAGNOSTIC_FLOAT64_PASS2_ITERATIONS", raising=False)
-    original = expectation._diagnostic_float64_pass2_matches
+    original = expectation.diagnostic_float64_pass2_matches
     seen = []
     monkeypatch.setattr(
-        expectation, "_diagnostic_float64_pass2_matches",
+        expectation, "diagnostic_float64_pass2_matches",
         lambda iteration, iterations: seen.append(iterations) or original(iteration, iterations),
     )
     run_tiny_refinement(monkeypatch, max_iter=1, final_after_max_iter=False,

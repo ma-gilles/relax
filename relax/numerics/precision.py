@@ -104,7 +104,7 @@ class DensePrecisionPolicy:
         )
 
     def for_local_pass(self, iteration: int | None, *, pass_index: int, float64_pass2_iterations: frozenset[int]):
-        if pass_index == 2 and _diagnostic_float64_pass2_matches(iteration, float64_pass2_iterations):
+        if pass_index == 2 and diagnostic_float64_pass2_matches(iteration, float64_pass2_iterations):
             return replace(self, use_float64_scoring=True, use_float64_projections=True)
         return self
 
@@ -135,7 +135,7 @@ class DensePrecisionPolicy:
         )
 
 
-def _diagnostic_float64_pass2_matches(debug_iteration: int | None, iterations: frozenset[int]) -> bool:
+def diagnostic_float64_pass2_matches(debug_iteration: int | None, iterations: frozenset[int]) -> bool:
     """Select genuine-f64 pass 2 without perturbing an earlier f32 boundary: ``debug_iteration`` is one of
     ``iterations`` (``RefinementEnvironment.diagnostic_float64_pass2_iterations``)."""
 

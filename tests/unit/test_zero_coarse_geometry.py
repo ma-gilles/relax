@@ -155,11 +155,11 @@ def test_only_coarse_engine_operand_changes(monkeypatch, oversampling, xhalf, ex
 
 def test_dense_float64_diagnostic_is_resolved_by_expectation_orchestration(monkeypatch):
     """The numbered and final execution policies carry the diagnostic switch their owner resolved."""
-    assert not hasattr(dense_half, "_diagnostic_float64_pass2_matches")
+    assert not hasattr(dense_half, "diagnostic_float64_pass2_matches")
     trace = CallTrace(monkeypatch)
     for module in (expectation, finalization):
-        monkeypatch.setattr(module, "_diagnostic_float64_pass2_matches", lambda *args, **kwargs: True)
-        trace.wrap(module, "_diagnostic_float64_pass2_matches", "resolved")
+        monkeypatch.setattr(module, "diagnostic_float64_pass2_matches", lambda *args, **kwargs: True)
+        trace.wrap(module, "diagnostic_float64_pass2_matches", "resolved")
         trace.wrap(module, "DenseExecutionPolicy", "policy")
     run_tiny_refinement(monkeypatch)
     assert trace.labels() == ["resolved", "policy"] * 5

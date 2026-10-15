@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from relax.numerics.precision import _diagnostic_float64_pass2_matches
+from relax.numerics.precision import diagnostic_float64_pass2_matches
 from relax.reconstruction.resolution import (
     ImageGeometry,
     class_current_resolution_shell,
@@ -346,7 +346,7 @@ def run_final_all_data(
         )
     else:
         # Resolved once: the batch plan and the execution policy read the same answer.
-        diagnostic_float64_pass2 = _diagnostic_float64_pass2_matches(
+        diagnostic_float64_pass2 = diagnostic_float64_pass2_matches(
             final_sampling.settings.relion_iteration, options.environment.diagnostic_float64_pass2_iterations,
         )
         final_dense_sampling = DenseSamplingSpec(
