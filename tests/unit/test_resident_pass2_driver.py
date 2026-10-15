@@ -82,7 +82,6 @@ def _production_gate_kwargs(**overrides):
         use_window=True,
         projection_cache_available=True,
         relion_wavg_atomic_scale_aa=True,
-        relion_wavg_atomic_direct_noise=True,
         relion_projector_texture=None,
         requested_diagnostics=(),
     )
@@ -112,7 +111,6 @@ def test_production_configuration_is_accepted():
         ({"use_window": False}, "Nyquist row"),
         ({"projection_cache_available": False}, "projection cache"),
         ({"relion_wavg_atomic_scale_aa": False}, "atomic Wavg triplet"),
-        ({"relion_wavg_atomic_direct_noise": False}, "direct low-shell residual"),
         ({"relion_firstiter_score_mode": "normalized_cc"}, "fine Gaussian"),
         ({"relion_projector_texture": object()}, "not a caller.s persistent texture"),
     ],

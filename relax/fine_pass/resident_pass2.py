@@ -88,6 +88,7 @@ from relax.fine_pass import (
     resident_mstep_blocks,
     resident_projections,
     resident_stable_windows,
+    resident_statistics,
 )
 from relax.fine_pass.bucket_arrays import _prepare_per_image_pass2_inputs
 from relax.fine_pass.bucket_io import _relion_cuda_score_translation_angles_if_available
@@ -241,7 +242,9 @@ def _resident_wavg_arithmetic(
     # A pass that preserves RELION's BPref order (every fresh K=1 pass) runs RELION's
     # powerClass spectrum with its exact BPref operands; there is no other variant.
     spectrum_norm = exact_bpref_operands = bool(source_faithful_spectrum_norm)
-    atomic_scale_aa = bool(accumulate_noise and scale_groups_available)
+    atomic_scale_aa = resident_statistics.relion_wavg_atomic_triplet_runs(
+        accumulate_noise=accumulate_noise, scale_groups_available=scale_groups_available
+    )
     return spectrum_norm, exact_bpref_operands, atomic_scale_aa
 
 
@@ -898,8 +901,6 @@ def _resident_pass2(
         has_ctf_rfloat=relion_exact_bpref_operands,
     ) and not (firstiter_cc and tilt is not None)  # a tilt CC pass translates its score image (resident_tilts)
     native_fft_size = int(np.prod(image_shape))
-    # RELION's direct low-shell residual supplies the shell noise wherever the atomic triplet runs.
-    relion_wavg_atomic_direct_noise = relion_wavg_atomic_scale_aa
 
     soft_posterior_block_bpref = relax.runtime.env_flags.parse_env_flag(
         _SOFT_POSTERIOR_BLOCK_BPREF_PROTOTYPE_ENV, default=True
@@ -933,7 +934,6 @@ def _resident_pass2(
         use_window=budget_window_spec.use_window,
         projection_cache_available=projection_cache_enabled,
         relion_wavg_atomic_scale_aa=relion_wavg_atomic_scale_aa,
-        relion_wavg_atomic_direct_noise=relion_wavg_atomic_direct_noise,
         relion_projector_texture=relion_projector_texture,
         requested_diagnostics=engine_tuning.resident_diagnostics,
         )
@@ -1124,7 +1124,6 @@ def _resident_pass2(
             accumulate_noise=accumulate_noise,
             use_exact_relion_gaussian=use_exact_relion_gaussian,
             source_faithful_spectrum_norm=resolved_spectrum_norm,
-            relion_wavg_atomic_direct_noise=relion_wavg_atomic_direct_noise,
             relion_wavg_atomic_scale_aa=relion_wavg_atomic_scale_aa,
             accumulate_scale=scale_groups_available,
             relion_exact_bpref_operands=relion_exact_bpref_operands,
@@ -2320,7 +2319,6 @@ def _resident_pass2(
         current_size=program_current_size if wsum_current_size == current_size else wsum_current_size,
         include_unweighted_high_shell=include_unweighted_norm_high_shell,
         use_exact_relion_gaussian=use_exact_relion_gaussian,
-        relion_wavg_atomic_direct_noise=relion_wavg_atomic_direct_noise,
         relion_wavg_atomic_scale_aa=relion_wavg_atomic_scale_aa,
         accumulate_scale=scale_groups_available,
         source_faithful_spectrum_norm=resolved_spectrum_norm,

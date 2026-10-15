@@ -80,6 +80,7 @@ from relax.fine_pass import (
     resident_chunk_records,
     resident_image_terms,
     resident_mstep_blocks,
+    resident_statistics,
 )
 from relax.fine_pass import resident_pass2 as rp
 from relax.fine_pass.bucket_io import (
@@ -265,10 +266,6 @@ def require_resident_local_configuration(**kwargs) -> None:
     _require(
         bool(kwargs["relion_wavg_atomic_scale_aa"]),
         "the resident statistics stage consumes the RELION atomic Wavg triplet",
-    )
-    _require(
-        bool(kwargs["relion_wavg_atomic_direct_noise"]),
-        "the resident statistics stage uses RELION's direct low-shell residual",
     )
     # RELION scores its radial support at every current size, the final
     # all-data iteration's full box included (updateImageSizeAndResolutionPointers
@@ -479,9 +476,9 @@ def compute_local_search_resident(
     # those on its production path.
     resolved_spectrum_norm = bool(kernel.source_faithful_spectrum_norm)
     scale_groups_available = data.group_ids is not None
-    # RELION's atomic Wavg triplet, and with it the direct low-shell residual, wherever noise accumulates by group.
-    relion_wavg_atomic_scale_aa = bool(kernel.accumulate_noise and scale_groups_available)
-    relion_wavg_atomic_direct_noise = relion_wavg_atomic_scale_aa
+    relion_wavg_atomic_scale_aa = resident_statistics.relion_wavg_atomic_triplet_runs(
+        accumulate_noise=kernel.accumulate_noise, scale_groups_available=scale_groups_available
+    )
     require_resident_local_configuration(
         requested_diagnostics=support.engine_tuning.resident_diagnostics,
         score_only=support.score_only,
@@ -503,7 +500,6 @@ def compute_local_search_resident(
         group_ids=data.group_ids,
         use_window=budget_window_spec.use_window,
         relion_wavg_atomic_scale_aa=relion_wavg_atomic_scale_aa,
-        relion_wavg_atomic_direct_noise=relion_wavg_atomic_direct_noise,
     )
     _require(
         jax.default_backend() == "gpu" and cuda_backproject.custom_cuda_requested(),
@@ -1048,7 +1044,6 @@ def compute_local_search_resident(
             current_size=wsum_current_size,
             include_unweighted_high_shell=True,
             use_exact_relion_gaussian=True,
-            relion_wavg_atomic_direct_noise=relion_wavg_atomic_direct_noise,
             relion_wavg_atomic_scale_aa=relion_wavg_atomic_scale_aa,
             accumulate_scale=scale_groups_available,
             source_faithful_spectrum_norm=resolved_spectrum_norm,

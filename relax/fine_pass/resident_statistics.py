@@ -12,11 +12,10 @@ Ported production branches (the fresh K=1 guard, confirmed from
 the compact engine's ``_fresh_k1_direct_noise_default`` and its bucket tail, both deleted): ``accumulate_noise=True``,
 ``use_relion_fine_mstep_prune=True`` (so the noise and statistics posteriors
 are the same pruned ``reconstruction_probs``), RELION x-half M-step,
-``relion_wavg_atomic_scale_aa=True``, ``relion_wavg_atomic_direct_noise=True``,
-``relion_wavg_atomic_direct_norm=False`` ("per-particle norm
-mode=production-algebraic"), ``translated_wavg_norm=False``. The two stopped
-diagnostic arms (direct Wavg norm, translated Wavg norm) and the per-bucket
-operand dumps are deliberately *not* ported; see the module's ticket report.
+RELION's atomic Wavg triplet (``relion_wavg_atomic_scale_aa=True``) with its
+direct low-shell noise residual, the production-algebraic per-particle norm and
+no translated Wavg norm. The per-bucket operand dumps are deliberately *not*
+ported; see the module's ticket report.
 
 Layout and padding contract
 ---------------------------
@@ -195,10 +194,9 @@ class ResidentStatisticsConfig:
     disable_cuda_binning: bool
     deterministic_norm_reduction: bool
     use_exact_relion_gaussian: bool
-    relion_wavg_atomic_direct_noise: bool
     relion_wavg_atomic_scale_aa: bool
-    # ``current_size // 2 + 1`` in shell coordinates; only read when
-    # ``relion_wavg_atomic_direct_noise`` is set.
+    # ``current_size // 2 + 1`` in shell coordinates: the end of RELION's direct
+    # low-shell noise residual.
     direct_noise_exclusive_shell_stop: int
     accumulate_scale: bool
     # RELION optics groups with their own noise spectrum (relax.relion.optics_groups).
@@ -226,13 +224,18 @@ class ResidentStatisticsConfig:
         ):
             if int(getattr(self, name)) < 0:
                 raise ValueError(f"{name} must be non-negative, got {getattr(self, name)}")
-        if self.relion_wavg_atomic_direct_noise and not self.relion_wavg_atomic_scale_aa:
-            raise ValueError(
-                "direct Wavg noise replacement requires the atomic Wavg scale triplet "
-                "(sparse_pass2_policy._relion_wavg_direct_modes enforces the same pairing)"
-            )
         if self.accumulate_scale and int(self.n_scale_groups) <= 0:
             raise ValueError("accumulate_scale requires at least one scale group")
+
+
+def relion_wavg_atomic_triplet_runs(*, accumulate_noise: bool, scale_groups_available: bool) -> bool:
+    """Whether a resident pass runs RELION's atomic Wavg triplet, and with it the direct low-shell residual.
+
+    The triplet runs whenever the pass accumulates noise with the triplet's groups
+    (``scale_groups_available``: the caller says which groups feed the triplet).
+    """
+
+    return bool(accumulate_noise and scale_groups_available)
 
 
 def resolve_statistics_config(
@@ -245,7 +248,6 @@ def resolve_statistics_config(
     current_size: int | None,
     include_unweighted_high_shell: bool = True,
     use_exact_relion_gaussian: bool = True,
-    relion_wavg_atomic_direct_noise: bool = True,
     relion_wavg_atomic_scale_aa: bool = True,
     accumulate_scale: bool = True,
     source_faithful_spectrum_norm: bool = False,
@@ -274,7 +276,6 @@ def resolve_statistics_config(
         disable_cuda_binning=parse_env_flag("RECOVAR_DISABLE_CUDA", default=False),
         deterministic_norm_reduction=bool(deterministic_norm_reduction),
         use_exact_relion_gaussian=bool(use_exact_relion_gaussian),
-        relion_wavg_atomic_direct_noise=bool(relion_wavg_atomic_direct_noise),
         relion_wavg_atomic_scale_aa=bool(relion_wavg_atomic_scale_aa),
         direct_noise_exclusive_shell_stop=int(n_shells) if cutoff is None else cutoff + 1,
         accumulate_scale=bool(accumulate_scale),

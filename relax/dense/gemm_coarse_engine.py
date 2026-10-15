@@ -314,7 +314,6 @@ def run_dense_gemm_full_grid(state: DenseGemmPreparedState):
         current_size=state.current_size,
         include_unweighted_high_shell=state.include_unweighted_norm_high_shell,
         use_exact_relion_gaussian=state.use_exact_relion_gaussian,
-        relion_wavg_atomic_direct_noise=state.relion_wavg_atomic_direct_noise,
         relion_wavg_atomic_scale_aa=state.relion_wavg_atomic_scale_aa,
         accumulate_scale=state.accumulate_scale,
         source_faithful_spectrum_norm=state.source_faithful_spectrum_norm,

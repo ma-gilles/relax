@@ -59,7 +59,6 @@ class DenseGemmPreparedState:
     accumulate_noise: bool
     use_exact_relion_gaussian: bool
     source_faithful_spectrum_norm: bool
-    relion_wavg_atomic_direct_noise: bool
     relion_wavg_atomic_scale_aa: bool
     accumulate_scale: bool
     relion_exact_bpref_operands: bool
