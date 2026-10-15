@@ -88,12 +88,13 @@ class OptionsFactory:
         return ScoringVariants(**{**defaults, **fields})
 
     def options(self, **groups) -> RefinementOptions:
-        """``RefinementOptions`` with every preset group the caller did not pass built from the preset and
-        the unset environment's scoring variants (:meth:`variants`)."""
+        """``RefinementOptions`` with every preset group the caller did not pass built from the preset, the
+        unset environment's scoring variants (:meth:`variants`) and the process's dense precision."""
         for group in self.preset:
             if group not in groups:
                 groups[group] = getattr(self, group)()
         groups.setdefault("variants", self.variants())
+        groups.setdefault("precision", scoring_policy.DENSE_PRECISION)
         return RefinementOptions(**groups)
 
 

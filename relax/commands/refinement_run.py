@@ -1274,6 +1274,7 @@ def main(command=None):
         final_pass=refinement_options.FinalPassOptions.from_environ(),
         environment=refinement_options.RefinementEnvironment.from_environ(),
         variants=refinement_options.ScoringVariants.from_environ(),
+        precision=scoring_policy.DENSE_PRECISION,
         adaptive=adaptive_options,
         optics_geometry=OpticsGeometry(
             relion_optics_image_sizes=half_sets.optics_image_sizes,

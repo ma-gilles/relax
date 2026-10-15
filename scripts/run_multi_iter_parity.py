@@ -1470,6 +1470,7 @@ def main():
         read_relion_sampling_metadata,
         read_relion_sampling_symmetry,
     )
+    from relax.steps import scoring_policy
     from relax.steps.optics_shapes import MultiShapeDataset, optics_shape_class_rows
 
     def _rotation_matrices_from_eulers_deg(eulers_deg):
@@ -2452,6 +2453,7 @@ def main():
         final_pass=FinalPassOptions.from_environ(),
         environment=RefinementEnvironment.from_environ(),
         variants=ScoringVariants.from_environ(),
+        precision=scoring_policy.DENSE_PRECISION,
         adaptive=AdaptiveOptions(
             adaptive_oversampling=oversampling, max_significants=max_significants,
             coarse_engine=args.coarse_engine,

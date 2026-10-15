@@ -869,8 +869,9 @@ class RefinementOptions:
     environment: RefinementEnvironment = field(default_factory=RefinementEnvironment)
     solvent: SolventOptions = field(default_factory=SolventOptions)
     expected_accuracy: ExpectedAccuracyOptions = field(default_factory=ExpectedAccuracyOptions)
-    # The dense scoring precision, taken when the options are built (code rule 5); see _process_dense_precision.
-    precision: DensePrecisionPolicy = field(default_factory=lambda: _process_dense_precision())
+    # The dense scoring precision: the command passes the process's (_process_dense_precision), which the
+    # scoring engines read; refine_single_volume refuses another (require_process_precision).
+    precision: DensePrecisionPolicy
     # The command reads it from the environment (ScoringVariants.from_environ); nothing below reads it again. No
     # default: K=1's x-half M-step default depends on the device, so no plain record equals the unset environment.
     variants: ScoringVariants
