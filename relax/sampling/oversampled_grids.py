@@ -1,11 +1,13 @@
 """RELION's oversampled and local orientation grids.
 
 The fine children of coarse rotation and translation samples in RELION's enumeration order (HEALPix NEST
-children scanned as RELION's ``HealPixOver``; ``_OVERSAMPLED_GRID_MEMO`` keeps the most recent full grid), and
-the local angular search grid around prior orientations (:func:`get_local_rotation_grid_fast`).
+children scanned as RELION's ``HealPixOver``; ``_OVERSAMPLED_GRID_MEMO`` keeps the most recent full grid and
+``_PARENT_ROWS_MEMO`` the most recent parents' child rows), and the local angular search grid around prior
+orientations (:func:`get_local_rotation_grid_fast`).
 """
 
 import functools
+import threading
 
 import healpy as hp
 import numpy as np
@@ -58,6 +60,15 @@ def _relion_nested_child_offsets(oversampling_order: int) -> np.ndarray:
 
 
 _OVERSAMPLED_GRID_MEMO: dict = {}
+
+# Child rows of the distinct parents computed so far, per set of grid arguments (the arguments change with the
+# iteration's perturbation): the exact-local passes of one iteration (two halves, one call per optics group, the
+# parent layout's order-0 rows and pass 2's children) ask for overlapping parents of the same few grids. The most
+# recently used argument sets are kept, capped in child rows (about 100 bytes each) over all of them.
+_PARENT_ROWS_MEMO: dict = {}
+_PARENT_ROWS_MEMO_LOCK = threading.Lock()
+_PARENT_ROWS_MEMO_MAX_KEYS = 4
+_PARENT_ROWS_MEMO_MAX_ROWS = 8_000_000
 
 
 def unique_nonnegative_ids(ids: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -155,22 +166,91 @@ def _compute_oversampled_rotation_grid(
     every image, 13M rows over a 2.4M-sample grid on the full EMPIAR-10097
     dataset) expands its distinct parents and gathers their rows; the returned
     rows are the same rows, and ``parent_map`` still indexes the given list.
+    The distinct parents' rows also come from, and go to, ``_PARENT_ROWS_MEMO``:
+    the exact-local calls of one iteration share most of their parents.
     """
 
     parents = np.asarray(parent_rotation_indices, dtype=np.int64).reshape(-1)
     if parents.size < 1024 or int(parents.min()) < 0:
         return _compute_oversampled_rotation_grid_rows(parents, parent_nside_level, oversampling_order, **kwargs)
     distinct, inverse = unique_nonnegative_ids(parents)
-    if 2 * distinct.size > parents.size:
-        return _compute_oversampled_rotation_grid_rows(parents, parent_nside_level, oversampling_order, **kwargs)
-    outputs = _compute_oversampled_rotation_grid_rows(distinct, parent_nside_level, oversampling_order, **kwargs)
     per_parent = 8 ** int(oversampling_order)
-    rows = (inverse.reshape(-1)[:, None] * per_parent + np.arange(per_parent, dtype=np.int64)[None, :]).reshape(-1)
+    outputs, positions = _memoized_parent_rows(distinct, parent_nside_level, oversampling_order, per_parent, kwargs)
+    if outputs is None:
+        if 2 * distinct.size > parents.size:
+            return _compute_oversampled_rotation_grid_rows(parents, parent_nside_level, oversampling_order, **kwargs)
+        outputs = _compute_oversampled_rotation_grid_rows(distinct, parent_nside_level, oversampling_order, **kwargs)
+        positions = np.arange(distinct.size, dtype=np.int64)
+    blocks = positions[inverse.reshape(-1)]
+    rows = (blocks[:, None] * per_parent + np.arange(per_parent, dtype=np.int64)[None, :]).reshape(-1)
     parent_map = np.repeat(np.arange(parents.size, dtype=np.int64), per_parent)
     return tuple(
         parent_map if position == 1 else (None if value is None else value[rows])
         for position, value in enumerate(outputs)
     )
+
+
+def _memo_rows() -> int:
+    """Child rows held by ``_PARENT_ROWS_MEMO`` over all argument sets."""
+
+    return sum(0 if outputs is None else int(outputs[0].shape[0]) for _, outputs in _PARENT_ROWS_MEMO.values())
+
+
+def _memoized_parent_rows(distinct, parent_nside_level, oversampling_order, per_parent, kwargs):
+    """The child rows of every parent in ``distinct`` from ``_PARENT_ROWS_MEMO``, computing the missing ones.
+
+    Returns ``(outputs, positions)``: parent-major row arrays of the memo (``parent_map`` excluded) and each
+    distinct parent's block in them, or ``(None, None)`` when the parents would exceed the memo's cap. The rows
+    are those :func:`_compute_oversampled_rotation_grid_rows` returns for the parent alone, so a parent's rows do
+    not depend on which call computed them.
+    """
+
+    key = (
+        int(parent_nside_level),
+        int(oversampling_order),
+        float(kwargs.get("random_perturbation", 0.0)),
+        bool(kwargs.get("return_rotation_indices", False)),
+        bool(kwargs.get("return_mstep_rotations", False)),
+        bool(kwargs.get("return_source_eulers", False)),
+        str(kwargs.get("rotation_index_order", "recovar")),
+        np.dtype(kwargs.get("dtype", np.float32)).str,
+        canonicalize_rotational_symmetry(kwargs.get("symmetry", "C1")),
+    )
+    with _PARENT_ROWS_MEMO_LOCK:
+        entry = _PARENT_ROWS_MEMO.pop(key, None)
+        if entry is None:
+            entry = (np.zeros(0, dtype=np.int64), None)
+        ids, outputs = entry
+        _PARENT_ROWS_MEMO[key] = entry  # most recently used last
+        found = np.zeros(distinct.size, dtype=bool)
+        if ids.size:
+            at = np.minimum(np.searchsorted(ids, distinct), ids.size - 1)
+            found = ids[at] == distinct
+        missing = distinct[~found]
+        if (ids.size + missing.size) * per_parent > _PARENT_ROWS_MEMO_MAX_ROWS:
+            return None, None
+        while len(_PARENT_ROWS_MEMO) > _PARENT_ROWS_MEMO_MAX_KEYS or (
+            len(_PARENT_ROWS_MEMO) > 1
+            and _memo_rows() + missing.size * per_parent > _PARENT_ROWS_MEMO_MAX_ROWS
+        ):
+            _PARENT_ROWS_MEMO.pop(next(iter(_PARENT_ROWS_MEMO)))
+        if missing.size:
+            new = _compute_oversampled_rotation_grid_rows(missing, parent_nside_level, oversampling_order, **kwargs)
+            new = tuple(value for position, value in enumerate(new) if position != 1)
+            if outputs is None:
+                ids, outputs = missing, new
+            else:
+                merged = np.concatenate([ids, missing])
+                order = np.argsort(merged, kind="stable")
+                block_order = (order[:, None] * per_parent + np.arange(per_parent, dtype=np.int64)[None, :]).reshape(-1)
+                outputs = tuple(
+                    None if old is None else np.concatenate([old, add])[block_order] for old, add in zip(outputs, new)
+                )
+                ids = merged[order]
+            _PARENT_ROWS_MEMO[key] = (ids, outputs)
+        positions = np.searchsorted(ids, distinct)
+    # parent_map (position 1) is rebuilt by the caller; keep the result tuple's layout.
+    return (outputs[0], None, *outputs[1:]), positions
 
 
 def _compute_oversampled_rotation_grid_rows(

@@ -1028,6 +1028,34 @@ class TestOversampledGridGeneration:
         for p_idx in range(len(parent_rotations)):
             assert np.sum(parent_map == p_idx) == 8
 
+    def test_parent_rows_memo_returns_the_rows_of_a_direct_computation(self, monkeypatch):
+        """Overlapping calls served from ``_PARENT_ROWS_MEMO`` give every output as computed alone."""
+        from relax.sampling import oversampled_grids as og
+
+        rng = np.random.default_rng(3)
+        kwargs = dict(
+            random_perturbation=0.41,
+            return_rotation_indices=True,
+            return_mstep_rotations=True,
+            return_source_eulers=True,
+            dtype=np.float32,
+        )
+        n_grid = og.grids.rotation_grid_size(2, "C1")
+        first = rng.integers(0, n_grid // 2, size=3000)
+        second = rng.integers(n_grid // 4, n_grid, size=5000)  # overlaps the first call's parents
+        calls = [(first, 1), (second, 0), (second, 1), (first, 0), (first, 1)]  # two argument sets interleaved
+        og._PARENT_ROWS_MEMO.clear()
+        memo = [og._compute_oversampled_rotation_grid(ids, 2, order, **kwargs) for ids, order in calls]
+        assert len(og._PARENT_ROWS_MEMO) == 2
+        monkeypatch.setattr(og, "_PARENT_ROWS_MEMO_MAX_ROWS", 0)  # memo off: each call computes its own rows
+        for (ids, order), got in zip(calls, memo):
+            alone = og._compute_oversampled_rotation_grid_rows(ids, 2, order, **kwargs)
+            assert len(got) == len(alone) == 5
+            for value, reference in zip(got, alone):
+                assert value.dtype == reference.dtype
+                assert_matches(value, reference)
+        og._PARENT_ROWS_MEMO.clear()
+
     def test_oversampled_translation_grid_size(self):
         """get_oversampled_translation_grid should produce 4x translations."""
         from relax.sampling.oversampled_grids import get_oversampled_translation_grid
