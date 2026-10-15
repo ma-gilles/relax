@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 
 from relax.fourier.fourier_window import stable_fourier_window_current_size
+from relax.runtime.engine_tuning import DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM
 from scripts.prove_vdam_projector_capacity import (
     GF46_IMAGE_SIZE,
     GF46_LOGICAL_CURRENT_SIZES,
@@ -47,7 +48,11 @@ def test_gf46_fixture_tracks_every_observed_logical_to_physical_pair():
     pairs = gf46_logical_physical_pairs()
 
     assert tuple(logical for logical, _physical in pairs) == GF46_LOGICAL_CURRENT_SIZES
-    assert all(physical == stable_fourier_window_current_size(logical, GF46_IMAGE_SIZE) for logical, physical in pairs)
+    assert all(
+        physical
+        == stable_fourier_window_current_size(logical, GF46_IMAGE_SIZE, quantum=DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM)
+        for logical, physical in pairs
+    )
     assert len(pairs) == 32
     assert len({physical for _logical, physical in pairs}) == 14
 

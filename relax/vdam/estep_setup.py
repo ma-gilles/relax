@@ -36,7 +36,7 @@ from relax.vdam.estep_common import (
     InitialModelEstepResult,
     MultiShapeTranslations,
 )
-from relax.vdam.native_options import NativeInitialModelOptions
+from relax.vdam.native_options import NativeInitialModelOptions, VdamEnvironment
 from relax.vdam.native_sampling import NativeSamplingPlan
 from relax.vdam.state import InitialModelState
 
@@ -56,9 +56,10 @@ class RelionProjectorInputs:
 
 @dataclass
 class IterationProjectorContext:
-    """One refresh-to-E-step handoff; never a cache across iterations. ``projector_dump_dir``: VdamEnvironment's."""
+    """One refresh-to-E-step handoff; never a cache across iterations. ``environment``: the run's; the refresh reads
+    its ``projector_dump_dir`` and ``engine.stable_window_quantum``."""
 
-    projector_dump_dir: str | None
+    environment: VdamEnvironment
     prepared: RelionProjectorInputs | None = None
     reference: np.ndarray | None = None
     geometry: tuple | None = None
@@ -67,7 +68,10 @@ class IterationProjectorContext:
         # Clear even if construction fails, so stale data cannot survive a retry.
         self.prepared = self.reference = self.geometry = None
         inputs, power = prepare_relion_projector_class_inputs_and_power(
-            state, padding_factor=padding_factor, projector_dump_dir=self.projector_dump_dir
+            state,
+            padding_factor=padding_factor,
+            projector_dump_dir=self.environment.projector_dump_dir,
+            stable_window_quantum=self.environment.engine.stable_window_quantum,
         )
         self.prepared = inputs
         self.reference = state.Iref
@@ -290,13 +294,16 @@ def prepare_relion_projector_class_inputs_and_power(
     *,
     padding_factor: int,
     projector_dump_dir: str | None,
+    stable_window_quantum: int,
 ) -> tuple[RelionProjectorInputs, np.ndarray]:
     """Produce scoring operands and tau2 from the identical corrected FFT (RELION's linear interpolator); dump
-    the projector to ``projector_dump_dir`` (``VdamEnvironment.projector_dump_dir``) unless it is None."""
+    the projector to ``projector_dump_dir`` (``VdamEnvironment.projector_dump_dir``) unless it is None.
+    ``stable_window_quantum``: ``EngineTuning.stable_window_quantum``."""
     half_maps, power, r_max = projector_setup.reference_to_relion_projector_half_maps_and_power(
         state.Iref,
         current_size=state.effective_current_size,
         padding_factor=padding_factor,
+        stable_window_quantum=stable_window_quantum,
     )
     return _finish_relion_projector_class_inputs(state, padding_factor, half_maps, r_max, projector_dump_dir), power
 

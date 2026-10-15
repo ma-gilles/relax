@@ -8,6 +8,7 @@ import pytest
 from helpers.float_compare import assert_matches
 from helpers.vdam import initial_model_state_stub
 
+from relax.runtime.engine_tuning import DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM
 from relax.vdam import m_step
 from relax.vdam.state import half_slot_index
 
@@ -64,6 +65,7 @@ def _call(state, k, transaction, monkeypatch):
         min_resol_shell=1.0,
         mstep_compute_dtype="float64",
         average_ctf2=None,
+        stable_window_quantum=DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM,
     )
 
 

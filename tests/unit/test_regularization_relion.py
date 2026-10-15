@@ -5,6 +5,8 @@ import pytest
 from helpers.float_compare import assert_matches
 from helpers.reconstruction_settings import reconstruction_settings
 
+from relax.runtime.engine_tuning import DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM
+
 pytest.importorskip("jax")
 import jax.numpy as jnp  # noqa: E402
 import recovar.core.fourier_transform_utils as fourier_transform_utils
@@ -611,6 +613,7 @@ def test_compute_relion_tau2_from_iref_power_spectrum_matches_relion_binding_sca
         padding_factor=2,
         current_size=56,
         return_details=True,
+        stable_window_quantum=DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM,
     )
 
     expected_tau2 = []
@@ -664,6 +667,7 @@ def test_tau2_from_the_scoring_projector_spectrum_matches_the_relion_transform()
             padding_factor=2,
             n_classes=1,
             files=ProjectorFiles(),
+            stable_window_quantum=DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM,
         )
         _, relion_power, *_ = bind.compute_fourier_transform_map(
             recovar_volume_to_relion(np.asarray(vol_real, dtype=np.float64)),
@@ -679,9 +683,15 @@ def test_tau2_from_the_scoring_projector_spectrum_matches_the_relion_transform()
             current_size=current_size,
             return_details=True,
             projector_power_spectrum=np.asarray(relion_power) * float(n) ** 2,
+            stable_window_quantum=DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM,
         )
         rebuilt = regularization_relion.compute_relion_tau2_from_iref_power_spectrum(
-            ft_recovar, vol_recovar.shape, padding_factor=2, current_size=current_size, return_details=True
+            ft_recovar,
+            vol_recovar.shape,
+            padding_factor=2,
+            current_size=current_size,
+            return_details=True,
+            stable_window_quantum=DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM,
         )
         reused = regularization_relion.compute_relion_tau2_from_iref_power_spectrum(
             None,
@@ -690,6 +700,7 @@ def test_tau2_from_the_scoring_projector_spectrum_matches_the_relion_transform()
             current_size=current_size,
             return_details=True,
             projector_power_spectrum=projector.power_spectrum[0],
+            stable_window_quantum=DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM,
         )
         for candidate in (reused, rebuilt):
             assert_matches(np.asarray(candidate[0]), np.asarray(oracle[0]))

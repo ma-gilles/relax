@@ -20,6 +20,7 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
+from relax.runtime.engine_tuning import DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM
 from relax.vdam.bootstrap_iref import initialise_denovo_state
 from relax.vdam.state import VdamAccumulator
 from scripts.vdam_native_mstep import vdam_m_step_single_class_native
@@ -90,6 +91,7 @@ def test_k1_pseudo_halfsets_uses_primary_weight(_bind_module, monkeypatch):
         accum_h1=a1,
         grad_current_stepsize=0.5,
         tau2_fudge_factor=1.0,
+        stable_window_quantum=DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM,
     )
 
     assert rec.call_count == 1
@@ -114,6 +116,7 @@ def test_k1_no_halfsets_uses_h0_weight(_bind_module, monkeypatch):
         accum_h1=None,
         grad_current_stepsize=0.5,
         tau2_fudge_factor=1.0,
+        stable_window_quantum=DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM,
     )
 
     assert rec.call_count == 1
@@ -139,6 +142,7 @@ def test_k_class_pseudo_halfsets_uses_h0_weight(_bind_module, monkeypatch, K):
         accum_h1=a1,
         grad_current_stepsize=0.5,
         tau2_fudge_factor=1.0,
+        stable_window_quantum=DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM,
     )
 
     assert rec.call_count == 1

@@ -39,6 +39,13 @@ DEFAULT_PREFETCH_BATCHES = 2
 DEFAULT_FIRSTITER_CC_RECON_COMPLEX_BUDGET = 268_435_456
 DEFAULT_EM_BATCH_PROJECTION_FRACTION = 0.20
 DEFAULT_COARSE_GEMM_TRANSIENT_MAX_BYTES = int(2.0 * 1024**3)
+# The stable Fourier windows' class step of Class3D and auto-refine (EngineTuning.stable_window_quantum).
+DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM = 8
+# VDAM's stable Fourier-window class step (VdamEnvironment.engine; Class3D and auto-refine keep 8). A
+# new class recompiles the resident pass programs (~5 s each); padding costs VDAM's small subsets almost nothing
+# (10k/256 late E-step 1.40 s at class 144, 1.41 s at 120). 24 visits 4 classes instead of 11: the 200-iteration
+# wall 439 -> 384 s (10k/256, same node, job 14867921), 577 -> 562 s on EMPIAR-10076 10k (14876259).
+VDAM_STABLE_FOURIER_WINDOW_QUANTUM = 24
 DEFAULT_LOCAL_SELECTOR_MAX_ELEMENTS = 16_000_000
 DEFAULT_BPREF_SYMMETRY_CHUNK_VOXELS = 16 * 1024 * 1024
 # One local resident projector call's transient: the 4 GiB the exact local engine budgeted for its fused projection
@@ -136,8 +143,9 @@ class EngineTuning:
     RELAX_LOCAL_SELECTOR_MAX_ELEMENTS; :func:`read_local_selector_chunking`): images per chunk of the local
     search's orientation selector, given, or sized so a chunk holds at most that many elements.
     ``stable_window_quantum`` (RELAX_RELION_VDAM_STABLE_FOURIER_WINDOW_QUANTUM, :func:`parse_stable_window_quantum`):
-    the stable Fourier windows' physical-size quantum for every refinement and VDAM run, None for the command's own
-    (capacity only; the logical windows are unchanged).
+    the stable Fourier windows' physical-size quantum of the run, for every refinement and VDAM run; unset, the
+    command's own (``from_environ``'s argument: :data:`DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM`, VDAM's
+    :data:`VDAM_STABLE_FOURIER_WINDOW_QUANTUM`). Capacity only; the logical windows are unchanged.
     ``chunk_timing`` (RELAX_SPARSE_PASS2_RESIDENT_CHUNK_TIMING, ``env_flags.parse_env_flag``, default off): log each
     resident chunk's occupancy, block count and synchronised wall (the global chunk loop then runs unpipelined).
     ``stable_windows`` (RELAX_SPARSE_PASS2_RESIDENT_STABLE_WINDOWS, ``env_flags.parse_env_flag``, default on): the
@@ -202,7 +210,7 @@ class EngineTuning:
     coarse_gemm_projection_cache: bool | None = None
     local_selector_chunk_size: int | None = None
     local_selector_max_elements: int = DEFAULT_LOCAL_SELECTOR_MAX_ELEMENTS
-    stable_window_quantum: int | None = None
+    stable_window_quantum: int = DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM
     chunk_timing: bool = False
     stable_windows: bool = True
     local_chunk_profile: bool = False
@@ -220,7 +228,9 @@ class EngineTuning:
     projection_max_bytes: int | None = None
 
     @classmethod
-    def from_environ(cls) -> EngineTuning:
+    def from_environ(cls, *, stable_window_quantum: int = DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM) -> EngineTuning:
+        """The record of this environment; ``stable_window_quantum`` is the command's own quantum, which
+        RELAX_RELION_VDAM_STABLE_FOURIER_WINDOW_QUANTUM overrides."""
         return cls(
             compile_ahead=parse_compile_ahead_config(
                 read_env_text(COMPILE_AHEAD_ENV, ""), read_env_text(COMPILE_AHEAD_MAX_ENV, ""),
@@ -275,7 +285,10 @@ class EngineTuning:
                 COARSE_GEMM_PROJECTION_CACHE_ENV, read_env_text(COARSE_GEMM_PROJECTION_CACHE_ENV),
             ),
             **dict(zip(("local_selector_chunk_size", "local_selector_max_elements"), read_local_selector_chunking())),
-            stable_window_quantum=parse_stable_window_quantum(read_env_text(STABLE_FOURIER_WINDOW_QUANTUM_ENV, "")),
+            stable_window_quantum=(
+                parse_stable_window_quantum(read_env_text(STABLE_FOURIER_WINDOW_QUANTUM_ENV, ""))
+                or stable_window_quantum
+            ),
             chunk_timing=parse_env_flag("RELAX_SPARSE_PASS2_RESIDENT_CHUNK_TIMING", default=False),
             stable_windows=parse_env_flag("RELAX_SPARSE_PASS2_RESIDENT_STABLE_WINDOWS", default=True),
             local_chunk_profile=parse_env_flag("RELAX_LOCAL_SEARCH_RESIDENT_CHUNK_PROFILE", default=False),

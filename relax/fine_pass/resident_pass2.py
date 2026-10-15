@@ -1241,6 +1241,7 @@ def _resident_pass2(
         window_spec_kwargs=window_spec_kwargs,
         firstiter_cc=firstiter_cc,
         requested=engine_tuning.stable_windows,
+        quantum=engine_tuning.stable_window_quantum,
     )
     stable_window_spec = None
     # The spec's current size: the physical class with stable windows, RELION's otherwise.
@@ -1424,7 +1425,9 @@ def _resident_pass2(
         program_volume_current_size = (
             int(stable_window_plan.physical_reconstruction_current_size)
             if reconstruction_volume_current_size is None
-            else resident_stable_windows.stable_reference_volume_class(int(volume_shape[0]), int(volume_current_size))
+            else resident_stable_windows.stable_reference_volume_class(
+                int(volume_shape[0]), int(volume_current_size), quantum=engine_tuning.stable_window_quantum
+            )
         )
         program_recon_volume_shape = tuple(
             int(v)

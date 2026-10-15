@@ -63,6 +63,7 @@ from relax.relion.initial_noise import (
     read_relion_single_optics_sigma2_noise,
     relion_mpi_process_start_scoring_noise_pair,
 )
+from relax.runtime.engine_tuning import DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM
 from relax.sampling.orientation_priors import DirectionPrior
 from relax.star.input_particle_table import prepare_relion_halfset_layout
 from relax.star.input_poses import _load_init_previous_best_poses_npz
@@ -1006,6 +1007,7 @@ def test_numbered_projectors_skip_the_empty_diagnostic_half(monkeypatch, caplog)
             halves, [object(), object()], settings, current_size=4, n_classes=1, reusable_half1=None,
             real_references_by_half=None, iteration=0, log=log,
             files=projector_preparation.ProjectorFiles(),
+            stable_window_quantum=DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM,
         )
     assert built == ["iter000_half0"] and projectors[0] is not None and projectors[1] is None
     assert "RELION mode: skipping Projector::data build for empty half-2 dataset" in caplog.messages

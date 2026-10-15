@@ -25,6 +25,7 @@ from relax.refinement.refinement_options import (
     RelionConsistencyOptions,
 )
 from relax.relion import projector_setup as setup
+from relax.runtime.engine_tuning import DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM
 from relax.steps import expected_accuracy, projector_preparation
 from relax.steps.projector_preparation import ProjectorFiles
 
@@ -63,7 +64,12 @@ def test_projector_setup_divides_by_the_selected_window(kernel, n, r_max):
     """Full and cropped radius, two box sizes: the slab is the transform of reference / window."""
     reference = _reference(n)
     slab, power = setup.setup_relion_projector_on_host(
-        reference, r_max, box_size=n, padding_factor=PF, gridding_kernel=kernel
+        reference,
+        r_max,
+        box_size=n,
+        padding_factor=PF,
+        gridding_kernel=kernel,
+        stable_window_quantum=DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM,
     )
     corrected = jnp.asarray(reference / WINDOWS[kernel](n))
     expected_slab, expected_power = setup._build_projector_window(
@@ -75,10 +81,24 @@ def test_projector_setup_divides_by_the_selected_window(kernel, n, r_max):
 
 def test_projector_setup_default_is_relions_radial_window():
     reference = _reference(8)
-    default = setup.setup_relion_projector_on_host(reference, 3, box_size=8, padding_factor=PF)
-    radial = setup.setup_relion_projector_on_host(reference, 3, box_size=8, padding_factor=PF, gridding_kernel="radial")
+    default = setup.setup_relion_projector_on_host(
+        reference, 3, box_size=8, padding_factor=PF, stable_window_quantum=DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM
+    )
+    radial = setup.setup_relion_projector_on_host(
+        reference,
+        3,
+        box_size=8,
+        padding_factor=PF,
+        gridding_kernel="radial",
+        stable_window_quantum=DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM,
+    )
     separable = setup.setup_relion_projector_on_host(
-        reference, 3, box_size=8, padding_factor=PF, gridding_kernel="separable"
+        reference,
+        3,
+        box_size=8,
+        padding_factor=PF,
+        gridding_kernel="separable",
+        stable_window_quantum=DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM,
     )
     assert_matches(default[0], radial[0])
     assert_matches(default[1], radial[1])
@@ -95,7 +115,14 @@ def test_separable_window_is_larger_off_axis_and_equal_on_axis():
 
 def test_projector_setup_rejects_an_unknown_kernel():
     with pytest.raises(ValueError, match="gridding_kernel"):
-        setup.setup_relion_projector_on_host(_reference(8), 3, box_size=8, padding_factor=PF, gridding_kernel="x")
+        setup.setup_relion_projector_on_host(
+            _reference(8),
+            3,
+            box_size=8,
+            padding_factor=PF,
+            gridding_kernel="x",
+            stable_window_quantum=DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM,
+        )
 
 
 def _scoring_projector(reference_real, r_max=3, files=projector_preparation.ProjectorFiles(), **kwargs):
@@ -105,7 +132,7 @@ def _scoring_projector(reference_real, r_max=3, files=projector_preparation.Proj
     reference_ft = np.asarray(ftu.get_dft3(jnp.asarray(reference_real))).reshape(-1)
     return projector_preparation.prepare_scoring_projector(
         reference_ft, volume_shape=(n, n, n), current_size=2 * r_max, padding_factor=PF, n_classes=1, **kwargs,
-        files=files,
+        files=files, stable_window_quantum=DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM,
     )
 
 
@@ -159,7 +186,7 @@ def test_a_half_without_its_projector_slab_refuses_separable():
 @pytest.mark.parametrize("kernel", ["radial", "separable"])
 def test_expected_accuracy_projector_uses_the_selected_window(kernel):
     references = _reference(8)[None]
-    built = expected_accuracy._projector_data(references, 6, PF, kernel)
+    built = expected_accuracy._projector_data(references, 6, PF, kernel, DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM)
     expected, _ = setup._build_projector_window(
         jnp.asarray(references[0] / WINDOWS[kernel](8)), 3, 8, PF, 3, chunk_bytes=None, to_host=True, output_radius=3
     )
@@ -183,6 +210,7 @@ def test_expected_accuracy_inputs_hand_the_estimator_the_kernel(monkeypatch, ker
         gridding_kernel=kernel,
         projector_files=ProjectorFiles(),
         device_memory_override=None,
+        stable_window_quantum=DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM,
     )
     inputs.estimate(
         reference_fourier="ref",
@@ -214,6 +242,7 @@ def test_expected_accuracy_refuses_separable_for_subtomograms():
             random_seed=0,
             gridding_kernel="separable",
             device_memory_override=None,
+            stable_window_quantum=DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM,
         )
 
 

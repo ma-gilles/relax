@@ -13,6 +13,7 @@ from recovar.reconstruction.noise import make_radial_noise
 from relax.commands.initial_model import _native_options_dict, make_parser
 from relax.fourier.half_spectrum import _host_half_spectrum_plan
 from relax.relion.projector_setup import setup_relion_projector, swap_relion_volume_layout
+from relax.runtime.engine_tuning import DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM
 from relax.sampling import grids as sampling_grids
 from relax.steps.sgd_schedule import DEFAULT_GRAD_MU
 from relax.vdam.bootstrap_iref import initialise_denovo_state
@@ -384,7 +385,12 @@ def test_cli_and_both_optimizers_keep_same_coarse_grid_and_terminal_subset(monke
             post_mstep_update=lambda state, iteration, meta: replace(state, has_converged=True),
             projector_refresh_fn=keep_tau2,
             update=(
-                VdamUpdate(padding_factor=1, mstep_compute_dtype="float32", probe=NoProbe())
+                VdamUpdate(
+                    padding_factor=1,
+                    mstep_compute_dtype="float32",
+                    probe=NoProbe(),
+                    stable_window_quantum=DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM,
+                )
                 if optimizer == "vdam"
                 else MomentumSgdUpdate(learning_rate=1.0, padding_factor=1)
             ),

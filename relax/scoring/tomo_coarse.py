@@ -77,7 +77,7 @@ def coarse_score_layout(
         else np.asarray(window.score_indices_np, dtype=np.int32)
     )
     layout = plan_coarse_gaussian_square_layout(
-        image_shape, int(current_size), active, stable_fourier_window_shapes=False
+        image_shape, int(current_size), active, stable_fourier_window_shapes=False, stable_window_quantum=None
     )
     return CoarseScoreLayout(
         image_shape=image_shape,

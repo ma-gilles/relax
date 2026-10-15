@@ -18,6 +18,7 @@ from relax.fourier.fourier_window import (
 )
 from relax.projection.projection import _texture_centered_crop_at_indices
 from relax.reconstruction.half_volume_mstep import crop_relion_x_half_accumulator
+from relax.runtime.engine_tuning import DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM
 from relax.scoring.coarse_layout import coarse_gaussian_fused_logical_lookup, plan_coarse_gaussian_square_layout
 
 pytestmark = pytest.mark.unit
@@ -112,14 +113,14 @@ def _relion_lane_tree_sum(storage, logical_count):
 
 
 def test_stable_window_size_uses_eight_pixel_classes_and_isolates_full_box():
-    assert stable_fourier_window_current_size(30, 128) == 32
-    assert stable_fourier_window_current_size(34, 128) == 40
-    assert stable_fourier_window_current_size(56, 128) == 56
-    assert stable_fourier_window_current_size(70, 128) == 72
-    assert stable_fourier_window_current_size(84, 128) == 88
-    assert stable_fourier_window_current_size(122, 128) == 126
-    assert stable_fourier_window_current_size(126, 128) == 126
-    assert stable_fourier_window_current_size(128, 128) == 128
+    assert stable_fourier_window_current_size(30, 128, quantum=DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM) == 32
+    assert stable_fourier_window_current_size(34, 128, quantum=DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM) == 40
+    assert stable_fourier_window_current_size(56, 128, quantum=DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM) == 56
+    assert stable_fourier_window_current_size(70, 128, quantum=DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM) == 72
+    assert stable_fourier_window_current_size(84, 128, quantum=DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM) == 88
+    assert stable_fourier_window_current_size(122, 128, quantum=DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM) == 126
+    assert stable_fourier_window_current_size(126, 128, quantum=DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM) == 126
+    assert stable_fourier_window_current_size(128, 128, quantum=DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM) == 128
 
 
 @pytest.mark.parametrize(
@@ -131,30 +132,19 @@ def test_stable_window_size_rejects_invalid_shapes(current_size, image_size, qua
         stable_fourier_window_current_size(current_size, image_size, quantum=quantum)
 
 
-@pytest.fixture
-def stable_quantum_32():
-    """The run's quantum 32, as a command enters it from RELAX_RELION_VDAM_STABLE_FOURIER_WINDOW_QUANTUM=32."""
-    from relax.fourier.fourier_window import stable_fourier_window_quantum_scope
-
-    with stable_fourier_window_quantum_scope(32):
-        yield
+# The run's quantum 32, as a command resolves it from RELAX_RELION_VDAM_STABLE_FOURIER_WINDOW_QUANTUM=32
+# (EngineTuning.stable_window_quantum) and passes it to the coarse layout.
+_RUN_QUANTUM = 32
 
 
 def test_stable_window_runtime_quantum_is_diagnostic_and_fail_closed(monkeypatch):
-    from relax.fourier.fourier_window import (
-        DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM,
-        stable_fourier_window_quantum,
-        stable_fourier_window_quantum_scope,
-    )
     from relax.runtime.engine_tuning import STABLE_FOURIER_WINDOW_QUANTUM_ENV, EngineTuning
 
     monkeypatch.delenv(STABLE_FOURIER_WINDOW_QUANTUM_ENV, raising=False)
-    assert stable_fourier_window_quantum() == DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM == 8
+    assert EngineTuning.from_environ().stable_window_quantum == DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM == 8
 
     monkeypatch.setenv(STABLE_FOURIER_WINDOW_QUANTUM_ENV, "16")
     assert EngineTuning.from_environ().stable_window_quantum == 16
-    with stable_fourier_window_quantum_scope(16):
-        assert stable_fourier_window_quantum() == 16
 
     for invalid in ("0", "3", "nope"):
         monkeypatch.setenv(STABLE_FOURIER_WINDOW_QUANTUM_ENV, invalid)
@@ -168,11 +158,11 @@ def _active_coarse_score_indices(current_size: int) -> np.ndarray:
         current_size,
         _N_HALF,
         enabled=False,
+        quantum=DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM,
     )
     return np.asarray(plan.logical_spec.score_indices_np, dtype=np.int32)
 
 
-@pytest.mark.usefixtures("stable_quantum_32")
 def test_stable_coarse_square_preserves_logical_issue_prefix(monkeypatch):
     logical_size = 70
     layout = plan_coarse_gaussian_square_layout(
@@ -180,6 +170,7 @@ def test_stable_coarse_square_preserves_logical_issue_prefix(monkeypatch):
         logical_size,
         _active_coarse_score_indices(logical_size),
         stable_fourier_window_shapes=True,
+        stable_window_quantum=_RUN_QUANTUM,
     )
     logical_indices, logical_count = make_fourier_window_indices_np(
         _IMAGE_SHAPE,
@@ -235,7 +226,6 @@ def test_stable_coarse_square_preserves_logical_issue_prefix(monkeypatch):
     assert not np.any(layout.logical_projector_mask_np[logical_count:])
 
 
-@pytest.mark.usefixtures("stable_quantum_32")
 def test_fused_lookup_strips_q32_physical_tail_for_current_size_26(monkeypatch):
     """Regression for the live current_size=26, physical_size=32 fused failure."""
 
@@ -245,6 +235,7 @@ def test_fused_lookup_strips_q32_physical_tail_for_current_size_26(monkeypatch):
         logical_size,
         _active_coarse_score_indices(logical_size),
         stable_fourier_window_shapes=True,
+        stable_window_quantum=_RUN_QUANTUM,
     )
 
     assert layout.logical_square_count == 26 * 14
@@ -263,7 +254,6 @@ def test_fused_lookup_strips_q32_physical_tail_for_current_size_26(monkeypatch):
     )
 
 
-@pytest.mark.usefixtures("stable_quantum_32")
 def test_stable_coarse_projector_keeps_logical_disk_boundary(monkeypatch):
     """Physical size 96 must retain the logical size-86 projector disk."""
 
@@ -273,6 +263,7 @@ def test_stable_coarse_projector_keeps_logical_disk_boundary(monkeypatch):
         logical_size,
         _active_coarse_score_indices(logical_size),
         stable_fourier_window_shapes=True,
+        stable_window_quantum=_RUN_QUANTUM,
     )
     coords = np.rint(make_frequency_coords_half_np(_IMAGE_SHAPE)).astype(np.int64)
     compact_r2 = np.sum(coords[layout.score_indices_np] ** 2, axis=1)
@@ -346,7 +337,6 @@ def test_stable_coarse_projector_keeps_logical_disk_boundary(monkeypatch):
     assert_matches(default_route, np.complex64(1))
 
 
-@pytest.mark.usefixtures("stable_quantum_32")
 def test_stable_coarse_square_has_one_shape_across_q32_class(monkeypatch):
     layouts = [
         plan_coarse_gaussian_square_layout(
@@ -354,6 +344,7 @@ def test_stable_coarse_square_has_one_shape_across_q32_class(monkeypatch):
             current_size,
             _active_coarse_score_indices(current_size),
             stable_fourier_window_shapes=True,
+            stable_window_quantum=_RUN_QUANTUM,
         )
         for current_size in (70, 72, 76, 78, 84, 96)
     ]
@@ -364,7 +355,6 @@ def test_stable_coarse_square_has_one_shape_across_q32_class(monkeypatch):
     assert len({layout.logical_square_count for layout in layouts}) == 6
 
 
-@pytest.mark.usefixtures("stable_quantum_32")
 def test_disabled_coarse_square_layout_is_legacy_exact(monkeypatch):
     current_size = 70
     active = _active_coarse_score_indices(current_size)
@@ -373,6 +363,7 @@ def test_disabled_coarse_square_layout_is_legacy_exact(monkeypatch):
         current_size,
         active,
         stable_fourier_window_shapes=False,
+        stable_window_quantum=_RUN_QUANTUM,
     )
     legacy_indices, legacy_count = make_fourier_window_indices_np(
         _IMAGE_SHAPE,

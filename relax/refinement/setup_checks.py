@@ -271,6 +271,7 @@ def expected_accuracy_inputs_for_run(
         expected_accuracy=options.expected_accuracy,
         projector_files=options.environment.projector_files,
         device_memory_override=options.environment.engine.device_memory_bytes,
+        stable_window_quantum=options.environment.engine.stable_window_quantum,
         optics_group_ids=optics_group_ids,
         gridding_kernel=gridding_kernel,
     )

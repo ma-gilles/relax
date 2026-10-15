@@ -12,6 +12,7 @@ from relax.commands.refinement_arguments import parse_refinement_args, validate_
 from relax.reconstruction.resolution import ImageGeometry
 from relax.refinement import image_size_plans
 from relax.refinement.image_size_plans import ExpectationWindows, relion_strict_highres_image_size
+from relax.runtime.engine_tuning import DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM
 from relax.steps.projector_preparation import ProjectorFiles
 
 pytestmark = pytest.mark.unit
@@ -127,6 +128,7 @@ def test_capped_accuracy_projects_at_the_current_size(monkeypatch):
         expected_accuracy=SimpleNamespace(half1_particle_ids=None, half1_ctf_params=None, do_ctf_correction=True),
         projector_files=ProjectorFiles(),
         device_memory_override=None,
+        stable_window_quantum=DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM,
     )
     common = dict(reference_fourier=None, best_eulers_deg=None, class_ids=None, class_weights=None,
                   sigma2_noise_native=None)

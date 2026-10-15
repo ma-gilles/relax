@@ -7,6 +7,7 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
+from relax.runtime.engine_tuning import DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM
 from relax.vdam.relion_mstep import relion_vdam_m_step_device, relion_vdam_m_step_host
 
 pytestmark = pytest.mark.unit
@@ -106,7 +107,9 @@ def test_invalid_precision_rejected_before_native_or_device_work(dtype):
     host.pop("return_intermediates")
     host["fsc_ssnr"] = case["fsc_reconstruct"]
     with pytest.raises(ValueError, match="compute_dtype"):
-        relion_vdam_m_step_host(**host, compute_dtype=dtype)
+        relion_vdam_m_step_host(
+            **host, stable_window_quantum=DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM, compute_dtype=dtype
+        )
 
 
 @pytest.mark.parametrize("dtype", [np.float32, np.float64])
@@ -120,7 +123,9 @@ def test_small_fft_grid_is_refused(dtype):
     case.pop("return_intermediates")
     case["fsc_ssnr"] = case["fsc_reconstruct"]
     with pytest.raises(ValueError, match="FFT grid"):
-        relion_vdam_m_step_host(**case, compute_dtype=dtype)
+        relion_vdam_m_step_host(
+            **case, stable_window_quantum=DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM, compute_dtype=dtype
+        )
 
 
 def test_float32_fft_ir_has_no_double_payload():

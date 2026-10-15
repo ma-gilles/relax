@@ -6,6 +6,8 @@ from collections.abc import Callable
 
 import numpy as np
 
+from relax.runtime.engine_tuning import DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM
+
 
 def numpy_rnd_unif_factory(seed: int) -> Callable[[int], float]:
     """Deterministic NumPy-backed ``rnd_unif`` for tests (not bit-exact to RELION)."""
@@ -159,6 +161,7 @@ def projector_power_refresh(state, *, padding_factor):
         state.Iref,
         current_size=int(state.current_size if state.current_size > 0 else state.box_size),
         padding_factor=int(padding_factor),
+        stable_window_quantum=DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM,
     )
     return replace(state, tau2_class=np.asarray(power, dtype=np.float64))
 

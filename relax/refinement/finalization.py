@@ -419,6 +419,7 @@ def run_final_all_data(
             dump_label=f"final_half{half.index}",
             gridding_kernel=ctx.reconstruction_settings.gridding_kernel,
             files=options.environment.projector_files,
+            stable_window_quantum=options.environment.engine.stable_window_quantum,
         )
         logger.info(
             "RELION final all-data half-%d: built exact Projector::data for scoring at current_size=%d r_max=%s "
@@ -698,6 +699,7 @@ def run_final_all_data(
             current_size=final_current_size,
             accumulator_shape=final_mstep_accumulator_shape,
             full_half_axis=final_mstep_full_half_axis,
+            stable_window_quantum=options.environment.engine.stable_window_quantum,
         )
         final_data_vs_prior = final_class_priors.data_vs_prior
         logger.info(

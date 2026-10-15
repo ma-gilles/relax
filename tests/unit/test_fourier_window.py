@@ -18,6 +18,8 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches, matches
 
+from relax.runtime.engine_tuning import DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM
+
 pytest.importorskip("jax")
 import jax.numpy as jnp
 import recovar.core.fourier_transform_utils as ftu
@@ -967,10 +969,17 @@ def test_stable_window_plan_keeps_relions_window_at_box():
 
     n = 112
     n_half = n * (n // 2 + 1)
-    assert not make_stable_fourier_window_shape_plan((n, n), n, n_half).logical_spec.use_window
+    assert not make_stable_fourier_window_shape_plan(
+        (n, n), n, n_half, quantum=DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM
+    ).logical_spec.use_window
     for recon_exact_radius in (True, False):
         plan = make_stable_fourier_window_shape_plan(
-            (n, n), n, n_half, recon_exact_radius=recon_exact_radius, window_at_box=True
+            (n, n),
+            n,
+            n_half,
+            recon_exact_radius=recon_exact_radius,
+            window_at_box=True,
+            quantum=DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM,
         )
         spec = make_fourier_window_spec(
             (n, n), n, n_half, recon_exact_radius=recon_exact_radius, window_at_box=True

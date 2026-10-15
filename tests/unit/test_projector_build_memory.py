@@ -9,6 +9,7 @@ from helpers.float_compare import assert_matches
 
 from relax.relion import projector_setup as setup
 from relax.runtime import xla_memory_reserve
+from relax.runtime.engine_tuning import DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM
 
 pytestmark = pytest.mark.unit
 
@@ -31,13 +32,17 @@ def test_chunks_are_lowered_to_the_working_set(working_set_gib, chunk_gib):
 def test_xy_stage_on_the_host_gives_the_same_window(monkeypatch):
     reference = np.random.default_rng(65).normal(size=(16,) * 3).astype(np.float64)
     monkeypatch.setattr(setup, "single_working_set_bytes", lambda: None)
-    whole = setup.setup_relion_projector_on_host(reference, 6, box_size=16, padding_factor=2)
+    whole = setup.setup_relion_projector_on_host(
+        reference, 6, box_size=16, padding_factor=2, stable_window_quantum=DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM
+    )
     # A one-byte working set sends the xy stage to the host and makes every chunk one plane.
     monkeypatch.setattr(setup, "single_working_set_bytes", lambda: 1)
     calls = []
     real = setup._window_in_chunks
     monkeypatch.setattr(setup, "_window_in_chunks", lambda *a, **k: calls.append(k["xy_on_host"]) or real(*a, **k))
-    on_host = setup.setup_relion_projector_on_host(reference, 6, box_size=16, padding_factor=2)
+    on_host = setup.setup_relion_projector_on_host(
+        reference, 6, box_size=16, padding_factor=2, stable_window_quantum=DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM
+    )
     assert calls == [True]
     assert_matches(on_host[0], whole[0])
     assert_matches(on_host[1], whole[1])
@@ -46,11 +51,13 @@ def test_xy_stage_on_the_host_gives_the_same_window(monkeypatch):
 _PEAK_CHILD = """
 import jax, numpy as np
 from relax.relion import projector_setup as setup
+from relax.runtime.engine_tuning import DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM
 setup.single_working_set_bytes = lambda: int(2.55 * 2**30)  # a 16 GB card's pool at box 448 (limit 10.22 GiB)
 reference = np.random.default_rng(0).standard_normal((448,) * 3)
 device = jax.devices()[0]
 before = device.memory_stats()["bytes_in_use"]
-setup.setup_relion_projector_on_host(reference, 224, box_size=448, padding_factor=2)
+setup.setup_relion_projector_on_host(reference, 224, box_size=448, padding_factor=2,
+                                     stable_window_quantum=DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM)
 stats = device.memory_stats()
 print("PEAK_GIB", (stats["peak_bytes_in_use"] - before) / 2**30, "LARGEST_GIB", stats["largest_alloc_size"] / 2**30)
 """

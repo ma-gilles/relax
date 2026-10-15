@@ -26,6 +26,7 @@ import numpy as np
 
 from relax.fourier.fourier_window import stable_fourier_window_current_size  # noqa: E402
 from relax.projection.projection import project_relion_projector_half_spectrum  # noqa: E402
+from relax.runtime.engine_tuning import DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM  # noqa: E402
 
 SCHEMA = "recovar.vdam_projector_capacity_proof.v1"
 GF46_IMAGE_SIZE = 128
@@ -79,6 +80,7 @@ def gf46_logical_physical_pairs() -> tuple[tuple[int, int], ...]:
                 stable_fourier_window_current_size(
                     logical_size,
                     GF46_IMAGE_SIZE,
+                    quantum=DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM,
                 )
             ),
         )
@@ -321,6 +323,7 @@ def analyze(
                 stable_fourier_window_current_size(
                     logical_size,
                     GF46_IMAGE_SIZE,
+                    quantum=DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM,
                 )
             ),
         )

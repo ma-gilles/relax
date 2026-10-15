@@ -21,8 +21,6 @@ from relax.fine_pass.projection_blocks import capacity_projection_window_union, 
 from relax.fourier.fourier_window import (
     make_stable_fourier_window_shape_plan,
     stable_fourier_window_current_size,
-    stable_fourier_window_quantum,
-    stable_fourier_window_quantum_scope,
 )
 
 logger = logging.getLogger(__name__)
@@ -36,7 +34,7 @@ STABLE_WINDOW_CLASSES_RUN: contextvars.ContextVar[dict | None] = contextvars.Con
 
 
 @contextlib.contextmanager
-def stable_window_class_history(quantum: int | None = None):
+def stable_window_class_history():
     """Let the passes of one refinement reuse each other's physical window classes.
 
     RELION's current size settles by steps of two around its final value (80,
@@ -46,17 +44,14 @@ def stable_window_class_history(quantum: int | None = None):
     smallest class the refinement already ran that is at most one quantum
     larger. The class is capacity only (the logical window is unchanged), so
     this changes shapes, not RELION's cutoffs; the history is per refinement,
-    so a run's shapes do not depend on what else the process ran.
-
-    ``quantum`` is the refinement's class step
-    (:func:`~relax.fourier.fourier_window.stable_fourier_window_quantum_scope`);
-    None keeps the default.
+    so a run's shapes do not depend on what else the process ran. The history
+    is keyed by box and quantum (``EngineTuning.stable_window_quantum``, which
+    the passes receive).
     """
 
     token = STABLE_WINDOW_CLASSES_RUN.set({})
     try:
-        with stable_fourier_window_quantum_scope(quantum):
-            yield
+        yield
     finally:
         STABLE_WINDOW_CLASSES_RUN.reset(token)
 
@@ -75,15 +70,15 @@ def _stable_window_physical_class(box_size: int, current_size: int, quantum: int
     return chosen
 
 
-def stable_reference_volume_class(volume_size: int, volume_current_size: int) -> int:
+def stable_reference_volume_class(volume_size: int, volume_current_size: int, *, quantum: int) -> int:
     """The physical reference-model current size of a pass on another grid.
 
     The backprojector cube of images on another grid is keyed on the reference
     model's current size, not the image's; it takes the same quantized classes,
-    with the run's class history, as a pass on the model grid would.
+    with the run's class history, as a pass on the model grid would
+    (``quantum``: ``EngineTuning.stable_window_quantum``).
     """
 
-    quantum = stable_fourier_window_quantum()
     physical = _stable_window_physical_class(int(volume_size), int(volume_current_size), quantum)
     if physical is None:
         physical = stable_fourier_window_current_size(int(volume_current_size), int(volume_size), quantum=quantum)
@@ -189,10 +184,12 @@ def resident_stable_window_plan(
     window_spec_kwargs,
     firstiter_cc,
     requested: bool,
+    quantum: int,
 ):
     """The pass's stable-window plan, or None to keep the logical window.
 
     The plan applies when ``requested`` (``EngineTuning.stable_windows``) and the current size is below the box,
+    in classes of ``quantum`` (``EngineTuning.stable_window_quantum``),
     with one current size for scoring and reconstruction on the model grid.
     The --firstiter_cc iteration (normalized-CC tiles) and a split
     score/reconstruction current size keep RELION's logical window, as the
@@ -216,7 +213,6 @@ def resident_stable_window_plan(
             ", ".join(reasons),
         )
         return None
-    quantum = stable_fourier_window_quantum()
     return make_stable_fourier_window_shape_plan(
         image_shape,
         int(current_size),

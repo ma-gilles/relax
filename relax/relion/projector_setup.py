@@ -21,7 +21,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from relax.fourier.fourier_window import stable_fourier_window_current_size, stable_fourier_window_quantum
+from relax.fourier.fourier_window import stable_fourier_window_current_size
 from relax.numerics.shells import shell_of_radius_sq
 from relax.relion.project import gridding_correct_volume_real, gridding_correct_volume_real_separable
 from relax.runtime.xla_memory_reserve import single_working_set_bytes
@@ -113,13 +113,15 @@ def setup_relion_projector_on_host(
     chunk_bytes: int | None = None,
     gridding_kernel: str = "radial",
     shell_pair_counting: str = "relion",
+    stable_window_quantum: int,
 ) -> tuple[np.ndarray, np.ndarray]:
     """:func:`setup_relion_projector` for one ``r_max``, dispatched chunk by chunk to host arrays.
 
     Returns the slab ``[L, L, L // 2 + 1]`` for ``L = 2 (pf r + 1) + 1``, the
     shape the native binding returns, and the shell power. The transform runs in
-    the stable Fourier-window class of ``2 r`` (``stable_fourier_window_current_size``,
-    the quantum the pass-2 engines use), so consecutive iterations whose current
+    the stable Fourier-window class of ``2 r`` (``stable_fourier_window_current_size``
+    with ``stable_window_quantum``, the run's ``EngineTuning.stable_window_quantum`` the
+    pass-2 engines use), so consecutive iterations whose current
     size stays in one class reuse the compiled programs; each chunk is cropped to
     ``L`` on its way to the host. The chunks are separate device programs, so a
     large box never holds the whole transform: at EMPIAR-10202 (box 800, padding
@@ -140,8 +142,7 @@ def setup_relion_projector_on_host(
     radius = box_size // 2 if int(r_max) < 0 else min(int(r_max), box_size // 2)
     window = radius
     if 0 < radius < box_size // 2:
-        quantum = stable_fourier_window_quantum()
-        window = stable_fourier_window_current_size(2 * radius, box_size, quantum=quantum) // 2
+        window = stable_fourier_window_current_size(2 * radius, box_size, quantum=stable_window_quantum) // 2
     if gridding_kernel == "radial":
         reference = _gridding_corrected(reference, box_size=box_size, padding_factor=padding_factor)
     else:
@@ -455,6 +456,7 @@ def reference_to_relion_projector_half_maps_and_power(
     compute_dtype=np.float64,
     gridding_kernel: str = "radial",
     shell_pair_counting: str = "relion",
+    stable_window_quantum: int,
 ) -> tuple[np.ndarray, np.ndarray, int]:
     """Convert references to native-layout half maps and their corrected spectrum.
 
@@ -467,7 +469,8 @@ def reference_to_relion_projector_half_maps_and_power(
     ``projector_data_dtype`` is what the caller wants the slab in; ``None`` keeps
     complex64, whose consumer is the InitialModel engine. Refinement asks for
     complex128 explicitly. ``gridding_kernel`` and ``shell_pair_counting`` are the
-    correction window and the spectrum's pair counting of :func:`setup_relion_projector_on_host`.
+    correction window and the spectrum's pair counting of :func:`setup_relion_projector_on_host`, and
+    ``stable_window_quantum`` its transform's window class step (``EngineTuning.stable_window_quantum``).
     """
     compute_dtype = np.dtype(compute_dtype)
     if compute_dtype not in (np.dtype(np.float32), np.dtype(np.float64)):
@@ -494,6 +497,7 @@ def reference_to_relion_projector_half_maps_and_power(
             swap_relion_volume_layout(ref), r_max, box_size=n,
             padding_factor=int(padding_factor), compute_dtype=compute_dtype.type,
             gridding_kernel=gridding_kernel, shell_pair_counting=shell_pair_counting,
+            stable_window_quantum=stable_window_quantum,
         )
         dtype = np.complex64 if projector_data_dtype is None else np.dtype(projector_data_dtype)
         halves.append(np.asarray(projector_data).astype(dtype, copy=False))

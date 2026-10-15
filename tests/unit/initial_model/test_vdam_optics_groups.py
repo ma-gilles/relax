@@ -9,6 +9,7 @@ import pandas as pd
 import pytest
 
 from relax.relion.initial_noise import relion_startup_positions
+from relax.runtime.engine_tuning import EngineTuning
 from relax.steps.expected_accuracy import ExpectedAccuracy
 from relax.vdam import bootstrap_reconstruction as br
 from relax.vdam import estep_setup, initial_model_io, native_sampling
@@ -208,7 +209,7 @@ def test_expected_accuracy_runs_once_per_group_with_its_noise_and_optics(monkeyp
         sigma2_fudge=1.0,
         optics_group_ids=groups,
         probe=NoProbe(),
-        device_memory_override=None,
+        engine=EngineTuning(),
     )
     meta = estimate.meta()
     assert calls == [

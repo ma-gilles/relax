@@ -26,6 +26,7 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
+from relax.runtime.engine_tuning import DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM
 from relax.steps.sgd_schedule import (
     DEFAULT_GRAD_EM_ITERS,
     compute_phase_lengths,
@@ -366,6 +367,7 @@ class TestAutoRefineExpectedAccuracyBinding:
             "random_seed": 17,
             "do_ctf_correction": False,
             "random_seed_particle_ids": np.asarray([101, 205], dtype=np.int64),
+            "stable_window_quantum": DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM,
         }
         direct = estimate_relion_expected_accuracy_from_prepared_inputs(**kwargs, device_memory_override=None)
         isolated = estimate_relion_expected_accuracy_in_spawned_process_from_prepared_inputs(**kwargs, device_memory_override=None)
@@ -415,6 +417,7 @@ class TestAutoRefineExpectedAccuracyBinding:
             "random_seed": 17,
             "do_ctf_correction": True,
             "random_seed_particle_ids": np.asarray([101, 205, 7], dtype=np.int64),
+            "stable_window_quantum": DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM,
         }
         direct = estimate_relion_expected_accuracy_from_prepared_inputs(**kwargs, device_memory_override=None)
         recovar_frame = np.stack([relion_volume_to_recovar(volume) for volume in references])
@@ -422,7 +425,10 @@ class TestAutoRefineExpectedAccuracyBinding:
 
         builders = {
             "native": native_reference_to_relion_projector_half_maps_and_power,
-            "jax": partial(reference_to_relion_projector_half_maps_and_power),
+            "jax": partial(
+                reference_to_relion_projector_half_maps_and_power,
+                stable_window_quantum=DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM,
+            ),
         }
         for backend, build in builders.items():
             slabs, _power, _r_max = build(

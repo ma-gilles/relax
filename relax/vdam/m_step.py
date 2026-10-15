@@ -98,9 +98,10 @@ def vdam_m_step(
     padding_factor: int,
     mstep_compute_dtype: Literal["float32", "float64"],
     average_ctf2=None,
+    stable_window_quantum: int,
     single_class_m_step: Callable[..., InitialModelState],
 ) -> InitialModelState:
-    """Full VDAM M-step over K classes.
+    """Full VDAM M-step over K classes (``stable_window_quantum``: ``EngineTuning.stable_window_quantum``).
 
     ``accumulators`` holds ``2K`` entries when ``pseudo_halfsets`` is active
     (halfset 0 of each class first, then halfset 1), else ``K``. ``single_class_m_step`` is each class's
@@ -124,6 +125,7 @@ def vdam_m_step(
             padding_factor=padding_factor,
             mstep_compute_dtype=mstep_compute_dtype,
             average_ctf2=average_ctf2,
+            stable_window_quantum=stable_window_quantum,
         )
     return out
 
@@ -226,6 +228,7 @@ def _run_m_step_transaction(
     min_resol_shell: float,
     mstep_compute_dtype: Literal["float32", "float64"],
     average_ctf2,
+    stable_window_quantum: int,
 ) -> InitialModelState:
     """Apply one shared-layout transaction and publish the new state on the device.
 
@@ -237,7 +240,7 @@ def _run_m_step_transaction(
     from relax.vdam.relion_mstep import relion_vdam_m_step_host
 
     host_options = dict(
-        recovar_layout=True, device_volumes=True, average_ctf2=average_ctf2
+        recovar_layout=True, device_volumes=True, average_ctf2=average_ctf2, stable_window_quantum=stable_window_quantum
     )
     if mstep_compute_dtype == "float32":
         host_options["compute_dtype"] = np.float32
@@ -319,6 +322,7 @@ def vdam_m_step_single_class(
     padding_factor: int,
     mstep_compute_dtype: Literal["float32", "float64"],
     average_ctf2=None,
+    stable_window_quantum: int,
 ) -> InitialModelState:
     """VDAM M-step for one class: the transaction of
     :func:`relax.vdam.relion_mstep.relion_vdam_m_step_host`.
@@ -326,6 +330,7 @@ def vdam_m_step_single_class(
     Pseudo-halfsets: FSC/noise-power is derived from the halfset-data difference
     in ``applyMomenta``; ``reconstructGrad`` then uses ``mom1_noise_power``.
     ``average_ctf2``: the E-step's CTF-premultiplied average CTF^2 (SSNR tau2 correction), or None.
+    ``stable_window_quantum``: ``EngineTuning.stable_window_quantum``.
     The options refuse an unknown precision; the command refuses the native replay variables without the oracle.
     """
     if mstep_compute_dtype == "float32":
@@ -350,4 +355,5 @@ def vdam_m_step_single_class(
         min_resol_shell=min_resol_shell,
         mstep_compute_dtype=mstep_compute_dtype,
         average_ctf2=average_ctf2,
+        stable_window_quantum=stable_window_quantum,
     )

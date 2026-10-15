@@ -122,6 +122,7 @@ def _class_tau2_from_iref_power_spectrum(
     frame_scale: float,
     projector_power_spectrum=None,
     shell_pair_counting="relion",
+    stable_window_quantum: int,
 ):
     """Class3D tau2 for one class from its previous ``Iref`` power spectrum.
 
@@ -143,6 +144,7 @@ def _class_tau2_from_iref_power_spectrum(
         return_details=True,
         projector_power_spectrum=projector_power_spectrum,
         shell_pair_counting=shell_pair_counting,
+        stable_window_quantum=stable_window_quantum,
     )
     mean_signal_variance = mean_signal_variance_relion * jnp.asarray(
         frame_scale,
@@ -258,8 +260,12 @@ def estimate_class_prior(
     projector_power_spectrum=None,
     replay_tau2_shells=None,
     average_ctf2=None,
+    stable_window_quantum: int,
 ) -> ClassPriorEstimate:
     """Estimate a class prior from Iref power or diagnostic replay, then its weights.
+
+    ``stable_window_quantum`` (``EngineTuning.stable_window_quantum``) is the window class step of a
+    projector transform built here for the Iref power.
 
     Index inside the operation so reference/projector views are created only
     on the native path and weight views follow prior estimation.
@@ -287,6 +293,7 @@ def estimate_class_prior(
                 else projector_power_spectrum[class_index]
             ),
             shell_pair_counting=settings.shell_pair_counting,
+            stable_window_quantum=stable_window_quantum,
         )
     weight_shells = regularization.compute_relion_weight_shell_stats(
         denominators[class_index],
@@ -353,6 +360,7 @@ def estimate_class_priors(
     scoring_dtype,
     log,
     probe: MaximizationProbe | None = None,
+    stable_window_quantum: int,
 ) -> ClassPriorAggregation:
     """Prepare and aggregate numbered Class3D priors from the previous Iref.
 
@@ -419,6 +427,7 @@ def estimate_class_priors(
             projector_power_spectrum=projector_power_spectrum,
             replay_tau2_shells=class_tau2.shells,
             average_ctf2=average_ctf2,
+            stable_window_quantum=stable_window_quantum,
         )
         mean_signal_variance_per_class.append(class_prior.variance)
         mean_signal_variance_shells_per_class.append(class_prior.shells)

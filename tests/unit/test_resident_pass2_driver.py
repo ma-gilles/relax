@@ -1754,6 +1754,7 @@ def test_stable_window_plan_applies_only_to_the_supported_passes(caplog):
         square_window=False,
         window_spec_kwargs={"window_at_box": True},
         firstiter_cc=False,
+        quantum=EngineTuning().stable_window_quantum,
     )
     # The engine tuning's switch (EngineTuning.stable_windows): off keeps the logical window, the default plans.
     assert resident_stable_windows.resident_stable_window_plan((64, 64), **kwargs, requested=False) is None
@@ -1774,13 +1775,13 @@ def test_stable_window_plan_applies_only_to_the_supported_passes(caplog):
 def test_stable_window_reference_volume_on_another_grid(monkeypatch):
     """A pass on another grid keeps the image grid's plan; its reference cube and clip take a physical class."""
 
-    from relax.fourier.fourier_window import stable_fourier_window_current_size, stable_fourier_window_quantum
+    from relax.fourier.fourier_window import stable_fourier_window_current_size
     from relax.projection.adjoint import ReferenceSphereClip, mstep_adjoint_max_r
     from relax.steps.shape_class_scoring import reconstruction_image_radius
 
     monkeypatch.delenv(volume_solver._RESIDENT_STABLE_WINDOWS_ENV, raising=False)
-    quantum = stable_fourier_window_quantum()
-    physical = resident_stable_windows.stable_reference_volume_class(128, 54)
+    quantum = EngineTuning().stable_window_quantum
+    physical = resident_stable_windows.stable_reference_volume_class(128, 54, quantum=quantum)
     assert physical == stable_fourier_window_current_size(54, 128, quantum=quantum) and physical >= 54
     scale = 112 * 5.44 / (128 * 4.25)
     logical_radius = reconstruction_image_radius(54, scale)

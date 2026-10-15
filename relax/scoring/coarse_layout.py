@@ -31,8 +31,13 @@ def plan_coarse_gaussian_square_layout(
     active_score_indices,
     *,
     stable_fourier_window_shapes: bool,
+    stable_window_quantum: int | None,
 ) -> CoarseGaussianSquareLayout:
     """Plan coarse storage without changing RELION's logical pixel traversal.
+
+    With ``stable_fourier_window_shapes`` the storage is the physical class of
+    ``logical_current_size`` in steps of ``stable_window_quantum``
+    (``EngineTuning.stable_window_quantum``; None, and not read, without them).
 
     The physical compact table is ordered as the complete logical square
     followed by physical-only capacity rows.  The direct CUDA lookup retains
@@ -46,7 +51,6 @@ def plan_coarse_gaussian_square_layout(
         make_fourier_window_indices_np,
         make_frequency_coords_half_np,
         stable_fourier_window_current_size,
-        stable_fourier_window_quantum,
     )
 
     image_shape = tuple(int(value) for value in image_shape)
@@ -54,7 +58,7 @@ def plan_coarse_gaussian_square_layout(
         stable_fourier_window_current_size(
             logical_current_size,
             image_shape[0],
-            quantum=stable_fourier_window_quantum(),
+            quantum=stable_window_quantum,
         )
         if stable_fourier_window_shapes
         else logical_current_size

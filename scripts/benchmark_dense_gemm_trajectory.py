@@ -244,7 +244,7 @@ def build_fixed_fixture_grid(dataset, checkpoint, model_dir, *, rotations, trans
     )
     score_layout = plan_coarse_gaussian_square_layout(
         dataset.image_shape, checkpoint.current_size, active_score,
-        stable_fourier_window_shapes=False,
+        stable_fourier_window_shapes=False, stable_window_quantum=None,
     )
     score_indices = jnp.asarray(score_layout.score_indices_np, dtype=jnp.int32)
     score_mask = jnp.asarray(score_layout.score_active_mask_np)
@@ -487,6 +487,7 @@ def _projector_slab(fourier_map, volume_shape, current_size):
     slabs, _power, radius = reference_to_relion_projector_half_maps_and_power(
         real_map[None, ...], current_size=current_size, padding_factor=2,
         projector_data_dtype=np.complex64,
+        stable_window_quantum=EngineTuning.from_environ().stable_window_quantum,
     )
     if radius != current_size // 2 or slabs.shape[0] != 1:
         raise ValueError("checkpoint projector has the wrong radius or class count")

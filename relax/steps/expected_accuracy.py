@@ -49,6 +49,8 @@ class Half1AccuracyInputs(NamedTuple):
     projector_files: object
     # EngineTuning.device_memory_bytes: the device memory the slab bound takes instead of the probe.
     device_memory_override: int | None
+    # EngineTuning.stable_window_quantum: the window class step of a projector built here and of the trials.
+    stable_window_quantum: int
     # Each half-1 image's row of a per-optics-group noise table; None for one group.
     optics_group_ids: object = None
     # The projector's gridding-correction window when the transform is built here.
@@ -99,6 +101,7 @@ class Half1AccuracyInputs(NamedTuple):
             gridding_kernel=self.gridding_kernel,
             group_grid=None if projector_current_size is None else dict(projector_current_size=int(projector_current_size)),
             device_memory_override=self.device_memory_override,
+            stable_window_quantum=self.stable_window_quantum,
         )
 
 
@@ -207,6 +210,7 @@ def estimate_iteration_accuracy(
                         dump_label=f"iter{iteration:03d}_half0",
                         gridding_kernel=inputs.gridding_kernel,
                         files=inputs.projector_files,
+                        stable_window_quantum=inputs.stable_window_quantum,
                     ),
                 )
             # A failure raises: an infinite accuracy would hide it behind a changed
@@ -300,9 +304,10 @@ def estimate_relion_expected_accuracy_from_prepared_inputs(
     optics=None,
     gridding_kernel: str = "radial",
     device_memory_override: int | None,
+    stable_window_quantum: int,
 ) -> ExpectedAccuracy:
     """RELION's ``calculateExpectedAngularErrors`` from prepared inputs (``device_memory_override``:
-    ``EngineTuning.device_memory_bytes``).
+    ``EngineTuning.device_memory_bytes``; ``stable_window_quantum``: ``EngineTuning.stable_window_quantum``).
 
     Supplied-map EM and InitialModel have different state containers and noise
     conventions, but the calculation has one owner
@@ -348,7 +353,9 @@ def estimate_relion_expected_accuracy_from_prepared_inputs(
     projector_current_size = int(grid.get("projector_current_size", current_image_size) or current_image_size)
     references = np.ascontiguousarray(references_relion, dtype=np.float64)
     if projector_data is None:
-        projector_data = _projector_data(references, projector_current_size, int(padding_factor), gridding_kernel)
+        projector_data = _projector_data(
+            references, projector_current_size, int(padding_factor), gridding_kernel, stable_window_quantum
+        )
     optics = {} if optics is None else dict(optics)
     ctf_images = None
     if do_ctf_correction and "trial_ctf" in optics:
@@ -387,6 +394,7 @@ def estimate_relion_expected_accuracy_from_prepared_inputs(
         ),
         projection_left=optics.get("projection_left"),
         device_memory_override=device_memory_override,
+        stable_window_quantum=stable_window_quantum,
     )
     return ExpectedAccuracy(
         acc_rot=out.acc_rot,
@@ -402,7 +410,7 @@ def estimate_relion_expected_accuracy_from_prepared_inputs(
 
 
 def _projector_data(
-    references_relion, current_size: int, padding_factor: int, gridding_kernel: str = "radial"
+    references_relion, current_size: int, padding_factor: int, gridding_kernel: str, stable_window_quantum: int
 ) -> np.ndarray:
     """Each class's ``Projector::data`` (data_dim 2, gridding-corrected) at ``current_size``."""
 
@@ -415,7 +423,7 @@ def _projector_data(
     for k, reference in enumerate(references_relion):
         slab = setup_relion_projector_on_host(
             reference, int(current_size) // 2, box_size=model_box_size, padding_factor=int(padding_factor),
-            gridding_kernel=gridding_kernel,
+            gridding_kernel=gridding_kernel, stable_window_quantum=stable_window_quantum,
         )[0]
         if data is None:
             data = np.empty((len(references_relion),) + slab.shape, dtype=np.complex128)
@@ -614,9 +622,10 @@ def estimate_relion_expected_accuracy(
     projector_data=None,
     gridding_kernel: str = "radial",
     device_memory_override: int | None,
+    stable_window_quantum: int,
 ) -> ExpectedAccuracy:
     """Evaluate RELION ``calculateExpectedAngularErrors`` on half 1 (``device_memory_override``:
-    ``EngineTuning.device_memory_bytes``).
+    ``EngineTuning.device_memory_bytes``; ``stable_window_quantum``: ``EngineTuning.stable_window_quantum``).
 
     The binding consumes RELION map/noise conventions.  RECOVAR's real-space
     maps already have the same physical scale, while its native FFT noise
@@ -663,6 +672,7 @@ def estimate_relion_expected_accuracy(
             max_trials=max_trials,
             optics_group_ids=optics_group_ids,
             device_memory_override=device_memory_override,
+            stable_window_quantum=stable_window_quantum,
         )
     if isinstance(dataset, MultiShapeHalf):
         return _estimate_by_shape_class(
@@ -686,6 +696,7 @@ def estimate_relion_expected_accuracy(
             projector_data=projector_data,
             gridding_kernel=gridding_kernel,
             device_memory_override=device_memory_override,
+            stable_window_quantum=stable_window_quantum,
         )
     eulers = np.asarray(best_eulers_deg, dtype=np.float64)
     if eulers.ndim != 2 or eulers.shape[1] != 3:
@@ -769,6 +780,7 @@ def estimate_relion_expected_accuracy(
                     projector_data=projector_data,
                     gridding_kernel=gridding_kernel,
                     device_memory_override=device_memory_override,
+                    stable_window_quantum=stable_window_quantum,
                 )
             )
         return _combine_group_expected_accuracies(per_group, group_positions, trial_local, trial_particle_ids)
@@ -810,6 +822,7 @@ def estimate_relion_expected_accuracy(
         optics=_expected_accuracy_optics(dataset, trial_local),
         gridding_kernel=gridding_kernel,
         device_memory_override=device_memory_override,
+        stable_window_quantum=stable_window_quantum,
     )
 
 
@@ -901,6 +914,7 @@ def _estimate_tomo_half(
     max_trials,
     optics_group_ids,
     device_memory_override,
+    stable_window_quantum,
 ):
     """Expected accuracy of subtomogram particles (a ``TomoHalf``): RELION's per-image branches.
 
@@ -992,6 +1006,7 @@ def _estimate_tomo_half(
                 tilt_images=tilt,
                 optics=expected_accuracy_optics(half.images, images),
                 device_memory_override=device_memory_override,
+                stable_window_quantum=stable_window_quantum,
             )
         )
     return _combine_group_expected_accuracies(per_group, group_positions, trial_local, particle_ids[trial_local])

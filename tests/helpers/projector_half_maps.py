@@ -7,6 +7,7 @@ Moved from relax/relion/projector_setup.py, where no relax module used it: relax
 import numpy as np
 
 from relax.relion.projector_setup import reference_to_relion_projector_half_maps_and_power
+from relax.runtime.engine_tuning import DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM
 
 
 def reference_to_relion_projector_half_maps(
@@ -26,5 +27,6 @@ def reference_to_relion_projector_half_maps(
         interpolator=interpolator,
         projector_data_dtype=projector_data_dtype,
         compute_dtype=compute_dtype,
+        stable_window_quantum=DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM,
     )
     return half_maps, r_max

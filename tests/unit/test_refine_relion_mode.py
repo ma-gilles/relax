@@ -33,7 +33,7 @@ from relax.refinement.noise_updates import NoiseModel
 from relax.refinement.ports import InputSource, RunObserver, StartSeeds
 from relax.refinement.refinement_options import OpticsGeometry
 from relax.refinement.startup_references import StartupHandoff
-from relax.runtime.engine_tuning import EngineTuning
+from relax.runtime.engine_tuning import DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM, EngineTuning
 from relax.runtime.scoring_overrides import ScoringOverrides
 from relax.sampling import oversampling as oversampling_grids
 from relax.sampling.orientation_priors import (
@@ -3029,9 +3029,10 @@ def test_relion_projector_cache_reuses_cached_projector_data(monkeypatch, tmp_pa
     calls = []
 
     def fake_projector_builder(
-        refs_real, *, current_size, padding_factor, projector_data_dtype, gridding_kernel,
+        refs_real, *, current_size, padding_factor, projector_data_dtype, gridding_kernel, stable_window_quantum,
     ):
         assert gridding_kernel == "radial"
+        assert stable_window_quantum == DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM
         assert projector_data_dtype == "complex128"
         calls.append(np.asarray(refs_real).copy())
         projector_half = np.full((refs_real.shape[0], 3, 3, 2), 7.0 + len(calls), dtype=np.complex64)
@@ -3050,6 +3051,7 @@ def test_relion_projector_cache_reuses_cached_projector_data(monkeypatch, tmp_pa
         padding_factor=2,
         n_classes=1,
         files=files,
+        stable_window_quantum=DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM,
     )
     second = projector_preparation.prepare_scoring_projector(
         mean_ft.reshape(-1),
@@ -3058,6 +3060,7 @@ def test_relion_projector_cache_reuses_cached_projector_data(monkeypatch, tmp_pa
         padding_factor=2,
         n_classes=1,
         files=files,
+        stable_window_quantum=DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM,
     )
 
     assert len(calls) == 1
@@ -3075,9 +3078,10 @@ def test_relion_projector_direct_real_reference_bypasses_fourier_roundtrip(monke
     captured_real = []
 
     def fake_projector_builder(
-        refs_real, *, current_size, padding_factor, projector_data_dtype, gridding_kernel,
+        refs_real, *, current_size, padding_factor, projector_data_dtype, gridding_kernel, stable_window_quantum,
     ):
         assert gridding_kernel == "radial"
+        assert stable_window_quantum == DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM
         assert projector_data_dtype == "complex128"
         captured_real.append(np.asarray(refs_real).copy())
         projector_half = np.ones((refs_real.shape[0], 3, 3, 2), dtype=np.complex64)
@@ -3100,6 +3104,7 @@ def test_relion_projector_direct_real_reference_bypasses_fourier_roundtrip(monke
         n_classes=1,
         real_references=exact_real,
         files=projector_preparation.ProjectorFiles(),
+        stable_window_quantum=DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM,
     )
 
     assert len(captured_real) == 1
@@ -6419,6 +6424,7 @@ class TestRelionModeSmokeTest:
                 current_size,
                 np.asarray(window.score_indices_np, dtype=np.int32),
                 stable_fourier_window_shapes=stable_fourier_window_shapes,
+                stable_window_quantum=DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM,
             )
             expected = np.asarray(layout.score_indices_np, dtype=np.int32)
             expected_output_size = layout.physical_current_size

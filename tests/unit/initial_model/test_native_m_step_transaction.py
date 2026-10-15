@@ -10,6 +10,7 @@ import pytest
 from helpers import natives
 from helpers.float_compare import assert_matches
 
+from relax.runtime.engine_tuning import DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM
 from relax.vdam.bootstrap_iref import initialise_denovo_state
 from relax.vdam.m_step import vdam_m_step_single_class
 from relax.vdam.state import VdamAccumulator
@@ -95,6 +96,7 @@ def test_transaction_matches_primitives_exactly(
         grad_current_stepsize=0.3,
         tau2_fudge_factor=4.0,
         padding_factor=padding_factor,
+        stable_window_quantum=DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM,
     )
     expected = vdam_m_step_single_class_native(state, **args)
     actual = vdam_m_step_single_class(state, **args)
@@ -121,6 +123,7 @@ def test_dump_keeps_primitive_boundaries(transaction_bind, monkeypatch, tmp_path
         accum_h1=accumulators[1],
         grad_current_stepsize=0.3,
         tau2_fudge_factor=4.0,
+        stable_window_quantum=DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM,
     )
     assert (tmp_path / "data_h0_post_reweight.npy").is_file()
     assert (tmp_path / "iref_out_relion_frame.npy").is_file()
@@ -136,7 +139,8 @@ def test_device_backend_preserves_complete_state_and_inputs(transaction_bind, K,
     original_accum = deepcopy(accumulators)
     args = dict(k=K-1, accum_h0=accumulators[0],
                 accum_h1=accumulators[1] if pseudo else None,
-                grad_current_stepsize=0.3, tau2_fudge_factor=4.0, padding_factor=padding)
+                grad_current_stepsize=0.3, tau2_fudge_factor=4.0, padding_factor=padding,
+                stable_window_quantum=DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM)
     expected = vdam_m_step_single_class(state, **args)
     calls = []
     actual_host = relion_mstep.relion_vdam_m_step_host

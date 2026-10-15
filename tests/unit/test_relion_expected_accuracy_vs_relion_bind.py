@@ -11,6 +11,7 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
+from relax.runtime.engine_tuning import DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM
 from relax.sampling.relion_expected_accuracy import expected_angular_errors
 from relax.steps.tomo_half import TiltImageAccuracyInputs
 
@@ -100,6 +101,7 @@ def _ours(case, *, size, current_size, padding, ctf_images, seed=11, fudge=1.0, 
         random_seed=seed,
         random_seed_particle_ids=case["seed_particles"],
         device_memory_override=None,
+        stable_window_quantum=DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM,
     )
 
 
@@ -328,6 +330,7 @@ def test_tilt_images_match(do_ctf):
         image_offsets=offsets,
         image_projections=projections,
         device_memory_override=None,
+        stable_window_quantum=DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM,
     )
     _assert_same(ours, oracle)
 
@@ -386,6 +389,7 @@ def test_optics_group_on_another_grid_matches():
         model_pixel_size=2.1,
         box_size=full,
         device_memory_override=None,
+        stable_window_quantum=DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM,
     )
     _assert_same(ours, oracle)
 
@@ -459,6 +463,7 @@ def test_prepared_inputs_with_relax_ctf_match(tomo, current_size):
         random_seed_particle_ids=case["seed_particles"],
         tilt_images=tilt,
         device_memory_override=None,
+        stable_window_quantum=DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM,
     )
     assert_matches(ours.acc_rot, float(oracle["acc_rot"]))
     assert_matches(ours.acc_trans_angstrom, float(oracle["acc_trans"]))
@@ -501,6 +506,7 @@ def test_prepared_inputs_with_optics_rows_match(magnified):
         sigma2_fudge=1.0, random_seed=11, do_ctf_correction=True, random_seed_particle_ids=case["seed_particles"],
         optics=optics,
         device_memory_override=None,
+        stable_window_quantum=DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM,
     )
     assert_matches(ours.acc_rot, float(oracle["acc_rot"]))
     assert_matches(ours.acc_trans_angstrom, float(oracle["acc_trans"]))

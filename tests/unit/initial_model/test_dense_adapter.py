@@ -11,7 +11,7 @@ from helpers.float_compare import assert_matches
 from helpers.vdam import estep_sampling_stub, initial_model_state_stub
 
 from relax.local_search.layout import LocalHypothesisLayout
-from relax.runtime.engine_tuning import EngineTuning
+from relax.runtime.engine_tuning import DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM, EngineTuning
 from relax.runtime.scoring_overrides import ScoringOverrides
 from relax.vdam.adaptive_estep import _safe_coarse_significance_image_batch_size, resolve_sparse_pass1_current_size
 from relax.vdam.bootstrap_iref import initialise_denovo_state
@@ -458,7 +458,9 @@ def test_resolve_class_inputs_takes_the_refreshed_projector_and_no_dense_means(m
         lambda *args, **kwargs: (projector_half, np.ones((1, 5)), 2),
     )
     state = initialise_denovo_state(box_size=8, pixel_size=1.0, K=1, nr_iter=1, n_directions=4)
-    prepared, _ = prepare_relion_projector_class_inputs_and_power(state, padding_factor=1, projector_dump_dir=None)
+    prepared, _ = prepare_relion_projector_class_inputs_and_power(
+        state, padding_factor=1, projector_dump_dir=None, stable_window_quantum=DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM
+    )
     half, r_max = prepared.half_by_class, prepared.r_max
     config = InitialModelEstepConfig(
         noise_variance=np.ones(8 * 8, dtype=np.float32),
@@ -535,9 +537,9 @@ def test_projector_refresh_can_dump_exact_projector_operand(monkeypatch, tmp_pat
     state = initialise_denovo_state(box_size=8, pixel_size=1.0, K=1, nr_iter=1, n_directions=4)
     state.iter = 7
     state.current_size = 4
-    environment = VdamEnvironment(projector_dump_dir=str(tmp_path))
+    environment = VdamEnvironment(projector_dump_dir=str(tmp_path), engine=EngineTuning())
 
-    IterationProjectorContext(projector_dump_dir=environment.projector_dump_dir).refresh(state, padding_factor=1)
+    IterationProjectorContext(environment=environment).refresh(state, padding_factor=1)
 
     with np.load(tmp_path / "iter007_relion_projector_half.npz") as dumped:
         assert_matches(dumped["projector_half"], projector_half)

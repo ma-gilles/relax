@@ -25,7 +25,7 @@ from relax.refinement import final_reconstruction, priors, startup_references
 from relax.refinement.refinement_options import RelionConsistencyOptions
 from relax.relion import projector_setup as setup
 from relax.relion import reference_initialization
-from relax.runtime.engine_tuning import EngineTuning
+from relax.runtime.engine_tuning import DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM, EngineTuning
 
 pytestmark = pytest.mark.unit
 
@@ -446,21 +446,49 @@ def test_projector_power_spectrum_follows_the_counting_rule(counting, n, r_max):
     """Full and cropped radius, two box sizes; at the full radius the Nyquist column is stored too."""
     reference = _reference(n)
     _, power = setup.setup_relion_projector_on_host(
-        reference, r_max, box_size=n, padding_factor=2, shell_pair_counting=counting
+        reference,
+        r_max,
+        box_size=n,
+        padding_factor=2,
+        shell_pair_counting=counting,
+        stable_window_quantum=DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM,
     )
     assert_matches(np.asarray(power), _projector_power_oracle(reference, r_max, 2, counting), rtol=1e-11)
 
 
 def test_projector_data_does_not_depend_on_the_counting_and_the_default_is_relions():
     reference = _reference(8)
-    default = setup.setup_relion_projector_on_host(reference, 3, box_size=8, padding_factor=2)
-    relion = setup.setup_relion_projector_on_host(reference, 3, box_size=8, padding_factor=2, shell_pair_counting="relion")
-    once = setup.setup_relion_projector_on_host(reference, 3, box_size=8, padding_factor=2, shell_pair_counting="once")
+    default = setup.setup_relion_projector_on_host(
+        reference, 3, box_size=8, padding_factor=2, stable_window_quantum=DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM
+    )
+    relion = setup.setup_relion_projector_on_host(
+        reference,
+        3,
+        box_size=8,
+        padding_factor=2,
+        shell_pair_counting="relion",
+        stable_window_quantum=DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM,
+    )
+    once = setup.setup_relion_projector_on_host(
+        reference,
+        3,
+        box_size=8,
+        padding_factor=2,
+        shell_pair_counting="once",
+        stable_window_quantum=DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM,
+    )
     assert_matches(default[1], relion[1])
     assert_matches(once[0], relion[0])
     assert np.max(np.abs(once[1] - relion[1])) > 1e-3 * np.max(np.abs(relion[1]))
     with pytest.raises(ValueError, match="shell_pair_counting"):
-        setup.setup_relion_projector_on_host(reference, 3, box_size=8, padding_factor=2, shell_pair_counting="twice")
+        setup.setup_relion_projector_on_host(
+            reference,
+            3,
+            box_size=8,
+            padding_factor=2,
+            shell_pair_counting="twice",
+            stable_window_quantum=DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM,
+        )
 
 
 @pytest.mark.parametrize("counting", COUNTINGS)
@@ -472,7 +500,13 @@ def test_class_tau2_from_the_reference_uses_the_counted_power(counting):
     reference = _reference(8, seed=2)
     reference_ft = np.asarray(ftu.get_dft3(jnp.asarray(reference))).reshape(-1)
     _, details = rr.compute_relion_tau2_from_iref_power_spectrum(
-        reference_ft, (8, 8, 8), padding_factor=2, current_size=6, return_details=True, shell_pair_counting=counting
+        reference_ft,
+        (8, 8, 8),
+        padding_factor=2,
+        current_size=6,
+        return_details=True,
+        shell_pair_counting=counting,
+        stable_window_quantum=DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM,
     )
     relion_frame = np.asarray(recovar_volume_to_relion(reference), dtype=np.float64)
     power = _projector_power_oracle(relion_frame, 3, 2, counting)
@@ -586,5 +620,6 @@ def test_final_class_priors_take_the_counting(monkeypatch, counting):
     final_reconstruction.compute_final_class_priors(
         None, None, projector_power_spectrum=None, n_classes=2, settings=settings, current_size=8, accumulator_shape=None,
         full_half_axis=0,
+        stable_window_quantum=DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM,
     )
     assert recorded == [counting, counting]

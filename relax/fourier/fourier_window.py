@@ -18,8 +18,6 @@ underlying CUDA image grid.
 See ``docs/math/plan_relion_parity.md``, Phase 3.
 """
 
-import contextlib
-import contextvars
 from dataclasses import dataclass, replace
 from functools import partial
 from typing import Any
@@ -34,46 +32,6 @@ from relax.runtime.shape_buckets import round_up_to_multiple
 # Representative sizes kept for explicit callers that still want a bounded set.
 ALLOWED_CURRENT_SIZES = [16, 24, 32, 48, 64, 80, 96, 104, 112, 120, 128, 160, 192, 224, 256]
 _DEFAULT_PROJECTION_MAX_R = object()
-DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM = 8
-# VDAM's class step (relax.vdam.driver). A new physical class compiles the resident
-# pass programs again (about 5 s each), while padding the window costs VDAM's small
-# subsets almost nothing: at 10k/256 the late E-step took 1.40 s per iteration at
-# class 144 against 1.41 s at 120. Quantum 24 visits 4 classes instead of 11 and cut
-# the 200-iteration wall 439 -> 384 s (10k/256, same node, job 14867921); on
-# EMPIAR-10076 10k it was 577 -> 562 s (14876259). Class3D and auto-refine keep 8.
-VDAM_STABLE_FOURIER_WINDOW_QUANTUM = 24
-
-
-# The quantum of the refinement in progress (``stable_fourier_window_quantum_scope``),
-# None outside one.
-_REFINEMENT_QUANTUM: contextvars.ContextVar[int | None] = contextvars.ContextVar(
-    "relax_stable_fourier_window_quantum", default=None
-)
-
-
-@contextlib.contextmanager
-def stable_fourier_window_quantum_scope(quantum: int | None):
-    """Run one refinement with its own physical-size quantum (None keeps the default)."""
-
-    if quantum is not None and (int(quantum) < 2 or int(quantum) % 2):
-        raise ValueError(f"the stable Fourier-window quantum must be an even integer >= 2, got {quantum!r}")
-    token = _REFINEMENT_QUANTUM.set(None if quantum is None else int(quantum))
-    try:
-        yield
-    finally:
-        _REFINEMENT_QUANTUM.reset(token)
-
-
-def stable_fourier_window_quantum() -> int:
-    """Return the shared physical-size quantum for stable EM windows.
-
-    The quantum of the refinement in progress
-    (:func:`stable_fourier_window_quantum_scope`, which the commands enter with
-    ``EngineTuning.stable_window_quantum`` when it is set), else the default.
-    """
-
-    scoped = _REFINEMENT_QUANTUM.get()
-    return DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM if scoped is None else scoped
 
 
 @dataclass(frozen=True)
@@ -530,7 +488,7 @@ def stable_fourier_window_current_size(
     current_size: int,
     box_size: int,
     *,
-    quantum: int = 8,
+    quantum: int,
 ) -> int:
     """Return a physical window class without changing the logical cutoff.
 
@@ -567,7 +525,7 @@ def make_stable_fourier_window_shape_plan(
     *,
     reconstruction_current_size: int | None = None,
     enabled: bool = False,
-    quantum: int = 8,
+    quantum: int,
     square: bool = False,
     score_square: bool | None = None,
     score_include_dc: bool = False,

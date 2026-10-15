@@ -21,6 +21,7 @@ from helpers.run_options import lowres_join, reconstruction_programs
 from relax.reconstruction import regularization
 from relax.reconstruction.resolution import shell_index_to_resolution_angstrom
 from relax.refinement import numbered_reconstruction, priors
+from relax.runtime.engine_tuning import DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM
 
 pytestmark = pytest.mark.unit
 
@@ -142,6 +143,7 @@ def test_class_prior_view_order_and_replay_do_not_materialize_unused_references(
         full_half_axis=-1, frame_scale=float(GRID_SIZE)**4,
         projector_power_spectrum=Stack("projector") if source != "host" else None,
         replay_tau2_shells=np.ones((4, N_SHELLS)) if source == "replay" else None,
+        stable_window_quantum=DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM,
     )
     prior_calls = [] if source == "replay" else ["reference", *(["projector"] if source == "projector" else []), "prior"]
     assert calls == prior_calls + ["denominator", "weight statistics", "denominator", "data vs prior"]
@@ -315,6 +317,7 @@ class TestClassTau2FromIrefPowerSpectrum:
             padding_factor=PADDING_FACTOR,
             current_size=6,
             frame_scale=frame_scale,
+            stable_window_quantum=DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM,
         )
 
         assert len(calls) == 1
@@ -325,6 +328,7 @@ class TestClassTau2FromIrefPowerSpectrum:
             "return_details": True,
             "projector_power_spectrum": None,
             "shell_pair_counting": "relion",
+            "stable_window_quantum": DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM,
         }
         expected_tau2 = relion_tau2 * jnp.asarray(frame_scale, dtype=jnp.float32)
         expected_shells_relion = jnp.asarray(relion_shells, dtype=jnp.float32)

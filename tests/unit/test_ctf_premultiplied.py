@@ -15,6 +15,7 @@ import pytest
 from helpers.float_compare import assert_matches
 
 from relax.relion import ctf as relion_ctf
+from relax.runtime.engine_tuning import DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM
 from relax.star.metadata import refuse_unsupported_optics
 
 
@@ -410,6 +411,7 @@ def test_subtomogram_average_ctf2_divides_by_the_particles_sumw_not_by_a_count(m
             half_denominators=None, halves=(half1, half2), noise_stats_per_half=(stats1, stats2), n_classes=2,
             iteration=0, current_size=BOX, image_current_size=BOX, accumulator_shape=None, full_half_axis=-1,
             projector_power_spectrum=None, class_tau2=SimpleNamespace(source=None), scoring_dtype=np.float32, log=None,
+            stable_window_quantum=DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM,
         )
 
     n_tilts, n_particles = 9, 3

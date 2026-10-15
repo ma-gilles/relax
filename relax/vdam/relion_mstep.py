@@ -24,7 +24,7 @@ from recovar.reconstruction.relion_functions import (
     relion_window_centered_half_fourier as _relion_window_centered_half_fourier,
 )
 
-from relax.fourier.fourier_window import stable_fourier_window_current_size, stable_fourier_window_quantum
+from relax.fourier.fourier_window import stable_fourier_window_current_size
 from relax.numerics.shells import shell_of_radius_sq
 from relax.relion.projector_setup import (
     setup_relion_projector,
@@ -329,19 +329,19 @@ def _pack_bpref_to_capacity(value, *, capacity):
     return packed.at[before : before + value.shape[0], before : before + value.shape[1], : value.shape[2]].set(value)
 
 
-def _pad_bpref_to_window_class(value, *, radius: int, box_size: int, padding_factor: int):
+def _pad_bpref_to_window_class(value, *, radius: int, box_size: int, padding_factor: int, quantum: int):
     """A host BPref slab zero-padded to the slab of its stable Fourier-window class.
 
     The device pack is one program per slab shape, and the slab follows RELION's current size,
     which takes about thirty values in a 200-iteration run (62 compiles, 3.7 s, census 14974371).
-    Padded here to the class of ``2 * radius`` the slab keeps its centre, so the packed cube is
+    Padded here to the class of ``2 * radius`` (step ``quantum``) the slab keeps its centre, so the packed cube is
     the same and the pack compiles once per class.
     """
 
     current_size = 2 * int(radius)
     if not (0 < current_size < int(box_size)) or int(box_size) % 2:
         return value
-    class_size = stable_fourier_window_current_size(current_size, int(box_size), quantum=stable_fourier_window_quantum())
+    class_size = stable_fourier_window_current_size(current_size, int(box_size), quantum=quantum)
     grow = int(padding_factor) * class_size + 3 - value.shape[0]
     if grow <= 0 or grow % 2:
         return value
@@ -372,6 +372,7 @@ def relion_vdam_m_step_host(
     recovar_layout: bool = False,
     device_volumes: bool = False,
     average_ctf2=None,
+    stable_window_quantum: int,
 ):
     """Host-facing adapter of the device VDAM M-step transaction (FFT grids of at least 16).
 
@@ -391,6 +392,8 @@ def relion_vdam_m_step_host(
     ``average_ctf2`` (``[box_size // 2 + 1]``, CTF-premultiplied images only,
     :func:`relax.relion.ctf.premultiplied_average_ctf2`) corrects the SSNR's tau2
     as RELION's ``updateSSNRarrays`` does; the reconstruction keeps the uncorrected tau2.
+    ``stable_window_quantum`` (``EngineTuning.stable_window_quantum``): the window class step a host BPref
+    slab is padded to (:func:`_pad_bpref_to_window_class`).
     """
     real_dtype, complex_dtype = _compute_dtypes(compute_dtype)
     if box_size * padding_factor < 16:
@@ -413,7 +416,8 @@ def relion_vdam_m_step_host(
             raise ValueError("BPref does not cover the logical radius or exceeds capacity")
         if not isinstance(value, jax.Array):
             value = _pad_bpref_to_window_class(
-                np.asarray(value), radius=radius, box_size=box_size, padding_factor=padding_factor
+                np.asarray(value), radius=radius, box_size=box_size, padding_factor=padding_factor,
+                quantum=stable_window_quantum,
             )
         return _pack_bpref_to_capacity(jnp.asarray(value), capacity=capacity)
 

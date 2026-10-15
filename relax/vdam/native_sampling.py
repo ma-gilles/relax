@@ -16,6 +16,7 @@ from recovar.utils.helpers import R_to_relion, recovar_volume_to_relion
 
 from relax.relion import optics_groups
 from relax.relion.optics_aberrations import expected_accuracy_optics
+from relax.runtime.engine_tuning import DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM, EngineTuning
 from relax.sampling import grids, oversampled_grids, perturbation
 from relax.steps.convergence import (
     compute_relion_offset_changes_angstrom,
@@ -413,7 +414,7 @@ def estimate_native_sampling_accuracy(
     experiment_dataset=None,
     isolate_in_subprocess: bool = False,
     probe: ExpectationProbe,
-    device_memory_override: int | None,
+    engine: EngineTuning,
 ) -> SamplingAccuracyEstimate | None:
     """RELION's expected accuracy of the subset's first 100 particles (calculateExpectedAngularErrors).
 
@@ -426,8 +427,12 @@ def estimate_native_sampling_accuracy(
     Single particles pass ``experiment_dataset`` (subtomograms: the flat dataset of ``tilt_images``' tilt
     images) for the trials' optics-table CTFs
     (:func:`relax.relion.optics_aberrations.expected_accuracy_optics`: CTF^2 of premultiplied
-    images, even Zernike terms); None without optics-table terms. ``device_memory_override``
-    (``EngineTuning.device_memory_bytes``) replaces the device memory probe of the estimate's slab bound.
+    images, even Zernike terms); None without optics-table terms. ``engine`` (``VdamEnvironment.engine``): its
+    ``device_memory_bytes`` replaces the device memory probe of the estimate's slab bound, and
+    ``stable_window_quantum`` is the estimate's window class step in this process. The isolated subprocess
+    (``isolate_in_subprocess``) keeps the default quantum
+    (:data:`relax.runtime.engine_tuning.DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM`), which the context variable
+    that held the quantum before never reached in a spawned process.
     """
     n_trials = min(100, int(particle_order.size))
     if n_trials <= 0:
@@ -560,7 +565,10 @@ def estimate_native_sampling_accuracy(
             # RELION seeds these trials with Experiment's internal ``part_id``,
             # not the original input-table row ids carried by RECOVAR's dataset.
             random_seed_particle_ids=random_seed_particle_ids[trials],
-            device_memory_override=device_memory_override,
+            device_memory_override=engine.device_memory_bytes,
+            stable_window_quantum=(
+                DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM if isolate_in_subprocess else engine.stable_window_quantum
+            ),
         )
 
     sigma2_noise = np.asarray(state.sigma2_noise, dtype=np.float64)

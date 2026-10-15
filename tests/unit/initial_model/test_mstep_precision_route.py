@@ -12,6 +12,7 @@ from helpers.vdam import keep_tau2
 
 from relax.commands import initial_model as initial_model_command
 from relax.parity import vdam_mstep_replay, vdam_replay
+from relax.runtime.engine_tuning import DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM
 from relax.steps.sgd_schedule import DEFAULT_GRAD_MU
 from relax.vdam import driver, estep_setup, initial_model_io, iteration_loop, m_step, native_options
 from relax.vdam.bootstrap_iref import initialise_denovo_state
@@ -131,7 +132,7 @@ def test_driver_converts_before_initial_artifact_and_forwards_loop(monkeypatch, 
         masked = kwargs["post_mstep_update"](current, 1, {})
         assert masked.Iref.dtype == expected
         # The options' projector dump directory reaches the iteration's projector context.
-        assert kwargs["projector_refresh_fn"].__self__.projector_dump_dir == str(tmp_path / "dump")
+        assert kwargs["projector_refresh_fn"].__self__.environment.projector_dump_dir == str(tmp_path / "dump")
         raise AtLoop
 
     monkeypatch.setattr(driver, "run_vdam_iterations", at_loop)
@@ -179,6 +180,7 @@ def _call(state, **kwargs):
         tau2_fudge_factor=4.0,
         padding_factor=1,
         mstep_compute_dtype="float32",
+        stable_window_quantum=DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM,
         **kwargs,
     )
 
@@ -281,6 +283,7 @@ def test_publication_rejects_wrong_result_dtype_or_rounded_prior(bad_field, monk
             min_resol_shell=1,
             mstep_compute_dtype="float32",
             average_ctf2=None,
+            stable_window_quantum=DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM,
         )
 
 
@@ -308,7 +311,13 @@ def test_actual_loop_forwards_f32_to_m_without_changing_authoritative_state(monk
             {"max_posterior_per_image": np.ones(len(ids)), "class_posterior_sums": np.asarray([float(len(ids))])},
         ),
         projector_refresh_fn=keep_tau2,
-        update=iteration_loop.VdamUpdate(padding_factor=1, mstep_compute_dtype="float32", single_class_m_step=step, probe=NoProbe()),
+        update=iteration_loop.VdamUpdate(
+            padding_factor=1,
+            mstep_compute_dtype="float32",
+            single_class_m_step=step,
+            probe=NoProbe(),
+            stable_window_quantum=DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM,
+        ),
         grad_ini_frac=0.3,
         grad_fin_frac=0.2,
         mu=DEFAULT_GRAD_MU,

@@ -19,7 +19,6 @@ from recovar.data_io.cryoem_dataset import load_dataset
 from recovar.data_io.starfile import read_star
 
 from relax.fine_pass.resident_stable_windows import stable_window_class_history
-from relax.fourier.fourier_window import VDAM_STABLE_FOURIER_WINDOW_QUANTUM
 from relax.io.particle_io import ParticleReadPolicy, assert_reads_from_scratch, image_star, prepare_particle_reads
 from relax.relion import ctf
 from relax.star.metadata import (
@@ -144,7 +143,7 @@ def _native_expectation_step(
                 optics_group_ids=optics_group_ids,
                 experiment_dataset=accuracy_dataset,
                 isolate_in_subprocess=opts.environment.isolate_expected_accuracy,
-                probe=probe, device_memory_override=opts.environment.engine.device_memory_bytes,
+                probe=probe, engine=opts.environment.engine,
             )
             if accuracy_estimate is not None:
                 sampling_state.acc_rot = accuracy_estimate.accuracy.acc_rot
@@ -600,7 +599,7 @@ def run_native_initial_model(
             ),
         )
     profile.record("state_setup")
-    projector_context = estep_setup.IterationProjectorContext(projector_dump_dir=opts.environment.projector_dump_dir)
+    projector_context = estep_setup.IterationProjectorContext(environment=opts.environment)
     expectation_step = _native_expectation_step(
         dataset,
         opts,
@@ -682,7 +681,7 @@ def run_native_initial_model(
     profile.record("iteration_setup")
 
     # One stable-window class history for the run, on VDAM's ladder unless the command read an override quantum.
-    with stable_window_class_history(quantum=opts.environment.engine.stable_window_quantum or VDAM_STABLE_FOURIER_WINDOW_QUANTUM):
+    with stable_window_class_history():
         final_state = run_vdam_iterations(
             state,
             nr_particles=n_particles,
@@ -708,6 +707,7 @@ def run_native_initial_model(
                 VdamUpdate(
                     padding_factor=int(opts.padding_factor), mstep_compute_dtype=opts.mstep_compute_dtype,
                     probe=maximization_probe, single_class_m_step=source.single_class_m_step,
+                    stable_window_quantum=opts.environment.engine.stable_window_quantum,
                 )
                 if opts.optimizer == "vdam"
                 else MomentumSgdUpdate(learning_rate=float(opts.sgd_learning_rate), padding_factor=int(opts.padding_factor))

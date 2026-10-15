@@ -164,9 +164,10 @@ def class_maximization(
     ``scored_class_weights``): its ``data_vs_prior`` curve stays the previous one
     (``previous_data_vs_prior``; ``updateSSNRarrays`` is not called), and its reference is the previous one
     in the iteration that emptied it and zero afterwards (:5019-5023, without gradient refinement).
-    Reads ``reference_model.maps``; from ``options``: ``k_class.n_classes`` and
-    ``parity.relion_firstiter_ini_high_angstrom``; from ``ctx``: the reconstruction settings, scoring dtype,
-    pixel size and M-step probe; from ``this_iteration``: its index and first-iteration CC.
+    Reads ``reference_model.maps``; from ``options``: ``k_class.n_classes``,
+    ``parity.relion_firstiter_ini_high_angstrom`` and ``environment.engine.stable_window_quantum``; from ``ctx``:
+    the reconstruction settings, scoring dtype, pixel size and M-step probe; from ``this_iteration``: its index and
+    first-iteration CC.
     """
     parity = options.parity
     Ft_y_0, Ft_y_1 = operands.numerators
@@ -199,6 +200,7 @@ def class_maximization(
         scoring_dtype=ctx.scoring_dtype,
         log=logger,
         probe=ctx.maximization_probe,
+        stable_window_quantum=options.environment.engine.stable_window_quantum,
     )
     tau2_update_details = _stack_class_tau2_update_details(class_priors.details_per_class)
     logger.info(

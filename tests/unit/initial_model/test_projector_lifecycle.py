@@ -7,6 +7,7 @@ from helpers.float_compare import assert_matches
 from helpers.vdam import relative_metrics
 from recovar.utils.helpers import recovar_volume_to_relion
 
+from relax.runtime.engine_tuning import DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM, EngineTuning
 from relax.steps.sgd_schedule import DEFAULT_GRAD_MU
 from relax.vdam import estep_setup as adapter
 from relax.vdam import iteration_loop as loop
@@ -40,7 +41,10 @@ def test_shared_device_projector_matches_both_native_calls(
 
     monkeypatch.setattr(bind, "compute_fourier_transform_map", counted_projector)
     inputs, power = adapter.prepare_relion_projector_class_inputs_and_power(
-        state, padding_factor=padding, projector_dump_dir=str(tmp_path)
+        state,
+        padding_factor=padding,
+        projector_dump_dir=str(tmp_path),
+        stable_window_quantum=DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM,
     )
     assert not builds  # VDAM prepares the projector on the device only.
     with np.load(tmp_path / "iter000_relion_projector_half.npz") as dumped:
@@ -75,13 +79,13 @@ def test_context_builds_once_and_consumes_once(monkeypatch):
     )
     calls = []
 
-    def prepare(current, *, padding_factor, projector_dump_dir):
-        assert projector_dump_dir is None
+    def prepare(current, *, padding_factor, projector_dump_dir, stable_window_quantum):
+        assert projector_dump_dir is None and stable_window_quantum == DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM
         calls.append((current.iter, current.Iref.copy()))
         return adapter.RelionProjectorInputs(current.Iref.copy(), 4), np.full((1, 5), current.iter)
 
     monkeypatch.setattr(adapter, "prepare_relion_projector_class_inputs_and_power", prepare)
-    ctx = adapter.IterationProjectorContext(projector_dump_dir=None)
+    ctx = adapter.IterationProjectorContext(environment=VdamEnvironment(engine=EngineTuning()))
     for iteration in (1, 2):
         state = replace(state, iter=iteration, Iref=state.Iref + 1)
         before = state.tau2_class.copy()
@@ -105,7 +109,7 @@ def test_context_rejects_stale_handoff_and_clears(monkeypatch, change):
     )
     monkeypatch.setattr(adapter, "prepare_relion_projector_class_inputs_and_power",
                         lambda *a, **k: (adapter.RelionProjectorInputs(None, 4), np.ones((1, 5))))
-    ctx = adapter.IterationProjectorContext(projector_dump_dir=None)
+    ctx = adapter.IterationProjectorContext(environment=VdamEnvironment(engine=EngineTuning()))
     current = ctx.refresh(state, padding_factor=1)
     kwargs = {"padding_factor": 1}
     if change == "reference":
@@ -144,11 +148,22 @@ def test_loop_callback_is_once_before_estep(monkeypatch, mstep_compute_dtype):
 
     monkeypatch.setattr(loop, "vdam_m_step", mstep)
     loop.run_vdam_iterations(
-        state, nr_particles=20, optics_group_by_particle=[0] * 20,
-        grad_ini_subset_size=10, grad_fin_subset_size=10, tau2_fudge_arg=4.0,
-        grad_em_iters=0, random_seed=29,
+        state,
+        nr_particles=20,
+        optics_group_by_particle=[0] * 20,
+        grad_ini_subset_size=10,
+        grad_fin_subset_size=10,
+        tau2_fudge_arg=4.0,
+        grad_em_iters=0,
+        random_seed=29,
         expectation_step=estep,
-        projector_refresh_fn=refresh, update=loop.VdamUpdate(padding_factor=1, mstep_compute_dtype=mstep_compute_dtype, probe=NoProbe()),
+        projector_refresh_fn=refresh,
+        update=loop.VdamUpdate(
+            padding_factor=1,
+            mstep_compute_dtype=mstep_compute_dtype,
+            probe=NoProbe(),
+            stable_window_quantum=DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM,
+        ),
         grad_ini_frac=0.3,
         grad_fin_frac=0.2,
         mu=DEFAULT_GRAD_MU,

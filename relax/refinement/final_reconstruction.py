@@ -124,8 +124,10 @@ def compute_final_class_priors(
     current_size: int,
     accumulator_shape: tuple,
     full_half_axis: int,
+    stable_window_quantum: int,
 ) -> ClassPriors:
-    """Estimate each class prior from its reference and merged backprojection."""
+    """Estimate each class prior from its reference and merged backprojection (``stable_window_quantum``:
+    ``EngineTuning.stable_window_quantum``)."""
     frame_scale = float(settings.box_size) ** 4
     variances = []
     shells = []
@@ -142,6 +144,7 @@ def compute_final_class_priors(
             full_half_axis=full_half_axis,
             frame_scale=frame_scale,
             projector_power_spectrum=projector_power_spectrum,
+            stable_window_quantum=stable_window_quantum,
         )
         variances.append(prior.variance)
         shells.append(prior.shells)

@@ -11,6 +11,7 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
+from relax.runtime.engine_tuning import DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM
 from relax.steps.expected_accuracy import estimate_relion_expected_accuracy
 
 N = 16
@@ -43,6 +44,7 @@ def _inputs(rng, voltages):
         random_seed=7,
         random_seed_particle_ids=np.arange(n_particles) + 100,
         do_ctf_correction=True,
+        stable_window_quantum=DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM,
     )
 
 

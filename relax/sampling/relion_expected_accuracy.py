@@ -41,7 +41,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from relax.fourier.fourier_window import stable_fourier_window_current_size, stable_fourier_window_quantum
+from relax.fourier.fourier_window import stable_fourier_window_current_size
 from relax.numerics import relion_random
 from relax.numerics.shells import shell_of_radius_sq
 from relax.relion.macros import PI, relion_round_array
@@ -99,12 +99,12 @@ def _inverse3(matrix):
     return inverse / determinant[..., None, None]
 
 
-def _capacity_size(size: int, box_size: int) -> int:
+def _capacity_size(size: int, box_size: int, quantum: int) -> int:
     """The stable Fourier-window class of ``size`` in a box of ``box_size`` (a shape, never a cutoff)."""
 
     if size <= 0 or size >= box_size or size % 2 or box_size % 2:
         return size
-    return stable_fourier_window_current_size(size, box_size, quantum=stable_fourier_window_quantum())
+    return stable_fourier_window_current_size(size, box_size, quantum=quantum)
 
 
 def _capacity_rows(size: int, capacity: int) -> np.ndarray:
@@ -482,6 +482,7 @@ def expected_angular_errors(
     image_projections=None,
     projection_left=None,
     device_memory_override: int | None,
+    stable_window_quantum: int,
 ) -> ExpectedErrors:
     """``calculateExpectedAngularErrors`` over the trials, as the binding's oracle computes it.
 
@@ -493,7 +494,8 @@ def expected_angular_errors(
     ``projection_left`` (3x3, ``ObservationModel::applyAnisoMag``'s ``inv(M3)``)
     multiplies both projection matrices on the left (ml_optimiser.cpp:9526, 9589).
     ``device_memory_override`` (``EngineTuning.device_memory_bytes``) replaces the device memory probe that bounds
-    the slab kept whole on the device.
+    the slab kept whole on the device. ``stable_window_quantum`` (``EngineTuning.stable_window_quantum``) is the
+    step of the device arrays' window classes (:func:`_capacity_size`).
     """
 
     model_pixel_size = float(pixel_size if model_pixel_size is None or model_pixel_size <= 0 else model_pixel_size)
@@ -536,8 +538,8 @@ def expected_angular_errors(
         int(current_image_size), box_size, sigma2_noise, float(sigma2_fudge), remap_image_sizes
     )
     # Device shapes: the stable window class of the image and of the projector radius.
-    capacity = _capacity_size(int(current_image_size), box_size)
-    capacity_r_max = _capacity_size(2 * int(projector_r_max), int(model_box_size)) // 2
+    capacity = _capacity_size(int(current_image_size), box_size, stable_window_quantum)
+    capacity_r_max = _capacity_size(2 * int(projector_r_max), int(model_box_size), stable_window_quantum) // 2
     valid, denominator = _to_capacity(valid, capacity, False), _to_capacity(denominator, capacity, 1.0)
     ctf = None if ctf_images is None else _to_capacity(np.asarray(ctf_images, dtype=np.float64), capacity, 0.0)
     left = None if projection_left is None else np.asarray(projection_left, dtype=np.float64).reshape(3, 3)

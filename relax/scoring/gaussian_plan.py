@@ -94,8 +94,8 @@ def plan_coarse_gaussian(
 ) -> CoarseGaussianPlan:
     """Plan the Gaussian route of a pass over ``shape``, scoring the rows ``window_score_indices_np`` (``None``: all).
 
-    ``engine_tuning`` (the request's ``EngineTuning``) gives the projector transient and projection cache budgets and
-    the explicit cache request.
+    ``engine_tuning`` (the request's ``EngineTuning``) gives the projector transient and projection cache budgets,
+    the explicit cache request and the stable windows' quantum.
 
     Refuses more than 128 translations and a backend without the custom CUDA library. Logs the plan.
     """
@@ -121,6 +121,7 @@ def plan_coarse_gaussian(
         shape.score_size,
         active_score_indices_np,
         stable_fourier_window_shapes=bool(stable_fourier_window_shapes),
+        stable_window_quantum=engine_tuning.stable_window_quantum,
     )
     square_score_count = square_layout.physical_square_count
     transient_budget = engine_tuning.coarse_gemm_transient_max_bytes

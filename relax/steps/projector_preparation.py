@@ -104,6 +104,7 @@ def prepare_scoring_projector(
     reusable: ProjectorReuse | None = None,
     gridding_kernel: str = "radial",
     files: ProjectorFiles,
+    stable_window_quantum: int,
 ) -> PreparedProjector:
     """Prepare RELION ``Projector::data`` slabs from current Fourier references.
 
@@ -118,7 +119,8 @@ def prepare_scoring_projector(
     setup's correction window; a ``reusable`` projector must have been built
     with the same one, and a non-radial window has its own cache entries.
     The power spectrum always counts as RELION does (every stored coefficient once). ``files`` names the
-    slab cache and dump (``ProjectorFiles``).
+    slab cache and dump (``ProjectorFiles``); ``stable_window_quantum`` (``EngineTuning.stable_window_quantum``)
+    is the transform's window class step.
     """
 
     if reusable is not None:
@@ -205,6 +207,7 @@ def prepare_scoring_projector(
         # setup narrows to complex64 (the InitialModel consumer) unless told otherwise.
         projector_data_dtype="complex128",
         gridding_kernel=gridding_kernel,
+        stable_window_quantum=stable_window_quantum,
     )
     if cache_path is not None:
         os.makedirs(files.cache_dir, exist_ok=True)
@@ -253,6 +256,7 @@ def build_numbered_projectors(
     real_references_by_half,
     iteration: int,
     files: ProjectorFiles,
+    stable_window_quantum: int,
     log: logging.Logger,
 ) -> list[PreparedProjector | None]:
     """Build each half's ``Projector::data`` for one numbered iteration's scoring; ``[half 1, half 2]``.
@@ -262,6 +266,7 @@ def build_numbered_projectors(
     projects ``references_by_half[half.index]``, from ``real_references_by_half[half.index]`` when given
     (the start-up handoff of the first iteration). Reads from ``settings`` (the run's
     ``ReconstructionSettings``): ``volume_shape``, ``projection_padding_factor`` and ``gridding_kernel``.
+    ``stable_window_quantum``: ``EngineTuning.stable_window_quantum``.
     """
     clock = Stopwatch()
     projectors = [None, None]
@@ -283,6 +288,7 @@ def build_numbered_projectors(
             dump_label=f"iter{iteration:03d}_half{half.index}",
             gridding_kernel=settings.gridding_kernel,
             files=files,
+            stable_window_quantum=stable_window_quantum,
         )
     require_projectors_for_gridding_kernel(projectors, settings.gridding_kernel)
     log.info(

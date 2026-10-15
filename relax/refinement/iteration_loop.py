@@ -959,7 +959,8 @@ def refine_single_volume(
             current_size=plan.sampling_plan.windows.model_window_size,
             n_classes=options.k_class.n_classes, reusable_half1=shared_projector_half1,
             real_references_by_half=initial_real_references_by_half if iteration == 0 else None, iteration=iteration,
-            files=options.environment.projector_files, log=logger,
+            files=options.environment.projector_files,
+            stable_window_quantum=options.environment.engine.stable_window_quantum, log=logger,
         )
         # The start-up real maps serve iteration 0's projector only (relax#26).
         initial_real_references_by_half = [None, None]

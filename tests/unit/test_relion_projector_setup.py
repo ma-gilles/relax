@@ -9,6 +9,7 @@ from helpers.float_compare import assert_matches
 from helpers.jit_programs import clear_programs
 
 from relax.relion.projector_setup import setup_relion_projector
+from relax.runtime.engine_tuning import DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM
 
 pytestmark = pytest.mark.unit
 
@@ -187,7 +188,13 @@ def test_host_window_build_meets_the_derived_float64_bound(size, padding, full):
     native_slab, native_power, *_ = bind.compute_fourier_transform_map(
         reference, size, padding, 1, 2 * radius, True, 2
     )
-    slab, power = setup_relion_projector_on_host(reference, radius, box_size=size, padding_factor=padding)
+    slab, power = setup_relion_projector_on_host(
+        reference,
+        radius,
+        box_size=size,
+        padding_factor=padding,
+        stable_window_quantum=DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM,
+    )
     assert slab.dtype == np.complex128 and slab.shape == np.asarray(native_slab).shape
     assert_matches(slab == 0, np.asarray(native_slab) == 0)
     bound = _float64_fft_bound(size, padding)
@@ -208,8 +215,17 @@ def test_host_window_build_is_chunking_invariant():
     from relax.relion.projector_setup import setup_relion_projector_on_host
 
     reference = np.random.default_rng(63).normal(size=(16,) * 3).astype(np.float64)
-    whole = setup_relion_projector_on_host(reference, 6, box_size=16, padding_factor=2)
-    chunked = setup_relion_projector_on_host(reference, 6, box_size=16, padding_factor=2, chunk_bytes=1)
+    whole = setup_relion_projector_on_host(
+        reference, 6, box_size=16, padding_factor=2, stable_window_quantum=DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM
+    )
+    chunked = setup_relion_projector_on_host(
+        reference,
+        6,
+        box_size=16,
+        padding_factor=2,
+        chunk_bytes=1,
+        stable_window_quantum=DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM,
+    )
     # Each one-dimensional FFT sees the same row, so the slab is unchanged; the
     # shell power is summed per chunk, in a different order.
     assert_matches(chunked[0], whole[0])
@@ -231,7 +247,11 @@ def test_jax_backend_builds_on_the_device_at_every_size(monkeypatch):
     monkeypatch.setattr(setup, "_CHUNK_BYTES", 1)
     reference = np.random.default_rng(64).normal(size=(1, 16, 16, 16)).astype(np.float64)
     slab, power, r_max = setup.reference_to_relion_projector_half_maps_and_power(
-        reference, current_size=12, padding_factor=2, projector_data_dtype="complex128"
+        reference,
+        current_size=12,
+        padding_factor=2,
+        projector_data_dtype="complex128",
+        stable_window_quantum=DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM,
     )
     assert called == [1]
     native, native_power, *_ = bind.compute_fourier_transform_map(
@@ -250,9 +270,13 @@ def test_host_build_reuses_programs_inside_a_stable_window_class():
 
     reference = np.random.default_rng(65).normal(size=(32,) * 3).astype(np.float64)
     programs = (setup._transform_xy, setup._transform_z, setup._mask_and_shell_power)
-    setup.setup_relion_projector_on_host(reference, 5, box_size=32, padding_factor=2)
+    setup.setup_relion_projector_on_host(
+        reference, 5, box_size=32, padding_factor=2, stable_window_quantum=DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM
+    )
     compiled = [program._cache_size() for program in programs]
-    slab, power = setup.setup_relion_projector_on_host(reference, 6, box_size=32, padding_factor=2)
+    slab, power = setup.setup_relion_projector_on_host(
+        reference, 6, box_size=32, padding_factor=2, stable_window_quantum=DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM
+    )
     assert [program._cache_size() for program in programs] == compiled
     # Current sizes 10 and 12 both run in class 16; the slab is still cropped to radius 6.
     assert slab.shape == (27, 27, 14)

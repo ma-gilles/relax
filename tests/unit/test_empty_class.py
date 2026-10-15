@@ -16,6 +16,7 @@ import pytest
 from helpers.float_compare import assert_matches
 
 from relax.refinement import iteration_loop, maximization, numbered_reconstruction, priors, reference_state
+from relax.runtime.engine_tuning import EngineTuning
 
 pytestmark = pytest.mark.unit
 
@@ -108,7 +109,11 @@ def test_class_maximization_freezes_the_curve_of_a_class_without_weight(monkeypa
     this_iteration = SimpleNamespace(
         iteration=11, current_size=8, first_iteration=SimpleNamespace(relion_firstiter_cc=False)
     )
-    options = SimpleNamespace(k_class=SimpleNamespace(n_classes=2), parity=SimpleNamespace())
+    options = SimpleNamespace(
+        k_class=SimpleNamespace(n_classes=2),
+        parity=SimpleNamespace(),
+        environment=SimpleNamespace(engine=EngineTuning()),
+    )
     ctx = SimpleNamespace(reconstruction_settings=None, scoring_dtype=np.float32, maximization_probe=None)
 
     mstep = maximization.class_maximization(

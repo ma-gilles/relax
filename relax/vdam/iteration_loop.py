@@ -167,12 +167,13 @@ class VdamUpdate:
     """RELION's VDAM model update: the gradient M-step, the noise blend and the data_vs_prior resolution.
 
     ``single_class_m_step``: each class's M-step, the run's input source's (``VdamInputSource``); ``probe`` the
-    run observer's model-update hooks, which see each noise update.
+    run observer's model-update hooks, which see each noise update; ``stable_window_quantum`` the run's (EngineTuning).
     """
 
     padding_factor: int
     mstep_compute_dtype: Literal["float32", "float64"]
     probe: MaximizationProbe
+    stable_window_quantum: int
     single_class_m_step: Callable[..., InitialModelState] = vdam_m_step_single_class
 
     def maximize(self, current: InitialModelState, accumulators, sums: EstepSums, meta: dict) -> InitialModelState:
@@ -184,6 +185,7 @@ class VdamUpdate:
             padding_factor=self.padding_factor,
             mstep_compute_dtype=self.mstep_compute_dtype,
             average_ctf2=sums.average_ctf2,
+            stable_window_quantum=self.stable_window_quantum,
             single_class_m_step=self.single_class_m_step,
         )
 
