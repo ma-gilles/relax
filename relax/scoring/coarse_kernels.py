@@ -30,7 +30,7 @@ def _relion_coarse_128lane_float32_reduce(values):
 
 
 @jax.jit
-def _relion_coarse_cc_atomic_score_from_components(numerator, norm):
+def relion_coarse_cc_atomic_score_from_components(numerator, norm):
     """Apply RELION's 128 identical atomic additions to coarse CC scores.
 
     ``cuda_kernel_diff2_CC_coarse`` deliberately has every one of its 128
@@ -77,7 +77,7 @@ def _relion_coarse_normalized_cc_rescore_jax(
     norm_pixels = score_weight * (jnp.abs(projection) ** 2) * weights
     numerator = _relion_coarse_128lane_float32_reduce(numerator_pixels)
     norm = _relion_coarse_128lane_float32_reduce(norm_pixels)
-    return _relion_coarse_cc_atomic_score_from_components(numerator, norm)
+    return relion_coarse_cc_atomic_score_from_components(numerator, norm)
 
 
 def relion_coarse_normalized_cc_rescore(
@@ -372,7 +372,7 @@ def relion_coarse_normalized_cc_gemm_scores_jit(
     ``corr_img``; with ``pixel_weight = corr_img * half_weights`` they are the
     cross term ``X`` and model energy ``A`` of :func:`relion_coarse_gemm_terms`,
     and the score is ``X / sqrt(A)`` through RELION's 128 atomic additions
-    (:func:`_relion_coarse_cc_atomic_score_from_components`). Returns
+    (:func:`relion_coarse_cc_atomic_score_from_components`). Returns
     ``[B, R, T]`` float32 scores; padded images score zero.
     """
 
@@ -385,7 +385,7 @@ def relion_coarse_normalized_cc_gemm_scores_jit(
         n_trans=n_trans,
         wide=jnp.float32,
     )
-    scores = _relion_coarse_cc_atomic_score_from_components(
+    scores = relion_coarse_cc_atomic_score_from_components(
         cross.swapaxes(1, 2),
         model_energy[:, :, None],
     )

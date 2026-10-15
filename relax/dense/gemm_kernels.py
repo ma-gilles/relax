@@ -26,7 +26,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from relax.scoring.coarse_kernels import (
-    _relion_coarse_cc_atomic_score_from_components,
+    relion_coarse_cc_atomic_score_from_components,
     relion_coarse_gemm_terms,
 )
 
@@ -169,7 +169,7 @@ def cc_score_tile(
         power = score_model_power(projection, pixel_weight) if model_power is None else model_power
     else:
         raise ValueError(f"unknown translation_side {translation_side!r}")
-    scores = _relion_coarse_cc_atomic_score_from_components(
+    scores = relion_coarse_cc_atomic_score_from_components(
         cross, power[:, :, None]
     )
     valid = valid_images[:, None, None] & valid_rotations[None, :, None] & valid_translations[None, None, :]

@@ -143,11 +143,11 @@ def _run_padding_pair(monkeypatch):
     from relax.scoring import significance
 
     args, kwargs = _significance_call(monkeypatch)
-    control = significance._compute_k_class_significance_batched(
+    control = significance.compute_k_class_significance_batched(
         *args, **dict(kwargs, engine_tuning=replace(EngineTuning(), coarse_pad_final_image_batch=False)),
         scoring_overrides=ScoringOverrides(),
     )
-    candidate = significance._compute_k_class_significance_batched(
+    candidate = significance.compute_k_class_significance_batched(
         *args, **dict(kwargs, engine_tuning=replace(EngineTuning(), coarse_pad_final_image_batch=True)),
         scoring_overrides=ScoringOverrides(),
     )
@@ -192,14 +192,14 @@ def test_coarse_pad_env_flag_gives_every_batch_one_image_extent(monkeypatch):
 
     monkeypatch.setattr(pass1_operands, "process_relion_exact_coarse_half_image", record)
 
-    significance._compute_k_class_significance_batched(
+    significance.compute_k_class_significance_batched(
         *args, **dict(kwargs, engine_tuning=replace(EngineTuning(), coarse_pad_final_image_batch=False)),
         scoring_overrides=ScoringOverrides(),
     )
     unpadded = list(seen)
 
     seen.clear()
-    significance._compute_k_class_significance_batched(
+    significance.compute_k_class_significance_batched(
         *args, **dict(kwargs, engine_tuning=replace(EngineTuning(), coarse_pad_final_image_batch=True)),
         scoring_overrides=ScoringOverrides(),
     )
@@ -292,7 +292,7 @@ def test_source_star_ctf_pads_with_the_rest_of_the_coarse_batch():
 
     ``RELAX_COARSE_PAD_FINAL_IMAGE_BATCH`` pads the coarse batch's images,
     CTF parameters, pre-shifts, corrections and scales, but the normalized-CC
-    tree-rescore branch of ``_compute_k_class_significance_batched`` rebuilds one
+    tree-rescore branch of ``compute_k_class_significance_batched`` rebuilds one
     more per-image operand from the source STAR at the *unpadded* ``indices``.
     With the flag on, the first iteration of a K=1 end-to-end died there:
 

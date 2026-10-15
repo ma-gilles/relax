@@ -218,7 +218,7 @@ Pass 1 by stage (`relax/scoring`; the open items are in [scoring_rules_status.md
 | | `gaussian_plan.py`, `coarse_layout.py`, `coarse_gaussian_gemm.py` | the Gaussian GEMM's scored rows, resources, layout and projection cache |
 | | `pass1_scores.py`, `pass1_support.py` | `plan_score_program`, `ProgramStatics`; `plan_support` and the float32 and generic support routes |
 | | `tree_rescore.py` | the first-iteration tree top-two rescore (plan, rescore, totals) |
-| Run | `significance.py` | `run_pass1`: the loop `prepare_batch`, publish the waiting batch, `score_batch`; the keyword entry `_compute_k_class_significance_batched` |
+| Run | `significance.py` | `run_pass1`: the loop `prepare_batch`, publish the waiting batch, `score_batch`; the keyword entry `compute_k_class_significance_batched` |
 | | `pass1_step.py`, `pass1_batch.py`, `pass1_operands.py` | the two batch steps; image preprocessing; the route's score operands |
 | | `pass1_program.py`, `coarse_projector.py` | the jitted kernels and `run_score_program`; the class-stacked projector and its cache |
 | | `pass1_publish.py`, `pass1_dump.py` | the host read-back into the per-image results; which batches dump |

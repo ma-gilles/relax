@@ -154,7 +154,7 @@ from relax.sampling.oversampled_grids import (
 from relax.sampling.perturbation import apply_relion_rotation_perturbation_to_eulers
 from relax.scoring.pass1_publish import _capture_offset_free_and_absolute_float32_scores
 from relax.scoring.pass1_results import Pass1Result
-from relax.scoring.significance import _compute_k_class_significance_batched
+from relax.scoring.significance import compute_k_class_significance_batched
 from relax.steps import score_outputs, scoring_policy
 from relax.steps.convergence import relion_optimizer_average_pmax
 from relax.types import LocalEMResult, NoiseStats, RelionStats
@@ -4235,7 +4235,7 @@ def test_k_class_firstiter_cc_routes_relion_cuda_norm_and_shift_before_fft(
 
     dataset.process_images_half = capture_process
     with pytest.raises(_CapturedStrictPreprocess):
-        _compute_k_class_significance_batched(
+        compute_k_class_significance_batched(
             dataset,
             jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
             _make_rotations(1, seed=884),
@@ -4279,7 +4279,7 @@ def test_coarse_gaussian_routes_relion_cuda_norm_and_shift_before_fft(rng, monke
 
     dataset.process_images_half = capture_process
     with pytest.raises(_CapturedStrictPreprocess):
-        _compute_k_class_significance_batched(
+        compute_k_class_significance_batched(
             dataset,
             jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
             _make_rotations(1, seed=886),
@@ -6372,7 +6372,7 @@ class TestRelionModeSmokeTest:
         """Rotation priors should work even when the last block is padded."""
         rotations = _make_rotations(5, seed=19)
         dataset, means, noise, projector = _exact_pass1_inputs(monkeypatch)
-        sig_rot_any, n_sig, ha, _, _, _ = _compute_k_class_significance_batched(
+        sig_rot_any, n_sig, ha, _, _, _ = compute_k_class_significance_batched(
             dataset,
             noise,
             rotations,
@@ -6454,7 +6454,7 @@ class TestRelionModeSmokeTest:
         )
 
         rotations = _make_rotations(3, seed=201)
-        _compute_k_class_significance_batched(
+        compute_k_class_significance_batched(
             dataset,
             noise,
             rotations,
@@ -6504,7 +6504,7 @@ class TestRelionModeSmokeTest:
             **projector,
         )
 
-        unpadded = _compute_k_class_significance_batched(
+        unpadded = compute_k_class_significance_batched(
             dataset,
             noise,
             rotations,
@@ -6515,7 +6515,7 @@ class TestRelionModeSmokeTest:
             engine_tuning=EngineTuning(),
             scoring_overrides=ScoringOverrides(),
         )
-        padded = _compute_k_class_significance_batched(
+        padded = compute_k_class_significance_batched(
             dataset,
             noise,
             rotations,
@@ -6655,7 +6655,7 @@ class TestRelionModeSmokeTest:
             fake_tree_rescore,
         )
 
-        *_, stats = _compute_k_class_significance_batched(
+        *_, stats = compute_k_class_significance_batched(
             dataset,
             jnp.ones(IMAGE_SIZE, dtype=jnp.float32),
             rotations,
@@ -6722,7 +6722,7 @@ class TestRelionModeSmokeTest:
             str(target_local),
         )
 
-        _compute_k_class_significance_batched(
+        compute_k_class_significance_batched(
             dataset,
             noise,
             rotations,
@@ -6770,7 +6770,7 @@ class TestRelionModeSmokeTest:
         monkeypatch.setenv("RELAX_SIGNIFICANCE_DUMP_DIR", str(dump_dir))
         monkeypatch.setenv("RELAX_SIGNIFICANCE_DUMP_ORIGINAL_INDICES", "0")
 
-        *_, stats = _compute_k_class_significance_batched(
+        *_, stats = compute_k_class_significance_batched(
             dataset,
             noise,
             rotations,
@@ -9463,7 +9463,7 @@ def test_production_k4_firstiter_has_one_joint_winner_and_exact_mstep_mass(rng, 
 
     monkeypatch.setattr(
         significance_module,
-        "_compute_k_class_significance_batched",
+        "compute_k_class_significance_batched",
         fake_joint_coarse_score,
     )
     sparse_calls = []

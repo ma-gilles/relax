@@ -11,9 +11,9 @@ The counterpart of ``scripts/dev/fingerprint.py`` (the refinement controller) an
 for ``relax/scoring/significance.py``: the same commands, output format and comparison rules; the pure logic
 (flattening, the diff and its accepted classes, mutations) is imported from the controller's harness, and the
 command line is ``scripts/dev/fingerprint_cli.py``. The refinement
-fingerprint replaces ``_compute_k_class_significance_batched`` by a recorder, so it cannot see inside pass 1.
+fingerprint replaces ``compute_k_class_significance_batched`` by a recorder, so it cannot see inside pass 1.
 
-``run`` calls ``_compute_k_class_significance_batched`` itself, on the CPU exact-operand harness
+``run`` calls ``compute_k_class_significance_batched`` itself, on the CPU exact-operand harness
 (``tests/helpers/exact_pass1_harness.py``: a tiny strict-preprocess dataset, unit CTFs, no high-resolution image
 power, translation as repetition and a coded projector), for a few dozen cases. Each case records the six results
 (rotation support, significant-sample counts, hard assignments, class assignments, the per-class significant
@@ -525,7 +525,7 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
         A base from before the removal of two parameters nothing read takes ``means`` (read only for its class
         count) as the second positional and ``disc_type`` as the sixth.
         """
-        function = getattr(significance, fingerprint_cli.either_name(significance, "_compute_k_class_significance_batched"))
+        function = getattr(significance, fingerprint_cli.either_name(significance, "compute_k_class_significance_batched"))
         parameters = inspect.signature(function).parameters
         args = list(args)
         if "means" in parameters:

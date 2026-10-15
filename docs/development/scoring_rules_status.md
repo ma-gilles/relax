@@ -10,7 +10,7 @@ here in the commit that closes it; record a decision in the "Decided" section. "
 
 | Measure | Before (main 6610f54d) | Now |
 | --- | --- | --- |
-| `_compute_k_class_significance_batched` | 1,819 lines, 46 parameters, 283 locals | 9 lines, 4 parameters and the options of `Pass1Request` |
+| `compute_k_class_significance_batched` | 1,819 lines, 46 parameters, 283 locals | 9 lines, 4 parameters and the options of `Pass1Request` |
 | Planning (`plan_pass1`) and the loop (`run_pass1`) | inside that function | 206 and 76 lines, one parameter each; the route, the program and support plans and the batch's two steps are functions of their own modules |
 | `significance.py` | 2,660 lines | 111 lines |
 | `_publish_batch` | 264 lines, nested; captures 51 enclosing variables, unpacks a 34-field tuple | `pass1_publish.publish_batch` (12 lines), explicit inputs, `BatchOutputs` record, five functions by what each writes |
@@ -22,7 +22,7 @@ here in the commit that closes it; record a decision in the "Decided" section. "
 
 ## Coverage
 
-`scripts/dev/pass1_fingerprint.py` calls `_compute_k_class_significance_batched` itself, on the CPU exact-operand
+`scripts/dev/pass1_fingerprint.py` calls `compute_k_class_significance_batched` itself, on the CPU exact-operand
 harness (`tests/helpers/exact_pass1_harness.py`), for 69 cases: K=1 and K=2, every prior shape, windows (radial,
 square, at the box, quantized physical), the padded tail batch, an optics-group noise table, corrections and
 pre-shifts, the cached and uncached projection program, the generic and the float32 support route, the support
@@ -51,7 +51,7 @@ device scoring (`defer_publish`).
    What remains inline is the normalization of the request's fields, the window and the construction of the output,
    dump and batch-input records. `coarse_rotation_ids` and the healpix order are validated for every route although only
    the normalized-CC tree rescore reads them. The callers (`k_class.py`, `scripts/run_k_class_parity.py`, about 30 tests)
-   still pass keywords that `_compute_k_class_significance_batched` turns into a `Pass1Request`; that entry is the seam
+   still pass keywords that `compute_k_class_significance_batched` turns into a `Pass1Request`; that entry is the seam
    they patch and the fingerprint calls, so it stays until they build the request.
 2. **The environment steers pass 1 below the boundary (rule 5).** Read in `pass1_assembly.py`: the support-audit
    variables; in `pass1_dump.py`: the dump target list. Moved to the commands (2026-10-12/13):

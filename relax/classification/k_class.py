@@ -734,7 +734,7 @@ def _run_dense_k_class_joint_firstiter_score_probe(
     (``scoring_overrides``: the run's ScoringOverrides)."""
 
     from relax.projection.projection import compact_relion_projector_half_for_centered_indices
-    from relax.scoring.significance import _compute_k_class_significance_batched
+    from relax.scoring.significance import compute_k_class_significance_batched
 
     means_array = as_class_means(means_array)
     n_classes = int(means_array.shape[0])
@@ -797,7 +797,7 @@ def _run_dense_k_class_joint_firstiter_score_probe(
     # RELION's iter-1 firstiter_cc path performs WTA on raw normalized-CC
     # scores before the non-firstiter prior-weighting branch is reached.
     firstiter_class_log_priors = np.zeros(n_classes, dtype=np.float64)
-    pass1_result = _compute_k_class_significance_batched(
+    pass1_result = compute_k_class_significance_batched(
         experiment_dataset,
         noise_variance,
         rotations,
@@ -1559,7 +1559,7 @@ def run_dense_k_class_em_adaptive(
     # Lazy import to avoid the formatter stripping a top-level name that is
     # only referenced inside this function.
     from relax.sampling.symmetry import canonicalize_rotational_symmetry
-    from relax.scoring.significance import _compute_k_class_significance_batched
+    from relax.scoring.significance import compute_k_class_significance_batched
 
     if not engine_kwargs.pop("sparse_pass2", True):
         raise RuntimeError(
@@ -1916,7 +1916,7 @@ def run_dense_k_class_em_adaptive(
             sig_kwargs["return_relion_f32_normalization"] = True
 
         with nvtx.annotate("kclass.adaptive.significance", color="orange", domain=NVTX_DOMAIN_EM):
-            pass1_result = _compute_k_class_significance_batched(
+            pass1_result = compute_k_class_significance_batched(
                 experiment_dataset,
                 noise_variance,
                 coarse_rotations_np,

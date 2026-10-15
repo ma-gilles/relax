@@ -91,8 +91,8 @@ def test_relion_coarse_rescore_matches_numpy_replay():
 
     from relax.scoring.coarse_kernels import (
         _relion_coarse_128lane_float32_reduce,
-        _relion_coarse_cc_atomic_score_from_components,
         _relion_coarse_normalized_cc_rescore_jax,
+        relion_coarse_cc_atomic_score_from_components,
     )
 
     rng = np.random.default_rng(6322)
@@ -149,7 +149,7 @@ def test_relion_coarse_rescore_matches_numpy_replay():
         dtype=jnp.float32,
     )
     frozen_actual = np.asarray(
-        _relion_coarse_cc_atomic_score_from_components(
+        relion_coarse_cc_atomic_score_from_components(
             frozen_numerator,
             frozen_norm,
         ),

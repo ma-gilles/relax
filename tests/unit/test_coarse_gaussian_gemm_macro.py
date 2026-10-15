@@ -644,7 +644,7 @@ def test_coarse_gaussian_gemm_macro_is_shared_by_em_and_initial_model():
 
     # InitialModel reaches the coarse pass through the same adaptive route as auto-refine.
     assert (
-        "_compute_k_class_significance_batched"
+        "compute_k_class_significance_batched"
         in k_class.run_dense_k_class_em_adaptive.__code__.co_names
     )
 
@@ -751,7 +751,7 @@ def test_coarse_gaussian_gemm_live_k1_cache_builds_once_outside_image_loop(
     )
 
     def run():
-        return significance._compute_k_class_significance_batched(
+        return significance.compute_k_class_significance_batched(
             dataset,
             jnp.ones(dataset.image_size, dtype=jnp.float32),
             rotations,
@@ -991,7 +991,7 @@ def test_coarse_gaussian_gemm_live_k2_priors_multigroup_and_poisoned_tails(
         selected_translation_prior = translation_prior[
             selected_dataset._original_indices
         ]
-        return significance._compute_k_class_significance_batched(
+        return significance.compute_k_class_significance_batched(
             selected_dataset,
             jnp.ones(selected_dataset.image_size, dtype=jnp.float32),
             rotations,

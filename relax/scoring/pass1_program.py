@@ -260,7 +260,7 @@ def coarse_pass1_blocks(
     """Pass 1 of one image batch over every cached class and rotation block, as one program.
 
     One program instead of the per-class, per-block eager loop of
-    :func:`_compute_k_class_significance_batched`: the same statements
+    :func:`compute_k_class_significance_batched`: the same statements
     (:func:`_pass1_block_update`) in the same class-then-block order, so the same
     values. ``blocks`` holds static ``(class_index, rotation_start, rows, block_rows)``
     entries whose rows are read from the ``[K, R, P]`` cached projection table;

@@ -11,7 +11,7 @@ from relax.scoring.probes import NoProbe, Pass1Probe
 
 @dataclass(frozen=True, kw_only=True)
 class Pass1Request:
-    """The inputs of one coarse significance pass (:func:`relax.scoring.significance._compute_k_class_significance_batched`).
+    """The inputs of one coarse significance pass (:func:`relax.scoring.significance.compute_k_class_significance_batched`).
 
     The pass finds significant samples from one posterior over ``class x rotation x translation``: the poses that carry
     ``adaptive_fraction`` of it, at most ``max_significants``. ``noise_variance`` is one shared spectrum or ``[G, P]`` rows

@@ -121,7 +121,7 @@ def test_adaptive_coarse_state_activation_is_zero_soft_k1_only(
         fine_calls.append(kwargs)
         return result
 
-    monkeypatch.setattr(significance, "_compute_k_class_significance_batched", coarse)
+    monkeypatch.setattr(significance, "compute_k_class_significance_batched", coarse)
     monkeypatch.setattr(k_class_module, "_run_sparse_k_class_adaptive_pass2", fine)
     actual = run_dense_k_class_em_adaptive(
         SimpleNamespace(n_images=1), jnp.zeros((n_classes, 4), dtype=jnp.complex64),
@@ -214,7 +214,7 @@ def _adaptive_run_with_fake_coarse(monkeypatch, engine_tuning=EngineTuning()):
         sparse_calls.append((args, kwargs))
         return sparse_result
 
-    monkeypatch.setattr(significance_module, "_compute_k_class_significance_batched", fake_significance)
+    monkeypatch.setattr(significance_module, "compute_k_class_significance_batched", fake_significance)
     monkeypatch.setattr(k_class_module, "_run_sparse_k_class_adaptive_pass2", fake_sparse)
 
     result = run_dense_k_class_em_adaptive(
@@ -751,7 +751,7 @@ def test_firstiter_score_probe_uses_joint_significance(monkeypatch, projection_d
             ),
         )
 
-    monkeypatch.setattr(significance_module, "_compute_k_class_significance_batched", fake_compute_significance)
+    monkeypatch.setattr(significance_module, "compute_k_class_significance_batched", fake_compute_significance)
 
     phase_source = np.asarray(
         [[0.0, 0.0], [1.0 + 2.0**-30, 0.0], [2.0, 0.0]],
@@ -1565,7 +1565,7 @@ def test_firstiter_score_probe_compacts_relion_projector_on_host(
 
     monkeypatch.setattr(
         significance_module,
-        "_compute_k_class_significance_batched",
+        "compute_k_class_significance_batched",
         fake_compute_significance,
     )
     caplog.set_level("INFO", logger=k_class_module.__name__)

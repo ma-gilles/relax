@@ -139,7 +139,7 @@ def test_adaptive_engine_hands_the_coarse_state_to_pass_2_for_classes_on_request
         fine_calls.append(kwargs)
         return result
 
-    monkeypatch.setattr(significance, "_compute_k_class_significance_batched", coarse)
+    monkeypatch.setattr(significance, "compute_k_class_significance_batched", coarse)
     monkeypatch.setattr(k_class_module, "_run_sparse_k_class_adaptive_pass2", fine)
     run_dense_k_class_em_adaptive(
         SimpleNamespace(n_images=1), jnp.zeros((n_classes, 4), dtype=jnp.complex64),

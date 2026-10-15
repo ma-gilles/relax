@@ -95,7 +95,7 @@ def run_pass1(plan: Pass1Plan) -> Pass1Result:
     )
 
 
-def _compute_k_class_significance_batched(experiment_dataset, noise_variance, rotations, translations, **options):
+def compute_k_class_significance_batched(experiment_dataset, noise_variance, rotations, translations, **options):
     """Find significant samples from one posterior over ``class x rotation x translation``.
 
     ``options`` are the keyword fields of :class:`~relax.scoring.pass1_request.Pass1Request`, which documents them.

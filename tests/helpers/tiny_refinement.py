@@ -377,7 +377,7 @@ def engine_stage_kwargs(monkeypatch, **engine_kwargs):
         recorded.append(kwargs)
         raise _Reached
 
-    monkeypatch.setattr(significance, "_compute_k_class_significance_batched", recorder)
+    monkeypatch.setattr(significance, "compute_k_class_significance_batched", recorder)
     monkeypatch.setattr(resident_pass2, "compute_pass2_stats_resident", recorder)
     dataset = MockHalfSet(3, np.random.default_rng(0))
     coarse = np.repeat(np.eye(3, dtype=np.float32)[None], 4, axis=0)

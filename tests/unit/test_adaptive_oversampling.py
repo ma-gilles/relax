@@ -153,9 +153,9 @@ def test_coarse_numeric_normalization_preserves_selection(monkeypatch, n_classes
         rotation_block_size=2,
         pad_final_image_batch=pad_tail,
     )
-    control = significance._compute_k_class_significance_batched(*args, **kwargs, scoring_overrides=replace(ScoringOverrides(), f32_coarse_support=False))
+    control = significance.compute_k_class_significance_batched(*args, **kwargs, scoring_overrides=replace(ScoringOverrides(), f32_coarse_support=False))
     assert not captured
-    candidate = significance._compute_k_class_significance_batched(
+    candidate = significance.compute_k_class_significance_batched(
         *args,
         **kwargs,
         return_relion_f32_normalization=True,
@@ -210,7 +210,7 @@ def test_k1_f32_coarse_support_forms_relion_ordered_log_weights(monkeypatch):
 
         monkeypatch.setattr(pass1_support, "coarse_support_posterior", record)
         args, projector = _exact_pass1_call(n_classes)
-        result = significance._compute_k_class_significance_batched(
+        result = significance.compute_k_class_significance_batched(
             *args,
             **projector,
             class_log_priors=np.log(np.full(n_classes, 1.0 / n_classes)),
@@ -282,10 +282,10 @@ def test_k1_f32_coarse_support_forms_relion_ordered_log_weights(monkeypatch):
     ],
 )
 def test_coarse_numeric_normalization_rejects_incompatible_modes(kwargs):
-    from relax.scoring.significance import _compute_k_class_significance_batched
+    from relax.scoring.significance import compute_k_class_significance_batched
 
     with pytest.raises(ValueError, match="requires Gaussian float32 significance"):
-        _compute_k_class_significance_batched(
+        compute_k_class_significance_batched(
             None,
             None,
             None,
@@ -1317,12 +1317,12 @@ def test_coarse_projections_are_computed_once_per_block_across_image_batches(mon
         rotation_block_size=2,
         score_mode="normalized_cc",
     )
-    memoized = significance._compute_k_class_significance_batched(*args, **kwargs, scoring_overrides=ScoringOverrides())
+    memoized = significance.compute_k_class_significance_batched(*args, **kwargs, scoring_overrides=ScoringOverrides())
     n_blocks = 3  # 5 rotations in blocks of 2
     assert len(calls) == n_classes * n_blocks
     monkeypatch.setattr(coarse_projector, "_PASS1_PROJECTION_MEMO_MAX_BYTES", 0)
     calls.clear()
-    recomputed = significance._compute_k_class_significance_batched(*args, **kwargs, scoring_overrides=ScoringOverrides())
+    recomputed = significance.compute_k_class_significance_batched(*args, **kwargs, scoring_overrides=ScoringOverrides())
     assert len(calls) > n_classes * n_blocks
     for actual, expected in zip(memoized[:4], recomputed[:4]):
         assert_matches(actual, expected)

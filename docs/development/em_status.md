@@ -1260,7 +1260,7 @@ Pass-1 batch loop (2026-10-04, speedw; relax 0ae37fd, 54cbb65, 4efac62, 3636596)
 program per batch (`coarse_publication.coarse_support_posterior`) forms the K=1 RELION-order log weights, the float32
 posterior, the winner, Pmax and the rotation mask; the device CTF row gather is one program
 (`relion_ctf._gather_ctf_rows`); a batch's host read-backs (`publish_batch` in
-`relax/scoring/pass1_publish.py`, called by `significance._compute_k_class_significance_batched`) run once the next batch's operands are on the device and
+`relax/scoring/pass1_publish.py`, called by `significance.compute_k_class_significance_batched`) run once the next batch's operands are on the device and
 before that batch's score program, and the image preprocess kernel's finite check is read at the end of the loop
 (`preprocess.deferred_relion_preprocess_checks`), so the device scores a batch while the host prepares the next. That
 check's queue belongs to the loop: a failure names pass 1 and each batch with an invalid image (batch number, positions
@@ -1292,7 +1292,7 @@ Late plain 10k K=1 iterations after these changes (py-spy, 60 s, relax 3636596):
 30%, the VDAM M-step 12%, the expected-accuracy estimate 7%. Open: pass 2 waits 11 s of the 60 s for the
 iteration's images to be read a second time (pass 1 already read them); the expected-accuracy estimate rebuilds a
 host float64 projector from the references at every iteration.
-`significance._compute_k_class_significance_batched` can score on a quantized physical window (runtime current size,
+`significance.compute_k_class_significance_batched` can score on a quantized physical window (runtime current size,
 zero-weight capacity rows; `stable_fourier_window_shapes`). It was off by default until 2026-10-07. Turned on as the one path, a K1 noise1 5k
 standalone refine (oversampling 1, healpix 3, 12 iterations, cold cache, A100, JAX_LOG_COMPILES) compiled 2350
 programs in both arms, wall 895 vs 911 s: the coarse current size stays 38 (physical 40) through the run, so pass 1

@@ -19,7 +19,7 @@ the float32 primitive, and rejects them on incompatible reconstruction paths.
 Defaults preserve the previous computation. Exact forwarding tests are in
 [`test_sparse_pass2_relion_f32_posterior.py`](../../tests/unit/test_sparse_pass2_relion_f32_posterior.py).
 
-[`_compute_k_class_significance_batched`](../../relax/scoring/significance.py) now optionally returns
+[`compute_k_class_significance_batched`](../../relax/scoring/significance.py) now optionally returns
 `relion_f32_sum_weight` and `relion_f32_max_posterior`. On the generic selector
 it uses the existing F32 primitive on the actual prior-weighted coarse scores,
 not exponentiated absolute log evidence. Its existing support, hard assignments,

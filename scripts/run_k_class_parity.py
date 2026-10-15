@@ -1317,7 +1317,7 @@ def main() -> None:
         apply_relion_rotation_perturbation_to_eulers,
         apply_relion_translation_perturbation,
     )
-    from relax.scoring.significance import _compute_k_class_significance_batched
+    from relax.scoring.significance import compute_k_class_significance_batched
     from relax.star.metadata import (
         read_relion_optimiser_metadata,
         read_relion_sampling_metadata,
@@ -1740,7 +1740,7 @@ def main() -> None:
     need_significant_support = args.significant_mstep or args.relion_bpref_mstep
     if need_significant_support:
         sig_t0 = time.time()
-        significance = _compute_k_class_significance_batched(
+        significance = compute_k_class_significance_batched(
             ds,
             noise_variance,
             coarse_scoring_rotations,
@@ -1856,7 +1856,7 @@ def main() -> None:
             "  RELION BPref diagnostic: recomputing same-window support "
             f"at current_size={current_size} (coarse support used current_size={coarse_engine_current_size})"
         )
-        bpref_significance = _compute_k_class_significance_batched(
+        bpref_significance = compute_k_class_significance_batched(
             ds,
             noise_variance,
             coarse_scoring_rotations,

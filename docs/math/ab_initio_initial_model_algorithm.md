@@ -111,7 +111,7 @@ fine pass:
 
 The support restriction is part of the algorithm, not an optimization detail.
 The helpers are
-[`helpers/significance.py::_compute_k_class_significance_batched`](../../relax/scoring/significance.py)
+[`helpers/significance.py::compute_k_class_significance_batched`](../../relax/scoring/significance.py)
 for coarse support and
 [`local_layout.py::build_pass2_hypothesis_layout`](../../relax/local_search/layout.py)
 for fine-support expansion.

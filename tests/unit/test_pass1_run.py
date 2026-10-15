@@ -348,7 +348,7 @@ def test_running_the_plan_is_what_the_keyword_entry_does(make):
     plan, args, kwargs = make()
     result = significance.run_pass1(plan)
     assert isinstance(result, Pass1Result)
-    _assert_significance_results_match(result, significance._compute_k_class_significance_batched(*args, **kwargs, scoring_overrides=ScoringOverrides()))
+    _assert_significance_results_match(result, significance.compute_k_class_significance_batched(*args, **kwargs, scoring_overrides=ScoringOverrides()))
 
 
 def test_the_stats_are_typed_fields_with_the_shapes_and_dtypes_of_the_pass(make):
