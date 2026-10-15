@@ -6,7 +6,7 @@ selection: the CUDA texture implementation also derives its compact texture
 extent and origin from the radius. Gathering the same image pixels afterward
 does not make a projection computed with a different radius equivalent.
 
-Implementation: [`_compute_sparse_pass2_projections_block`](../../relax/fine_pass/projection_blocks.py).
+Implementation: [`compute_sparse_pass2_projections_block`](../../relax/fine_pass/projection_blocks.py).
 The helper also reads `max_r` to infer a supplied RELION projector's output crop,
 but must not consume it before the generic call. An explicit `None` and an
 omitted argument retain their distinct underlying-projector meanings. Explicit

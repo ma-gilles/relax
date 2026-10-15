@@ -87,11 +87,11 @@ def test_resident_without_scale_groups_keeps_the_scale_one_wavg():
 def test_native_fine_units_in_place_is_the_eager_conversion(shape):
     """On the default backend (CPU, or the Slurm GPU): a cache-sized block and a small one."""
 
-    from relax.fine_pass.scoring import _relion_native_fine_units
+    from relax.fine_pass.scoring import to_relion_native_fine_units
 
     rng = np.random.default_rng(3)
     values = (rng.normal(size=shape) + 1j * rng.normal(size=shape)).astype(np.complex64) * np.float32(1e3)
-    eager = np.asarray(_relion_native_fine_units(values, 136 * 136))
+    eager = np.asarray(to_relion_native_fine_units(values, 136 * 136))
     fused = np.asarray(resident_block_programs.relion_native_fine_units_in_place(jnp.asarray(values), 136 * 136))
     assert fused.dtype == np.complex64
     # Division in binary64 and one rounding to float32 in both forms (measured: identical).
@@ -168,7 +168,7 @@ def test_class_accumulators_stack_the_pseudo_halfsets():
     """Slot ``k + K * h`` becomes group ``h`` of class ``k``: the exact-local engine's grouped layout."""
 
     volumes = tuple(np.full(3, float(a)) for a in range(4))
-    result = rp._ResidentPass2Result(
+    result = rp.ResidentPass2Result(
         Ft_y=volumes,
         Ft_ctf=tuple(v + 10.0 for v in volumes),
         n_classes=2,

@@ -2,7 +2,7 @@
 
 Test oracle: moved from relax/projection/projection.py (with its broadcast helper from relax/relion/optics_groups.py),
 where only tests called it; it is the independent reference the flat-row ``_flat_row_norm_and_scale_terms`` of
-relax.fine_pass.resident_statistics is compared with.
+relax.fine_pass.resident_block_programs is compared with.
 """
 
 import jax

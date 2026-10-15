@@ -52,7 +52,7 @@ def relion_parent_execution_key(parent_ids, *, n_coarse_rot: int, nside_level: i
     return (parent_ids % n_directions) * n_psi + parent_ids // n_directions
 
 
-def _prepare_per_image_pass2_inputs(
+def prepare_per_image_pass2_inputs(
     significant_sample_indices,
     n_coarse_rot,
     n_coarse_trans,

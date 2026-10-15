@@ -20,7 +20,7 @@ def test_generic_sparse_projection_preserves_radius(monkeypatch, radius_kwargs, 
 
     monkeypatch.setattr(blocks, "_compute_projections_block", project)
     monkeypatch.delenv("RELAX_SPARSE_PASS2_MAX_PROJECTED_ROTATIONS", raising=False)
-    result, abs2 = blocks._compute_sparse_pass2_projections_block(
+    result, abs2 = blocks.compute_sparse_pass2_projections_block(
         np.zeros(512, np.complex64),
         np.broadcast_to(np.eye(3, dtype=np.float32), (3, 3, 3)),
         (8, 8),
@@ -44,7 +44,7 @@ def test_relion_sparse_projection_keeps_separate_crop_and_radius(monkeypatch, ou
         return np.zeros((len(rotations), 8320), np.complex64), None
 
     monkeypatch.setattr(blocks, "_compute_relion_projector_projections_block", project)
-    blocks._compute_sparse_pass2_projections_block(
+    blocks.compute_sparse_pass2_projections_block(
         None,
         np.eye(3, dtype=np.float32)[None],
         (128, 128),
@@ -72,7 +72,7 @@ def test_windowed_generic_sparse_projection_preserves_radius(monkeypatch):
         return values, None
 
     monkeypatch.setattr(blocks, "_compute_projections_block", project)
-    score, recon, abs2 = blocks._compute_sparse_pass2_windowed_projections_block(
+    score, recon, abs2 = blocks.compute_sparse_pass2_windowed_projections_block(
         np.zeros(512, np.complex64),
         np.broadcast_to(np.eye(3, dtype=np.float32), (3, 3, 3)),
         (8, 8),

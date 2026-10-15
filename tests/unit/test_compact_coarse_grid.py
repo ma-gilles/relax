@@ -14,7 +14,7 @@ pytestmark = pytest.mark.unit
 
 
 def _inputs(supports, *, n_coarse_rot, fine_ids, prior, **extra):
-    from relax.fine_pass.bucket_arrays import _prepare_per_image_pass2_inputs
+    from relax.fine_pass.bucket_arrays import prepare_per_image_pass2_inputs
     from relax.sampling import oversampled_grids
 
     order, n_trans = 1, 3
@@ -27,7 +27,7 @@ def _inputs(supports, *, n_coarse_rot, fine_ids, prior, **extra):
         return_source_eulers=True,
         dtype=np.float32,
     )
-    return _prepare_per_image_pass2_inputs(
+    return prepare_per_image_pass2_inputs(
         supports,
         n_coarse_rot=n_coarse_rot,
         n_coarse_trans=n_trans,

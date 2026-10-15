@@ -117,8 +117,8 @@ amplitude convention), `_relion_powerclass_operands` (CUDA shell map and pixel
 validity) and `_relion_powerclass_native_spectrum_highres` (native atomics),
 shared by the JAX reproductions and the native wrappers
 ([`test_powerclass_operand_owner.py`](../../tests/unit/test_powerclass_operand_owner.py)).
-`_relion_powerclass_noise_terms` selects the `highres_Xi2` and high-shell norm
-terms the resident scoring and operand stages need. `_sparse_pass2_window_setup` builds the
+`relion_powerclass_noise_terms` selects the `highres_Xi2` and high-shell norm
+terms the resident scoring and operand stages need. `sparse_pass2_window_setup` builds the
 forward-model configuration, score and reconstruction windows, RELION x-half reconstruction
 indices and the windowed-prepare decision of a resident pass.
 In [`k_class`](../../relax/classification/k_class.py),

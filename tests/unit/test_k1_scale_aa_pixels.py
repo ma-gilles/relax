@@ -3,7 +3,7 @@ from pathlib import Path
 import numpy as np
 from helpers.float_compare import assert_matches
 
-from relax.fine_pass.wavg import _make_relion_wavg_rectangle
+from relax.fine_pass.wavg import make_relion_wavg_rectangle
 from relax.fourier.fourier_window import (
     make_fourier_window_indices_np,
     make_frequency_coords_half_np,
@@ -21,7 +21,7 @@ def test_relion_wavg_rectangle_matches_native_size60_topology_and_order():
         exact_radius=True,
     )
 
-    layout = _make_relion_wavg_rectangle(
+    layout = make_relion_wavg_rectangle(
         image_shape,
         current_size,
         exact_indices,
@@ -52,12 +52,12 @@ def test_relion_wavg_rectangle_maps_complete_square_cc_reconstruction():
         image_shape, current_size, square=True,
         include_dc=True, exact_radius=True,
     )
-    layout = _make_relion_wavg_rectangle(image_shape, current_size, square_exact)
+    layout = make_relion_wavg_rectangle(image_shape, current_size, square_exact)
     assert layout.centered_indices.size == current_size * (current_size // 2 + 1)
     assert layout.exact_positions.size == square_exact.size == 1254
     assert_matches(layout.centered_indices[layout.exact_positions], square_exact)
     with np.testing.assert_raises_regex(ValueError, "complete exact-radius"):
-        _make_relion_wavg_rectangle(image_shape, current_size, square_exact[:-1])
+        make_relion_wavg_rectangle(image_shape, current_size, square_exact[:-1])
 
 
 def test_relion_wavg_rectangle_separates_optics_image_and_model_sizes():
@@ -71,7 +71,7 @@ def test_relion_wavg_rectangle_separates_optics_image_and_model_sizes():
         exact_radius=True,
     )
 
-    layout = _make_relion_wavg_rectangle(
+    layout = make_relion_wavg_rectangle(
         image_shape,
         image_current_size,
         model_indices,

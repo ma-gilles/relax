@@ -3,7 +3,7 @@
 Why this module exists
 ----------------------
 The device-resident K=1 driver used to call
-:func:`~recovar.em.sparse_pass2.sparse_pass2_bucket_io._prepare_bucket_io` once
+:func:`~recovar.em.sparse_pass2.sparse_pass2_bucket_io.prepare_bucket_io` once
 per capacity chunk. That call is per-image work -- a RELION FFT, the soft mask,
 the CTF and noise algebra, the corrections and the pre-centering phase -- and it
 was repeated for every chunk an image appears in, at an image occupancy of
@@ -26,7 +26,7 @@ stores.
 
 What is stored, and in which convention
 ---------------------------------------
-``_prepare_bucket_io`` builds two translated reconstruction operands with two
+``prepare_bucket_io`` builds two translated reconstruction operands with two
 different primitives, and the kernel has to be told which:
 
 * the reconstruction operand uses ``relion_translate_bpref_f32`` when
@@ -62,10 +62,10 @@ from relax.fine_pass.bucket_io import (
 )
 from relax.fine_pass.resident_statistics import resident_image_capacity
 from relax.fine_pass.scoring import (
-    _relion_native_fine_units,
-    _relion_native_score_corr_img,
-    _relion_powerclass_noise_terms,
+    relion_native_score_corr_img,
     relion_powerclass_noise_presence,
+    relion_powerclass_noise_terms,
+    to_relion_native_fine_units,
 )
 from relax.fine_pass.wavg import image_power_shells, relion_cuda_translate_wavg_norm_window
 from relax.fourier.half_spectrum import make_shell_indices_half
@@ -103,6 +103,7 @@ __all__ = [
     "resident_half_operand_bytes",
     "resident_image_capacity",
     "resident_operands_max_bytes",
+    "gather_rows",
 ]
 
 
@@ -123,7 +124,7 @@ class ResidentHalfOperands:
     ------
     score_input, corr_img_score, highres_xi2_half, translation_prior
         The scoring operands, already gathered to the score window. These are
-        what ``_prepare_bucket_io`` returned as ``direct_score_input``,
+        what ``prepare_bucket_io`` returned as ``direct_score_input``,
         ``ctf2_over_nv_half`` and the ``powerClass`` tail.
     recon_image, recon_weight
         The unshifted reconstruction operand of the M-step. ``recon_weight`` is
@@ -315,7 +316,7 @@ def resident_half_operand_presence(
     ``recon_weight`` exists when ``_batch_window_operands`` is handed a
     ``weighted_ctf_half``, and ``direct_ctf_rfloat_recon`` when it is handed a
     ``ctf_half_rfloat``; both are supplied only in the exact-BPref
-    configuration (``sparse_pass2_bucket_io._prepare_bucket_io``). The two
+    configuration (``sparse_pass2_bucket_io.prepare_bucket_io``). The two
     ``powerClass`` terms follow
     :func:`~recovar.em.sparse_pass2.sparse_pass2_scoring.relion_powerclass_noise_presence`.
     """
@@ -557,7 +558,7 @@ def _window_batch_into_buffers(
         acc_real_dtype=acc_real_dtype,
     )
     if native_fft_size is not None:
-        batch["score_input"] = _relion_native_fine_units(batch["score_input"], native_fft_size)
+        batch["score_input"] = to_relion_native_fine_units(batch["score_input"], native_fft_size)
     batch.update(extra_arrays)
     return _place_batch(buffers, batch, start, buffer_rows=buffer_rows)
 
@@ -732,7 +733,7 @@ def prepare_resident_half_operands(
 ) -> ResidentHalfOperands:
     """Run the per-image preparation once for ``image_indices`` and keep it resident.
 
-    ``bucket_io_kwargs`` is the driver's own ``_prepare_bucket_io`` keyword set,
+    ``bucket_io_kwargs`` is the driver's own ``prepare_bucket_io`` keyword set,
     so this call reads exactly the configuration the per-chunk path would have
     read; the translation-only keywords are ignored here because nothing in the
     per-image half depends on them.
@@ -744,7 +745,7 @@ def prepare_resident_half_operands(
 
     ``relion_native_fine_units`` stores the two score operands in RELION's
     native FFT units, as the compact engine scores a fresh K=1 pass
-    (:func:`~relax.fine_pass.scoring._relion_native_fine_units_enabled`):
+    (:func:`~relax.fine_pass.scoring.relion_native_fine_units_enabled`):
     ``score_input`` divided by N**2 and ``corr_img_score`` RELION's native
     ``corr_img``. Every reconstruction and noise operand keeps RECOVAR units.
 
@@ -908,7 +909,7 @@ def prepare_resident_half_operands(
                 # Gaussian fine scoring uses RELION's native corr_img. Fine
                 # normalized CC instead uses the direct invXi2-weighted operand
                 # from the canonical bucket path above.
-                score_corr_img_half = _relion_native_score_corr_img(
+                score_corr_img_half = relion_native_score_corr_img(
                     pixel_rows(unshifted.noise_variance_half),
                     unshifted.ctf_half_rfloat,
                     image_shape,
@@ -957,7 +958,7 @@ def prepare_resident_half_operands(
                 shell_count=int(n_noise_shells),
             )
 
-            highres_xi2_half, relion_norm_high_shell = _relion_powerclass_noise_terms(
+            highres_xi2_half, relion_norm_high_shell = relion_powerclass_noise_terms(
                 unshifted.processed_score_half_for_noise,
                 image_shape=image_shape,
                 current_size=current_size,
@@ -1106,7 +1107,7 @@ def prepare_resident_half_operands(
     return operands
 
 
-def _gather_rows(values, safe_slots, valid, fill=0):
+def gather_rows(values, safe_slots, valid, fill=0):
     """Take one row per chunk slot, with the padded slots set to ``fill``."""
 
     if values is None:
@@ -1162,27 +1163,27 @@ def _gather_chunk_arrays(
     safe_slots = jnp.where(valid, image_slots, image_slots[0])
 
     raw_translated_wavg_rectangle = relion_cuda_translate_wavg_norm_window(
-        _gather_rows(wavg_image_rect, safe_slots, valid),
+        gather_rows(wavg_image_rect, safe_slots, valid),
         translation_angles,
         rect_indices,
         image_shape,
     )
     return (
-        _gather_rows(score_input, safe_slots, valid),
-        _gather_rows(corr_img_score, safe_slots, valid),
-        _gather_rows(highres_xi2_half, safe_slots, valid),
-        _gather_rows(translation_prior, safe_slots, valid),
-        _gather_rows(recon_image, safe_slots, valid),
-        _gather_rows(recon_weight, safe_slots, valid),
-        _gather_rows(noise_image, safe_slots, valid),
-        _gather_rows(ctf2_over_nv_recon, safe_slots, valid),
-        _gather_rows(direct_ctf_rfloat_recon, safe_slots, valid),
-        _gather_rows(power_shells, safe_slots, valid),
-        _gather_rows(relion_norm_high_shell, safe_slots, valid),
-        _gather_rows(scale, safe_slots, valid, fill=1.0),
-        _gather_rows(group_ids, safe_slots, valid, fill=-1),
-        _gather_rows(optics_groups, safe_slots, valid),
-        _gather_rows(bpref_ctf2_over_nv_recon, safe_slots, valid),
+        gather_rows(score_input, safe_slots, valid),
+        gather_rows(corr_img_score, safe_slots, valid),
+        gather_rows(highres_xi2_half, safe_slots, valid),
+        gather_rows(translation_prior, safe_slots, valid),
+        gather_rows(recon_image, safe_slots, valid),
+        gather_rows(recon_weight, safe_slots, valid),
+        gather_rows(noise_image, safe_slots, valid),
+        gather_rows(ctf2_over_nv_recon, safe_slots, valid),
+        gather_rows(direct_ctf_rfloat_recon, safe_slots, valid),
+        gather_rows(power_shells, safe_slots, valid),
+        gather_rows(relion_norm_high_shell, safe_slots, valid),
+        gather_rows(scale, safe_slots, valid, fill=1.0),
+        gather_rows(group_ids, safe_slots, valid, fill=-1),
+        gather_rows(optics_groups, safe_slots, valid),
+        gather_rows(bpref_ctf2_over_nv_recon, safe_slots, valid),
         raw_translated_wavg_rectangle,
         raw_translated_wavg_rectangle[:, :, jnp.asarray(exact_positions, dtype=jnp.int32)],
     )

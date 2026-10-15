@@ -643,7 +643,7 @@ def test_relion_score_window_projection_kwargs_use_image_window_not_model_window
         (64, 64), 34, 64 * 33, reconstruction_current_size=32, square=False, include_recon_window=True
     )
     assert int(2 * spec.max_r) == 32
-    kwargs = projection_blocks._projection_kwargs_for_relion_score_window(
+    kwargs = projection_blocks.projection_kwargs_for_relion_score_window(
         spec.projection_kwargs(return_abs2=False),
         use_relion_projector=True,
         current_size=34,

@@ -5,7 +5,7 @@ Ticket: `em_parity_tickets_20260918/T13_device_significance_compaction.md`.
 The host path is the oracle in every test here: the compacted CSR must equal
 `compact_significant_sample_indices_from_mask` per image bitwise, and the
 candidate tables built from that CSR must equal, field by field, the tables
-built through `_prepare_per_image_pass2_inputs` for the same support.
+built through `prepare_per_image_pass2_inputs` for the same support.
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ from helpers.float_compare import assert_matches
 from helpers.resident_significance import compact_batch_significance
 
 from relax.fine_pass.bucket_arrays import (
-    _prepare_per_image_pass2_inputs,
+    prepare_per_image_pass2_inputs,
     relion_parent_execution_key,
 )
 from relax.fine_pass.resident_candidates import build_resident_candidate_tables
@@ -116,7 +116,7 @@ def _mask_from_supports(supports, n_samples: int) -> np.ndarray:
 def _encoded_supports(supports, n_samples: int) -> list:
     """The host encoder's output for these supports, as production produces it.
 
-    ``_prepare_per_image_pass2_inputs`` never sees raw id lists in production:
+    ``prepare_per_image_pass2_inputs`` never sees raw id lists in production:
     it sees whatever
     :func:`compact_significant_sample_indices_from_mask` encoded, which is
     ``None`` for a full support and a sparse complement for a dense one.
@@ -433,7 +433,7 @@ def test_tables_from_csr_match_the_host_path_with_a_fine_grid_override(execution
     fine_rotations, fine_parent = _fine_rotation_override()
     rotation_log_prior = np.linspace(-2.0, 2.0, N_COARSE_ROT, dtype=np.float32)
 
-    per_image_inputs = _prepare_per_image_pass2_inputs(
+    per_image_inputs = prepare_per_image_pass2_inputs(
         _encoded_supports(supports, n_samples),
         n_coarse_rot=N_COARSE_ROT,
         n_coarse_trans=N_COARSE_TRANS,
@@ -480,7 +480,7 @@ def test_tables_from_csr_match_the_host_path_on_the_generated_grid(execution_ord
     supports = _supports(9, n_samples, seed=7)
     rotation_log_prior = np.linspace(-1.0, 1.0, STD_N_COARSE_ROT, dtype=np.float32)
 
-    per_image_inputs = _prepare_per_image_pass2_inputs(
+    per_image_inputs = prepare_per_image_pass2_inputs(
         _encoded_supports(supports, n_samples),
         n_coarse_rot=STD_N_COARSE_ROT,
         n_coarse_trans=N_COARSE_TRANS,
@@ -523,7 +523,7 @@ def test_tables_from_csr_match_the_host_path_without_a_rotation_prior():
     supports = _supports(6, n_samples, seed=3)
     fine_rotations, fine_parent = _fine_rotation_override()
 
-    per_image_inputs = _prepare_per_image_pass2_inputs(
+    per_image_inputs = prepare_per_image_pass2_inputs(
         _encoded_supports(supports, n_samples),
         n_coarse_rot=N_COARSE_ROT,
         n_coarse_trans=N_COARSE_TRANS,
@@ -635,7 +635,7 @@ def test_fixture_covers_every_support_regime():
     assert any(isinstance(e, np.ndarray) and e.size > 0 for e in encoded), "no sparse image"
 
     _rotations, fine_parent = _fine_rotation_override()
-    per_image_inputs = _prepare_per_image_pass2_inputs(
+    per_image_inputs = prepare_per_image_pass2_inputs(
         encoded,
         n_coarse_rot=N_COARSE_ROT,
         n_coarse_trans=N_COARSE_TRANS,
@@ -710,7 +710,7 @@ def test_seed_iteration_supports_keep_a_csr_whose_tables_match_the_host_path():
     for k, rows in enumerate(by_class):
         assert np.array_equal(rows.csr.n_significant > 0, (seeds == k) & (csr.n_significant > 0))
         expected = build_resident_candidate_tables(
-            _prepare_per_image_pass2_inputs(
+            prepare_per_image_pass2_inputs(
                 list(rows),
                 n_coarse_rot=STD_N_COARSE_ROT,
                 n_coarse_trans=N_COARSE_TRANS,

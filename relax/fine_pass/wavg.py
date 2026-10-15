@@ -114,7 +114,7 @@ def weighted_image_power_from_shells(
     return weighted_shells, weighted_per_image.astype(norm_reduction_dtype)
 
 
-def _make_relion_wavg_rectangle(
+def make_relion_wavg_rectangle(
     image_shape,
     current_size,
     recon_window_indices,
@@ -236,7 +236,7 @@ def _make_relion_wavg_rectangle(
     )
 
 
-def _make_stable_relion_wavg_rectangle(image_shape, shape_plan):
+def make_stable_relion_wavg_rectangle(image_shape, shape_plan):
     """Pack a logical Wavg rectangle before its physical-capacity tail.
 
     RELION's Wavg kernel walks the dense FFTW rectangle, whereas RECOVAR's
@@ -251,12 +251,12 @@ def _make_stable_relion_wavg_rectangle(image_shape, shape_plan):
         : shape_plan.logical_reconstruction_pixels
     ]
     physical_recon = shape_plan.packed_indices_np("recon")
-    logical = _make_relion_wavg_rectangle(
+    logical = make_relion_wavg_rectangle(
         image_shape,
         shape_plan.logical_current_size,
         logical_recon,
     )
-    physical = _make_relion_wavg_rectangle(
+    physical = make_relion_wavg_rectangle(
         image_shape,
         shape_plan.physical_current_size,
         physical_recon,
@@ -316,7 +316,7 @@ def _make_stable_relion_wavg_rectangle(image_shape, shape_plan):
     )
 
 
-def _relion_wavg_shifted_power(raw_shifted):
+def relion_wavg_shifted_power(raw_shifted):
     """RELION's float32 ``|x|^2``, with the barrier between its two terms.
 
     The barrier keeps ``real*real`` and ``+ imag*imag`` from contracting into a
@@ -330,7 +330,7 @@ def _relion_wavg_shifted_power(raw_shifted):
     return (shifted_power + raw_shifted.imag * raw_shifted.imag).astype(jnp.float32)
 
 
-def _replace_low_shell_noise_with_relion_wavg_direct_residual_jnp(
+def replace_low_shell_noise_with_relion_wavg_direct_residual_jnp(
     residual_shells,
     image_power_shells,
     atomic_diff2_per_pixel,
@@ -392,31 +392,13 @@ def _replace_low_shell_noise_with_relion_wavg_direct_residual_jnp(
     )
 
 
-def _relion_cuda_translate_wavg_norm_images(
-    processed_score_half,
-    translation_angles,
-    score_window_indices,
-    image_shape,
-):
-    """Translate the raw masked image at RELION's Wavg input boundary."""
-
-    processed_score_half = jnp.asarray(processed_score_half, dtype=jnp.complex64)
-    score_window_indices = jnp.asarray(score_window_indices, dtype=jnp.int32)
-    return relion_cuda_translate_wavg_norm_window(
-        processed_score_half[:, score_window_indices],
-        translation_angles,
-        score_window_indices,
-        image_shape,
-    )
-
-
 def relion_cuda_translate_wavg_norm_window(
     window_pixels,
     translation_angles,
     window_indices,
     image_shape,
 ):
-    """:func:`_relion_cuda_translate_wavg_norm_images` on already gathered window pixels.
+    """:func:`resident_chunk_inputs._relion_cuda_translate_wavg_norm_images` on already gathered window pixels.
 
     ``window_pixels`` is ``processed_score_half[:, window_indices]``; callers
     that keep only the Wavg window of each image resident translate it here.

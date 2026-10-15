@@ -18,7 +18,7 @@ def _setup(monkeypatch, *, use_window, recon, x_half):
     monkeypatch.setattr(window.ForwardModelConfig, "from_dataset", lambda ds, *, disc_type, process_fn: calls.append(("config", disc_type)) or "config")
     monkeypatch.setattr(window, "make_fourier_window_spec", lambda *a, **kw: SimpleNamespace(use_window=use_window, score_indices_np="sinp", score_indices="si", recon_indices=recon, n_score=11, n_recon=7))
     monkeypatch.setattr(window, "centered_half_indices_to_fftw_half_indices", lambda shape, idx: calls.append(("fftw", idx if not hasattr(idx, "shape") else int(idx.shape[0]))) or "xhalf")
-    out = sp._sparse_pass2_window_setup(
+    out = sp.sparse_pass2_window_setup(
         SimpleNamespace(process_images=None), disc_type="linear", image_shape=(8, 8), current_size=6, n_half=40, mstep_current_size=8,
         square_window=False, window_spec_kwargs={}, use_relion_x_half_mstep=x_half, log_label="Sparse pass-2",
     )
@@ -42,4 +42,4 @@ def test_x_half_mstep_converts_the_reconstruction_window_or_the_full_half(monkey
 
 
 def test_pass2_window_setup_owner_builds_the_budget_window():
-    assert inspect.getsource(sp._pass2_window_setup).count("budget_window_spec = make_fourier_window_spec(") == 1
+    assert inspect.getsource(sp.pass2_window_setup).count("budget_window_spec = make_fourier_window_spec(") == 1

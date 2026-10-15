@@ -114,7 +114,7 @@ def open_pass_capacity_texture(
 
 
 
-def _compute_sparse_pass2_projections_block(
+def compute_sparse_pass2_projections_block(
     mean_for_proj,
     rotations_block,
     image_shape,
@@ -326,7 +326,7 @@ def _capacity_projections_block(
     )
 
 
-def _projection_kwargs_for_relion_score_window(
+def projection_kwargs_for_relion_score_window(
     projection_kwargs,
     *,
     use_relion_projector: bool,
@@ -351,7 +351,7 @@ def _projection_kwargs_for_relion_score_window(
     return kwargs
 
 
-def _compute_sparse_pass2_windowed_projections_block(
+def compute_sparse_pass2_windowed_projections_block(
     mean_for_proj,
     rotations_block,
     image_shape,
@@ -434,7 +434,7 @@ def _compute_sparse_pass2_windowed_projections_block(
     # (bench 14572645, K=1 50k/256 at current size 178: 7.70 GiB).
     score_proj, recon_proj, recon_abs2 = (None, None, None) if outputs is None else outputs
     for start, stop in chunk_ranges:
-        proj_chunk, _ = _compute_sparse_pass2_projections_block(
+        proj_chunk, _ = compute_sparse_pass2_projections_block(
             mean_for_proj,
             rotations_block[start:stop],
             image_shape,
@@ -462,7 +462,7 @@ def _compute_sparse_pass2_windowed_projections_block(
                 recon_abs2 = jnp.zeros((n_output_rows, int(recon_indices.shape[0])), dtype=abs2_dtype)
         rows = jnp.asarray(output_row_ids[start:stop])
         if recon_indices is None:
-            score_proj = _place_score_window_block(
+            score_proj = place_score_window_block(
                 score_proj,
                 proj_chunk,
                 score_indices,
@@ -471,7 +471,7 @@ def _compute_sparse_pass2_windowed_projections_block(
                 zero_column=pixel_indices is not None,
             )
         else:
-            score_proj, recon_proj, recon_abs2 = _place_windowed_projection_block(
+            score_proj, recon_proj, recon_abs2 = place_windowed_projection_block(
                 score_proj,
                 recon_proj,
                 recon_abs2,
@@ -505,7 +505,7 @@ def project_rows_by_class(project, matrices, row_class, *, n_rows: int):
     """``(score, recon, |recon|^2)`` of every row, each projected from its own class's reference.
 
     ``project(matrices, class_index=, n_rows=, outputs=, output_row_ids=, finalize=)`` is a
-    windowed projector (:func:`_compute_sparse_pass2_windowed_projections_block` behind the
+    windowed projector (:func:`compute_sparse_pass2_windowed_projections_block` behind the
     caller's units). Each class projects its own rows in one call, padded with copies of its
     first rotation to :func:`class_call_length` rotations so the programs see few distinct
     lengths; every call writes its rows in place into one set of ``n_rows``-long arrays and
@@ -646,7 +646,7 @@ def _place_rows(values, block, rows):
 
 
 @partial(jax.jit, static_argnames=("output_complex_dtype", "zero_column"), donate_argnums=(0,))
-def _place_score_window_block(score_proj, proj_block, score_indices, rows, *, output_complex_dtype, zero_column):
+def place_score_window_block(score_proj, proj_block, score_indices, rows, *, output_complex_dtype, zero_column):
     """Write one projector block's score window into ``score_proj`` (donated) at ``rows``.
 
     ``zero_column``: ``proj_block`` holds the window union's pixels, and index
@@ -659,7 +659,7 @@ def _place_score_window_block(score_proj, proj_block, score_indices, rows, *, ou
 
 
 @partial(jax.jit, static_argnames=("output_complex_dtype", "output_abs2_dtype", "zero_column"), donate_argnums=(0, 1, 2))
-def _place_windowed_projection_block(
+def place_windowed_projection_block(
     score_proj,  # [C_R, N_score], donated
     recon_proj,  # [C_R, N_recon], donated
     recon_abs2,  # [C_R, N_recon], donated
@@ -674,7 +674,7 @@ def _place_windowed_projection_block(
 ):
     """Window one projector block and write it, with ``|recon|^2``, into ``rows``.
 
-    ``zero_column`` as for :func:`_place_score_window_block`.
+    ``zero_column`` as for :func:`place_score_window_block`.
     """
 
     if zero_column:

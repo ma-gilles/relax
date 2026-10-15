@@ -1,16 +1,16 @@
 """Full-box Wavg sentinel regressions recovered from donor344eca9fb4."""
 import numpy as np
 import jax.numpy as jnp
-from relax.fine_pass.wavg import _make_relion_wavg_rectangle
+from relax.fine_pass.wavg import make_relion_wavg_rectangle
 from relax.fine_pass.scoring import (
-    relion_cuda_powerclass_highres_xi2_half, _relion_powerclass_noise_terms,
+    relion_cuda_powerclass_highres_xi2_half, relion_powerclass_noise_terms,
 )
 from relax.fourier.fourier_window import make_fourier_window_indices_np
 from helpers.float_compare import assert_matches
 
 def test_full_box_wavg_rectangle_resolves_unwindowed_current_size_sentinel():
     image_shape = (8, 8)
-    rectangle = _make_relion_wavg_rectangle(
+    rectangle = make_relion_wavg_rectangle(
         image_shape,
         current_size=None,
         recon_window_indices=None,
@@ -49,7 +49,7 @@ def test_full_box_wavg_rectangle_resolves_unwindowed_current_size_sentinel():
 
 
 def test_full_box_powerclass_noise_terms_has_zero_high_shell():
-    highres, norm = _relion_powerclass_noise_terms(
+    highres, norm = relion_powerclass_noise_terms(
         jnp.ones((2, 40), dtype=jnp.complex64),
         image_shape=(8, 8), current_size=None,
         use_exact_relion_gaussian=True, accumulate_noise=True,

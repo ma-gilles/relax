@@ -9,7 +9,7 @@ from helpers.cuda_source import read_em_cuda_source
 from helpers.float_compare import assert_matches, matches
 
 from relax.fine_pass.scoring import _relion_cuda_fine_full_to_compact_lookup
-from relax.fine_pass.wavg import _make_relion_wavg_rectangle, _make_stable_relion_wavg_rectangle
+from relax.fine_pass.wavg import make_relion_wavg_rectangle, make_stable_relion_wavg_rectangle
 from relax.fourier.fourier_window import (
     make_fourier_window_indices_np,
     make_frequency_coords_half_np,
@@ -610,12 +610,12 @@ def test_packed_physical_spec_keeps_every_logical_stream_as_its_prefix():
 
 def test_stable_wavg_rectangle_preserves_logical_fftw_order_and_poison_tail():
     plan = _plan(70)
-    logical = _make_relion_wavg_rectangle(
+    logical = make_relion_wavg_rectangle(
         _IMAGE_SHAPE,
         plan.logical_current_size,
         plan.logical_spec.recon_indices_np,
     )
-    stable = _make_stable_relion_wavg_rectangle(_IMAGE_SHAPE, plan)
+    stable = make_stable_relion_wavg_rectangle(_IMAGE_SHAPE, plan)
     logical_rectangle_count = plan.logical_rectangle_pixels
     logical_recon_count = plan.logical_reconstruction_pixels
 
@@ -647,7 +647,7 @@ def test_stable_wavg_rectangle_preserves_logical_fftw_order_and_poison_tail():
 
 def test_stable_wavg_reconstruction_tail_cannot_alias_logical_rectangle():
     plan = _plan(70)
-    stable = _make_stable_relion_wavg_rectangle(_IMAGE_SHAPE, plan)
+    stable = make_stable_relion_wavg_rectangle(_IMAGE_SHAPE, plan)
 
     assert np.all(
         stable.exact_positions[plan.logical_reconstruction_pixels :]
@@ -661,11 +661,11 @@ def test_every_gf46_stable_window_has_enough_inert_wavg_tail_capacity():
         plan = _plan(current_size)
         if plan.physical_current_size == plan.logical_current_size:
             continue
-        stable = _make_stable_relion_wavg_rectangle(_IMAGE_SHAPE, plan)
+        stable = make_stable_relion_wavg_rectangle(_IMAGE_SHAPE, plan)
         logical_recon_count = plan.logical_reconstruction_pixels
         assert_matches(
             stable.exact_positions[:logical_recon_count],
-            _make_relion_wavg_rectangle(
+            make_relion_wavg_rectangle(
                 _IMAGE_SHAPE,
                 current_size,
                 plan.logical_spec.recon_indices_np,

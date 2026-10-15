@@ -28,7 +28,7 @@ from helpers.float_compare import assert_matches
 from relax.fine_pass.scoring import (
     _relion_cuda_corr_img_from_native_noise_variance,
     _relion_cuda_native_corr_img_from_noise_variance,
-    _relion_native_fine_units,
+    to_relion_native_fine_units,
 )
 from relax.fourier.half_spectrum import make_relion_noise_shell_indices_half, make_shell_indices_half
 from scripts.lib.bucketed_pass2_scoring import _score_pass2_bucket_relion_gpu_diff2_raw
@@ -70,7 +70,7 @@ def test_score_corr_img_is_the_native_corr_img_scaled_once(image_size):
     # fusion context; XLA's complex64 division by a real scalar is neither.
     values = _random_complex(rng, (3, n_half)) * np.float32(10.0) ** rng.uniform(-3, 5, (3, n_half)).astype(np.float32)
     np.testing.assert_allclose(
-        np.asarray(_relion_native_fine_units(values, image_size * image_size)),
+        np.asarray(to_relion_native_fine_units(values, image_size * image_size)),
         _divide_correctly_rounded(values, image_size * image_size),
         rtol=_EXACT_BY_CONSTRUCTION_RTOL,
         atol=0.0,
@@ -193,10 +193,10 @@ class _NativeUnitsDataset:
     ],
 )
 def test_native_unit_condition_is_the_compact_condition(fresh, exact, float64, rfloat, expected):
-    from relax.fine_pass.scoring import _relion_native_fine_units_enabled
+    from relax.fine_pass.scoring import relion_native_fine_units_enabled
 
     assert (
-        _relion_native_fine_units_enabled(
+        relion_native_fine_units_enabled(
             fresh_k1_guard=fresh,
             use_exact_relion_gaussian=exact,
             use_float64_scoring=float64,

@@ -51,7 +51,7 @@ class ScoringOverrides:
     reference tests compare against (the texture unit weighs with 8-bit fixed-point fractions).
     ``f32_fine_posterior`` (RELAX_RELION_X_HALF_F32_FINE_POSTERIOR, ``env_flags.parse_env_flag``; default off): every
     resident pass 2 takes RELION's float32 fine posterior, also where its caller's arithmetic does not ask for it
-    (``relax.fine_pass.window._pass2_relion_flags``); the K=1 and resident K>1 production passes already take it.
+    (``relax.fine_pass.window.pass2_relion_flags``); the K=1 and resident K>1 production passes already take it.
     """
 
     f32_coarse_support: bool = True

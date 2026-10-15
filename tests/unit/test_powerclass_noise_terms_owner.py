@@ -20,20 +20,20 @@ def _with_fakes(monkeypatch):
 
 def test_nothing_is_computed_without_exact_scoring_or_noise_accumulation(monkeypatch):
     calls = _with_fakes(monkeypatch)
-    out = sp._relion_powerclass_noise_terms("x", image_shape=(8, 8), current_size=8, use_exact_relion_gaussian=False, accumulate_noise=False, source_faithful_spectrum_norm=True)
+    out = sp.relion_powerclass_noise_terms("x", image_shape=(8, 8), current_size=8, use_exact_relion_gaussian=False, accumulate_noise=False, source_faithful_spectrum_norm=True)
     assert out == (None, None) and calls == []
 
 
 def test_exact_scoring_without_current_size_only_needs_highres_xi2(monkeypatch):
     calls = _with_fakes(monkeypatch)
-    out = sp._relion_powerclass_noise_terms("x", image_shape=(8, 8), current_size=None, use_exact_relion_gaussian=True, accumulate_noise=True, source_faithful_spectrum_norm=False)
+    out = sp.relion_powerclass_noise_terms("x", image_shape=(8, 8), current_size=None, use_exact_relion_gaussian=True, accumulate_noise=True, source_faithful_spectrum_norm=False)
     assert out == ("xi2", None) and calls == ["xi2"]
 
 
 @pytest.mark.parametrize("source_faithful,expected,calls_expected", [(True, "spectrum", ["xi2", "spectrum"]), (False, ("norm", "xi2"), ["xi2", "convert"])])
 def test_noise_accumulation_selects_the_norm_term(monkeypatch, source_faithful, expected, calls_expected):
     calls = _with_fakes(monkeypatch)
-    out = sp._relion_powerclass_noise_terms("x", image_shape=(8, 8), current_size=8, use_exact_relion_gaussian=False, accumulate_noise=True, source_faithful_spectrum_norm=source_faithful)
+    out = sp.relion_powerclass_noise_terms("x", image_shape=(8, 8), current_size=8, use_exact_relion_gaussian=False, accumulate_noise=True, source_faithful_spectrum_norm=source_faithful)
     assert out == ("xi2", expected) and calls == calls_expected
 
 
@@ -50,7 +50,7 @@ def test_noise_terms_key_on_the_box_and_take_the_current_size_at_runtime():
     half = image_shape[0] * (image_shape[1] // 2 + 1)
     images = jnp.asarray(rng.normal(size=(3, half)) + 1j * rng.normal(size=(3, half)), dtype=jnp.complex64)
     for current_size in (8, 10, 12):
-        xi2, norm = scoring._relion_powerclass_noise_terms(
+        xi2, norm = scoring.relion_powerclass_noise_terms(
             images,
             image_shape=image_shape,
             current_size=current_size,

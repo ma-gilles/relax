@@ -1,7 +1,7 @@
 """Host candidate tables and capacity-chunk layouts for resident pass 2.
 
 This module builds a flat, row-major (CSR-by-image) table of pass-2 candidate
-rows from :func:`recovar.em.scoring.sparse_bucket_arrays._prepare_per_image_pass2_inputs`
+rows from :func:`recovar.em.scoring.sparse_bucket_arrays.prepare_per_image_pass2_inputs`
 output, and chunks those rows into fixed-capacity "programs" so a future
 device-resident kernel can be traced once per (row capacity, image capacity,
 pixel count) triple instead of once per bucket shape.
@@ -67,6 +67,7 @@ __all__ = [
     "plan_pass_chunks",
     "share_image_capacity",
     "table_block_starts",
+    "BLOCK_UNITS",
 ]
 
 # Per-image mask modes (int8). Kept as module-level constants so both the
@@ -296,10 +297,10 @@ def build_resident_candidate_tables(
     n_fine_trans: int,
     fine_translation_parent,
 ) -> ResidentCandidateTables:
-    """Flatten ``_prepare_per_image_pass2_inputs`` output into one CSR table.
+    """Flatten ``prepare_per_image_pass2_inputs`` output into one CSR table.
 
     ``per_image_inputs`` is exactly the dict returned by
-    :func:`recovar.em.scoring.sparse_bucket_arrays._prepare_per_image_pass2_inputs`;
+    :func:`recovar.em.scoring.sparse_bucket_arrays.prepare_per_image_pass2_inputs`;
     only the ``oversampled_rot_indices``, ``parent_map``, ``log_prior`` and
     ``candidate_mask`` entries are read (rotations/mstep rotations/source
     Eulers stay on the shared fine grid and are looked up later by
@@ -874,7 +875,7 @@ def share_image_capacity(chunks, row_capacity_ladder) -> list[CapacityChunk]:
 # on EMPIAR-10076 10k/256 at current size 34 reached 27.8 GB of anonymous host
 # memory (relax#34); K4 100k/256 held 1.3e9 rows at once and its host process
 # was killed at 134 GB (bench job 14557771).
-_BLOCK_UNITS = 1 << 25
+BLOCK_UNITS = 1 << 25
 
 
 def table_block_starts(offsets, max_units: int) -> np.ndarray:

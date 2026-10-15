@@ -54,7 +54,6 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from relax.relion.optics_groups import pixel_rows
 from relax.runtime.env_flags import parse_env_flag
 from relax.runtime.shape_buckets import pow2_floor
 
@@ -68,6 +67,7 @@ __all__ = [
     "make_resident_statistics",
     "resolve_statistics_config",
     "segment_sum_by_image",
+    "drop_index",
 ]
 
 
@@ -380,7 +380,7 @@ def posterior_translation_bucket_scratch_bytes(
     return 2 * partial + int(image_capacity) * int(n_fine_trans) * 4
 
 
-def _drop_index(ids, length: int):
+def drop_index(ids, length: int):
     """Map padded ids (any negative sentinel) to an index ``mode="drop"`` drops.
 
     ``mode="drop"`` keeps negative indices (it normalises ``-1`` to ``n - 1``),
@@ -389,41 +389,6 @@ def _drop_index(ids, length: int):
 
     ids = jnp.asarray(ids, dtype=jnp.int32)
     return jnp.where(ids < 0, jnp.int32(length), ids)
-
-
-def _flat_row_norm_and_scale_terms(
-    proj,
-    proj_abs2,
-    summed_masked,
-    ctf_probs,
-    noise_variance,
-    *,
-    pixel_mask=None,
-):
-    """Per-row ``A2`` and ``XA`` partials in the flat candidate-row layout.
-
-    Term for term this is the rectangular per-image norm residual (the test oracle
-    in ``tests/oracles/projection.py``; and,
-    with ``pixel_mask``, its scale-correction sibling) with the ``(B, R, P)``
-    rotation axis folded into the row axis: the same masks, the same
-    ``noise_variance`` broadcast and the same natural dtype promotion, summed
-    over pixels only. The caller sums rows into images and forms
-    ``A2 - 2 * XA`` afterwards, exactly as the host does after its
-    ``axis=(1, 2)`` reduction.
-    """
-
-    ctf_has_mass = ctf_probs != 0.0
-    cross_has_mass = summed_masked != 0.0
-    if pixel_mask is not None:
-        pixel_mask = jnp.asarray(pixel_mask, dtype=bool).reshape(-1)
-        ctf_has_mass = ctf_has_mass & pixel_mask[None, :]
-        cross_has_mass = cross_has_mass & pixel_mask[None, :]
-    noise_variance = pixel_rows(noise_variance)
-    ctf_probs_raw = jnp.where(ctf_has_mass, ctf_probs * noise_variance, 0.0)
-    a2_terms = jnp.where(ctf_has_mass, proj_abs2 * ctf_probs_raw, 0.0)
-    cross_terms = jnp.where(cross_has_mass, proj * jnp.conj(summed_masked), 0.0)
-    xa_terms = noise_variance * cross_terms.real
-    return jnp.sum(a2_terms, axis=1), jnp.sum(xa_terms, axis=1)
 
 
 class FinalizedStatistics(NamedTuple):

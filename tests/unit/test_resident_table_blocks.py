@@ -83,7 +83,7 @@ def test_block_starts_hold_at_most_the_budget_unless_one_image_exceeds_it():
 
 
 def _source(n_classes, *, whole, execution_order, groups, monkeypatch):
-    monkeypatch.setattr(rp, "_BLOCK_UNITS", 40)
+    monkeypatch.setattr(rp, "BLOCK_UNITS", 40)
     csrs = [_class_csr(seed=11 + 7 * k) for k in range(n_classes)]
     supports = [DeviceCompactedSignificantSamples(host_support_rows(csr), csr=csr) for csr in csrs]
     priors = [np.linspace(-1.0, 1.0, N_COARSE_ROT, dtype=np.float32) + k for k in range(n_classes)]

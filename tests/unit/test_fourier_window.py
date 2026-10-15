@@ -998,7 +998,7 @@ def test_class_reconstruction_window_at_box_keeps_relions_outer_ring():
     backprojects every pixel with ``ires < N/2 + 1``, including the ring N/2 < r < N/2 + 1/2 that
     the single-grid exact cut drops. Single-grid pixels keep the exact cut (sphere = window there).
     """
-    from relax.fine_pass.window import _pass2_window_setup
+    from relax.fine_pass.window import pass2_window_setup
     from relax.fourier.fourier_window import make_frequency_coords_half_np
 
     n = 112
@@ -1013,8 +1013,8 @@ def test_class_reconstruction_window_at_box_keeps_relions_outer_ring():
         device_memory_override=None,
         window_at_box=True,
     )
-    single = _pass2_window_setup((n, n), **common).budget_window_spec
-    clipped = _pass2_window_setup((n, n), reference_sphere_clip=True, **common).budget_window_spec
+    single = pass2_window_setup((n, n), **common).budget_window_spec
+    clipped = pass2_window_setup((n, n), reference_sphere_clip=True, **common).budget_window_spec
     coords = np.asarray(make_frequency_coords_half_np((n, n)))
     radius = np.hypot(coords[:, 0], coords[:, 1])
     ring = set(np.flatnonzero((radius > n // 2) & (np.rint(radius) <= n // 2)).tolist())

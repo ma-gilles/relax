@@ -38,7 +38,7 @@ def _adjoint_block_chunk_rows(flat_block, *, max_block_bytes: int) -> int:
     return max(1, int(max_block_bytes) // row_bytes)
 
 
-def _accumulate_adjoint_block_chunked(
+def accumulate_adjoint_block_chunked(
     flat_block,
     flat_rotations,
     volume,

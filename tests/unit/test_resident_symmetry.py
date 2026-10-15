@@ -32,7 +32,7 @@ from test_resident_significance import (
     _supports,
 )
 
-from relax.fine_pass.bucket_arrays import _prepare_per_image_pass2_inputs
+from relax.fine_pass.bucket_arrays import prepare_per_image_pass2_inputs
 from relax.fine_pass.resident_candidates import build_resident_candidate_tables
 from relax.fine_pass.resident_significance import build_resident_candidate_tables_from_csr
 from relax.runtime.engine_tuning import EngineTuning
@@ -124,7 +124,7 @@ def test_c4_tables_from_csr_match_the_host_path_on_the_generated_grid(execution_
     supports = _supports(9, n_samples, seed=5)
     rotation_log_prior = np.linspace(-1.0, 1.0, n_coarse_rot, dtype=np.float32)
 
-    per_image_inputs = _prepare_per_image_pass2_inputs(
+    per_image_inputs = prepare_per_image_pass2_inputs(
         _encoded_supports(supports, n_samples),
         n_coarse_rot=n_coarse_rot,
         n_coarse_trans=N_COARSE_TRANS,

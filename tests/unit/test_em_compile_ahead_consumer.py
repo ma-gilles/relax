@@ -45,9 +45,9 @@ from relax.fine_pass.resident_operands import (  # noqa: E402
     resident_half_operand_presence,
 )
 from relax.fine_pass.scoring import (  # noqa: E402
-    _relion_powerclass_noise_terms,
     relion_powerclass_noise_dtypes,
     relion_powerclass_noise_presence,
+    relion_powerclass_noise_terms,
 )
 from relax.runtime.compile_ahead import (  # noqa: E402
     CompileAheadConfig,
@@ -121,7 +121,7 @@ def test_the_powerclass_predicate_agrees_with_the_function_that_decides(
 ):
     """Predicting from the flags must match deciding with the image in hand.
 
-    `_relion_powerclass_noise_terms` returns None for a term the batch does not
+    `relion_powerclass_noise_terms` returns None for a term the batch does not
     need. The warm-up has to know that before any batch exists, so the rule
     lives in `relion_powerclass_noise_presence` and this asserts the two
     readers of it never diverge.
@@ -130,7 +130,7 @@ def test_the_powerclass_predicate_agrees_with_the_function_that_decides(
     images = jnp.asarray(
         np.random.default_rng(0).normal(size=(3, 8 * 5)).astype(np.complex64)
     )
-    xi2, norm = _relion_powerclass_noise_terms(
+    xi2, norm = relion_powerclass_noise_terms(
         images,
         image_shape=(8, 8),
         current_size=current_size,
@@ -164,7 +164,7 @@ def test_the_powerclass_dtypes_agree_with_the_function_that_produces_them(
     images = jnp.asarray(
         np.random.default_rng(0).normal(size=(3, 8 * 5)), dtype=complex_dtype
     )
-    xi2, norm = _relion_powerclass_noise_terms(
+    xi2, norm = relion_powerclass_noise_terms(
         images,
         image_shape=(8, 8),
         current_size=6,

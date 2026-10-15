@@ -154,7 +154,7 @@ def _full_grid_local_rotation_slots(state: DenseGemmPreparedState) -> np.ndarray
     """
 
     from relax.fine_pass.bucket_arrays import relion_parent_execution_key
-    from relax.fine_pass.resident_significance import _ragged_gather, fine_rotation_children
+    from relax.fine_pass.resident_significance import fine_rotation_children, ragged_gather
 
     n_fine = len(state.fine_rotations)
     if state.relion_parent_execution_order:
@@ -170,7 +170,7 @@ def _full_grid_local_rotation_slots(state: DenseGemmPreparedState) -> np.ndarray
             parents, n_coarse_rot=state.n_coarse_rot, nside_level=state.nside_level,
         ), kind="stable")]
         child_counts = child_offsets[parents + 1] - child_offsets[parents]
-        ordered_fine = _ragged_gather(child_offsets, child_ids, parents, child_counts)
+        ordered_fine = ragged_gather(child_offsets, child_ids, parents, child_counts)
     else:
         # Full-support host preparation uses np.flatnonzero over the global
         # fine grid when RELION parent execution order is disabled.
@@ -207,23 +207,23 @@ def run_dense_gemm_full_grid(state: DenseGemmPreparedState):
 
     from recovar.reconstruction import noise as noise_utils
 
-    from relax.fine_pass.bucket_io import _relion_cuda_score_translation_angles_if_available
+    from relax.fine_pass.bucket_io import relion_cuda_score_translation_angles_if_available
     from relax.fine_pass.resident_block_programs import relion_native_fine_units_in_place
     from relax.fine_pass.resident_chunk_programs import make_chunk_translation_sqdist
     from relax.fine_pass.resident_operands import prepare_resident_half_operands
-    from relax.fine_pass.resident_pass2 import _relion_scale_correction_pixel_mask
     from relax.fine_pass.resident_statistics import (
         make_resident_statistics,
         resolve_statistics_config,
     )
-    from relax.fine_pass.scoring import _relion_cuda_fine_pixel_weights
-    from relax.fine_pass.wavg import _make_relion_wavg_rectangle
-    from relax.fine_pass.window import _pass2_half_weights, _sparse_pass2_window_setup
+    from relax.fine_pass.scoring import relion_cuda_fine_pixel_weights
+    from relax.fine_pass.wavg import make_relion_wavg_rectangle
+    from relax.fine_pass.window import pass2_half_weights, sparse_pass2_window_setup
     from relax.fourier.half_spectrum import (
         make_relion_noise_shell_indices_half,
         mask_relion_noise_shell_indices_to_current_window,
     )
     from relax.projection.adjoint import mstep_adjoint_max_r
+    from relax.projection.projection import relion_scale_correction_pixel_mask
     from relax.reconstruction.half_volume_mstep import half_volume_accumulator_shape, relion_backprojector_volume_shape
     from relax.relion.scale_groups import prepare_scale_correction_groups
 
@@ -255,7 +255,7 @@ def run_dense_gemm_full_grid(state: DenseGemmPreparedState):
                 or np.any(reconstruction_groups < 0) or np.any(reconstruction_groups >= n_groups)):
             raise ValueError("reconstruction group IDs must be one valid 0-based ID per image")
 
-    window = _sparse_pass2_window_setup(
+    window = sparse_pass2_window_setup(
         dataset, disc_type=state.disc_type, image_shape=dataset.image_shape,
         current_size=state.current_size, n_half=state.n_half,
         mstep_current_size=state.mstep_current_size,
@@ -268,7 +268,7 @@ def run_dense_gemm_full_grid(state: DenseGemmPreparedState):
     score_indices = window.window_indices
     recon_indices = window.recon_window_indices
     n_score, n_recon = int(window.n_windowed), int(window.n_recon_windowed)
-    _, half_weights_score = _pass2_half_weights(
+    _, half_weights_score = pass2_half_weights(
         dataset.image_shape, window.window_spec, half_spectrum_scoring=True,
         relion_firstiter_score_mode=state.relion_firstiter_score_mode, use_float64_scoring=False,
     )
@@ -277,13 +277,13 @@ def run_dense_gemm_full_grid(state: DenseGemmPreparedState):
     optics = None if state.optics_group_ids is None else np.asarray(state.optics_group_ids, np.int32)
     if n_optics > 1 and (optics is None or optics.shape != (n_images,) or np.any(optics < 0) or np.any(optics >= n_optics)):
         raise ValueError("optics-group IDs must match the per-group noise table")
-    angles = _relion_cuda_score_translation_angles_if_available(
+    angles = relion_cuda_score_translation_angles_if_available(
         state.fine_translations_source, dataset.image_shape, enabled=True, dtype=np.float32,
         angle_scale=state.relion_translation_angle_scale,
     )
     if angles is None:
         raise NotImplementedError("dense GEMM needs canonical RELION translation angles")
-    rect = _make_relion_wavg_rectangle(
+    rect = make_relion_wavg_rectangle(
         dataset.image_shape, state.current_size, recon_indices,
         reconstruction_current_size=state.mstep_current_size,
     )
@@ -304,7 +304,7 @@ def run_dense_gemm_full_grid(state: DenseGemmPreparedState):
         class_dvp = None if dvp is None else (np.asarray(dvp)[class_id] if np.asarray(dvp).ndim == 2 else dvp)
         mask = np.zeros(n_rect, bool)
         mask[rect.exact_positions] = np.asarray(
-            _relion_scale_correction_pixel_mask(class_dvp, shell_noise, n_shells=n_shells), bool
+            relion_scale_correction_pixel_mask(class_dvp, shell_noise, n_shells=n_shells), bool
         )
         class_masks.append(mask)
     masks = jnp.asarray(class_masks[0] if k == 1 else np.stack(class_masks))
@@ -433,7 +433,7 @@ def run_dense_gemm_full_grid(state: DenseGemmPreparedState):
             relion_native_fine_units=state.relion_native_fine_units,
             log_summary=False, allow_normalized_cc=True,
         )
-        score_weight = _relion_cuda_fine_pixel_weights(resident.corr_img_score[:count], half_weights_score)
+        score_weight = relion_cuda_fine_pixel_weights(resident.corr_img_score[:count], half_weights_score)
         initial_diff2 = (jnp.zeros((count,), jnp.float32) if resident.highres_xi2_half is None
                          else resident.highres_xi2_half[:count])
         rec_image, rec_denominator = _dense_reconstruction_operands(
@@ -531,7 +531,7 @@ def run_dense_gemm_full_grid(state: DenseGemmPreparedState):
 def _finalize_dense_result(state, numerator, denominator, stats, stats_config, bp_shape, *, n_groups):
     """Use the resident BPref/statistics finalizers, with one terminal host pull."""
 
-    from relax.fine_pass.resident_pass2 import _ResidentPass2Result
+    from relax.fine_pass.resident_pass2 import ResidentPass2Result
     from relax.fine_pass.resident_statistics import finalize_statistics
     from relax.reconstruction.half_volume_mstep import (
         finalize_half_volume_bpref,
@@ -565,7 +565,7 @@ def _finalize_dense_result(state, numerator, denominator, stats, stats_config, b
         wsum_scale_correction_xa=finalized.wsum_scale_correction_xa,
         wsum_scale_correction_aa=finalized.wsum_scale_correction_aa,
     )
-    return _ResidentPass2Result(
+    return ResidentPass2Result(
         Ft_y=tuple(final_y), Ft_ctf=tuple(final_w), n_classes=k,
         n_slot_groups=n_groups, finalized=finalized, noise_stats=noise,
         fine_translations=np.asarray(state.fine_translations, np.float32),

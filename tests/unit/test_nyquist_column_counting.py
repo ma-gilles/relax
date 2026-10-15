@@ -182,13 +182,13 @@ def test_image_power_of_the_noise_image_counts_each_nyquist_pair_once():
 
 
 def test_pass2_weight_builder_takes_the_rule():
-    from relax.fine_pass.window import _pass2_half_weights
+    from relax.fine_pass.window import pass2_half_weights
     from relax.fourier.fourier_window import make_fourier_window_spec
 
     spec = make_fourier_window_spec((16, 16), 16, 16 * 9, window_at_box=True)
     kwargs = dict(half_spectrum_scoring=True, relion_firstiter_score_mode="gaussian", use_float64_scoring=False)
-    _, relion = _pass2_half_weights((16, 16), spec, **kwargs)
-    _, once = _pass2_half_weights((16, 16), spec, nyquist_column_counting="once", **kwargs)
+    _, relion = pass2_half_weights((16, 16), spec, **kwargs)
+    _, once = pass2_half_weights((16, 16), spec, nyquist_column_counting="once", **kwargs)
     redundant = np.asarray(half_spectrum.redundant_nyquist_column_pixels((16, 16)))[spec.score_indices_np]
     assert redundant.sum() == 2 and np.all(np.asarray(relion) == 1.0)
     assert_matches(np.asarray(once), (~redundant).astype(np.float32))

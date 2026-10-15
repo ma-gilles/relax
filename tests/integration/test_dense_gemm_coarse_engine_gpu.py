@@ -163,7 +163,7 @@ def _capture_pre_scatter_norm(
     *, n_shells, image_capacity,
 ):
     """Save only scalar A2/XA rows and their existing F32 block scatters."""
-    from relax.fine_pass.resident_statistics import _flat_row_norm_and_scale_terms
+    from relax.fine_pass.resident_block_programs import _flat_row_norm_and_scale_terms
 
     result = original(
         proj, proj_abs2, summed_masked, ctf_probs, noise_variance,
@@ -364,11 +364,11 @@ def _save_k1_score_diagnostic(path, state, batch, control, candidate):
     from relax.cuda import fine as cuda_fine
     from relax.dense.gemm_coarse_engine import _expanded_rotation_priors
     from relax.dense.gemm_kernels import native_phase_table, native_relion_callbacks, score_tile
-    from relax.fine_pass.bucket_io import _relion_cuda_score_translation_angles_if_available
-    from relax.fine_pass.projection_blocks import _compute_sparse_pass2_windowed_projections_block
+    from relax.fine_pass.bucket_io import relion_cuda_score_translation_angles_if_available
+    from relax.fine_pass.projection_blocks import compute_sparse_pass2_windowed_projections_block
     from relax.fine_pass.resident_block_programs import relion_native_fine_units_in_place
     from relax.fine_pass.scoring import _relion_cuda_fine_full_to_compact_lookup
-    from relax.fine_pass.window import _sparse_pass2_window_setup
+    from relax.fine_pass.window import sparse_pass2_window_setup
 
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -382,7 +382,7 @@ def _save_k1_score_diagnostic(path, state, batch, control, candidate):
     winner_trans = winner_pose % t
     unique_rot, inverse = np.unique(winner_rot, return_inverse=True)
     inverse = inverse.reshape(b, 2)
-    window = _sparse_pass2_window_setup(
+    window = sparse_pass2_window_setup(
         state.dataset, disc_type=state.disc_type, image_shape=tuple(state.dataset.image_shape),
         current_size=state.current_size, n_half=state.n_half,
         mstep_current_size=state.mstep_current_size, square_window=state.square_window,
@@ -399,7 +399,7 @@ def _save_k1_score_diagnostic(path, state, batch, control, candidate):
     rotations = jnp.asarray(state.fine_rotations)[unique_rot]
     slab = jnp.asarray(state.class_projector_halves[0], jnp.complex64)
     projected_dense = score_project(slab, rotations)
-    projected_resident, _, _ = _compute_sparse_pass2_windowed_projections_block(
+    projected_resident, _, _ = compute_sparse_pass2_windowed_projections_block(
         state.class_volumes[0], rotations, tuple(state.dataset.image_shape),
         tuple(state.dataset.volume_shape), state.disc_type,
         score_indices=score_indices, recon_indices=None,
@@ -411,7 +411,7 @@ def _save_k1_score_diagnostic(path, state, batch, control, candidate):
     if state.relion_native_fine_units:
         projected_dense = relion_native_fine_units_in_place(projected_dense, int(np.prod(state.dataset.image_shape)))
         projected_resident = relion_native_fine_units_in_place(projected_resident, int(np.prod(state.dataset.image_shape)))
-    angles = _relion_cuda_score_translation_angles_if_available(
+    angles = relion_cuda_score_translation_angles_if_available(
         state.fine_translations_source, tuple(state.dataset.image_shape), enabled=True,
         dtype=np.float32, angle_scale=state.relion_translation_angle_scale,
     )
@@ -474,9 +474,9 @@ def _save_k1_cc_score_diagnostic(path, state, batch, grid, resident, control_chu
     from relax.fine_pass.resident_block_programs import relion_native_fine_units_in_place
     from relax.fine_pass.scoring import (
         _relion_cuda_fine_full_to_compact_lookup,
-        _relion_cuda_fine_normalized_cc_score,
+        relion_cuda_fine_normalized_cc_score,
     )
-    from relax.fine_pass.window import _pass2_half_weights, _sparse_pass2_window_setup
+    from relax.fine_pass.window import pass2_half_weights, sparse_pass2_window_setup
     from relax.scoring.coarse_kernels import relion_coarse_gemm_terms
 
     path = Path(path)
@@ -488,7 +488,7 @@ def _save_k1_cc_score_diagnostic(path, state, batch, grid, resident, control_chu
                            np.asarray(candidate.best_rotation_indices)), axis=1)
     unique_rot, inverse = np.unique(winner_rot, return_inverse=True)
     inverse = inverse.reshape(n_images, 2)
-    window = _sparse_pass2_window_setup(
+    window = sparse_pass2_window_setup(
         state.dataset, disc_type=state.disc_type, image_shape=tuple(state.dataset.image_shape),
         current_size=state.current_size, n_half=state.n_half,
         mstep_current_size=state.mstep_current_size, square_window=state.square_window,
@@ -510,7 +510,7 @@ def _save_k1_cc_score_diagnostic(path, state, batch, grid, resident, control_chu
         projection = relion_native_fine_units_in_place(
             projection, int(np.prod(state.dataset.image_shape)),
         )
-    _, half_weights = _pass2_half_weights(
+    _, half_weights = pass2_half_weights(
         tuple(state.dataset.image_shape), window.window_spec,
         half_spectrum_scoring=True, relion_firstiter_score_mode="normalized_cc",
         use_float64_scoring=False,
@@ -520,7 +520,7 @@ def _save_k1_cc_score_diagnostic(path, state, batch, grid, resident, control_chu
     lookup = _relion_cuda_fine_full_to_compact_lookup(
         tuple(state.dataset.image_shape), state.current_size, window.window_indices_np,
     )
-    fine_scores = _relion_cuda_fine_normalized_cc_score(
+    fine_scores = relion_cuda_fine_normalized_cc_score(
         projection[None, :, None, :], shifted[:, None, :, :],
         resident.corr_img_score[:n_images, None, None, :], half_weights, lookup,
     )

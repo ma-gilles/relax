@@ -34,20 +34,20 @@ from helpers.fine_grid_significance_reference import _build_fine_grid_significan
 from recovar.core.configs import ForwardModelConfig
 
 from relax.classification.k_class import _fine_support_stats
-from relax.fine_pass.adjoint import _accumulate_adjoint_block_chunked, _adjoint_block_chunk_rows
-from relax.fine_pass.bucket_arrays import _prepare_per_image_pass2_inputs
+from relax.fine_pass.adjoint import _adjoint_block_chunk_rows, accumulate_adjoint_block_chunked
+from relax.fine_pass.bucket_arrays import prepare_per_image_pass2_inputs
 from relax.fine_pass.bucket_io import (
     _half_translation_phase_table_for_indices,
-    _prepare_bucket_io,
+    prepare_bucket_io,
     relion_translation_angles_f32,
 )
 from relax.fine_pass.local_backprojection import compute_local_ctf_sums_from_probs_sum_t
 from relax.fine_pass.policy import (
-    _projection_cache_enabled_for_pass,
+    projection_cache_enabled_for_pass,
 )
 from relax.fine_pass.projection_blocks import (
-    _compute_sparse_pass2_projections_block,
-    _compute_sparse_pass2_windowed_projections_block,
+    compute_sparse_pass2_projections_block,
+    compute_sparse_pass2_windowed_projections_block,
 )
 from relax.fine_pass.scoring import (
     _relion_cuda_corr_img_from_native_noise_variance,
@@ -277,7 +277,7 @@ def test_pass2_projection_cache_override_supports_matched_dump_ab(monkeypatch):
         return EngineTuning.from_environ().pass2_projection_cache
 
     def enabled(request, rotations, dump):
-        return _projection_cache_enabled_for_pass(
+        return projection_cache_enabled_for_pass(
             fine_rotations_override=rotations, dump_pass2_operands=dump, requested=request,
         )
 
@@ -544,14 +544,14 @@ def test_bucket_count_bounded_under_varied_per_image_rotation_counts():
     ]
 
     # Build per-image inputs the way compute_pass2_stats_sparse_bucketed does.
-    from relax.fine_pass.bucket_arrays import _prepare_per_image_pass2_inputs
+    from relax.fine_pass.bucket_arrays import prepare_per_image_pass2_inputs
 
     # fine_translation_parent maps fine trans -> coarse trans. With oversampling=1
     # in 2D, each coarse trans expands to 4 children, so trans 0..3 map to coarse 0,
     # trans 4..7 map to coarse 1.
     fine_trans_parent = np.array([0, 0, 0, 0, 1, 1, 1, 1], dtype=np.int32)
 
-    per_image = _prepare_per_image_pass2_inputs(
+    per_image = prepare_per_image_pass2_inputs(
         sig_indices,
         n_coarse_rot=n_coarse_rot,
         n_coarse_trans=n_coarse_trans,
@@ -780,7 +780,7 @@ def test_sparse_pass2_adjoint_block_chunking_accumulates_all_rows(monkeypatch):
     # a program compiled around another adjoint.
     adjoint._adjoint_rows.clear_cache()
     try:
-        actual = _accumulate_adjoint_block_chunked(
+        actual = accumulate_adjoint_block_chunked(
             flat_block,
             rotations,
             volume,
@@ -1207,7 +1207,7 @@ def test_sparse_pass2_projection_cap_chunks_projection_calls(monkeypatch):
     rotations = np.zeros((10, 3, 3), dtype=np.float32)
     rotations[:, 0, 0] = np.arange(10, dtype=np.float32)
 
-    proj, abs2 = _compute_sparse_pass2_projections_block(
+    proj, abs2 = compute_sparse_pass2_projections_block(
         jnp.zeros(VOLUME_SIZE, dtype=jnp.complex64),
         jnp.asarray(rotations),
         IMAGE_SHAPE,
@@ -1239,7 +1239,7 @@ def test_sparse_pass2_windowed_projection_cap_keeps_only_requested_pixels(monkey
     rotations = np.zeros((7, 3, 3), dtype=np.float32)
     rotations[:, 0, 0] = np.arange(7, dtype=np.float32)
 
-    score, recon, recon_abs2 = _compute_sparse_pass2_windowed_projections_block(
+    score, recon, recon_abs2 = compute_sparse_pass2_windowed_projections_block(
         jnp.zeros(VOLUME_SIZE, dtype=jnp.complex64),
         jnp.asarray(rotations),
         IMAGE_SHAPE,
@@ -1261,7 +1261,7 @@ def test_sparse_pass2_windowed_projection_cap_keeps_only_requested_pixels(monkey
     assert recon_abs2.dtype == jnp.float32
     assert_matches(np.asarray(score[:, 0].real), 10.0 * np.arange(7, dtype=np.float32))
     assert_matches(np.asarray(recon_abs2[6]), np.asarray([61.0**2, 65.0**2], dtype=np.float32))
-    score_only, no_recon, no_abs2 = _compute_sparse_pass2_windowed_projections_block(
+    score_only, no_recon, no_abs2 = compute_sparse_pass2_windowed_projections_block(
         jnp.zeros(VOLUME_SIZE, dtype=jnp.complex64),
         jnp.asarray(rotations),
         IMAGE_SHAPE,
@@ -1272,7 +1272,7 @@ def test_sparse_pass2_windowed_projection_cap_keeps_only_requested_pixels(monkey
     )
     assert no_recon is None and no_abs2 is None
     assert_matches(np.asarray(score_only), np.asarray(score))
-    padded, padded_recon, padded_abs2 = _compute_sparse_pass2_windowed_projections_block(
+    padded, padded_recon, padded_abs2 = compute_sparse_pass2_windowed_projections_block(
         jnp.zeros(VOLUME_SIZE, dtype=jnp.complex64),
         jnp.asarray(rotations),
         IMAGE_SHAPE,
@@ -1345,7 +1345,7 @@ def test_class_rows_project_in_place_within_the_streamed_chunk_plan(monkeypatch)
 
     def project(matrices, *, class_index, n_rows, outputs, output_row_ids, finalize):
         finalized.append(bool(finalize))
-        return _compute_sparse_pass2_windowed_projections_block(
+        return compute_sparse_pass2_windowed_projections_block(
             volumes[class_index],
             jnp.asarray(matrices),
             IMAGE_SHAPE,
@@ -1438,7 +1438,7 @@ def test_sparse_pass2_windowed_projection_uses_relion_projector_branch(monkeypat
     rotations = np.zeros((7, 3, 3), dtype=np.float32)
     rotations[:, 0, 0] = np.arange(7, dtype=np.float32)
 
-    score, recon, recon_abs2 = _compute_sparse_pass2_windowed_projections_block(
+    score, recon, recon_abs2 = compute_sparse_pass2_windowed_projections_block(
         jnp.zeros(VOLUME_SIZE, dtype=jnp.complex64),
         jnp.asarray(rotations),
         IMAGE_SHAPE,
@@ -1477,9 +1477,9 @@ def test_sparse_pass2_windowed_projection_uses_relion_projector_branch(monkeypat
 
 
 def test_relion_score_window_keeps_particle_crop_separate_from_model_radius():
-    from relax.fine_pass.projection_blocks import _projection_kwargs_for_relion_score_window
+    from relax.fine_pass.projection_blocks import projection_kwargs_for_relion_score_window
 
-    kwargs = _projection_kwargs_for_relion_score_window(
+    kwargs = projection_kwargs_for_relion_score_window(
         {"max_r": 28.0, "return_abs2": False},
         use_relion_projector=True,
         current_size=58,
@@ -1506,7 +1506,7 @@ def test_sparse_pass2_windowed_projection_cap_casts_chunks_before_concat(monkeyp
     rotations = np.zeros((7, 3, 3), dtype=np.float32)
     rotations[:, 0, 0] = np.arange(7, dtype=np.float32)
 
-    score, recon, recon_abs2 = _compute_sparse_pass2_windowed_projections_block(
+    score, recon, recon_abs2 = compute_sparse_pass2_windowed_projections_block(
         jnp.zeros(VOLUME_SIZE, dtype=jnp.complex128),
         jnp.asarray(rotations),
         IMAGE_SHAPE,
@@ -1574,7 +1574,7 @@ def test_prepare_bucket_io_routes_direct_score_translation_through_relion_cuda(
         "relion_translate_score_f32",
         fake_translate,
     )
-    result = _prepare_bucket_io(
+    result = prepare_bucket_io(
         experiment_dataset=ds,
         batch=batch,
         ctf_params=jnp.asarray(ds.CTF_params[batch_indices]),
@@ -1656,8 +1656,8 @@ def test_prepare_bucket_io_exact_cc_keeps_relion_image_and_corr_operands_separat
         score_mode="normalized_cc",
     )
 
-    folded = _prepare_bucket_io(**common, finite_check_mode="off")
-    exact = _prepare_bucket_io(
+    folded = prepare_bucket_io(**common, finite_check_mode="off")
+    exact = prepare_bucket_io(
         **common,
         relion_exact_normalized_cc_operands=True,
         finite_check_mode="off",
@@ -1729,7 +1729,7 @@ def test_prepare_bucket_io_exact_bpref_translation_keeps_recovar_fft_units_and_n
 
     monkeypatch.setattr(cuda_translate, "relion_translate_score_f32", fake_translate_score)
     noise = np.linspace(0.75, 1.25, n_half, dtype=np.float64)
-    result = _prepare_bucket_io(
+    result = prepare_bucket_io(
         experiment_dataset=ds,
         batch=batch,
         ctf_params=jnp.asarray(ds.CTF_params[batch_indices]),
@@ -1792,7 +1792,7 @@ def test_prepare_bucket_io_routes_relion_cuda_operands_to_score_and_reconstructi
     scale_corrections = np.asarray([2.0, 0.5], dtype=np.float32)
     image_pre_shifts = np.asarray([[1.0, -1.0], [-2.0, 1.0]], dtype=np.float32)
 
-    result = _prepare_bucket_io(
+    result = prepare_bucket_io(
         ds,
         batch,
         jnp.asarray(ds.CTF_params[batch_indices]),
@@ -1882,12 +1882,12 @@ def test_prepare_bucket_io_windowed_reuses_unmasked_recon_shift_for_noise(monkey
         return original_apply(images, phases)
 
     monkeypatch.setattr(bucket_io, "apply_half_translation_phases", counting_apply)
-    unmasked = _prepare_bucket_io(**common_kwargs, score_with_masked_images=False, finite_check_mode="off")
+    unmasked = prepare_bucket_io(**common_kwargs, score_with_masked_images=False, finite_check_mode="off")
     assert len(call_shapes) == 3
     assert_matches(np.asarray(unmasked[5]), np.asarray(unmasked[1]))
 
     call_shapes.clear()
-    _prepare_bucket_io(**common_kwargs, score_with_masked_images=True, finite_check_mode="off")
+    prepare_bucket_io(**common_kwargs, score_with_masked_images=True, finite_check_mode="off")
     assert len(call_shapes) == 4
 
 
@@ -2008,7 +2008,7 @@ def test_fine_rotation_override_preserves_fine_grid_order_and_parent_map():
     fine_rotations = np.arange(6 * 9, dtype=np.float32).reshape(6, 3, 3)
     fine_parent = np.array([0, 1, 0, 2, 1, 2], dtype=np.int64)
 
-    per_image = _prepare_per_image_pass2_inputs(
+    per_image = prepare_per_image_pass2_inputs(
         [np.array([0, 2], dtype=np.int32)],
         n_coarse_rot=3,
         n_coarse_trans=1,
@@ -2033,7 +2033,7 @@ def test_fine_rotation_override_can_follow_relion_parent_execution_order():
     # direction 0, psi 1, so RELION executes it before parent 1.
     fine_parent = np.array([0, 0, 1, 1, 48, 48], dtype=np.int64)
 
-    per_image = _prepare_per_image_pass2_inputs(
+    per_image = prepare_per_image_pass2_inputs(
         [np.array([0, 1, 48], dtype=np.int32)],
         n_coarse_rot=576,
         n_coarse_trans=1,

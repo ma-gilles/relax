@@ -1,7 +1,7 @@
 """Drivers that run the live resident scoring programs of ``relax.fine_pass.resident_scoring`` in tests.
 
 Moved from relax/fine_pass/resident_scoring.py, where only tests called them: the per-half image operands built
-with the production ``_prepare_bucket_io``, the device upload of one chunk, the loop of ``score_resident_chunk``
+with the production ``prepare_bucket_io``, the device upload of one chunk, the loop of ``score_resident_chunk``
 over a half's chunks, and the tilt-series composition of ``tilt_image_rows_raw_diff2`` and
 ``tilt_rows_scores_from_raw``.
 """
@@ -14,14 +14,14 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from relax.fine_pass.bucket_io import _prepare_bucket_io
+from relax.fine_pass.bucket_io import prepare_bucket_io
 from relax.fine_pass.resident_candidates import CapacityChunk, ResidentCandidateTables, materialize_chunk
 from relax.fine_pass.resident_scoring import (
     score_resident_chunk,
     tilt_image_rows_raw_diff2,
     tilt_rows_scores_from_raw,
 )
-from relax.fine_pass.scoring import _relion_powerclass_noise_terms
+from relax.fine_pass.scoring import relion_powerclass_noise_terms
 from relax.io.batch_fetch import fetch_indexed_batch
 
 
@@ -46,7 +46,7 @@ class ResidentImageOperands:
         two, added by the kernel as ``initial_diff2``. ``None`` when the pass
         does not use it (only possible outside exact-Gaussian scoring).
     batch_norm
-        ``[n_images]``: the per-image normalization ``_prepare_bucket_io``
+        ``[n_images]``: the per-image normalization ``prepare_bucket_io``
         returns; carried for the later M-step/noise stages, unused here.
     translation_prior
         float32 ``[n_images, n_fine_trans]``: the per-image fine translation
@@ -116,18 +116,18 @@ def prepare_resident_image_operands(
     score_real_dtype=jnp.float32,
     image_batch_size: int = 256,
 ) -> ResidentImageOperands:
-    """Run ``_prepare_bucket_io`` once per half and keep its operands resident.
+    """Run ``prepare_bucket_io`` once per half and keep its operands resident.
 
     ``image_indices`` are the dataset image indices of this half, in the order
     the pass processes them (RELION particle order); resident row ``i``
     corresponds to ``image_indices[i]``. ``bucket_io_kwargs`` must be exactly
     the keyword arguments the K=1 loop passes to
-    :func:`_prepare_bucket_io`, minus the four per-batch positional operands
+    :func:`prepare_bucket_io`, minus the four per-batch positional operands
     (``experiment_dataset``, ``batch``, ``ctf_params``, ``image_indices``) and
     minus ``return_direct_scoring_io``, which is forced on here because the
     fused translate route needs ``direct_score_input``.
 
-    ``image_batch_size`` only controls how many images one ``_prepare_bucket_io``
+    ``image_batch_size`` only controls how many images one ``prepare_bucket_io``
     call covers; the results are per image, so it does not change the output.
     The last batch is short rather than padded.
 
@@ -170,7 +170,7 @@ def prepare_resident_image_operands(
             experiment_dataset, batch_image_indices
         )
         fetched_indices = np.asarray(fetched_indices)
-        prepared = _prepare_bucket_io(
+        prepared = prepare_bucket_io(
             experiment_dataset,
             jnp.asarray(batch_data),
             ctf_params,
@@ -197,7 +197,7 @@ def prepare_resident_image_operands(
         else:
             score_input = direct_score_input
             corr_img_score = ctf2_over_nv_half
-        highres_xi2_half, _norm_high_shell = _relion_powerclass_noise_terms(
+        highres_xi2_half, _norm_high_shell = relion_powerclass_noise_terms(
             processed_score_half_for_noise,
             image_shape=image_shape,
             current_size=current_size,

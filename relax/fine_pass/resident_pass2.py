@@ -90,19 +90,19 @@ from relax.fine_pass import (
     resident_stable_windows,
     resident_statistics,
 )
-from relax.fine_pass.bucket_arrays import _prepare_per_image_pass2_inputs
-from relax.fine_pass.bucket_io import _relion_cuda_score_translation_angles_if_available
+from relax.fine_pass.bucket_arrays import prepare_per_image_pass2_inputs
+from relax.fine_pass.bucket_io import relion_cuda_score_translation_angles_if_available
 from relax.fine_pass.policy import (
     ResidentConfigurationUnsupported,
-    _projection_cache_enabled_for_pass,
+    projection_cache_enabled_for_pass,
 )
 from relax.fine_pass.projection_blocks import (
-    _compute_sparse_pass2_windowed_projections_block,
-    _projection_kwargs_for_relion_score_window,
+    compute_sparse_pass2_windowed_projections_block,
     project_rows_by_class,
+    projection_kwargs_for_relion_score_window,
 )
 from relax.fine_pass.resident_candidates import (
-    _BLOCK_UNITS,
+    BLOCK_UNITS,
     CandidateTableBlocks,
     map_over_classes,
     merge_class_tables,
@@ -129,14 +129,14 @@ from relax.fine_pass.resident_significance import (
 )
 from relax.fine_pass.scoring import (
     _relion_cuda_fine_full_to_compact_lookup,
-    _relion_native_fine_units_enabled,
+    relion_native_fine_units_enabled,
     relion_powerclass_noise_dtypes,
 )
-from relax.fine_pass.wavg import _make_relion_wavg_rectangle, _make_stable_relion_wavg_rectangle
+from relax.fine_pass.wavg import make_relion_wavg_rectangle, make_stable_relion_wavg_rectangle
 from relax.fine_pass.window import (
-    _pass2_half_weights,
-    _pass2_window_setup,
-    _sparse_pass2_window_setup,
+    pass2_half_weights,
+    pass2_window_setup,
+    sparse_pass2_window_setup,
 )
 from relax.fourier.half_spectrum import (
     make_relion_noise_shell_indices_half,
@@ -210,6 +210,7 @@ __all__ = [
     "ResidentKClassPass2Output",
     "compute_k_class_pass2_stats_resident",
     "compute_pass2_stats_resident",
+    "ResidentPass2Result",
 ]
 
 
@@ -342,7 +343,7 @@ def _class_candidate_tables(
     take RELION's parent execution order with the float32 fine posterior.
 
     ``coarse_rotation_ids`` and ``per_image_rotation_log_prior`` are the compact coarse grid and
-    the per-unit priors of a subtomogram local search (``_prepare_per_image_pass2_inputs``); the priors
+    the per-unit priors of a subtomogram local search (``prepare_per_image_pass2_inputs``); the priors
     are over this class's support.
     Returns ``(tables, hypothesis_prep_seconds, table_seconds)``.
     """
@@ -355,7 +356,7 @@ def _class_candidate_tables(
         n_coarse_rot=n_coarse_rot,
         n_coarse_trans=n_coarse_trans,
     )
-    per_image_inputs = None if significance_csr is not None else _prepare_per_image_pass2_inputs(
+    per_image_inputs = None if significance_csr is not None else prepare_per_image_pass2_inputs(
         significant_sample_indices,
         n_coarse_rot=n_coarse_rot,
         n_coarse_trans=n_coarse_trans,
@@ -414,7 +415,7 @@ def _candidate_table_blocks(
     """The pass's candidate tables over every class, as :class:`CandidateTableBlocks`.
 
     With every class's device-compacted CSR the tables are built one image
-    block of at most ``_BLOCK_UNITS`` rows plus significant ids at a time, when
+    block of at most ``BLOCK_UNITS`` rows plus significant ids at a time, when
     the chunk loop first reaches the block; only the per-image row counts are
     computed here. The
     rows, their order and their fields are the whole-pass build's, since each
@@ -480,7 +481,7 @@ def _candidate_table_blocks(
     )
     row_offsets = np.zeros(n_images + 1, dtype=np.int64)
     row_offsets[1:] = np.cumsum(rows_per_image)
-    # A block is counted in rows plus the classes' significant ids its builders read (_BLOCK_UNITS).
+    # A block is counted in rows plus the classes' significant ids its builders read (BLOCK_UNITS).
     unit_offsets = row_offsets.copy()
     unit_offsets[1:] += np.cumsum(np.sum([csr.counts() for csr in csrs], axis=0, dtype=np.int64))
     csr_kwargs = dict(
@@ -517,7 +518,7 @@ def _candidate_table_blocks(
         n_classes=len(csrs),
         n_slot_groups=1 if reconstruction_group_count is None else int(reconstruction_group_count),
         row_offsets=row_offsets,
-        block_starts=table_block_starts(unit_offsets, _BLOCK_UNITS),
+        block_starts=table_block_starts(unit_offsets, BLOCK_UNITS),
         build_block=build_block,
     )
     return blocks, 0.0, time.time() - table_t0
@@ -729,7 +730,7 @@ def _resident_pass2(
     firstiter_cc_support: str = "relion",
     image_translations=None,
 ):
-    """The device-resident sparse pass 2 over one or K classes; returns ``_ResidentPass2Result``.
+    """The device-resident sparse pass 2 over one or K classes; returns ``ResidentPass2Result``.
 
     With ``classes`` set, ``volume`` (and ``relion_projector_half``, when given)
     stack the K class references on the leading axis, and
@@ -756,7 +757,7 @@ def _resident_pass2(
 
     ``nyquist_column_counting`` and ``firstiter_cc_support`` are the consistency options of the
     per-image sums (docs/math/relion_consistency_options.md). They change only arrays built
-    here: the scoring weights (``_pass2_half_weights``), the image the noise statistics read
+    here: the scoring weights (``pass2_half_weights``), the image the noise statistics read
     and the normalized-CC image power (``prepare_unshifted_bucket_operands``). Subtomogram and
     full-grid GEMM passes refuse them.
 
@@ -786,9 +787,9 @@ def _resident_pass2(
         )
 
     from relax.fine_pass.window import (
-        _fine_translation_prior_2d,
-        _pass2_projection_budget,
-        _pass2_relion_flags,
+        fine_translation_log_prior_2d,
+        pass2_projection_budget,
+        pass2_relion_flags,
     )
     from relax.sampling.grids import rotation_grid_size
     from relax.sampling.oversampled_grids import get_oversampled_translation_grid, infer_translation_step
@@ -799,7 +800,7 @@ def _resident_pass2(
     (
         use_exact_relion_gaussian,
         use_relion_f32_fine_posterior,
-    ) = _pass2_relion_flags(
+    ) = pass2_relion_flags(
         relion_exact_fine_gaussian=relion_exact_fine_gaussian,
         relion_firstiter_score_mode=relion_firstiter_score_mode,
         relion_f32_fine_posterior=relion_f32_fine_posterior,
@@ -901,7 +902,7 @@ def _resident_pass2(
             budget_window_spec,
             device_memory_bytes,
             precision_policy,
-        ) = _pass2_window_setup(
+        ) = pass2_window_setup(
             image_shape,
             current_size=current_size,
             reconstruction_current_size=reconstruction_current_size,
@@ -948,7 +949,7 @@ def _resident_pass2(
     # RFLOAT CTF operand exists exactly when the exact BPref operands are on.
     # Only the score operands change (the score-cache rows, the score image
     # and corr_img); the reconstruction and noise operands keep RECOVAR units.
-    relion_native_fine_units = _relion_native_fine_units_enabled(
+    relion_native_fine_units = relion_native_fine_units_enabled(
         fresh_k1_guard=bool(source_faithful_spectrum_norm),
         use_exact_relion_gaussian=use_exact_relion_gaussian,
         use_float64_scoring=use_float64_scoring,
@@ -956,7 +957,7 @@ def _resident_pass2(
     ) and not (firstiter_cc and tilt is not None)  # a tilt CC pass translates its score image (resident_tilts)
     native_fft_size = int(np.prod(image_shape))
 
-    projection_cache_enabled = _projection_cache_enabled_for_pass(
+    projection_cache_enabled = projection_cache_enabled_for_pass(
         fine_rotations_override=fine_rotations_override,
         dump_pass2_operands=False,
         requested=engine_tuning.pass2_projection_cache,
@@ -1114,7 +1115,7 @@ def _resident_pass2(
         n_images=n_images,
         n_dims=translations_np.shape[1],
     )
-    fine_translation_prior_2d = _fine_translation_prior_2d(
+    fine_translation_prior_2d = fine_translation_log_prior_2d(
         translation_log_prior,
         fine_translation_parent,
         n_images=n_images,
@@ -1270,7 +1271,7 @@ def _resident_pass2(
             stable_window_plan.logical_rectangle_pixels,
             stable_window_plan.physical_rectangle_pixels,
         )
-    window_setup = _sparse_pass2_window_setup(
+    window_setup = sparse_pass2_window_setup(
         experiment_dataset,
         disc_type=disc_type,
         image_shape=image_shape,
@@ -1293,7 +1294,7 @@ def _resident_pass2(
     n_windowed = window_setup.n_windowed
     n_recon_windowed = window_setup.n_recon_windowed
 
-    half_weights, half_weights_windowed = _pass2_half_weights(
+    half_weights, half_weights_windowed = pass2_half_weights(
         image_shape,
         window_spec,
         half_spectrum_scoring=half_spectrum_scoring,
@@ -1352,7 +1353,7 @@ def _resident_pass2(
     spa_fine_translations = (
         fine_translations if tilt is None else np.zeros((n_fine_trans, 2), dtype=fine_translations.dtype)
     )
-    relion_score_translation_angles = _relion_cuda_score_translation_angles_if_available(
+    relion_score_translation_angles = relion_cuda_score_translation_angles_if_available(
         spa_fine_translations_source,
         image_shape,
         enabled=True,
@@ -1374,7 +1375,7 @@ def _resident_pass2(
         else window_indices_np[: int(stable_window_plan.logical_score_pixels)]
     )
     if wsum_current_size != current_size:
-        noise_crop_indices = _make_relion_wavg_rectangle(
+        noise_crop_indices = make_relion_wavg_rectangle(
             image_shape,
             wsum_current_size,
             recon_window_indices,
@@ -1389,7 +1390,7 @@ def _resident_pass2(
     shell_indices_noise = window_spec.recon_values(shell_indices_half)
     noise_variance_for_noise = window_spec.recon_values(noise_variance_half)
     if stable_window_plan is None:
-        relion_wavg_rectangle = _make_relion_wavg_rectangle(
+        relion_wavg_rectangle = make_relion_wavg_rectangle(
             image_shape,
             wsum_current_size,
             recon_window_indices,
@@ -1409,7 +1410,7 @@ def _resident_pass2(
             jnp.int32(int(stable_window_plan.logical_reconstruction_pixels)),
             shell_sentinel=int(image_shape[0] // 2 + 1),
         )
-        relion_wavg_rectangle = _make_stable_relion_wavg_rectangle(image_shape, stable_window_plan)
+        relion_wavg_rectangle = make_stable_relion_wavg_rectangle(image_shape, stable_window_plan)
         logical_rect_pixels = int(stable_window_plan.logical_rectangle_pixels)
         logical_recon_pixels = int(stable_window_plan.logical_reconstruction_pixels)
     n_rect = int(relion_wavg_rectangle.centered_indices.size)
@@ -1566,7 +1567,7 @@ def _resident_pass2(
         _projection_complex_dtype,
         _projection_budget_pixels,
         max_projected_rotations_per_projection_call,
-    ) = _pass2_projection_budget(
+    ) = pass2_projection_budget(
         jnp.asarray(class_means_for_proj[0]).dtype,
         precision_policy,
         n_half=n_half,
@@ -1615,7 +1616,7 @@ def _resident_pass2(
     max_projection_cache_bytes = projection_cache_max_bytes_for_pass(
         device_memory_bytes, override=engine_tuning.projection_max_bytes,
     )
-    projection_kwargs = _projection_kwargs_for_relion_score_window(
+    projection_kwargs = projection_kwargs_for_relion_score_window(
         window_spec.projection_kwargs(return_abs2=False),
         use_relion_projector=use_relion_projector,
         current_size=current_size,
@@ -1728,7 +1729,7 @@ def _resident_pass2(
         the whole arrays, once, on the call that completes them.
         """
 
-        score, recon, recon_abs2 = _compute_sparse_pass2_windowed_projections_block(
+        score, recon, recon_abs2 = compute_sparse_pass2_windowed_projections_block(
             class_means_for_proj[class_index],
             jnp.asarray(rotations, dtype=precision_policy.score_real_dtype),
             image_shape,
@@ -1931,7 +1932,7 @@ def _resident_pass2(
         ) or cache_rows_per_class
 
         def project_union_rows(class_index, start, stop):
-            return _compute_sparse_pass2_windowed_projections_block(
+            return compute_sparse_pass2_windowed_projections_block(
                 class_means_for_proj[class_index],
                 class_cache_rotations(class_index)[start:stop],
                 image_shape,
@@ -1989,7 +1990,7 @@ def _resident_pass2(
             sgd_projection_kwargs = {**projection_kwargs, "relion_kernel": "sgd"}
 
             def project_sgd_rows(class_index, start, stop):
-                return _compute_sparse_pass2_windowed_projections_block(
+                return compute_sparse_pass2_windowed_projections_block(
                     class_means_for_proj[class_index],
                     class_cache_rotations(class_index)[start:stop],
                     image_shape,
@@ -3026,7 +3027,7 @@ def _resident_pass2(
         loop_s,
         time.time() - overall_t0,
     )
-    return _ResidentPass2Result(
+    return ResidentPass2Result(
         Ft_y=tuple(Ft_y_out),
         Ft_ctf=tuple(Ft_ctf_out),
         n_classes=int(tables.n_classes),
@@ -3077,7 +3078,7 @@ def _stack_slot_pair(Ft_y, Ft_ctf):
     return jnp.stack(Ft_y, axis=0), jnp.stack(Ft_ctf, axis=0)
 
 
-class _ResidentPass2Result(NamedTuple):
+class ResidentPass2Result(NamedTuple):
     """What :func:`_resident_pass2` hands its K=1 and K-class entries."""
 
     Ft_y: tuple  # per accumulator slot (class + K * group), public x-half layout

@@ -114,7 +114,7 @@ def relion_translation_angles_f32(translations, image_shape, *, angle_scale=1.0)
     )
 
 
-def _relion_cuda_score_translation_angles_if_available(
+def relion_cuda_score_translation_angles_if_available(
     translations,
     image_shape,
     *,
@@ -252,14 +252,14 @@ def _divide_by_safe_ctf(sparse_score_input_half, ctf_half):
 
 
 class UnshiftedBucketOperands(NamedTuple):
-    """Every per-image operand :func:`_prepare_bucket_io` builds before shifting.
+    """Every per-image operand :func:`prepare_bucket_io` builds before shifting.
 
     The bucket preparation is two halves: a per-image half that weights, corrects
     and pre-centers each image, and a translation half that tiles the result over
     the fine translations. Only the first half is per-image pure, so it is the
     half the device-resident driver hoists to once per pass over a set of images
     (:mod:`relax.fine_pass.resident_operands`). This record is that half's
-    output, named exactly as the locals it replaced; :func:`_prepare_bucket_io`
+    output, named exactly as the locals it replaced; :func:`prepare_bucket_io`
     consumes it and appends the translation half unchanged.
     """
 
@@ -325,12 +325,12 @@ def prepare_unshifted_bucket_operands(
     nyquist_column_counting="relion",
     image_translations=None,
 ) -> UnshiftedBucketOperands:
-    """Per-image half of :func:`_prepare_bucket_io`, statement for statement.
+    """Per-image half of :func:`prepare_bucket_io`, statement for statement.
 
     Extracted so the resident driver can prepare these operands once for a whole
     half instead of once per chunk. Nothing here depends on the fine translations,
     so a call covering any set of images returns exactly the rows a per-bucket
-    call would; the translation-dependent work stays in :func:`_prepare_bucket_io`.
+    call would; the translation-dependent work stays in :func:`prepare_bucket_io`.
 
     ``noise_variance_half`` is one shared spectrum or a per-optics-group table
     whose rows ``noise_optics_groups`` selects per image (:mod:`relax.relion.optics_groups`).
@@ -725,7 +725,7 @@ def normalized_cc_direct_corr_img(unshifted, *, score_real_dtype, scale_correcti
     )
 
 
-def _prepare_bucket_io(
+def prepare_bucket_io(
     experiment_dataset,
     batch,
     ctf_params,
@@ -1146,7 +1146,7 @@ def _prepare_bucket_io(
             "shifted_corrected_score_half": shifted_corrected_score_half,
             "direct_score_input": direct_score_input,
         },
-        where="_prepare_bucket_io",
+        where="prepare_bucket_io",
         mode=native_bpref_operand_check,
     )
 

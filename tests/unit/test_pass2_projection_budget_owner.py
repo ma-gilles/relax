@@ -16,7 +16,7 @@ def test_owner_threads_the_budget(monkeypatch):
     class Window:
         use_window = True
 
-    out = sp._pass2_projection_budget(
+    out = sp.pass2_projection_budget(
         "f32", Policy(), n_half=9, use_relion_projector=True, budget_window_spec=Window(), device_memory_bytes=123,
         include_abs2=False, max_projected_rotations_override=7, projection_max_bytes=11,
     )

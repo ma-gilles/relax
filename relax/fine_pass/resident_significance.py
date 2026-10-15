@@ -9,7 +9,7 @@ about 3.8 GB of booleans per iteration.  The host path in
 ``recovar/em/scoring/significance.py`` pulls that whole mask
 (``batch_sig_mask_np = np.array(batch_sig_mask, dtype=bool, copy=True)``),
 reduces it per image with :func:`numpy.flatnonzero`, and
-``_prepare_per_image_pass2_inputs`` then re-expands the resulting ids into
+``prepare_per_image_pass2_inputs`` then re-expands the resulting ids into
 per-image candidate structures that the resident candidate tables flatten
 again.
 
@@ -26,7 +26,7 @@ The coarse pass always compacts on the device, one CSR per class (the host
 mask pull remains only for score dumps and the compact-hybrid diagnostics).
 The host encoder stays the oracle: the CSR must equal its
 ``significant_sample_indices`` per image bitwise, and the tables built here
-must equal the tables built through ``_prepare_per_image_pass2_inputs`` field
+must equal the tables built through ``prepare_per_image_pass2_inputs`` field
 by field.  Nothing here changes a scientific default; the RELION significance
 selection itself (adaptive fraction, ``max_significants``, the tie-inclusive
 cutoff) happens upstream in the posterior and is only read here.
@@ -78,6 +78,7 @@ __all__ = [
     "host_support_rows",
     "resident_candidate_tables",
     "resident_significance_csr",
+    "ragged_gather",
 ]
 
 # Compacted-id buffers are traced at a power-of-two capacity, so one program
@@ -865,7 +866,7 @@ def fine_rotation_children(
 
     Returns ``(child_offsets, child_ids)``: parent ``p`` owns
     ``child_ids[child_offsets[p]:child_offsets[p + 1]]``.  The order inside a
-    parent is the order ``_prepare_per_image_pass2_inputs`` produces for it --
+    parent is the order ``prepare_per_image_pass2_inputs`` produces for it --
     ascending fine id when the caller supplies a fine rotation/parent override
     (its rows come from :func:`numpy.flatnonzero`), and the sampling
     generator's own child order otherwise.  Both are functions of the parent
@@ -966,7 +967,7 @@ def csr_candidate_rows_per_image(
     return rows
 
 
-def _ragged_gather(
+def ragged_gather(
     child_offsets: np.ndarray,
     child_ids: np.ndarray,
     parents: np.ndarray,
@@ -1007,7 +1008,7 @@ def build_resident_candidate_tables_from_csr(
 
     Produces exactly what
     :func:`recovar.em.sparse_pass2.resident_candidates.build_resident_candidate_tables`
-    produces from ``_prepare_per_image_pass2_inputs`` for the same support, and
+    produces from ``prepare_per_image_pass2_inputs`` for the same support, and
     is validated against it field by field.  Nothing here materializes a dense
     mask, a per-image rotation-matrix block, or a per-image Python loop over
     the fine grid: every table is assembled with whole-array numpy over the
@@ -1028,7 +1029,7 @@ def build_resident_candidate_tables_from_csr(
     n_samples = csr.n_samples
     n_significant = csr.n_significant.astype(np.int64)
     store_excluded = np.asarray(csr.store_excluded, dtype=bool)
-    # Three regimes, matching ``_prepare_per_image_pass2_inputs`` exactly:
+    # Three regimes, matching ``prepare_per_image_pass2_inputs`` exactly:
     # a full support takes the full rotation grid with an all-true mask, a
     # dense (complement-encoded) support takes the full rotation grid with the
     # excluded pairs cleared, and everything else takes only the rotations its
@@ -1108,7 +1109,7 @@ def build_resident_candidate_tables_from_csr(
 
     # An image with no significant sample still carries one parent, coarse
     # rotation 0, and an all-false candidate mask, matching
-    # ``_prepare_per_image_pass2_inputs``' ``unique_rot = [0]`` branch.
+    # ``prepare_per_image_pass2_inputs``' ``unique_rot = [0]`` branch.
     mask_mode = np.full(csr.n_images, _MASK_MODE_BITSET, dtype=np.int8)
     mask_mode[full_images] = _MASK_MODE_FULL
     mask_mode[empty_images] = _MASK_MODE_EMPTY
@@ -1166,7 +1167,7 @@ def build_resident_candidate_tables_from_csr(
     row_offsets[1:] = np.cumsum(rows_per_image).astype(np.int32)
     n_rows = int(row_offsets[-1])
 
-    row_fine_rot = _ragged_gather(child_offsets, child_ids, ordered_rot, child_counts)
+    row_fine_rot = ragged_gather(child_offsets, child_ids, ordered_rot, child_counts)
     row_image = np.repeat(ordered_image, child_counts)
     row_parent_local = np.repeat(ordered_local, child_counts)
     row_parent_rot = np.repeat(ordered_rot, child_counts)

@@ -506,7 +506,7 @@ def test_firstiter_cc_fine_grid_uses_reduced_asymmetric_unit_ids(label):
 @pytest.mark.parametrize("label", ["C7", "D5", "T", "O", "I1", "I2", "I3", "I4"])
 def test_sparse_pass2_fallback_uses_symmetry_reduced_parent_ids(label):
     from relax.fine_pass.bucket_arrays import (
-        _prepare_per_image_pass2_inputs,
+        prepare_per_image_pass2_inputs,
     )
     from relax.sampling.grids import rotation_grid_size
     from relax.sampling.oversampled_grids import get_oversampled_rotation_grid_from_samples
@@ -519,7 +519,7 @@ def test_sparse_pass2_fallback_uses_symmetry_reduced_parent_ids(label):
         oversampling_order=1,
         symmetry=label,
     )
-    prepared = _prepare_per_image_pass2_inputs(
+    prepared = prepare_per_image_pass2_inputs(
         [None],
         n_coarse_rot=n_coarse_rotations,
         n_coarse_trans=1,
@@ -538,12 +538,12 @@ def test_sparse_pass2_fallback_uses_symmetry_reduced_parent_ids(label):
 
 def test_sparse_pass2_rejects_c1_sized_parent_grid_for_i1():
     from relax.fine_pass.bucket_arrays import (
-        _prepare_per_image_pass2_inputs,
+        prepare_per_image_pass2_inputs,
     )
     from relax.sampling.grids import rotation_grid_size
 
     with pytest.raises(ValueError, match="I1 sparse pass-2 coarse rotation count mismatch"):
-        _prepare_per_image_pass2_inputs(
+        prepare_per_image_pass2_inputs(
             [None],
             n_coarse_rot=rotation_grid_size(3, "C1"),
             n_coarse_trans=1,

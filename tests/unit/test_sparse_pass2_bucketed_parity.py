@@ -21,7 +21,7 @@ import recovar.core.fourier_transform_utils as ftu
 from helpers.em_arrays import _raw_real_image_2d
 from helpers.float_compare import assert_matches
 
-from relax.fine_pass.bucket_arrays import _prepare_per_image_pass2_inputs
+from relax.fine_pass.bucket_arrays import prepare_per_image_pass2_inputs
 from scripts.lib.bucketed_pass2 import _build_bucket_arrays, _normalize_pass2_bucket_with_log_z, _reorder_to_indices
 from scripts.lib.bucketed_pass2_scoring import _score_pass2_bucket_relion_gpu_diff2
 
@@ -335,7 +335,7 @@ def test_sparse_pass2_mstep_rotations_follow_score_selection_padding_and_reorder
         np.asarray([1], dtype=np.int32),
     ]
 
-    per_image = _prepare_per_image_pass2_inputs(
+    per_image = prepare_per_image_pass2_inputs(
         significant_samples,
         n_coarse_rot=12,
         n_coarse_trans=1,
@@ -383,7 +383,7 @@ def test_sparse_pass2_mstep_rotations_follow_score_selection_padding_and_reorder
     assert_matches(reordered_score, expected_score)
     assert_matches(reordered_mstep, expected_mstep)
 
-    aliased = _prepare_per_image_pass2_inputs(
+    aliased = prepare_per_image_pass2_inputs(
         significant_samples,
         n_coarse_rot=12,
         n_coarse_trans=1,
@@ -430,11 +430,11 @@ def test_sparse_pass2_prepare_per_image_inputs_honors_explicit_float64_dtype():
         fine_rotation_parent_override=parent_map,
     )
 
-    default_out = _prepare_per_image_pass2_inputs(**kwargs)
+    default_out = prepare_per_image_pass2_inputs(**kwargs)
     assert default_out["oversampled_rots"][0].dtype == np.float32
     assert default_out["oversampled_mstep_rots"][0].dtype == np.float32
 
-    f64_out = _prepare_per_image_pass2_inputs(**kwargs, dtype=np.float64)
+    f64_out = prepare_per_image_pass2_inputs(**kwargs, dtype=np.float64)
     assert f64_out["oversampled_rots"][0].dtype == np.float64
     assert f64_out["oversampled_mstep_rots"][0].dtype == np.float64
     assert f64_out["log_prior"][0].dtype == np.float64
@@ -467,7 +467,7 @@ def test_sparse_pass2_rotations_by_index_build_matches_the_host_build(monkeypatc
 
     score_rotations = np.stack([_z_rotation(angle) for angle in (0.1, 0.2, 0.3, 0.4)])
     mstep_rotations = np.stack([_z_rotation(angle) for angle in (1.1, 1.2, 1.3, 1.4)])
-    per_image = _prepare_per_image_pass2_inputs(
+    per_image = prepare_per_image_pass2_inputs(
         [np.asarray([0, 1], dtype=np.int32), np.asarray([1], dtype=np.int32)],
         n_coarse_rot=12,
         n_coarse_trans=1,

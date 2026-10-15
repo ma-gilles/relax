@@ -73,7 +73,7 @@ def test_rows_sum_their_particles_images_in_order(monkeypatch, request):
         unit_capacity=3,
     )
 
-    weights = np.asarray(resident_scoring._relion_cuda_fine_pixel_weights(corr, half_weights[None, :]), np.float32)
+    weights = np.asarray(resident_scoring.relion_cuda_fine_pixel_weights(corr, half_weights[None, :]), np.float32)
     expected = np.full((n_rows, n_trans), np.inf, dtype=np.float32)
     for r in range(n_rows):
         if not row_is_valid[r]:

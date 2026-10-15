@@ -231,7 +231,7 @@ def test_a_magnified_single_shape_local_half_reconstructs_on_the_remapped_window
     """relax#69: one magnified 1.40 A group against the header pixel scores at 40 for model size 38. Its M-step
     window is the rounded shell of 40 (653 pixels) with the reference kept at 38, as for the same group among
     several shapes; the rounded shell of 38 (597 pixels) is not a window the Wavg rectangle of the 40 crop takes."""
-    from relax.fine_pass.wavg import _make_relion_wavg_rectangle
+    from relax.fine_pass.wavg import make_relion_wavg_rectangle
     from relax.fourier.fourier_window import make_fourier_window_indices_np
 
     sampling, optics = _local_grid(HEADER_PIXEL)
@@ -243,35 +243,35 @@ def test_a_magnified_single_shape_local_half_reconstructs_on_the_remapped_window
 
     window, count = make_fourier_window_indices_np((128, 128), sampling.model_support_size, include_dc=True)
     assert int(count) == 653
-    _make_relion_wavg_rectangle((128, 128), 40, window, reconstruction_current_size=sampling.model_support_size)
+    make_relion_wavg_rectangle((128, 128), 40, window, reconstruction_current_size=sampling.model_support_size)
     unremapped, count = make_fourier_window_indices_np((128, 128), 38, include_dc=True)
     assert int(count) == 597
     with pytest.raises(ValueError, match="got 597 pixels"):
-        _make_relion_wavg_rectangle((128, 128), 40, unremapped, reconstruction_current_size=38)
+        make_relion_wavg_rectangle((128, 128), 40, unremapped, reconstruction_current_size=38)
 
 
 def test_a_magnified_single_shape_dense_half_reconstructs_on_the_remapped_window(magnified):
     """The dense path (global searches, Class3D) takes the same grid: cell C group 1 at Class3D's model size 28
     scores at 30, and its rounded shell of 28 (330 pixels) is refused on the 30 crop as the local one of 38 is."""
-    from relax.fine_pass.wavg import _make_relion_wavg_rectangle
+    from relax.fine_pass.wavg import make_relion_wavg_rectangle
     from relax.fourier.fourier_window import make_fourier_window_indices_np
 
     sampling, optics = _dense_grid(HEADER_PIXEL)
     assert (sampling.image_window_size, sampling.model_support_size, optics.reference_current_size) == (30, 30, 28)
     window, count = make_fourier_window_indices_np((128, 128), 30, include_dc=True)
     assert int(count) == 372
-    _make_relion_wavg_rectangle((128, 128), 30, window, reconstruction_current_size=30)
+    make_relion_wavg_rectangle((128, 128), 30, window, reconstruction_current_size=30)
     unremapped, count = make_fourier_window_indices_np((128, 128), 28, include_dc=True)
     assert int(count) == 330
     with pytest.raises(ValueError, match="got 330 pixels"):
-        _make_relion_wavg_rectangle((128, 128), 30, unremapped, reconstruction_current_size=28)
+        make_relion_wavg_rectangle((128, 128), 30, unremapped, reconstruction_current_size=28)
 
 
 def test_an_unmagnified_single_shape_half_keeps_the_exact_window_of_the_model_size(unmagnified):
     """Without magnification a rounding scale changes nothing on either entry: the engine gets the model's size
     (it builds the exact-radius window, 565 pixels at 38 and 307 at 28, which the rectangle of the remapped crop
     takes) and no reference clip."""
-    from relax.fine_pass.wavg import _make_relion_wavg_rectangle
+    from relax.fine_pass.wavg import make_relion_wavg_rectangle
     from relax.fourier.fourier_window import make_fourier_window_indices_np
 
     for grid, model_size, image_size, pixels in ((_local_grid, 38, 40, 565), (_dense_grid, 28, 30, 307)):
@@ -280,7 +280,7 @@ def test_an_unmagnified_single_shape_half_keeps_the_exact_window_of_the_model_si
         assert optics.reference_current_size is None
         exact, count = make_fourier_window_indices_np((128, 128), model_size, include_dc=True, exact_radius=True)
         assert int(count) == pixels
-        _make_relion_wavg_rectangle((128, 128), image_size, exact, reconstruction_current_size=model_size)
+        make_relion_wavg_rectangle((128, 128), image_size, exact, reconstruction_current_size=model_size)
 
 
 @pytest.mark.parametrize("fixture", ["magnified", "unmagnified"])

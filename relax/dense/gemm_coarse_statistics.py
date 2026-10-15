@@ -28,8 +28,8 @@ from relax.fine_pass.resident_chunk_stages import fold_class_scale_sums
 from relax.fine_pass.resident_image_terms import ChunkImageOperands, ChunkImageTables, accumulate_chunk_image_terms
 from relax.fine_pass.resident_statistics import ResidentStatisticsConfig
 from relax.fine_pass.wavg import (
-    _relion_wavg_shifted_power,
     relion_cuda_translate_wavg_norm_window,
+    relion_wavg_shifted_power,
 )
 from relax.fourier.half_spectrum import bin_shell_values_jax
 
@@ -252,7 +252,7 @@ def make_statistics_callbacks(plan: DenseGemmStatisticsPlan):
             xa_raw = scaled_ctf * raw_cross
             aa_raw = (scaled_ctf * scaled_ctf) * expected_power
             image_power_exact = jnp.sum(
-                mass_bu[:, :, None] * _relion_wavg_shifted_power(raw_exact), axis=1
+                mass_bu[:, :, None] * relion_wavg_shifted_power(raw_exact), axis=1
             )
             safe_scale = jnp.maximum(scale, jnp.asarray(1e-30, jnp.float32))
             exact_triplet = jnp.stack((
@@ -268,7 +268,7 @@ def make_statistics_callbacks(plan: DenseGemmStatisticsPlan):
                 jnp.where(live_exact[None, :, None], exact_triplet, jnp.float32(0.0))
             )
             rectangle_power = jnp.sum(
-                mass_bu[:, :, None] * _relion_wavg_shifted_power(raw_rect), axis=1
+                mass_bu[:, :, None] * relion_wavg_shifted_power(raw_rect), axis=1
             )
             outside_exact = (
                 jnp.arange(plan.n_rect_pixels) < ops.logical_rect_pixels

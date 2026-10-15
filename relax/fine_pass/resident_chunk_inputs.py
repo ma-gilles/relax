@@ -19,7 +19,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from relax.fine_pass.bucket_io import _prepare_bucket_io, premultiplied_bpref_weights
+from relax.fine_pass.bucket_io import premultiplied_bpref_weights, prepare_bucket_io
 from relax.fine_pass.resident_operands import (
     ResidentOperandsUnsupported,
     gather_resident_chunk_operands,
@@ -27,11 +27,11 @@ from relax.fine_pass.resident_operands import (
     require_unshifted_operand_support,
 )
 from relax.fine_pass.scoring import (
-    _relion_native_fine_units,
-    _relion_native_score_corr_img,
-    _relion_powerclass_noise_terms,
+    relion_native_score_corr_img,
+    relion_powerclass_noise_terms,
+    to_relion_native_fine_units,
 )
-from relax.fine_pass.wavg import _relion_cuda_translate_wavg_norm_images, image_power_shells
+from relax.fine_pass.wavg import image_power_shells, relion_cuda_translate_wavg_norm_window
 from relax.io.batch_fetch import fetch_indexed_batch
 from relax.relion import ctf
 from relax.relion.optics_groups import noise_rows, pixel_rows
@@ -43,6 +43,24 @@ logger = logging.getLogger(__name__)
 # arm: 12x the measured same-call spread of 5.8e-8, still far inside one
 # float32 ulp of the accumulated shell power.
 _RACING_SCATTER_RELATIVE_BAND = 7e-7
+
+
+def _relion_cuda_translate_wavg_norm_images(
+    processed_score_half,
+    translation_angles,
+    score_window_indices,
+    image_shape,
+):
+    """Translate the raw masked image at RELION's Wavg input boundary."""
+
+    processed_score_half = jnp.asarray(processed_score_half, dtype=jnp.complex64)
+    score_window_indices = jnp.asarray(score_window_indices, dtype=jnp.int32)
+    return relion_cuda_translate_wavg_norm_window(
+        processed_score_half[:, score_window_indices],
+        translation_angles,
+        score_window_indices,
+        image_shape,
+    )
 
 
 def pad_batch_to_capacity(values, capacity: int):
@@ -379,7 +397,7 @@ def prepare_chunk_reconstruction_operands(
     ``RELAX_SPARSE_PASS2_RESIDENT_OPERANDS=0``. These tiles carry the
     ``(images, translations, pixels)`` axis, so they are the one operand family
     that cannot be kept resident for a whole half (17 GiB at the hp3 state);
-    they are rebuilt per chunk from the same :func:`_prepare_bucket_io` call,
+    they are rebuilt per chunk from the same :func:`prepare_bucket_io` call,
     with the same keyword arguments, that the compact engine makes per bucket.
     The default path instead keeps the *unshifted* per-image operands resident
     (:mod:`recovar.em.sparse_pass2.resident_operands`) and lets T15's kernel
@@ -397,7 +415,7 @@ def prepare_chunk_reconstruction_operands(
     the compact engine reports evidence with. ``corr_img_score`` is then the
     CC pixel weight the same call returns.
 
-    Shape stability. The batch handed to ``_prepare_bucket_io`` is padded on
+    Shape stability. The batch handed to ``prepare_bucket_io`` is padded on
     the host to the chunk's image capacity before anything is traced, so every
     chunk of one capacity class runs the same program instead of one program
     per distinct occupancy. The padded slots carry a duplicate image's real
@@ -412,7 +430,7 @@ def prepare_chunk_reconstruction_operands(
         experiment_dataset, image_indices, chunk.image_capacity
     )
     order = reorder_permutation(fetched_indices, image_indices, chunk.image_capacity)
-    prepared = _prepare_bucket_io(
+    prepared = prepare_bucket_io(
         experiment_dataset,
         batch_images,
         padded_ctf_params,
@@ -487,7 +505,7 @@ def prepare_chunk_reconstruction_operands(
         # engine: RELION's native corr_img (DC zeroed for half-spectrum
         # scoring) in the score window, and the unshifted score image divided
         # by N**2, which the kernel translates in-kernel.
-        native_corr_img_half = _relion_native_score_corr_img(
+        native_corr_img_half = relion_native_score_corr_img(
             pixel_rows(
                 noise_rows(
                     bucket_io_kwargs["noise_variance_half"],
@@ -509,9 +527,9 @@ def prepare_chunk_reconstruction_operands(
                 :, jnp.asarray(score_window_indices, dtype=jnp.int32)
             ]
         corr_img_score = native_corr_img_half.astype(corr_img_score.dtype)
-        score_input = _relion_native_fine_units(score_input, int(np.prod(image_shape)))
+        score_input = to_relion_native_fine_units(score_input, int(np.prod(image_shape)))
 
-    highres_xi2_half, relion_norm_high_shell = _relion_powerclass_noise_terms(
+    highres_xi2_half, relion_norm_high_shell = relion_powerclass_noise_terms(
         processed_score_half_for_noise,
         image_shape=image_shape,
         current_size=current_size,
@@ -653,7 +671,7 @@ def verify_resident_chunk_operands(
 
     The two paths differ in *when* the translation is applied, so the check
     translates the resident per-image operands with the primitives
-    ``_prepare_bucket_io`` uses and compares against its own pre-shifted tiles.
+    ``prepare_bucket_io`` uses and compares against its own pre-shifted tiles.
     A mismatch raises: this runs only in a diagnostic arm, and a silent
     difference here would be a changed reconstruction operand.
     """

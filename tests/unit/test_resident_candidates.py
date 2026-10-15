@@ -11,7 +11,7 @@ import pytest
 from helpers.float_compare import assert_matches, matches
 from oracles.resident_candidates import expand_mask_rows
 
-from relax.fine_pass.bucket_arrays import _prepare_per_image_pass2_inputs
+from relax.fine_pass.bucket_arrays import prepare_per_image_pass2_inputs
 from relax.fine_pass.resident_candidates import (
     ResidentCandidateTables,
     build_resident_candidate_tables,
@@ -75,7 +75,7 @@ def _build_fixture_per_image_inputs():
     significant_sample_indices = [image0_samples, image1_samples, image2_samples, image3_samples]
     rotation_log_prior = np.linspace(-1.0, 1.0, N_COARSE_ROT, dtype=np.float32)
 
-    per_image_inputs = _prepare_per_image_pass2_inputs(
+    per_image_inputs = prepare_per_image_pass2_inputs(
         significant_sample_indices,
         n_coarse_rot=N_COARSE_ROT,
         n_coarse_trans=N_COARSE_TRANS,
@@ -113,7 +113,7 @@ def fixture_tables(fixture_inputs):
     )
 
 
-# --- Mask/id/parent/prior equivalence to _prepare_per_image_pass2_inputs ----
+# --- Mask/id/parent/prior equivalence to prepare_per_image_pass2_inputs ----
 
 
 def test_row_ids_parents_and_priors_match_per_image_inputs(fixture_inputs, fixture_tables):

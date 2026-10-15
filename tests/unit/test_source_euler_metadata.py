@@ -8,7 +8,7 @@ import pytest
 from helpers.float_compare import assert_matches
 
 from relax.classification import k_class_results
-from relax.fine_pass.bucket_arrays import _prepare_per_image_pass2_inputs
+from relax.fine_pass.bucket_arrays import prepare_per_image_pass2_inputs
 from relax.local_search.layout import build_pass2_hypothesis_layout
 from relax.sampling import oversampled_grids
 from relax.types import make_relion_stats
@@ -63,10 +63,10 @@ def test_sparse_override_source_follows_true_child_permutation(order):
         fine_rotation_parent_override=parent,
         relion_parent_execution_order=order,
     )
-    inputs = _prepare_per_image_pass2_inputs(
+    inputs = prepare_per_image_pass2_inputs(
         [np.array([0, 1]), np.array([1])], fine_source_eulers_override=eulers, **kwargs
     )
-    legacy = _prepare_per_image_pass2_inputs([np.array([0, 1]), np.array([1])], **kwargs)
+    legacy = prepare_per_image_pass2_inputs([np.array([0, 1]), np.array([1])], **kwargs)
     for i in range(2):
         ids = inputs["oversampled_rot_indices"][i]
         assert_matches(inputs["source_eulers"][i], eulers[ids])

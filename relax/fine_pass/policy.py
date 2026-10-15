@@ -15,7 +15,7 @@ class ResidentConfigurationUnsupported(NotImplementedError):
     """
 
 
-def _projection_cache_enabled_for_pass(
+def projection_cache_enabled_for_pass(
     *,
     fine_rotations_override,
     dump_pass2_operands: bool,

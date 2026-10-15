@@ -241,7 +241,7 @@ def chunk_translated_tile_pixels(
 
     With the translated tiles (:func:`prepare_chunk_reconstruction_operands`),
     the preparation peak is inside :func:`_chunk_operand_rows`, where
-    ``_prepare_bucket_io``'s two score-window and two recon-window tiles, the
+    ``prepare_bucket_io``'s two score-window and two recon-window tiles, the
     Wavg rectangle and the row-order copies (recon, noise, rectangle and its
     exact positions) are live together; the chunk then holds the three
     row-order recon-window tiles and the rectangle through projection, scoring

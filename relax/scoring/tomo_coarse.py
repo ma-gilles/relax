@@ -1442,7 +1442,7 @@ def particle_coarse_cc_winners(
     n_half = image_shape[0] * (image_shape[1] // 2 + 1)
     # RELION's CC kernels sum every element of the windowed FFTW image, the DC and the redundant x=0
     # column included, and Xi2 is its full power (ml_optimiser.cpp:6846-6855): the square current-size
-    # crop of the CC pass (sparse_pass2_window's normalized_cc window, _pass2_half_weights).
+    # crop of the CC pass (sparse_pass2_window's normalized_cc window, pass2_half_weights).
     window = np.asarray(
         make_fourier_window_spec(
             image_shape,

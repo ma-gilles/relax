@@ -17,10 +17,46 @@ from relax.fine_pass.local_backprojection import (
     compute_local_ctf_sums_from_probs_sum_t,
     compute_local_weighted_sums,
 )
-from relax.fine_pass.resident_statistics import _flat_row_norm_and_scale_terms, segment_sum_by_image
-from relax.fine_pass.scoring import _relion_native_fine_units
-from relax.fine_pass.wavg import _relion_wavg_shifted_power
+from relax.fine_pass.resident_statistics import segment_sum_by_image
+from relax.fine_pass.scoring import to_relion_native_fine_units
+from relax.fine_pass.wavg import relion_wavg_shifted_power
 from relax.projection.projection import compute_noise_block, compute_noise_block_per_optics_group
+from relax.relion.optics_groups import pixel_rows
+
+
+def _flat_row_norm_and_scale_terms(
+    proj,
+    proj_abs2,
+    summed_masked,
+    ctf_probs,
+    noise_variance,
+    *,
+    pixel_mask=None,
+):
+    """Per-row ``A2`` and ``XA`` partials in the flat candidate-row layout.
+
+    Term for term this is the rectangular per-image norm residual (the test oracle
+    in ``tests/oracles/projection.py``; and,
+    with ``pixel_mask``, its scale-correction sibling) with the ``(B, R, P)``
+    rotation axis folded into the row axis: the same masks, the same
+    ``noise_variance`` broadcast and the same natural dtype promotion, summed
+    over pixels only. The caller sums rows into images and forms
+    ``A2 - 2 * XA`` afterwards, exactly as the host does after its
+    ``axis=(1, 2)`` reduction.
+    """
+
+    ctf_has_mass = ctf_probs != 0.0
+    cross_has_mass = summed_masked != 0.0
+    if pixel_mask is not None:
+        pixel_mask = jnp.asarray(pixel_mask, dtype=bool).reshape(-1)
+        ctf_has_mass = ctf_has_mass & pixel_mask[None, :]
+        cross_has_mass = cross_has_mass & pixel_mask[None, :]
+    noise_variance = pixel_rows(noise_variance)
+    ctf_probs_raw = jnp.where(ctf_has_mass, ctf_probs * noise_variance, 0.0)
+    a2_terms = jnp.where(ctf_has_mass, proj_abs2 * ctf_probs_raw, 0.0)
+    cross_terms = jnp.where(cross_has_mass, proj * jnp.conj(summed_masked), 0.0)
+    xa_terms = noise_variance * cross_terms.real
+    return jnp.sum(a2_terms, axis=1), jnp.sum(xa_terms, axis=1)
 
 
 @jax.jit
@@ -87,7 +123,7 @@ def resident_block_weighted_sums_kernel(
     tile, so no ``[images, translations, pixels]`` tile exists. ``recon_weight``
     selects the convention pairing production uses -- BPref for the
     reconstruction operand, score for the noise operand -- and matches how
-    ``_prepare_bucket_io`` builds the two shifted arrays.
+    ``prepare_bucket_io`` builds the two shifted arrays.
 
     Rows are bounded by their image id rather than by a row count: a padded row
     carries ``-1`` and the kernel writes it as zeros, which is the value the XLA
@@ -148,7 +184,7 @@ def resident_block_ctf_probs(row_posterior, row_image_local, ctf2_over_nv_recon)
 
 @partial(jax.jit, static_argnums=1, donate_argnums=0)
 def relion_native_fine_units_in_place(values, fft_size):
-    """:func:`_relion_native_fine_units` as one program that reuses the input buffer.
+    """:func:`to_relion_native_fine_units` as one program that reuses the input buffer.
 
     The whole-grid projection cache is several GiB; the eager form holds the
     complex64 input, two float64 part arrays and the output at once (EMPIAR-10097
@@ -158,7 +194,7 @@ def relion_native_fine_units_in_place(values, fft_size):
     so the same values.
     """
 
-    return _relion_native_fine_units(values, fft_size)
+    return to_relion_native_fine_units(values, fft_size)
 
 
 @jax.jit
@@ -350,7 +386,7 @@ def add_wavg_rectangle_image_power(
     image_power = jnp.einsum(
         "bt,btp->bp",
         marginal,
-        _relion_wavg_shifted_power(raw_shifted_rectangle),
+        relion_wavg_shifted_power(raw_shifted_rectangle),
         precision=jax.lax.Precision.HIGHEST,
         preferred_element_type=jnp.float32,
     ).astype(jnp.float32)

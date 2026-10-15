@@ -19,7 +19,7 @@ import jax.numpy as jnp
 from oracles.resident_candidates import expand_mask_rows
 from test_resident_significance import _csr_from_supports, _encoded_supports, _supports
 
-from relax.fine_pass.bucket_arrays import _prepare_per_image_pass2_inputs
+from relax.fine_pass.bucket_arrays import prepare_per_image_pass2_inputs
 from relax.fine_pass.resident_candidates import (
     build_resident_candidate_tables,
     expand_chunk_mask_jnp,
@@ -51,7 +51,7 @@ def _wide_case(n_coarse_trans: int, seed: int = 3):
         n_coarse_trans=n_coarse_trans,
         fine_translation_parent=fine_translation_parent,
     )
-    per_image_inputs = _prepare_per_image_pass2_inputs(
+    per_image_inputs = prepare_per_image_pass2_inputs(
         _encoded_supports(supports, n_samples),
         n_coarse_rot=N_COARSE_ROT,
         nside_level=0,

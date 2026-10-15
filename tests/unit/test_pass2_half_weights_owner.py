@@ -14,7 +14,7 @@ def test_owner_casts_and_rewindows_in_double(monkeypatch):
         def score_values(w):
             return w[:2]
 
-    hw, hww = sp._pass2_half_weights((2, 2), Window(), half_spectrum_scoring=True, relion_firstiter_score_mode="gaussian", use_float64_scoring=True)
+    hw, hww = sp.pass2_half_weights((2, 2), Window(), half_spectrum_scoring=True, relion_firstiter_score_mode="gaussian", use_float64_scoring=True)
     assert hw.dtype == jnp.float64 and hww.dtype == jnp.float64 and hww.shape == (2,) and float(hw[0]) == 2.0
-    hw32, _ = sp._pass2_half_weights((2, 2), Window(), half_spectrum_scoring=True, relion_firstiter_score_mode="normalized_cc", use_float64_scoring=False)
+    hw32, _ = sp.pass2_half_weights((2, 2), Window(), half_spectrum_scoring=True, relion_firstiter_score_mode="normalized_cc", use_float64_scoring=False)
     assert hw32.dtype == jnp.float32 and float(hw32[0]) == 1.0

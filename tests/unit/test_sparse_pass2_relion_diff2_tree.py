@@ -15,7 +15,7 @@ from relax.fine_pass.scoring import (
     _RELION_CUDA_FINE_REF3D_BLOCK_SIZE,
     _RELION_CUDA_POWERCLASS_BLOCK_SIZE,
     _relion_cuda_fine_full_to_compact_lookup,
-    _relion_cuda_fine_pixel_weights,
+    relion_cuda_fine_pixel_weights,
     relion_cuda_powerclass_highres_xi2_half,
 )
 from scripts.lib.bucketed_pass2_scoring import (
@@ -186,7 +186,7 @@ def test_relion_cuda_fine_pixel_weight_preserves_acc_double_precision():
     narrowed = np.float32(corr) * np.float32(half_weight)
 
     actual = np.asarray(
-        _relion_cuda_fine_pixel_weights(jnp.asarray(corr), jnp.asarray(half_weight))
+        relion_cuda_fine_pixel_weights(jnp.asarray(corr), jnp.asarray(half_weight))
     )
 
     assert_matches(actual, expected)

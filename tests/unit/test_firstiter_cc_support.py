@@ -15,7 +15,7 @@ from helpers.float_compare import assert_matches
 from helpers.run_options import stand_in
 from helpers.tiny_refinement import MockHalfSet, engine_stage_kwargs, run_tiny_refinement
 
-from relax.fine_pass.window import _pass2_half_weights
+from relax.fine_pass.window import pass2_half_weights
 from relax.fourier import half_spectrum
 from relax.fourier.fourier_window import make_fourier_window_spec
 from relax.refinement.refinement_options import RelionConsistencyOptions
@@ -64,7 +64,7 @@ def test_gaussian_support_weights_are_relions_gaussian_support(box, current_size
 
 
 def _cc_window(box, current_size):
-    # The normalized-CC pass keeps its rectangular score window (sparse_pass2_window._pass2_window_setup).
+    # The normalized-CC pass keeps its rectangular score window (sparse_pass2_window.pass2_window_setup).
     return make_fourier_window_spec(
         (box, box), current_size, box * (box // 2 + 1), score_square=True, score_include_dc=True, window_at_box=True
     )
@@ -76,9 +76,9 @@ def test_cc_weights_default_to_every_pixel_of_the_rectangle_and_gaussian_to_the_
     window = np.arange(box * (box // 2 + 1)) if spec.score_indices_np is None else np.asarray(spec.score_indices_np)
     assert_matches(np.sort(window), _rectangle(box, current_size))
     kwargs = dict(half_spectrum_scoring=True, relion_firstiter_score_mode="normalized_cc", use_float64_scoring=False)
-    _, relion = _pass2_half_weights((box, box), spec, **kwargs)
-    _, default = _pass2_half_weights((box, box), spec, firstiter_cc_support="relion", current_size=current_size, **kwargs)
-    _, gaussian = _pass2_half_weights(
+    _, relion = pass2_half_weights((box, box), spec, **kwargs)
+    _, default = pass2_half_weights((box, box), spec, firstiter_cc_support="relion", current_size=current_size, **kwargs)
+    _, gaussian = pass2_half_weights(
         (box, box), spec, firstiter_cc_support="gaussian", current_size=current_size, **kwargs
     )
     assert np.all(np.asarray(relion) == 1.0)
@@ -92,8 +92,8 @@ def test_cc_weights_default_to_every_pixel_of_the_rectangle_and_gaussian_to_the_
 def test_gaussian_iterations_are_not_touched_by_the_option():
     spec = make_fourier_window_spec((16, 16), 8, 16 * 9)
     kwargs = dict(half_spectrum_scoring=True, relion_firstiter_score_mode="gaussian", use_float64_scoring=False)
-    _, relion = _pass2_half_weights((16, 16), spec, **kwargs)
-    _, gaussian = _pass2_half_weights((16, 16), spec, firstiter_cc_support="gaussian", current_size=8, **kwargs)
+    _, relion = pass2_half_weights((16, 16), spec, **kwargs)
+    _, gaussian = pass2_half_weights((16, 16), spec, firstiter_cc_support="gaussian", current_size=8, **kwargs)
     assert_matches(np.asarray(gaussian), np.asarray(relion))
 
 
@@ -147,7 +147,7 @@ def test_coarse_image_power_takes_the_weights():
 @pytest.mark.parametrize("box,current_size", [(16, 8), (16, 12), (16, 16)])
 def test_fine_cc_score_is_the_normalized_cc_over_the_weighted_support(box, current_size):
     """The fine CC reduction with the two weight sets against the plain numpy normalized CC."""
-    from relax.fine_pass.scoring import _relion_cuda_fine_normalized_cc_score
+    from relax.fine_pass.scoring import relion_cuda_fine_normalized_cc_score
 
     spec = _cc_window(box, current_size)
     window = np.arange(box * (box // 2 + 1)) if spec.score_indices_np is None else np.asarray(spec.score_indices_np)
@@ -155,13 +155,13 @@ def test_fine_cc_score_is_the_normalized_cc_over_the_weighted_support(box, curre
     reference = (rng.normal(size=window.size) + 1j * rng.normal(size=window.size)).astype(np.complex128)
     image = (rng.normal(size=window.size) + 1j * rng.normal(size=window.size)).astype(np.complex128)
     for support in ("relion", "gaussian"):
-        _, weights = _pass2_half_weights(
+        _, weights = pass2_half_weights(
             (box, box), spec, half_spectrum_scoring=True, relion_firstiter_score_mode="normalized_cc",
             use_float64_scoring=True, firstiter_cc_support=support, current_size=current_size,
         )
         counted = np.ones(window.size, dtype=bool) if support == "relion" else np.isin(window, _gaussian_support(box, current_size))
         inverse_power = 1.0 / np.sum(np.abs(image[counted]) ** 2)
-        score = _relion_cuda_fine_normalized_cc_score(
+        score = relion_cuda_fine_normalized_cc_score(
             jnp.asarray(reference), jnp.asarray(image), jnp.full(window.size, inverse_power), jnp.asarray(weights)
         )
         expected = np.sum((np.conj(reference) * image).real[counted]) / np.sqrt(

@@ -365,7 +365,7 @@ def test_wavg_shifted_power_commutes_with_a_row_gather():
     optimization barrier that keeps the two products from contracting.
     """
 
-    from relax.fine_pass.wavg import _relion_wavg_shifted_power
+    from relax.fine_pass.wavg import relion_wavg_shifted_power
 
     rng = np.random.default_rng(5150)
     rect = (
@@ -373,10 +373,10 @@ def test_wavg_shifted_power_commutes_with_a_row_gather():
     ).astype(np.complex64)
     take = rng.integers(0, 6, size=97).astype(np.int32)
     gather_then_square = np.asarray(
-        _relion_wavg_shifted_power(jnp.asarray(rect)[jnp.asarray(take)])
+        relion_wavg_shifted_power(jnp.asarray(rect)[jnp.asarray(take)])
     )
     square_then_gather = np.asarray(
-        _relion_wavg_shifted_power(jnp.asarray(rect))[jnp.asarray(take)]
+        relion_wavg_shifted_power(jnp.asarray(rect))[jnp.asarray(take)]
     )
     assert_matches(
         square_then_gather, gather_then_square
@@ -1290,7 +1290,7 @@ def test_chunk_operands_are_padded_on_the_host(monkeypatch):
         raise _Prepared
 
     monkeypatch.setattr(jax, "device_put", device_put)
-    monkeypatch.setattr(resident_chunk_inputs, "_prepare_bucket_io", prepare_bucket_io)
+    monkeypatch.setattr(resident_chunk_inputs, "prepare_bucket_io", prepare_bucket_io)
     capacity = 4
     for chunk_indices in ([5, 1], [3, 0, 6]):
         uploads.clear()
@@ -1702,7 +1702,7 @@ def test_streamed_projection_rows_equal_the_cached_rows_exactly(monkeypatch):
     """
 
     calls = []
-    original = rp._compute_sparse_pass2_windowed_projections_block
+    original = rp.compute_sparse_pass2_windowed_projections_block
 
     def recording(volume, rotations, *args, **kwargs):
         out = original(volume, rotations, *args, **kwargs)
@@ -1713,7 +1713,7 @@ def test_streamed_projection_rows_equal_the_cached_rows_exactly(monkeypatch):
         calls.append((np.asarray(rotations), windows, tuple(None if v is None else np.asarray(v) for v in out)))
         return out
 
-    monkeypatch.setattr(rp, "_compute_sparse_pass2_windowed_projections_block", recording)
+    monkeypatch.setattr(rp, "compute_sparse_pass2_windowed_projections_block", recording)
     args = _driver_fixture_args()
     rp.compute_pass2_stats_resident(**args, engine_tuning=RESIDENT_PRODUCTION_ENGINE, scoring_overrides=ScoringOverrides())
     assert len(calls) == 1

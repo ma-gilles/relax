@@ -35,20 +35,20 @@ _BPREF_ATOMIC_BAND = 2e-7
 
 
 def _one_image_tilt_inputs(args):
-    from relax.fine_pass.bucket_io import _relion_cuda_score_translation_angles_if_available
+    from relax.fine_pass.bucket_io import relion_cuda_score_translation_angles_if_available
     from relax.fine_pass.resident_tilts import TiltPassInputs
-    from relax.fine_pass.window import _fine_translation_prior_2d
+    from relax.fine_pass.window import fine_translation_log_prior_2d
 
     n_images = args["experiment_dataset"].n_units
     fine_translations = np.asarray(args["fine_translations_override"])
     angles = np.asarray(
-        _relion_cuda_score_translation_angles_if_available(
+        relion_cuda_score_translation_angles_if_available(
             fine_translations, args["experiment_dataset"].image_shape, enabled=True
         ),
         dtype=np.float32,
     )
     prior = np.asarray(
-        _fine_translation_prior_2d(
+        fine_translation_log_prior_2d(
             args["translation_log_prior"],
             np.asarray(args["fine_translation_parent_override"]),
             n_images=n_images,

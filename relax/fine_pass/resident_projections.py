@@ -17,7 +17,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from relax.fine_pass import resident_chunk_memory, resident_stable_windows
-from relax.fine_pass.adjoint import _accumulate_adjoint_block_chunked
+from relax.fine_pass.adjoint import accumulate_adjoint_block_chunked
 from relax.fine_pass.policy import ResidentConfigurationUnsupported
 from relax.fine_pass.resident_operands import (
     resident_half_operand_bytes,
@@ -88,7 +88,7 @@ def backproject_projection_sums(sums_y, sums_ctf, *, mstep_grid, n_classes, n_fi
         start = (slot % int(n_classes)) * int(n_fine_rot)
         rotations = mstep_grid[start : start + int(n_fine_rot)]
         Ft_y_out.append(
-            _accumulate_adjoint_block_chunked(
+            accumulate_adjoint_block_chunked(
                 slot_y,
                 rotations,
                 jnp.zeros(int(volume_size), dtype=slot_y.dtype),
@@ -97,7 +97,7 @@ def backproject_projection_sums(sums_y, sums_ctf, *, mstep_grid, n_classes, n_fi
             )
         )
         Ft_ctf_out.append(
-            _accumulate_adjoint_block_chunked(
+            accumulate_adjoint_block_chunked(
                 slot_ctf,
                 rotations,
                 jnp.zeros(int(volume_size), dtype=slot_ctf.dtype),

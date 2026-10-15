@@ -17,8 +17,8 @@ import jax.numpy as jnp
 from relax.fine_pass.scoring import (
     _RELION_CUDA_FINE_REF3D_BLOCK_SIZE,
     _RELION_FINE_DIFF2_FUSED_FFI_ENV,
-    _relion_cuda_fine_pixel_weights,
     _relion_cuda_fine_reduce_lanes,
+    relion_cuda_fine_pixel_weights,
 )
 from relax.runtime.env_flags import parse_env_flag
 
@@ -308,7 +308,7 @@ def _score_pass2_bucket_relion_gpu_diff2_raw(
     already masks (``candidate_mask & isfinite``).
     """
 
-    weights = _relion_cuda_fine_pixel_weights(
+    weights = relion_cuda_fine_pixel_weights(
         corr_img_score, jnp.asarray(half_weights)[None, :]
     )
     diff2 = _relion_cuda_fine_diff2_sum(

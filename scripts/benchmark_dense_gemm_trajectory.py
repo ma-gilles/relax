@@ -186,7 +186,7 @@ def build_fixed_fixture_grid(dataset, checkpoint, model_dir, *, rotations, trans
     """Freeze a deterministic subset of the canonical checkpoint's full SO(3)/shift grid."""
     from relax.dense.gemm_kernels import native_phase_table, pad_grid
     from relax.fine_pass.bucket_io import relion_translation_angles_f32
-    from relax.fine_pass.window import _pass2_window_setup, _sparse_pass2_window_setup
+    from relax.fine_pass.window import pass2_window_setup, sparse_pass2_window_setup
     from relax.refinement.trial_grids import build_initial_coarse_grids
     from relax.relion.optics_aberrations import projection_rotations
     from relax.sampling.oversampling import prepare_adaptive_pass2_grids
@@ -222,7 +222,7 @@ def build_fixed_fixture_grid(dataset, checkpoint, model_dir, *, rotations, trans
     if len(np.unique(rotation_ids)) != rotations or len(np.unique(translation_ids)) != translations:
         raise ValueError("fixed-grid selection repeated a pose")
     n = int(dataset.image_shape[0])
-    window_plan = _pass2_window_setup(
+    window_plan = pass2_window_setup(
         dataset.image_shape, current_size=checkpoint.current_size,
         reconstruction_current_size=checkpoint.current_size,
         half_spectrum_scoring=True, square_window=False,
@@ -230,7 +230,7 @@ def build_fixed_fixture_grid(dataset, checkpoint, model_dir, *, rotations, trans
         use_float64_scoring=False, device_memory_override=EngineTuning.from_environ().device_memory_bytes,
         window_at_box=True,
     )
-    window = _sparse_pass2_window_setup(
+    window = sparse_pass2_window_setup(
         dataset, disc_type="linear_interp", image_shape=dataset.image_shape,
         current_size=checkpoint.current_size, n_half=window_plan.n_half,
         mstep_current_size=window_plan.mstep_current_size, square_window=False,
@@ -271,7 +271,7 @@ def prepare_real_batch(dataset, checkpoint, half_index, metadata, geometry, loca
     """Assemble one batch through the existing coarse and BPref operand owners."""
     from relax.fine_pass.resident_operands import prepare_resident_half_operands
     from relax.fine_pass.scoring import relion_cuda_powerclass_highres_xi2_half
-    from relax.fine_pass.wavg import _make_relion_wavg_rectangle
+    from relax.fine_pass.wavg import make_relion_wavg_rectangle
     from relax.fourier.half_spectrum import (
         make_relion_noise_shell_indices_half,
         make_scoring_half_image_weights,
@@ -325,7 +325,7 @@ def prepare_real_batch(dataset, checkpoint, half_index, metadata, geometry, loca
     )
 
     window = geometry["window"]
-    rect = _make_relion_wavg_rectangle(
+    rect = make_relion_wavg_rectangle(
         dataset.image_shape, checkpoint.current_size, window.recon_window_indices,
         reconstruction_current_size=checkpoint.current_size,
     )
@@ -695,7 +695,7 @@ def _resident_cuda_fixture_program(
         merge_normalizers,
         tile_normalizer,
     )
-    from relax.fine_pass.adjoint import _accumulate_adjoint_block_chunked
+    from relax.fine_pass.adjoint import accumulate_adjoint_block_chunked
     from relax.fine_pass.resident_block_programs import resident_block_weighted_sums_kernel
     from relax.runtime.memory_budget import max_adjoint_block_bytes_for_pass
     from relax.scoring.coarse_kernels import relion_coarse_gaussian_gemm_scores_jit
@@ -801,10 +801,10 @@ def _resident_cuda_fixture_program(
                     max_r=float(current_size // 2), relion_x_half=True,
                     max_block_bytes=max_adjoint_block_bytes, log_label="dense-resident-cuda",
                 )
-                y_acc = _accumulate_adjoint_block_chunked(
+                y_acc = accumulate_adjoint_block_chunked(
                     summed, row_rotations, y_acc, **adjoint_kwargs,
                 )
-                w_acc = _accumulate_adjoint_block_chunked(
+                w_acc = accumulate_adjoint_block_chunked(
                     ctf_probs, row_rotations, w_acc, **adjoint_kwargs,
                 )
                 return y_acc, w_acc

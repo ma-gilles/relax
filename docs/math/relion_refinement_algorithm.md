@@ -481,12 +481,12 @@ coefficients. RECOVAR's shifted image and projected reference carry an extra
 `N²` and its score `corr_img` an extra `N⁻⁴`. The factors cancel over the reals,
 and bit for bit when `N²` is a power of two, but not in float32 pixel products
 otherwise. The fresh K=1 exact-Gaussian pass therefore scores native-unit
-operands (condition `_relion_native_fine_units_enabled`): each complex operand
+operands (condition `relion_native_fine_units_enabled`): each complex operand
 divided by `N²` in binary64 and rounded once
 ([`scoring.py`](../../relax/fine_pass/scoring.py),
-`_relion_native_fine_units`), and RELION's own `corr_img` before its `N⁻⁴`
+`to_relion_native_fine_units`), and RELION's own `corr_img` before its `N⁻⁴`
 conversion, with the zero origin of `Minvsigma2`
-(`_relion_native_score_corr_img`). The device-resident driver divides the unshifted image,
+(`relion_native_score_corr_img`). The device-resident driver divides the unshifted image,
 which its kernel translates, and the reference rows of its score projections
 ([`resident_operands.py`](../../relax/fine_pass/resident_operands.py),
 `prepare_resident_half_operands`;

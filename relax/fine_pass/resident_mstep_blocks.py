@@ -16,7 +16,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from relax.fine_pass import resident_block_programs, resident_chunk_records
-from relax.fine_pass.adjoint import _accumulate_adjoint_block_chunked
+from relax.fine_pass.adjoint import accumulate_adjoint_block_chunked
 from relax.fine_pass.resident_scoring import cache_dtype, cache_rows
 from relax.reconstruction.half_volume_mstep import RowPartial
 
@@ -91,7 +91,7 @@ def cached_block_projections(tables: resident_chunk_records.ChunkStageTables, bl
     if tables.union_recon_take is not None:
         # The union cache: the reconstruction window is taken out of the
         # gathered rows and |recon|^2 is formed as the three-cache build formed
-        # it (_place_windowed_projection_block).
+        # it (place_windowed_projection_block).
         recon = cache_rows(tables.projection_score_cache, block_fine_rot)[:, tables.union_recon_take]
         recon_abs2 = (jnp.abs(recon) ** 2).astype(jnp.real(recon).dtype)
         if tables.residual_sgd_take is None:
@@ -298,10 +298,10 @@ def backproject_block_rows(summed, ctf_probs, block_mstep_rotations, Ft_y, Ft_ct
         max_block_bytes=int(spec.max_adjoint_block_bytes),
         runtime_max_r=runtime_mstep_max_r,
     )
-    Ft_y = _accumulate_adjoint_block_chunked(
+    Ft_y = accumulate_adjoint_block_chunked(
         summed, block_mstep_rotations, Ft_y, log_label="resident-y-window", **adjoint_kwargs
     )
-    Ft_ctf = _accumulate_adjoint_block_chunked(
+    Ft_ctf = accumulate_adjoint_block_chunked(
         ctf_probs, block_mstep_rotations, Ft_ctf, log_label="resident-ctf-window", **adjoint_kwargs
     )
     return Ft_y, Ft_ctf

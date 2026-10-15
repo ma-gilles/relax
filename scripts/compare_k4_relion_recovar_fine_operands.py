@@ -22,7 +22,7 @@ from recovar.utils.file_hash import sha256_file
 
 from relax.cuda.preprocess import relion_preprocess_real_f32
 from relax.fine_pass.bucket_io import _half_translation_phase_table_for_indices
-from relax.fine_pass.scoring import _relion_cuda_fine_full_to_compact_lookup, _relion_cuda_fine_pixel_weights
+from relax.fine_pass.scoring import _relion_cuda_fine_full_to_compact_lookup, relion_cuda_fine_pixel_weights
 from relax.fourier.half_spectrum import make_scoring_half_image_weights, make_shell_indices_half
 from relax.fourier.image_shifts import apply_relion_integer_pre_shifts
 from scripts.lib.bucketed_pass2_scoring import _relion_cuda_fine_diff2_sum
@@ -596,7 +596,7 @@ def compare(
     recovar_reference_compact = raw_projection[recovar_rotation_local]
     recovar_score_weight_compact = np.asarray(
         jax.block_until_ready(
-            _relion_cuda_fine_pixel_weights(
+            relion_cuda_fine_pixel_weights(
                 jnp.asarray(raw_corr_img_score),
                 jnp.asarray(raw_half_weights),
             )

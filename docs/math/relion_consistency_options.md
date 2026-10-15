@@ -163,7 +163,7 @@ affected, and there only shells `>= N/2`, which lie outside the reference sphere
 
 | Quantity | Function |
 | --- | --- |
-| Gaussian score weights of pass 1, pass 2, the first-iteration tree rescore and local search | `make_scoring_half_image_weights` (`compute_k_class_significance_batched`, `_pass2_half_weights`) |
+| Gaussian score weights of pass 1, pass 2, the first-iteration tree rescore and local search | `make_scoring_half_image_weights` (`compute_k_class_significance_batched`, `pass2_half_weights`) |
 | image power of the coarse pass (the high-shell constant of the squared difference) | the processed image of `compute_k_class_significance_batched` |
 | noise, image-power, norm-correction and scale sums of pass 2 and local search | the image the noise statistics read in `prepare_unshifted_bucket_operands` |
 | `Npix_per_shell` of the noise update | `make_relion_noise_shell_indices_half`, through `normalize_wsum_to_sigma2_noise` |
@@ -188,7 +188,7 @@ without DC. The first iteration therefore picks its poses on a different set of 
 
 | Quantity | Function |
 | --- | --- |
-| weights of the cross term and the reference power, pass 1, the tree rescore and pass 2 | `make_scoring_half_image_weights(firstiter_cc_support_size=...)` (`compute_k_class_significance_batched`, `_pass2_half_weights`) |
+| weights of the cross term and the reference power, pass 1, the tree rescore and pass 2 | `make_scoring_half_image_weights(firstiter_cc_support_size=...)` (`compute_k_class_significance_batched`, `pass2_half_weights`) |
 | image power of pass 1 | `_relion_cc_inverse_power_from_processed(power_weights=...)` |
 | image power `Xi2` of pass 2 | `prepare_unshifted_bucket_operands(cc_power_weights=...)` |
 

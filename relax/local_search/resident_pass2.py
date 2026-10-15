@@ -85,14 +85,14 @@ from relax.fine_pass import (
 )
 from relax.fine_pass import resident_pass2 as rp
 from relax.fine_pass.bucket_io import (
-    _prepare_bucket_io,
-    _relion_cuda_score_translation_angles_if_available,
+    prepare_bucket_io,
+    relion_cuda_score_translation_angles_if_available,
 )
 from relax.fine_pass.policy import (
     ResidentConfigurationUnsupported,
 )
 from relax.fine_pass.projection_blocks import (
-    _projection_kwargs_for_relion_score_window,
+    projection_kwargs_for_relion_score_window,
     projection_window_union,
 )
 from relax.fine_pass.resident_candidates import chunk_segment_offsets, expand_local_chunk_mask_jnp
@@ -110,15 +110,15 @@ from relax.fine_pass.resident_scoring import (
 )
 from relax.fine_pass.scoring import (
     _relion_cuda_fine_full_to_compact_lookup,
-    _relion_powerclass_noise_terms,
+    relion_powerclass_noise_terms,
 )
 from relax.fine_pass.wavg import (
-    _make_relion_wavg_rectangle,
+    make_relion_wavg_rectangle,
 )
 from relax.fine_pass.window import (
-    _pass2_half_weights,
-    _pass2_window_setup,
-    _sparse_pass2_window_setup,
+    pass2_half_weights,
+    pass2_window_setup,
+    sparse_pass2_window_setup,
 )
 from relax.fourier.half_spectrum import (
     make_relion_noise_shell_indices_half,
@@ -445,7 +445,7 @@ def compute_local_search_resident(
             budget_window_spec,
             device_memory_bytes,
             precision_policy,
-        ) = _pass2_window_setup(
+        ) = pass2_window_setup(
             image_shape,
             current_size=current_size,
             reconstruction_current_size=kernel.reconstruction_current_size,
@@ -522,7 +522,7 @@ def compute_local_search_resident(
     # projected with its own reference and backprojected into its own BPref.
 
     # ---- window, weights and lookups --------------------------------------
-    window_setup = _sparse_pass2_window_setup(
+    window_setup = sparse_pass2_window_setup(
         data.experiment_dataset,
         disc_type=kernel.disc_type,
         image_shape=image_shape,
@@ -544,7 +544,7 @@ def compute_local_search_resident(
     n_windowed = window_setup.n_windowed
     n_recon_windowed = window_setup.n_recon_windowed
 
-    half_weights, half_weights_windowed = _pass2_half_weights(
+    half_weights, half_weights_windowed = pass2_half_weights(
         image_shape,
         window_spec,
         half_spectrum_scoring=kernel.half_spectrum_scoring,
@@ -561,7 +561,7 @@ def compute_local_search_resident(
     # divides by it (local_big_jit.py, the non-BPref-operand branch). Passing a
     # float64 sigma2 through instead makes every downstream operand double:
     # ctf^2/sigma2 becomes float64, the translated reconstruction tile becomes
-    # complex128, and _prepare_bucket_io then picks relion_translate_score_f64
+    # complex128, and prepare_bucket_io then picks relion_translate_score_f64
     # where the exact engine picks the f32 kernel. That is a different
     # computation and twice the memory on the largest per-chunk array.
     noise_variance_half = noise_utils.to_batched_half_pixel_noise(
@@ -580,7 +580,7 @@ def compute_local_search_resident(
                 f"optics_group_ids must give each of {n_images} images a row of the "
                 f"{n_optics_groups}-group noise table"
             )
-    relion_score_translation_angles = _relion_cuda_score_translation_angles_if_available(
+    relion_score_translation_angles = relion_cuda_score_translation_angles_if_available(
         fine_translations,
         image_shape,
         enabled=True,
@@ -602,7 +602,7 @@ def compute_local_search_resident(
     # With a weighted-sum size above the scoring size, the noise crop is that size's rectangle.
     noise_crop_indices = window_indices
     if wsum_current_size != current_size:
-        noise_crop_indices = _make_relion_wavg_rectangle(
+        noise_crop_indices = make_relion_wavg_rectangle(
             image_shape, wsum_current_size, recon_window_indices, reconstruction_current_size=mstep_current_size
         ).centered_indices
     shell_indices_half = mask_relion_noise_shell_indices_to_current_window(
@@ -632,7 +632,7 @@ def compute_local_search_resident(
         shell_indices_noise,
         n_shells=n_shells,
     )
-    relion_wavg_rectangle = _make_relion_wavg_rectangle(
+    relion_wavg_rectangle = make_relion_wavg_rectangle(
         image_shape,
         wsum_current_size,
         recon_window_indices,
@@ -705,7 +705,7 @@ def compute_local_search_resident(
         tuple(relion_projector_half.shape),
         kernel.relion_projector_r_max,
     )
-    projection_kwargs = _projection_kwargs_for_relion_score_window(
+    projection_kwargs = projection_kwargs_for_relion_score_window(
         window_spec.projection_kwargs(return_abs2=False),
         use_relion_projector=True,
         current_size=current_size,
@@ -1424,7 +1424,7 @@ def _prepare_chunk_score_operands(
     """One probe chunk's score operands, from the same preparation as pass 2.
 
     :func:`~relax.fine_pass.resident_chunk_inputs.prepare_chunk_reconstruction_operands`
-    minus every reconstruction, noise and Wavg tile: ``_prepare_bucket_io`` runs
+    minus every reconstruction, noise and Wavg tile: ``prepare_bucket_io`` runs
     with ``score_only`` and the rows are permuted and padded exactly as there.
     ``normalized_cc`` (the ``--firstiter_cc`` iteration) adds that function's
     normalized-CC operands, the translated corrected score tile and half the
@@ -1436,7 +1436,7 @@ def _prepare_chunk_score_operands(
         experiment_dataset, image_indices, chunk.image_capacity
     )
     order = resident_chunk_inputs.reorder_permutation(fetched_indices, image_indices, chunk.image_capacity)
-    prepared = _prepare_bucket_io(
+    prepared = prepare_bucket_io(
         experiment_dataset,
         batch_images,
         padded_ctf_params,
@@ -1456,7 +1456,7 @@ def _prepare_chunk_score_operands(
         gather_score = jnp.asarray(score_window_indices, dtype=jnp.int32)
         score_input = direct_score_input[:, gather_score]
         corr_img_score = ctf2_over_nv_half[:, gather_score]
-    highres_xi2_half, _ = _relion_powerclass_noise_terms(
+    highres_xi2_half, _ = relion_powerclass_noise_terms(
         processed_score_half_for_noise,
         image_shape=image_shape,
         current_size=current_size,
@@ -2237,7 +2237,7 @@ def _start_resident_local_chunk(
 
     # --- stage 0: this chunk's operands, both families, at image capacity ---
     # Upstream merged the per-half score preparation into this call, so
-    # ``_prepare_bucket_io`` runs once per image instead of twice and every
+    # ``prepare_bucket_io`` runs once per image instead of twice and every
     # per-chunk program is keyed on the image-capacity class rather than on
     # the chunk's occupancy.
     recon = None

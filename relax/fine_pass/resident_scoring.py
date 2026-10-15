@@ -5,7 +5,7 @@ Stages 1-3 of ``em_device_resident_pass2_design_20260918.md``: gather,
 call) and score. The candidate rows and their capacity chunks come from
 :mod:`recovar.em.sparse_pass2.resident_candidates` (T5); the per-image image /
 CTF / noise operands come from
-:func:`recovar.em.sparse_pass2.sparse_pass2_bucket_io._prepare_bucket_io`, run
+:func:`recovar.em.sparse_pass2.sparse_pass2_bucket_io.prepare_bucket_io`, run
 once per half instead of once per bucket and kept on the device.
 
 What this module changes relative to the compact engine, and what it does not
@@ -51,10 +51,10 @@ import jax
 import jax.numpy as jnp
 
 from relax.fine_pass.projection_blocks import (
-    _compute_sparse_pass2_projections_block,
-    _compute_sparse_pass2_windowed_projections_block,
-    _place_score_window_block,
-    _place_windowed_projection_block,
+    compute_sparse_pass2_projections_block,
+    compute_sparse_pass2_windowed_projections_block,
+    place_score_window_block,
+    place_windowed_projection_block,
     window_union_applies,
 )
 from relax.fine_pass.resident_candidates import (
@@ -62,8 +62,8 @@ from relax.fine_pass.resident_candidates import (
     expand_local_chunk_mask_jnp,
 )
 from relax.fine_pass.scoring import (
-    _relion_cuda_fine_normalized_cc_score,
-    _relion_cuda_fine_pixel_weights,
+    relion_cuda_fine_normalized_cc_score,
+    relion_cuda_fine_pixel_weights,
 )
 
 __all__ = [
@@ -263,9 +263,9 @@ def cached_score_reference(projection_score_cache, row_fine_rot, *, score_take=N
     if score_take is not None:
         reference = reference[:, jnp.asarray(score_take, dtype=jnp.int32)]
         if native_fft_size:
-            from relax.fine_pass.scoring import _relion_native_fine_units
+            from relax.fine_pass.scoring import to_relion_native_fine_units
 
-            reference = _relion_native_fine_units(reference, int(native_fft_size))
+            reference = to_relion_native_fine_units(reference, int(native_fft_size))
     return reference
 
 
@@ -494,7 +494,7 @@ def _flat_rows_kernel_diff2(
 
     from relax.cuda import fine as cuda_fine
 
-    weights = _relion_cuda_fine_pixel_weights(
+    weights = relion_cuda_fine_pixel_weights(
         chunk_corr, jnp.asarray(half_weights)[None, :]
     ).astype(jnp.float32)
     return cuda_fine.relion_fine_diff2_fused_translate_runtime_flat_rows_f32(
@@ -585,7 +585,7 @@ def _normalized_cc_row_scores(
 
     RELION's 256-lane ``cuda_kernel_diff2_CC_fine`` numerator and
     reference-norm reduction (ml_optimiser.cpp:8844-8858), shared through
-    :func:`_relion_cuda_fine_normalized_cc_score`, evaluated in row blocks so
+    :func:`relion_cuda_fine_normalized_cc_score`, evaluated in row blocks so
     the ``[rows, T, N]`` product never exists for a whole chunk. Row ``r`` reads
     its projection at ``projection_rows[row_projection_index[r]]``. Like the
     compact engine it adds no rotation or translation prior.
@@ -625,7 +625,7 @@ def _normalized_cc_block_scores(
 ):
     """One row block's ``[B, T]`` normalized-CC scores: the block core every CC chunk scorer shares."""
 
-    return _relion_cuda_fine_normalized_cc_score(
+    return relion_cuda_fine_normalized_cc_score(
         block_projections[:, None, :],
         score_shifted_cc[block_images],
         cc_score_weight[block_images][:, None, :],
@@ -931,7 +931,7 @@ def project_resident_rows(
     projected here instead, in blocks of ``max_projected_rotations`` rows so the
     projector's transient stays inside its byte budget. The blocking is the
     compact engine's own
-    :func:`_compute_sparse_pass2_windowed_projections_block`, so the projector
+    :func:`compute_sparse_pass2_windowed_projections_block`, so the projector
     call, its window gathers and the ``|proj|^2`` formation are the same code
     the cache build uses, only driven by row rotations instead of grid rotations.
 
@@ -939,7 +939,7 @@ def project_resident_rows(
     recon_abs2 [Q, N_recon])``.
     """
 
-    return _compute_sparse_pass2_windowed_projections_block(
+    return compute_sparse_pass2_windowed_projections_block(
         mean_for_proj,
         rotations,
         image_shape,
@@ -1067,7 +1067,7 @@ def project_resident_live_rows(
         pixel_indices = window_union.indices
         score_indices, recon_indices = window_union.score_take, window_union.recon_take
     for start in range(0, n_projected, block):
-        proj_block, _ = _compute_sparse_pass2_projections_block(
+        proj_block, _ = compute_sparse_pass2_projections_block(
             mean_for_proj,
             rotations[start : start + block],
             image_shape,
@@ -1087,7 +1087,7 @@ def project_resident_live_rows(
             else jnp.asarray(place_rows[start : start + int(proj_block.shape[0])], dtype=jnp.int32)
         )
         if recon_indices is None:
-            score_proj = _place_score_window_block(
+            score_proj = place_score_window_block(
                 score_proj,
                 proj_block,
                 score_indices,
@@ -1096,7 +1096,7 @@ def project_resident_live_rows(
                 zero_column=pixel_indices is not None,
             )
         else:
-            score_proj, recon_proj, recon_abs2 = _place_windowed_projection_block(
+            score_proj, recon_proj, recon_abs2 = place_windowed_projection_block(
                 score_proj,
                 recon_proj,
                 recon_abs2,

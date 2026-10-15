@@ -17,7 +17,7 @@ from oracles.resident_candidates import expand_mask_rows
 from test_resident_significance import _encoded_supports, _supports
 
 from relax.fine_pass import resident_candidates
-from relax.fine_pass.bucket_arrays import _prepare_per_image_pass2_inputs
+from relax.fine_pass.bucket_arrays import prepare_per_image_pass2_inputs
 from relax.fine_pass.resident_candidates import (
     build_resident_candidate_tables,
     materialize_chunk,
@@ -46,7 +46,7 @@ def _class_tables(seed, n_classes):
         supports = _supports(N_IMAGES, n_samples, seed=seed + class_index)
         order = np.random.default_rng(seed + 100 * class_index).permutation(N_IMAGES)
         supports = [supports[i] for i in order]
-        inputs = _prepare_per_image_pass2_inputs(
+        inputs = prepare_per_image_pass2_inputs(
             _encoded_supports(supports, n_samples),
             n_coarse_rot=N_COARSE_ROT,
             n_coarse_trans=N_COARSE_TRANS,

@@ -701,8 +701,8 @@ def _relion_bpref_maps_from_sparse_support(
     from recovar.reconstruction import noise as noise_utils
     from recovar.utils import helpers
 
-    from relax.fine_pass.bucket_arrays import _prepare_per_image_pass2_inputs
-    from relax.fine_pass.bucket_io import _prepare_bucket_io
+    from relax.fine_pass.bucket_arrays import prepare_per_image_pass2_inputs
+    from relax.fine_pass.bucket_io import prepare_bucket_io
     from relax.fine_pass.local_backprojection import compute_local_weighted_sums
     from relax.fourier.fourier_window import make_fourier_window_spec
     from relax.fourier.half_spectrum import make_scoring_half_image_weights
@@ -805,7 +805,7 @@ def _relion_bpref_maps_from_sparse_support(
     maps = []
     summaries = []
     for class_index in range(n_classes):
-        per_image_inputs = _prepare_per_image_pass2_inputs(
+        per_image_inputs = prepare_per_image_pass2_inputs(
             significant_sample_indices_by_class[class_index],
             n_coarse_rot=n_coarse_rot,
             n_coarse_trans=n_coarse_trans,
@@ -871,7 +871,7 @@ def _relion_bpref_maps_from_sparse_support(
                 _shifted_score_half_with_dc,
                 _processed_score_half_for_noise,
                 shifted_corrected_score_half,
-            ) = _prepare_bucket_io(
+            ) = prepare_bucket_io(
                 experiment_dataset,
                 batch_data,
                 ctf_params,

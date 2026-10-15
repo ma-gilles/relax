@@ -36,7 +36,7 @@
 // sequential in increasing ``t`` with a rounded multiply followed by a rounded
 // add, the order RELION's Wavg accumulation uses.
 //
-// Two operand conventions.  ``_prepare_bucket_io`` builds the reconstruction
+// Two operand conventions.  ``prepare_bucket_io`` builds the reconstruction
 // tile with ``relion_translate_score_f32`` normally, but with
 // ``relion_translate_bpref_f32`` when the exact RELION BPref operands are
 // selected: that primitive pins the same complex-rotation FMA order as the

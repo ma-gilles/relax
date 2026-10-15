@@ -339,7 +339,7 @@ def relion_translate_sum_flat_rows_f32(
     :func:`relion_translate_score_f32` takes.
 
     ``recon_weight`` switches the first operand to the exact RELION BPref
-    convention, the one ``_prepare_bucket_io`` uses when
+    convention, the one ``prepare_bucket_io`` uses when
     ``relion_exact_bpref_operands`` is selected: pass the raw BPref image as
     ``recon_image`` and the weighted CTF as ``recon_weight``, and the kernel
     reproduces :func:`relion_translate_bpref_f32`, whose imaginary component

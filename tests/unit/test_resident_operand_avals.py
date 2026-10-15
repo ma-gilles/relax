@@ -488,7 +488,7 @@ def test_the_optional_operands_against_a_star_backed_preparation(
     from test_resident_operands import _gpu_case
 
     from relax.fine_pass.bucket_io import (
-        _relion_cuda_score_translation_angles_if_available,
+        relion_cuda_score_translation_angles_if_available,
     )
     from relax.fine_pass.resident_operands import (
         describe_resident_operand_mismatch,
@@ -543,7 +543,7 @@ def test_the_optional_operands_against_a_star_backed_preparation(
         recon_window_indices=window,
         translation_phases_half=None,
         relion_score_translation_angles=(
-            _relion_cuda_score_translation_angles_if_available(
+            relion_cuda_score_translation_angles_if_available(
                 fine_translations, image_shape, enabled=True, dtype=np.float32
             )
         ),
@@ -662,7 +662,7 @@ def test_the_per_chunk_oracle_meets_the_same_guard():
     """Why declaring exact BPref unsupported in the resident path would not help.
 
     The driver's fallback for a configuration the resident preparation refuses
-    is `_prepare_bucket_io`, the per-chunk oracle. It reaches the same guard
+    is `prepare_bucket_io`, the per-chunk oracle. It reaches the same guard
     through the same helper, so it refuses identically and falling back buys
     nothing. Read out of the bytecode rather than out of the source, because a
     reading of the source is how I got this wrong the first time.
@@ -670,7 +670,7 @@ def test_the_per_chunk_oracle_meets_the_same_guard():
 
     from relax.fine_pass import bucket_io as io
 
-    assert "prepare_unshifted_bucket_operands" in io._prepare_bucket_io.__code__.co_names
+    assert "prepare_unshifted_bucket_operands" in io.prepare_bucket_io.__code__.co_names
 
 
 @pytest.mark.parametrize("backend_name", ["host_numpy", "jax_gpu"])

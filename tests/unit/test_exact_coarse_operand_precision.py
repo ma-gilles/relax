@@ -125,11 +125,11 @@ def test_native_noise_variance_corr_img_accepts_the_score_dtype_used_by_bucket_i
 
     import inspect
 
-    # The call moved out of ``_prepare_bucket_io`` and into the operand
+    # The call moved out of ``prepare_bucket_io`` and into the operand
     # preparation it delegates to; the contract is the same and is still
     # inspected at the function that makes the call, plus the delegation that
-    # keeps ``_prepare_bucket_io`` the entry point.
-    entry_source = inspect.getsource(bucket_io._prepare_bucket_io)
+    # keeps ``prepare_bucket_io`` the entry point.
+    entry_source = inspect.getsource(bucket_io.prepare_bucket_io)
     assert "prepare_unshifted_bucket_operands(" in entry_source
     call_site = inspect.getsource(bucket_io.prepare_unshifted_bucket_operands)
     assert "_relion_cuda_corr_img_from_native_noise_variance(" in call_site

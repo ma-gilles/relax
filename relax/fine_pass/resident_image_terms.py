@@ -13,9 +13,9 @@ from typing import NamedTuple
 import jax
 import jax.numpy as jnp
 
-from relax.fine_pass.resident_statistics import ResidentStatistics, _drop_index, segment_sum_by_image
+from relax.fine_pass.resident_statistics import ResidentStatistics, drop_index, segment_sum_by_image
 from relax.fine_pass.wavg import (
-    _replace_low_shell_noise_with_relion_wavg_direct_residual_jnp,
+    replace_low_shell_noise_with_relion_wavg_direct_residual_jnp,
     weighted_image_power_from_shells,
 )
 
@@ -89,7 +89,7 @@ def accumulate_chunk_image_terms(
     row_image = jnp.asarray(operands.row_image_local, dtype=jnp.int32)
     image_ids = jnp.asarray(operands.image_ids, dtype=jnp.int32)
     valid_image = image_ids >= 0
-    image_slot = _drop_index(image_ids, int(config.image_capacity))
+    image_slot = drop_index(image_ids, int(config.image_capacity))
 
     # --- 1/2. sigma2 offset and support mass -------------------------------
     translation_posterior = segment_sum_by_image(
@@ -137,7 +137,7 @@ def accumulate_chunk_image_terms(
     # --- 5/6. noise shells with RELION's direct low-shell replacement ------
     if config.n_optics_groups == 1:
         residual_shells, img_power_shells = (
-            _replace_low_shell_noise_with_relion_wavg_direct_residual_jnp(
+            replace_low_shell_noise_with_relion_wavg_direct_residual_jnp(
                 jnp.asarray(operands.block_noise_shells, dtype=jnp.float64),
                 weighted_img_shells.astype(jnp.float64),
                 operands.wavg_triplet_pixels[:, :, 2],
@@ -160,7 +160,7 @@ def accumulate_chunk_image_terms(
                 include_unweighted_high_shell=config.include_unweighted_high_shell,
                 deterministic_norm_reduction=config.deterministic_norm_reduction,
             )
-            group_residual, group_power = _replace_low_shell_noise_with_relion_wavg_direct_residual_jnp(
+            group_residual, group_power = replace_low_shell_noise_with_relion_wavg_direct_residual_jnp(
                 jnp.asarray(operands.block_noise_shells[group], dtype=jnp.float64),
                 group_img_shells.astype(jnp.float64),
                 jnp.where(in_group[:, None], operands.wavg_triplet_pixels[:, :, 2], jnp.float32(0.0)),
@@ -205,7 +205,7 @@ def accumulate_chunk_image_terms(
                 ),
                 axis=1,
             )
-        group_slot = _drop_index(operands.group_ids, int(config.n_scale_groups))
+        group_slot = drop_index(operands.group_ids, int(config.n_scale_groups))
         keep_group = valid_image & (jnp.asarray(operands.group_ids, dtype=jnp.int32) >= 0)
         scale_xa = scale_xa.at[group_slot].add(
             jnp.where(keep_group, scale_xa_per_image, 0.0).astype(jnp.float64), mode="drop"
@@ -216,7 +216,7 @@ def accumulate_chunk_image_terms(
 
     # --- 9. rotation posterior sums ----------------------------------------
     probs_sum_t = jnp.sum(probs, axis=-1)
-    coarse_slot = _drop_index(operands.row_coarse_rot, int(config.n_coarse_rot))
+    coarse_slot = drop_index(operands.row_coarse_rot, int(config.n_coarse_rot))
     rotation_posterior_sums = stats.rotation_posterior_sums.at[coarse_slot].add(
         probs_sum_t.astype(jnp.float64), mode="drop"
     )

@@ -45,7 +45,7 @@ class _SparsePass2WindowSetup(NamedTuple):
     n_recon_windowed: int
 
 
-def _sparse_pass2_window_setup(
+def sparse_pass2_window_setup(
     experiment_dataset,
     *,
     disc_type,
@@ -124,7 +124,7 @@ def _sparse_pass2_window_setup(
     )
 
 
-def _pass2_relion_flags(*, relion_exact_fine_gaussian, relion_firstiter_score_mode, relion_f32_fine_posterior, f32_fine_posterior_override):
+def pass2_relion_flags(*, relion_exact_fine_gaussian, relion_firstiter_score_mode, relion_f32_fine_posterior, f32_fine_posterior_override):
     """The two RELION fine-scoring flags of a pass 2: exact Gaussian scoring and the float32 fine posterior.
 
     The float32 fine posterior is on when the caller's arithmetic asks for it (``relion_f32_fine_posterior``) or the
@@ -139,7 +139,7 @@ def _pass2_relion_flags(*, relion_exact_fine_gaussian, relion_firstiter_score_mo
     return use_exact_relion_gaussian, use_relion_f32_fine_posterior
 
 
-def _pass2_half_weights(
+def pass2_half_weights(
     image_shape,
     window_spec,
     *,
@@ -176,7 +176,7 @@ def _pass2_half_weights(
     return half_weights, half_weights_windowed
 
 
-def _pass2_projection_budget(
+def pass2_projection_budget(
     mean_dtype,
     precision_policy: DensePrecisionPolicy,
     *,
@@ -229,7 +229,7 @@ class _Pass2WindowSetup(NamedTuple):
     precision_policy: DensePrecisionPolicy
 
 
-def _pass2_window_setup(
+def pass2_window_setup(
     image_shape,
     *,
     current_size,
@@ -303,7 +303,7 @@ def _pass2_window_setup(
     )
 
 
-def _fine_translation_prior_2d(translation_log_prior, fine_translation_parent, *, n_images, n_fine_trans, dtype):
+def fine_translation_log_prior_2d(translation_log_prior, fine_translation_parent, *, n_images, n_fine_trans, dtype):
     """Expand the coarse translation log-prior onto the fine translation grid, or ``None`` without a prior."""
 
     if translation_log_prior is None:

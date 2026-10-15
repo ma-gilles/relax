@@ -25,7 +25,7 @@ import numpy as np
 from relax.fine_pass.projection_blocks import project_rows_by_class
 from relax.fine_pass.resident_candidates import map_over_classes
 from relax.fine_pass.wavg import (
-    _replace_low_shell_noise_with_relion_wavg_direct_residual_jnp,
+    replace_low_shell_noise_with_relion_wavg_direct_residual_jnp,
     weighted_image_power_from_shells,
 )
 from relax.reconstruction.half_volume_mstep import blocks_per_flush, flushed_block_loop
@@ -433,9 +433,9 @@ def run_tilt_chunk(
     )
     # Each chunk image's unshifted Wavg window (the resident operands keep only that window of the
     # image); the slot views translate it with each image's own phases.
-    from relax.fine_pass.resident_operands import _gather_rows
+    from relax.fine_pass.resident_operands import gather_rows
 
-    chunk_wavg_window = _gather_rows(
+    chunk_wavg_window = gather_rows(
         resident_operands.wavg_image_rect,
         jnp.asarray(np.maximum(operand_slots, 0), dtype=jnp.int32),
         jnp.asarray(operand_slots >= 0),
@@ -831,13 +831,13 @@ def tilt_cc_scores(
     slot's images are translated with their own phases (RELION's score translation,
     ``relion_translate_score_f32``) over the translations some row may take, in blocks that fit
     ``tile_budget_bytes``, and each row is scored by the SPA reduction
-    (``_relion_cuda_fine_normalized_cc_score``); the float32 running sum keeps the slot order.
+    (``relion_cuda_fine_normalized_cc_score``); the float32 running sum keeps the slot order.
     ``min_diff2`` is the particle's ``0.5 |X_i|^2`` summed over its images (the SPA evidence offset).
     """
 
     from relax.cuda import translate as cuda_translate
     from relax.fine_pass.resident_scoring import ResidentChunkScores
-    from relax.fine_pass.scoring import _relion_cuda_fine_normalized_cc_score
+    from relax.fine_pass.scoring import relion_cuda_fine_normalized_cc_score
 
     slot_image_ids = np.asarray(slot_image_ids, dtype=np.int64)
     unit_slot_images = np.asarray(unit_slot_images, dtype=np.int64)
@@ -875,7 +875,7 @@ def tilt_cc_scores(
                 def block_cc(first, projections=projections, tiles=tiles, images=images):
                     rows = jax.lax.dynamic_slice_in_dim(row_unit, first, block_rows)
                     row_images = jax.lax.dynamic_slice_in_dim(images, first, block_rows)
-                    return _relion_cuda_fine_normalized_cc_score(
+                    return relion_cuda_fine_normalized_cc_score(
                         jax.lax.dynamic_slice_in_dim(projections, first, block_rows)[:, None, :],
                         tiles[rows],
                         weight[row_images][:, None, :],
@@ -1322,12 +1322,12 @@ def _slot_view_gather(fields, wavg_window, safe, valid):
     (-1), the chunk gather's padding values (resident_operands._gather_chunk_arrays).
     """
 
-    from relax.fine_pass.resident_operands import _gather_rows
+    from relax.fine_pass.resident_operands import gather_rows
 
     gathered = {
-        name: _gather_rows(values, safe, valid, fill=_SLOT_VIEW_FILL.get(name, 0)) for name, values in fields.items()
+        name: gather_rows(values, safe, valid, fill=_SLOT_VIEW_FILL.get(name, 0)) for name, values in fields.items()
     }
-    return gathered, _gather_rows(wavg_window, safe, valid)
+    return gathered, gather_rows(wavg_window, safe, valid)
 
 
 def _slot_view_translate(window, valid, angles, rect_indices, exact_positions, *, image_shape):
@@ -1406,12 +1406,12 @@ def accumulate_tilt_chunk_terms(
     """
 
     from relax.fine_pass import resident_image_terms
-    from relax.fine_pass.resident_statistics import ResidentStatistics, _drop_index, segment_sum_by_image
+    from relax.fine_pass.resident_statistics import ResidentStatistics, drop_index, segment_sum_by_image
 
     config = spec.stats_config
     unit_capacity = int(unit_ids.shape[0])
     valid_unit = unit_ids >= 0
-    unit_slot = _drop_index(unit_ids, int(config.image_capacity))
+    unit_slot = drop_index(unit_ids, int(config.image_capacity))
     valid_image = image_ids >= 0
     scale = jnp.where(valid_image, jnp.asarray(operands.image_noise_scale, dtype=jnp.float32), jnp.float32(0.0))
 
@@ -1460,7 +1460,7 @@ def accumulate_tilt_chunk_terms(
     direct_residual = operands.image_noise_scale[:, None] * mstep.wavg_triplet_pixels[:, :, 2]
     direct_residual = jnp.where(valid_image[:, None], direct_residual, jnp.float32(0.0))
     if config.n_optics_groups == 1:
-        residual_shells, image_power_shells = _replace_low_shell_noise_with_relion_wavg_direct_residual_jnp(
+        residual_shells, image_power_shells = replace_low_shell_noise_with_relion_wavg_direct_residual_jnp(
             jnp.asarray(mstep.noise_shells, dtype=jnp.float64),
             weighted_img_shells.astype(jnp.float64),
             direct_residual,
@@ -1483,7 +1483,7 @@ def accumulate_tilt_chunk_terms(
                 deterministic_norm_reduction=config.deterministic_norm_reduction,
                 high_shell_mass=scale,
             )
-            return _replace_low_shell_noise_with_relion_wavg_direct_residual_jnp(
+            return replace_low_shell_noise_with_relion_wavg_direct_residual_jnp(
                 jnp.asarray(group_noise_shells, dtype=jnp.float64),
                 group_img_shells.astype(jnp.float64),
                 jnp.where(in_group[:, None], direct_residual, jnp.float32(0.0)),
@@ -1506,14 +1506,14 @@ def accumulate_tilt_chunk_terms(
             zero = jnp.float32(0.0)
             xa = jnp.sum(jnp.where(mask_rect, mstep.wavg_triplet_pixels[:, :, 0], zero).astype(jnp.float64), axis=1)
             aa = jnp.sum(jnp.where(mask_rect, mstep.wavg_triplet_pixels[:, :, 1], zero).astype(jnp.float64), axis=1)
-        group_slot = _drop_index(operands.group_ids, int(config.n_scale_groups))
+        group_slot = drop_index(operands.group_ids, int(config.n_scale_groups))
         keep = valid_image & (jnp.asarray(operands.group_ids, dtype=jnp.int32) >= 0)
         scale_xa = scale_xa.at[group_slot].add(jnp.where(keep, xa, 0.0), mode="drop")
         scale_aa = scale_aa.at[group_slot].add(jnp.where(keep, aa, 0.0), mode="drop")
 
     # --- 9. rotation posterior sums: the particle's -------------------------
     probs_sum_t = jnp.sum(row_posterior, axis=-1)
-    coarse_slot = _drop_index(row_coarse_rot, int(config.n_coarse_rot))
+    coarse_slot = drop_index(row_coarse_rot, int(config.n_coarse_rot))
     rotation_posterior_sums = stats.rotation_posterior_sums.at[coarse_slot].add(
         probs_sum_t.astype(jnp.float64), mode="drop"
     )

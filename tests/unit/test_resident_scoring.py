@@ -5,7 +5,7 @@ Design: em_device_resident_pass2_design_20260918.md (stages 1-3).
 
 The stage under test is a layout change, not an arithmetic change: its raw
 diff2 must equal the compact engine's raw diff2 for the same rows, the same
-cached projections and the same ``_prepare_bucket_io`` operands. Two
+cached projections and the same ``prepare_bucket_io`` operands. Two
 comparisons are made, because the compact engine has two routes:
 
 * against the compact *pairs* fused-translate scorer, which reaches the same
@@ -32,10 +32,10 @@ from recovar.core.configs import ForwardModelConfig
 from recovar.reconstruction import noise as noise_utils
 
 from relax.fine_pass import scoring as spb
-from relax.fine_pass.bucket_arrays import _prepare_per_image_pass2_inputs
+from relax.fine_pass.bucket_arrays import prepare_per_image_pass2_inputs
 from relax.fine_pass.bucket_io import (
-    _prepare_bucket_io,
-    _relion_cuda_score_translation_angles_if_available,
+    prepare_bucket_io,
+    relion_cuda_score_translation_angles_if_available,
 )
 from relax.fine_pass.resident_candidates import (
     build_resident_candidate_tables,
@@ -106,7 +106,7 @@ def _significant_sample_indices(rng):
 def _build_candidate_tables(seed=20260918):
     rng = np.random.default_rng(seed)
     fine_rotations, fine_parent = _fine_rotation_grid()
-    per_image_inputs = _prepare_per_image_pass2_inputs(
+    per_image_inputs = prepare_per_image_pass2_inputs(
         _significant_sample_indices(rng),
         n_coarse_rot=N_COARSE_ROT,
         n_coarse_trans=N_COARSE_TRANS,
@@ -135,7 +135,7 @@ def _build_candidate_tables(seed=20260918):
 
 
 def _bucket_io_kwargs(dataset, *, current_size, window_indices, translation_angles, fine_translations):
-    """The keyword arguments the K=1 loop passes to ``_prepare_bucket_io``."""
+    """The keyword arguments the K=1 loop passes to ``prepare_bucket_io``."""
 
     image_shape = dataset.image_shape
     n_half = image_shape[0] * (image_shape[1] // 2 + 1)
@@ -201,7 +201,7 @@ def _build_case(current_size, *, row_capacity_ladder, image_capacity_ladder, see
     fine_translations = np.concatenate(
         [np.zeros((1, 2)), rng.uniform(-2.0, 2.0, (N_FINE_TRANS - 1, 2))]
     )
-    translation_angles = _relion_cuda_score_translation_angles_if_available(
+    translation_angles = relion_cuda_score_translation_angles_if_available(
         fine_translations, image_shape, enabled=True, dtype=np.float32
     )
     assert translation_angles is not None and translation_angles.dtype == np.float32
@@ -443,7 +443,7 @@ def test_padded_image_slots_and_empty_images_do_not_contribute(
 def test_resident_operands_match_a_single_image_prepare(
     monkeypatch, custom_cuda_lib, gpu_device, current_size
 ):
-    """Batching ``_prepare_bucket_io`` over images does not change its result.
+    """Batching ``prepare_bucket_io`` over images does not change its result.
 
     ``prepare_resident_image_operands`` runs the production owner in fixed
     image batches; every operand it keeps must equal what the same owner
@@ -469,7 +469,7 @@ def test_resident_operands_match_a_single_image_prepare(
             batch_data, ctf_params, fetched = fetch_indexed_batch(
                 case["dataset"], np.asarray([image])
             )
-            prepared = _prepare_bucket_io(
+            prepared = prepare_bucket_io(
                 case["dataset"],
                 jnp.asarray(batch_data),
                 ctf_params,
@@ -487,7 +487,7 @@ def test_resident_operands_match_a_single_image_prepare(
             else:
                 expected_input = direct_score_input
                 expected_corr = ctf2_over_nv_half
-            expected_xi2, _ = spb._relion_powerclass_noise_terms(
+            expected_xi2, _ = spb.relion_powerclass_noise_terms(
                 processed_score_half_for_noise,
                 image_shape=case["image_shape"],
                 current_size=current_size,

@@ -8,7 +8,7 @@ with.
 import jax
 import jax.numpy as jnp
 
-from relax.fine_pass.wavg import _relion_wavg_shifted_power
+from relax.fine_pass.wavg import relion_wavg_shifted_power
 
 
 def _relion_wavg_rectangle_power_contraction(shifted_power, posterior):
@@ -25,7 +25,7 @@ def _relion_wavg_rectangle_power_contraction(shifted_power, posterior):
 def _relion_wavg_rectangle_image_power(raw_shifted, posterior):
     """Shared rectangle power contraction; keep the original F32/barrier order."""
     return _relion_wavg_rectangle_power_contraction(
-        _relion_wavg_shifted_power(raw_shifted), posterior
+        relion_wavg_shifted_power(raw_shifted), posterior
     )
 
 

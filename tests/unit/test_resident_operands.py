@@ -9,7 +9,7 @@ applied inside T15's M-step kernel instead. Both claims are checked against the
 path they replace:
 
 * the resident per-image arrays, translated with the primitives
-  ``_prepare_bucket_io`` uses, must match its pre-shifted tiles;
+  ``prepare_bucket_io`` uses, must match its pre-shifted tiles;
 * the kernel's ``summed``/``summed_masked``/``ctf_probs`` must match
   ``resident_block_weighted_sums`` at the production translation count,
   where XLA's reduction over translations is sequential too.
@@ -42,10 +42,10 @@ from recovar.reconstruction import noise as noise_utils
 from relax.fine_pass import bucket_io as bucket_io_module
 from relax.fine_pass import resident_operands as resident_module
 from relax.fine_pass.bucket_io import (
-    _prepare_bucket_io,
-    _relion_cuda_score_translation_angles_if_available,
     _relion_translation_angles_f64,
+    prepare_bucket_io,
     prepare_unshifted_bucket_operands,
+    relion_cuda_score_translation_angles_if_available,
 )
 from relax.fine_pass.resident_operands import (
     ResidentOperandsUnsupported,
@@ -88,7 +88,7 @@ def _fine_translations(seed=20260919):
 
 
 def _case(*, relion_angles, current_size=6, seed=20260919):
-    """Dataset, window and the ``_prepare_bucket_io`` keywords the driver passes.
+    """Dataset, window and the ``prepare_bucket_io`` keywords the driver passes.
 
     ``score_with_masked_images`` is on, as production has it, so the score and
     reconstruction images really are two different arrays and the two translate
@@ -107,7 +107,7 @@ def _case(*, relion_angles, current_size=6, seed=20260919):
         dataset, disc_type="linear_interp", process_fn=dataset.process_images
     )
     translation_angles = (
-        _relion_cuda_score_translation_angles_if_available(
+        relion_cuda_score_translation_angles_if_available(
             fine_translations, image_shape, enabled=True, dtype=np.float32
         )
         if relion_angles
@@ -152,7 +152,7 @@ def _prepared(case, image_indices):
     )
     return (
         np.asarray(fetched),
-        _prepare_bucket_io(
+        prepare_bucket_io(
             case["dataset"],
             jnp.asarray(batch_data),
             ctf_params,
@@ -390,13 +390,13 @@ def test_native_fine_units_keep_the_score_modes_distinct(monkeypatch, score_mode
     monkeypatch.setattr(resident_module, "prepare_unshifted_bucket_operands", synthetic_exact_bpref)
     monkeypatch.setattr(bucket_io_module, "prepare_unshifted_bucket_operands", synthetic_exact_bpref)
     gaussian_corr_calls = []
-    original_native_corr = resident_module._relion_native_score_corr_img
+    original_native_corr = resident_module.relion_native_score_corr_img
 
     def native_gaussian_corr(*args, **options):
         gaussian_corr_calls.append(True)
         return original_native_corr(*args, **options)
 
-    monkeypatch.setattr(resident_module, "_relion_native_score_corr_img", native_gaussian_corr)
+    monkeypatch.setattr(resident_module, "relion_native_score_corr_img", native_gaussian_corr)
 
     def prepared(native_units):
         return prepare_resident_half_operands(
@@ -678,7 +678,7 @@ def test_shell_binning_is_a_racing_scatter_within_one_float32_ulp(
     equal, including two of the per-chunk path.
     """
 
-    from relax.fine_pass.scoring import _relion_powerclass_noise_terms
+    from relax.fine_pass.scoring import relion_powerclass_noise_terms
 
     _gpu_case(monkeypatch, custom_cuda_lib)
     rng = np.random.default_rng(4242)
@@ -688,7 +688,7 @@ def test_shell_binning_is_a_racing_scatter_within_one_float32_ulp(
     ).astype(np.complex64)
 
     def terms(array):
-        return _relion_powerclass_noise_terms(
+        return relion_powerclass_noise_terms(
             array,
             image_shape=IMAGE_SHAPE,
             current_size=current_size,

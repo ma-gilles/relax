@@ -483,7 +483,7 @@ def _source_rows_production_f32(
         contribution["relion_preprocess_normalization_factors"], dtype=jnp.float32
     )
     integer_shifts = jnp.asarray(contribution["integer_pre_shifts"], dtype=jnp.int32)
-    # This is deliberately unmasked.  ``_prepare_bucket_io`` may mask the
+    # This is deliberately unmasked.  ``prepare_bucket_io`` may mask the
     # score image, but always constructs ``processed_recon_half_raw`` for the
     # M-step/active_summed boundary from the unmasked reconstruction image.
     _, preprocessed = relion_preprocess_real_f32(

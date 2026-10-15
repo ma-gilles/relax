@@ -106,7 +106,7 @@ def test_resident_cuda_control_streams_all_dense_rows_in_bounded_tiles(monkeypat
     monkeypatch.setattr(cuda_translate, "relion_translate_score_f32", translate)
     monkeypatch.setattr(coarse_kernels, "relion_coarse_gaussian_gemm_scores_jit", score)
     monkeypatch.setattr(resident_block_programs, "resident_block_weighted_sums_kernel", weighted_rows)
-    monkeypatch.setattr(sparse_pass2_adjoint, "_accumulate_adjoint_block_chunked", adjoint)
+    monkeypatch.setattr(sparse_pass2_adjoint, "accumulate_adjoint_block_chunked", adjoint)
 
     rotations = jnp.broadcast_to(jnp.eye(3, dtype=jnp.float32), (3, 3, 3))
     grid = pad_grid(

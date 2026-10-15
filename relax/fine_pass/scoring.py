@@ -67,7 +67,7 @@ def _relion_cuda_fine_full_to_compact_lookup(image_shape, current_size, compact_
     return lookup
 
 
-def _relion_cuda_fine_normalized_cc_score(
+def relion_cuda_fine_normalized_cc_score(
     reference,
     shifted_score,
     score_weight,
@@ -170,7 +170,7 @@ def _relion_cuda_fine_normalized_cc_score(
     )
 
 
-def _relion_cuda_fine_pixel_weights(corr_img_score, half_weights):
+def relion_cuda_fine_pixel_weights(corr_img_score, half_weights):
     """Form RELION XFLOAT pixel weights in the active ACC precision."""
 
     real_dtype = jnp.result_type(corr_img_score, half_weights, jnp.float32)
@@ -275,7 +275,7 @@ def _relion_cuda_native_corr_img_from_noise_variance(
     )
 
 
-def _relion_native_fine_units_enabled(
+def relion_native_fine_units_enabled(
     *,
     fresh_k1_guard,
     use_exact_relion_gaussian,
@@ -299,7 +299,7 @@ def _relion_native_fine_units_enabled(
     )
 
 
-def _relion_native_score_corr_img(
+def relion_native_score_corr_img(
     noise_variance_rows,
     ctf_rfloat,
     image_shape,
@@ -330,7 +330,7 @@ def _relion_native_score_corr_img(
 
 
 @partial(jax.jit, static_argnames=("fft_size",))
-def _relion_native_fine_units(values, fft_size):
+def to_relion_native_fine_units(values, fft_size):
     """Convert a complex fine-score operand to RELION's unnormalised FFT units.
 
     RELION evaluates the fine diff2 in native units.  RECOVAR's shifted image
@@ -609,7 +609,7 @@ def relion_powerclass_noise_presence(
 ):
     """Which ``powerClass`` terms a pass-2 batch will produce, from the flags alone.
 
-    :func:`_relion_powerclass_noise_terms` decides this while it has the image
+    :func:`relion_powerclass_noise_terms` decides this while it has the image
     array in hand. A caller that has to know before any image exists -- the
     compile-ahead warm-up, which describes the operand set to lower a program
     against -- asks here instead, so there is one statement of the rule rather
@@ -648,7 +648,7 @@ def relion_powerclass_noise_dtypes(
     return xi2_dtype, xi2_dtype
 
 
-def _relion_powerclass_noise_terms(
+def relion_powerclass_noise_terms(
     processed_score_half_for_noise,
     *,
     image_shape,

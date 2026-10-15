@@ -403,7 +403,7 @@ def _window_into_buffers(batches, *, native_fft_size=None, rows=12):
 def test_a_batch_is_windowed_and_placed_by_one_program(native_fft_size):
     """Every operand of every batch, extra per-image terms included: one program for the first batch, one after."""
 
-    from relax.fine_pass.scoring import _relion_native_fine_units
+    from relax.fine_pass.scoring import to_relion_native_fine_units
 
     rng = np.random.default_rng(9)
     batches = [
@@ -417,7 +417,7 @@ def test_a_batch_is_windowed_and_placed_by_one_program(native_fft_size):
     for arrays, extra in batches:
         part = dict(ro._batch_window_operands(arrays, **_WINDOW_KWARGS), **extra)
         if native_fft_size is not None:
-            part["score_input"] = _relion_native_fine_units(part["score_input"], native_fft_size)
+            part["score_input"] = to_relion_native_fine_units(part["score_input"], native_fft_size)
         expected.append(part)
     assert set(buffers) == set(expected[0])
     for name in buffers:

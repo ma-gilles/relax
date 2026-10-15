@@ -253,7 +253,10 @@ def test_gpu_global_pass_texture_refilled_projects_the_per_call_windows(monkeypa
     refilled with a second slab, gives the windowed score/recon rows the per-call staging gives for that slab;
     a slab above the kept size gets no texture."""
     from relax.fine_pass import projection_blocks
-    from relax.fine_pass.projection_blocks import _compute_sparse_pass2_windowed_projections_block, projection_window_union
+    from relax.fine_pass.projection_blocks import (
+        compute_sparse_pass2_windowed_projections_block,
+        projection_window_union,
+    )
 
     image_size, radius, pf = 32, 14, 2
     size = 2 * pf * radius + 3
@@ -282,13 +285,13 @@ def test_gpu_global_pass_texture_refilled_projects_the_per_call_windows(monkeypa
     for class_index in list(projection_blocks.PASS_TEXTURES):
         projection_blocks.PASS_TEXTURES.pop(class_index).close()
     texture = projection_blocks.open_pass_capacity_texture(first, **open_kwargs)
-    _compute_sparse_pass2_windowed_projections_block(None, _rotations(), relion_projector_half=first, relion_projector_capacity_texture=texture, **common)
+    compute_sparse_pass2_windowed_projections_block(None, _rotations(), relion_projector_half=first, relion_projector_capacity_texture=texture, **common)
     refilled = projection_blocks.open_pass_capacity_texture(second, **open_kwargs)
     assert refilled is texture and projection_blocks.keeps_pass_texture(refilled)
-    staged = _compute_sparse_pass2_windowed_projections_block(
+    staged = compute_sparse_pass2_windowed_projections_block(
         None, _rotations(), relion_projector_half=second, relion_projector_capacity_texture=refilled, **common
     )
-    per_call = _compute_sparse_pass2_windowed_projections_block(None, _rotations(), relion_projector_half=second, **common)
+    per_call = compute_sparse_pass2_windowed_projections_block(None, _rotations(), relion_projector_half=second, **common)
     assert np.count_nonzero(np.asarray(per_call[0])) > np.asarray(per_call[0]).size // 4
     for got, expected in zip(staged, per_call, strict=True):
         if expected is None:
@@ -354,8 +357,8 @@ def test_gpu_resident_capacity_projection_matches_the_logical_crop(pf, logical_s
     (capacity_projection_window_union; relax/relion/project.py).
     """
     from relax.fine_pass.projection_blocks import (
-        _compute_sparse_pass2_windowed_projections_block,
         capacity_projection_window_union,
+        compute_sparse_pass2_windowed_projections_block,
         projection_window_union,
     )
     from relax.fine_pass.resident_stable_windows import center_pad_relion_projector_half
@@ -383,7 +386,7 @@ def test_gpu_resident_capacity_projection_matches_the_logical_crop(pf, logical_s
 
     def project(slab, r_max, output_size, union, **extra):
         args = dict(common, relion_projector_r_max=r_max, projector_output_size=output_size, window_union=union, **extra)
-        return _compute_sparse_pass2_windowed_projections_block(None, rotations, relion_projector_half=slab, **args)
+        return compute_sparse_pass2_windowed_projections_block(None, rotations, relion_projector_half=slab, **args)
 
     shape = (image_size, image_size)
     expected = project(

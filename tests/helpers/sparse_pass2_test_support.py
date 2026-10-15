@@ -14,8 +14,8 @@ import jax.numpy as jnp
 
 from relax.fine_pass.scoring import (
     _RELION_CUDA_FINE_REF3D_BLOCK_SIZE,
-    _relion_cuda_fine_normalized_cc_score,
     _relion_cuda_fine_reduce_lanes,
+    relion_cuda_fine_normalized_cc_score,
 )
 
 
@@ -50,7 +50,7 @@ def _score_pass2_bucket_relion_gpu_normalized_cc_single_cached(
 ):
     """Single-image normalized-CC scorer for cached ``(R, N)`` projections."""
 
-    scores = _relion_cuda_fine_normalized_cc_score(
+    scores = relion_cuda_fine_normalized_cc_score(
         proj_half[:, None, :],
         shifted_score[None, :, :],
         score_weight[None, None, :],
@@ -81,7 +81,7 @@ def _score_pass2_pairs_relion_gpu_normalized_cc(
 
     shifted_pair = shifted_score[row, safe_translation_idx, :]
     proj_pair = proj_half[row, safe_rotation_row, :]
-    scores = _relion_cuda_fine_normalized_cc_score(
+    scores = relion_cuda_fine_normalized_cc_score(
         proj_pair,
         shifted_pair,
         score_weight[:, None, :],

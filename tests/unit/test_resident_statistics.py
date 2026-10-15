@@ -111,7 +111,7 @@ def test_bucketed_float32_posterior_keeps_image_mass_and_index_semantics(monkeyp
 def test_flat_row_norm_residual_matches_host_per_image_helper():
     """The flat-row A2/XA partials reproduce ``compute_norm_residual_per_image``."""
 
-    from relax.fine_pass.resident_statistics import _flat_row_norm_and_scale_terms
+    from relax.fine_pass.resident_block_programs import _flat_row_norm_and_scale_terms
 
     rng = _rng()
     batch, n_rot = 3, 4
@@ -143,7 +143,7 @@ def test_flat_row_norm_residual_matches_host_per_image_helper():
 def test_flat_row_scale_terms_match_host_scale_helper():
     """The masked flat-row partials reproduce the algebraic scale statistics."""
 
-    from relax.fine_pass.resident_statistics import _flat_row_norm_and_scale_terms
+    from relax.fine_pass.resident_block_programs import _flat_row_norm_and_scale_terms
 
     rng = _rng()
     batch, n_rot = 3, 4
