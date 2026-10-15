@@ -138,14 +138,3 @@ def relion_x_half_f32_fine_posterior_enabled(*, default: bool = False) -> bool:
     return parse_env_flag(_RELION_X_HALF_F32_FINE_POSTERIOR_ENV, default=default)
 
 
-def _relion_fine_parent_execution_order_enabled(
-    *,
-    use_relion_f32_fine_posterior: bool,
-    requested: bool,
-) -> bool:
-    """Keep exact fine-posterior diagnostics in RELION's candidate order (``requested``:
-    ``ScoringOverrides.fine_rotation_execution_order``)."""
-
-    return bool(use_relion_f32_fine_posterior) or bool(requested)
-
-

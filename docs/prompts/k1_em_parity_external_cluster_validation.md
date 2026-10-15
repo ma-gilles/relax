@@ -1,6 +1,6 @@
 # Prompt: validate the K=1 RELION-parity checkpoint on another cluster
 
-> **Status note (2026-10-13).** This prompt is historical: it predates the RECOVAR to RELAX rename and the rule-5
+> **Status note (2026-10-14).** This prompt is historical: it predates the RECOVAR to RELAX rename and the rule-5
 > move of environment reads to the commands. Its variables now stand as follows (relax/renamed_environment.json
 > refuses a retired name at import):
 >
@@ -15,9 +15,13 @@
 >   `EngineTuning.resident_diagnostics`).
 > - Read by the command under its old name: `RECOVAR_K1_RELION_F32_COARSE_SUPPORT`
 >   (`relax.runtime.scoring_overrides.ScoringOverrides.f32_coarse_support`, default on).
-> - Pending a RELION A/B: `RELAX_RELION_FINE_ROTATION_EXECUTION_ORDER` (this recipe's `RECOVAR_` export), now
->   `ScoringOverrides.fine_rotation_execution_order`, default off. The A/B decides whether the order becomes the
->   default or the switch is retired.
+> - Retired after a RELION A/B (2026-10-14): `RELAX_RELION_FINE_ROTATION_EXECUTION_ORDER` (this recipe's `RECOVAR_`
+>   export, removed below). On the K=1 50k/256 auto-refine (`tests/long_test/test_em_parity_long.py::
+>   test_em_parity_long_k1_full`, standalone, two runs per arm on H100, relax main a999ac5f), forcing RELION's fine
+>   parent execution order did not move relax closer to RELION: merged-map FSC-AUC against RELION's final map
+>   0.999824 / 0.999806 with the order against 0.999819 / 0.999788 without, half 2 the other way, per-iteration
+>   Pmax gaps 1e-4 either way, and two runs of one arm differ more (0.99991) than the arms of one node pair
+>   (0.99998). The order still follows the float32 fine posterior (`RELAX_RELION_X_HALF_F32_FINE_POSTERIOR`).
 
 Copy everything below this line into the external ChatGPT Pro/Codex agent.
 
@@ -191,7 +195,6 @@ composition:
 
 ```bash
 export RECOVAR_K1_RELION_LIVE_INITIAL_NOISE=1
-export RECOVAR_RELION_FINE_ROTATION_EXECUTION_ORDER=1
 unset RECOVAR_K1_RELION_POWERCLASS_SPECTRUM_NORM
 unset RECOVAR_K1_RELION_TRANSLATED_WAVG_NORM
 unset RECOVAR_FINAL_ALL_DATA_GRID_CORRECT RECOVAR_FINAL_ALL_DATA_AFTER_MAX_ITER

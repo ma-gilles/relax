@@ -95,9 +95,6 @@ from relax.fine_pass.policy import (
     ResidentConfigurationUnsupported,
     _projection_cache_enabled_for_pass,
 )
-from relax.fine_pass.posterior import (
-    _relion_fine_parent_execution_order_enabled,
-)
 from relax.fine_pass.projection_blocks import (
     _compute_sparse_pass2_windowed_projections_block,
     _projection_kwargs_for_relion_score_window,
@@ -341,14 +338,13 @@ def _class_candidate_tables(
     fine_mstep_rotations_override,
     fine_rotation_parent_override,
     use_relion_f32_fine_posterior,
-    fine_rotation_execution_order: bool,
     dtype,
     symmetry_label,
     coarse_rotation_ids=None,
     per_image_rotation_log_prior=None,
 ):
-    """One class's per-image hypotheses and candidate table (T5), exactly the K=1 build
-    (``fine_rotation_execution_order``: ``ScoringOverrides.fine_rotation_execution_order``).
+    """One class's per-image hypotheses and candidate table (T5), exactly the K=1 build; the fine candidates
+    take RELION's parent execution order with the float32 fine posterior.
 
     ``coarse_rotation_ids`` and ``per_image_rotation_log_prior`` are the compact coarse grid and
     the per-unit priors of a subtomogram local search (``_prepare_per_image_pass2_inputs``); the priors
@@ -357,9 +353,7 @@ def _class_candidate_tables(
     """
 
     prep_t0 = time.time()
-    relion_parent_execution_order = _relion_fine_parent_execution_order_enabled(
-        use_relion_f32_fine_posterior=use_relion_f32_fine_posterior, requested=fine_rotation_execution_order,
-    )
+    relion_parent_execution_order = use_relion_f32_fine_posterior
     significance_csr = resident_significance_csr(
         significant_sample_indices,
         n_images=n_images,
@@ -501,10 +495,7 @@ def _candidate_table_blocks(
         fine_translation_parent=table_kwargs["fine_translation_parent"],
         random_perturbation=table_kwargs["random_perturbation"],
         fine_rotation_parent_override=table_kwargs["fine_rotation_parent_override"],
-        relion_parent_execution_order=_relion_fine_parent_execution_order_enabled(
-            use_relion_f32_fine_posterior=table_kwargs["use_relion_f32_fine_posterior"],
-            requested=table_kwargs["fine_rotation_execution_order"],
-        ),
+        relion_parent_execution_order=table_kwargs["use_relion_f32_fine_posterior"],
         dtype=table_kwargs["dtype"],
         symmetry_label=table_kwargs["symmetry_label"],
         children=children,
@@ -1113,10 +1104,7 @@ def _resident_pass2(
             nside_level=nside_level,
             oversampling_order=oversampling_order,
             random_perturbation=random_perturbation,
-            relion_parent_execution_order=_relion_fine_parent_execution_order_enabled(
-                use_relion_f32_fine_posterior=use_relion_f32_fine_posterior,
-                requested=scoring_overrides.fine_rotation_execution_order,
-            ),
+            relion_parent_execution_order=use_relion_f32_fine_posterior,
             current_size=int(current_size), mstep_current_size=int(mstep_current_size),
             n_half=n_half, window_spec_kwargs=window_spec_kwargs, engine_tuning=engine_tuning,
             deterministic_reductions=scoring_overrides.deterministic_reductions,
@@ -1176,7 +1164,6 @@ def _resident_pass2(
         fine_mstep_rotations_override=fine_mstep_rotations_override,
         fine_rotation_parent_override=fine_rotation_parent_override,
         use_relion_f32_fine_posterior=use_relion_f32_fine_posterior,
-        fine_rotation_execution_order=scoring_overrides.fine_rotation_execution_order,
         dtype=precision_policy.score_real_dtype,
         symmetry_label=symmetry_label,
         coarse_rotation_ids=coarse_rotation_ids,

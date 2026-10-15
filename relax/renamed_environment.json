@@ -291,7 +291,6 @@
   "RECOVAR_RELION_EXACT_CTF_CACHE_GB": "RELAX_RELION_EXACT_CTF_CACHE_GB",
   "RECOVAR_RELION_FINE_DIFF2_FUSED_FFI": "RELAX_RELION_FINE_DIFF2_FUSED_FFI",
   "RECOVAR_RELION_FINE_DIFF2_MASKED": "RELAX_RELION_FINE_DIFF2_MASKED",
-  "RECOVAR_RELION_FINE_ROTATION_EXECUTION_ORDER": "RELAX_RELION_FINE_ROTATION_EXECUTION_ORDER",
   "RECOVAR_RELION_FIRSTITER_RECON_COMPLEX_BUDGET": "RELAX_RELION_FIRSTITER_RECON_COMPLEX_BUDGET",
   "RECOVAR_RELION_FSC_PACKED_STREAM_MIN_ELEMENTS": "RELAX_RELION_FSC_PACKED_STREAM_MIN_ELEMENTS",
   "RECOVAR_RELION_HOST_FFT_WORKERS": "RELAX_RELION_HOST_FFT_WORKERS",
@@ -728,6 +727,8 @@
   "RECOVAR_K1_BPREF_EXECUTION_BATCH_CONSECUTIVE_EQUAL_SUPPORT": "no reader: the K=1 BPref execution-order switches went with the compact pass 2 (2026-09-26); their unread name constants were deleted (2026-10-14)",
   "RELAX_K1_BPREF_EXECUTION_BATCH_CONSECUTIVE_EQUAL_SUPPORT": "no reader: the K=1 BPref execution-order switches went with the compact pass 2 (2026-09-26); their unread name constants were deleted (2026-10-14)",
   "RECOVAR_K1_BPREF_EXECUTION_GROUP_BY_BUCKET_SIZE": "no reader: the K=1 BPref execution-order switches went with the compact pass 2 (2026-09-26); their unread name constants were deleted (2026-10-14)",
-  "RELAX_K1_BPREF_EXECUTION_GROUP_BY_BUCKET_SIZE": "no reader: the K=1 BPref execution-order switches went with the compact pass 2 (2026-09-26); their unread name constants were deleted (2026-10-14)"
+  "RELAX_K1_BPREF_EXECUTION_GROUP_BY_BUCKET_SIZE": "no reader: the K=1 BPref execution-order switches went with the compact pass 2 (2026-09-26); their unread name constants were deleted (2026-10-14)",
+  "RECOVAR_RELION_FINE_ROTATION_EXECUTION_ORDER": "retired after a RELION A/B (2026-10-14): K=1 auto-refine with RELION's fine parent execution order matched RELION no better than without it, within the run-to-run spread; the order still follows the float32 fine posterior",
+  "RELAX_RELION_FINE_ROTATION_EXECUTION_ORDER": "retired after a RELION A/B (2026-10-14): K=1 auto-refine with RELION's fine parent execution order matched RELION no better than without it, within the run-to-run spread; the order still follows the float32 fine posterior"
  }
 }
