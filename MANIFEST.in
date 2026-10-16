@@ -13,3 +13,5 @@ include relax/cuda/relion_translate_sum.cuh
 include relax/cuda/relion_capacity_texture.cuh
 include relax/cuda/ppca_moment_backproject.cuh
 include relax/cuda/ppca_stream.cuh
+include relax/host_math/Makefile
+include relax/host_math/relax_host_math.c
