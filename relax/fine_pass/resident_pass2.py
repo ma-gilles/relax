@@ -83,6 +83,7 @@ from relax.fine_pass import (
     resident_configuration,
     resident_image_terms,
     resident_mstep_blocks,
+    resident_pass_tables,
     resident_projections,
     resident_stable_windows,
     resident_statistics,
@@ -1062,19 +1063,9 @@ def _resident_pass2(
     noise_variance_half = noise_utils.to_batched_half_pixel_noise(
         noise_variance, image_shape
     ).squeeze()
-    n_optics_groups = 1 if noise_variance_half.ndim == 1 else int(noise_variance_half.shape[0])
-    optics_groups_np = None
-    if n_optics_groups > 1:
-        if optics_group_ids is None:
-            raise ValueError("a per-optics-group noise table needs optics_group_ids")
-        optics_groups_np = np.asarray(optics_group_ids, dtype=np.int32).reshape(-1)
-        if optics_groups_np.shape != (n_images,) or np.any(optics_groups_np < 0) or np.any(
-            optics_groups_np >= n_optics_groups
-        ):
-            raise ValueError(
-                f"optics_group_ids must give each of {n_images} images a row of the "
-                f"{n_optics_groups}-group noise table"
-            )
+    n_optics_groups, optics_groups_np = resident_pass_tables.optics_group_rows(
+        noise_variance_half, optics_group_ids, n_images=n_images
+    )
     # Tilt images (S4.2) carry 3D translations whose phases are per image (tilt.image_angles); the SPA
     # operand preparation, which never sees a trial shift of a tilt image, gets 2D zeros of the same count.
     spa_fine_translations_source = (

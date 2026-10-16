@@ -75,6 +75,7 @@ from relax.fine_pass import (
     resident_chunk_memory,
     resident_chunk_records,
     resident_image_terms,
+    resident_pass_tables,
     resident_stable_windows,
     resident_statistics,
 )
@@ -432,19 +433,9 @@ def compute_local_search_resident(
     noise_variance_half = noise_utils.to_batched_half_pixel_noise(
         data.noise_variance, image_shape
     ).squeeze().astype(precision_policy.score_real_dtype)
-    n_optics_groups = 1 if noise_variance_half.ndim == 1 else int(noise_variance_half.shape[0])
-    optics_groups_np = None
-    if n_optics_groups > 1:
-        if data.optics_group_ids is None:
-            raise ValueError("a per-optics-group noise table needs optics_group_ids")
-        optics_groups_np = np.asarray(data.optics_group_ids, dtype=np.int32).reshape(-1)
-        if optics_groups_np.shape != (n_images,) or np.any(optics_groups_np < 0) or np.any(
-            optics_groups_np >= n_optics_groups
-        ):
-            raise ValueError(
-                f"optics_group_ids must give each of {n_images} images a row of the "
-                f"{n_optics_groups}-group noise table"
-            )
+    n_optics_groups, optics_groups_np = resident_pass_tables.optics_group_rows(
+        noise_variance_half, data.optics_group_ids, n_images=n_images
+    )
     relion_score_translation_angles = relion_cuda_score_translation_angles_if_available(
         fine_translations,
         image_shape,
