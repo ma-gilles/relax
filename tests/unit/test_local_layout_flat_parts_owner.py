@@ -1,14 +1,14 @@
-"""``_flat_parts`` is the one concatenate-or-empty of per-image layout parts in ``local_layout``."""
+"""``flat_parts`` is the one concatenate-or-empty of per-image layout parts in ``direction_supports``, which the layout builders use too."""
 
 import numpy as np
 
-from relax.local_search import layout
+from relax.local_search import direction_supports
 
 
 def test_owner_concatenates_casts_and_returns_typed_empties():
-    assert layout._flat_parts([], empty_shape=(0, 3, 3), dtype=np.float32).shape == (0, 3, 3)
-    assert layout._flat_parts([], empty_shape=0, dtype=np.int64).dtype == np.int64
-    flat = layout._flat_parts([np.array([1, 2], dtype=np.int32), np.array([3], dtype=np.int32)], empty_shape=0, dtype=np.int64, cast=np.int64)
+    assert direction_supports.flat_parts([], empty_shape=(0, 3, 3), dtype=np.float32).shape == (0, 3, 3)
+    assert direction_supports.flat_parts([], empty_shape=0, dtype=np.int64).dtype == np.int64
+    flat = direction_supports.flat_parts([np.array([1, 2], dtype=np.int32), np.array([3], dtype=np.int32)], empty_shape=0, dtype=np.int64, cast=np.int64)
     assert flat.dtype == np.int64 and flat.tolist() == [1, 2, 3]
-    same = layout._flat_parts([np.ones((2, 4), bool)], empty_shape=(0, 4), dtype=bool)
+    same = direction_supports.flat_parts([np.ones((2, 4), bool)], empty_shape=(0, 4), dtype=bool)
     assert same.dtype == bool and same.shape == (2, 4)

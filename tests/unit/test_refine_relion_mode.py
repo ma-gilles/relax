@@ -74,6 +74,7 @@ from relax.classification.k_class_results import (
 )
 from relax.diagnostics.observers import IntermediatesObserver
 from relax.fourier.image_shifts import apply_relion_integer_pre_shifts, integer_pre_shifts_or_none
+from relax.local_search import direction_supports
 from relax.local_search.layout import (
     LocalHypothesisLayout,
     build_local_adaptive_pass2_hypothesis_layout,
@@ -2291,6 +2292,8 @@ def test_lazy_pass2_layouts_request_aligned_relion_mstep_rotations(monkeypatch, 
         return tuple(outputs)
 
     monkeypatch.setattr(local_layout_module, "get_oversampled_rotation_grid_from_samples", fake_oversampled_rotations)
+    # The parent-expanded builder expands its parents in the direction supports, which bind the name too.
+    monkeypatch.setattr(direction_supports, "get_oversampled_rotation_grid_from_samples", fake_oversampled_rotations)
     # The adaptive builder expands every image's parents in one uncached call.
     monkeypatch.setattr(local_layout_module, "compute_oversampled_rotation_grid", fake_oversampled_rotations)
     translations = np.array([[0.0, 0.0]], dtype=np.float32)

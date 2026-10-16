@@ -559,7 +559,8 @@ existing device placement and posterior kernels.
 constructs per-image neighborhoods and runs both the fine pass and RELION's pass-1
 parent probe on the device-resident local driver.
 [`layout.py`](../../relax/local_search/layout.py)
-builds the per-image hypothesis layout. This route does not use the retired
+builds the per-image hypothesis layout from the direction supports that
+[`direction_supports.py`](../../relax/local_search/direction_supports.py) selects. This route does not use the retired
 sort-and-split union helper formerly described on this page.
 
 `sampling.get_local_rotation_grid_fast` implements C1 factored direction/psi
@@ -922,8 +923,8 @@ to that tilt.
   If no direction is within `3 s`, RELION keeps one direction with prior 1: `best_idir` of a scan that
   stores, as the distance to beat, the distance of the last symmetry mate of the current best direction
   rather than its smallest; with symmetry that is not always the nearest direction. relax reproduces the
-  scan. [`_tilt_prior_direction_supports`](../../relax/local_search/layout.py), inside the selector the
-  local searches use ([`_build_factorized_local_entries`](../../relax/local_search/layout.py)), tested
+  scan. [`_tilt_prior_direction_supports`](../../relax/local_search/direction_supports.py), inside the selector the
+  local searches use ([`build_factorized_local_entries`](../../relax/local_search/direction_supports.py)), tested
   against a direct transcription of RELION's loop
   ([`tests/unit/test_tilt_prior_selection.py`](../../tests/unit/test_tilt_prior_selection.py)).
 - Search. Each particle is scored over its own kept orientations and every translation, with its own

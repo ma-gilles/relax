@@ -266,26 +266,29 @@ def test_parent_expanded_local_layout_maps_non_c1_children_to_reduced_parent_ids
     expected_n_global,
     expected_posterior_ids,
 ):
+    from relax.local_search import direction_supports
     from relax.local_search import layout as local_layout
 
     parent_ids = np.asarray([2, 7], dtype=np.int32)
     parent_map = np.asarray([0, 0, 1, 1], dtype=np.int64)
 
-    monkeypatch.setattr(
-        local_layout,
-        "build_local_search_grid_metadata",
-        lambda _order, *, symmetry: {"symmetry": symmetry},
-    )
-    monkeypatch.setattr(
-        local_layout,
-        "_build_factorized_local_entries",
-        lambda *_args, **_kwargs: (
-            np.asarray([0, 2], dtype=np.int64),
-            np.asarray([2], dtype=np.int32),
-            parent_ids,
-            np.asarray([-0.25, -0.75], dtype=np.float32),
-        ),
-    )
+    # The layout builder and the direction supports it calls each bind the patched names.
+    for module in (local_layout, direction_supports):
+        monkeypatch.setattr(
+            module,
+            "build_local_search_grid_metadata",
+            lambda _order, *, symmetry: {"symmetry": symmetry},
+        )
+        monkeypatch.setattr(
+            module,
+            "build_factorized_local_entries",
+            lambda *_args, **_kwargs: (
+                np.asarray([0, 2], dtype=np.int64),
+                np.asarray([2], dtype=np.int32),
+                parent_ids,
+                np.asarray([-0.25, -0.75], dtype=np.float32),
+            ),
+        )
 
     def fake_oversampled(_parent_ids, _parent_order, **kwargs):
         assert kwargs["symmetry"] == label
@@ -296,16 +299,17 @@ def test_parent_expanded_local_layout_maps_non_c1_children_to_reduced_parent_ids
             np.zeros((4, 3), dtype=np.float64),
         )
 
-    monkeypatch.setattr(
-        local_layout,
-        "get_oversampled_rotation_grid_from_samples",
-        fake_oversampled,
-    )
-    monkeypatch.setattr(
-        local_layout,
-        "rotation_grid_size",
-        lambda _order, symmetry: 8 if symmetry == "I1" else 20,
-    )
+    for module in (local_layout, direction_supports):
+        monkeypatch.setattr(
+            module,
+            "get_oversampled_rotation_grid_from_samples",
+            fake_oversampled,
+        )
+        monkeypatch.setattr(
+            module,
+            "rotation_grid_size",
+            lambda _order, symmetry: 8 if symmetry == "I1" else 20,
+        )
 
     layout = local_layout.build_local_hypothesis_layout(
         np.zeros((1, 3), dtype=np.float32),
