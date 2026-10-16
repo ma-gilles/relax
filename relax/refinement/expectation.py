@@ -52,7 +52,7 @@ from relax.steps.score_outputs import (
 )
 from relax.steps.scoring_policy import local_precision
 from relax.steps.tomo_half import TomoSampling, numbered_iteration_tomo_sampling
-from relax.steps.tomo_scoring import score_tomo_half_in_loop as _score_tomo_half_in_loop
+from relax.steps.tomo_scoring import score_tomo_half_in_loop
 
 if TYPE_CHECKING:
     from relax.refinement.setup_checks import RunContext
@@ -681,7 +681,7 @@ def score_numbered_half(
     if half.data.tilt_prior is not None and not tomo_halves:
         raise NotImplementedError("--sigma_tilt is implemented for subtomogram particles only")
     if tomo_halves:
-        score_result = _score_tomo_half_in_loop(
+        score_result = score_tomo_half_in_loop(
             half.data,
             use_adaptive=phase.use_adaptive,
             sampling=tomo_sampling,

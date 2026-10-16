@@ -11,9 +11,7 @@ from functools import partial
 import jax
 import jax.numpy as jnp
 
-from relax.projection.adjoint import ReferenceSphereClip
-from relax.projection.adjoint import adjoint_slice_volume_half as _adjoint_slice_volume_half
-from relax.projection.adjoint import adjoint_slice_volume_windowed as _adjoint_slice_volume_windowed
+from relax.projection.adjoint import ReferenceSphereClip, adjoint_slice_volume_half, adjoint_slice_volume_windowed
 from relax.runtime.memory_budget import (
     dtype_itemsize,
 )
@@ -73,7 +71,7 @@ def accumulate_adjoint_block_chunked(
     max_rows = _adjoint_block_chunk_rows(flat_block, max_block_bytes=max_block_bytes)
     if n_rows <= max_rows:
         if use_windowed_adjoint:
-            return _adjoint_slice_volume_windowed(
+            return adjoint_slice_volume_windowed(
                 flat_block,
                 window_indices,
                 flat_rotations,
@@ -87,7 +85,7 @@ def accumulate_adjoint_block_chunked(
                 relion_x_half,
                 runtime_max_r,
             )
-        return _adjoint_slice_volume_half(
+        return adjoint_slice_volume_half(
             flat_block,
             flat_rotations,
             volume,
@@ -176,7 +174,7 @@ def _adjoint_rows(
     block = jax.lax.dynamic_slice_in_dim(flat_block, start, rows, axis=0)
     rotations = jax.lax.dynamic_slice_in_dim(flat_rotations, start, rows, axis=0)
     if use_windowed_adjoint:
-        return _adjoint_slice_volume_windowed(
+        return adjoint_slice_volume_windowed(
             block,
             window_indices,
             rotations,
@@ -190,7 +188,7 @@ def _adjoint_rows(
             relion_x_half,
             runtime_max_r,
         )
-    return _adjoint_slice_volume_half(
+    return adjoint_slice_volume_half(
         block,
         rotations,
         volume,

@@ -762,7 +762,7 @@ def test_sparse_pass2_adjoint_block_chunking_accumulates_all_rows(monkeypatch):
         calls.append(int(half_block.shape[0]))
         return volume_in + jnp.sum(half_block)
 
-    monkeypatch.setattr(adjoint, "_adjoint_slice_volume_half", fake_adjoint_slice_volume_half)
+    monkeypatch.setattr(adjoint, "adjoint_slice_volume_half", fake_adjoint_slice_volume_half)
 
     row_bytes = flat_block.shape[1] * np.dtype(np.float32).itemsize
     assert _adjoint_block_chunk_rows(flat_block, max_block_bytes=4 * row_bytes + 1) == 4
@@ -1193,7 +1193,7 @@ def test_sparse_pass2_projection_cap_chunks_projection_calls(monkeypatch):
         return_abs2 = kwargs.get("return_abs2", None)
         return proj, None if return_abs2 is False else jnp.abs(proj) ** 2
 
-    monkeypatch.setattr(sparse_pass2_projection_blocks, "_compute_projections_block", fake_project)
+    monkeypatch.setattr(sparse_pass2_projection_blocks, "compute_projections_block", fake_project)
     rotations = np.zeros((10, 3, 3), dtype=np.float32)
     rotations[:, 0, 0] = np.arange(10, dtype=np.float32)
 
@@ -1225,7 +1225,7 @@ def test_sparse_pass2_windowed_projection_cap_keeps_only_requested_pixels(monkey
         proj = rotation_ids[:, None] * 10.0 + jnp.arange(n_half, dtype=jnp.float32)[None, :]
         return proj.astype(jnp.complex64), None
 
-    monkeypatch.setattr(sparse_pass2_projection_blocks, "_compute_projections_block", fake_project)
+    monkeypatch.setattr(sparse_pass2_projection_blocks, "compute_projections_block", fake_project)
     rotations = np.zeros((7, 3, 3), dtype=np.float32)
     rotations[:, 0, 0] = np.arange(7, dtype=np.float32)
 
@@ -1325,7 +1325,7 @@ def test_class_rows_project_in_place_within_the_streamed_chunk_plan(monkeypatch)
         peak[0] = max(peak[0], live)
         return proj, None
 
-    monkeypatch.setattr(sparse_pass2_projection_blocks, "_compute_projections_block", fake_project)
+    monkeypatch.setattr(sparse_pass2_projection_blocks, "compute_projections_block", fake_project)
     row_class = np.repeat(np.arange(n_classes), rows_per_class)
     n_valid = row_class.size
     matrices = np.zeros((n_valid, 3, 3), dtype=np.float32)
@@ -1492,7 +1492,7 @@ def test_sparse_pass2_windowed_projection_cap_casts_chunks_before_concat(monkeyp
         proj = rotation_ids[:, None] * 10.0 + jnp.arange(n_half, dtype=jnp.float64)[None, :]
         return proj.astype(jnp.complex128), None
 
-    monkeypatch.setattr(sparse_pass2_projection_blocks, "_compute_projections_block", fake_project)
+    monkeypatch.setattr(sparse_pass2_projection_blocks, "compute_projections_block", fake_project)
     rotations = np.zeros((7, 3, 3), dtype=np.float32)
     rotations[:, 0, 0] = np.arange(7, dtype=np.float32)
 

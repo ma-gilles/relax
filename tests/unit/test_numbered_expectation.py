@@ -403,7 +403,7 @@ def test_tomography_seeding_uses_original_unit_rows_without_spa_optics(monkeypat
     def reject(*args, **kw):
         raise AssertionError('tomography must not prepare SPA image priors or optics')
 
-    monkeypatch.setattr(expectation, '_score_tomo_half_in_loop', score)
+    monkeypatch.setattr(expectation, 'score_tomo_half_in_loop', score)
     monkeypatch.setattr(expectation.shape_class_scoring, 'prepare_optics', reject)
     monkeypatch.setattr(expectation, 'relion_half_translation_prior_inputs', reject)
     score_flat(half, phase, **kwargs)

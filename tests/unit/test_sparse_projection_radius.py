@@ -18,7 +18,7 @@ def test_generic_sparse_projection_preserves_radius(monkeypatch, radius_kwargs, 
         calls.append(kwargs)
         return np.zeros((len(rotations), 40), np.complex64), None
 
-    monkeypatch.setattr(blocks, "_compute_projections_block", project)
+    monkeypatch.setattr(blocks, "compute_projections_block", project)
     monkeypatch.delenv("RELAX_SPARSE_PASS2_MAX_PROJECTED_ROTATIONS", raising=False)
     result, abs2 = blocks.compute_sparse_pass2_projections_block(
         np.zeros(512, np.complex64),
@@ -71,7 +71,7 @@ def test_windowed_generic_sparse_projection_preserves_radius(monkeypatch):
         values = np.broadcast_to(np.arange(40, dtype=np.complex64), (len(rotations), 40)).copy()
         return values, None
 
-    monkeypatch.setattr(blocks, "_compute_projections_block", project)
+    monkeypatch.setattr(blocks, "compute_projections_block", project)
     score, recon, abs2 = blocks.compute_sparse_pass2_windowed_projections_block(
         np.zeros(512, np.complex64),
         np.broadcast_to(np.eye(3, dtype=np.float32), (3, 3, 3)),

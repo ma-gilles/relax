@@ -16,7 +16,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from relax.projection.projection import compute_projections_block as _compute_projections_block
+from relax.projection.projection import compute_projections_block
 from relax.projection.projection import (
     compute_relion_projector_projections_block as _compute_relion_projector_projections_block,
 )
@@ -256,7 +256,7 @@ def compute_sparse_pass2_projections_block(
                     else {}
                 ),
             )
-        return _compute_projections_block(
+        return compute_projections_block(
             mean_for_proj,
             rotations,
             image_shape,
