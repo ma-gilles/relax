@@ -17906,13 +17906,13 @@
     "resolution_definition": "engine_current_resolution",
     "relion_reported_resolution_A": 11.102041,
     "masked_resolution_A": null,
-    "wall_s": 714,
-    "wall_definition": "arm-script wall (WALL.json) of relion_refine, cold, same 2-GPU job as relax",
+    "wall_s": 722,
+    "wall_definition": "seed 1: arm-script wall (WALL.json) of stock RELION 5.0.1 sm_90 GPU relion_refine non-MPI --j 12, cold, one H100 + 12 CPUs, same 2-GPU job and node as relax, started together",
     "gpu_model": "H100 80GB",
     "gpu_count": 1,
     "iterations": 25,
     "jobs": [
-     "14868236"
+     "15633691"
     ],
     "masked_band_auc": null,
     "quality_reference_jobs": [
@@ -17920,18 +17920,18 @@
     ]
    },
    "relax": {
-    "source_sha": "364dba796607f53614d6eedbe7ac598046ea4761",
-    "source_repo": "relax main 364dba79 (contains #52 6b500e7f, 411ed2c1 + a4aa751c, #56/#58), frozen at relax_scorew_20261008/cand_364dba79 (natives of landw's medium_fwd_364dba79 build, checked)",
+    "source_sha": "3e474a16f2d9417ffeafbaf3f2ab6adbf304a293",
+    "source_repo": "relax main 3e474a16 (frozen at relax_smallspeed_20261015/cand_3e474a16: git archive of the sha, pixi env lock f720b1fe, natives checked against its sources); production defaults",
     "resolution_A": null,
     "resolution_definition": "engine_current_resolution",
     "masked_resolution_A": null,
-    "wall_s": 484,
-    "wall_definition": "arm-script wall (WALL.json) of relax Class3D end to end, empty JAX cache (cold), same 2-GPU job as RELION",
+    "wall_s": 360,
+    "wall_definition": "seed 1: arm-script wall (WALL.json) of relax Class3D end to end, empty JAX cache (cold), one H100 + 12 CPUs, same 2-GPU job and node as RELION, started together",
     "gpu_model": "H100 80GB",
     "gpu_count": 1,
     "iterations": 25,
     "jobs": [
-     "15279717"
+     "15633691"
     ],
     "masked_band_auc": null,
     "quality_jobs": [
@@ -18061,7 +18061,7 @@
    },
    "cross_engine": "same-seed masked relax-vs-RELION CPU FSC-AUC per GT class: seed 1 0.9700/0.9756; seed 2 0.9891/0.9887; seed 3 0.9723/0.9718",
    "cross_engine_masked_band_auc": null,
-   "time_ratio_relax_over_relion": 0.68,
+   "time_ratio_relax_over_relion": 0.5,
    "matched": "yes",
    "matched_detail": {
     "gpu_model": true,
@@ -18072,6 +18072,7 @@
     "timing_controlled": true
    },
    "notes": [
+    "Speed refresh 2026-10-15 (smallspeed, round 3): relax main 3e474a16 vs stock GPU RELION 5.0.1 non-MPI --j 12, seed 1, one 2-GPU job (15633691, della-h19g2, H100 80GB both arms), both cold and started together: relax 359.6 s vs RELION 722.1 s (0.50x). The relax arm reproduces the row's s1 score (masked mean GT FSC-AUC 0.463704, class accuracy 0.7127; tools/score_class3d.py, mask multioptics_k2_c1, analysis/score_c3d_3e474a16.json). The gain since the f6c8299b wall (484 s) is main's, not a round-3 change. Arms: /scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_smallspeed_20261015/phase1/pairs_15633691/c3d/{relax,relion}.",
     "Rerun 2026-10-09 on relax main 364dba79 (team-lead, fix-applicability audit: own-pixel offset rounding #52 6b500e7f and the per-path projection-matrix rule 411ed2c1 act on the 112 px / 5.44 A shape class, s = 1.12; #56/#58/#60 do not act here: exact 4.25 A header, no premultiplied CTF, s > 1). Three relax seeds (job 15279717, walls 364-374 s on one H100 each, three runs per node, not quoted): masked mean GT FSC-AUC relax / patched GPU RELION s1 0.463704 / 0.463361; s2 0.464880 / 0.466109; s3 0.424210 / 0.423856; paired -1.8e-04 ± 5.3e-04 (was +0.00288 ± 0.00068). Page verdict hit. Previous relax values s1 0.466423, s2 0.470061, s3 0.425485. Class accuracy relax 0.7127/0.7275/0.7065.",
     "Reference (team-lead 2026-10-08): patched GPU RELION with the relax#12 coarse-plan fix. Qualification (https://github.com/ma-gilles/relax/issues/12#issuecomment-6064299986): on the 112-px group legacy CPU and the patched accelerated path make different but equally accurate choices against the GT poses (median angle error 6.32 vs 6.36 deg, 71.8% vs 71.0% within 10 deg); relax reproduces the accelerated path (0.08% of group-2 poses differ).",
     "Against patched GPU RELION (masked mean GT FSC-AUC per seed, relax / RELION): s1 0.466423 / 0.463361; s2 0.470061 / 0.466109; s3 0.425485 / 0.423856; paired +0.00288 ± 0.00068. Page verdict: hit (worst s3 +0.0016 vs same-seed RELION; inside or above across-seed band). Class accuracy RELION 0.7135/0.7288/0.7073.",
@@ -18138,17 +18139,21 @@
      "config": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_scorew_20261008/r54_364dba79/score_cfg.json",
      "score_json": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_scorew_20261008/r54_364dba79/SCORE.json",
      "builder": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/tools/mshape_c3d_364dba79_row_20261009.py"
+    },
+    "speed_refresh_20261015": {
+     "run_root": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_smallspeed_20261015/phase1/pairs_15633691/c3d",
+     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_smallspeed_20261015/analysis/score_c3d_3e474a16.json"
     }
    },
-   "date": "2026-10-09",
+   "date": "2026-10-15",
    "quality_pass": true,
    "quality_reason": "worst s2 −0.0012 vs same-seed RELION; inside across-seed band; against patched GPU RELION (relax#12 fix); relax main 364dba79",
    "feature_reference": "several image shapes (two optics groups, 128 px / 112 px) in Class3D K=2: stock RELION 5.0.1 CPU (--j 32, no --gpu; its GPU path skips the scale difference, relax#12) for accuracy, 3 seeds; stock RELION 5.0.1 GPU non-MPI --j 12 for the wall (cold pairs in one 2-GPU job, seed 1 quoted)",
    "time_check": {
-    "a": "relax: Slurm job 14956563 (della-h20g3), one H100 and 12 CPUs, 2026-10-04; RELION: the row's earlier job 14868236. Not the same job or node: the refresh reran relax only.",
-    "b": "relax main a7683d50 production defaults; stock RELION 5.0.1 GPU build (not the accuracy reference: the GPU path skips applyScaleDifference, relax#12).",
-    "c": "arm-script walls (WALL.json), end to end, both cold.",
-    "d": "H100 80GB on both arms (GPU.csv of each run); different jobs and nodes"
+    "a": "relax and stock GPU RELION each on 1 H100 + 12 CPUs, one 2-GPU job (15633691, della-h19g2), both arms started together",
+    "b": "relax main 3e474a16 production defaults; stock RELION 5.0.1 sm_90 GPU build, non-MPI --j 12 (the wall reference; the accuracy reference is patched GPU RELION, relax#12)",
+    "c": "arm-script walls (WALL.json), end to end, both cold (relax with an empty JAX compilation cache)",
+    "d": "H100 80GB HBM3 on both arms (GPU.csv)"
    },
    "history": [
     {
@@ -22961,11 +22966,15 @@
     "relion_reported_resolution_A": 4.977778,
     "masked_resolution_A": null,
     "wall_s": 571,
-    "wall_definition": "seed 29, first run: arm-script wall of relion_refine_mpi (WALL.json), cold, one H100 + 12 CPUs (3 ranks x 4 threads), own job 15296382",
+    "wall_definition": "seed 29: arm-script wall of relion_refine_mpi (WALL.json), cold, one H100 + 12 CPUs (3 ranks x 4 threads), same 2-GPU job and node as relax (job 15651573), started together",
     "gpu_model": "H100 80GB",
     "gpu_count": 1,
     "iterations": 12,
     "jobs": [
+     "15651573"
+    ],
+    "masked_band_auc": null,
+    "quality_reference_jobs": [
      "15296382",
      "15296383",
      "15296384",
@@ -22977,22 +22986,21 @@
      "15318022",
      "15318023",
      "15319963"
-    ],
-    "masked_band_auc": null
+    ]
    },
    "relax": {
-    "source_sha": "3f843d494e6219a890341a0dd5990e3ada113b78",
-    "source_repo": "relax main 3f843d49 (contains the relax#70 projection-rule fix ae21326c); frozen at relax_scorew_20261008/cand_3f843d49 (git archive of the sha, natives checked against its sources); production defaults",
+    "source_sha": "9a56136ef2ab1c5ceba5fbc299a27ded8c0ba788",
+    "source_repo": "relax main 9a56136e (round 3: oversampled child-row memo ed0145b1 and the kept per-class local projector texture 9a56136e; frozen at relax_smallspeed_20261015/cand_9a56136e, natives built at the sha); production defaults",
     "resolution_A": 4.98,
     "resolution_definition": "half_fsc_0143",
     "masked_resolution_A": null,
-    "wall_s": 492,
-    "wall_definition": "seed 29, first run: arm-script wall of relax refine end to end (WALL.json), cold (arm-local empty JAX cache), one H100 + 12 CPUs; one of four concurrent steps of job 15358685 (della-h20g1)",
+    "wall_s": 440,
+    "wall_definition": "seed 29: arm-script wall of relax refine end to end (WALL.json), cold (arm-local empty JAX cache), one H100 + 12 CPUs, same 2-GPU job and node as RELION, started together",
     "gpu_model": "H100 80GB",
     "gpu_count": 1,
     "iterations": 12,
     "jobs": [
-     "15358685"
+     "15651573"
     ],
     "masked_band_auc": null
    },
@@ -23221,7 +23229,7 @@
    },
    "cross_engine": null,
    "cross_engine_masked_band_auc": null,
-   "time_ratio_relax_over_relion": 0.86,
+   "time_ratio_relax_over_relion": 0.77,
    "matched": "yes",
    "matched_detail": {
     "gpu_model": true,
@@ -23232,6 +23240,7 @@
     "timing_controlled": true
    },
    "notes": [
+    "Speed refresh 2026-10-15 (smallspeed, round 3): relax main 9a56136e vs page-build RELION relion_refine_mpi 3x4, seed 29, one 2-GPU job (15651573, della-h20g1), both cold and started together: relax 439.5 s vs RELION 570.5 s (0.77x; was 492 vs 571 s, 0.86x). Changes: the oversampled child rows are shared across an iteration's ten exact-local calls (ed0145b1) and each class's projector texture is kept and refilled between passes (9a56136e; 381 compiles -> about 40), -38 s over four same-node pairs against 3e474a16 (jobs 15642037, 15647569). Quality of the refreshed arms by the row's metric (unmasked FSC-AUC vs EMD-3908, analysis/score_10299_rowpair.json): relax 0.449939 (12 iterations, 4.98 A), RELION 0.449953 (12 iterations, 4.978 A); 9a56136e's four A/B runs 0.449828-0.449988 against eleven cold 3e474a16 runs 0.449861-0.450005, all 12 iterations and 4.98 A (analysis/score_10299_repeats.json). The remaining gap to 0.6x is the exact-local engine's per-current-size compiles (about 95 s cold, relax#95) and its image rereads (relax#96). Arms: /scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_smallspeed_20261015/phase1/pairs_15651573/e10299/{relax,relion}.",
     "New row 2026-10-11 (robustness cell C made a page row; user via team-lead): real multi-optics SPA. Unmasked FSC-AUC against EMD-3908, relax runs / RELION range: s29 0.449851/0.449908 / 0.449946-0.450045 (3 runs); s41 0.455451/0.455373/0.455478/0.455435 / 0.455386-0.455605 (10 runs); s53 0.448677/0.448759 / 0.448583-0.448638 (3 runs). Page verdict on run ranges: hit (worst s29 −3.8e-5 vs same-seed RELION; run ranges compared at s29/s41/s53 (both engines repeated); inside across-seed band). At seed 29 both relax runs sit below all three RELION runs, by 3.8e-5 at the closest; at seed 41 the ranges overlap; at seed 53 relax is above. The verdict is a hit by the multi-seed rule: every relax seed lies inside the band of all RELION runs of the row, and relax is below its same-seed RELION runs at one seed of three, not at a majority.",
     "Verdict metric: no mask passes the registry's checks at this box: the cell mask captures 0.353 of positive density, the recipe mask has 4 components and no clear edge, so the verdict uses the unmasked metric and the page's masked fields are empty. Supplementary, with the cell's unregistered mask (/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_curw_20261008/cellC/data/mask_emd3908_box128.mrc, sha256 85047d2162b8...): relax / RELION range s29 0.548134/0.548143 / 0.548076-0.548226; s41 0.555432/0.555391/0.555491/0.555408 / 0.555376-0.555495; s53 0.542090/0.542184 / 0.542035-0.542102; the same rule on these also reads hit (worst s29 +6.7e-5 vs same-seed RELION; run ranges compared at s29/s41/s53 (both engines repeated); inside across-seed band).",
     "Iterations and reported resolution equal RELION's at every seed: s29 12 iterations, 4.98 A; s41 10 iterations, 4.98 A; s53 9 iterations, 4.72 A. Seed 41 is a two-outcome seed in relax: on the branch that carried the relax#70 fix before it landed (tree identical in relax/), 1 of 10 runs took one extra iteration and ended 2.0e-3 lower on the masked metric; the 4 runs on main 3f843d49 and all 10 RELION runs took the 10-iteration schedule. 0 of 10 in RELION against 1 of 14 in relax is not a significant difference. Before relax#70 (main be45a076 and earlier) relax took the extra iteration in 8 of 8 runs and the cell was a miss.",
@@ -23283,19 +23292,26 @@
      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_curw_20261008/cellC/realmag_relionpage_rep_s53_20261010/relion/refine_mpi_15318023"
     ],
     "tracker": "robustness_gaps_v1.md, cell C entries of 2026-10-10 and 2026-10-11",
-    "builder": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/tools/add_empiar10299_multioptics_row_20261011.py"
+    "builder": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/tools/add_empiar10299_multioptics_row_20261011.py",
+    "speed_refresh_20261015": {
+     "run_root": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_smallspeed_20261015/phase1/pairs_15651573/e10299",
+     "score_json": [
+      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_smallspeed_20261015/analysis/score_10299_rowpair.json",
+      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_smallspeed_20261015/analysis/score_10299_repeats.json"
+     ]
+    }
    },
-   "date": "2026-10-11",
+   "date": "2026-10-15",
    "history": [],
    "quality_pass": true,
    "quality_reason": "unmasked FSC-AUC vs EMD-3908: worst s29 −3.8e-5 vs same-seed RELION; run ranges compared at s29/s41/s53 (both engines repeated); inside across-seed band",
    "label": "EMPIAR-10299 20k (5 optics groups)",
    "feature_reference": "anisotropic magnification (rlnMagMat) in SPA Refine3D: RELION 5.0.1 + MPI scale-sum patch (mpiscale), relion_refine_mpi 3 ranks x 4 threads, one H100, seed 42, three runs",
    "time_check": {
-    "a": "relax and RELION each on 1 H100 + 12 CPUs; RELION relion_refine_mpi 3 ranks x 4 threads in its own job per run; relax four concurrent steps of one job (one GPU and 12 CPUs each); seed 29 first runs quoted",
-    "b": "relax main 3f843d49 frozen snapshot with production defaults; no --scratch_dir on either engine",
-    "c": "arm-script walls (WALL.json), end to end, cold",
-    "d": "H100 80GB HBM3 for every arm (GPU.csv / PROVENANCE.txt per arm)"
+    "a": "relax and page-build RELION each on 1 H100 + 12 CPUs, one 2-GPU job (15651573, della-h20g1), both arms started together; RELION relion_refine_mpi 3 ranks x 4 threads",
+    "b": "relax main 9a56136e frozen snapshot with production defaults; no --scratch_dir on either engine (the row's command)",
+    "c": "arm-script walls (WALL.json), end to end, both cold",
+    "d": "H100 80GB HBM3 on both arms"
    }
   },
   {
