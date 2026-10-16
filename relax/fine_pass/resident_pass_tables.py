@@ -14,7 +14,9 @@ from relax.fourier.half_spectrum import (
     make_relion_noise_shell_indices_half,
     mask_relion_noise_shell_indices_to_current_window,
 )
+from relax.projection.adjoint import mstep_adjoint_max_r
 from relax.projection.projection import relion_scale_correction_pixel_mask
+from relax.reconstruction.half_volume_mstep import relion_backprojector_volume_shape
 
 
 def optics_group_rows(noise_variance_half, optics_group_ids, *, n_images: int) -> tuple[int, np.ndarray | None]:
@@ -122,3 +124,38 @@ def scale_pixel_masks_rect(
             dtype=bool,
         )
     return masks
+
+
+def reconstruction_volume(
+    volume_shape,
+    *,
+    mstep_current_size,
+    reconstruction_volume_current_size,
+    reconstruction_padding_factor,
+    reconstruction_image_radius,
+    anisotropic_magnification: bool,
+) -> tuple:
+    """``(volume_current_size, recon_volume_shape, mstep_max_r)``: RELION's x-half BPref of the pass.
+
+    The backprojector's model size (``reconstruction_volume_current_size``, else the M-step's), its
+    padded volume shape and the M-step adjoint radius; the stable-window physical cube derives from these
+    (:func:`resident_stable_windows.physical_reconstruction_volume`).
+    """
+
+    volume_current_size = (
+        mstep_current_size
+        if reconstruction_volume_current_size is None
+        else int(reconstruction_volume_current_size)
+    )
+    recon_volume_shape = relion_backprojector_volume_shape(
+        volume_shape,
+        reconstruction_padding_factor,
+        current_size=volume_current_size,
+    )
+    mstep_max_r = mstep_adjoint_max_r(
+        volume_current_size,
+        reconstruction_image_radius,
+        reconstruction_padding_factor,
+        anisotropic_magnification=anisotropic_magnification,
+    )
+    return volume_current_size, recon_volume_shape, mstep_max_r

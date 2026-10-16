@@ -125,12 +125,10 @@ from relax.fine_pass.window import (
     sparse_pass2_window_setup,
 )
 from relax.fourier.preprocessing import half_translation_phase_table
-from relax.projection.adjoint import mstep_adjoint_max_r
 from relax.projection.projection import relion_kernel_zero_rows
 from relax.reconstruction.half_volume_mstep import (
     allocate_row_partial,
     half_volume_accumulator_shape,
-    relion_backprojector_volume_shape,
     relion_x_half_mstep_accumulator_dtypes,
 )
 from relax.relion import ctf
@@ -757,22 +755,16 @@ def _resident_pass2(
             "the resident M-step reconstructs from RELION's pruned fine weights",
         )
     # ---- accumulator layout (identical to the compact engine) -------------
-    volume_current_size = (
-        mstep_current_size
-        if reconstruction_volume_current_size is None
-        else int(reconstruction_volume_current_size)
-    )
-    recon_volume_shape = relion_backprojector_volume_shape(
+    volume_current_size, recon_volume_shape, mstep_max_r = resident_pass_tables.reconstruction_volume(
         volume_shape,
-        reconstruction_padding_factor,
-        current_size=volume_current_size,
+        mstep_current_size=mstep_current_size,
+        reconstruction_volume_current_size=reconstruction_volume_current_size,
+        reconstruction_padding_factor=reconstruction_padding_factor,
+        reconstruction_image_radius=reconstruction_image_radius,
+        anisotropic_magnification=anisotropic_magnification,
     )
     recon_accum_shape = half_volume_accumulator_shape(recon_volume_shape)
     recon_volume_size = int(np.prod(recon_accum_shape))
-    mstep_max_r = mstep_adjoint_max_r(
-        volume_current_size, reconstruction_image_radius, reconstruction_padding_factor,
-        anisotropic_magnification=anisotropic_magnification,
-    )
     recon_y_accum_dtype, recon_ctf_accum_dtype = relion_x_half_mstep_accumulator_dtypes(
         experiment_dataset.dtype,
         use_relion_x_half_mstep=True,

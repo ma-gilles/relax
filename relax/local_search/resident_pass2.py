@@ -114,11 +114,9 @@ from relax.local_search.resident_layout import (
     plan_local_capacity_chunks,
     tables_from_local_layout,
 )
-from relax.projection.adjoint import mstep_adjoint_max_r
 from relax.reconstruction.half_volume_mstep import (
     allocate_row_partial,
     half_volume_accumulator_shape,
-    relion_backprojector_volume_shape,
     relion_x_half_mstep_accumulator_dtypes,
 )
 from relax.relion.optics_aberrations import dataset_magnification_is_anisotropic, dataset_needs_exact_ctf
@@ -481,20 +479,12 @@ def compute_local_search_resident(
     )
 
     # ---- accumulator layout (identical to the exact engine's x-half BPref) -
-    volume_current_size = (
-        mstep_current_size
-        if kernel.reconstruction_volume_current_size is None
-        else int(kernel.reconstruction_volume_current_size)
-    )
-    recon_volume_shape = relion_backprojector_volume_shape(
+    volume_current_size, recon_volume_shape, mstep_max_r = resident_pass_tables.reconstruction_volume(
         volume_shape,
-        kernel.reconstruction_padding_factor,
-        current_size=volume_current_size,
-    )
-    mstep_max_r = mstep_adjoint_max_r(
-        volume_current_size,
-        kernel.reconstruction_image_radius,
-        kernel.reconstruction_padding_factor,
+        mstep_current_size=mstep_current_size,
+        reconstruction_volume_current_size=kernel.reconstruction_volume_current_size,
+        reconstruction_padding_factor=kernel.reconstruction_padding_factor,
+        reconstruction_image_radius=kernel.reconstruction_image_radius,
         anisotropic_magnification=anisotropic_magnification,
     )
     # The BPref cube the chunks accumulate into: RELION's, or the plan's physical one, cropped at finalize.
