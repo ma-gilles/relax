@@ -96,17 +96,10 @@ from relax.fine_pass.resident_operands import (
 from relax.fine_pass.resident_scoring import (
     resident_row_projection_bytes,
 )
-from relax.fine_pass.wavg import (
-    make_relion_wavg_rectangle,
-)
 from relax.fine_pass.window import (
     pass2_half_weights,
     pass2_window_setup,
     sparse_pass2_window_setup,
-)
-from relax.fourier.half_spectrum import (
-    make_relion_noise_shell_indices_half,
-    mask_relion_noise_shell_indices_to_current_window,
 )
 from relax.fourier.preprocessing import half_translation_phase_table
 from relax.local_search import (
@@ -455,37 +448,25 @@ def compute_local_search_resident(
     ).astype(precision_policy.score_complex_dtype)
 
     n_shells = image_shape[0] // 2 + 1
-    # With a weighted-sum size above the scoring size, the noise crop is that size's rectangle.
-    noise_crop_indices = resident_stable_windows.logical_score_indices(
-        window_indices, window_indices_np, stable_window_plan
-    )
-    if wsum_current_size != current_size:
-        noise_crop_indices = make_relion_wavg_rectangle(
-            image_shape, wsum_current_size, recon_window_indices, reconstruction_current_size=mstep_current_size
-        ).centered_indices
-    shell_indices_half = mask_relion_noise_shell_indices_to_current_window(
-        make_relion_noise_shell_indices_half(image_shape),
-        image_shape,
-        wsum_current_size,
-        noise_crop_indices,
-    )
-    shell_indices_noise = window_spec.recon_values(shell_indices_half)
-    noise_variance_for_noise = window_spec.recon_values(noise_variance_half)
     (
+        shell_indices_half,
         shell_indices_noise,
         noise_variance_for_noise,
         relion_wavg_rectangle,
         logical_rect_pixels,
         logical_recon_pixels,
-    ) = resident_stable_windows.stable_noise_tables(
-        shell_indices_noise,
-        noise_variance_for_noise,
-        plan=stable_window_plan,
-        image_shape=image_shape,
-        wsum_current_size=wsum_current_size,
+    ) = resident_pass_tables.resident_noise_tables(
+        noise_variance_half,
+        window_spec=window_spec,
+        window_indices=window_indices,
+        window_indices_np=window_indices_np,
         recon_window_indices=recon_window_indices,
-        mstep_current_size=mstep_current_size,
         n_recon_windowed=n_recon_windowed,
+        stable_window_plan=stable_window_plan,
+        image_shape=image_shape,
+        current_size=current_size,
+        wsum_current_size=wsum_current_size,
+        mstep_current_size=mstep_current_size,
     )
     # Class3D masks each class's scale sums by its own data_vs_prior_class
     # (acc_ml_optimiser_impl.h:4893-4912): ``[K, n_shells]``, or one curve for every class.
