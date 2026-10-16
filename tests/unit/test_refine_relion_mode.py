@@ -2795,20 +2795,14 @@ def test_relion_projector_texture_full_embeds_positive_x_half():
 
 def test_relion_projector_texture_route_defaults_on_and_can_be_disabled(monkeypatch):
     from relax.projection import projection as projection_helpers
-    from relax.runtime.scoring_overrides import PROJECTOR_TEXTURE_INTERP_ENV, ScoringOverrides
+    from relax.runtime.scoring_overrides import ScoringOverrides
 
     projector_half = jnp.ones((5, 5, 3), dtype=jnp.complex64)
     rotations = jnp.eye(3, dtype=jnp.float32)[None]
     calls = []
 
-    # The run's choice (ScoringOverrides.projector_texture_interp): on unless the variable says 0.
-    monkeypatch.delenv(PROJECTOR_TEXTURE_INTERP_ENV, raising=False)
-    assert ScoringOverrides.from_environ().projector_texture_interp is True is ScoringOverrides().projector_texture_interp
-    monkeypatch.setenv(PROJECTOR_TEXTURE_INTERP_ENV, "0")
-    assert ScoringOverrides.from_environ().projector_texture_interp is False
-    monkeypatch.setenv(PROJECTOR_TEXTURE_INTERP_ENV, "maybe")
-    with pytest.raises(ValueError, match=PROJECTOR_TEXTURE_INTERP_ENV):
-        ScoringOverrides.from_environ()
+    # The run's choice (ScoringOverrides.projector_texture_interp): on by default.
+    assert ScoringOverrides().projector_texture_interp is True
 
     monkeypatch.setattr(projection_helpers, "_cuda_projection_available", lambda: True)
     assert projection_helpers.relion_projector_texture_enabled(

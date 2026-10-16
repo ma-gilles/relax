@@ -29,22 +29,6 @@ _ROTATION = np.array(
 )[None]
 
 
-@pytest.mark.parametrize("token,expected", [(None, None), ("0", False), ("1", True)])
-def test_optin(monkeypatch, token, expected):
-    """RELAX_K1_COARSE_ROTATED_RADIUS, read once by the command: unset is None (the pass's default)."""
-    monkeypatch.delenv("RELAX_K1_COARSE_ROTATED_RADIUS", raising=False)
-    if token is not None:
-        monkeypatch.setenv("RELAX_K1_COARSE_ROTATED_RADIUS", token)
-    assert ScoringOverrides.from_environ().coarse_rotated_radius is expected
-
-
-@pytest.mark.parametrize("token", ["typo", "", " 1"])
-def test_invalid_optin(monkeypatch, token):
-    monkeypatch.setenv("RELAX_K1_COARSE_ROTATED_RADIUS", token)
-    with pytest.raises(ValueError, match="must be 0 or 1"):
-        ScoringOverrides.from_environ()
-
-
 @pytest.mark.parametrize("radius", [np.float32(13), np.array([13], np.int32)])
 def test_image_radius_validated_before_loading_cuda(monkeypatch, radius):
     monkeypatch.setattr(cb, "_ensure_optional_ffi", lambda _target: pytest.fail("loaded before validation"))

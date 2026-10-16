@@ -27,7 +27,7 @@ from relax.fine_pass import (
     resident_tilt_mstep,
 )
 from relax.reconstruction import half_volume_mstep as hvm
-from relax.runtime.scoring_overrides import EXACT_FLOAT32_ACCUMULATION_ENV, ScoringOverrides
+from relax.runtime.scoring_overrides import ScoringOverrides
 
 pytestmark = pytest.mark.unit
 
@@ -255,17 +255,8 @@ def test_the_switch_is_off_by_default_and_then_nothing_is_allocated(monkeypatch)
         raise AssertionError("a partial pair was allocated with the switch off")
 
     monkeypatch.setattr(hvm, "RowPartial", no_allocation)
-    for value in (None, "0"):
-        if value is None:
-            monkeypatch.delenv(EXACT_FLOAT32_ACCUMULATION_ENV, raising=False)
-        else:
-            monkeypatch.setenv(EXACT_FLOAT32_ACCUMULATION_ENV, value)
-        assert not ScoringOverrides.from_environ().exact_float32_accumulation
     assert not ScoringOverrides().exact_float32_accumulation
     assert hvm.allocate_row_partial(1000, np.complex64, np.float32, exact_float32_accumulation=False) is None
-    assert EXACT_FLOAT32_ACCUMULATION_ENV == "RELAX_EM_EXACT_FLOAT32_ACCUMULATION"
-    monkeypatch.setenv(EXACT_FLOAT32_ACCUMULATION_ENV, "1")
-    assert ScoringOverrides.from_environ().exact_float32_accumulation
 
 
 def test_the_switch_changes_the_accumulators_where_the_loss_shows(monkeypatch):

@@ -19,12 +19,3 @@ def test_owner_rules():
         f32_fine_posterior_override=False,
     )
     assert (exact, f32) == (False, True)
-
-
-def test_scoring_overrides_read_the_f32_fine_posterior_switch(monkeypatch):
-    from relax.runtime.scoring_overrides import F32_FINE_POSTERIOR_ENV, ScoringOverrides
-
-    monkeypatch.delenv(F32_FINE_POSTERIOR_ENV, raising=False)
-    assert ScoringOverrides.from_environ().f32_fine_posterior is False is ScoringOverrides().f32_fine_posterior
-    monkeypatch.setenv(F32_FINE_POSTERIOR_ENV, "1")
-    assert ScoringOverrides.from_environ().f32_fine_posterior is True

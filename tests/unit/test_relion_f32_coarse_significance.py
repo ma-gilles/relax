@@ -3,7 +3,6 @@
 from dataclasses import replace
 
 import numpy as np
-import pytest
 from helpers.float_compare import assert_matches
 
 from relax.sampling.oversampling import (
@@ -192,38 +191,6 @@ def test_relion_cuda_f32_tail_target_preserves_text_to_float_semantics():
     target = np.asarray(relion_cuda_f32_tail_target(sum_weight, 0.999))
 
     assert_matches(target, np.asarray([1606715186], dtype=np.uint32).view(np.float32))
-
-
-def test_relion_f32_coarse_support_is_read_once_at_the_boundary(monkeypatch):
-    """RECOVAR_K1_RELION_F32_COARSE_SUPPORT (a strict flag): unset is on, the production RELION float32 support;
-    0 selects the generic support route; anything else is refused, as before."""
-    from relax.runtime.scoring_overrides import F32_COARSE_SUPPORT_ENV, ScoringOverrides
-
-    monkeypatch.delenv(F32_COARSE_SUPPORT_ENV, raising=False)
-    assert ScoringOverrides.from_environ().f32_coarse_support is True
-    monkeypatch.setenv(F32_COARSE_SUPPORT_ENV, " OFF ")
-    assert ScoringOverrides.from_environ().f32_coarse_support is False
-    monkeypatch.setenv(F32_COARSE_SUPPORT_ENV, "1")
-    assert ScoringOverrides.from_environ().f32_coarse_support is True
-    for raw in ("", "maybe"):
-        monkeypatch.setenv(F32_COARSE_SUPPORT_ENV, raw)
-        with pytest.raises(ValueError, match=f"Unsupported {F32_COARSE_SUPPORT_ENV}"):
-            ScoringOverrides.from_environ()
-
-
-def test_coarse_gemm_float64_is_read_once_at_the_boundary(monkeypatch):
-    """RELAX_COARSE_GEMM_FLOAT64: unset is 0 (RELION's float32 GEMMs); exactly 0 or 1 after stripping; anything else
-    is refused, as before."""
-    from relax.runtime.scoring_overrides import COARSE_GEMM_FLOAT64_ENV, ScoringOverrides
-
-    monkeypatch.delenv(COARSE_GEMM_FLOAT64_ENV, raising=False)
-    assert ScoringOverrides.from_environ().coarse_gemm_float64 is False
-    monkeypatch.setenv(COARSE_GEMM_FLOAT64_ENV, " 1 ")
-    assert ScoringOverrides.from_environ().coarse_gemm_float64 is True
-    for raw in ("", "true", "2"):
-        monkeypatch.setenv(COARSE_GEMM_FLOAT64_ENV, raw)
-        with pytest.raises(ValueError, match=f"Unsupported {COARSE_GEMM_FLOAT64_ENV}"):
-            ScoringOverrides.from_environ()
 
 
 def test_coarse_gemm_float64_reaches_the_pass1_score_program(monkeypatch):

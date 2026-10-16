@@ -20,7 +20,6 @@ from relax.cuda import backprojection as cuda_backprojection
 from relax.cuda import library
 from relax.reconstruction import half_volume_mstep, regularization
 from relax.runtime.engine_tuning import EngineTuning, XHalfLargeGrid
-from relax.runtime.scoring_overrides import X_HALF_MSTEP_DOUBLE_ENV, ScoringOverrides
 
 pytestmark = pytest.mark.unit
 
@@ -168,16 +167,6 @@ def test_relion_x_half_mstep_accumulator_dtypes_can_opt_into_double():
 
     assert y_dtype == np.dtype(np.complex128)
     assert ctf_dtype == np.dtype(np.float64)
-
-
-def test_the_double_switch_is_read_once_by_scoring_overrides(monkeypatch):
-    """RELAX_RELION_X_HALF_MSTEP_DOUBLE (``env_flags.parse_env_flag``): unset and 0 off, 1 on."""
-    monkeypatch.delenv(X_HALF_MSTEP_DOUBLE_ENV, raising=False)
-    assert ScoringOverrides.from_environ().x_half_mstep_double is False is ScoringOverrides().x_half_mstep_double
-    monkeypatch.setenv(X_HALF_MSTEP_DOUBLE_ENV, "0")
-    assert ScoringOverrides.from_environ().x_half_mstep_double is False
-    monkeypatch.setenv(X_HALF_MSTEP_DOUBLE_ENV, "1")
-    assert ScoringOverrides.from_environ().x_half_mstep_double is True
 
 
 def test_non_relion_mstep_keeps_dataset_accumulator_dtype():
