@@ -131,7 +131,7 @@ from relax.runtime.memory_budget import (
     max_translation_tile_bytes_for_pass,
     projection_cache_max_bytes_for_pass,
 )
-from relax.types import LocalEMResult, make_noise_stats, make_relion_stats
+from relax.types import LocalEMResult, make_relion_stats
 
 logger = logging.getLogger(__name__)
 
@@ -1108,15 +1108,7 @@ def compute_local_search_resident(
             finalized.rotation_posterior_sums, posterior_bin_ids, tables.n_posterior_bins
         ),
     )
-    noise_stats = make_noise_stats(
-        wsum_sigma2_noise=finalized.wsum_sigma2_noise,
-        wsum_img_power=finalized.wsum_img_power,
-        wsum_sigma2_offset=finalized.wsum_sigma2_offset,
-        sumw=finalized.sumw,
-        wsum_norm_correction=finalized.wsum_norm_correction,
-        wsum_scale_correction_xa=finalized.wsum_scale_correction_xa,
-        wsum_scale_correction_aa=finalized.wsum_scale_correction_aa,
-    )
+    noise_stats = finalized.noise_stats()
 
     best_pose_rotations = best_pose_translations = best_pose_rotation_ids = None
     if support.return_best_pose_details:
@@ -1212,15 +1204,7 @@ def _finalize_class_local_pass(
     safe_translation = np.where(has_pose, class_translation, 0)
     rotation_ids = tables.row_rotation_id[safe_row].astype(np.int64)
     rotation_posterior_sums = np.asarray(finalized.rotation_posterior_sums, dtype=np.float64)
-    noise_stats = make_noise_stats(
-        wsum_sigma2_noise=finalized.wsum_sigma2_noise,
-        wsum_img_power=finalized.wsum_img_power,
-        wsum_sigma2_offset=finalized.wsum_sigma2_offset,
-        sumw=finalized.sumw,
-        wsum_norm_correction=finalized.wsum_norm_correction,
-        wsum_scale_correction_xa=finalized.wsum_scale_correction_xa,
-        wsum_scale_correction_aa=finalized.wsum_scale_correction_aa,
-    )
+    noise_stats = finalized.noise_stats()
     rotations = np.asarray(tables.rotations)
     translations = np.asarray(tables.translation_grid)
     logger.info(

@@ -56,6 +56,7 @@ import numpy as np
 
 from relax.runtime import process_platform
 from relax.runtime.shape_buckets import pow2_floor
+from relax.types import NoiseStats, make_noise_stats
 
 __all__ = [
     "FinalizedClassStatistics",
@@ -418,6 +419,19 @@ class FinalizedStatistics(NamedTuple):
     best_translation_indices: np.ndarray
     # K>1 only; ``rotation_posterior_sums`` is then [K, n_coarse_rot].
     classes: "FinalizedClassStatistics | None" = None
+
+    def noise_stats(self) -> NoiseStats:
+        """The pass's :class:`~relax.types.NoiseStats`, from the first seven fields."""
+
+        return make_noise_stats(
+            wsum_sigma2_noise=self.wsum_sigma2_noise,
+            wsum_img_power=self.wsum_img_power,
+            wsum_sigma2_offset=self.wsum_sigma2_offset,
+            sumw=self.sumw,
+            wsum_norm_correction=self.wsum_norm_correction,
+            wsum_scale_correction_xa=self.wsum_scale_correction_xa,
+            wsum_scale_correction_aa=self.wsum_scale_correction_aa,
+        )
 
 
 class FinalizedClassStatistics(NamedTuple):

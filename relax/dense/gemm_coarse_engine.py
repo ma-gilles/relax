@@ -537,7 +537,6 @@ def _finalize_dense_result(state, numerator, denominator, stats, stats_config, b
         finalize_half_volume_bpref,
         relion_x_half_accumulators_to_public_layout,
     )
-    from relax.types import make_noise_stats
 
     k = int(numerator.shape[0])
     final_y, final_w = [], []
@@ -556,15 +555,7 @@ def _finalize_dense_result(state, numerator, denominator, stats, stats_config, b
             final_y.append(y)
             final_w.append(w)
     finalized = finalize_statistics(stats, config=stats_config, n_images=int(state.dataset.n_units))
-    noise = make_noise_stats(
-        wsum_sigma2_noise=finalized.wsum_sigma2_noise,
-        wsum_img_power=finalized.wsum_img_power,
-        wsum_sigma2_offset=finalized.wsum_sigma2_offset,
-        sumw=finalized.sumw,
-        wsum_norm_correction=finalized.wsum_norm_correction,
-        wsum_scale_correction_xa=finalized.wsum_scale_correction_xa,
-        wsum_scale_correction_aa=finalized.wsum_scale_correction_aa,
-    )
+    noise = finalized.noise_stats()
     return ResidentPass2Result(
         Ft_y=tuple(final_y), Ft_ctf=tuple(final_w), n_classes=k,
         n_slot_groups=n_groups, finalized=finalized, noise_stats=noise,

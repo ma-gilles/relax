@@ -149,7 +149,7 @@ from relax.runtime.memory_budget import (
     projection_cache_transient_bytes,
 )
 from relax.sampling.translation_prior import validate_translation_prior_centers
-from relax.types import SparsePass2Output, make_noise_stats, make_relion_stats
+from relax.types import SparsePass2Output, make_relion_stats
 
 logger = logging.getLogger(__name__)
 
@@ -2612,15 +2612,7 @@ def _resident_pass2(
         Ft_ctf_out.append(class_Ft_ctf)
 
     finalized = resident_statistics.finalize_statistics(stats, config=stats_config, n_images=n_units)
-    noise_stats = make_noise_stats(
-        wsum_sigma2_noise=finalized.wsum_sigma2_noise,
-        wsum_img_power=finalized.wsum_img_power,
-        wsum_sigma2_offset=finalized.wsum_sigma2_offset,
-        sumw=finalized.sumw,
-        wsum_norm_correction=finalized.wsum_norm_correction,
-        wsum_scale_correction_xa=finalized.wsum_scale_correction_xa,
-        wsum_scale_correction_aa=finalized.wsum_scale_correction_aa,
-    )
+    noise_stats = finalized.noise_stats()
     logger.info(
         "Resident pass-2: %d images, %d classes, %d chunks, %.2fs chunk loop, %.2fs total",
         n_images,
