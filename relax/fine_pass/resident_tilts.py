@@ -237,6 +237,19 @@ def tilt_mstep_tile_bytes(n_units: int, *, n_rect_pixels: int, n_exact_pixels: i
     return int(n_units) * (3 * int(n_rect_pixels) + int(n_exact_pixels)) * 8
 
 
+def tilt_mstep_units(n_valid_units: int, *, unit_capacity: int) -> int:
+    """Units a tilt chunk's M-step tables and translated tiles hold (:func:`run_tilt_chunk`, relax#102).
+
+    The chunk's valid units rounded up to a power of two, at most its unit capacity: the padded units carry no
+    image, so sizing the tiles at the capacity (32 in a final iteration) only shrank the translation blocks
+    of a chunk holding few particles (:func:`tilt_mstep_tile_bytes`) and multiplied its M-step loop
+    iterations. The power of two bounds the M-step programs to one per power of two up to the capacity.
+    Fewer blocks change the order of each row's partial sums over translations, not their terms.
+    """
+
+    return min(int(unit_capacity), pow2_ceil(int(n_valid_units)))
+
+
 def _slot_tables_block(slots: "SlotMstepTables", start: int, stop: int) -> "SlotMstepTables":
     """Slots ``start:stop`` of :func:`_slot_mstep_tables`, renumbered from 0 (their block's projections)."""
 
@@ -336,8 +349,8 @@ def run_tilt_chunk(
       the rows' ``[C_R, T]`` diff2; its posterior is formed over all of its rows as before, and the M-step
       projects and backprojects its rows with posterior mass, that many at a time. Each row's diff2 keeps its
       slot order and the posterior is the one-call chunk's; only the grouping of the projector calls and of
-      the M-step blocks changes. Its M-step tables and translated tiles hold its one unit, not the chunk's
-      unit capacity.
+      the M-step blocks changes. Its M-step tables and translated tiles hold its one unit; any other chunk's
+      hold its valid units, rounded up to a power of two (:func:`tilt_mstep_units`).
     The per-stage (non-jitted) path.
     """
 
@@ -615,8 +628,9 @@ def run_tilt_chunk(
         jnp.zeros((), row_posterior.dtype),
     )
     unit_kept = MstepTranslations(index=np.arange(n_unit_trans, dtype=np.int64), valid=np.ones(n_unit_trans, dtype=bool))
-    # The M-step's units: the chunk's, or the one particle of a chunk run in row blocks (unit 0).
-    mstep_units = 1 if lone else unit_capacity
+    # The M-step's units: the chunk's valid ones (tilt_mstep_units), or the one particle of a chunk run in row
+    # blocks (unit 0).
+    mstep_units = 1 if lone else tilt_mstep_units(int(chunk.n_valid_images), unit_capacity=unit_capacity)
     bytes_per_translation = tilt_mstep_tile_bytes(
         mstep_units,
         n_rect_pixels=int(rect_indices_device.shape[0]),

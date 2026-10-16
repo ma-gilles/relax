@@ -349,6 +349,11 @@ def test_tilt_unit_capacity_at_the_full_box_is_bounded_by_its_gather():
 
 
 @pytest.mark.unit
+def test_tilt_mstep_units_are_the_valid_units_in_powers_of_two_up_to_the_capacity():
+    assert [resident_tilts.tilt_mstep_units(n, unit_capacity=32) for n in (1, 2, 3, 5, 12, 17, 32)] == [1, 2, 4, 8, 16, 32, 32]
+    assert resident_tilts.tilt_mstep_units(5, unit_capacity=6) == 6
+
+
 def test_mstep_translation_blocks_stay_within_the_kernel_table_limit():
     kept = resident_tilts.MstepTranslations(index=np.arange(4120, dtype=np.int64), valid=np.ones(4120, dtype=bool))
     blocks = resident_tilts.mstep_translation_blocks(kept, bytes_per_translation=1, tile_budget_bytes=10**12)

@@ -631,6 +631,66 @@ def test_translation_blocked_tilt_mstep_is_the_one_block_mstep(monkeypatch):
 
 
 @requires_resident_gpu
+def test_mstep_at_the_chunks_valid_units_is_the_unit_capacity_mstep(monkeypatch):
+    """An M-step sized at the chunk's valid units is the M-step sized at its unit capacity (relax#102).
+
+    Both runs get a tile budget of two translations at the unit capacity, so the capacity-sized M-step
+    runs in two-translation blocks and the valid-units one in fewer, larger blocks. The blocks merge each
+    row's partials before its one adjoint, so only float32 reassociation within a row and the atomics'
+    order differ: the discrete state is exact, the scores equal and the maps and sums inside the repeat
+    band. K=2 with VDAM's pseudo-halfsets exercises every accumulator slot.
+    """
+
+    from test_resident_k_class_pass2 import _k_class_args, _resident
+
+    from relax.fine_pass import resident_tilts
+
+    args, volumes, supports, priors = _k_class_args(2)
+    args = dict(args, score_with_masked_images=True)
+    tilt, n_units = _two_image_particles(args)
+    supports = [class_supports[:n_units] for class_supports in supports]
+    vdam = dict(args, translation_log_prior=None, tilt=tilt, **_vdam_options(n_units))
+    units, blocks = resident_tilts.tilt_mstep_units, resident_tilts.mstep_translation_blocks
+    sizing, n_blocks = [], []
+
+    def recorded_units(n_valid_units, *, unit_capacity, capacity_sized):
+        valid_units = units(n_valid_units, unit_capacity=unit_capacity)
+        sizing.append((int(unit_capacity) if capacity_sized else valid_units, valid_units, int(unit_capacity)))
+        return sizing[-1][0]
+
+    def two_capacity_translations(kept, *, bytes_per_translation, tile_budget_bytes):
+        mstep_units, _, unit_capacity = sizing[-1]
+        capacity_bytes = bytes_per_translation // mstep_units * unit_capacity
+        out = blocks(kept, bytes_per_translation=bytes_per_translation, tile_budget_bytes=2 * capacity_bytes)
+        n_blocks[-1] += len(out)
+        return out
+
+    monkeypatch.setattr(resident_tilts, "mstep_translation_blocks", two_capacity_translations)
+    runs = []
+    for capacity_sized in (True, False):
+        n_blocks.append(0)
+        monkeypatch.setattr(
+            resident_tilts,
+            "tilt_mstep_units",
+            lambda n, *, unit_capacity, capacity_sized=capacity_sized: recorded_units(
+                n, unit_capacity=unit_capacity, capacity_sized=capacity_sized
+            ),
+        )
+        runs.append(_resident(vdam, volumes, supports, priors))
+    capacity, valid = runs
+    # The fixture's chunks hold fewer units than their capacity, so the valid-units M-step has fewer blocks.
+    assert any(valid_units < unit_capacity for _, valid_units, unit_capacity in sizing)
+    assert n_blocks[1] < n_blocks[0]
+
+    assert_matches(capacity.per_class_hard_assignments, valid.per_class_hard_assignments)
+    for field in ("class_log_evidence_per_image", "class_best_log_score_per_image", "class_rotation_posterior_sums"):
+        assert_matches(np.asarray(getattr(capacity, field)), np.asarray(getattr(valid, field)), err_msg=field)
+    for k in range(2):
+        _assert_accumulators_match(capacity.Ft_y[k], capacity.Ft_ctf[k], valid.Ft_y[k], valid.Ft_ctf[k])
+    _assert_noise_stats_match(capacity.noise_stats, valid.noise_stats)
+
+
+@requires_resident_gpu
 def test_row_partials_merged_before_the_adjoint_keep_their_float32_weight():
     """The swamping toy of relax#27: many rows into one voxel, each row's weight split over translation blocks.
 
