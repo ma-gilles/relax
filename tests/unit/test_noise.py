@@ -5,6 +5,7 @@ from helpers.float_compare import assert_matches
 pytest.importorskip("jax")
 
 import recovar.reconstruction.noise as noise
+
 from relax.reconstruction import noise as noise_relion
 
 pytestmark = pytest.mark.unit
@@ -82,7 +83,6 @@ def test_variable_radial_noise_model_via_dataset_1d_broadcast():
     """Test the fix: set_variable_radial_noise_model with 1D input
     broadcasts to 2D so VariableRadialNoiseModel.get() doesn't crash."""
     import jax.numpy as jnp
-
     from recovar import core
 
     # Simulate a CryoEMDataset-like object with CTF_params that have
@@ -768,7 +768,7 @@ def test_compute_noise_block_preserves_float64_inputs():
     here compounds error across that whole reduction, unlike RELION's own
     per-particle RFLOAT accumulation.
     """
-    from relax.projection.projection import compute_noise_block
+    from relax.projection.noise_blocks import compute_noise_block
 
     n_rot, n_pix, n_shells = 3, 5, 3
     rng = np.random.default_rng(0)

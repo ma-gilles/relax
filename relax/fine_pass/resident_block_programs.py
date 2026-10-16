@@ -20,7 +20,7 @@ from relax.fine_pass.local_backprojection import (
 from relax.fine_pass.resident_statistics import segment_sum_by_image
 from relax.fine_pass.scoring import to_relion_native_fine_units
 from relax.fine_pass.wavg import relion_wavg_shifted_power
-from relax.projection.projection import compute_noise_block, compute_noise_block_per_optics_group
+from relax.projection.noise_blocks import compute_noise_block, compute_noise_block_per_optics_group
 from relax.relion.optics_groups import pixel_rows
 
 
