@@ -17,7 +17,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, NamedTuple
 
-from relax.reconstruction.accumulator_guard import HALF_ACCUMULATOR_GUARD_ENV
+from relax.reconstruction.accumulator_guard import HALF_ACCUMULATOR_GUARD_ENV, half_accumulator_guard_mode
 from relax.reconstruction.volume_solver import ReconstructionPrograms
 from relax.refinement.refinement_state import (
     APPROX_ACC_ROT_CONVERGENCE_ENV,
@@ -685,46 +685,6 @@ class ExecutionOptions:
         )
 
 
-_GUARD_OFF_VALUES = frozenset({"0", "false", "no", "off"})
-_GUARD_RAISE_VALUES = frozenset({"", "1", "true", "yes", "on", "raise"})
-
-
-def half_accumulator_guard_mode(raw: str | None, *, warn_only: bool) -> str:
-    """How the once-per-iteration accumulator guard behaves: raise, warn or off.
-
-    ``raw`` is the text of ``RELAX_EM_BPREF_FINITE_GUARD`` (None when unset) and ``warn_only`` the flag
-    ``RELAX_EM_FINITE_CHECK_WARN`` (``env_flags.parse_env_true_flag``, as ``EngineTuning.finite_check`` reads it), both read once
-    by :meth:`RefinementEnvironment.from_environ`; ``finite_check.check_half_accumulators`` runs in this mode.
-
-    The guard is on by default in ``raise`` mode. Job 14193291 (P4-D,
-    2026-09-20) measured its cost on an interleaved off/on pair of twelve
-    one-iteration arms at current size 74 on one H100: in the eight arms that
-    ran without a co-located cold compile the medians were 218.0 s off and
-    218.3 s on, inside the 217.4 to 219.1 s same-source spread, so production
-    pays nothing measurable for stopping where the damage is instead of four
-    stages later.
-
-    ``RELAX_EM_BPREF_FINITE_GUARD=0`` (also ``off``, ``false``, ``no``) opts
-    out; ``warn`` logs the offending accumulators and continues;
-    ``RELAX_EM_FINITE_CHECK_WARN=1`` demotes it to ``warn`` as well, as it
-    does the per-bucket checks. Any other value is a configuration error and
-    raises, rather than silently running with a guard the caller did not ask
-    for.
-    """
-
-    raw = (raw or "").strip().lower()
-    if raw in _GUARD_OFF_VALUES:
-        return "off"
-    if raw == "warn":
-        return "warn"
-    if raw not in _GUARD_RAISE_VALUES:
-        raise ValueError(
-            f"{HALF_ACCUMULATOR_GUARD_ENV}={raw!r}: expected one of 1/on/raise "
-            "(the default), warn, or 0/off"
-        )
-    return "warn" if warn_only else "raise"
-
-
 FIRSTITER_FUSED_BPREF_ENV = "RELAX_K1_RELION_FIRSTITER_FUSED_BPREF"
 DIAGNOSTIC_FLOAT64_PASS2_ITERATIONS_ENV = "RELAX_DIAGNOSTIC_FLOAT64_PASS2_ITERATIONS"
 
@@ -775,7 +735,7 @@ class RefinementEnvironment:
     ``half_accumulator_guard``: the mode of the finite guard of the half accumulators before their join, "raise"
     (the default), "warn" or "off", from RELAX_EM_BPREF_FINITE_GUARD (1/true/yes/on/raise or unset/blank:
     raise; 0/false/no/off: off; warn; anything else refused) demoted to "warn" by RELAX_EM_FINITE_CHECK_WARN
-    (``env_flags.parse_env_true_flag``); see :func:`half_accumulator_guard_mode`.
+    (``env_flags.parse_env_true_flag``); see ``accumulator_guard.half_accumulator_guard_mode``.
     ``firstiter_fused_bpref`` (RELAX_K1_RELION_FIRSTITER_FUSED_BPREF, :func:`_optional_env_flag`; None: the
     first-iteration BPref takes its fused kernel wherever it is supported; False: never; True: required there,
     refused elsewhere; ``firstiter_bpref._relion_firstiter_fused_bpref_enabled``). ``diagnostic_float64_pass2_iterations``

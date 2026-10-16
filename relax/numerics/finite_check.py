@@ -14,7 +14,7 @@ back one boolean per field, so it costs a reduction and a synchronisation
 rather than a transfer, but it still serialises the pass it watches. An arm
 with it set is a diagnostic arm and never a timing arm. The once-per-iteration
 accumulator guard (:func:`check_half_accumulators`) is the exception: it is on
-by default, see ``relax.refinement.refinement_options.half_accumulator_guard_mode``.
+by default, see ``relax.reconstruction.accumulator_guard.half_accumulator_guard_mode``.
 
 On the first non-finite value it reports the half, the bucket, the field, how
 many entries are bad, the first bad flat index, and the operands at that index,
@@ -431,7 +431,7 @@ def check_half_accumulators(accumulators: dict, *, mode: str, context: str = "")
     Unlike the per-bucket checks this costs one reduction per accumulator and
     one synchronisation per iteration, against a pass that takes tens of
     seconds, so it is affordable in production and runs by default in raise
-    ``mode`` (``refinement_options.half_accumulator_guard_mode``; ``RELAX_EM_BPREF_FINITE_GUARD=0``
+    ``mode`` (``accumulator_guard.half_accumulator_guard_mode``; ``RELAX_EM_BPREF_FINITE_GUARD=0``
     opts out, ``warn`` logs and continues). Turning it off restores the
     earlier behaviour of failing four stages later on ``wsum_norm_correction``.
     """
