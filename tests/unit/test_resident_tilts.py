@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
-from relax.fine_pass import resident_tilts
+from relax.fine_pass import resident_tilt_layout, resident_tilt_mstep, resident_tilts
 
 
 # Moved from relax/fine_pass/resident_tilts.py (PLAN e1): no relax module uses them, only this test file.
@@ -28,7 +28,7 @@ def test_chunk_tilt_layout_enumerates_each_rows_images_in_slot_order():
     # Four units owning 2, 3, 1 and 2 images; the chunk holds units 1..2 (images 2..5).
     offsets = validate_unit_image_offsets([0, 2, 5, 6, 8], 4)
     row_unit_local = np.array([0, 0, 1, 1, 1, 0, 0])  # 5 valid rows, 2 padding rows
-    layout = resident_tilts.chunk_tilt_layout(
+    layout = resident_tilt_layout.chunk_tilt_layout(
         offsets,
         unit_start=1,
         n_valid_units=2,
@@ -52,7 +52,7 @@ def test_chunk_tilt_layout_enumerates_each_rows_images_in_slot_order():
 @pytest.mark.unit
 def test_single_particle_units_are_the_one_image_case():
     offsets = validate_unit_image_offsets(np.arange(6), 5)
-    layout = resident_tilts.chunk_tilt_layout(
+    layout = resident_tilt_layout.chunk_tilt_layout(
         offsets,
         unit_start=2,
         n_valid_units=3,
@@ -70,9 +70,9 @@ def test_chunk_tilt_layout_refuses_overflow_and_bad_offsets():
     offsets = validate_unit_image_offsets([0, 3, 4], 2)
     kwargs = dict(unit_start=0, n_valid_units=2, row_unit_local=np.array([0, 1]), n_valid_rows=2)
     with pytest.raises(ValueError, match="image capacity"):
-        resident_tilts.chunk_tilt_layout(offsets, image_capacity=3, slot_capacity=3, **kwargs)
+        resident_tilt_layout.chunk_tilt_layout(offsets, image_capacity=3, slot_capacity=3, **kwargs)
     with pytest.raises(ValueError, match="image slots"):
-        resident_tilts.chunk_tilt_layout(offsets, image_capacity=4, slot_capacity=2, **kwargs)
+        resident_tilt_layout.chunk_tilt_layout(offsets, image_capacity=4, slot_capacity=2, **kwargs)
     with pytest.raises(ValueError, match="at least one image"):
         validate_unit_image_offsets([0, 2, 2], 2)
 
@@ -83,7 +83,7 @@ def test_tilt_slot_rotations_are_each_images_inverse_of_l_a():
 
     rng = np.random.default_rng(3)
     offsets = validate_unit_image_offsets([0, 2, 3], 2)
-    layout = resident_tilts.chunk_tilt_layout(
+    layout = resident_tilt_layout.chunk_tilt_layout(
         offsets,
         unit_start=0,
         n_valid_units=2,
@@ -94,7 +94,7 @@ def test_tilt_slot_rotations_are_each_images_inverse_of_l_a():
     )
     eulers = rng.uniform(-180, 180, size=(4, 3))
     left = np.stack([np.linalg.qr(rng.normal(size=(3, 3)))[0] * s for s in (1.0, 1.1, 0.9)])
-    got = resident_tilts.tilt_slot_rotations(layout, eulers, left, dtype=np.float64)
+    got = resident_tilt_layout.tilt_slot_rotations(layout, eulers, left, dtype=np.float64)
     a = euler_angles_to_matrix(eulers)
     for slot in range(2):
         for row in range(4):
@@ -114,7 +114,7 @@ def test_tilt_slot_rotations_built_in_threaded_parts_are_the_per_entry_matrices(
     n_units, n_rows, n_slots = 5, 40, 4
     counts = np.array([4, 1, 3, 2, 4])
     offsets = validate_unit_image_offsets(np.concatenate([[0], np.cumsum(counts)]), n_units)
-    layout = resident_tilts.chunk_tilt_layout(
+    layout = resident_tilt_layout.chunk_tilt_layout(
         offsets,
         unit_start=0,
         n_valid_units=n_units,
@@ -127,8 +127,8 @@ def test_tilt_slot_rotations_built_in_threaded_parts_are_the_per_entry_matrices(
     left = np.stack([np.linalg.qr(rng.normal(size=(3, 3)))[0] * rng.uniform(0.9, 1.1) for _ in range(int(counts.sum()))])
     left[::4] = np.eye(3)
     spa = rng.normal(size=(n_rows, 3, 3)).astype(np.float32)
-    monkeypatch.setattr(resident_tilts, "_SLOT_ROTATION_THREAD_ENTRIES", 7)
-    got = resident_tilts.tilt_slot_rotations(layout, eulers, left, row_spa_matrices=spa)
+    monkeypatch.setattr(resident_tilt_layout, "_SLOT_ROTATION_THREAD_ENTRIES", 7)
+    got = resident_tilt_layout.tilt_slot_rotations(layout, eulers, left, row_spa_matrices=spa)
     assert got.dtype == np.float32 and got.shape == (n_slots * n_rows, 3, 3)
     kinds = set()
     for slot in range(n_slots):
@@ -165,7 +165,7 @@ def test_slot_views_visit_every_chunk_image_once_and_their_partials_land_on_it()
     from relax.fine_pass import resident_chunk_records
 
     offsets = validate_unit_image_offsets([0, 3, 4, 6], 3)
-    layout = resident_tilts.chunk_tilt_layout(
+    layout = resident_tilt_layout.chunk_tilt_layout(
         offsets,
         unit_start=0,
         n_valid_units=3,
@@ -196,9 +196,9 @@ def test_slot_views_visit_every_chunk_image_once_and_their_partials_land_on_it()
             a2_per_image=jnp.arange(4, dtype=jnp.float32) + 10 * slot,
             xa_per_image=-(jnp.arange(4, dtype=jnp.float32) + 10 * slot),
         )
-        placed = resident_tilts._place_slot_partials(
-            {name: getattr(full, name) for name in resident_tilts._SLOT_PARTIAL_FIELDS},
-            {name: getattr(partial, name) for name in resident_tilts._SLOT_PARTIAL_FIELDS},
+        placed = resident_tilt_mstep._place_slot_partials(
+            {name: getattr(full, name) for name in resident_tilt_mstep._SLOT_PARTIAL_FIELDS},
+            {name: getattr(partial, name) for name in resident_tilt_mstep._SLOT_PARTIAL_FIELDS},
             full.noise_shells,
             partial.noise_shells,
             jnp.asarray(np.where(views[slot] >= 0, views[slot], 12), dtype=jnp.int32),
@@ -225,7 +225,7 @@ def test_unit_mstep_translations_keep_each_particles_translations_with_mass():
     posterior[1, 41] = 1.0  # unit 0's second row
     posterior[3, [2, 9, 11, 13, 17]] = 0.2  # unit 2
     row_unit = np.array([0, 0, 1, 2])  # unit 1's row has no mass; unit 3 has no rows
-    kept = resident_tilts.unit_mstep_translations(posterior, row_unit, unit_capacity=4, n_fine_trans=500)
+    kept = resident_tilt_mstep.unit_mstep_translations(posterior, row_unit, unit_capacity=4, n_fine_trans=500)
     assert kept.index.shape == (4, 8)  # five translations at most -> the next power of two
     np.testing.assert_array_equal(kept.index[0, :3], [7, 41, 300])
     np.testing.assert_array_equal(kept.index[0, 3:], 300)
@@ -236,10 +236,10 @@ def test_unit_mstep_translations_keep_each_particles_translations_with_mass():
     for row, unit in enumerate(row_unit):
         assert set(np.flatnonzero(posterior[row])) <= set(kept.index[unit][kept.valid[unit]])
     # Rows in any order give the same tables.
-    shuffled = resident_tilts.unit_mstep_translations(posterior[::-1], row_unit[::-1], unit_capacity=4, n_fine_trans=500)
+    shuffled = resident_tilt_mstep.unit_mstep_translations(posterior[::-1], row_unit[::-1], unit_capacity=4, n_fine_trans=500)
     np.testing.assert_array_equal(shuffled.index, kept.index)
     # A unit with mass on the whole grid keeps the grid.
-    full = resident_tilts.unit_mstep_translations(np.ones((2, 40), np.float32), np.array([0, 1]), unit_capacity=2, n_fine_trans=40)
+    full = resident_tilt_mstep.unit_mstep_translations(np.ones((2, 40), np.float32), np.array([0, 1]), unit_capacity=2, n_fine_trans=40)
     np.testing.assert_array_equal(full.index, np.tile(np.arange(40), (2, 1)))
     assert full.valid.all()
 
@@ -287,9 +287,9 @@ def test_mstep_source_eulers_never_build_a_grid_of_another_size(monkeypatch):
 
 @pytest.mark.unit
 def test_mstep_translation_blocks_fit_the_tile_budget_and_cover_every_kept_translation():
-    kept = resident_tilts.MstepTranslations(index=np.arange(0, 600, 2, dtype=np.int64), valid=np.ones(300, dtype=bool))
+    kept = resident_tilt_mstep.MstepTranslations(index=np.arange(0, 600, 2, dtype=np.int64), valid=np.ones(300, dtype=bool))
     per_translation = 1000
-    blocks = resident_tilts.mstep_translation_blocks(
+    blocks = resident_tilt_mstep.mstep_translation_blocks(
         kept, bytes_per_translation=per_translation, tile_budget_bytes=70_000
     )
     assert {int(b.index.size) for b in blocks} == {64}
@@ -297,7 +297,7 @@ def test_mstep_translation_blocks_fit_the_tile_budget_and_cover_every_kept_trans
     covered = np.concatenate([b.index[b.valid] for b in blocks])
     np.testing.assert_array_equal(covered, kept.index)
     # A chunk whose kept translations fit keeps one block.
-    assert resident_tilts.mstep_translation_blocks(kept, bytes_per_translation=1, tile_budget_bytes=10**9) == (kept,)
+    assert resident_tilt_mstep.mstep_translation_blocks(kept, bytes_per_translation=1, tile_budget_bytes=10**9) == (kept,)
 
 
 @pytest.mark.unit
@@ -313,17 +313,17 @@ def test_tilt_mstep_tiles_are_counted_per_unit_so_a_flat_particle_keeps_one_tran
     from relax.runtime.memory_budget import max_translation_tile_bytes_for_pass
 
     n_rect, n_exact, k = 11704, 11704, 1176
-    kept = resident_tilts.MstepTranslations(index=np.arange(k, dtype=np.int64), valid=np.ones(k, dtype=bool))
-    one_unit = resident_tilts.tilt_mstep_tile_bytes(1, n_rect_pixels=n_rect, n_exact_pixels=n_exact)
+    kept = resident_tilt_mstep.MstepTranslations(index=np.arange(k, dtype=np.int64), valid=np.ones(k, dtype=bool))
+    one_unit = resident_tilt_mstep.tilt_mstep_tile_bytes(1, n_rect_pixels=n_rect, n_exact_pixels=n_exact)
     assert one_unit == (3 * n_rect + n_exact) * 8
-    assert resident_tilts.tilt_mstep_tile_bytes(32, n_rect_pixels=n_rect, n_exact_pixels=n_exact) == 32 * one_unit
+    assert resident_tilt_mstep.tilt_mstep_tile_bytes(32, n_rect_pixels=n_rect, n_exact_pixels=n_exact) == 32 * one_unit
     budget = max_translation_tile_bytes_for_pass(80 * 1024**3, override=None)
-    assert resident_tilts.mstep_translation_blocks(kept, bytes_per_translation=one_unit, tile_budget_bytes=budget) == (kept,)
+    assert resident_tilt_mstep.mstep_translation_blocks(kept, bytes_per_translation=one_unit, tile_budget_bytes=budget) == (kept,)
     with_block_rows = (128 + 256) * (n_rect + n_exact) * 8
-    blocks = resident_tilts.mstep_translation_blocks(kept, bytes_per_translation=with_block_rows, tile_budget_bytes=budget)
+    blocks = resident_tilt_mstep.mstep_translation_blocks(kept, bytes_per_translation=with_block_rows, tile_budget_bytes=budget)
     assert (len(blocks), int(blocks[0].index.size)) == (74, 16)
     # A 16 GB card's budget still holds the particle's translations in a few blocks.
-    small = resident_tilts.mstep_translation_blocks(
+    small = resident_tilt_mstep.mstep_translation_blocks(
         kept, bytes_per_translation=one_unit, tile_budget_bytes=max_translation_tile_bytes_for_pass(16 * 1024**3, override=None)
     )
     assert len(small) <= 4
@@ -350,14 +350,14 @@ def test_tilt_unit_capacity_at_the_full_box_is_bounded_by_its_gather():
 
 @pytest.mark.unit
 def test_tilt_mstep_units_are_the_valid_units_in_powers_of_two_up_to_the_capacity():
-    assert [resident_tilts.tilt_mstep_units(n, unit_capacity=32) for n in (1, 2, 3, 5, 12, 17, 32)] == [1, 2, 4, 8, 16, 32, 32]
-    assert resident_tilts.tilt_mstep_units(5, unit_capacity=6) == 6
+    assert [resident_tilt_mstep.tilt_mstep_units(n, unit_capacity=32) for n in (1, 2, 3, 5, 12, 17, 32)] == [1, 2, 4, 8, 16, 32, 32]
+    assert resident_tilt_mstep.tilt_mstep_units(5, unit_capacity=6) == 6
 
 
 def test_mstep_translation_blocks_stay_within_the_kernel_table_limit():
-    kept = resident_tilts.MstepTranslations(index=np.arange(4120, dtype=np.int64), valid=np.ones(4120, dtype=bool))
-    blocks = resident_tilts.mstep_translation_blocks(kept, bytes_per_translation=1, tile_budget_bytes=10**12)
-    assert all(int(b.index.size) == resident_tilts.TILT_MSTEP_MAX_TRANSLATIONS for b in blocks)
+    kept = resident_tilt_mstep.MstepTranslations(index=np.arange(4120, dtype=np.int64), valid=np.ones(4120, dtype=bool))
+    blocks = resident_tilt_mstep.mstep_translation_blocks(kept, bytes_per_translation=1, tile_budget_bytes=10**12)
+    assert all(int(b.index.size) == resident_tilt_mstep.TILT_MSTEP_MAX_TRANSLATIONS for b in blocks)
     np.testing.assert_array_equal(np.concatenate([b.index[b.valid] for b in blocks]), kept.index)
 
 
@@ -449,8 +449,8 @@ def test_slot_tables_visit_the_rows_with_mass_and_an_image_first():
     angles = np.arange(12 * 6 * 2, dtype=np.float32).reshape(12, 6, 2)
     # Every unit's translations [1, 4, 0, 2, 3, 5]; the first block takes its first two.
     unit_translations = np.tile([1, 4, 0, 2, 3, 5], (4, 1))
-    kept = resident_tilts.MstepTranslations(index=np.array([0, 1]), valid=np.array([True, True]))
-    tables = resident_tilts._slot_mstep_tables(
+    kept = resident_tilt_mstep.MstepTranslations(index=np.array([0, 1]), valid=np.array([True, True]))
+    tables = resident_tilt_mstep.slot_mstep_tables(
         views,
         row_unit=row_unit,
         row_has_mass=row_has_mass,
@@ -474,8 +474,8 @@ def test_slot_tables_visit_the_rows_with_mass_and_an_image_first():
     np.testing.assert_array_equal(np.asarray(tables.targets), np.where(views >= 0, views, 12))
     assert_matches(np.asarray(tables.angles)[1, 0, 2], angles[5][[1, 4]])
     # Several translation blocks: block b of every slot and unit holds that image's phases at the block's indices.
-    blocks = (kept, resident_tilts.MstepTranslations(index=np.array([2, 5]), valid=np.array([True, False])))
-    several = resident_tilts._slot_mstep_tables(
+    blocks = (kept, resident_tilt_mstep.MstepTranslations(index=np.array([2, 5]), valid=np.array([True, False])))
+    several = resident_tilt_mstep.slot_mstep_tables(
         views,
         row_unit=row_unit,
         row_has_mass=row_has_mass,
@@ -507,8 +507,8 @@ def test_slot_views_take_every_per_image_operand():
 
     from relax.fine_pass.resident_chunk_records import ChunkStageOperands
 
-    view = set(resident_tilts._SLOT_VIEW_FIELDS)
-    chunk_only = set(resident_tilts._SLOT_CHUNK_ONLY_FIELDS)
+    view = set(resident_tilt_mstep._SLOT_VIEW_FIELDS)
+    chunk_only = set(resident_tilt_mstep._SLOT_CHUNK_ONLY_FIELDS)
     assert not view & chunk_only
     assert set(ChunkStageOperands._fields) == view | chunk_only
     assert "bpref_ctf2_over_nv_recon" in view
@@ -554,13 +554,13 @@ def test_tilt_mstep_holds_one_translation_blocks_tiles(monkeypatch):
             xa_per_image=jnp.zeros(units, jnp.float32),
         )
 
-    monkeypatch.setattr(resident_tilts, "_slot_view_translate", translate)
+    monkeypatch.setattr(resident_tilt_mstep, "_slot_view_translate", translate)
     monkeypatch.setattr(resident_mstep_blocks, "resident_mstep_block_at", block_at)
     monkeypatch.setattr(resident_block_programs, "add_chunk_wavg_image_power", image_power)
     monkeypatch.setattr(resident_mstep_blocks, "initial_mstep_carry", initial_carry)
     fields = resident_chunk_records.ChunkStageOperands._fields
     operands = resident_chunk_records.ChunkStageOperands(
-        **{name: (jnp.ones((units, 4), jnp.float32) if name in resident_tilts._SLOT_VIEW_FIELDS else None) for name in fields}
+        **{name: (jnp.ones((units, 4), jnp.float32) if name in resident_tilt_mstep._SLOT_VIEW_FIELDS else None) for name in fields}
     )
     tables = resident_chunk_records.ChunkStageTables(**{name: None for name in resident_chunk_records.ChunkStageTables._fields})
 
@@ -570,7 +570,7 @@ def test_tilt_mstep_holds_one_translation_blocks_tiles(monkeypatch):
         presum_adjoint: bool = False  # the row-sum merge (relax#27) adds one [C_R, recon] pair, not per block
 
     def temp_bytes(n_blocks):
-        slots = resident_tilts.SlotMstepTables(
+        slots = resident_tilt_mstep.SlotMstepTables(
             slot=jnp.arange(2, dtype=jnp.int32),
             safe_images=jnp.zeros((2, units), jnp.int32),
             valid_images=jnp.ones((2, units), bool),
@@ -582,7 +582,7 @@ def test_tilt_mstep_holds_one_translation_blocks_tiles(monkeypatch):
             angles=jnp.ones((2, n_blocks, units, translations, 2), jnp.float32),
         )
         mstep = initial_carry(jnp.zeros(4), jnp.zeros(4), None, None, spec=None)
-        lowered = resident_tilts._tilt_mstep_program.lower(
+        lowered = resident_tilt_mstep.tilt_mstep_program.lower(
             (mstep,),
             slots,
             operands,

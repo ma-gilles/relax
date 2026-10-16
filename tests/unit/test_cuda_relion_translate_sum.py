@@ -953,7 +953,7 @@ def test_translate_sum_matches_a_float64_reduction_at_a_subtomogram_grid(
     """The largest table the kernel takes (T = 2048 at one row per block) against a float64 reduction.
 
     The tilt M-step (S1: a 4120-translation 3D grid) launches the kernel on translation blocks of at
-    most this size (resident_tilts.TILT_MSTEP_MAX_TRANSLATIONS). The kernel sums the T products
+    most this size (resident_tilt_mstep.TILT_MSTEP_MAX_TRANSLATIONS). The kernel sums the T products
     sequentially in float32 (RELION's order, kept). Higham's worst case for that sum is (T - 1) eps
     of the summation scale, about 2000 ulp here and too loose to catch anything; rounding errors of
     randomly phased terms add as a random walk, so the bound is max(4, sqrt(T)) ulp of the summation

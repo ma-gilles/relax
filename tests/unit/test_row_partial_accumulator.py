@@ -24,7 +24,7 @@ from relax.fine_pass import (
     resident_chunk_records,
     resident_chunk_stages,
     resident_mstep_blocks,
-    resident_tilts,
+    resident_tilt_mstep,
 )
 from relax.reconstruction import half_volume_mstep as hvm
 from relax.runtime.scoring_overrides import EXACT_FLOAT32_ACCUMULATION_ENV, ScoringOverrides
@@ -356,7 +356,7 @@ def test_tilt_mstep_program_flushes_its_slots_through_the_partial(monkeypatch, m
     def backproject_block_rows(summed, ctf_probs, rotations, Ft_y, Ft_ctf, *, tables, spec):
         return Ft_y.at[0].add(jnp.sum(summed)), Ft_ctf.at[0].add(jnp.sum(ctf_probs))
 
-    monkeypatch.setattr(resident_tilts, "_slot_view_translate", translate)
+    monkeypatch.setattr(resident_tilt_mstep, "_slot_view_translate", translate)
     monkeypatch.setattr(resident_mstep_blocks, "resident_mstep_block_at", block_at)
     monkeypatch.setattr(resident_mstep_blocks, "backproject_block_rows", backproject_block_rows)
     monkeypatch.setattr(resident_mstep_blocks, "cached_block_projections", lambda tables, ids: (None, None, ids))
@@ -375,7 +375,7 @@ def test_tilt_mstep_program_flushes_its_slots_through_the_partial(monkeypatch, m
     )
     operands = resident_chunk_records.ChunkStageOperands(
         **{
-            name: (jnp.ones((units, 4), jnp.float32) if name in resident_tilts._SLOT_VIEW_FIELDS else None)
+            name: (jnp.ones((units, 4), jnp.float32) if name in resident_tilt_mstep._SLOT_VIEW_FIELDS else None)
             for name in resident_chunk_records.ChunkStageOperands._fields
         }
     )
@@ -387,7 +387,7 @@ def test_tilt_mstep_program_flushes_its_slots_through_the_partial(monkeypatch, m
         presum_adjoint: bool = merge_row_partials
         n_recon_pixels: int = 1
 
-    slots = resident_tilts.SlotMstepTables(
+    slots = resident_tilt_mstep.SlotMstepTables(
         slot=jnp.arange(slots_n, dtype=jnp.int32),
         safe_images=jnp.zeros((slots_n, units), jnp.int32),
         valid_images=jnp.ones((slots_n, units), bool),
@@ -402,7 +402,7 @@ def test_tilt_mstep_program_flushes_its_slots_through_the_partial(monkeypatch, m
     def run(with_partial):
         mstep = resident_mstep_blocks.initial_mstep_carry(*_totals(), None, None, spec=None)
         pair = ((jnp.zeros(VOLUME, jnp.complex64), jnp.zeros(VOLUME, jnp.float32)),) if with_partial else ()
-        return resident_tilts._tilt_mstep_program(
+        return resident_tilt_mstep.tilt_mstep_program(
             (mstep, *pair),
             slots,
             operands,

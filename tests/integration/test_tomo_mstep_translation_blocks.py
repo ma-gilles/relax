@@ -1,7 +1,7 @@
 """A subtomogram M-step split into translation blocks keeps its BPref weight (relax#27, GPU).
 
 The tilt M-step backprojects each row once. When its particles' translations do not fit one tile block, each
-row's partials are merged across the blocks before that one adjoint (``resident_tilts._tilt_mstep_program``).
+row's partials are merged across the blocks before that one adjoint (``resident_tilt_mstep.tilt_mstep_program``).
 Without the merge, every block's partial reached a voxel separately, and a partial below half an ulp of the
 voxel's float32 total was lost. That loss only shows at a realistic size, where the DC and low-shell voxels add
 up tens of thousands of rows: on this fixture, blocks of 2 lost Ft_ctf relL2 1.0-1.2e-5 against one block

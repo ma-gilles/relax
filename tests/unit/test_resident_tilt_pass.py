@@ -453,10 +453,10 @@ def _lone_tilt_runs(monkeypatch, args, tilt):
             mstep_units.append(1)
         return real_tables(unit_slot_images, **k)
 
-    mstep_units, real_tables = [], resident_tilts._slot_mstep_tables
+    mstep_units, real_tables = [], resident_tilts.slot_mstep_tables
     monkeypatch.setattr(resident_chunk_memory, "plan_resident_chunk_memory", plan)
     monkeypatch.setattr(resident_tilts, "run_tilt_chunk", chunk)
-    monkeypatch.setattr(resident_tilts, "_slot_mstep_tables", slot_tables)
+    monkeypatch.setattr(resident_tilts, "slot_mstep_tables", slot_tables)
     whole = rp._resident_pass2(**dict(args, translation_log_prior=None), tilt=tilt, engine_tuning=engine_tuning, scoring_overrides=ScoringOverrides())
     assert not mstep_units
     assert lone_rows and not any(lone_rows), "a particle that fits whole must not run in row blocks"
@@ -553,7 +553,7 @@ def test_each_particles_own_translations_are_the_whole_grid_mstep(monkeypatch):
 
     from test_resident_k_class_pass2 import _k_class_args, _resident
 
-    from relax.fine_pass import resident_tilts
+    from relax.fine_pass import resident_tilt_mstep, resident_tilts
 
     args, volumes, supports, priors = _k_class_args(2)
     args = dict(args, score_with_masked_images=True)
@@ -561,7 +561,7 @@ def test_each_particles_own_translations_are_the_whole_grid_mstep(monkeypatch):
     supports = [class_supports[:n_units] for class_supports in supports]
     vdam = dict(args, translation_log_prior=None, tilt=tilt, **_vdam_options(n_units))
     calls = []
-    sparse_tables = resident_tilts.unit_mstep_translations
+    sparse_tables = resident_tilt_mstep.unit_mstep_translations
 
     def recorded(*a, **k):
         out = sparse_tables(*a, **k)
@@ -576,7 +576,7 @@ def test_each_particles_own_translations_are_the_whole_grid_mstep(monkeypatch):
 
     def whole_grid(row_posterior, row_unit, *, unit_capacity, n_fine_trans, minimum=4):
         index = np.tile(np.arange(int(n_fine_trans), dtype=np.int64), (int(unit_capacity), 1))
-        return resident_tilts.UnitMstepTranslations(index=index, valid=np.ones_like(index, dtype=bool))
+        return resident_tilt_mstep.UnitMstepTranslations(index=index, valid=np.ones_like(index, dtype=bool))
 
     monkeypatch.setattr(resident_tilts, "unit_mstep_translations", whole_grid)
     dense = _resident(vdam, volumes, supports, priors)
@@ -602,7 +602,7 @@ def test_translation_blocked_tilt_mstep_is_the_one_block_mstep(monkeypatch):
 
     from test_resident_k_class_pass2 import _k_class_args, _resident
 
-    from relax.fine_pass import resident_tilts
+    from relax.fine_pass import resident_tilt_mstep, resident_tilts
 
     args, volumes, supports, priors = _k_class_args(2)
     args = dict(args, score_with_masked_images=True)
@@ -610,7 +610,7 @@ def test_translation_blocked_tilt_mstep_is_the_one_block_mstep(monkeypatch):
     supports = [class_supports[:n_units] for class_supports in supports]
     vdam = dict(args, translation_log_prior=None, tilt=tilt, **_vdam_options(n_units))
     whole = _resident(vdam, volumes, supports, priors)
-    blocks = resident_tilts.mstep_translation_blocks
+    blocks = resident_tilt_mstep.mstep_translation_blocks
     n_blocks = []
 
     def one_translation_each(kept, *, bytes_per_translation, tile_budget_bytes):
@@ -643,14 +643,14 @@ def test_mstep_at_the_chunks_valid_units_is_the_unit_capacity_mstep(monkeypatch)
 
     from test_resident_k_class_pass2 import _k_class_args, _resident
 
-    from relax.fine_pass import resident_tilts
+    from relax.fine_pass import resident_tilt_mstep, resident_tilts
 
     args, volumes, supports, priors = _k_class_args(2)
     args = dict(args, score_with_masked_images=True)
     tilt, n_units = _two_image_particles(args)
     supports = [class_supports[:n_units] for class_supports in supports]
     vdam = dict(args, translation_log_prior=None, tilt=tilt, **_vdam_options(n_units))
-    units, blocks = resident_tilts.tilt_mstep_units, resident_tilts.mstep_translation_blocks
+    units, blocks = resident_tilt_mstep.tilt_mstep_units, resident_tilt_mstep.mstep_translation_blocks
     sizing, n_blocks = [], []
 
     def recorded_units(n_valid_units, *, unit_capacity, capacity_sized):
@@ -696,7 +696,7 @@ def test_row_partials_merged_before_the_adjoint_keep_their_float32_weight():
 
     200k rows of weight 0.5-1 plus four tails (one per block) of up to 2e-3 of it, all at the DC voxel.
     Adjoined block by block, each tail lands on a float32 total ~1e5 times the row and is lost (-4e-3);
-    merged per row first (the tilt M-step's row sums, ``resident_tilts._tilt_mstep_program``), they enter
+    merged per row first (the tilt M-step's row sums, ``resident_tilt_mstep.tilt_mstep_program``), they enter
     at the row's own scale and the voxel keeps the one-block total (three runs on a local GPU: one block
     -1.6e-6 to -9.9e-6, merged -2.0e-6 to -9.4e-6, blocks -4.0e-3 against the float64 sum; the float32
     atomics' order moves the first two between runs).

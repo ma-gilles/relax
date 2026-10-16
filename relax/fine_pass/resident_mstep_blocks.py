@@ -279,7 +279,7 @@ def backproject_block_rows(summed, ctf_probs, block_mstep_rotations, Ft_y, Ft_ct
     """Both windowed adjoints of one row block: ``summed`` into ``Ft_y``, ``ctf_probs`` into ``Ft_ctf``.
 
     The block body's adjoint (:func:`_resident_mstep_block`), and the tilt M-step's once it has merged
-    each row's translation-block partials (``resident_tilts._tilt_mstep_program``, relax#27).
+    each row's translation-block partials (``resident_tilt_mstep.tilt_mstep_program``, relax#27).
     """
 
     runtime_mstep_max_r = None

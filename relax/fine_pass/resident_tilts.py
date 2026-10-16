@@ -3,13 +3,16 @@
 The posterior unit of the resident pass 2 is a particle; for subtomograms it owns several
 tilt images (docs/development/resident_segments.md, "The scoring side"). A capacity chunk
 holds a contiguous range of units, so it also holds the contiguous range of their images.
-:func:`chunk_tilt_layout` enumerates, for each image slot ``s``, which chunk image scores
+:func:`relax.fine_pass.resident_tilt_layout.chunk_tilt_layout` enumerates, for each image slot ``s``, which chunk image scores
 each hypothesis row: the ``s``-th visible tilt of the row's unit, in RELION's ``img_id``
 order (frame order, ``tomo_input.relion_image_geometry``). The scorer and the M-step loop
 over ``s`` and add each image's contribution in that order, as RELION's ``img_id`` loops
 do (acc_ml_optimiser_impl.h:1490, :2959).
 
 Single-particle data are the one-image case: ``unit_image_offsets = arange(n + 1)``.
+
+The chunk's layout is ``resident_tilt_layout``'s, its slot M-step program ``resident_tilt_mstep``'s; this
+module runs a chunk (:func:`run_tilt_chunk`) and sizes it.
 """
 
 from __future__ import annotations
@@ -23,140 +26,24 @@ import jax.numpy as jnp
 import numpy as np
 
 from relax.fine_pass.projection_blocks import project_rows_by_class
-from relax.fine_pass.resident_candidates import map_over_classes
+from relax.fine_pass.resident_tilt_layout import ChunkTiltLayout, chunk_tilt_layout, tilt_slot_rotations
+from relax.fine_pass.resident_tilt_mstep import (
+    MstepTranslations,
+    mstep_translation_blocks,
+    slot_mstep_tables,
+    slot_tables_block,
+    tilt_mstep_program,
+    tilt_mstep_tile_bytes,
+    tilt_mstep_units,
+    unit_mstep_translations,
+)
 from relax.fine_pass.wavg import (
     replace_low_shell_noise_with_relion_wavg_direct_residual_jnp,
     weighted_image_power_from_shells,
 )
-from relax.reconstruction.half_volume_mstep import blocks_per_flush, flushed_block_loop
-from relax.runtime.shape_buckets import pow2_ceil, pow2_floor
-from relax.sampling import tomo_particles
+from relax.runtime.shape_buckets import pow2_floor
 
 logger = logging.getLogger(__name__)
-
-
-class ChunkTiltLayout(NamedTuple):
-    """One chunk's tilt images and each row's image per image slot (host NumPy)."""
-
-    image_ids: np.ndarray  # int64 [C_I], global image of each chunk image, -1 when padded
-    image_unit_local: np.ndarray  # int64 [C_I], chunk-local unit of each image, C_U when padded
-    slot_image_ids: np.ndarray  # int32 [S, C_R], chunk-local image of a row's unit's s-th image, -1 past its images
-    n_valid_images: int
-
-
-def chunk_tilt_layout(
-    unit_image_offsets,
-    *,
-    unit_start: int,
-    n_valid_units: int,
-    row_unit_local,
-    n_valid_rows: int,
-    image_capacity: int,
-    slot_capacity: int,
-) -> ChunkTiltLayout:
-    """The images of units ``unit_start : unit_start + n_valid_units`` and every row's image per slot.
-
-    ``row_unit_local`` is the chunk-local unit of each of the chunk's ``C_R`` rows (rows past
-    ``n_valid_rows`` are padding). ``slot_capacity`` is the chunk program's image-slot count
-    ``S``, at least the most images any unit of the chunk owns.
-    """
-
-    offsets = np.asarray(unit_image_offsets, dtype=np.int64)
-    unit_start, n_valid_units, n_valid_rows = int(unit_start), int(n_valid_units), int(n_valid_rows)
-    first = int(offsets[unit_start])
-    unit_offsets = offsets[unit_start : unit_start + n_valid_units + 1] - first
-    counts = np.diff(unit_offsets)
-    n_valid_images = int(unit_offsets[-1])
-    if n_valid_images > int(image_capacity):
-        raise ValueError(f"chunk has {n_valid_images} images, more than its image capacity {image_capacity}")
-    if counts.size and int(counts.max()) > int(slot_capacity):
-        raise ValueError(f"a unit owns {int(counts.max())} images, more than the {slot_capacity} image slots")
-
-    image_ids = np.full(int(image_capacity), -1, dtype=np.int64)
-    image_ids[:n_valid_images] = np.arange(first, first + n_valid_images)
-    image_unit_local = np.full(int(image_capacity), n_valid_units, dtype=np.int64)
-    image_unit_local[:n_valid_images] = np.repeat(np.arange(n_valid_units), counts)
-
-    row_unit = np.asarray(row_unit_local, dtype=np.int64)[:n_valid_rows]
-    if row_unit.size and (row_unit.min() < 0 or row_unit.max() >= n_valid_units):
-        raise ValueError("a valid row addresses a unit outside the chunk")
-    slot_image_ids = np.full((int(slot_capacity), np.asarray(row_unit_local).shape[0]), -1, dtype=np.int32)
-    for slot in range(int(slot_capacity)):
-        slot_image_ids[slot, :n_valid_rows] = tomo_particles.image_slot_ids(row_unit, unit_offsets, slot)
-    return ChunkTiltLayout(
-        image_ids=image_ids,
-        image_unit_local=image_unit_local,
-        slot_image_ids=slot_image_ids,
-        n_valid_images=n_valid_images,
-    )
-
-
-# Entries of (image slot, row) matrices one host thread builds before another joins it.
-_SLOT_ROTATION_THREAD_ENTRIES = 32768
-
-
-def tilt_slot_rotations(
-    layout: ChunkTiltLayout, row_source_eulers, image_left, *, row_spa_matrices=None, dtype=np.float32
-) -> np.ndarray:
-    """``[S * C_R, 3, 3]`` fine and M-step matrices of every (image slot, row): ``inv(L_i A_r)``.
-
-    RELION builds a tilt image's fine and backprojection matrices on the host with its left matrix
-    ``L_i`` (the image's ``Aproj`` times the optics scale; generateEulerMatrices,
-    acc_helper_functions_impl.h:248-255; acc_ml_optimiser_impl.h:1709-1734, 3212-3234), so every
-    (image, rotation) pair has its own matrix. It passes ``L`` only when it is not the identity
-    (``isIdentity``, :1100-1104; ``tomo_particles.relion_left_matrices``); an identity image keeps the
-    SPA matrices, ``row_spa_matrices`` ``[C_R, 3, 3]`` when given. ``row_source_eulers`` ``[C_R, 3]``
-    are the rows' RELION Euler angles and ``image_left`` ``[n_images, 3, 3]`` the images' ``L``; entries
-    of rows without an ``s``-th image are the identity and are never read. Slot ``s`` of row ``r`` is
-    entry ``s * C_R + r``.
-    """
-
-    from relax.sampling.grids import relion_mstep_rotations_from_euler_matrices, relion_mstep_rotations_from_eulers
-    from relax.sampling.healpix import euler_angles_to_matrix
-    from relax.sampling.tomo_particles import relion_left_matrices
-
-    n_slots, n_rows = layout.slot_image_ids.shape
-    out = np.empty((n_slots * n_rows, 3, 3), dtype=dtype)
-    out[:] = np.eye(3, dtype=dtype)
-    chunk_image = layout.slot_image_ids.reshape(-1)
-    # Only the entries with an image are built: a particle has fewer images than the pass's slots.
-    entries = np.flatnonzero(chunk_image >= 0)
-    if entries.size == 0:
-        return out
-    rows = entries % n_rows
-    entry_image = chunk_image[entries].astype(np.int64)
-    # One L per chunk image and one Euler matrix per row, gathered per entry (the trigonometry of a row
-    # serves all of its images).
-    left, applies = relion_left_matrices(
-        np.asarray(image_left, dtype=np.float64)[layout.image_ids[: int(layout.n_valid_images)]]
-    )
-    with_left = applies[entry_image]
-    if np.any(with_left):
-        row_matrices = euler_angles_to_matrix(np.asarray(row_source_eulers, dtype=np.float64))
-        left_entries, left_rows, left_images = entries[with_left], rows[with_left], entry_image[with_left]
-
-        def inverses(part):
-            return relion_mstep_rotations_from_euler_matrices(
-                row_matrices[left_rows[part]], dtype=dtype, left_matrices=left[left_images[part]]
-            )
-
-        # Each entry's inverse is its own NumPy arithmetic, so a few host threads build them side by side
-        # (a soft global iteration has about 300,000 entries in each of thousands of chunks, relax#80).
-        n_parts = min(8, left_entries.size // _SLOT_ROTATION_THREAD_ENTRIES) + 1
-        bounds = np.linspace(0, left_entries.size, n_parts + 1, dtype=np.int64)
-        parts = [slice(int(a), int(b)) for a, b in zip(bounds[:-1], bounds[1:])]
-        for part, block in zip(parts, map_over_classes(inverses, parts)):
-            out[left_entries[part]] = block
-    if not np.all(with_left):
-        spa_rows = rows[~with_left]
-        out[entries[~with_left]] = (
-            np.asarray(row_spa_matrices, dtype=dtype)[spa_rows]
-            if row_spa_matrices is not None
-            else relion_mstep_rotations_from_eulers(
-                np.asarray(row_source_eulers, dtype=np.float64)[spa_rows], dtype=dtype
-            )
-        )
-    return out
 
 
 # ---------------------------------------------------------------------------
@@ -223,38 +110,6 @@ def tilt_lone_row_bytes(n_fine_trans: int, *, slot_capacity: int, n_accumulators
         + int(n_fine_trans) * 4 * max(int(n_accumulators), 1)
         + int(slot_capacity) * (36 + 4)
     )
-
-
-def tilt_mstep_tile_bytes(n_units: int, *, n_rect_pixels: int, n_exact_pixels: int) -> int:
-    """Device bytes one M-step translation adds to a slot's translated Wavg tiles (:func:`_tilt_mstep_program`).
-
-    The tiles are per unit, ``[units, T, pixels]``: the translated rectangle (complex64) and its copy with the
-    padded units zeroed (:func:`_slot_view_translate`), its exact-radius gather, and the rectangle's float32
-    power and the product it is built from (``add_wavg_rectangle_image_power``). The M-step kernels read them
-    by each row's image; no tile has a row axis.
-    """
-
-    return int(n_units) * (3 * int(n_rect_pixels) + int(n_exact_pixels)) * 8
-
-
-def tilt_mstep_units(n_valid_units: int, *, unit_capacity: int) -> int:
-    """Units a tilt chunk's M-step tables and translated tiles hold (:func:`run_tilt_chunk`, relax#102).
-
-    The chunk's valid units rounded up to a power of two, at most its unit capacity: the padded units carry no
-    image, so sizing the tiles at the capacity (32 in a final iteration) only shrank the translation blocks
-    of a chunk holding few particles (:func:`tilt_mstep_tile_bytes`) and multiplied its M-step loop
-    iterations. The power of two bounds the M-step programs to one per power of two up to the capacity.
-    Fewer blocks change the order of each row's partial sums over translations, not their terms.
-    """
-
-    return min(int(unit_capacity), pow2_ceil(int(n_valid_units)))
-
-
-def _slot_tables_block(slots: "SlotMstepTables", start: int, stop: int) -> "SlotMstepTables":
-    """Slots ``start:stop`` of :func:`_slot_mstep_tables`, renumbered from 0 (their block's projections)."""
-
-    block = slots._replace(**{name: getattr(slots, name)[start:stop] for name in slots._fields})
-    return block._replace(slot=jnp.arange(stop - start, dtype=jnp.int32))
 
 
 class TiltMstepCensus:
@@ -685,7 +540,7 @@ def run_tilt_chunk(
         # The chunk's rows, or a lone particle's block ``row_ids`` (chunk rows, padded past its valid ones).
         n_rows = chunk.n_valid_rows if row_ids is None else int(np.count_nonzero(row_ids >= 0))
         rows_of = slice(None) if row_ids is None else np.maximum(row_ids, 0)
-        return _slot_mstep_tables(
+        return slot_mstep_tables(
             unit_slot_images,
             row_unit=host_row_unit[rows_of],
             row_has_mass=(row_has_mass_padded & in_accumulator[accumulator])[rows_of][:n_rows],
@@ -706,7 +561,7 @@ def run_tilt_chunk(
     def mstep_slot_block(mstep, tables_b, slots_of, posteriors):
         # One slot block's M-step for every accumulator, in accumulator order.
         for accumulator in range(n_accumulators):
-            mstep, *partial_pair = _tilt_mstep_program(
+            mstep, *partial_pair = tilt_mstep_program(
                 (
                     mstep._replace(Ft_y=Ft_y_out[accumulator], Ft_ctf=Ft_ctf_out[accumulator]),
                     *(() if row_partial is None else ((row_partial.y, row_partial.ctf),)),
@@ -743,7 +598,7 @@ def run_tilt_chunk(
                 tables_b,
                 lambda accumulator: accumulator_slots[accumulator]
                 if whole is not None
-                else _slot_tables_block(accumulator_slots[accumulator], start, stop),
+                else slot_tables_block(accumulator_slots[accumulator], start, stop),
                 accumulator_posteriors,
             )
             del tables_b
@@ -779,7 +634,7 @@ def run_tilt_chunk(
                 mstep = mstep_slot_block(
                     mstep,
                     tables_b,
-                    lambda accumulator: _slot_tables_block(block_slots[accumulator], start, stop),
+                    lambda accumulator: slot_tables_block(block_slots[accumulator], start, stop),
                     block_posteriors,
                 )
                 del tables_b
@@ -931,358 +786,6 @@ def project_slot_rows(project_rotations, slot_matrices, entry_class, *, n_classe
     )
 
 
-class SlotMstepTables(NamedTuple):
-    """Every image slot's M-step inputs of one tilt chunk, stacked on a leading slot axis ``S``."""
-
-    slot: jax.Array  # int32 [S]
-    safe_images: jax.Array  # int32 [S, C_U] chunk image of each unit's s-th image (a valid image on padding)
-    valid_images: jax.Array  # bool [S, C_U]
-    targets: jax.Array  # int32 [S, C_U] chunk image the slot's partials land on, image_capacity (dropped) on padding
-    order: jax.Array  # int32 [S, C_R] the slot's rows: those with mass and an image first, then the rest
-    active: jax.Array  # bool [S, C_R] in visiting order
-    units: jax.Array  # int32 [S, C_R] in visiting order, 0 where the row has no image in the slot
-    n_blocks: jax.Array  # int32 [S] M-step blocks covering the active rows
-    angles: jax.Array  # float32 [S, K, C_U, T_b, 2] each unit's image phases at its translations, per block
-
-
-def _slot_mstep_tables(
-    unit_slot_images,
-    *,
-    row_unit,
-    row_has_mass,
-    n_valid_rows: int,
-    row_capacity: int,
-    block_rows: int,
-    image_angles,
-    layout_image_ids,
-    unit_translations,
-    translation_blocks,
-    image_capacity: int,
-) -> SlotMstepTables:
-    """Host tables for :func:`_tilt_mstep_program`: one transfer per chunk instead of several per slot.
-
-    Rows without posterior mass (RELION's non-significant samples) add exact zeros, so each slot
-    visits only its rows with mass and an image in the slot, gathered to the front (ascending).
-    """
-
-    unit_slot_images = np.asarray(unit_slot_images, dtype=np.int64)
-    n_slots, _ = unit_slot_images.shape
-    row_unit_padded = np.zeros(row_capacity, dtype=np.int64)
-    row_unit_padded[:n_valid_rows] = row_unit[:n_valid_rows]
-    order = np.zeros((n_slots, row_capacity), dtype=np.int32)
-    active = np.zeros((n_slots, row_capacity), dtype=bool)
-    units = np.zeros((n_slots, row_capacity), dtype=np.int32)
-    n_blocks = np.zeros(n_slots, dtype=np.int32)
-    for slot in range(n_slots):
-        slot_images = unit_slot_images[slot]
-        has_image = np.zeros(row_capacity, dtype=bool)
-        has_image[:n_valid_rows] = slot_images[row_unit[:n_valid_rows]] >= 0
-        row_active = has_image.copy()
-        row_active[:n_valid_rows] &= row_has_mass
-        visit = np.concatenate([np.flatnonzero(row_active), np.flatnonzero(~row_active)])
-        order[slot] = visit
-        active[slot] = row_active[visit]
-        units[slot] = np.where(has_image, row_unit_padded, 0)[visit]
-        n_blocks[slot] = -(-int(np.count_nonzero(row_active)) // int(block_rows))
-    valid = unit_slot_images >= 0
-    safe = np.where(valid, unit_slot_images, np.max(unit_slot_images, axis=1, keepdims=True)).clip(min=0)
-    image_of_unit = np.where(valid, np.asarray(layout_image_ids)[np.maximum(unit_slot_images, 0)], 0)
-    # Gathered once, at each unit's own translations: taken inside the comprehension, every translation
-    # block repeated the whole [S, C_U, T, 2] gather (5 s of each late et09 subtomogram VDAM iteration,
-    # py-spy 14993731).
-    unit_translations = np.asarray(unit_translations, dtype=np.int64)
-    unit_angles = np.asarray(image_angles)[image_of_unit[:, :, None], unit_translations[None, :, :]]
-    angles = np.stack([unit_angles[:, :, kept.index] for kept in translation_blocks], axis=1)
-    return SlotMstepTables(
-        slot=jnp.arange(n_slots, dtype=jnp.int32),
-        safe_images=jnp.asarray(safe, dtype=jnp.int32),
-        valid_images=jnp.asarray(valid),
-        targets=jnp.asarray(np.where(valid, unit_slot_images, int(image_capacity)), dtype=jnp.int32),
-        order=jnp.asarray(order),
-        active=jnp.asarray(active),
-        units=jnp.asarray(units),
-        n_blocks=jnp.asarray(n_blocks),
-        angles=jnp.asarray(angles, dtype=jnp.float32),
-    )
-
-
-@partial(jax.jit, static_argnames=("slot_spec", "image_shape"), donate_argnums=(0,))
-def _tilt_mstep_program(
-    state,
-    slots: SlotMstepTables,
-    operands,
-    stage_tables,
-    wavg_window,
-    row_posterior,
-    kept_index,
-    kept_valid,
-    rect_indices,
-    exact_positions,
-    *,
-    slot_spec,
-    image_shape,
-):
-    """A tilt chunk's M-step as one program: a scan over its image slots.
-
-    Each slot backprojects the C_U images that are its units' s-th images (a slot view of the chunk's
-    operands, indexed by unit), block by block over its active rows, then adds the image power of each
-    translation block once (as the SPA chunk does, ``add_chunk_wavg_image_power``) and puts its
-    per-image partials on those images' chunk rows. ``row_posterior`` ``[C_R, k]`` is each row's posterior at
-    its unit's ``k`` translations (:func:`unit_mstep_translations`), and ``slots.angles`` the units' phases
-    there; ``kept_index``/``kept_valid`` are the translation blocks' ``[K, T_b]`` positions in those ``k``
-    and validity: positions outside a block (and padding) carry zero posterior there.
-
-    With more than one translation block (``slot_spec.presum_adjoint``), a row's weight arrives as one
-    partial per block. Adjoined block by block, a partial below half an ulp of a voxel's float32 total
-    is lost (relax#27: DC and low shells at et09 lost ~1e-6 of their weight, more with more blocks). So
-    the blocks add each row's partials into a ``[C_R, recon pixels]`` pair at the row's own scale, and
-    each row is backprojected once, as in one block (and in RELION, which sums an orientation's
-    translations before it backprojects).
-
-    ``state`` is ``(mstep,)`` or ``(mstep, (partial_y, partial_ctf))`` and is returned in the same form. With
-    the pass's zeroed partial pair, the rows are scattered into it and it is added into the volumes every
-    ``blocks_per_flush`` blocks and at the end of every slot (relax#65): a row is one tilt image here, so
-    the flush counts tilt images.
-    """
-
-    from relax.fine_pass import resident_block_programs, resident_chunk_records, resident_mstep_blocks
-
-    row_capacity = int(row_posterior.shape[0])
-    block_rows = int(slot_spec.mstep_block_rows)
-    merge_row_partials = bool(slot_spec.presum_adjoint)
-    fields = {name: getattr(operands, name) for name in _SLOT_VIEW_FIELDS}
-    flush_blocks = blocks_per_flush(block_rows)
-    mstep, *partial_pair = state
-
-    def one_slot(scan_carry, xs):
-        full, *pair = scan_carry
-        slot, safe, valid, target, order, active, units, n_blocks, angles = xs
-        ordered_posterior = row_posterior[order]
-        gathered, window = _slot_view_gather(fields, wavg_window, safe, valid)
-        kernel_row_image_ids = jnp.where(active, units, jnp.int32(-1))
-        row_fine_rot = slot * jnp.int32(row_capacity) + order
-        Ft_y, Ft_ctf = full.Ft_y, full.Ft_ctf
-        # With a partial pair the blocks scatter into it, and the loops carry the slot's volumes beside it.
-        flush_blocks_into_volumes = bool(pair) and not merge_row_partials
-        if flush_blocks_into_volumes:
-            Ft_y, Ft_ctf = pair[0]
-        if merge_row_partials:
-            # Each row's partials, by its visiting position, until the one adjoint below.
-            n_recon = int(slot_spec.n_recon_pixels)
-            Ft_y = jnp.zeros((row_capacity, n_recon), dtype=full.Ft_y.dtype)
-            Ft_ctf = jnp.zeros((row_capacity, n_recon), dtype=full.Ft_ctf.dtype)
-        # The block stages' dtypes follow from the gathered operands alone (resident_mstep_blocks._mstep_block_operand_dtypes).
-        slot_carry = resident_mstep_blocks.initial_mstep_carry(
-            Ft_y,
-            Ft_ctf,
-            operands._replace(**gathered),
-            stage_tables._replace(translation_angles=angles[0]),
-            spec=slot_spec,
-        )
-
-        # One translation block at a time: a loop iteration's translated tiles are dead before the next
-        # block translates its own, so the program holds one block's tiles, as mstep_translation_blocks
-        # sizes them. Unrolled blocks let XLA schedule every block's translation first (all tiles live).
-        def translation_block(k, loop_carry):
-            slot_carry, *volumes = loop_carry
-            translated, translated_atomic = _slot_view_translate(
-                window, valid, angles[k], rect_indices, exact_positions, image_shape=image_shape
-            )
-            slot_operands = operands._replace(
-                **gathered, raw_translated_wavg_rectangle=translated, raw_translated_wavg_for_atomic=translated_atomic
-            )
-            # The M-step kernels read each row's image phases by its slot-local image (the unit).
-            slot_tables = stage_tables._replace(translation_angles=angles[k])
-            block_posterior = jnp.where(
-                kept_valid[k][None, :], ordered_posterior[:, kept_index[k]], jnp.zeros((), row_posterior.dtype)
-            )
-            blocks = resident_chunk_records.MstepBlockInputs(
-                row_image_local=units,
-                kernel_row_image_ids=kernel_row_image_ids,
-                row_posterior=jnp.where(active[:, None], block_posterior, jnp.zeros((), block_posterior.dtype)),
-                row_fine_rot=row_fine_rot,
-                projections=None,
-                row_sum_ids=jnp.arange(row_capacity, dtype=jnp.int32) if merge_row_partials else None,
-            )
-
-            def block(i, carry):
-                return resident_mstep_blocks.resident_mstep_block_at(
-                    i * jnp.int32(block_rows),
-                    blocks,
-                    slot_operands,
-                    slot_tables,
-                    carry,
-                    spec=slot_spec,
-                )
-
-            if flush_blocks_into_volumes:
-                slot_carry, *volumes = flushed_block_loop(
-                    n_blocks,
-                    block,
-                    slot_carry,
-                    *volumes,
-                    flush_blocks=flush_blocks,
-                    get_pair=lambda carry: (carry.Ft_y, carry.Ft_ctf),
-                    set_pair=lambda carry, y, ctf: carry._replace(Ft_y=y, Ft_ctf=ctf),
-                )
-            else:
-                slot_carry = jax.lax.fori_loop(0, n_blocks, block, slot_carry)
-            slot_carry = resident_block_programs.add_chunk_wavg_image_power(
-                slot_carry,
-                slot_operands,
-                slot_tables,
-                blocks.row_posterior,
-                blocks.kernel_row_image_ids,
-                spec=slot_spec,
-            )
-            return (slot_carry, *volumes)
-
-        slot_carry, *volumes = jax.lax.fori_loop(
-            0,
-            int(kept_index.shape[0]),
-            translation_block,
-            (slot_carry, full.Ft_y, full.Ft_ctf) if flush_blocks_into_volumes else (slot_carry,),
-        )
-        Ft_y, Ft_ctf = slot_carry.Ft_y, slot_carry.Ft_ctf
-        if flush_blocks_into_volumes:
-            pair = [(Ft_y, Ft_ctf)]
-            Ft_y, Ft_ctf = volumes
-        if merge_row_partials:
-
-            def adjoint(i, volumes):
-                def take(values):
-                    return jax.lax.dynamic_slice_in_dim(values, i * jnp.int32(block_rows), block_rows, axis=0)
-
-                rotations = resident_mstep_blocks.cached_block_projections(stage_tables, take(row_fine_rot))[2]
-                return resident_mstep_blocks.backproject_block_rows(
-                    take(slot_carry.Ft_y),
-                    take(slot_carry.Ft_ctf),
-                    rotations,
-                    *volumes,
-                    tables=stage_tables,
-                    spec=slot_spec,
-                )
-
-            if pair:
-                pair_out, Ft_y, Ft_ctf = flushed_block_loop(
-                    n_blocks,
-                    adjoint,
-                    pair[0],
-                    full.Ft_y,
-                    full.Ft_ctf,
-                    flush_blocks=flush_blocks,
-                    get_pair=lambda volumes: volumes,
-                    set_pair=lambda volumes, y, ctf: (y, ctf),
-                )
-                pair = [pair_out]
-            else:
-                Ft_y, Ft_ctf = jax.lax.fori_loop(0, n_blocks, adjoint, (full.Ft_y, full.Ft_ctf))
-        placed = _place_slot_partials(
-            {name: getattr(full, name) for name in _SLOT_PARTIAL_FIELDS},
-            {name: getattr(slot_carry, name) for name in _SLOT_PARTIAL_FIELDS},
-            full.noise_shells,
-            slot_carry.noise_shells,
-            target,
-        )
-        return (full._replace(Ft_y=Ft_y, Ft_ctf=Ft_ctf, **placed), *pair), None
-
-    xs = (
-        slots.slot,
-        slots.safe_images,
-        slots.valid_images,
-        slots.targets,
-        slots.order,
-        slots.active,
-        slots.units,
-        slots.n_blocks,
-        slots.angles,
-    )
-    state, _ = jax.lax.scan(one_slot, (mstep, *partial_pair), xs)
-    return state
-
-
-class MstepTranslations(NamedTuple):
-    """The translations one tilt chunk's M-step visits: ``index`` into the fine grid, ``valid`` false on padding."""
-
-    index: np.ndarray  # int64 [T_cap]
-    valid: np.ndarray  # bool [T_cap]
-
-
-class UnitMstepTranslations(NamedTuple):
-    """Each unit's (particle's) translations the M-step visits: ``index`` into the fine grid, ``valid`` false on padding."""
-
-    index: np.ndarray  # int64 [C_U, k] ascending, padded with the unit's last
-    valid: np.ndarray  # bool [C_U, k]
-
-
-def unit_mstep_translations(
-    row_posterior, row_unit, *, unit_capacity: int, n_fine_trans: int, minimum: int = 4
-) -> UnitMstepTranslations:
-    """Each unit's fine translations with posterior mass in any of its rows, ascending, padded to one power of two.
-
-    ``k`` is the next power of two of the largest unit's count (at least ``minimum``, at most the grid),
-    so chunks share programs; a unit's padding repeats its last translation with ``valid`` false (a unit
-    without rows takes translation 0). Visiting a row's translations in ascending order without the
-    others drops only terms whose posterior is exactly zero.
-    """
-
-    row_unit = np.asarray(row_unit, dtype=np.int64)
-    mass = np.asarray(row_posterior) > 0.0
-    unit_mass = np.zeros((int(unit_capacity), n_fine_trans), dtype=bool)
-    if row_unit.size:
-        order = np.argsort(row_unit, kind="stable")
-        sorted_units = row_unit[order]
-        starts = np.flatnonzero(np.r_[True, sorted_units[1:] != sorted_units[:-1]])
-        unit_mass[sorted_units[starts]] = np.logical_or.reduceat(mass[order], starts, axis=0)
-    counts = unit_mass.sum(axis=1)
-    largest = int(counts.max(initial=0))
-    k = max(int(minimum), pow2_ceil(largest))
-    if k >= n_fine_trans:
-        k = n_fine_trans
-    # Translations with mass first, each set ascending (a stable sort of "no mass").
-    index = np.argsort(~unit_mass, axis=1, kind="stable")[:, :k].astype(np.int64)
-    valid = np.arange(k)[None, :] < counts[:, None]
-    last = np.take_along_axis(index, np.maximum(counts - 1, 0)[:, None], axis=1)
-    index = np.where(valid, index, np.where(counts[:, None] > 0, last, 0))
-    return UnitMstepTranslations(index=index, valid=valid)
-
-
-# The flat-row translate-and-sum keeps a block's posterior rows and active-translation list in under
-# 48 KB of shared memory: 8 T bytes at one row per block for tilt images, whose angle tables stay in
-# global memory (relion_translate_sum.cuh).
-TILT_MSTEP_MAX_TRANSLATIONS = 2048
-
-
-def mstep_translation_blocks(
-    kept: MstepTranslations, *, bytes_per_translation: int, tile_budget_bytes: int
-) -> tuple[MstepTranslations, ...]:
-    """``kept`` in blocks of equal power-of-two size whose translated tiles fit ``tile_budget_bytes``.
-
-    ``bytes_per_translation`` is what one translation adds to a slot's tiles (the slot view's units and
-    the per-row gather's block rows, times the Wavg rectangle and exact pixels, complex64). Blocks also
-    stay within the translate-and-sum kernel's table limit (``TILT_MSTEP_MAX_TRANSLATIONS``). One block
-    when ``kept`` fits; otherwise every block has the largest power of two that fits (at least one),
-    the last padded with ``valid`` false.
-    """
-
-    fit = min(max(int(tile_budget_bytes) // max(int(bytes_per_translation), 1), 1), TILT_MSTEP_MAX_TRANSLATIONS)
-    if kept.index.size <= fit:
-        return (kept,)
-    block = pow2_floor(fit)
-    out = []
-    for start in range(0, kept.index.size, block):
-        index = kept.index[start : start + block]
-        valid = kept.valid[start : start + block]
-        pad = block - index.size
-        out.append(
-            MstepTranslations(
-                index=np.concatenate([index, np.full(pad, index[-1])]).astype(np.int64),
-                valid=np.concatenate([valid, np.zeros(pad, dtype=bool)]),
-            )
-        )
-    return tuple(out)
-
-
 def _unit_slot_images(layout: ChunkTiltLayout, *, unit_capacity: int, slot_capacity: int) -> np.ndarray:
     """``[S, C_U]`` chunk image of each unit's s-th image, -1 past its images or on a padded unit."""
 
@@ -1292,85 +795,6 @@ def _unit_slot_images(layout: ChunkTiltLayout, *, unit_capacity: int, slot_capac
     first = np.concatenate([[0], np.cumsum(counts)[:-1]])
     slots = np.arange(int(slot_capacity))[:, None]
     return np.where(slots < counts[None, :], first[None, :] + slots, -1).astype(np.int64)
-
-
-# The per-image fields a slot view gathers, and their padding value when not zero.
-_SLOT_VIEW_FIELDS = (
-    "score_input",
-    "corr_img_score",
-    "highres_xi2_half",
-    "translation_prior",
-    "recon_image",
-    "recon_weight",
-    "noise_image",
-    "ctf2_over_nv_recon",
-    "direct_ctf_rfloat_recon",
-    "image_power_shells",
-    "relion_norm_high_shell",
-    "scale",
-    "group_ids",
-    "optics_groups",
-    "image_noise_scale",
-    "bpref_ctf2_over_nv_recon",
-)
-_SLOT_VIEW_FILL = {"scale": 1.0, "group_ids": -1}
-# The chunk operands a slot view does not take per image: the translated Wavg tiles it rebuilds with
-# each image's own phases, and the per-chunk tiles and CC operands the resident M-step never reads.
-# Every other per-image operand must be in _SLOT_VIEW_FIELDS, or the slot's units read the chunk's
-# first images' values (a premultiplied CTF weight did, 2026-10-03).
-_SLOT_CHUNK_ONLY_FIELDS = (
-    "shifted_recon",
-    "shifted_noise",
-    "raw_translated_wavg_rectangle",
-    "raw_translated_wavg_for_atomic",
-    "translation_sqdist_ang",
-    "score_shifted_cc",
-    "cc_half_batch_norm",
-)
-
-
-def _slot_view_gather(fields, wavg_window, safe, valid):
-    """One image slot's chunk operands, one image per unit (``safe``, ``valid`` false on padding), and its Wavg window.
-
-    Padded units read a valid image with every array zeroed, except ``scale`` (1) and ``group_ids``
-    (-1), the chunk gather's padding values (resident_operands._gather_chunk_arrays).
-    """
-
-    from relax.fine_pass.resident_operands import gather_rows
-
-    gathered = {
-        name: gather_rows(values, safe, valid, fill=_SLOT_VIEW_FILL.get(name, 0)) for name, values in fields.items()
-    }
-    return gathered, gather_rows(wavg_window, safe, valid)
-
-
-def _slot_view_translate(window, valid, angles, rect_indices, exact_positions, *, image_shape):
-    """The slot's translated Wavg rectangle ``[C, T, W]``, each image with its own phases (one launch)."""
-
-    from relax.fine_pass.wavg import relion_cuda_translate_wavg_norm_window
-
-    translated = relion_cuda_translate_wavg_norm_window(window, angles, rect_indices, image_shape)
-    translated = jnp.where(valid[:, None, None], translated, jnp.zeros((), translated.dtype))
-    return translated, translated[:, :, exact_positions]
-
-
-_SLOT_PARTIAL_FIELDS = ("wavg_triplet_pixels", "a2_per_image", "xa_per_image")
-
-
-@jax.jit
-def _place_slot_partials(full_fields, slot_fields, full_noise, slot_noise, target):
-    """Add one slot's per-image M-step partials to their chunk images (``target``; out of range drops) and its noise sums.
-
-    An image is its particle's s-th image in one slot only; it takes a partial from every accumulator
-    slot (class) of its particle's rows.
-    """
-
-    placed = {
-        name: None if full_fields[name] is None else full_fields[name].at[target].add(slot_fields[name], mode="drop")
-        for name in _SLOT_PARTIAL_FIELDS
-    }
-    placed["noise_shells"] = full_noise + slot_noise
-    return placed
 
 
 def row_fine_rot_device(host, row_capacity: int) -> np.ndarray:

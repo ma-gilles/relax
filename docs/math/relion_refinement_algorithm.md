@@ -660,8 +660,8 @@ backprojected on its own is scattered into a zeroed partial pair, which is added
 command reads the switch once (`ScoringOverrides.exact_float32_accumulation`), and each pass consults it when it
 allocates its accumulators; without it nothing is allocated and
 the three row-block loops run as before: `resident_chunk_stages_finish` in
-[`fine_pass/resident_chunk_stages.py`](../../relax/fine_pass/resident_chunk_stages.py), `_tilt_mstep_program` in
-[`resident_tilts.py`](../../relax/fine_pass/resident_tilts.py) (a row is one tilt image there) and
+[`fine_pass/resident_chunk_stages.py`](../../relax/fine_pass/resident_chunk_stages.py), `tilt_mstep_program` in
+[`resident_tilt_mstep.py`](../../relax/fine_pass/resident_tilt_mstep.py) (a row is one tilt image there) and
 `run_resident_mstep_blocks` (local searches and the final pass, from
 [`local_search/resident_local_chunk.py`](../../relax/local_search/resident_local_chunk.py)). The flush points are a
 static block count, so they depend on the row order alone.

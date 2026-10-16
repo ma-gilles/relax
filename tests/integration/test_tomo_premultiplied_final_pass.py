@@ -5,7 +5,7 @@ tilt images (``rlnCtfDataAreCtfPremultiplied 1``, the default of RELION 5's extr
 ``relax refine`` for a few iterations and the final all-data iteration
 (``RELAX_FINAL_ALL_DATA_AFTER_MAX_ITER``). The final all-data iteration reconstructs to Nyquist without a
 split-half prior, so a wrong backprojected CTF weight shows there first. On 2026-10-03 a tilt slot read the
-chunk's u-th image's premultiplied CTF weight for its unit u (resident_tilts._SLOT_VIEW_FIELDS): the final
+chunk's u-th image's premultiplied CTF weight for its unit u (resident_tilt_mstep._SLOT_VIEW_FIELDS): the final
 half maps of a premultiplied project were uncorrelated (half-half FSC -0.26 at low resolution) and 1e6 times
 too strong, while every split-half iteration looked plausible.
 
