@@ -4,7 +4,7 @@ TF32 rounds every packed moment entry on its own, so nearly rank-one moment matr
 against a large mean latent) summed into a voxel come out indefinite by about 2^-12 of the largest eigenvalue,
 above the coupled-direction check's bound of 32 float32 eps. VDAM stopped there past update 2000 on a realistic
 fixture (em_work/ppca_sgd_vs_vdam_20261003/improve_20261004/tables/vdam_crash_dump_eigs.jsonl: smallest/largest
--1.2e-5 to -3.7e-5). ``full_row_stream._metric_dot`` passes the moments through the TF32 GEMM as a TF32 value plus
+-1.2e-5 to -3.7e-5). ``full_row_kernels._metric_dot`` passes the moments through the TF32 GEMM as a TF32 value plus
 the exact remainder; rounding the non-negative CTF operand scales a pixel's moment channels together and keeps PSD.
 """
 
@@ -17,8 +17,8 @@ import pytest
 from helpers.float_compare import assert_matches
 
 from relax.ppca_initial_model.update import coupled_direction, metric_floor
-from relax.ppca_refinement import full_row_stream
-from relax.ppca_refinement.full_row_stream import _metric_dot, second_moment_sums, tf32_capable
+from relax.ppca_refinement import full_row_kernels
+from relax.ppca_refinement.full_row_kernels import _metric_dot, second_moment_sums, tf32_capable
 
 pytestmark = pytest.mark.unit
 
@@ -40,7 +40,7 @@ def _emulated_tf32_dot(a, b, precision=None):
 
 
 def _operands():
-    """Moment rows (tri(1+q) * R, B) and the CTF operand (B, F), as ``_moment_block`` passes them to the LHS GEMM.
+    """Moment rows (tri(1+q) * R, B) and the CTF operand (B, F), as ``moment_block`` passes them to the LHS GEMM.
 
     Latent means near (2.7, -1.9) with a posterior variance of 1e-6: each image's moment matrix is nearly rank one
     with entries spanning 1 to 7 (the large-mean-latent regime of the failing runs).
@@ -76,7 +76,7 @@ def test_tf32_metric_gemm_keeps_the_metric_semidefinite(monkeypatch):
     with pytest.raises(ValueError, match="materially indefinite PPCA metric"):
         _check(plain)
 
-    monkeypatch.setattr(full_row_stream.jnp, "dot", _emulated_tf32_dot)
+    monkeypatch.setattr(full_row_kernels.jnp, "dot", _emulated_tf32_dot)
     split = _metric_rows(_metric_dot(jnp.asarray(sums), jnp.asarray(ctf2), TF32))
     monkeypatch.undo()
     _check(split)

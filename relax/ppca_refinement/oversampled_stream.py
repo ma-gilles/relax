@@ -47,34 +47,38 @@ from recovar.ppca.triangular import tri_size
 from relax.cuda.ppca import ppca_window_project_f32
 from relax.fourier.preprocessing import half_translation_phase_table
 from relax.ppca_refinement.dense_dataset import DensePPCAEmbeddings
-from relax.ppca_refinement.full_row_stream import (
+from relax.ppca_refinement.full_row_kernels import (
     HIGHEST,
     SHIFT_ALIGN,
-    TILE_FRAGMENTATION_HEADROOM,
     FullRowStream,
     Posterior,
-    available_bytes,
-    check_finite_posterior,
-    device_block_starts,
-    drop_padding,
     empty_carry,
-    finish_full_row_tile,
     frame_rotations,
     gemm,
     latent_scores,
     n_frames,
-    plan_shape_key,
     project,
-    read_tile,
     real_imag,
-    real_image_count,
     scatter_moment_images,
     score_tile,
     score_window_pixels,
     second_moment_sums,
+)
+from relax.ppca_refinement.full_row_stream import (
+    check_finite_posterior,
+    device_block_starts,
+    drop_padding,
+    finish_full_row_tile,
+    read_tile,
+    real_image_count,
+    tile_support,
+)
+from relax.ppca_refinement.full_row_tile_plan import (
+    TILE_FRAGMENTATION_HEADROOM,
+    available_bytes,
+    plan_shape_key,
     tile_frames,
     tile_spec,
-    tile_support,
 )
 from relax.ppca_refinement.residual_statistics import full_float32
 from relax.sampling import grids as sampling_grids
@@ -515,7 +519,7 @@ def _moment_rows(
     recon = _shifted(tile.Y1_recon[rows.image], phases, shifts, K)  # (N, T_c, K 2F)
     rhs_parts = jnp.einsum("pnt,ntk->pnk", weights, recon, precision=gemm(static)).reshape(P, N * K, 2 * F)
     # No contraction: full float32 products cost nothing here, and TF32 would round each moment
-    # entry on its own and leave the metric indefinite (full_row_stream._metric_dot).
+    # entry on its own and leave the metric indefinite (full_row_kernels._metric_dot).
     lhs_images = jnp.einsum("mn,nk->mnk", sums[:, :, 0], tile.ctf2_recon[rows.image], precision=HIGHEST).reshape(
         sums.shape[0], N * K, F
     )
@@ -861,7 +865,7 @@ _JOB_CHUNKS: dict = {}
 def plan_job_chunk(ostream: OversampledStream, n_images: int, *, memory_bytes=None, device_bytes=None) -> int:
     """Jobs per pass-2 program: the most one kernel launch takes (:func:`launch_job_chunk`), halved until the job
     programs (:func:`job_program_bytes`) fit the device's free memory less the planner's fragmentation headroom
-    (:func:`relax.ppca_refinement.full_row_stream.plan_tile_images`). Pass 1's buffers are released before pass 2,
+    (:func:`relax.ppca_refinement.full_row_tile_plan.plan_tile_images`). Pass 1's buffers are released before pass 2,
     so the job programs have the device to themselves, apart from the tile's unshifted operands and job results."""
     if memory_bytes is None and device_bytes is None:
         # The device probes run nvidia-smi (tens of ms); a stage's shapes are planned once.

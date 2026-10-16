@@ -1,6 +1,7 @@
 """One-tile call of the full-row accumulator, for tests that compare a single image tile."""
 
-from relax.ppca_refinement.full_row_stream import FullRowStream, accumulate_full_row_tiles
+from relax.ppca_refinement.full_row_kernels import FullRowStream
+from relax.ppca_refinement.full_row_stream import accumulate_full_row_tiles
 from relax.ppca_refinement.residual_statistics import full_float32
 
 

@@ -55,7 +55,7 @@ class Config:
     preread_images: str = "auto"
     # Pass 2 skips the pose rows on which every image of a tile has less posterior mass than this
     # (0: visit every row), when that leaves at most half the rows. A runtime setting;
-    # full_row_stream._pass2_rows has the bound; section 14 of docs/math/vdam_ppca_algorithm.md the evidence.
+    # full_row_kernels._pass2_rows has the bound; section 14 of docs/math/vdam_ppca_algorithm.md the evidence.
     pass2_mass_floor: float = 1e-10
 
     def __post_init__(self):

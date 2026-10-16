@@ -959,8 +959,9 @@ scientific contract; runnable code alone does not establish recovery.
   existing unpaired-Nyquist convention, and the effective radius is recorded.
 - Fine orientations are children of coarse orientations and do not depend on
   the image, so opt-in streamed rows share one fine rotation grid.
-  [full_row_stream.py](../../relax/ppca_refinement/full_row_stream.py) scores,
-  per image tile, the sorted union of the images' supported rows. It uploads
+  [full_row_stream.py](../../relax/ppca_refinement/full_row_stream.py) scores (with the kernels of
+  [full_row_kernels.py](../../relax/ppca_refinement/full_row_kernels.py) and the tile planner of
+  [full_row_tile_plan.py](../../relax/ppca_refinement/full_row_tile_plan.py)), per image tile, the sorted union of the images' supported rows. It uploads
   the tile's coarse support once and forms each fine pose prior on the device
   as the coarse parent's support plus the rotation and translation log-priors,
   so a row outside an image's own support is `-inf` for that image and adds
@@ -1043,7 +1044,7 @@ scientific contract; runnable code alone does not establish recovery.
   buffers, and per (rotation, image) the maximum score over translations, the
   first maximizing translation and `sum_t exp(score - maximum)`; the tile
   normalization reduces these partials
-  ([_normalize_partials](../../relax/ppca_refinement/full_row_stream.py)), with the
+  ([_normalize_partials](../../relax/ppca_refinement/full_row_kernels.py)), with the
   same first-maximum order, instead of every kept score. The posterior
   preparation ([ppca_posterior_prep_f32](../../relax/cuda/ppca.py)) forms the
   weights `gamma [1, E z]` and the translation sums of `gamma E[a a^T]`; the
@@ -1059,7 +1060,7 @@ scientific contract; runnable code alone does not establish recovery.
   Hopper scatter were dropped too: 4% of the scatter, no update-level change.
   The four stream GEMMs (score, Gram, RHS and LHS images) take one precision
   setting (`Config.gemm_precision`, `--ppca-gemm-precision`, resolved by
-  [resolve_gemm_precision](../../relax/ppca_refinement/full_row_stream.py)):
+  [resolve_gemm_precision](../../relax/ppca_refinement/full_row_kernels.py)):
   `tf32` is one TF32 tensor-core pass with float32 accumulation, `fp32` the full
   float32 products (cuBLAS SIMT FFMA kernels), and `auto`, the default, is tf32 on
   GPUs of compute capability 8.0 or later and fp32 elsewhere (V100, CPU). The
@@ -1103,7 +1104,7 @@ scientific contract; runnable code alone does not establish recovery.
   too. Rounding the other operand, the non-negative `CTF^2 / sigma^2`, scales all of a
   pixel's moment channels by one non-negative number and keeps the sum
   semidefinite. So under tf32
-  [_metric_dot](../../relax/ppca_refinement/full_row_stream.py) passes the moments
+  [_metric_dot](../../relax/ppca_refinement/full_row_kernels.py) passes the moments
   through the TF32 GEMM as a TF32 value (the 13 low mantissa bits cleared) plus the
   exact float32 remainder, about `2^-22` relative error in the moments; the
   oversampled stream's contraction-free LHS product runs in float32. Restarts from
@@ -1181,7 +1182,7 @@ scientific contract; runnable code alone does not establish recovery.
   fewer when its counted device bytes exceed the memory still available after
   the stream's upload, less 10% of the device for fragmentation and
   uncounted temporaries
-  ([plan_tile_images](../../relax/ppca_refinement/full_row_stream.py),
+  ([plan_tile_images](../../relax/ppca_refinement/full_row_tile_plan.py),
   `TILE_FRAGMENTATION_HEADROOM`). The count includes:
   - the kept pass-1 rows over the row table and the moment accumulators, from
     their shapes;
@@ -1224,7 +1225,7 @@ scientific contract; runnable code alone does not establish recovery.
   right: 4.83 GiB counted against 4.87 GiB measured at 33 shifts). Each new
   plan therefore allocates and releases one block of its counted bytes, or of
   all the allocator may still take when that is less
-  ([reserve_plan_region](../../relax/ppca_refinement/full_row_stream.py)), so
+  ([reserve_plan_region](../../relax/ppca_refinement/full_row_tile_plan.py)), so
   the pool grows by one region of at least that size before the stage runs. A
   preallocated pool has nothing left to take, and the plans do not change
   (the same tile sizes and counted bytes at every stage with and without it).
@@ -1514,7 +1515,7 @@ scientific contract; runnable code alone does not establish recovery.
 - Pass-2 row skip (October 3, 2026; default floor 1e-10, `--ppca-pass2-mass-floor`).
   After pass 1, the stream reads each pose row's largest per-image posterior mass
   in the tile from the epilogue partials
-  ([_pass2_rows](../../relax/ppca_refinement/full_row_stream.py)). When at most half
+  ([_pass2_rows](../../relax/ppca_refinement/full_row_kernels.py)). When at most half
   the rows reach the floor, pass 2 (weights, M-step GEMMs, projections and moment
   scatter) runs on those rows only. They are gathered into a power-of-two block
   buffer, and their rotation masses return to the pass-1 positions. Each image then
@@ -1816,7 +1817,8 @@ Approved for the first version (October 2, 2026), each to be lifted separately:
 
 ### 16.7 Implementation and checks
 
-- [full_row_stream.py](../../relax/ppca_refinement/full_row_stream.py): a tile may
+- [full_row_kernels.py](../../relax/ppca_refinement/full_row_kernels.py) and
+  [full_row_stream.py](../../relax/ppca_refinement/full_row_stream.py): a tile may
   carry `K` frame matrices (`TileArrays.frames`); projection and scatter
   rotations expand block rows by frames (`frame_rotations`); operands and pass-2
   images flatten `(frame, pixel)`; the tile reader is a stream argument

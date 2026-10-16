@@ -34,14 +34,14 @@ from relax.ppca_refinement.dense_dataset import (
     accumulate_dense_ppca_statistics,
     compute_dense_ppca_embeddings,
 )
+from relax.ppca_refinement.full_row_kernels import resolve_gemm_precision
 from relax.ppca_refinement.full_row_stream import (
     TracePPCAStats,
     accumulate_full_row_tiles,
     full_row_tile_embeddings,
-    plan_tile_images,
     prepare_full_row_stream,
-    resolve_gemm_precision,
 )
+from relax.ppca_refinement.full_row_tile_plan import plan_tile_images
 from relax.ppca_refinement.oversampled_stream import (
     accumulate_oversampled_tiles,
     oversampled_tile_embeddings,

@@ -15,11 +15,8 @@ from scipy.spatial.transform import Rotation
 from test_full_fine_streaming import IMAGE_SHAPE, N_HALF, _half_volume, _TinyData
 
 from relax.ppca_refinement.config import GeometryConfig, ScheduleConfig, ScoringConfig
-from relax.ppca_refinement.full_row_stream import (
-    _normalize,
-    full_row_tile_embeddings,
-    prepare_full_row_stream,
-)
+from relax.ppca_refinement.full_row_kernels import _normalize
+from relax.ppca_refinement.full_row_stream import full_row_tile_embeddings, prepare_full_row_stream
 from relax.ppca_refinement.oversampled_stream import (
     OVERSAMPLED_ENGINE,
     _significant_samples,
@@ -350,6 +347,7 @@ def test_pass1_tile_from_the_pass2_tile_is_the_readers(tilts):
     """Pass 1's operands, formed from the tile's unshifted pass-2 operands (window pixels times the coarse
     translations' phase factors), are the ones the tile reader builds for the pass-1 stream."""
     from relax.ppca_refinement import full_row_stream as frs
+    from relax.ppca_refinement import full_row_tile_plan
     from relax.ppca_refinement import oversampled_stream as oss
 
     if tilts:
@@ -369,7 +367,7 @@ def test_pass1_tile_from_the_pass2_tile_is_the_readers(tilts):
     if tilts:
         np.testing.assert_array_equal(slots[slots >= 0], np.flatnonzero(slots >= 0))  # one window
     else:
-        assert 0 < (slots >= 0).sum() < frs._window_pixels(pass2)  # a smaller window
+        assert 0 < (slots >= 0).sum() < full_row_tile_plan._window_pixels(pass2)  # a smaller window
     support = [None] * len(ids)
     expected, _, expected_layout = frs.read_tile(coarse, ids, support, collect_observation=False)
     tile, _, layout = frs.read_tile(ostream.base, ids, support, collect_observation=False)

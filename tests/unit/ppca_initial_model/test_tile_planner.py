@@ -7,12 +7,12 @@ from scipy.spatial.transform import Rotation
 
 from relax.ppca_initial_model.tomo import TiltParticles, load_tilt_tile
 from relax.ppca_refinement.config import GeometryConfig, ScheduleConfig, ScoringConfig
-from relax.ppca_refinement.full_row_stream import (
+from relax.ppca_refinement.full_row_stream import prepare_full_row_stream
+from relax.ppca_refinement.full_row_tile_plan import (
     PLAN_REGION_MARGIN_BYTES,
     TILE_FRAGMENTATION_HEADROOM,
     plan_region_bytes,
     plan_tile_images,
-    prepare_full_row_stream,
     stream_tile_bytes,
     tile_bytes,
     tile_program_bytes,
@@ -104,12 +104,12 @@ def _program_stand_in(monkeypatch):
     """On CPU the block programs are the XLA reference path, not the GPU programs a 16 GB card runs: a
     per-image stand-in for their memory (one block's projections, products and M-step images for 41
     frames, plus its GEMM outputs per image) checks the planner's arithmetic."""
-    from relax.ppca_refinement import full_row_stream as frs
+    from relax.ppca_refinement import full_row_tile_plan
 
     block, K, P, T = 512, 41, 3, 33
-    F = frs._window_pixels(_tilt_stream())
+    F = full_row_tile_plan._window_pixels(_tilt_stream())
     monkeypatch.setattr(
-        frs, "tile_program_bytes", lambda stream, n: 4 * (block * K * F * 4 * P + n * block * (2 * P * T + 12))
+        full_row_tile_plan, "tile_program_bytes", lambda stream, n: 4 * (block * K * F * 4 * P + n * block * (2 * P * T + 12))
     )
 
 
@@ -253,7 +253,7 @@ def test_a_grown_pool_takes_the_plan_as_one_block_bounded_by_what_is_left():
 _REGION_SCRIPT = """
 import sys
 import jax, jax.numpy as jnp
-from relax.ppca_refinement.full_row_stream import reserve_plan_region
+from relax.ppca_refinement.full_row_tile_plan import reserve_plan_region
 device = jax.devices()[0]
 block = lambda megabytes: jnp.zeros((megabytes, 2**20), jnp.uint8)
 limit = device.memory_stats()["bytes_limit"] // 2**20

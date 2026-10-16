@@ -14,7 +14,7 @@ import jax.numpy as jnp
 from helpers.float_compare import assert_matches
 
 from relax.fourier.fourier_window import make_fourier_window_spec
-from relax.ppca_refinement import full_row_stream as frs
+from relax.ppca_refinement import full_row_kernels
 
 IMAGE_SHAPE, VOLUME_SHAPE = (32, 32), (32, 32, 32)
 N_HALF, HALF = 32 * 17, 32 * 32 * 17
@@ -165,7 +165,7 @@ def test_latent_epilogue_and_posterior_prep_match_xla(q, T, gpu_device):
         """The XLA formulation of both stages (``_latent_block``, ``_posterior_block``) in ``dtype``."""
         with jax.default_device(jax.devices("cpu")[0]), jax.default_matmul_precision("highest"):
             rotation_parent, rotation_log_prior, translation_parent, translation_log_prior, coarse_mask = tables
-            prior = frs.full_row_pose_log_prior(
+            prior = full_row_kernels.full_row_pose_log_prior(
                 jnp.asarray(coarse_mask),
                 jnp.asarray(rotation_parent)[rows],
                 jnp.asarray(translation_parent),
@@ -185,27 +185,27 @@ def test_latent_epilogue_and_posterior_prep_match_xla(q, T, gpu_device):
                 covariance = jnp.zeros((R, B, 0), dtype)
             else:
                 H = [[g[index[(min(i, j), max(i, j))]] for j in range(1, P)] for i in range(1, P)]
-                L, logdet = frs._unit_shift_cholesky(H)
+                L, logdet = full_row_kernels._unit_shift_cholesky(H)
                 Lt = [[v if v is None else v[..., None] for v in row] for row in L]
                 b = [x[j] - g[index[(0, j)], :, :, None] for j in range(1, P)]
-                v = frs._forward_substitute(Lt, b)
+                v = full_row_kernels._forward_substitute(Lt, b)
                 score = -0.5 * (rho - sum(e * e for e in v) + logdet[..., None]) + prior_rbt
-                mean = jnp.stack(frs._back_substitute(Lt, v), axis=0)
-                inverse = frs._lower_inverse(L)
+                mean = jnp.stack(full_row_kernels._back_substitute(Lt, v), axis=0)
+                inverse = full_row_kernels._lower_inverse(L)
                 covariance = jnp.stack(
                     [sum(inverse[k][i] * inverse[k][j] for k in range(j, q)) for i, j in zip(*np.triu_indices(q))],
                     axis=-1,
                 )
             center = jnp.max(score, axis=(0, 2))
             logZ = jnp.log(jnp.sum(jnp.exp(score - center[None, :, None]), axis=(0, 2)))
-            kept = frs._empty_kept(cap, B, T, q, dtype)
+            kept = full_row_kernels.empty_kept(cap, B, T, q, dtype)
             kept = kept._replace(
                 score=kept.score.at[start : start + R].set(score),
                 latent_mean=kept.latent_mean.at[:, start : start + R].set(mean),
                 latent_covariance=kept.latent_covariance.at[start : start + R].set(covariance),
             )
-            posterior = frs.Posterior(center, logZ, center, None, None)
-            carry = frs._MomentCarry(
+            posterior = full_row_kernels.Posterior(center, logZ, center, None, None)
+            carry = full_row_kernels._MomentCarry(
                 None,
                 None,
                 None,
@@ -216,10 +216,10 @@ def test_latent_epilogue_and_posterior_prep_match_xla(q, T, gpu_device):
                 dtype(0),
                 jnp.zeros((B,), jnp.int32),
             )
-            arrays = frs._StreamArrays(**dict.fromkeys(frs._StreamArrays._fields))._replace(
+            arrays = full_row_kernels.StreamArrays(**dict.fromkeys(full_row_kernels.StreamArrays._fields))._replace(
                 shift_squared=jnp.asarray(shift2, dtype)
             )
-            weights, sums, carry = frs._posterior_block(carry, arrays, kept, posterior, start, R)
+            weights, sums, carry = full_row_kernels._posterior_block(carry, arrays, kept, posterior, start, R)
             return {
                 "score": score,
                 "mean": mean,
@@ -241,8 +241,8 @@ def test_latent_epilogue_and_posterior_prep_match_xla(q, T, gpu_device):
     xla32 = {k: np.asarray(v) for k, v in xla(jnp.float32).items()}
 
     with jax.default_device(gpu_device):
-        kept = frs._empty_kept(cap, B, T, q, jnp.float32)
-        kept = frs._Kept(
+        kept = full_row_kernels.empty_kept(cap, B, T, q, jnp.float32)
+        kept = full_row_kernels._Kept(
             *ppca_latent_epilogue_f32(
                 # The GEMM's padded shift axis: row (p, r) holds b T + t, then junk the kernel ignores.
                 jnp.asarray(np.concatenate([inner.reshape(P, R, B * T), np.full((P, R, pad), 7.0)], -1), jnp.float32),
@@ -255,7 +255,7 @@ def test_latent_epilogue_and_posterior_prep_match_xla(q, T, gpu_device):
         )
         epilogue = jax.device_get(kept)
         # Pass 2 from the epilogue's own normalization, as the engine runs it.
-        posterior = frs._normalize_partials(kept, jnp.arange(cap, dtype=jnp.int32), n_blocks=2, block_size=R)
+        posterior = full_row_kernels._normalize_partials(kept, jnp.arange(cap, dtype=jnp.int32), n_blocks=2, block_size=R)
         center, logZ = jax.device_get((posterior.center, posterior.centered_logZ))
         weights, sums, partial, count = jax.device_get(
             ppca_posterior_prep_f32(
@@ -320,14 +320,14 @@ def test_normalize_partials_matches_full_score_normalization():
         part_max = np.max(score, axis=-1)
         part_arg = np.argmax(score, axis=-1).astype(np.int32)
         part_sum = np.where(np.isneginf(part_max), 0.0, np.sum(np.exp(score - part_max[..., None]), axis=-1))
-    kept = frs._empty_kept(cap, B, T, 0, jnp.float32)._replace(
+    kept = full_row_kernels.empty_kept(cap, B, T, 0, jnp.float32)._replace(
         score=jnp.asarray(score),
         part_max=jnp.asarray(part_max),
         part_arg=jnp.asarray(part_arg),
         part_sum=jnp.asarray(part_sum.astype(np.float32)),
     )
-    expected = frs._normalize(jnp.asarray(score), jnp.asarray(rows), n_blocks=n_blocks, block_size=block_size)
-    actual = frs._normalize_partials(kept, jnp.asarray(rows), n_blocks=n_blocks, block_size=block_size)
+    expected = full_row_kernels._normalize(jnp.asarray(score), jnp.asarray(rows), n_blocks=n_blocks, block_size=block_size)
+    actual = full_row_kernels._normalize_partials(kept, jnp.asarray(rows), n_blocks=n_blocks, block_size=block_size)
     for name in ("center", "top_score", "top_rotation", "top_translation"):
         assert np.array_equal(np.asarray(getattr(actual, name)), np.asarray(getattr(expected, name))), name
     assert_matches(np.asarray(actual.centered_logZ), np.asarray(expected.centered_logZ))

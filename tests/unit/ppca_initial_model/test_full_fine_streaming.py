@@ -15,18 +15,16 @@ from relax.ppca_refinement.dense_dataset import (
     accumulate_dense_ppca_statistics,
     compute_dense_ppca_embeddings,
 )
+from relax.ppca_refinement.full_row_kernels import full_row_pose_log_prior
 from relax.ppca_refinement.full_row_stream import (
     FULL_ROW_ENGINE,
-    TILE_FRAGMENTATION_HEADROOM,
     TracePPCAStats,
     accumulate_full_row_tiles,
     coarse_support_mask,
-    full_row_pose_log_prior,
     full_row_tile_embeddings,
-    plan_tile_images,
     prepare_full_row_stream,
-    tile_bytes,
 )
+from relax.ppca_refinement.full_row_tile_plan import TILE_FRAGMENTATION_HEADROOM, plan_tile_images, tile_bytes
 from relax.ppca_refinement.residual_statistics import full_float32
 from relax.sampling import oversampled_grids
 
@@ -391,7 +389,7 @@ def test_pass2_row_skip_drops_only_negligible_rows(tile_problem):
 
 def test_pass2_floor_zero_visits_every_row(tile_problem):
     """tau = 0 is the no-skip path: no row selection, identical statistics."""
-    from relax.ppca_refinement.full_row_stream import _pass2_rows
+    from relax.ppca_refinement.full_row_kernels import _pass2_rows
 
     _dataset, _mu, _W, stream, _host = tile_problem
     assert stream.pass2_mass_floor == 0.0
@@ -406,7 +404,7 @@ def test_pass2_floor_zero_visits_every_row(tile_problem):
 
 def test_rotation_mass_returns_to_pass1_rows():
     """Compacted rows' masses land at their pass-1 positions; padding adds nothing."""
-    from relax.ppca_refinement.full_row_stream import _expand_rotation_mass
+    from relax.ppca_refinement.full_row_kernels import _expand_rotation_mass
 
     compact = jnp.asarray([5.0, 7.0, 11.0, 0.0, 0.0, 0.0, 0.0, 0.0])
     positions = jnp.asarray([1, 4, 6, 0], jnp.int32)  # three visited rows, one padding slot
@@ -416,6 +414,7 @@ def test_rotation_mass_returns_to_pass1_rows():
 
 def _padded_loader(n_dummies):
     """The single-particle reader, with ``n_dummies`` zero-operand images appended after the real ones."""
+    from relax.ppca_refinement import full_row_kernels
     from relax.ppca_refinement import full_row_stream as frs
 
     def load(stream, image_indices, significant_rows, *, collect_observation):
@@ -423,7 +422,7 @@ def _padded_loader(n_dummies):
             stream, image_indices, significant_rows, collect_observation=collect_observation
         )
         B, T = len(image_indices), int(stream.translations.shape[0])
-        pad = -((B + n_dummies) * T) % frs.SHIFT_ALIGN if stream.static.cuda_kernels else 0
+        pad = -((B + n_dummies) * T) % full_row_kernels.SHIFT_ALIGN if stream.static.cuda_kernels else 0
         extra = n_dummies * T
         Y1 = jnp.pad(tile.Y1[:, : B * T], ((0, 0), (0, extra + pad)))
         Y1_recon = jnp.pad(tile.Y1_recon[: B * T], ((0, extra + pad), (0, 0)))
@@ -526,7 +525,7 @@ def test_tiles_of_different_sizes_keep_one_kept_buffer_live(tile_problem, monkey
     counts one (two live buffers ran a dense HEALPix 4 tile pair of 101 and 49 images out of 80 GB)."""
     import jax
 
-    from relax.ppca_refinement import full_row_stream as frs
+    from relax.ppca_refinement import full_row_kernels, full_row_tile_plan
 
     _dataset, _mu, _W, stream, _host = tile_problem
     capacity = len(stream.block_starts) * stream.rotation_block_size
@@ -542,14 +541,16 @@ def test_tiles_of_different_sizes_keep_one_kept_buffer_live(tile_problem, monkey
         stats = stream.device.memory_stats()
         return None if stats is None else stats["bytes_in_use"]
 
-    allocations, empty_kept = [], frs._empty_kept
+    allocations, empty_kept = [], full_row_kernels.empty_kept
 
     def recording_empty_kept(capacity, n_images, *args):
         kept = empty_kept(capacity, n_images, *args)
         allocations.append((n_images, kept_sizes(), in_use()))
         return kept
 
-    monkeypatch.setattr(frs, "_empty_kept", recording_empty_kept)
+    # The tile scorer and the planner each bind the kept-buffer allocation.
+    monkeypatch.setattr(full_row_kernels, "empty_kept", recording_empty_kept)
+    monkeypatch.setattr(full_row_tile_plan, "empty_kept", recording_empty_kept)
     assert not kept_sizes()
     before = in_use()
     # Sizes 2, 2, 1, 2 run largest first (2, 2, 2, 1): the three tiles of 2 share one buffer, allocated first,
@@ -758,7 +759,7 @@ def test_compensated_block_sums_keep_small_contributions_under_jit():
     """Increments below half a float32 ULP of the total are kept, as in pass-2 volume sums."""
     import jax
 
-    from relax.ppca_refinement.full_row_stream import compensated_add
+    from relax.ppca_refinement.engine import compensated_add
 
     step = jax.jit(compensated_add)
     total = jnp.full((4,), 1.0e6, jnp.float32)
@@ -775,6 +776,7 @@ def _float64_tile_statistics(stream, image_indices, significant):
     """The streamed engine's tile statistics with every operand and sum in float64 (x64, XLA moments)."""
     import jax
 
+    from relax.ppca_refinement import full_row_kernels
     from relax.ppca_refinement import full_row_stream as frs
     from relax.ppca_refinement.engine import enforce_augmented_x0
 
@@ -798,22 +800,22 @@ def _float64_tile_statistics(stream, image_indices, significant):
         capacity = len(stream.block_starts) * stream.rotation_block_size
         q = stream.static.basis_size - 1
         T = len(stream.translations)
-        kept = frs._empty_kept(capacity, n_images, T, q, jnp.float64)
+        kept = full_row_kernels.empty_kept(capacity, n_images, T, q, jnp.float64)
         for start in stream.block_starts[: layout["n_blocks"]]:
-            kept = frs._score_block(
+            kept = full_row_kernels.score_block(
                 arrays, tile, kept, start, static=wide.static, block_size=stream.rotation_block_size
             )
-        posterior = frs._normalize(
+        posterior = full_row_kernels._normalize(
             kept.score, tile.rows, n_blocks=layout["n_blocks"], block_size=stream.rotation_block_size
         )
-        carry = up(frs.empty_carry(stream, n_images, observation_power))
-        carry = frs._run_pass2(wide, tile, kept, posterior, layout["n_blocks"], carry, moments=True)
+        carry = up(full_row_kernels.empty_carry(stream, n_images, observation_power))
+        carry = full_row_kernels._run_pass2(wide, tile, kept, posterior, layout["n_blocks"], carry, moments=True)
         volume_shape = stream.static.volume_shape
         weights = make_half_image_weights(stream.static.image_shape)
         shells = np.asarray(make_shell_indices_half(stream.static.image_shape))
         residual_num = np.zeros(shells.max() + 1)
         np.add.at(residual_num, shells, np.asarray(weights * carry.residual_power))
-        lhs_tri, residual = frs._unpack_moments(carry.moments, stream.static)
+        lhs_tri, residual = full_row_kernels.unpack_moments(carry.moments, stream.static)
         rotation_mass = np.zeros(stream.rotation_parent.size)
         rotation_mass[layout["rows"]] = np.asarray(carry.rotation_mass)[: layout["rows"].size]
         pmax = np.exp(np.asarray(posterior.top_score - posterior.center) - np.asarray(posterior.centered_logZ))

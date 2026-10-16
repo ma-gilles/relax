@@ -10,7 +10,7 @@ import pytest
 from relax.commands.ppca_initial_model import add_args
 from relax.ppca_initial_model import iteration_loop
 from relax.ppca_initial_model.config import Config
-from relax.ppca_refinement.full_row_stream import _normalize
+from relax.ppca_refinement.full_row_kernels import _normalize
 
 pytestmark = pytest.mark.unit
 
@@ -287,7 +287,7 @@ def test_gemm_precision_flag_config_and_checkpoint_default(tmp_path):
 def test_auto_gemm_precision_resolves_by_device():
     import jax
 
-    from relax.ppca_refinement.full_row_stream import resolve_gemm_precision
+    from relax.ppca_refinement.full_row_kernels import resolve_gemm_precision
 
     cpu = jax.devices("cpu")[0]
     assert resolve_gemm_precision("auto", cpu) == "fp32"

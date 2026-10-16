@@ -131,11 +131,11 @@ def ppca_latent_epilogue_f32(inner, gram, rows, prior_tables, start, kept):
     CTF/noise-weighted ``Re(conj(A_i) A_j)``; ``rows`` ``(R,)`` the block's fine rows and
     ``prior_tables`` ``(rotation_parent, rotation_log_prior, translation_parent,
     translation_log_prior, coarse_mask)`` the pose log-prior of
-    :func:`relax.ppca_refinement.full_row_stream.full_row_pose_log_prior`. ``kept`` is
+    :func:`relax.ppca_refinement.full_row_kernels.full_row_pose_log_prior`. ``kept`` is
     ``(score, mean, covariance, part_max, part_arg, part_sum)`` of shapes ``(cap, B, T)``,
     ``(q, cap, B, T)``, ``(cap, B, tri(q))`` and ``(cap, B)``; rows ``start .. start + R`` are
     overwritten (the buffers are aliased, so a donated ``kept`` is updated in place) with the
-    formulation of :func:`relax.ppca_refinement.full_row_stream._latent_block` and each
+    formulation of :func:`relax.ppca_refinement.full_row_kernels._latent_block` and each
     (rotation, image)'s maximum score, first maximizing translation and
     ``sum_t exp(score - maximum)``. Latent rank at most 16.
     """
@@ -167,7 +167,7 @@ def ppca_posterior_prep_f32(kept_score, kept_mean, kept_covariance, center, cent
     padding up to ``row_length`` (default ``B T``; the RHS GEMM's aligned shift axis), the packed
     upper translation sums
     ``(tri(P), R, B)`` of ``gamma E[a_i a_j]`` for ``a = [1, z]``
-    (:func:`relax.ppca_refinement.full_row_stream.second_moment_sums`), the partial diagnostics
+    (:func:`relax.ppca_refinement.full_row_kernels.second_moment_sums`), the partial diagnostics
     ``(2, R, B)`` (``-sum_t gamma log-gamma`` over ``gamma > 0`` and ``sum_t gamma |shift|^2``) and
     the count ``(R, B)`` of poses with ``gamma > 1e-3``.
     """

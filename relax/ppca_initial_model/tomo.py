@@ -24,7 +24,8 @@ from scipy.spatial.transform import Rotation
 from relax.fourier.half_spectrum import make_half_image_weights
 from relax.fourier.preprocessing import relion_half_translation_lattice, translation_phases
 from relax.ppca_initial_model.initialization import initial_noise, seed_model
-from relax.ppca_refinement.full_row_stream import SHIFT_ALIGN, TileArrays, real_imag, tile_size_bucket, tile_support
+from relax.ppca_refinement.full_row_kernels import SHIFT_ALIGN, TileArrays, real_imag
+from relax.ppca_refinement.full_row_stream import tile_size_bucket, tile_support
 from relax.ppca_refinement.residual_statistics import full_float32
 from relax.reconstruction.resolution import compute_ini_high_shell
 from relax.sampling.tomo_particles import tilt_image_shifts
