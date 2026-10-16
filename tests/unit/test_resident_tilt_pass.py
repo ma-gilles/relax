@@ -16,7 +16,7 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 from helpers.engine_settings import RESIDENT_PRODUCTION_ENGINE
-from helpers.float_compare import assert_matches
+from helpers.float_compare import RTOL, assert_matches
 from test_resident_pass2_driver import (
     _driver_fixture_args,
     _resident_production_env,  # noqa: F401 (fixture)
@@ -734,3 +734,82 @@ def test_one_image_particles_reproduce_the_spa_firstiter_cc_pass(_resident_produ
         )
     assert _rel_l2(spa.Ft_y[0], tomo.Ft_y[0]) < _BPREF_ATOMIC_BAND
     assert _rel_l2(spa.Ft_ctf[0], tomo.Ft_ctf[0]) < _BPREF_ATOMIC_BAND
+
+
+@requires_resident_gpu
+def test_compiled_tilt_fold_is_the_eager_fold(_resident_production_env, monkeypatch):  # noqa: F811
+    """accumulate_tilt_chunk_terms compiled (one program, the optics groups vmapped) gives the eager function's
+    statistics, for the chunk of a real tilt pass and for the same chunk split over three optics groups.
+
+    ``sumw`` is compared at the float32 band: it is a float32 atomic scatter-add of the rows' posterior
+    (segment_sum_by_image) summed in float32 and cast to float64, so it is not reproducible to float64 even
+    eager against eager (2^-24 on 1.0 in 2 of 10 back-to-back eager runs on an H100, job 15669435). Every other
+    leaf keeps the float64 default.
+    """
+
+    from dataclasses import replace as dc_replace
+
+    import jax
+
+    from relax.fine_pass import resident_pass2 as rp
+    from relax.fine_pass import resident_tilts
+
+    calls = []
+    real_fold = resident_tilts.accumulate_tilt_chunk_terms
+
+    def spy(stats, **kwargs):
+        calls.append((stats, kwargs))
+        return real_fold(stats, **kwargs)
+
+    monkeypatch.setattr(resident_tilts, "accumulate_tilt_chunk_terms", spy)
+    args = dict(_driver_fixture_args(), score_with_masked_images=True)
+    rp._resident_pass2(
+        **dict(args, translation_log_prior=None), tilt=_one_image_tilt_inputs(args),
+        engine_tuning=RESIDENT_PRODUCTION_ENGINE, scoring_overrides=ScoringOverrides(),
+    )
+    assert calls
+    stats, kwargs = calls[0]
+
+    float32_atomic = {".sumw"}
+
+    def assert_same(compiled, eager):
+        leaves_c, tree_c = jax.tree_util.tree_flatten_with_path(compiled)[0], jax.tree_util.tree_structure(compiled)
+        leaves_e, tree_e = jax.tree_util.tree_leaves(eager), jax.tree_util.tree_structure(eager)
+        assert tree_c == tree_e
+        for (path, got), want in zip(leaves_c, leaves_e, strict=True):
+            got, want = np.asarray(got), np.asarray(want)
+            if got.dtype.kind in "fc":
+                band = {"rtol": RTOL[np.dtype(np.float32)]} if jax.tree_util.keystr(path) in float32_atomic else {}
+                assert_matches(got, want, **band)
+            else:
+                np.testing.assert_array_equal(got, want)
+
+    assert_same(real_fold(stats, **kwargs), real_fold.__wrapped__(stats, **kwargs))
+
+    # The same chunk over three optics groups: each image's group, each group's noise shells.
+    n_groups = 3
+    spec = kwargs["spec"]
+    spec = dc_replace(spec, stats_config=dc_replace(spec.stats_config, n_optics_groups=n_groups))
+    n_images = int(kwargs["image_ids"].shape[0])
+    image_groups = jnp.asarray(np.arange(n_images) % n_groups, dtype=jnp.int32)
+    mstep = kwargs["mstep"]
+    mstep = mstep._replace(
+        noise_shells=jnp.stack([jnp.asarray(mstep.noise_shells) * f for f in (1.0, 0.5, 2.0)])
+    )
+    n_shells = int(spec.stats_config.n_shells)
+    grouped = stats._replace(
+        wsum_sigma2_noise=jnp.zeros((n_groups, n_shells), jnp.float64),
+        wsum_img_power=jnp.zeros((n_groups, n_shells), jnp.float64),
+        sumw=jnp.zeros(n_groups, jnp.float64),
+    )
+    n_units = int(kwargs["unit_ids"].shape[0])
+    grouped_kwargs = dict(
+        kwargs,
+        spec=spec,
+        mstep=mstep,
+        operands=kwargs["operands"]._replace(optics_groups=image_groups),
+        unit_optics_groups=jnp.asarray(np.arange(n_units) % n_groups, dtype=jnp.int32),
+    )
+    compiled = real_fold(grouped, **grouped_kwargs)
+    assert compiled.wsum_sigma2_noise.shape == (n_groups, n_shells)
+    assert_same(compiled, real_fold.__wrapped__(grouped, **grouped_kwargs))

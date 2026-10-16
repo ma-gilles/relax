@@ -1368,6 +1368,7 @@ def row_fine_rot_device(host, row_capacity: int) -> np.ndarray:
     return out
 
 
+@partial(jax.jit, static_argnames=("spec",))
 def accumulate_tilt_chunk_terms(
     stats,
     *,
@@ -1396,6 +1397,12 @@ def accumulate_tilt_chunk_terms(
     are (:3474-3479). The noise and norm block partials arrive already scaled (image_noise_scale).
     With K>1 the class terms are the particle's (``resident_image_terms.fold_class_axis``) and the scale
     sums arrive folded class by class (``mstep.scale_xa_per_image``).
+
+    One compiled program per chunk shape, the optics groups' noise shells vmapped over the groups. Run
+    eagerly with a Python loop over the groups it dispatched each group's operations one by one while the
+    GPU waited: 13.6% of a real tilt-series final iteration's pass-2 host samples, with 130 optics groups.
+    Compiled, XLA fuses and orders the same operations its own way, so the sums differ from the eager
+    ones in float32 rounding, not bitwise.
     """
 
     from relax.fine_pass import resident_image_terms
@@ -1463,8 +1470,8 @@ def accumulate_tilt_chunk_terms(
         )
     else:
         image_optics = jnp.asarray(operands.optics_groups, dtype=jnp.int32)
-        residual_per_group, power_per_group = [], []
-        for group in range(config.n_optics_groups):
+
+        def group_shells(group, group_noise_shells):
             in_group = valid_image & (image_optics == group)
             group_img_shells, _ = weighted_image_power_from_shells(
                 operands.image_power_shells,
@@ -1476,18 +1483,18 @@ def accumulate_tilt_chunk_terms(
                 deterministic_norm_reduction=config.deterministic_norm_reduction,
                 high_shell_mass=scale,
             )
-            group_residual, group_power = _replace_low_shell_noise_with_relion_wavg_direct_residual_jnp(
-                jnp.asarray(mstep.noise_shells[group], dtype=jnp.float64),
+            return _replace_low_shell_noise_with_relion_wavg_direct_residual_jnp(
+                jnp.asarray(group_noise_shells, dtype=jnp.float64),
                 group_img_shells.astype(jnp.float64),
                 jnp.where(in_group[:, None], direct_residual, jnp.float32(0.0)),
                 tables.wavg_shell_indices,
                 exclusive_shell_stop=int(config.direct_noise_exclusive_shell_stop),
                 shell_count=config.n_shells,
             )
-            residual_per_group.append(group_residual)
-            power_per_group.append(group_power)
-        residual_shells = jnp.stack(residual_per_group)
-        image_power_shells = jnp.stack(power_per_group)
+
+        residual_shells, image_power_shells = jax.vmap(group_shells)(
+            jnp.arange(config.n_optics_groups, dtype=jnp.int32), mstep.noise_shells
+        )
 
     # --- 8. scale sums: every image as it is ------------------------------
     scale_xa, scale_aa = stats.scale_xa, stats.scale_aa
