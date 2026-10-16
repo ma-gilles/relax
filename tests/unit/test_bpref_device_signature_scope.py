@@ -12,7 +12,7 @@ from relax.classification import k_class
 from relax.cuda import backprojection as cuda_backprojection
 from relax.diagnostics import bpref_diagnostics
 from relax.refinement import dense_half, local_half
-from relax.refinement.refinement_options import ExecutionOptions, bpref_device_signature_target
+from relax.refinement.refinement_options import bpref_device_signature_target
 
 pytestmark = pytest.mark.unit
 
@@ -33,14 +33,6 @@ def test_device_signature_target_is_the_numbered_half_the_environment_names():
     # Without the device-signature directory nothing is captured, whatever the targets say.
     env.pop("RECOVAR_BPREF_DEVICE_SIGNATURE_DUMP_DIR")
     assert bpref_device_signature_target(environ=env) is None
-
-
-def test_the_run_options_read_the_device_signature_target_once(monkeypatch):
-    for name, value in _capture_environment().items():
-        monkeypatch.setenv(name, value)
-    assert ExecutionOptions.from_environ().bpref_device_signature_target == (5, 1)
-    monkeypatch.delenv("RECOVAR_BPREF_DEVICE_SIGNATURE_DUMP_DIR")
-    assert ExecutionOptions.from_environ().bpref_device_signature_target is None
 
 
 def test_device_signature_scope_rejects_missing_or_invalid_target():

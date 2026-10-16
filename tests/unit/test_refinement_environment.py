@@ -475,3 +475,20 @@ def test_final_all_data_after_max_iter_is_read_once(monkeypatch, caplog):
     monkeypatch.setenv(env_name, "maybe")
     assert FinalPassOptions.from_environ().after_max_iter is False
     assert "Ignoring invalid RELAX_FINAL_ALL_DATA_AFTER_MAX_ITER" in caplog.text
+
+
+def test_the_run_options_read_the_device_signature_target_once(monkeypatch):
+    """ExecutionOptions.bpref_device_signature_target: the numbered half to capture, read once; none without the
+    device-signature directory."""
+    from relax.refinement.refinement_options import ExecutionOptions
+
+    capture = {
+        "RECOVAR_BPREF_DEVICE_SIGNATURE_DUMP_DIR": "/tmp/device",
+        "RELAX_BPREF_CONTRIBUTION_DUMP_ITERATION": "5",
+        "RELAX_BPREF_CONTRIBUTION_DUMP_HALF": "1",
+    }
+    for name, value in capture.items():
+        monkeypatch.setenv(name, value)
+    assert ExecutionOptions.from_environ().bpref_device_signature_target == (5, 1)
+    monkeypatch.delenv("RECOVAR_BPREF_DEVICE_SIGNATURE_DUMP_DIR")
+    assert ExecutionOptions.from_environ().bpref_device_signature_target is None
