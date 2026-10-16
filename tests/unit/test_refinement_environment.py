@@ -1,5 +1,10 @@
 """Each controller environment variable is read once, by ``RefinementEnvironment.from_environ`` when the command
-builds the run's options (code rule 5), and reaches its consumer as an argument."""
+builds the run's options (code rule 5), and reaches its consumer as an argument.
+
+This file also holds the parse tests of the other refinement option records (``ReconstructionPrograms``,
+``FinalPassOptions``, ``ExecutionOptions``, ``DensePrecisionPolicy``) and every record's guard that
+``from_environ()`` with no variable set is the record's defaults; other tests pass explicit values (rule 22).
+"""
 
 from __future__ import annotations
 

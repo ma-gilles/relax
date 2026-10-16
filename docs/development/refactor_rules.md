@@ -172,10 +172,16 @@ Each rule names a commit that shows it applied and the check that enforces it.
     (07fded0c "chore(structure): lower relax/refinement's ceilings to the paid-back totals"). Check:
     `scripts/report_refinement_structure.py --check` and the ceiling tests through `scripts/dev/ceilings.py`.
 22. **Tests build records with explicit values:** `Record(...)`, `dataclasses.replace(Record(), field=value)`,
-    or a builder in `tests/helpers/` (`tests/helpers/engine_settings.py`). A test does not set a variable to
-    get a value through `from_environ()`; `from_environ()` appears only in the record's own parse tests, with
-    the environment set by `monkeypatch`. Before/after: e5e0d7a2 "test(env): EngineTuning tests pass explicit
-    values (rule 5)". Check: no check.
+    or a builder in `tests/helpers/` (`tests/helpers/engine_settings.py`, `tests/helpers/run_options.py`).
+    No test sets a variable to get a value through `from_environ()`. `from_environ()` is called only in the
+    records' parse tests, with the environment set by `monkeypatch`, and those live in the parse-test files
+    (`test_<record>_environment.py`, and `test_refinement_environment.py` for the refinement option records
+    and every record's guard against the unset environment). A test that parses a variable and then drives
+    its consumer is two tests: the parse half goes to the record's file, the consumer half passes the value.
+    Before/after: e5e0d7a2 "test(env): EngineTuning tests pass explicit values (rule 5)" and "test(env):
+    EngineTuning parse tests live in one file; the rest pass explicit values (rule 22)". Check:
+    `tests/unit/test_from_environ_only_in_parse_tests.py` fails on a `from_environ()` call anywhere in
+    `tests/` outside its allowlist of parse-test files.
 23. **Importing a script changes no environment variable.** A script sets `JAX_PLATFORMS` and the like in its
     `main` (`use_cpu_jax()` in `scripts/summarize_em_completion_bench.py`); a pytest session that collects
     it, or a script importing it, otherwise passes the setting to every later child process. Before/after:
