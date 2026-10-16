@@ -263,25 +263,24 @@ def resolve_statistics_config(
     norm reduction.
     """
 
-    deterministic_norm_reduction = bool(source_faithful_spectrum_norm)
-    cutoff = None if current_size is None else int(current_size) // 2
+    cutoff = None if current_size is None else current_size // 2
     return ResidentStatisticsConfig(
-        n_shells=int(n_shells),
-        n_fine_trans=int(n_fine_trans),
+        n_shells=n_shells,
+        n_fine_trans=n_fine_trans,
         image_capacity=resident_image_capacity(n_images),
-        n_coarse_rot=int(n_coarse_rot),
-        n_scale_groups=int(n_scale_groups),
+        n_coarse_rot=n_coarse_rot,
+        n_scale_groups=n_scale_groups,
         norm_unweighted_shell_cutoff=cutoff,
-        include_unweighted_high_shell=bool(include_unweighted_high_shell),
+        include_unweighted_high_shell=include_unweighted_high_shell,
         disable_cuda_binning=process_platform.custom_cuda_disabled(),
-        deterministic_norm_reduction=bool(deterministic_norm_reduction),
-        use_exact_relion_gaussian=bool(use_exact_relion_gaussian),
-        relion_wavg_atomic_scale_aa=bool(relion_wavg_atomic_scale_aa),
-        direct_noise_exclusive_shell_stop=int(n_shells) if cutoff is None else cutoff + 1,
-        accumulate_scale=bool(accumulate_scale),
-        n_optics_groups=int(n_optics_groups),
-        n_classes=int(n_classes),
-        float32_bucketed_image_sums=bool(float32_bucketed_image_sums),
+        deterministic_norm_reduction=source_faithful_spectrum_norm,
+        use_exact_relion_gaussian=use_exact_relion_gaussian,
+        relion_wavg_atomic_scale_aa=relion_wavg_atomic_scale_aa,
+        direct_noise_exclusive_shell_stop=n_shells if cutoff is None else cutoff + 1,
+        accumulate_scale=accumulate_scale,
+        n_optics_groups=n_optics_groups,
+        n_classes=n_classes,
+        float32_bucketed_image_sums=float32_bucketed_image_sums,
     )
 
 
