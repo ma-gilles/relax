@@ -206,8 +206,8 @@ def resident_stable_window_plan(
     in classes of ``quantum`` (``EngineTuning.stable_window_quantum``),
     with one current size for scoring and reconstruction on the model grid.
     The --firstiter_cc iteration (normalized-CC tiles) and a split
-    score/reconstruction current size keep RELION's logical window, as the
-    compact and local engines do. Images on another grid take the plan on their
+    score/reconstruction current size keep RELION's logical window, in the
+    global and the local resident passes alike. Images on another grid take the plan on their
     own image grid; their reference-model volume gets its own physical class in
     the caller (:func:`stable_reference_volume_class`).
     """

@@ -49,6 +49,7 @@ def open_pass_capacity_texture(
     projection_kwargs,
     class_index: int,
     kept_only: bool = False,
+    logical_r_max: int | None = None,
 ):
     """One staged projector texture for a half's chunks, or None where it does not apply.
 
@@ -62,15 +63,26 @@ def open_pass_capacity_texture(
     when the shapes agree (``PASS_TEXTURES``) and stays open after the pass;
     the caller closes any other texture after the loop. With ``kept_only`` a
     larger slab gets None (its projections stage their own texture per call).
+
+    ``logical_r_max`` marks a center-padded capacity slab of a stable-window pass
+    (``resident_stable_windows.pass_capacity_projection``, static radius 0): the
+    texture serves the slab's physical geometry and is staged at RELION's logical
+    model radius, which its runtime-radius projections then read.
     """
 
     from relax.projection.projection import relion_capacity_texture_serves
 
     if relion_projector_half is None or jax.default_backend() != "gpu":
         return None
+    staged_r_max = int(relion_projector_r_max) if logical_r_max is None else int(logical_r_max)
+    geometry_r_max = (
+        int(relion_projector_r_max)
+        if logical_r_max is None
+        else (int(relion_projector_half.shape[2]) - 2) // int(projection_padding_factor)
+    )
     if not relion_capacity_texture_serves(
         relion_projector_half,
-        r_max=int(relion_projector_r_max),
+        r_max=geometry_r_max,
         padding_factor=int(projection_padding_factor),
         projector_output_size=int(projection_kwargs["projector_output_size"]),
         relion_texture_interp=(
@@ -88,7 +100,7 @@ def open_pass_capacity_texture(
             return None
         return RelionCapacityHalfTextureF32(
             relion_projector_half,
-            int(relion_projector_r_max),
+            staged_r_max,
             padding_factor=int(projection_padding_factor),
         )
     texture = PASS_TEXTURES.pop(int(class_index), None)
@@ -99,13 +111,13 @@ def open_pass_capacity_texture(
         and texture.padding_factor == int(projection_padding_factor)
         and texture.device in relion_projector_half.devices()
     ):
-        texture.refill(relion_projector_half, logical_r_max=int(relion_projector_r_max))
+        texture.refill(relion_projector_half, logical_r_max=staged_r_max)
     else:
         if texture is not None:
             texture.close()
         texture = RelionCapacityHalfTextureF32(
             relion_projector_half,
-            int(relion_projector_r_max),
+            staged_r_max,
             padding_factor=int(projection_padding_factor),
             reusable_staging=True,
         )

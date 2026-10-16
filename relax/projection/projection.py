@@ -605,6 +605,21 @@ def _half_storage_projection(volume_relion_half, *, r_max, padding_factor, proje
     )
 
 
+def _require_capacity_texture_holds(capacity_texture, volume_relion_half, model_r_max, padding_factor) -> None:
+    """Refuse a staged texture that is not this slab at this model radius (a concrete radius is checked)."""
+
+    if (
+        tuple(capacity_texture.shape) != tuple(volume_relion_half.shape)
+        or capacity_texture.padding_factor != int(padding_factor)
+    ):
+        raise ValueError("the capacity projector texture does not hold this projector")
+    if not isinstance(model_r_max, jax.core.Tracer) and int(model_r_max) != int(capacity_texture.logical_r_max):
+        raise ValueError(
+            f"the capacity projector texture was staged at model radius {capacity_texture.logical_r_max}, "
+            f"not {int(model_r_max)}"
+        )
+
+
 def relion_capacity_texture_serves(
     volume_relion_half, *, r_max, padding_factor, projector_output_size, relion_texture_interp: bool
 ) -> bool:
@@ -673,12 +688,35 @@ def _project_relion_projector_texture(
             raise ValueError("rotated image radius cannot be combined with an exact image-disk mask")
         from relax.cuda.projector import project_relion_half_capacity
 
-        projection_crop = project_relion_half_capacity(
-            volume_relion_half, rotations_block,
-            jnp.asarray(r_max, jnp.int32) if runtime_r_max is None else runtime_r_max,
-            image_shape=(int(projector_output_size), int(projector_output_size)),
-            padding_factor=int(padding_factor), image_r_max=image_r_max,
-        )
+        model_r_max = jnp.asarray(r_max, jnp.int32) if runtime_r_max is None else runtime_r_max
+        if capacity_texture is not None:
+            # A capacity slab staged once per pass at its logical model radius (the local resident pass's
+            # stable windows): the same staging and kernel as the per-call projection below.
+            _require_capacity_texture_holds(capacity_texture, volume_relion_half, model_r_max, padding_factor)
+            project = partial(
+                capacity_texture.project,
+                image_shape=(int(projector_output_size), int(projector_output_size)),
+                image_r_max=image_r_max,
+            )
+            capacity_texture = None
+            # The kernel takes at most _HALF_STORAGE_MAX_ROTATIONS rotations per launch.
+            n_rotations = int(rotations_block.shape[0])
+            if n_rotations <= _HALF_STORAGE_MAX_ROTATIONS:
+                projection_crop = project(rotations_block)
+            else:
+                projection_crop = jnp.concatenate(
+                    [
+                        project(rotations_block[start : start + _HALF_STORAGE_MAX_ROTATIONS])
+                        for start in range(0, n_rotations, _HALF_STORAGE_MAX_ROTATIONS)
+                    ],
+                    axis=0,
+                )
+        else:
+            projection_crop = project_relion_half_capacity(
+                volume_relion_half, rotations_block, model_r_max,
+                image_shape=(int(projector_output_size), int(projector_output_size)),
+                padding_factor=int(padding_factor), image_r_max=image_r_max,
+            )
     elif (
         runtime_r_max is None
         and _half_storage_projection(
@@ -850,12 +888,18 @@ def compute_relion_projector_projections_block(
         coarse_window = resolved_output_size
         if current_image_mask_size is not None and not isinstance(current_image_mask_size, jax.core.Tracer):
             coarse_window = int(current_image_mask_size)
+        # The model radius: the static one, or a capacity projection's runtime radius (its static one is 0).
+        model_r_max = int(r_max)
+        if projector_capacity:
+            if isinstance(runtime_r_max, jax.core.Tracer):
+                raise NotImplementedError("RELION's coarse kernel rows need a concrete runtime model radius")
+            model_r_max = int(runtime_r_max)
         # Other-grid rotations carry 1 / s (applyScaleDifference). Rows can wrap inside the
         # sphere only for a window wider than 2 r_max, so only then is the scale read (a
         # device rotation block costs a host sync per block).
-        if coarse_window // 2 > int(r_max) and coarse_rows_wrap_inside(
+        if coarse_window // 2 > model_r_max and coarse_rows_wrap_inside(
             coarse_window,
-            int(r_max),
+            model_r_max,
             1.0 / float(np.linalg.norm(np.asarray(rotations_block[0, 0], dtype=np.float64))),
         ):
             unsupported = (
@@ -866,7 +910,7 @@ def compute_relion_projector_projections_block(
             if unsupported:
                 raise NotImplementedError(
                     f"a {coarse_window} px coarse window lies between 2 r_max and 2 s r_max "
-                    f"(r_max {int(r_max)}): RELION's coarse kernel projects its relabelled outer rows there "
+                    f"(r_max {model_r_max}): RELION's coarse kernel projects its relabelled outer rows there "
                     "(diff2.cuh:86-90); this projection route (a runtime radius, an image-disk mask or "
                     "uncentred rows) does not reproduce them"
                 )

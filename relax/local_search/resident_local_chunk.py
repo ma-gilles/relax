@@ -303,6 +303,7 @@ def start_resident_local_chunk(
     class_scale_masks_rect=None,
     lone_block_rows=None,
     row_partial=None,
+    window_logical=None,
     engine_tuning,
 ):
     """Enqueue one local capacity chunk's front stages; return its ``finish``.
@@ -338,6 +339,10 @@ def start_resident_local_chunk(
     lone image's rows are class-major, so a block spans few classes) and each class's M-step blocks with its own.
     The ``--firstiter_cc`` iteration scores the blocks with the normalized-CC block core
     (:func:`~relax.fine_pass.resident_scoring.score_resident_chunk_normalized_cc_in_row_blocks`).
+
+    ``window_logical`` (a stable-window pass, :func:`~relax.fine_pass.resident_stable_windows.window_logical_sizes`)
+    carries RELION's logical recon and Wavg pixel counts and adjoint radius to the M-step, whose pixel axes and
+    BPref cube are the physical class's.
     """
 
     from relax.cuda import posterior as cuda_posterior
@@ -781,6 +786,7 @@ def start_resident_local_chunk(
                 max_adjoint_block_bytes=max_adjoint_block_bytes,
                 n_optics_groups=int(stats_config.n_optics_groups),
                 row_partial=row_partial,
+                window_logical=window_logical,
             )
 
         class_fields = {}

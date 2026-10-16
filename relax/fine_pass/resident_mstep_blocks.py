@@ -664,6 +664,7 @@ def run_resident_mstep_blocks(
     recon_pixel_indices=None,
     translation_angles=None,
     row_partial: RowPartial | None = None,
+    window_logical: resident_chunk_records.WindowLogicalSizes | None = None,
 ):
     """Walk one chunk's pixel axis in row blocks: Wavg, noise and both adjoints (``glue_jit``:
     ``EngineTuning.resident_glue_jit``, the block program jitted or run eagerly).
@@ -672,6 +673,10 @@ def run_resident_mstep_blocks(
     into ``Ft_y_total``/``Ft_ctf_total`` every ``blocks_per_flush`` blocks and after the last (relax#65).
 
     Exactly one of ``block_projections`` and ``chunk_projections`` is given.
+
+    ``window_logical`` (:func:`~relax.fine_pass.resident_stable_windows.window_logical_sizes`) is set for a
+    stable-window pass: the pixel axes are the physical class's, RELION's logical recon and Wavg pixel
+    counts and adjoint radius are runtime values, and the physical tail adds nothing.
 
     ``row_ids`` (int32 ``[row_capacity]``) is the chunk row each M-step row
     reads its ``chunk_projections`` at; ``None`` is the identity. The row
@@ -763,6 +768,7 @@ def run_resident_mstep_blocks(
         use_translate_sum_kernel=use_translate_sum_kernel,
         bpref_recon_operand=use_translate_sum_kernel and recon.get("recon_weight") is not None,
         glue_jit=glue_jit,
+        stable_window=window_logical is not None,
     )
     operands = resident_chunk_records.ChunkStageOperands(
         score_input=None,
@@ -814,6 +820,7 @@ def run_resident_mstep_blocks(
         shell_indices_half=None,
         wavg_shell_indices=None,
         wavg_scale_pixel_mask=None,
+        window_logical=window_logical,
     )
 
     block_rows = int(mstep_block_rows)

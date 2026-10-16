@@ -1510,3 +1510,69 @@ def test_local_block_row_program_is_read_once_at_the_boundary(monkeypatch):
         else:
             monkeypatch.setenv("RELAX_LOCAL_SEARCH_RESIDENT_BLOCK_ROW_PROGRAM", raw)
         assert EngineTuning.from_environ().local_block_row_program is expected
+
+
+@requires_resident_gpu
+@pytest.mark.parametrize("current_size", [4, CURRENT_SIZE])
+def test_stable_window_pass_matches_the_logical_window(caplog, current_size):
+    """relax#95: the local pass in its physical window class (current size 4 runs in class 6 of the 8 px box,
+    6 in its own class) computes what the logical window computes: the same winners and the same maps,
+    statistics and noise sums up to the reduction order of the padded pixel axes."""
+
+    import logging
+
+    case = _case()
+    logical = _run(case, engine_tuning=replace(LOCAL_RESIDENT_ENGINE, stable_windows=False), current_size=current_size)
+    with caplog.at_level(logging.INFO, logger="relax.fine_pass.resident_stable_windows"):
+        stable = _run(case, engine_tuning=LOCAL_RESIDENT_ENGINE, current_size=current_size)
+    assert f"Resident local pass-2 stable windows: logical current_size {current_size} -> physical class 6" in caplog.text
+    np.testing.assert_array_equal(np.asarray(stable.hard_assignment), np.asarray(logical.hard_assignment))
+    assert_matches(
+        np.asarray(stable.relion_stats.log_evidence_per_image), np.asarray(logical.relion_stats.log_evidence_per_image)
+    )
+
+    def rel_l2(a, b):
+        a = np.asarray(a, dtype=np.complex128)
+        b = np.asarray(b, dtype=np.complex128)
+        den = float(np.linalg.norm(a))
+        return float(np.linalg.norm(a - b) / den) if den else 0.0
+
+    # The repeat band of test_resident_local_repeats_itself (float32 atomics, 1e-7 measured): the padded
+    # pixel axes change only the reduction order (the stable pass measured 4.3e-7 max-relative on the maps
+    # against 1.4e-7 for two logical runs, A100).
+    assert np.asarray(stable.Ft_y).shape == np.asarray(logical.Ft_y).shape
+    for name in ("Ft_y", "Ft_ctf"):
+        assert rel_l2(getattr(stable, name), getattr(logical, name)) < 1e-6, name
+    for name in ("wsum_sigma2_noise", "wsum_img_power", "sumw", "wsum_norm_correction"):
+        assert rel_l2(getattr(stable.noise_stats, name), getattr(logical.noise_stats, name)) < 1e-6, name
+
+
+@requires_resident_gpu
+def test_stable_window_parent_probe_keeps_the_logical_window_samples(caplog):
+    """relax#95: the pass-1 parent probe in its physical window class (RELION's coarse kernel, current size 4 in
+    class 6) keeps the samples and winners the logical window keeps."""
+
+    import logging
+
+    parent, translations = _parent_layout()
+    case = dict(_case(), layout=parent, translations=translations)
+    probe = dict(
+        current_size=4,
+        projection_relion_kernel="coarse",
+        score_only=True,
+        disable_adjoint_y=True,
+        disable_adjoint_ctf=True,
+        return_reconstruction_sample_indices=True,
+        return_profile=True,
+    )
+    logical = _run(case, engine_tuning=replace(LOCAL_RESIDENT_ENGINE, stable_windows=False), **probe)
+    with caplog.at_level(logging.INFO, logger="relax.fine_pass.resident_stable_windows"):
+        stable = _run(case, engine_tuning=LOCAL_RESIDENT_ENGINE, **probe)
+    assert "Resident local pass-2 stable windows: logical current_size 4 -> physical class 6" in caplog.text
+    np.testing.assert_array_equal(np.asarray(stable.hard_assignment), np.asarray(logical.hard_assignment))
+    for got, want in zip(
+        stable.profile_summary["reconstruction_sample_indices_by_image"],
+        logical.profile_summary["reconstruction_sample_indices_by_image"],
+        strict=True,
+    ):
+        np.testing.assert_array_equal(np.asarray(got), np.asarray(want))

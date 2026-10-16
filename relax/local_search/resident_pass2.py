@@ -73,7 +73,9 @@ from recovar.reconstruction import noise as noise_utils
 from relax.fine_pass import (
     projection_blocks,
     resident_chunk_memory,
+    resident_chunk_records,
     resident_image_terms,
+    resident_stable_windows,
     resident_statistics,
 )
 from relax.fine_pass import resident_pass2 as rp
@@ -85,7 +87,6 @@ from relax.fine_pass.policy import (
 )
 from relax.fine_pass.projection_blocks import (
     projection_kwargs_for_relion_score_window,
-    projection_window_union,
 )
 from relax.fine_pass.resident_operands import (
     ResidentOperandsUnsupported,
@@ -93,9 +94,6 @@ from relax.fine_pass.resident_operands import (
 )
 from relax.fine_pass.resident_scoring import (
     resident_row_projection_bytes,
-)
-from relax.fine_pass.scoring import (
-    _relion_cuda_fine_full_to_compact_lookup,
 )
 from relax.fine_pass.wavg import (
     make_relion_wavg_rectangle,
@@ -128,10 +126,8 @@ from relax.projection.projection import (
 )
 from relax.reconstruction.half_volume_mstep import (
     allocate_row_partial,
-    finalize_half_volume_bpref,
     half_volume_accumulator_shape,
     relion_backprojector_volume_shape,
-    relion_x_half_accumulators_to_public_layout,
     relion_x_half_mstep_accumulator_dtypes,
 )
 from relax.relion.optics_aberrations import dataset_magnification_is_anisotropic, dataset_needs_exact_ctf
@@ -342,6 +338,30 @@ def compute_local_search_resident(
         jax.default_backend() == "gpu" and cuda_backproject.custom_cuda_requested(),
         "every resident stage is a CUDA FFI target",
     )
+    # Stable windows (relax#95), as the global resident pass runs them and with its exclusions (the
+    # --firstiter_cc iteration, a size at the box, a weighted-sum size above the score's): the pass runs
+    # in its physical window class, so the logical sizes of a class share the chunk programs.
+    stable_window_plan = (
+        None
+        if wsum_current_size != current_size
+        else resident_stable_windows.resident_stable_window_plan(
+            image_shape,
+            current_size=current_size,
+            mstep_current_size=mstep_current_size,
+            n_half=n_half,
+            square_window=kernel.square_window,
+            window_spec_kwargs=window_spec_kwargs,
+            firstiter_cc=kernel.firstiter_cc,
+            requested=support.engine_tuning.stable_windows,
+            quantum=support.engine_tuning.stable_window_quantum,
+        )
+    )
+    stable_window_spec = None
+    program_current_size = int(current_size)
+    if stable_window_plan is not None:
+        stable_window_spec = resident_stable_windows.stable_window_spec(stable_window_plan)
+        program_current_size = int(stable_window_plan.physical_current_size)
+        resident_stable_windows.log_stable_window_plan("Resident local pass-2", stable_window_plan)
 
     # ---- candidate rows ---------------------------------------------------
     # Read after the configuration checks, so a pass the driver refuses touches
@@ -374,6 +394,7 @@ def compute_local_search_resident(
         window_spec_kwargs=window_spec_kwargs,
         use_relion_x_half_mstep=True,
         log_label="Resident local pass-2",
+        window_spec_override=stable_window_spec,
     )
     config = window_setup.config
     window_spec = window_setup.window_spec
@@ -394,9 +415,12 @@ def compute_local_search_resident(
         nyquist_column_counting=kernel.nyquist_column_counting,
     )
     del half_weights
-    relion_score_full_to_compact = jnp.asarray(
-        _relion_cuda_fine_full_to_compact_lookup(image_shape, current_size, window_indices_np),
-        dtype=jnp.int32,
+    half_weights_windowed, relion_score_full_to_compact = resident_stable_windows.score_weights_and_lookup(
+        half_weights_windowed,
+        image_shape=image_shape,
+        current_size=current_size,
+        window_indices_np=window_indices_np,
+        plan=stable_window_plan,
     )
     # The exact local engine casts sigma2 to the score real dtype before it
     # divides by it (local_big_jit.py, the non-BPref-operand branch). Passing a
@@ -441,7 +465,9 @@ def compute_local_search_resident(
 
     n_shells = image_shape[0] // 2 + 1
     # With a weighted-sum size above the scoring size, the noise crop is that size's rectangle.
-    noise_crop_indices = window_indices
+    noise_crop_indices = resident_stable_windows.logical_score_indices(
+        window_indices, window_indices_np, stable_window_plan
+    )
     if wsum_current_size != current_size:
         noise_crop_indices = make_relion_wavg_rectangle(
             image_shape, wsum_current_size, recon_window_indices, reconstruction_current_size=mstep_current_size
@@ -454,6 +480,22 @@ def compute_local_search_resident(
     )
     shell_indices_noise = window_spec.recon_values(shell_indices_half)
     noise_variance_for_noise = window_spec.recon_values(noise_variance_half)
+    (
+        shell_indices_noise,
+        noise_variance_for_noise,
+        relion_wavg_rectangle,
+        logical_rect_pixels,
+        logical_recon_pixels,
+    ) = resident_stable_windows.stable_noise_tables(
+        shell_indices_noise,
+        noise_variance_for_noise,
+        plan=stable_window_plan,
+        image_shape=image_shape,
+        wsum_current_size=wsum_current_size,
+        recon_window_indices=recon_window_indices,
+        mstep_current_size=mstep_current_size,
+        n_recon_windowed=n_recon_windowed,
+    )
     # Class3D masks each class's scale sums by its own data_vs_prior_class
     # (acc_ml_optimiser_impl.h:4893-4912): ``[K, n_shells]``, or one curve for every class.
     scale_dvp_by_class = [data.scale_correction_data_vs_prior] * tables.n_classes
@@ -472,12 +514,6 @@ def compute_local_search_resident(
         scale_dvp_by_class[0],
         shell_indices_noise,
         n_shells=n_shells,
-    )
-    relion_wavg_rectangle = make_relion_wavg_rectangle(
-        image_shape,
-        wsum_current_size,
-        recon_window_indices,
-        reconstruction_current_size=mstep_current_size,
     )
     n_rect = int(relion_wavg_rectangle.centered_indices.size)
     scale_pixel_mask_rect_np = np.zeros(n_rect, dtype=bool)
@@ -507,7 +543,28 @@ def compute_local_search_resident(
         kernel.reconstruction_padding_factor,
         current_size=volume_current_size,
     )
-    recon_accum_shape = half_volume_accumulator_shape(recon_volume_shape)
+    mstep_max_r = mstep_adjoint_max_r(
+        volume_current_size,
+        kernel.reconstruction_image_radius,
+        kernel.reconstruction_padding_factor,
+        anisotropic_magnification=anisotropic_magnification,
+    )
+    # The BPref cube the chunks accumulate into: RELION's, or the plan's physical one, cropped at finalize.
+    program_volume_current_size, program_recon_volume_shape, program_mstep_max_r = (
+        resident_stable_windows.physical_reconstruction_volume(
+            stable_window_plan,
+            volume_shape=volume_shape,
+            volume_current_size=volume_current_size,
+            reconstruction_volume_current_size=kernel.reconstruction_volume_current_size,
+            recon_volume_shape=recon_volume_shape,
+            mstep_max_r=mstep_max_r,
+            reconstruction_image_radius=kernel.reconstruction_image_radius,
+            reconstruction_padding_factor=kernel.reconstruction_padding_factor,
+            anisotropic_magnification=anisotropic_magnification,
+            quantum=support.engine_tuning.stable_window_quantum,
+        )
+    )
+    recon_accum_shape = half_volume_accumulator_shape(program_recon_volume_shape)
     recon_volume_size = int(np.prod(recon_accum_shape))
     recon_y_accum_dtype, recon_ctf_accum_dtype = relion_x_half_mstep_accumulator_dtypes(
         data.experiment_dataset.dtype,
@@ -559,14 +616,36 @@ def compute_local_search_resident(
     projection_kwargs["force_jax"] = False
     projection_kwargs["mask_current_image_disk"] = False
     projection_kwargs["relion_kernel"] = kernel.projection_relion_kernel
+    # A stable-window pass projects at its physical class (pass_capacity_projection): center-padded slabs,
+    # the static radius sentinel 0 and RELION's logical model and image radii at runtime, through the
+    # pass's staged texture, which holds the padded slab at the logical model radius.
+    projection_halves, projection_r_max, capacity_projection_kwargs, capacity_logical_output_size = (
+        resident_stable_windows.pass_capacity_projection(
+            stable_window_plan,
+            use_relion_projector=True,
+            class_projector_halves=[relion_projector_half] if class_slabs is None else class_slabs,
+            relion_projector_r_max=kernel.relion_projector_r_max,
+            projection_padding_factor=kernel.projection_padding_factor,
+            projection_kwargs=projection_kwargs,
+        )
+    )
+    texture_logical_r_max = None
+    if capacity_logical_output_size is not None:
+        projection_kwargs["projector_output_size"] = int(stable_window_plan.physical_current_size)
+        projection_kwargs.update(capacity_projection_kwargs)
+        relion_projector_half = projection_halves[0]
+        if class_slabs is not None:
+            class_slabs = projection_halves
+        texture_logical_r_max = int(kernel.relion_projector_r_max)
     # The pixels the projector computes for a chunk's rows: the two windows,
     # not the full half spectrum (10202 box 800: ~155k of 320,800 px per row).
     window_union = (
-        projection_window_union(
+        resident_stable_windows.pass_window_union(
             window_indices,
             recon_window_indices,
             image_shape=image_shape,
             projector_output_size=int(projection_kwargs["projector_output_size"]),
+            capacity_logical_output_size=capacity_logical_output_size,
         )
         if projection_kwargs.get("projector_output_size") is not None
         else None
@@ -585,6 +664,7 @@ def compute_local_search_resident(
         projection_padding_factor=kernel.projection_padding_factor,
         projection_kwargs=projection_kwargs,
         class_index=0,
+        logical_r_max=texture_logical_r_max,
     )
     class_textures = [capacity_texture]
     try:
@@ -596,6 +676,7 @@ def compute_local_search_resident(
                     projection_padding_factor=kernel.projection_padding_factor,
                     projection_kwargs=projection_kwargs,
                     class_index=k,
+                    logical_r_max=texture_logical_r_max,
                 )
                 for k, slab in enumerate(class_slabs[1:], start=1)
             ]
@@ -670,7 +751,7 @@ def compute_local_search_resident(
                 projection_kwargs=projection_kwargs,
                 projection_padding_factor=kernel.projection_padding_factor,
                 relion_projector_half=relion_projector_half,
-                relion_projector_r_max=kernel.relion_projector_r_max,
+                relion_projector_r_max=projection_r_max,
                 relion_projector_capacity_texture=capacity_texture,
                 class_projectors=class_projectors,
                 precision_policy=precision_policy,
@@ -689,10 +770,11 @@ def compute_local_search_resident(
                 firstiter_cc=bool(kernel.firstiter_cc),
                 engine_tuning=support.engine_tuning,
                 window_union=(
-                    projection_window_union(
+                    resident_stable_windows.pass_window_union(
                         window_indices,
                         image_shape=image_shape,
                         projector_output_size=int(projection_kwargs["projector_output_size"]),
+                        capacity_logical_output_size=capacity_logical_output_size,
                     )
                     if window_union is not None
                     else None
@@ -877,7 +959,8 @@ def compute_local_search_resident(
             n_images=n_images,
             n_coarse_rot=_posterior_bin_capacity(posterior_bin_ids.size, n_classes=tables.n_classes),
             n_scale_groups=n_scale_groups,
-            current_size=wsum_current_size,
+            # A stable-window pass's programs take the physical class; the cutoff is a runtime value below.
+            current_size=wsum_current_size if stable_window_plan is None else program_current_size,
             include_unweighted_high_shell=True,
             use_exact_relion_gaussian=True,
             relion_wavg_atomic_scale_aa=relion_wavg_atomic_scale_aa,
@@ -890,11 +973,24 @@ def compute_local_search_resident(
         stats = resident_statistics.make_resident_statistics(
             stats_config, max_posterior_dtype=precision_policy.score_real_dtype
         )
+        # RELION's logical sizes as runtime values of a stable-window pass's programs.
+        window_logical = (
+            None
+            if stable_window_plan is None
+            else resident_stable_windows.window_logical_sizes(
+                current_size=current_size,
+                recon_pixels=logical_recon_pixels,
+                rect_pixels=logical_rect_pixels,
+                place=resident_chunk_records.PLACE_ON_DEVICE,
+                mstep_max_r=resident_stable_windows.runtime_mstep_radius(mstep_max_r),
+            )
+        )
         image_tables = resident_image_terms.ChunkImageTables(
             shell_indices_half=jnp.asarray(shell_indices_half, dtype=jnp.int32),
             wavg_shell_indices=jnp.asarray(relion_wavg_rectangle.shell_indices, dtype=jnp.int32),
             wavg_scale_pixel_mask=jnp.asarray(scale_pixel_mask_rect_np, dtype=bool),
             translation_sqdist_ang=None,
+            norm_shell_cutoff=None if window_logical is None else window_logical.current_size // 2,
         )
 
         exact_positions_device = jnp.asarray(relion_wavg_rectangle.exact_positions, dtype=jnp.int32)
@@ -960,7 +1056,7 @@ def compute_local_search_resident(
                 projection_block_rows=projection_block_rows,
                 projection_padding_factor=kernel.projection_padding_factor,
                 relion_projector_half=relion_projector_half,
-                relion_projector_r_max=kernel.relion_projector_r_max,
+                relion_projector_r_max=projection_r_max,
                 precision_policy=precision_policy,
                 n_fine_trans=n_fine_trans,
                 n_recon_windowed=n_recon_windowed,
@@ -978,12 +1074,10 @@ def compute_local_search_resident(
                 image_shape=image_shape,
                 current_size=current_size,
                 wsum_current_size=wsum_current_size,
-                mstep_current_size=volume_current_size,
-                mstep_max_r=mstep_adjoint_max_r(
-                    volume_current_size, kernel.reconstruction_image_radius, kernel.reconstruction_padding_factor,
-                    anisotropic_magnification=anisotropic_magnification,
-                ),
-                recon_volume_shape=recon_volume_shape,
+                mstep_current_size=program_volume_current_size,
+                mstep_max_r=program_mstep_max_r,
+                recon_volume_shape=program_recon_volume_shape,
+                window_logical=window_logical,
                 max_adjoint_block_bytes=max_adjoint_block_bytes,
                 noise_variance_for_noise=noise_variance_for_noise_device,
                 shell_indices_noise=shell_indices_noise_device,
@@ -1035,6 +1129,7 @@ def compute_local_search_resident(
             tables=tables,
             n_images=n_images,
             n_fine_trans=n_fine_trans,
+            program_recon_volume_shape=program_recon_volume_shape,
             recon_volume_shape=recon_volume_shape,
             symmetry_label=symmetry_label,
             engine_tuning=support.engine_tuning,
@@ -1044,22 +1139,15 @@ def compute_local_search_resident(
         )
     # RELION symmetriseReconstructions (ml_optimiser.cpp:5541-5575): x=0
     # Hermitian enforcement, then applyPointGroupSymmetry on BPref.
-    Ft_y_total, Ft_ctf_total = finalize_half_volume_bpref(
+    Ft_y_total, Ft_ctf_total = resident_stable_windows.finalize_stable_bpref(
         Ft_y_total,
         Ft_ctf_total,
-        recon_volume_shape,
+        program_recon_volume_shape=program_recon_volume_shape,
+        recon_volume_shape=recon_volume_shape,
+        symmetry_label=symmetry_label,
+        engine_tuning=support.engine_tuning,
         logger=logger,
         label="Resident local pass-2",
-        symmetry_label=symmetry_label,
-        relion_x_half=True,
-        symmetry_chunk_voxels=support.engine_tuning.bpref_symmetry_chunk_voxels,
-        large_grid=support.engine_tuning.x_half_large_grid,
-    )
-    Ft_y_total, Ft_ctf_total = relion_x_half_accumulators_to_public_layout(
-        Ft_y_total,
-        Ft_ctf_total,
-        recon_volume_shape,
-        large_grid=support.engine_tuning.x_half_large_grid,
     )
 
     finalized = resident_statistics.finalize_statistics(stats, config=stats_config, n_images=n_images)
@@ -1147,6 +1235,7 @@ def _finalize_class_local_pass(
     tables,
     n_images,
     n_fine_trans,
+    program_recon_volume_shape,
     recon_volume_shape,
     symmetry_label,
     engine_tuning,
@@ -1159,24 +1248,21 @@ def _finalize_class_local_pass(
     The joint statistics (normalizer, Pmax, noise and scale sums) are over classes and poses; each
     class's evidence, winner and pruned M-step mass come from its sub-segments, and its BPref is
     symmetrised on its own, as the global K-class pass does (``compute_k_class_pass2_stats_resident``).
-    Winners are rows of the layout's flat order, decoded through the tables as for K=1.
+    Winners are rows of the layout's flat order, decoded through the tables as for K=1. The BPrefs were
+    accumulated in ``program_recon_volume_shape`` (the stable-window physical cube, or RELION's).
     """
 
     Ft_y_public, Ft_ctf_public = [], []
     for k in range(tables.n_classes):
-        y, ctf = finalize_half_volume_bpref(
+        y, ctf = resident_stable_windows.finalize_stable_bpref(
             Ft_y_total[k],
             Ft_ctf_total[k],
-            recon_volume_shape,
+            program_recon_volume_shape=program_recon_volume_shape,
+            recon_volume_shape=recon_volume_shape,
+            symmetry_label=symmetry_label,
+            engine_tuning=engine_tuning,
             logger=logger,
             label=f"Resident local pass-2 class {k + 1}",
-            symmetry_label=symmetry_label,
-            relion_x_half=True,
-            symmetry_chunk_voxels=engine_tuning.bpref_symmetry_chunk_voxels,
-            large_grid=engine_tuning.x_half_large_grid,
-        )
-        y, ctf = relion_x_half_accumulators_to_public_layout(
-            y, ctf, recon_volume_shape, large_grid=engine_tuning.x_half_large_grid,
         )
         Ft_y_public.append(y)
         Ft_ctf_public.append(ctf)
