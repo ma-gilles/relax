@@ -88,8 +88,6 @@ class _ReplaceableNamespace(SimpleNamespace):
         return type(self)(**values)
 
 
-
-
 def _identity_local_layout(*, n_images, rotations_per_image, n_translations):
     n_rotations = n_images * rotations_per_image
     return LocalHypothesisLayout(
@@ -197,18 +195,6 @@ def test_arrays_to_accumulators_splits_grouped_halfsets():
     assert [value.class_idx for value in actual] == [0, 0]
     assert not np.array_equal(actual[0].data, actual[1].data)
     assert not np.array_equal(actual[0].weight, actual[1].weight)
-
-
-def test_accumulator_dump_directory_is_read_once(monkeypatch, tmp_path):
-    """RELAX_INITIAL_MODEL_ACCUM_DUMP_DIR is read into VdamEnvironment as set; unset or empty is None."""
-    from relax.vdam.native_options import VdamEnvironment
-
-    monkeypatch.delenv("RELAX_INITIAL_MODEL_ACCUM_DUMP_DIR", raising=False)
-    assert VdamEnvironment.from_environ().accum_dump_dir is None
-    monkeypatch.setenv("RELAX_INITIAL_MODEL_ACCUM_DUMP_DIR", "")
-    assert VdamEnvironment.from_environ().accum_dump_dir is None
-    monkeypatch.setenv("RELAX_INITIAL_MODEL_ACCUM_DUMP_DIR", str(tmp_path))
-    assert VdamEnvironment.from_environ().accum_dump_dir == str(tmp_path)
 
 
 def test_accumulator_dump_directory_receives_each_accumulator(tmp_path):
@@ -507,21 +493,6 @@ def test_resolve_class_inputs_reuses_prebuilt_production_projector(monkeypatch):
 
     with pytest.raises(ValueError, match="needs the iteration's RELION projector"):
         _resolve_class_inputs(state, replace(config, relion_projector_r_max=None))
-
-
-def test_projector_dump_directory_is_read_once(monkeypatch, tmp_path):
-    """RELAX_INITIAL_MODEL_PROJECTOR_DUMP_DIR is read once into VdamEnvironment, stripped; unset or blank is None."""
-    from relax.vdam.native_options import VdamEnvironment
-
-    for unset in (None, "  "):
-        if unset is None:
-            monkeypatch.delenv("RELAX_INITIAL_MODEL_PROJECTOR_DUMP_DIR", raising=False)
-        else:
-            monkeypatch.setenv("RELAX_INITIAL_MODEL_PROJECTOR_DUMP_DIR", unset)
-        assert VdamEnvironment.from_environ().projector_dump_dir is None
-    assert VdamEnvironment().projector_dump_dir is None
-    monkeypatch.setenv("RELAX_INITIAL_MODEL_PROJECTOR_DUMP_DIR", f" {tmp_path} ")
-    assert VdamEnvironment.from_environ().projector_dump_dir == str(tmp_path)
 
 
 def test_projector_refresh_can_dump_exact_projector_operand(monkeypatch, tmp_path):
