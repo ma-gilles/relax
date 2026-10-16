@@ -21,8 +21,8 @@ class _HeldHalfImages:
 
     def __init__(self, source, n_images: int, max_bytes: int):
         self.source = source
-        self.n_images = int(n_images)
-        self.max_bytes = int(max_bytes)
+        self.n_images = n_images
+        self.max_bytes = max_bytes
         self.images = None
         self.held = None
         self.disabled = False

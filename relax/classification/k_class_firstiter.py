@@ -283,7 +283,9 @@ class _PerClassSubsetResults:
     zeros on the device.
     """
 
-    def __init__(self, *, n_images, accumulate_noise, return_best_pose_details, full_group_count, pose_dtype, score_dtype):
+    def __init__(
+        self, *, n_images: int, accumulate_noise: bool, return_best_pose_details: bool, full_group_count, pose_dtype, score_dtype
+    ):
         self.Ft_y = []
         self.Ft_ctf = []
         self.hard_assignments = []
@@ -293,11 +295,11 @@ class _PerClassSubsetResults:
         self.best_pose_translations = [] if return_best_pose_details else None
         self.best_pose_rotation_ids = [] if return_best_pose_details else None
         self.subset_counts = []
-        self.n_images = int(n_images)
+        self.n_images = n_images
         self.full_group_count = full_group_count
         self.pose_dtype = pose_dtype
         self.score_dtype = score_dtype
-        self.return_best_pose_details = bool(return_best_pose_details)
+        self.return_best_pose_details = return_best_pose_details
 
     def append_empty_class(self, *, mean, class_log_evidence, noise_variance, class_index, n_classes, n_rot, host_accumulators):
         zero = jnp.zeros_like(mean)

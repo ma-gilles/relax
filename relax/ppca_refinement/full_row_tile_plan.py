@@ -211,31 +211,30 @@ def plan_tile_images(
     every call holds one tile at the plan without read-ahead, that plan is used; otherwise (or when
     it is None) the next tile's reader is counted.
     """
-    if tiles_per_call is not None and tiles_per_call(int(requested)) <= 1:
+    if tiles_per_call is not None and tiles_per_call(requested) <= 1:
         single = _planned_tile_images(stream, requested, memory_bytes, device_bytes, pipelined=False)
         if tiles_per_call(single) <= 1:
             return single
     return _planned_tile_images(stream, requested, memory_bytes, device_bytes, pipelined=True)
 
 
-def _planned_tile_images(stream, requested, memory_bytes, device_bytes, *, pipelined):
+def _planned_tile_images(stream, requested: int, memory_bytes, device_bytes, *, pipelined):
     if memory_bytes is None and device_bytes is None:
         # The device probes run nvidia-smi (tens of ms); a stage's shapes are planned once.
-        key = (plan_shape_key(stream), int(requested), stream.device.id, pipelined)
+        key = (plan_shape_key(stream), requested, stream.device.id, pipelined)
         if key not in _PLANS:
             _PLANS[key] = _planned_tile_images(stream, requested, *available_bytes(stream), pipelined=pipelined)
             if stream.static.cuda_kernels:
                 reserve_plan_region(stream.device, tile_bytes(stream, _PLANS[key], pipelined=pipelined))
         return _PLANS[key]
     if not memory_bytes:
-        return int(requested)
+        return requested
     if device_bytes is None and stream.static.cuda_kernels:
         from relax.runtime import memory_budget as budget
 
         device_bytes = budget.device_memory_limit_bytes(None)  # PPCA takes no EngineTuning: the device's own memory
     budget_bytes = memory_bytes - TILE_FRAGMENTATION_HEADROOM * (device_bytes or memory_bytes)
     reader = _reader_bytes(stream)
-    requested = int(requested)
     planned = _plan_tile_images(stream, requested, reader, budget_bytes, pipelined)
     peak, resident = reader(stream, planned)
     gib = 2**30
