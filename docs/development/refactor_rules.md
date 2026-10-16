@@ -128,7 +128,9 @@ Each rule names a commit that shows it applied and the check that enforces it.
     `DensePrecisionPolicy` (`relax/numerics/precision.py`). A value-changing switch never goes into
     `EngineTuning`. The only reads elsewhere: a dump destination owned by `relax/diagnostics` that changes no
     computed value, read where the dump is written and listed in the module's status document; and
-    process-level settings (device discovery from `CUDA_VISIBLE_DEVICES`, XLA and JAX settings).
+    process-level settings (device discovery from `CUDA_VISIBLE_DEVICES`, XLA and JAX settings). The
+    platform switches `JAX_PLATFORMS`/`JAX_PLATFORM_NAME` are read only through `relax/runtime/process_platform.py`,
+    at call time, so relax's choice agrees with what JAX does in the same process.
     Before/after: 135ce1ac "refactor(precision): the command reads the dense precision; scoring_policy reads no
     environment for it (rule 5)". Check: `scripts/dev/smell_check.py` `env-read` (gate step `smell`, against
     `scripts/dev/smell_baseline.json`; a new finding is a defect even though the step only warns).

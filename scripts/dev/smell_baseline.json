@@ -291,8 +291,6 @@
   "env-read:relax.runtime.xla_memory_reserve:explains_pool_region_failure.explained:PREALLOCATE_ENV",
   "env-read:relax.runtime.xla_memory_reserve:reserve_projector_texture_memory:MEM_FRACTION_ENV",
   "env-read:relax.runtime.xla_memory_reserve:reserve_projector_texture_memory:MEM_FRACTION_ENV#2",
-  "env-read:relax.steps.scoring_policy:_jax_cpu_forced_from_env:JAX_PLATFORMS",
-  "env-read:relax.steps.scoring_policy:_jax_cpu_forced_from_env:JAX_PLATFORM_NAME",
   "env-read:relax.vdam.native_options:VdamEnvironment.from_environ:JAX_COMPILATION_CACHE_DIR",
   "env-read:relax.vdam.native_options:VdamEnvironment.from_environ:JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS",
   "env-read:relax.vdam.native_options:VdamEnvironment.from_environ:RELAX_CLEAR_JAX_CACHES_PER_ITER",

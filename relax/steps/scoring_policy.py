@@ -7,12 +7,12 @@ K=1's x-half default. This module performs no scoring or scheduling.
 """
 
 import logging
-import os
 
 import jax
 import numpy as np
 
 from relax.numerics.precision import DensePrecisionPolicy
+from relax.runtime import process_platform
 
 logger = logging.getLogger(__name__)
 
@@ -49,26 +49,13 @@ def local_precision(
     return precision.for_local_pass(iteration, pass_index=pass_index, float64_pass2_iterations=float64_pass2_iterations)
 
 
-def _jax_cpu_forced_from_env() -> bool:
-    """Return whether JAX has been forced to CPU by environment."""
-
-    platform_name = os.environ.get("JAX_PLATFORM_NAME", "").strip().lower()
-    if platform_name == "cpu":
-        return True
-    platforms = os.environ.get("JAX_PLATFORMS", "").strip().lower()
-    if not platforms:
-        return False
-    requested = [token.strip() for token in platforms.split(",") if token.strip()]
-    return bool(requested) and all(token == "cpu" for token in requested)
-
-
 def k1_relion_x_half_mstep_default_available() -> bool:
     """Return whether the default K=1 x-half M-step can use custom CUDA."""
 
     from recovar.utils.cuda_env import custom_cuda_disabled_from_env
 
     disabled, _ = custom_cuda_disabled_from_env()
-    if disabled or _jax_cpu_forced_from_env():
+    if disabled or process_platform.jax_cpu_forced():
         return False
     try:
         return jax.default_backend() == "gpu"

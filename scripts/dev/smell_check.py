@@ -33,6 +33,7 @@ BASELINE = Path("scripts/dev/smell_baseline.json")
 # allows a whole directory).
 ENV_READ_ALLOWED = (
     "relax/runtime/env_flags.py",
+    "relax/runtime/process_platform.py",  # the process's platform switches (rule 16)
     "relax/command_line.py",
     "relax/commands/",
 )
