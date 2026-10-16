@@ -115,9 +115,6 @@ from relax.local_search.resident_layout import (
     tables_from_local_layout,
 )
 from relax.projection.adjoint import mstep_adjoint_max_r
-from relax.projection.projection import (
-    relion_scale_correction_pixel_mask as _relion_scale_correction_pixel_mask,
-)
 from relax.reconstruction.half_volume_mstep import (
     allocate_row_partial,
     half_volume_accumulator_shape,
@@ -468,38 +465,17 @@ def compute_local_search_resident(
         wsum_current_size=wsum_current_size,
         mstep_current_size=mstep_current_size,
     )
-    # Class3D masks each class's scale sums by its own data_vs_prior_class
-    # (acc_ml_optimiser_impl.h:4893-4912): ``[K, n_shells]``, or one curve for every class.
-    scale_dvp_by_class = [data.scale_correction_data_vs_prior] * tables.n_classes
-    if (
-        tables.n_classes > 1
-        and data.scale_correction_data_vs_prior is not None
-        and np.ndim(data.scale_correction_data_vs_prior) == 2
-    ):
-        if int(np.shape(data.scale_correction_data_vs_prior)[0]) != tables.n_classes:
-            raise ValueError(
-                f"scale_correction_data_vs_prior must be one curve or ({tables.n_classes}, n_shells), "
-                f"got {np.shape(data.scale_correction_data_vs_prior)}"
-            )
-        scale_dvp_by_class = [np.asarray(data.scale_correction_data_vs_prior)[k] for k in range(tables.n_classes)]
-    scale_correction_pixel_mask = _relion_scale_correction_pixel_mask(
-        scale_dvp_by_class[0],
-        shell_indices_noise,
-        n_shells=n_shells,
-    )
     n_rect = int(relion_wavg_rectangle.centered_indices.size)
-    scale_pixel_mask_rect_np = np.zeros(n_rect, dtype=bool)
-    scale_pixel_mask_rect_np[relion_wavg_rectangle.exact_positions] = np.asarray(
-        scale_correction_pixel_mask, dtype=bool
+    # Class3D masks each class's scale sums by its own curve; the per-image tables take class 1's.
+    class_masks_np = resident_pass_tables.scale_pixel_masks_rect(
+        data.scale_correction_data_vs_prior,
+        n_classes=tables.n_classes,
+        shell_indices_noise=shell_indices_noise,
+        n_shells=n_shells,
+        relion_wavg_rectangle=relion_wavg_rectangle,
     )
-    class_scale_masks_rect = None
-    if tables.n_classes > 1:
-        class_masks_np = np.zeros((tables.n_classes, n_rect), dtype=bool)
-        for k, dvp in enumerate(scale_dvp_by_class):
-            class_masks_np[k, relion_wavg_rectangle.exact_positions] = np.asarray(
-                _relion_scale_correction_pixel_mask(dvp, shell_indices_noise, n_shells=n_shells), dtype=bool
-            )
-        class_scale_masks_rect = jnp.asarray(class_masks_np)
+    scale_pixel_mask_rect_np = class_masks_np[0]
+    class_scale_masks_rect = None if tables.n_classes == 1 else jnp.asarray(class_masks_np)
     group_ids_np, n_scale_groups = prepare_scale_correction_groups(
         data.group_ids, data.scale_correction_group_count, n_images=n_images
     )

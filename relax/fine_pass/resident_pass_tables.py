@@ -14,6 +14,7 @@ from relax.fourier.half_spectrum import (
     make_relion_noise_shell_indices_half,
     mask_relion_noise_shell_indices_to_current_window,
 )
+from relax.projection.projection import relion_scale_correction_pixel_mask
 
 
 def optics_group_rows(noise_variance_half, optics_group_ids, *, n_images: int) -> tuple[int, np.ndarray | None]:
@@ -92,3 +93,32 @@ def resident_noise_tables(
             n_recon_windowed=n_recon_windowed,
         ),
     )
+
+
+def scale_pixel_masks_rect(
+    scale_correction_data_vs_prior, *, n_classes: int, shell_indices_noise, n_shells: int, relion_wavg_rectangle
+) -> np.ndarray:
+    """Each class's scale-sum pixel mask over the Wavg rectangle, ``[n_classes, n_rect]`` bool.
+
+    RELION masks each class's scale sums with its own data_vs_prior_class[iclass] > 3
+    (acc_ml_optimiser_impl.h:4893-4912): ``[K, n_shells]`` curves, or one shell vector for every class.
+    """
+
+    n_rect = int(relion_wavg_rectangle.centered_indices.size)
+    scale_dvp_by_class = [scale_correction_data_vs_prior] * n_classes
+    if scale_correction_data_vs_prior is not None and n_classes > 1:
+        scale_dvp_array = np.asarray(scale_correction_data_vs_prior)
+        if scale_dvp_array.ndim == 2:
+            if scale_dvp_array.shape[0] != n_classes:
+                raise ValueError(
+                    "scale_correction_data_vs_prior must be one shell vector or have "
+                    f"shape ({n_classes}, n_shells), got {scale_dvp_array.shape}"
+                )
+            scale_dvp_by_class = [scale_dvp_array[k] for k in range(n_classes)]
+    masks = np.zeros((n_classes, n_rect), dtype=bool)
+    for class_index, class_dvp in enumerate(scale_dvp_by_class):
+        masks[class_index, relion_wavg_rectangle.exact_positions] = np.asarray(
+            relion_scale_correction_pixel_mask(class_dvp, shell_indices_noise, n_shells=n_shells),
+            dtype=bool,
+        )
+    return masks

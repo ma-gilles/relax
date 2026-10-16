@@ -127,9 +127,6 @@ from relax.fine_pass.window import (
 from relax.fourier.preprocessing import half_translation_phase_table
 from relax.projection.adjoint import mstep_adjoint_max_r
 from relax.projection.projection import relion_kernel_zero_rows
-from relax.projection.projection import (
-    relion_scale_correction_pixel_mask as _relion_scale_correction_pixel_mask,
-)
 from relax.reconstruction.half_volume_mstep import (
     allocate_row_partial,
     half_volume_accumulator_shape,
@@ -1193,24 +1190,13 @@ def _resident_pass2(
         sums_bytes / float(1024**3),
         "unknown" if free_bytes is None else f"{float(free_bytes) / float(1024**3):.2f}",
     )
-    # RELION masks each class's scale sums with its own data_vs_prior_class[iclass] > 3
-    # (acc_ml_optimiser_impl.h:4908); one shell vector serves every class.
-    scale_dvp_by_class = [scale_correction_data_vs_prior] * n_classes
-    if scale_correction_data_vs_prior is not None and n_classes > 1:
-        scale_dvp_array = np.asarray(scale_correction_data_vs_prior)
-        if scale_dvp_array.ndim == 2:
-            if scale_dvp_array.shape[0] != n_classes:
-                raise ValueError(
-                    "scale_correction_data_vs_prior must be one shell vector or have "
-                    f"shape ({n_classes}, n_shells), got {scale_dvp_array.shape}"
-                )
-            scale_dvp_by_class = [scale_dvp_array[k] for k in range(n_classes)]
-    scale_pixel_mask_rect_np = np.zeros((n_classes, n_rect), dtype=bool)
-    for class_index, class_dvp in enumerate(scale_dvp_by_class):
-        scale_pixel_mask_rect_np[class_index, relion_wavg_rectangle.exact_positions] = np.asarray(
-            _relion_scale_correction_pixel_mask(class_dvp, shell_indices_noise, n_shells=n_shells),
-            dtype=bool,
-        )
+    scale_pixel_mask_rect_np = resident_pass_tables.scale_pixel_masks_rect(
+        scale_correction_data_vs_prior,
+        n_classes=n_classes,
+        shell_indices_noise=shell_indices_noise,
+        n_shells=n_shells,
+        relion_wavg_rectangle=relion_wavg_rectangle,
+    )
     if n_classes == 1:
         scale_pixel_mask_rect_np = scale_pixel_mask_rect_np[0]
     group_ids_np, n_scale_groups = prepare_scale_correction_groups(
