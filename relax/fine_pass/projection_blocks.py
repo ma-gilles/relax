@@ -31,8 +31,22 @@ logger = logging.getLogger(__name__)
 # scoring/tomo_coarse.py keeps its coarse textures the same way). The exact-local and the global resident passes
 # share them: a pass refills class k's texture when the shapes agree. Only slabs up to KEPT_TEXTURE_MAX_BYTES are
 # kept: a texture lives outside the XLA pool, and a large box's (7.9 GB at EMPIAR-10202) must not outlive its pass.
+# No pool or chunk budget counts a kept texture: the pool reserve (relax.runtime.xla_memory_reserve) leaves room
+# outside the pool for one texture of the model box's largest slab plus 3 GiB of context and scratch, so a kept
+# texture of another shape is released before a pass stages its own (relax#105: a 0.87 GiB one, kept from a
+# current size below the cap, stayed beside the 2.71 GiB box-448 texture of the final pass and its staging at a
+# 16 GB device, which then failed with CUDA error 2).
 PASS_TEXTURES: dict = {}
 KEPT_TEXTURE_MAX_BYTES = 1 << 30
+
+
+def _release_kept_textures_of_other_shapes(shape: tuple, padding_factor: int) -> None:
+    """Close and forget every kept texture that cannot serve a slab of ``shape`` at ``padding_factor``."""
+
+    for class_index, kept in list(PASS_TEXTURES.items()):
+        if kept.closed or kept.shape != shape or kept.padding_factor != int(padding_factor):
+            del PASS_TEXTURES[class_index]
+            kept.close()
 
 
 def keeps_pass_texture(texture) -> bool:
@@ -63,6 +77,7 @@ def open_pass_capacity_texture(
     when the shapes agree (``PASS_TEXTURES``) and stays open after the pass;
     the caller closes any other texture after the loop. With ``kept_only`` a
     larger slab gets None (its projections stage their own texture per call).
+    Before either, every kept texture of another shape is closed (relax#105; see ``PASS_TEXTURES``).
 
     ``logical_r_max`` marks a center-padded capacity slab of a stable-window pass
     (``resident_stable_windows.pass_capacity_projection``, static radius 0): the
@@ -95,6 +110,8 @@ def open_pass_capacity_texture(
     from relax.cuda.projector import RelionCapacityHalfTextureF32
 
     relion_projector_half = jnp.asarray(relion_projector_half)
+    # Kept textures of another shape hold memory outside the pool that this pass's own texture needs (relax#105).
+    _release_kept_textures_of_other_shapes(tuple(int(n) for n in relion_projector_half.shape), projection_padding_factor)
     if relion_projector_half.nbytes > KEPT_TEXTURE_MAX_BYTES:
         if kept_only:
             return None

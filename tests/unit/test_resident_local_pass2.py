@@ -720,6 +720,36 @@ def test_next_pass_refills_the_kept_texture(monkeypatch):
 
 
 @requires_resident_gpu
+def test_a_slab_of_another_shape_releases_the_kept_textures(monkeypatch):
+    """relax#105: kept textures live outside the XLA pool and no budget counts them, so a pass staging a slab of
+    another shape (here larger than the kept size, as the final pass's full box is) first closes every kept
+    texture of the old shape; a slab of the kept shape still refills its texture."""
+
+    from relax.fine_pass import resident_stable_windows
+
+    case = _case()
+    slab, r_max = case["projector_half"], case["r_max"]
+    projection_kwargs = {"projector_output_size": IMAGE_SHAPE[0], "relion_texture_interp": None, "texture_interp_default": True}
+    kwargs = dict(relion_projector_r_max=r_max, projection_padding_factor=1, projection_kwargs=projection_kwargs)
+    for class_index in list(projection_blocks.PASS_TEXTURES):
+        projection_blocks.PASS_TEXTURES.pop(class_index).close()
+    kept = [projection_blocks.open_pass_capacity_texture(slab, class_index=k, **kwargs) for k in (0, 1)]
+    assert all(projection_blocks.keeps_pass_texture(texture) for texture in kept)
+    again = projection_blocks.open_pass_capacity_texture(jnp.asarray(slab * 0.5), class_index=0, **kwargs)
+    assert again is kept[0] and not kept[1].closed
+
+    wider = resident_stable_windows.center_pad_relion_projector_half(
+        jnp.asarray(slab), logical_r_max=int(r_max), physical_size=2 * int(r_max) + 2, padding_factor=1
+    )
+    assert tuple(wider.shape) != tuple(slab.shape)
+    monkeypatch.setattr(projection_blocks, "KEPT_TEXTURE_MAX_BYTES", 0)
+    large = projection_blocks.open_pass_capacity_texture(wider, class_index=0, logical_r_max=int(r_max), **kwargs)
+    assert large is not None and not projection_blocks.keeps_pass_texture(large)
+    assert all(texture.closed for texture in kept) and not projection_blocks.PASS_TEXTURES
+    large.close()
+
+
+@requires_resident_gpu
 def test_resident_local_repeats_itself():
     """The resident driver's own repeat band, the reference for the table above."""
 
