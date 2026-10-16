@@ -411,17 +411,20 @@ X_HALF_FULL_HOST_ENV = "RELAX_RELION_X_HALF_FULL_HOST"
 X_HALF_HOST_X0_ENV = "RELAX_RELION_X_HALF_HOST_X0"
 
 
-def parse_large_grid_switch(flag_raw: str | None, min_voxels_raw: str | None, default_min_voxels: int) -> LargeGridSwitch:
+def parse_large_grid_switch(
+    flag_raw: str | None, min_voxels_raw: str | None, default_min_voxels: int, *, min_voxels_name: str,
+) -> LargeGridSwitch:
     """A large-grid switch from its two variables: a set flag is on unless it is a false token (0/false/no/off, any
-    case, stripped); a minimum that is not an integer silently keeps ``default_min_voxels``."""
+    case, stripped); an unset or blank minimum keeps ``default_min_voxels``, and one that is not an integer is
+    refused (``min_voxels_name`` names it)."""
 
     forced = None if flag_raw is None else flag_raw.strip().lower() not in {"0", "false", "no", "off"}
     min_voxels = default_min_voxels
-    if min_voxels_raw is not None:
+    if min_voxels_raw is not None and min_voxels_raw.strip():
         try:
             min_voxels = int(min_voxels_raw)
         except ValueError:
-            min_voxels = default_min_voxels
+            raise ValueError(f"{min_voxels_name} must be an integer, got {min_voxels_raw!r}") from None
     return LargeGridSwitch(min_voxels, forced)
 
 
@@ -432,6 +435,7 @@ def read_x_half_large_grid() -> XHalfLargeGrid:
     return XHalfLargeGrid(**{
         field_name: parse_large_grid_switch(
             read_env_text(name), read_env_text(f"{name}_MIN_VOXELS"), getattr(default, field_name).min_voxels,
+            min_voxels_name=f"{name}_MIN_VOXELS",
         )
         for field_name, name in (
             ("to_native_half", X_HALF_TO_NATIVE_HALF_ENV),

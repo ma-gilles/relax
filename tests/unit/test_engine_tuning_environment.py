@@ -218,7 +218,7 @@ def test_firstiter_cc_budget_env_override_rejects_invalid(monkeypatch, raw):
 @pytest.mark.parametrize("name", ["TO_NATIVE_HALF", "FULL_HOST", "HOST_X0"])
 def test_large_grid_switches_read_once_at_the_boundary(monkeypatch, name):
     """Each switch as the old reading function parsed it: a set flag is on unless it is a false token (blank is
-    on), and a minimum that is not an integer keeps the default without refusing."""
+    on); a blank minimum keeps the default and one that is not an integer is refused (rule 12)."""
 
     field = name.lower()
     variable = f"RELAX_RELION_X_HALF_{name}"
@@ -226,8 +226,12 @@ def test_large_grid_switches_read_once_at_the_boundary(monkeypatch, name):
     monkeypatch.setenv(f"{variable}_MIN_VOXELS", "1000")
     switch = getattr(EngineTuning.from_environ().x_half_large_grid, field)
     assert (switch.forced, switch.on(999), switch.on(1000)) == (None, False, True)
-    monkeypatch.setenv(f"{variable}_MIN_VOXELS", "lots")
+    monkeypatch.setenv(f"{variable}_MIN_VOXELS", " ")
     assert getattr(EngineTuning.from_environ().x_half_large_grid, field) == getattr(XHalfLargeGrid(), field)
+    monkeypatch.setenv(f"{variable}_MIN_VOXELS", "lots")
+    with pytest.raises(ValueError, match=f"{variable}_MIN_VOXELS must be an integer, got 'lots'"):
+        EngineTuning.from_environ()
+    monkeypatch.setenv(f"{variable}_MIN_VOXELS", "1000")
     for raw, forced in (("", True), (" OFF ", False), ("no", False), ("0", False), ("anything", True)):
         monkeypatch.setenv(variable, raw)
         assert getattr(EngineTuning.from_environ().x_half_large_grid, field).on(1) is forced
