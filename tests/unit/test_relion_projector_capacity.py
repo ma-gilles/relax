@@ -248,6 +248,59 @@ def test_gpu_projection_block_with_a_staged_texture_matches_the_per_call_block(m
 
 
 @pytest.mark.gpu
+def test_gpu_global_pass_texture_refilled_projects_the_per_call_windows(monkeypatch):
+    """The global resident pass's kept texture (projection_blocks.open_pass_capacity_texture with kept_only),
+    refilled with a second slab, gives the windowed score/recon rows the per-call staging gives for that slab;
+    a slab above the kept size gets no texture."""
+    from relax.fine_pass import projection_blocks
+    from relax.fine_pass.projection_blocks import _compute_sparse_pass2_windowed_projections_block, projection_window_union
+
+    image_size, radius, pf = 32, 14, 2
+    size = 2 * pf * radius + 3
+    rng = np.random.default_rng(20261015)
+    first, second = (
+        jnp.asarray((rng.standard_normal((size, size, size // 2 + 1)) + 1j * rng.standard_normal((size, size, size // 2 + 1))).astype(np.complex64))
+        for _ in range(2)
+    )
+    half = image_size // 2 + 1
+    rows, cols = np.meshgrid(np.arange(image_size), np.arange(half), indexing="ij")
+    ky, kx = rows - image_size // 2, cols
+    inside = kx * kx + ky * ky <= radius * radius
+    score = np.flatnonzero(inside.ravel()).astype(np.int32)
+    recon = np.flatnonzero((inside & ~((kx == 0) & (ky == 0))).ravel()).astype(np.int32)
+    projection_kwargs = dict(projector_output_size=2 * radius, relion_texture_interp=True, texture_interp_default=True)
+    open_kwargs = dict(
+        relion_projector_r_max=radius, projection_padding_factor=pf, projection_kwargs=projection_kwargs,
+        class_index=0, kept_only=True,
+    )
+    common = dict(
+        image_shape=(image_size, image_size), proj_volume_shape=None, disc_type="linear_interp", score_indices=score,
+        recon_indices=recon, relion_projector_r_max=radius, projection_padding_factor=pf, relion_texture_interp=True,
+        mask_current_image_disk=False, projector_output_size=2 * radius,
+        window_union=projection_window_union(score, recon, image_shape=(image_size, image_size), projector_output_size=2 * radius),
+    )
+    for class_index in list(projection_blocks.PASS_TEXTURES):
+        projection_blocks.PASS_TEXTURES.pop(class_index).close()
+    texture = projection_blocks.open_pass_capacity_texture(first, **open_kwargs)
+    _compute_sparse_pass2_windowed_projections_block(None, _rotations(), relion_projector_half=first, relion_projector_capacity_texture=texture, **common)
+    refilled = projection_blocks.open_pass_capacity_texture(second, **open_kwargs)
+    assert refilled is texture and projection_blocks.keeps_pass_texture(refilled)
+    staged = _compute_sparse_pass2_windowed_projections_block(
+        None, _rotations(), relion_projector_half=second, relion_projector_capacity_texture=refilled, **common
+    )
+    per_call = _compute_sparse_pass2_windowed_projections_block(None, _rotations(), relion_projector_half=second, **common)
+    assert np.count_nonzero(np.asarray(per_call[0])) > np.asarray(per_call[0]).size // 4
+    for got, expected in zip(staged, per_call, strict=True):
+        if expected is None:
+            assert got is None
+        else:
+            assert_matches(np.asarray(got), np.asarray(expected))
+    monkeypatch.setattr(projection_blocks, "KEPT_TEXTURE_MAX_BYTES", 0)
+    assert projection_blocks.open_pass_capacity_texture(second, **open_kwargs) is None
+    projection_blocks.PASS_TEXTURES.pop(0, texture).close()
+
+
+@pytest.mark.gpu
 def test_gpu_wide_slab_takes_the_half_storage_kernel_and_matches_the_persistent_texture():
     """A slab wider than the former 1025 limit (radius 257 at padding 2: 1031 texels) is
     staged by the half-storage kernel, once or per call alike, and projects what the

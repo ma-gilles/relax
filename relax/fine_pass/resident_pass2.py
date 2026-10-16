@@ -76,6 +76,7 @@ from recovar.reconstruction import noise as noise_utils
 import relax.runtime.engine_tuning
 import relax.runtime.env_flags
 from relax.fine_pass import (
+    projection_blocks,
     resident_block_programs,
     resident_chunk_inputs,
     resident_chunk_memory,
@@ -1661,6 +1662,23 @@ def _resident_pass2(
         }
         capacity_logical_output_size = int(projection_kwargs["projector_output_size"])
         projection_kwargs["projector_output_size"] = physical_size
+    # The fixed-radius projections stage each class's slab into a texture once, kept from pass to pass and
+    # refilled (projection_blocks.open_pass_capacity_texture), not per projection call: a real tilt-series final
+    # iteration projected every slot block through its own texture, about 45 CUDA array allocations and
+    # stagings per chunk with the GPU idle. The same texels and kernel project.
+    class_textures = [None] * len(projection_halves)
+    if use_relion_projector and not capacity_projection_kwargs:
+        class_textures = [
+            projection_blocks.open_pass_capacity_texture(
+                half,
+                relion_projector_r_max=projection_r_max,
+                projection_padding_factor=projection_padding_factor,
+                projection_kwargs=projection_kwargs,
+                class_index=k,
+                kept_only=True,
+            )
+            for k, half in enumerate(projection_halves)
+        ]
     residual_sgd_rows = (
         _padded_sgd_residual_rows(_sgd_residual_rows(
             recon_window_indices,
@@ -1734,6 +1752,7 @@ def _resident_pass2(
             relion_projector_half=projection_halves[class_index],
             relion_projector_r_max=projection_r_max,
             projection_padding_factor=projection_padding_factor,
+            relion_projector_capacity_texture=class_textures[class_index],
             window_union=fine_window_union,
             output_rows=n_rows,
             outputs=outputs,

@@ -36,7 +36,7 @@ from helpers.em_arrays import _hermitian_volume
 from helpers.refinement_specs import local_iteration_owners
 from helpers.sparse_pass2_mock import IMAGE_SHAPE, VOLUME_SHAPE, MockDataset
 
-from relax.fine_pass import resident_chunk_memory, resident_image_terms, resident_mstep_blocks
+from relax.fine_pass import projection_blocks, resident_chunk_memory, resident_image_terms, resident_mstep_blocks
 from relax.local_search import resident_pass2 as rlp
 from relax.local_search.layout import (
     build_local_adaptive_pass2_hypothesis_layout,
@@ -473,12 +473,12 @@ def test_local_projector_texture_is_not_opened_for_manual_or_double_projection()
     kwargs = dict(relion_projector_r_max=4, projection_padding_factor=1, class_index=0)
     # The run's choice (texture_interp_default) is the unset RELAX_RELION_PROJECTOR_TEXTURE_INTERP's.
     projection_kwargs = {"projector_output_size": 8, "relion_texture_interp": None, "texture_interp_default": True}
-    assert rlp._open_capacity_texture(None, projection_kwargs=projection_kwargs, **kwargs) is None
+    assert projection_blocks.open_pass_capacity_texture(None, projection_kwargs=projection_kwargs, **kwargs) is None
     assert (
-        rlp._open_capacity_texture(slab, projection_kwargs=dict(projection_kwargs, relion_texture_interp=False), **kwargs)
+        projection_blocks.open_pass_capacity_texture(slab, projection_kwargs=dict(projection_kwargs, relion_texture_interp=False), **kwargs)
         is None
     )
-    assert rlp._open_capacity_texture(slab.astype(np.complex128), projection_kwargs=projection_kwargs, **kwargs) is None
+    assert projection_blocks.open_pass_capacity_texture(slab.astype(np.complex128), projection_kwargs=projection_kwargs, **kwargs) is None
 
 
 def _parent_layout(seed=20260919):
@@ -515,14 +515,14 @@ def test_resident_local_capacity_texture_matches_the_per_call_texture(monkeypatc
 
     case = _case()
     opened = []
-    real_open = rlp._open_capacity_texture
+    real_open = projection_blocks.open_pass_capacity_texture
 
     def spy(*args, **kwargs):
         texture = real_open(*args, **kwargs)
         opened.append(texture is not None)
         return texture
 
-    monkeypatch.setattr(rlp, "_open_capacity_texture", spy)
+    monkeypatch.setattr(projection_blocks, "open_pass_capacity_texture", spy)
     # EMPIAR-10202 full-box pass (14575557): the device slab next to the staged
     # texture left no free block for the x-half accumulators, so the chunks of a
     # staged pass get only the slab's geometry.
@@ -538,7 +538,7 @@ def test_resident_local_capacity_texture_matches_the_per_call_texture(monkeypatc
     assert opened == [True]
     assert chunk_slabs and set(chunk_slabs) == {jax.ShapeDtypeStruct}
     chunk_slabs.clear()
-    monkeypatch.setattr(rlp, "_open_capacity_texture", lambda *a, **k: None)
+    monkeypatch.setattr(projection_blocks, "open_pass_capacity_texture", lambda *a, **k: None)
     per_call = _run(case, engine_tuning=LOCAL_RESIDENT_ENGINE)
     assert chunk_slabs and all(issubclass(kind, jax.Array) for kind in chunk_slabs)
 
@@ -699,23 +699,23 @@ def test_next_pass_refills_the_kept_texture(monkeypatch):
     from relax.sampling.healpix import euler_angles_to_matrix
 
     rotations = jnp.asarray(euler_angles_to_matrix(_prior_eulers(N_IMAGES, 5)), dtype=jnp.float32)
-    for class_index in list(rlp._PASS_TEXTURES):
-        rlp._PASS_TEXTURES.pop(class_index).close()
-    first = rlp._open_capacity_texture(slab, class_index=0, **kwargs)
+    for class_index in list(projection_blocks.PASS_TEXTURES):
+        projection_blocks.PASS_TEXTURES.pop(class_index).close()
+    first = projection_blocks.open_pass_capacity_texture(slab, class_index=0, **kwargs)
     first.project(rotations, image_shape=IMAGE_SHAPE)
     changed = jnp.asarray(slab * (0.5 + 0.25j))
-    second = rlp._open_capacity_texture(changed, class_index=0, **kwargs)
-    assert second is first and rlp._keeps_texture(second)
+    second = projection_blocks.open_pass_capacity_texture(changed, class_index=0, **kwargs)
+    assert second is first and projection_blocks.keeps_pass_texture(second)
     refilled = np.asarray(second.project(rotations, image_shape=IMAGE_SHAPE))
     with RelionCapacityHalfTextureF32(changed, r_max, padding_factor=1) as fresh:
         expected = np.asarray(fresh.project(rotations, image_shape=IMAGE_SHAPE))
     assert np.count_nonzero(expected) > expected.size // 4
     assert_matches(refilled, expected)
-    monkeypatch.setattr(rlp, "_KEPT_TEXTURE_MAX_BYTES", 0)
-    large = rlp._open_capacity_texture(changed, class_index=0, **kwargs)
-    assert large is not first and not rlp._keeps_texture(large)
+    monkeypatch.setattr(projection_blocks, "KEPT_TEXTURE_MAX_BYTES", 0)
+    large = projection_blocks.open_pass_capacity_texture(changed, class_index=0, **kwargs)
+    assert large is not first and not projection_blocks.keeps_pass_texture(large)
     large.close()
-    rlp._PASS_TEXTURES.pop(0, first).close()
+    projection_blocks.PASS_TEXTURES.pop(0, first).close()
 
 
 @requires_resident_gpu
