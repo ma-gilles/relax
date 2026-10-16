@@ -328,9 +328,7 @@ posterior mass. The finite masses followed the stated logZ-ratio identity. The
 approximation is therefore unsuitable for this checkpoint/update sequence in
 its requested form; exact mode remains the valid reference for this experiment.
 
-Commands, job/source/native hashes, timing matrices, memory traces and limitations
-are recorded in the [development plan](../development/dense_gemm_experiment_plan_20260928.md)
-and its external evidence directory. The experiment does not change scientific
+The experiment does not change scientific
 tolerances, production defaults, or baseline data.
 
 ## Reproduce the dense comparison

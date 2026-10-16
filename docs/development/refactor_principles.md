@@ -445,10 +445,6 @@ the cold-start prior policy, class identity and numerical operation order
 together. Test callers of an obsolete forwarding route were moved to production
 dispatch while keeping their independent expected-value assertions.
 
-The [final-search proposal](final_search_refactor_proposal.md) is a concrete
-application awaiting user review, not an accepted implementation or scientific
-qualification. Maintain that distinction as the design evolves.
-
 The pose-transition example shows why one scientific responsibility can need two
 operations in one owner: snapshot/resolve occurs before explicit publication,
 while convergence-stack preparation follows publication and particle export.
@@ -464,8 +460,7 @@ the current example. Preserve established links and acceptance distinctions.
 
 ## Current review implementation
 
-The [complete local-sampling review](final_local_sampling_patch_review.md)
-supersedes earlier idealized snippets for this review. The implementation moves
+The implementation moves
 precision selection into the existing policy and passes symmetry explicitly.
 Numerically meaningful dtype choices remain explicit even when hidden policy
 lookups are removed. Final local sampling reconstructs grids from explicit settings; the user requested
@@ -575,11 +570,8 @@ The current exemplar also covers prepared projectors, sampling and scoring
 configuration. Initialization, phase orchestration, model updates and finalization
 still need substantial operation boundaries.
 
-The [extension plan](refactor_extension_plan.md) proposes the next bounded
-packages and their required checks. Broad migration awaits review and production
-qualification of this example.
 Extend those concepts only after reviewing their producers and consumers and
-passing the applicable numerical gates. The review extract and status state the
+passing the applicable numerical gates. The code and the status documents state the
 current implementation and evidence; an attractive call site is not acceptance.
 
 ## Execution-default cleanup lesson
@@ -754,8 +746,7 @@ parsed command at the command-input boundary rather than inventing another
 temporary options class. Numerical operations still take only the operands and
 settings they require. Share source-discovery policy with the existing CLI owner
 and preserve when consumers read it. Trace adapter and scratch cleanup ownership
-before moving loader locals out of the controller. The full example and its
-source-specific limitations are in the [review](final_local_sampling_patch_review.md#particle-input-preparation).
+before moving loader locals out of the controller.
 
 ### Particle row-layout example
 
@@ -767,8 +758,6 @@ an integer dtype. Small named results can express those relationships without
 owning mutable model state. Keep mode/source selection and diagnostic admission
 visible. A private helper is justified when it releases scratch before a derived
 allocation; deleting that boundary to reduce function count would change lifetime.
-The [complete example](final_local_sampling_patch_review.md#particle-row-layout)
-shows construction, actual consumers and the remaining large-controller limits.
 
 ### Startup state ownership
 
@@ -780,8 +769,7 @@ scientific state updates explicit. Review scalar normalization at its original
 consumer: here the resolution helpers already convert a positive pixel scalar
 before arithmetic. Compare original statements and all resulting state fields,
 including refusal paths. A successful host extraction does not qualify GPU
-quality, timing or retained large-buffer lifetimes. See the
-[complete example](final_local_sampling_patch_review.md#startup-sampling-state).
+quality, timing or retained large-buffer lifetimes.
 
 Convergence policy can own accuracy admission and replay precedence without
 moving the decision to enter finalization. Return the new state explicitly and

@@ -6,7 +6,7 @@ The same owner selects native versus explicit angular sampling at the start of
 expectation, after accuracy and before the numbered grid is constructed.
 The mathematical scheduler/metrics remain in `steps/convergence.py`; the
 controller installs state and checks preceding-iteration convergence at its
-existing top boundary. See the [complete operation](final_local_sampling_patch_review.md#iteration-convergence-policy).
+existing top boundary.
 
 Start at the entry point for the workflow you are changing, then follow the
 state and array layouts into its kernels. RECOVAR has several EM workflows;
@@ -58,8 +58,7 @@ Unperturbed exhaustive rotation matrices, working Euler rows, HEALPix order and
 point group are produced together as `sampling.grids.RotationGrid` in
 [`sampling/grids.py`](../../relax/sampling/grids.py). Initial planning and numbered replacement
 retain that owner; final sampling consumes it. The command and numbered controllers
-remain unfinished; the [current review](final_local_sampling_patch_review.md#rotation-grid-ownership-and-remaining-controller-work)
-shows the actual producer, updates and final consumer.
+remain unfinished.
 
 Numbered normalization preparation, numerical estimation and reporting live in
 [`relion/normalization.py`](../../relax/relion/normalization.py). The controller
@@ -452,7 +451,7 @@ Startup sampling policy is produced by
 `relax/commands/refinement_arguments.py:resolve_initial_sampling` and reused as
 `InitialSampling`. Archive metadata conversion belongs to
 `relax/refinement/result_files.py:build_archive_metadata`; the command owns
-publication order. The current review shows both producers and all calling facts.
+publication order.
 
 Startup pose source selection, loading and norm-correction preparation belong to
 `relax/star/input_poses.py:prepare_initial_poses`. Its `InitialPoses` result

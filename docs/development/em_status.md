@@ -74,8 +74,6 @@ are preserved. Final prior/reconstruction orchestration stays separate because
 its replay, CTF, precision and release policies differ; shared mathematical
 primitives retain one implementation.
 
-The [complete calling flow and implementations](final_local_sampling_patch_review.md#integrated-controller-ownership-changes)
-show the scientific order, producer/consumer ownership and actual caller together.
 Source spans are 2731/1767 for numerical/command controllers;
 these counts are review signals, not design acceptance. Current CPU checks are recorded above; earlier passing receipts describe their
 own source only. The milestone is incomplete until the frozen float32 K1/exactly-K4
@@ -89,8 +87,7 @@ is verified. Existing comments, frozen candidates, controls and jobs are preserv
 Replay now consumes validated `ImageGeometry`; the generic controller dataset
 alias and two silent invalid-pixel substitutions are removed. Original scalar
 types remain explicit for existing host arithmetic. Scientific state writes,
-sampling order and array lifetimes are unchanged. See the
-[actual producer and calling flow](final_local_sampling_patch_review.md#input-geometry-and-replay-boundary).
+sampling order and array lifetimes are unchanged.
 
 All 185 selected CPU cases pass with zero skips; source/test lint, structural
 comparison and diff checks pass. The initial structural proof required a script
@@ -111,7 +108,6 @@ The existing diagnostic CLI owner now holds projector-only slots, captured-state
 attachment and float32 scoring-noise expansion with its admission/source helpers.
 Controller mode/source selection, noise installation, capture publication and
 validation timing remain visible. No new function, type, module or wrapper.
-See the [actual callers and implementations](final_local_sampling_patch_review.md#sealed-restart-runtime-adaptation).
 
 The affected inventory passed 223 cases and found one stale source guard from
 the preceding expectation move; after test-only migration all three affected
@@ -133,7 +129,6 @@ The existing expectation owner now binds the canonical trial grid, dense/local
 sampling support and local diagnostic policy once for both halves. The
 controller retains mode decisions, explicit tomography adaptation, half-specific
 operands, score publication, serial/overlap dispatch and the memory boundary.
-See the [complete construction and implementation](final_local_sampling_patch_review.md#numbered-expectation-preparation).
 
 Initial checks passed 132 cases and found eight incorrect new window expectations
 plus one source guard needing its new owner. After test-only repairs, 43 repair
@@ -156,8 +151,7 @@ Command preparation now owns verified dispatch admission and CLI/optimiser
 runtime-control resolution in the existing command-options module. The controller
 keeps authoritative group identity, strict replay admission, follower preparation,
 frozen-aware source choice and visible option installation before reference
-loading. See the [complete current caller and owners](final_local_sampling_patch_review.md#command-oracle-admission-and-runtime-controls)
-and [checks/source receipt](final_search_patch_status.md#current-command-oracle-admission-and-runtime-controls).
+loading.
 
 The initial run passed 208 cases and exposed 12 new fixture setup errors from
 unsorted manifest names; all 26 new cases pass after fixing that fixture alone.
@@ -174,9 +168,7 @@ Correction measurements now have one small reporting result in the normalization
 owner, reused by checkpoint averages and parity captures. The existing diagnostic
 owner performs capture encoding/conversion and preserves warning handling. The
 controller retains normalization admission, native/follower correction writes,
-convergence, checkpoint order and full/timing-only selection. See the
-[complete current operation](final_local_sampling_patch_review.md#correction-reporting-and-completed-iteration-capture)
-and [checks and source receipt](final_search_patch_status.md#current-correction-reporting-and-capture).
+convergence, checkpoint order and full/timing-only selection.
 
 The initial focused run passed 88 cases and found five failures from two new
 fixture mistakes. After repair without assertion/tolerance changes, all 13 new
@@ -194,9 +186,7 @@ sources and jobs are preserved.
 The existing half model operands carry borrowed radial noise; local/dense
 sampling carries coarse angular metadata; particle diameter comes from the
 already-required run options. No new function, type, module or flag was added.
-Scoring, frame writes, offloading, publication and recording remain visible. See
-the [complete current operation](final_local_sampling_patch_review.md#numbered-half-input-ownership)
-and [checks and source receipt](final_search_patch_status.md#earlier-half-input-ownership).
+Scoring, frame writes, offloading, publication and recording remain visible.
 
 The initial focused command passed 122 cases and found three stale indirect
 fixture cases. After migration without assertion changes, all three final
@@ -214,9 +204,7 @@ Half profiles, support counts and E-step captures now have their existing
 expectation owner. The controller retains scoring, metadata updates, offloading,
 payload publication and the recording call. Count collection preserves worker
 recording order, separate Class3D/native policies, absent/empty arrays and
-combination after preprocessing drains. See the
-[complete current flow](final_local_sampling_patch_review.md#half-expectation-recording-and-support-counts)
-and [checks and source receipt](final_search_patch_status.md#earlier-half-expectation-recording).
+combination after preprocessing drains.
 
 The initial focused command passed 127 cases and failed one stale checkpoint
 fixture. After migration, all 19 checkpoint and 45 affected controller cases pass
@@ -233,9 +221,7 @@ The representative refactor is still being completed before full production
 qualification. The existing reconstruction settings owner now binds invariant
 regularization, particle-mask and initial-filter inputs once for numbered/final
 priors, reconstruction, postprocessing and Class3D captures. Windows, accumulator
-layout, first-CC phase decisions and model updates remain explicit. See the
-[complete current calling flow](final_local_sampling_patch_review.md#reconstruction-settings-and-visible-model-updates)
-and [checks and source receipt](final_search_patch_status.md#earlier-reconstruction-settings-cleanup).
+layout, first-CC phase decisions and model updates remain explicit.
 
 58 focused and 19 affected controller cases pass. The final capture-interface
 migration passes all 11 capture cases; import and structural checks pass. The
@@ -254,8 +240,7 @@ following the user's October 2 clarification. Angular-transition policy now
 belongs to `refinement/numbered_transitions.py`; numbered perturbation and scoring-window
 planning belong to `refinement/iteration_planning.py`. The controller preserves
 pre-update coarse order, replay/accuracy timing, grid execution and explicit
-state writes. See the [complete calling flow](final_local_sampling_patch_review.md#numbered-sampling-policy-and-fourier-windows)
-and [current package receipt](final_search_patch_status.md#earlier-numbered-sampling-cleanup).
+state writes.
 
 Focused CPU checks pass. At that source the numerical controller spanned 3,052 lines and command
 1,992 lines; both are unfinished. Continue phase construction/publication and
@@ -274,8 +259,7 @@ or forwarding wrapper was added.
 
 The controller retains captured-projector admission, empty-half handling, ordered
 half iteration and explicit projector installation. Its old-projector list reset
-and last-projector assignment remain at their original release boundaries. The
-complete producer, operation and caller are in the [review](final_local_sampling_patch_review.md#projector-preparation-and-accuracy-reuse).
+and last-projector assignment remain at their original release boundaries.
 
 This package passed **79 affected CPU tests, 108 guards and 96 actual old/new
 preparation-stage comparisons**, with no skipped cases in those test receipts.
@@ -312,7 +296,7 @@ occurred; inspect the earlier uncertain submission's remote state before retryin
 Startup pose selection, loading, corrections and provenance now have one
 operation in `star/input_poses.py`. The command retains source setup order and
 visible replay/frozen-correction construction. Reports reuse provenance produced
-with the selected data. See the [complete caller, result types and implementation](final_local_sampling_patch_review.md#startup-pose-source-ownership).
+with the selected data.
 
 414 affected CPU tests pass, including 34 new source cases. All 504 actual
 previous/current cases match (344 successful selections, 160 matching refusals);
@@ -347,9 +331,7 @@ about 2.6 GB per iteration at the fine orders.
 
 ## Refactor history and scientific gates
 
-Read the concise [current qualification status](final_search_patch_status.md)
-for source-specific numerical findings, preserved smoke/job evidence and the
-remaining float32 K1/K4/real-data/performance gates. Earlier readability source
+Earlier readability source
 reports are retained in the immutable [previous status][refactor-history].
 The following preserved headings keep existing links; their old next actions
 are historical evidence rather than current instructions.
@@ -848,8 +830,7 @@ whole-process times were 37.64 s for `auto` and 37.55 s for cached full dense
 (job 14694770). Their minimum per-class one-update RELION FSC-AUC was
 0.999999993 versus 0.963218, respectively. Neither the measured process tie
 nor the divergent result supports using full dense by default. The isolated
-kernel speedups are not end-to-end production speedups. Detailed source and
-evidence are in the [integration record](dense_gemm_coarse_engine_plan_20260928.md).
+kernel speedups are not end-to-end production speedups. The run's source was `efc18e4f`.
 
 ## Opt-in dense GEMM K1 experiment (September 28)
 
@@ -858,7 +839,7 @@ normalization, image/projection translation expansion, and serial/mixed/full
 translation tiles. Exact three-iteration reconstruction closely agrees with the
 native dense control; lagged absolute normalization overflows at iteration two.
 Production defaults are unchanged. [Math and measured scope](../math/dense_gemm_experiment.md)
-and the [detailed plan](dense_gemm_experiment_plan_20260928.md) link the evidence.
+links the evidence.
 The final single raw-batch staging seam passes real GPU operand/upload checks
 14632476. Medium14632505 passed all 27 items and 13 FSC comparisons; integrated
 smoke14633325 passed all four items and three FSC comparisons. Both enforced

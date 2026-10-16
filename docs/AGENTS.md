@@ -45,9 +45,6 @@ The root guide applies.
   `at most once every 3-4 hours` and `pixi run test-full` in the runbook; rewording them fails the test.
 - Scratch evidence disappears. `development/em_status.md` cites a `HANDOFF.json` as "current integration,
   receipts, preserved jobs and required gates"; the file is gone and the line now says "no longer available".
-- `development/final_local_sampling_patch_review.md` is 440 KB, three quarters of it fenced code excerpts.
-  Other documents link to its anchors. Open the anchor you were sent to; do not read the file whole, and read
-  the code, not the excerpt, for what a function does today.
 - `development/em_status.md` is more than 100 KB and mixes current state with dated history under headings such as
   "Current readability refactor". Check a claim against the code or a receipt before acting on it.
 - `pixi run -e docs docs-build` runs `mkdocs build --strict`, and no `mkdocs.yml` is tracked. The

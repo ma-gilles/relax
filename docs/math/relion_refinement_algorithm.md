@@ -17,8 +17,7 @@ class/box and supported modes before restoring snapshot scalars while preserving
 configured run limits. Grid, model, particle and history restoration retain
 their positions in the controller. Geometry normalization is equivalent here
 because the resolution consumers already convert positive pixel size to Python
-float before arithmetic. The [complete review](../development/final_local_sampling_patch_review.md#startup-sampling-state)
-records source precedence, buffer lifetime and qualification limits.
+float before arithmetic.
 
 ## Particle row layout
 
@@ -36,8 +35,6 @@ existing whole-vector Class3D accuracy trials from RELION's post-read source
 order. Input rows, source particle IDs and half-local trial positions remain
 distinct frames. The computed `ParticleLayout` carries them through consumers;
 the command still selects source/mode, admits diagnostics and installs state.
-The [complete review](../development/final_local_sampling_patch_review.md#particle-row-layout)
-records scratch lifetime, unchanged ordering and outstanding qualification.
 
 ## Particle input preparation
 
@@ -57,8 +54,6 @@ precedence is unchanged; seed and runtime consumers retain their original timing
 The controller receives the existing dataset and format/preprocessing metadata,
 then creates half sets and selects startup noise explicitly. Subtomogram particle
 identity follows particle-STAR order rather than flattened tilt-image row order.
-The [complete review](../development/final_local_sampling_patch_review.md#particle-input-preparation)
-records lifetime and qualification limits.
 
 ## Start-up noise
 
@@ -1294,7 +1289,6 @@ when that value is absent. Offset sigma is read only from the optimiser. The
 command installs noise before reporting, installs priors before their report,
 and reads controls afterwards. These explicit assignments preserve large-array
 release points. Small radial/text scratch expires after its last use.
-See the [complete current caller and implementation](../development/final_local_sampling_patch_review.md#iteration-zero-model-replay).
 
 ### Prejoin diagnostic ownership
 
