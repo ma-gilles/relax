@@ -1327,17 +1327,22 @@ def _finalize_class_local_pass(
 
 
 # The K=1 rotation posterior's used-bin count changes with every local pass, and the
-# statistics programs are shaped by it: padded to a multiple of this, a refinement's
-# passes share a few shapes instead of compiling the image-term program per half.
+# statistics programs are shaped by it: padded to this times a power of two, a refinement's
+# passes share a few shapes instead of compiling the image-term program per half. A multiple
+# of it gave the EMPIAR-10299 row 12 lengths and 71 image-term compiles (relax#103).
 _POSTERIOR_BIN_QUANTUM = 4096
 
 
 def _posterior_bin_capacity(n_used_bins: int, *, n_classes: int) -> int:
-    """The accumulator length of ``n_used_bins`` used posterior bins (K>1 keeps the whole histogram)."""
+    """The accumulator length of ``n_used_bins`` used posterior bins (K>1 keeps the whole histogram).
+
+    The smallest ``_POSTERIOR_BIN_QUANTUM * 2**k`` that holds them: at most twice the used bins.
+    """
 
     if n_classes != 1:
         return int(n_used_bins)
-    return max(1, -(-int(n_used_bins) // _POSTERIOR_BIN_QUANTUM)) * _POSTERIOR_BIN_QUANTUM
+    blocks = max(1, -(-int(n_used_bins) // _POSTERIOR_BIN_QUANTUM))
+    return (1 << (blocks - 1).bit_length()) * _POSTERIOR_BIN_QUANTUM
 
 
 def _expand_posterior_bins(sums, posterior_bin_ids, n_posterior_bins: int) -> np.ndarray:

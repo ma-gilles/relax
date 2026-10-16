@@ -1077,6 +1077,14 @@ def test_expanded_posterior_bins_ignore_the_padding():
     assert rlp._posterior_bin_capacity(5785, n_classes=1) == 8192
     assert rlp._posterior_bin_capacity(4096, n_classes=1) == 4096
     assert rlp._posterior_bin_capacity(5785, n_classes=2) == 5785
+    # A power-of-two ladder of the quantum (relax#103): the 13 used-bin lengths of the EMPIAR-10299 row's
+    # image-term compiles (job 15689192) take 4 accumulator lengths, each under twice the bins.
+    row = [4096, 12288, 16384, 20480, 24576, 28672, 32768, 36864, 40960, 49152, 53248, 57344, 61440]
+    assert {rlp._posterior_bin_capacity(n, n_classes=1) for n in row} == {4096, 16384, 32768, 65536}
+    assert all(n <= rlp._posterior_bin_capacity(n, n_classes=1) < 2 * n for n in row)
+    assert rlp._posterior_bin_capacity(1, n_classes=1) == 4096
+    assert rlp._posterior_bin_capacity(4097, n_classes=1) == 8192
+    assert rlp._posterior_bin_capacity(61440, n_classes=1) == 65536
 
 
 def test_rotation_posterior_is_accumulated_over_the_used_bins():
@@ -1576,3 +1584,36 @@ def test_stable_window_parent_probe_keeps_the_logical_window_samples(caplog):
         strict=True,
     ):
         np.testing.assert_array_equal(np.asarray(got), np.asarray(want))
+
+
+@requires_resident_gpu
+def test_power_of_two_posterior_bin_padding_carries_no_mass(monkeypatch):
+    """relax#103: on the power-of-two ladder the device rotation-posterior sums past the used bins are exactly
+    zero, and two paddings of one pass (quantum 1 and 64) give the same histogram."""
+
+    sums_seen = []
+    expand = rlp._expand_posterior_bins
+
+    def capture(sums, posterior_bin_ids, n_posterior_bins):
+        sums_seen.append((np.asarray(sums, dtype=np.float64), int(np.asarray(posterior_bin_ids).size)))
+        return expand(sums, posterior_bin_ids, n_posterior_bins)
+
+    monkeypatch.setattr(rlp, "_expand_posterior_bins", capture)
+    case = _case()
+    results = []
+    for quantum in (1, 64):
+        monkeypatch.setattr(rlp, "_POSTERIOR_BIN_QUANTUM", quantum)
+        results.append(_run(case, engine_tuning=LOCAL_RESIDENT_ENGINE))
+    (small, n_used), (large, n_used_large) = sums_seen
+    assert n_used == n_used_large
+    assert small.size == rlp._posterior_bin_capacity(n_used, n_classes=1) >= n_used
+    assert large.size == 64 * (1 << (-(-n_used // 64) - 1).bit_length()) > n_used
+    assert not small[n_used:].any() and not large[n_used:].any()
+    assert large[:n_used].any()
+    # The repeat band of the posterior sums (float32 posteriors in float64 sums): as in
+    # test_padded_posterior_bins_serve_two_bin_counts_with_one_program.
+    assert_matches(
+        np.asarray(results[1].relion_stats.rotation_posterior_sums),
+        np.asarray(results[0].relion_stats.rotation_posterior_sums),
+        rtol=1e-6,
+    )
