@@ -637,6 +637,10 @@ def compute_local_search_resident(
         if class_slabs is not None:
             class_slabs = projection_halves
         texture_logical_r_max = int(kernel.relion_projector_r_max)
+    # The slabs live on in relion_projector_half and class_slabs alone, which the pass releases once their
+    # textures are staged; a list kept here held the device slab for the whole pass (relax#108: the 2.71 GiB
+    # box-448 slab beside the final pass's BPref at a 16 GB device).
+    del projection_halves
     # The pixels the projector computes for a chunk's rows: the two windows,
     # not the full half spectrum (10202 box 800: ~155k of 320,800 px per row).
     window_union = (

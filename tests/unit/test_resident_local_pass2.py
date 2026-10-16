@@ -686,6 +686,42 @@ def test_exact_float32_accumulation_switch_runs_the_local_driver(monkeypatch):
 
 
 @requires_resident_gpu
+@pytest.mark.parametrize("current_size", [4, IMAGE_SHAPE[0]], ids=["stable_window", "at_the_box"])
+def test_the_device_slab_is_released_before_the_accumulators(monkeypatch, current_size):
+    """relax#108: once the pass's texture holds the slab, no reference keeps the device slab alive when the
+    BPref accumulators are allocated (a 2.71 GiB box-448 slab stayed beside them at a 16 GB device)."""
+
+    import gc
+    import weakref
+
+    staged = []
+    real_open = projection_blocks.open_pass_capacity_texture
+
+    def open_texture(relion_projector_half, **kw):
+        texture = real_open(relion_projector_half, **kw)
+        if texture is not None:
+            staged.append(weakref.ref(relion_projector_half))
+        return texture
+
+    alive_at_accumulators = []
+    real_allocate = rlp.allocate_row_partial
+
+    def allocate(*a, **kw):
+        gc.collect()
+        alive_at_accumulators.append([ref() is not None for ref in staged])
+        return real_allocate(*a, **kw)
+
+    monkeypatch.setattr(projection_blocks, "open_pass_capacity_texture", open_texture)
+    monkeypatch.setattr(rlp, "allocate_row_partial", allocate)
+    case = _case()
+    # The refinement hands the pass a host Projector::data; the pass owns the device slab it uploads.
+    case["projector_half"] = np.asarray(case["projector_half"])
+    _run(case, engine_tuning=LOCAL_RESIDENT_ENGINE, current_size=current_size)
+    assert staged and alive_at_accumulators
+    assert not any(alive_at_accumulators[-1]), "the device slab outlived its texture staging"
+
+
+@requires_resident_gpu
 def test_next_pass_refills_the_kept_texture(monkeypatch):
     """A pass's texture is the previous pass's owner refilled (the compiled projections capture its handle), and
     it projects what a texture staged fresh from the new slab projects; a slab above the kept size gets a texture
