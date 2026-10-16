@@ -22769,7 +22769,7 @@
    "pixel_size_A": 4.25,
    "symmetry": "C1",
    "classes": 1,
-   "workflow": "cryo-ET InitialModel (VDAM) K=1 on CTF-premultiplied tilt-series images, 200 iterations, seeds 1/2/3, one run per engine and seed (relax main 8fc3a2a8)",
+   "workflow": "cryo-ET InitialModel (VDAM) K=1 on CTF-premultiplied tilt-series images, 200 iterations, seeds 1/2/3; speed and seed 1 on relax main b69e480d, seeds 2-3 on 8fc3a2a8",
    "relion_dependence": "standalone",
    "status": "current",
    "relion": {
@@ -22782,48 +22782,51 @@
     "resolution_definition": "engine_current_resolution",
     "relion_reported_resolution_A": 8.774194,
     "masked_resolution_A": null,
-    "wall_s": 6875,
-    "wall_definition": "seed 1: arm-script wall of relion_refine (WALL.json), cold, one H100 + 10 CPUs; the three seeds ran as three concurrent steps of one job",
+    "wall_s": 6688,
+    "wall_definition": "seed 1: arm-script wall of relion_refine (WALL.json), cold, one H100 + 10 CPUs, same job and node as the relax arm (job 15654699, della-h20g4); the earlier seed-1 run (job 15297768, three seeds concurrent) took 6875 s",
     "gpu_model": "H100 80GB",
     "gpu_count": 1,
     "iterations": 200,
     "jobs": [
+     "15654699",
      "15297768"
     ],
     "masked_band_auc": null
    },
    "relax": {
-    "source_sha": "8fc3a2a8993e5b7331c157e9605d24b955b32398",
-    "source_repo": "relax main 8fc3a2a8 (frozen worktree relax_landw_20261008/r63/src_8fc3a2a8); relax#66 (d795c892) and the CTF-row rewrite (a678fc16) landed afterwards and are not in these arms",
+    "source_sha": "b69e480dd4fed36e65f268a6f11204725ea9f2e5",
+    "source_repo": "relax main b69e480d (frozen snapshot relax_etobspeed_20261015/cand_b69e480d, natives built at the snapshot): adds tiltprof's CTF fix 73c33651 (relax#39 c regression) and etobspeed's float2 capacity texture 5f3ff104, coarse bound 3a8990c8 and remainder launch b69e480d; seeds 2-3 keep their 8fc3a2a8 runs",
     "resolution_A": 8.77419354839,
     "resolution_definition": "engine_current_resolution",
     "masked_resolution_A": null,
-    "wall_s": 4251,
-    "wall_definition": "seed 1: arm-script wall of relax InitialModel end to end (WALL.json), cold (arm-local empty JAX cache), one H100 + 10 CPUs; the three seeds ran as three concurrent steps of one job on the node the RELION job used (della-h20g3), not in the same job",
+    "wall_s": 3994,
+    "wall_definition": "seed 1: arm-script wall of relax InitialModel end to end (WALL.json), cold (arm-local empty JAX cache), one H100 + 10 CPUs, same job and node as the RELION arm (job 15654699, della-h20g4)",
     "gpu_model": "H100 80GB",
     "gpu_count": 1,
     "iterations": 200,
     "jobs": [
+     "15654699",
      "15305268"
     ],
     "masked_band_auc": null
    },
    "gt": {
-    "metric": "population-weighted masked GT FSC-AUC of the registered final maps (scripts/score_initialmodel_maps.py at relax main 56022350, default registration, --fit-threads 1, all six arms in one invocation)",
+    "metric": "population-weighted masked GT FSC-AUC of the registered final maps (scripts/score_initialmodel_maps.py at relax main 56022350, default registration, --fit-threads 1, 8 fit workers; all eight arms in one invocation, which reproduces the six earlier arms' values exactly)",
     "relion": 0.965965,
-    "relax": 0.966168,
+    "relax": 0.966068,
     "relion_band": [
      0.965382,
      0.96748
     ],
     "relax_per_seed": {
-     "1": 0.966168,
+     "1": 0.966068,
      "2": 0.966628,
      "3": 0.967204
     },
     "relion_per_seed": {
      "1": [
-      0.965965
+      0.965965,
+      0.966057
      ],
      "2": [
       0.965382
@@ -22834,7 +22837,7 @@
     },
     "relax_runs_per_seed": {
      "1": [
-      0.966168
+      0.966068
      ],
      "2": [
       0.966628
@@ -22845,7 +22848,7 @@
     },
     "unmasked_relax_per_seed": {
      "1": [
-      0.927251
+      0.92693
      ],
      "2": [
       0.92804
@@ -22856,7 +22859,8 @@
     },
     "unmasked_relion_per_seed": {
      "1": [
-      0.92637
+      0.92637,
+      0.927228
      ],
      "2": [
       0.92531
@@ -22866,27 +22870,28 @@
      ]
     },
     "same_seed_map_fsc_auc": {
-     "1": 0.996152,
+     "1": 0.996093,
      "2": 0.993316,
      "3": 0.993374
     },
     "wall_s_per_seed": {
      "relax": {
-      "1": 4251,
+      "1": 3994,
       "2": 4324,
       "3": 4212
      },
      "relion": {
-      "1": 6875,
+      "1": 6688,
       "2": 5728,
       "3": 9430
      }
     },
-    "scoring_note_20261010": "one scorer invocation, one thread (8 fit workers, OMP 1), scorer sha256 0090e2a8...; landw's own scoring of the same config agrees to 2e-6"
+    "scoring_note_20261010": "one scorer invocation, one thread (8 fit workers, OMP 1), scorer sha256 0090e2a8...; landw's own scoring of the same config agrees to 2e-6",
+    "scoring_note_20261016": "seed 1 on b69e480d: relax 0.966068 against RELION 0.965965 (job 15297768) and 0.966057 (same-node rerun, job 15654699); same-seed masked map FSC-AUC 0.996093 (vs 15297768) and 0.995836 (vs the rerun)"
    },
-   "cross_engine": "masked relax-vs-same-seed-RELION map FSC-AUC (registered pairs): s1 0.9962, s2 0.9933, s3 0.9934",
+   "cross_engine": "masked relax-vs-same-seed-RELION map FSC-AUC (registered pairs): s1 0.9961 (b69e480d vs 15297768; 0.9958 vs the same-node rerun), s2 0.9933, s3 0.9934 (8fc3a2a8)",
    "cross_engine_masked_band_auc": null,
-   "time_ratio_relax_over_relion": 0.62,
+   "time_ratio_relax_over_relion": 0.597,
    "matched": "yes",
    "matched_detail": {
     "gpu_model": true,
@@ -22894,13 +22899,14 @@
     "particles": true,
     "schedule": true,
     "flags": true,
-    "timing_controlled": false
+    "timing_controlled": true
    },
    "notes": [
     "New row 2026-10-10 (landw's runs, scorew's scoring, team-lead): CTF-premultiplied tilt-series InitialModel. Weighted masked GT FSC-AUC relax / RELION: s1 0.966168 / 0.965965 (+2.0e-04); s2 0.966628 / 0.965382 (+1.2e-03); s3 0.967204 / 0.967480 (-2.8e-04). One run per engine and seed; all three relax values lie inside RELION's across-seed range [0.965382, 0.967480]. Same-seed masked map FSC-AUC 0.9962, 0.9933, 0.9934 (de novo runs; under 0.9999, so the reproduced-map tie is not used).",
-    "The row cites relax main 8fc3a2a8. relax#66 (d795c892) and the CTF-row rewrite (a678fc16) landed afterwards and are not in these arms.",
+    "Seed 1 is relax main b69e480d (speed and quality); seeds 2-3 keep their 8fc3a2a8 runs. b69e480d contains relax#66 (d795c892), the CTF-row rewrite a678fc16 and its compile fix 73c33651. The code between the two changed speed; the round-3 kernels (5f3ff104, 3a8990c8, b69e480d) are bitwise. The one known numerical change on this path is the CTF-row path: a678fc16 replaced the host NumPy CTF evaluator with one float64 JAX program, whose rows differ from the host rows by at most 2.2e-16 relative (5 float32 casts of 9.79e9 values differed in that commit's own check). The range was not audited commit by commit beyond that.",
     "This is the case on which relax#65 was found: the float32 per-row back-projection loses about 1% of the weight in the lowest shells at iteration 1. The result is inside RELION's range regardless. The row is to be re-judged with one rerun on the main that carries the relax#65 remedy.",
-    "Walls (WALL.json): relax 4212 to 4324 s, RELION 5728 to 9430 s across the three seeds, per-seed ratios 0.45x to 0.75x; each engine ran its three seeds as concurrent steps of its own job on della-h20g3 (relax 15305268, RELION 15297768), so the ratio is indicative only; the row quotes seed 1."
+    "Walls before the speed refresh (8fc3a2a8, WALL.json): relax 4212 to 4324 s, RELION 5728 to 9430 s across the three seeds, each engine's seeds concurrent in its own job on della-h20g3 (relax 15305268, RELION 15297768); the row now quotes the same-node seed-1 pair (job 15654699).",
+    "Speed refresh 2026-10-15 (etobspeed, round 3): one cold same-node pair, relax main b69e480d vs page-build RELION, seed 1, the row's commands (job 15654699, della-h20g4): relax 3994 s, RELION 6688 s, ratio 0.597. Between 8fc3a2a8 and b69e480d, relax#39 c (a678fc16) had made etob2 744 s slower on a same-node A/B (8fc3a2a8 4230 s vs main 3e474a16 4974 s, 5x the compiles: per-optics-group CTF rows recompiled for every member count); tiltprof's 73c33651 removed it (4371 s), and the float2 capacity texture plus the coarse bound (5f3ff104, 3a8990c8; bitwise projections) took 446 s more (3925 s, job 15645327). Seed-1 quality on b69e480d: weighted masked GT FSC-AUC relax 0.966068 against RELION 0.965965 / 0.966057, inside RELION's across-seed range; seeds 2-3 keep their 8fc3a2a8 runs."
    ],
    "null_reasons": {
     "relion.masked_resolution_A": "InitialModel (VDAM) has no gold-standard half maps; masked half-map resolution does not apply",
@@ -22917,6 +22923,8 @@
     "fixture": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/cryoet_optics_premult_20261004/cases/etob2_premult",
     "mask": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/cryoet_optics_premult_20261004/masks/etoptics_b2_8c9c_b40_c1/etoptics_b2_8c9c_b40_c1_mask.mrc",
     "run_roots": [
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_etobspeed_20261015/row/relax_b69e480d_s1",
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_etobspeed_20261015/row/relion_s1",
      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_landw_20261008/r63/cell/relax_vdam_after_8fc3a2a8_s1",
      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_landw_20261008/r63/cell/relax_vdam_after_8fc3a2a8_s2",
      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_landw_20261008/r63/cell/relax_vdam_after_8fc3a2a8_s3",
@@ -22924,23 +22932,89 @@
      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_landw_20261008/r63/cell/relion_vdam_s2",
      "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_landw_20261008/r63/cell/relion_vdam_s3"
     ],
-    "score_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_scorew_20261008/scorer_repeat_20261010/ft1main_p1_etob2_premult_vdam/etob2_premult_vdam_k1_after63.json",
-    "score_config": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_landw_20261008/r63/cell/vdam_after_score_cfg.json",
+    "score_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_etobspeed_20261015/row/scores/etob2_premult_vdam_k1_b69e480d.json",
+    "score_config": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_etobspeed_20261015/row/score_cfg.json",
     "landw_score_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_landw_20261008/r63/cell/vdam_after_scores/etob2_premult_vdam_k1_after63.json",
     "scorer": "relax scripts/score_initialmodel_maps.py (main 56022350)",
     "original_run_root": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_landw_20261008/r63/cell",
-    "builder": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/tools/add_etob2_premult_vdam_row_20261010.py"
+    "builder": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_bench_refresh_20261003/tools/add_etob2_premult_vdam_row_20261010.py",
+    "previous_score_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_scorew_20261008/scorer_repeat_20261010/ft1main_p1_etob2_premult_vdam/etob2_premult_vdam_k1_after63.json",
+    "previous_score_config": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_landw_20261008/r63/cell/vdam_after_score_cfg.json",
+    "speed_refresh_run_root": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_etobspeed_20261015/row",
+    "speed_refresh_job": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relax_etobspeed_20261015/row/row.sbatch"
    },
-   "date": "2026-10-10",
+   "date": "2026-10-15",
    "quality_pass": true,
    "quality_reason": "worst s3 −2.8e-4 vs same-seed RELION; inside across-seed band",
    "time_check": {
-    "a": "relax and RELION each on 1 H100 + 10 CPUs, relion_refine --j 10 --gpu 0 non-MPI; separate jobs on della-h20g3, each with its three seeds as concurrent steps: relax 15305268, RELION 15297768; seed 1 quoted",
-    "b": "relax main 8fc3a2a8 frozen worktree with production defaults and RELION's GUI InitialModel command; no --scratch_dir on either engine",
+    "a": "relax and RELION in one Slurm job on one node (job 15654699, della-h20g4), one H100 + 10 CPUs each, relion_refine --j 10 --gpu 0 non-MPI; both cold, run side by side; seed 1",
+    "b": "relax main b69e480d frozen snapshot (natives built at the snapshot) with production defaults and RELION's GUI InitialModel command, the row's commands; no --scratch_dir on either engine",
     "c": "arm-script walls (WALL.json), end to end, cold (arm-local empty JAX cache)",
-    "d": "H100 80GB HBM3 for every arm (GPU.csv / PROVENANCE.txt per arm)"
+    "d": "H100 80GB HBM3 for both arms (GPU.csv / PROVENANCE.txt per arm)"
    },
-   "history": []
+   "history": [
+    {
+     "date": "2026-10-10",
+     "note": "values before the 2026-10-15 speed refresh (etobspeed): seed 1 on relax main 8fc3a2a8, walls from each engine's three concurrent seeds",
+     "relax_source_sha": "8fc3a2a8993e5b7331c157e9605d24b955b32398",
+     "relax_wall_s": 4251,
+     "relax_jobs": [
+      "15305268"
+     ],
+     "relion_wall_s": 6875,
+     "relion_jobs": [
+      "15297768"
+     ],
+     "time_ratio_relax_over_relion": 0.62,
+     "quality_pass": true,
+     "quality_reason": "worst s3 −2.8e-4 vs same-seed RELION; inside across-seed band",
+     "gt": {
+      "relax": 0.966168,
+      "relion": 0.965965,
+      "relax_per_seed": {
+       "1": 0.966168,
+       "2": 0.966628,
+       "3": 0.967204
+      },
+      "relion_per_seed": {
+       "1": [
+        0.965965
+       ],
+       "2": [
+        0.965382
+       ],
+       "3": [
+        0.96748
+       ]
+      },
+      "same_seed_map_fsc_auc": {
+       "1": 0.996152,
+       "2": 0.993316,
+       "3": 0.993374
+      },
+      "wall_s_per_seed": {
+       "relax": {
+        "1": 4251,
+        "2": 4324,
+        "3": 4212
+       },
+       "relion": {
+        "1": 6875,
+        "2": 5728,
+        "3": 9430
+       }
+      }
+     },
+     "cross_engine": "masked relax-vs-same-seed-RELION map FSC-AUC (registered pairs): s1 0.9962, s2 0.9933, s3 0.9934",
+     "score_json": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_scorew_20261008/scorer_repeat_20261010/ft1main_p1_etob2_premult_vdam/etob2_premult_vdam_k1_after63.json",
+     "time_check": {
+      "a": "relax and RELION each on 1 H100 + 10 CPUs, relion_refine --j 10 --gpu 0 non-MPI; separate jobs on della-h20g3, each with its three seeds as concurrent steps: relax 15305268, RELION 15297768; seed 1 quoted",
+      "b": "relax main 8fc3a2a8 frozen worktree with production defaults and RELION's GUI InitialModel command; no --scratch_dir on either engine",
+      "c": "arm-script walls (WALL.json), end to end, cold (arm-local empty JAX cache)",
+      "d": "H100 80GB HBM3 for every arm (GPU.csv / PROVENANCE.txt per arm)"
+     }
+    }
+   ]
   },
   {
    "id": "empiar10299_20k_multioptics_k1_refine3d_local_3f843d49",
