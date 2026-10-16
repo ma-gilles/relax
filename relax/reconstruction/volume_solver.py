@@ -14,7 +14,7 @@ import jax.numpy as jnp
 import numpy as np
 from recovar.core import fourier_transform_utils
 
-from relax.reconstruction import regularization
+from relax.reconstruction import low_resolution_join, regularization
 from relax.runtime.env_flags import parse_env_auto_flag, parse_env_flag, parse_env_worker_count, read_env_text
 from relax.runtime.xla_memory_reserve import SINGLE_WORKING_SET_LIMIT_SHARE, device_fits
 
@@ -46,7 +46,7 @@ class ReconstructionPrograms:
     ``SLURM_CPUS_PER_TASK``, else 1): that transform's threads. ``fsc_packed_stream_min_elements``
     (``RELAX_RELION_FSC_PACKED_STREAM_MIN_ELEMENTS``, an integer, default 0): the smallest packed half whose
     backprojector FSC takes the streamed reduction instead of the full expansion (the two FSCs are equal).
-    ``lowres_join`` (``regularization.LowResolutionJoinRoute``): where the low-resolution half join runs.
+    ``lowres_join`` (``low_resolution_join.LowResolutionJoinRoute``): where the low-resolution half join runs.
     ``fsc_dump`` (``regularization.FscDump``, :func:`_fsc_dump`; None: none): where the backprojector FSC writes its
     shell sums.
     """
@@ -55,7 +55,7 @@ class ReconstructionPrograms:
     host_irfft: bool | None
     host_fft_workers: int
     fsc_packed_stream_min_elements: int
-    lowres_join: regularization.LowResolutionJoinRoute
+    lowres_join: low_resolution_join.LowResolutionJoinRoute
     fsc_dump: regularization.FscDump | None
 
     @classmethod
@@ -71,11 +71,11 @@ class ReconstructionPrograms:
                 "RELAX_RELION_FSC_PACKED_STREAM_MIN_ELEMENTS",
                 str(regularization.RELION_FSC_PACKED_STREAM_MIN_ELEMENTS),
             )),
-            lowres_join=regularization.LowResolutionJoinRoute(
+            lowres_join=low_resolution_join.LowResolutionJoinRoute(
                 forced_host=parse_env_auto_flag("RELAX_LOWRES_JOIN_HOST_FALLBACK", logger=log),
                 host_min_elements=int(read_env_text(
                     "RELAX_LOWRES_JOIN_HOST_FALLBACK_MIN_ELEMENTS",
-                    str(regularization.LOW_RESOLUTION_JOIN_HOST_FALLBACK_MIN_ELEMENTS),
+                    str(low_resolution_join.LOW_RESOLUTION_JOIN_HOST_FALLBACK_MIN_ELEMENTS),
                 )),
             ),
             fsc_dump=_fsc_dump(),

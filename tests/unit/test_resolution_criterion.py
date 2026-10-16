@@ -12,12 +12,12 @@ import pytest
 pytest.importorskip("jax")
 import jax.numpy as jnp
 
-from relax.reconstruction.regularization import (
-    compute_data_vs_prior,
-    resolution_from_data_vs_prior,
+from relax.reconstruction.regularization import compute_data_vs_prior
+from relax.reconstruction.resolution_criteria import (
     compute_current_size_relion,
     compute_relion_incr_size_from_fsc,
     fsc_to_relion_ssnr,
+    resolution_from_data_vs_prior,
     update_relion_growth_state_from_fsc,
 )
 

@@ -223,15 +223,15 @@ def test_device_can_place_answers_on_the_device_and_leaves_nothing(preallocate):
 
 
 def test_low_resolution_join_goes_to_the_host_when_its_copies_do_not_fit(monkeypatch):
-    from relax.reconstruction import regularization
+    from relax.reconstruction import low_resolution_join
 
     route = lowres_join()
     seen = []
-    monkeypatch.setattr(regularization, "device_fits", lambda nbytes: seen.append(nbytes) or False)
-    assert regularization._low_resolution_join_host_fallback_enabled_for_size(1000, 10, itemsize=8, route=route) is True
+    monkeypatch.setattr(low_resolution_join, "device_fits", lambda nbytes: seen.append(nbytes) or False)
+    assert low_resolution_join._low_resolution_join_host_fallback_enabled_for_size(1000, 10, itemsize=8, route=route) is True
     assert seen == [2 * 1000 * 8]  # both joined copies of the half pair
-    monkeypatch.setattr(regularization, "device_fits", lambda nbytes: True)
-    assert regularization._low_resolution_join_host_fallback_enabled_for_size(1000, 10, route=route) is False
+    monkeypatch.setattr(low_resolution_join, "device_fits", lambda nbytes: True)
+    assert low_resolution_join._low_resolution_join_host_fallback_enabled_for_size(1000, 10, route=route) is False
     # A full join (every voxel) never takes the host path; physically large grids always do.
-    assert regularization._low_resolution_join_host_fallback_enabled_for_size(1000, 1000, route=route) is False
-    assert regularization._low_resolution_join_host_fallback_enabled_for_size(300_000_000, 10, route=route) is True
+    assert low_resolution_join._low_resolution_join_host_fallback_enabled_for_size(1000, 1000, route=route) is False
+    assert low_resolution_join._low_resolution_join_host_fallback_enabled_for_size(300_000_000, 10, route=route) is True

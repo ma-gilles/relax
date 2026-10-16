@@ -11,7 +11,7 @@ import jax.numpy as jnp
 import numpy as np
 from recovar.core import fourier_transform_utils
 
-from relax.reconstruction import regularization
+from relax.reconstruction import low_resolution_join, regularization
 from relax.reconstruction.resolution import (
     firstiter_cc_ini_high_tapered,
     firstiter_cc_ini_high_tau2_taper,
@@ -63,7 +63,7 @@ def join_half_accumulators_at_low_resolution(
     current_resolution,
     preserve_inputs: bool,
     return_retained_first_numerator=False,
-    route: regularization.LowResolutionJoinRoute,
+    route: low_resolution_join.LowResolutionJoinRoute,
 ):
     """Apply RELION's ``--low_resol_join_halves`` to K=1 half accumulators before the Wiener solve.
 
@@ -76,7 +76,7 @@ def join_half_accumulators_at_low_resolution(
     all-data passes call this with their own accumulators. Returns the four
     joined arrays in input order (``preserve_inputs`` False: host inputs may be updated in place), and a
     fifth value with ``return_retained_first_numerator``, as
-    :func:`regularization_relion.join_halves_at_low_resolution` does; refinement state is not mutated.
+    :func:`low_resolution_join.join_halves_at_low_resolution` does; refinement state is not mutated.
     """
 
     previous_resolution_angstrom = _previous_resolution_angstrom_for_half_join(
@@ -85,7 +85,7 @@ def join_half_accumulators_at_low_resolution(
         box_size=box_size,
         voxel_size=voxel_size,
     )
-    return regularization.join_halves_at_low_resolution(
+    return low_resolution_join.join_halves_at_low_resolution(
         numerators_by_half[0],
         numerators_by_half[1],
         denominators_by_half[0],

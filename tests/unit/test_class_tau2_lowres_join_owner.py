@@ -18,7 +18,7 @@ from helpers.float_compare import assert_matches
 from helpers.reconstruction_settings import reconstruction_settings
 from helpers.run_options import lowres_join, reconstruction_programs
 
-from relax.reconstruction import regularization
+from relax.reconstruction import low_resolution_join, regularization
 from relax.reconstruction.resolution import shell_index_to_resolution_angstrom
 from relax.refinement import numbered_reconstruction, priors
 from relax.runtime.engine_tuning import DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM
@@ -227,7 +227,7 @@ class TestJoinHalfAccumulatorsAtLowResolution:
             calls.append((args, kwargs))
             return sentinel
 
-        monkeypatch.setattr(regularization, "join_halves_at_low_resolution", spy)
+        monkeypatch.setattr(low_resolution_join, "join_halves_at_low_resolution", spy)
         ft_y, ft_ctf = _random_accumulators(0)
         result = priors.join_half_accumulators_at_low_resolution(
             ft_y,
@@ -265,7 +265,7 @@ class TestJoinHalfAccumulatorsAtLowResolution:
         expected_cap = priors._previous_resolution_angstrom_for_half_join(
             pixel_resolutions, current_resolution, box_size=GRID_SIZE, voxel_size=1.5
         )
-        expected = regularization.join_halves_at_low_resolution(
+        expected = low_resolution_join.join_halves_at_low_resolution(
             ft_y[0],
             ft_y[1],
             ft_ctf[0],

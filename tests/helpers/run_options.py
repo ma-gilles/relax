@@ -15,7 +15,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from relax.numerics.precision import DensePrecisionPolicy
-from relax.reconstruction import regularization
+from relax.reconstruction import low_resolution_join, regularization
 from relax.reconstruction.volume_solver import ReconstructionPrograms
 from relax.refinement.refinement_options import (
     AdaptiveOptions,
@@ -113,11 +113,11 @@ def reconstruction_programs(**fields) -> ReconstructionPrograms:
     return ReconstructionPrograms(**{**defaults, **fields})
 
 
-def lowres_join(**fields) -> regularization.LowResolutionJoinRoute:
+def lowres_join(**fields) -> low_resolution_join.LowResolutionJoinRoute:
     """The low-resolution join route ``ReconstructionPrograms.from_environ`` reads with none of its variables set
     (by size, above the default threshold), under ``fields``."""
-    defaults = dict(forced_host=None, host_min_elements=regularization.LOW_RESOLUTION_JOIN_HOST_FALLBACK_MIN_ELEMENTS)
-    return regularization.LowResolutionJoinRoute(**{**defaults, **fields})
+    defaults = dict(forced_host=None, host_min_elements=low_resolution_join.LOW_RESOLUTION_JOIN_HOST_FALLBACK_MIN_ELEMENTS)
+    return low_resolution_join.LowResolutionJoinRoute(**{**defaults, **fields})
 
 
 cli = OptionsFactory()

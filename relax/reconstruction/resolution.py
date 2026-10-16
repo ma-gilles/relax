@@ -13,10 +13,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from relax.fourier.fourier_window import quantize_current_size
-from relax.reconstruction.regularization import (
-    compute_current_size_relion,
-    resolution_from_data_vs_prior,
-)
+from relax.reconstruction.resolution_criteria import compute_current_size_relion, resolution_from_data_vs_prior
 
 
 @dataclass(frozen=True, kw_only=True)

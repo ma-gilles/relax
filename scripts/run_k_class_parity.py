@@ -1303,7 +1303,7 @@ def main() -> None:
 
     from relax.fine_pass.dispatch import compute_pass2_stats_sparse
     from relax.io.map_io import write_map
-    from relax.reconstruction.regularization import RELION_MINRES_MAP
+    from relax.reconstruction.resolution_criteria import RELION_MINRES_MAP
     from relax.reconstruction.volume_solver import ReconstructionPrograms
     from relax.refinement.numbered_reconstruction import reconstruct_volume_eager
     from relax.sampling.grids import get_relion_rotation_grid_eulers, get_translation_grid, relion_angular_sampling_deg

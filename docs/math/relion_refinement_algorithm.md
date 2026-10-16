@@ -770,7 +770,8 @@ is not an exhaustive description of its resolution policy.
 [`relion_reconstruct`](https://github.com/ma-gilles/recovar/blob/a6e6b64dd864aefa78b6953ffe2185ffb3be0578/recovar/reconstruction/relion_functions.py) applies
 the actual regularized reconstruction and postprocessing conventions.
 
-During numbered split-half iterations, `join_halves_at_low_resolution` averages
+During numbered split-half iterations,
+[`join_halves_at_low_resolution`](../../relax/reconstruction/low_resolution_join.py) averages
 **accumulators**, then writes the result into both halves inside the join sphere.
 It does not average already reconstructed maps. The effective joining
 resolution is the larger Angstrom value of the configured threshold (40 Å by

@@ -13,7 +13,7 @@ import pytest
 from helpers.float_compare import assert_matches
 from recovar.core import fourier_transform_utils as ftu
 
-from relax.reconstruction import regularization
+from relax.reconstruction import regularization, resolution_criteria
 from relax.refinement import iteration_snapshot as iteration_snapshot_module
 from relax.refinement import setup_checks
 from relax.refinement.iteration_snapshot import (
@@ -850,8 +850,8 @@ def test_growth_state_update_is_idempotent():
     """The files hold incr_size after the FSC update; the loop applies it once more."""
 
     fsc = np.concatenate([np.ones(20), np.linspace(0.9, 0.0, 45)])
-    once = regularization.update_relion_growth_state_from_fsc(fsc, 60, incr_size=10, has_high_fsc_at_limit=False)
-    twice = regularization.update_relion_growth_state_from_fsc(
+    once = resolution_criteria.update_relion_growth_state_from_fsc(fsc, 60, incr_size=10, has_high_fsc_at_limit=False)
+    twice = resolution_criteria.update_relion_growth_state_from_fsc(
         fsc, 60, incr_size=once[0], has_high_fsc_at_limit=once[1]
     )
     assert once == twice

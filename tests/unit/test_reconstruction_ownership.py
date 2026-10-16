@@ -12,7 +12,7 @@ from helpers.run_options import lowres_join, reconstruction_programs
 from recovar.core import fourier_transform_utils as ftu
 from recovar.reconstruction import relion_functions as rf
 
-from relax.reconstruction import regularization, volume_solver
+from relax.reconstruction import low_resolution_join, regularization, volume_solver
 from relax.refinement import map_postprocess
 
 pytestmark = pytest.mark.unit
@@ -429,7 +429,7 @@ def test_k1_numpy_join_reservation_reaches_first_stage_a_only(monkeypatch):
     ft_y_1 = (rng.standard_normal(half_shape) + 1j * rng.standard_normal(half_shape)).astype(np.complex64)
     ft_ctf_0 = rng.uniform(0.5, 1.5, half_shape).astype(np.float32)
     ft_ctf_1 = rng.uniform(0.5, 1.5, half_shape).astype(np.float32)
-    joined = regularization.join_halves_at_low_resolution(
+    joined = low_resolution_join.join_halves_at_low_resolution(
         ft_y_0,
         ft_y_1,
         ft_ctf_0,
@@ -508,11 +508,11 @@ def test_host_join_threshold_counts_the_physical_grid_of_a_packed_half(monkeypat
         low_resol_join_halves_angstrom=40.0,
         padding_factor=2,
     )
-    host = regularization.join_halves_at_low_resolution(
+    host = low_resolution_join.join_halves_at_low_resolution(
         ft_y_0, ft_y_1, ft_ctf_0, ft_ctf_1, **kwargs, route=lowres_join(forced_host=None, host_min_elements=threshold),
     )
     assert all(isinstance(value, np.ndarray) for value in host)
-    device = regularization.join_halves_at_low_resolution(
+    device = low_resolution_join.join_halves_at_low_resolution(
         ft_y_0, ft_y_1, ft_ctf_0, ft_ctf_1, **kwargs, route=lowres_join(forced_host=False, host_min_elements=threshold),
     )
     for h, d in zip(host, device, strict=True):

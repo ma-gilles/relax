@@ -9,8 +9,8 @@ import numpy as np
 
 from relax.classification.probes import KClassProbe
 from relax.numerics.relion_random import GlibcRand, init_random_generator
-from relax.reconstruction.regularization import RELION_MINRES_MAP
 from relax.reconstruction.resolution import ImageGeometry
+from relax.reconstruction.resolution_criteria import RELION_MINRES_MAP
 from relax.refinement.expectation_batches import BatchPlanner
 from relax.refinement.image_size_plans import RunOptics
 from relax.refinement.iteration_snapshot import SnapshotCapture

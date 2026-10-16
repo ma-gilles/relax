@@ -9,12 +9,12 @@ from typing import TYPE_CHECKING, NamedTuple
 
 import numpy as np
 
-from relax.reconstruction.regularization import fsc_to_relion_ssnr, resolution_from_data_vs_prior
 from relax.reconstruction.resolution import (
     ImageGeometry,
     firstiter_cc_ini_high_resolution_shell,
     shell_index_to_resolution_angstrom,
 )
+from relax.reconstruction.resolution_criteria import fsc_to_relion_ssnr, resolution_from_data_vs_prior
 from relax.refinement.iteration_snapshot import validate_resume_snapshot
 from relax.refinement.ports import InputSource
 from relax.refinement.refinement_state import RefinementState

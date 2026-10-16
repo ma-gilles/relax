@@ -208,11 +208,11 @@ def test_lowres_join_route_reaches_the_command(monkeypatch, tmp_path):
 def test_lowres_join_route_reaches_the_join(monkeypatch):
     from helpers.run_options import cli, reconstruction_programs
 
-    from relax.reconstruction import regularization
+    from relax.reconstruction import low_resolution_join
 
-    route = regularization.LowResolutionJoinRoute(forced_host=False, host_min_elements=11)
+    route = low_resolution_join.LowResolutionJoinRoute(forced_host=False, host_min_elements=11)
     variants = cli.variants(reconstruction=reconstruction_programs(lowres_join=route))
-    seen = _received(monkeypatch, regularization, "join_halves_at_low_resolution", "route",
+    seen = _received(monkeypatch, low_resolution_join, "join_halves_at_low_resolution", "route",
                      RefinementEnvironment(), variants=variants, parity={"low_resol_join_halves_angstrom": 40.0})
     assert seen and set(seen) == {route}
 

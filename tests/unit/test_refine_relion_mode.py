@@ -86,6 +86,7 @@ from relax.numerics import precision as dtype_policy_module
 from relax.parity import final_replay, relion_replay_source
 from relax.parity.relion_replay import _replay_control_model_iteration
 from relax.parity.relion_replay_source import RelionReplay
+from relax.reconstruction import low_resolution_join
 from relax.reconstruction import regularization as regularization_relion
 from relax.reconstruction import resolution as resolution_helpers
 from relax.reconstruction.half_volume_mstep import (
@@ -5020,7 +5021,7 @@ class TestRelionModeSmokeTest:
         """RELION joins low-res half accumulators before the first local output iter."""
 
         join_calls = []
-        original_join = regularization_relion.join_halves_at_low_resolution
+        original_join = low_resolution_join.join_halves_at_low_resolution
 
         def spy_join(*args, **kwargs):
             join_calls.append(
@@ -5033,7 +5034,7 @@ class TestRelionModeSmokeTest:
             return original_join(*args, **kwargs)
 
         monkeypatch.setattr(
-            regularization_relion,
+            low_resolution_join,
             "join_halves_at_low_resolution",
             spy_join,
         )

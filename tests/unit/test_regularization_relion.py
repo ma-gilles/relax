@@ -13,6 +13,7 @@ import recovar.core.fourier_transform_utils as fourier_transform_utils
 from helpers.run_options import lowres_join, reconstruction_programs
 from recovar.reconstruction import regularization
 
+from relax.reconstruction import low_resolution_join
 from relax.reconstruction import regularization as regularization_relion
 
 pytestmark = pytest.mark.unit
@@ -250,7 +251,7 @@ def test_join_halves_at_low_resolution_uses_explicit_padding_for_current_size_ac
     weight0[joined_only_with_explicit_padding] = 1.0
     weight1[joined_only_with_explicit_padding] = 1.0
 
-    legacy_join = regularization_relion.join_halves_at_low_resolution(
+    legacy_join = low_resolution_join.join_halves_at_low_resolution(
         data0.reshape(-1),
         data1.reshape(-1),
         weight0.reshape(-1),
@@ -266,7 +267,7 @@ def test_join_halves_at_low_resolution_uses_explicit_padding_for_current_size_ac
         1.0 + 0.0j,
     )
 
-    joined = regularization_relion.join_halves_at_low_resolution(
+    joined = low_resolution_join.join_halves_at_low_resolution(
         data0.reshape(-1),
         data1.reshape(-1),
         weight0.reshape(-1),

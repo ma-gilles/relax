@@ -11,9 +11,9 @@ from recovar import core, jax_config
 from recovar.reconstruction import regularization
 from recovar.reconstruction import relion_functions as rf
 
+from relax.reconstruction import low_resolution_join, volume_solver
 from relax.reconstruction import regularization as regularization_relion
 from relax.reconstruction import relion_functions as relion_functions_relion
-from relax.reconstruction import volume_solver
 from relax.relion.geometry import (
     PROJECTION_PADDING_FACTOR,
     RECONSTRUCTION_PADDING_FACTOR,
@@ -956,7 +956,7 @@ def test_join_halves_at_low_resolution_half_matches_full():
     ft_ctf_0_full = np.asarray(ftu.half_volume_to_full_volume(jnp.array(ft_ctf_0_half), volume_shape)).reshape(-1).real
     ft_ctf_1_full = np.asarray(ftu.half_volume_to_full_volume(jnp.array(ft_ctf_1_half), volume_shape)).reshape(-1).real
 
-    full_joined = regularization_relion.join_halves_at_low_resolution(
+    full_joined = low_resolution_join.join_halves_at_low_resolution(
         jnp.array(ft_y_0_full),
         jnp.array(ft_y_1_full),
         jnp.array(ft_ctf_0_full),
@@ -968,7 +968,7 @@ def test_join_halves_at_low_resolution_half_matches_full():
         current_resolution_angstrom=18.0,
         route=lowres_join(),
     )
-    half_joined = regularization_relion.join_halves_at_low_resolution(
+    half_joined = low_resolution_join.join_halves_at_low_resolution(
         jnp.array(ft_y_0_half),
         jnp.array(ft_y_1_half),
         jnp.array(ft_ctf_0_half),
@@ -1001,7 +1001,7 @@ def test_join_halves_at_low_resolution_uses_relion_squared_radius_boundary():
     ft_y_0[idx_boundary] = 20.0
     ft_y_1[idx_boundary] = 4.0
 
-    joined0, joined1, _, _ = regularization_relion.join_halves_at_low_resolution(
+    joined0, joined1, _, _ = low_resolution_join.join_halves_at_low_resolution(
         jnp.array(ft_y_0.reshape(-1)),
         jnp.array(ft_y_1.reshape(-1)),
         jnp.array(ft_ctf_0.reshape(-1)),
@@ -1043,7 +1043,7 @@ def test_join_halves_at_low_resolution_host_fallback_matches_join(monkeypatch):
         box_size=4,
         low_resol_join_halves_angstrom=40.0,
     )
-    device_joined = regularization_relion.join_halves_at_low_resolution(
+    device_joined = low_resolution_join.join_halves_at_low_resolution(
         jnp.array(ft_y_0.reshape(-1)),
         jnp.array(ft_y_1.reshape(-1)),
         jnp.array(ft_ctf_0.reshape(-1)),
@@ -1052,7 +1052,7 @@ def test_join_halves_at_low_resolution_host_fallback_matches_join(monkeypatch):
         route=lowres_join(forced_host=False),
     )
 
-    host_joined = regularization_relion.join_halves_at_low_resolution(
+    host_joined = low_resolution_join.join_halves_at_low_resolution(
         jnp.array(ft_y_0.reshape(-1)),
         jnp.array(ft_y_1.reshape(-1)),
         jnp.array(ft_ctf_0.reshape(-1)),
@@ -1084,12 +1084,12 @@ def test_low_resolution_join_host_fallback_auto_catches_padded_384(monkeypatch):
     unpadded_384_half_size = 384 * 384 * (384 // 2 + 1)
     padded_384_half_size = (2 * 384) * (2 * 384) * (384 + 1)
 
-    assert not regularization_relion._low_resolution_join_host_fallback_enabled_for_size(
+    assert not low_resolution_join._low_resolution_join_host_fallback_enabled_for_size(
         unpadded_384_half_size,
         1,
         route=lowres_join(),
     )
-    assert regularization_relion._low_resolution_join_host_fallback_enabled_for_size(
+    assert low_resolution_join._low_resolution_join_host_fallback_enabled_for_size(
         padded_384_half_size,
         1,
         route=lowres_join(),
@@ -3165,7 +3165,7 @@ def test_join_halves_host_fallback_retains_half0_device_numerator(monkeypatch):
     ft_ctf_0 = rng.uniform(0.5, 1.5, volume_shape).astype(np.float32)
     ft_ctf_1 = rng.uniform(0.5, 1.5, volume_shape).astype(np.float32)
 
-    joined = regularization_relion.join_halves_at_low_resolution(
+    joined = low_resolution_join.join_halves_at_low_resolution(
         jnp.asarray(ft_y_0).reshape(-1),
         jnp.asarray(ft_y_1).reshape(-1),
         jnp.asarray(ft_ctf_0).reshape(-1),
@@ -3187,7 +3187,7 @@ def test_join_halves_host_fallback_retains_half0_device_numerator(monkeypatch):
     assert not isinstance(retained_half0, np.ndarray)
     assert_matches(np.asarray(retained_half0), joined[0])
 
-    padding_joined = regularization_relion.join_halves_at_low_resolution(
+    padding_joined = low_resolution_join.join_halves_at_low_resolution(
         jnp.asarray(ft_y_0).reshape(-1),
         jnp.asarray(ft_y_1).reshape(-1),
         jnp.asarray(ft_ctf_0).reshape(-1),
@@ -3223,7 +3223,7 @@ def test_join_halves_host_fallback_reserves_joined_numpy_half0_for_crop(monkeypa
     ft_ctf_1 = rng.uniform(0.5, 1.5, half_shape).astype(np.float32)
 
     caplog.set_level("INFO", logger=regularization.__name__)
-    joined = regularization_relion.join_halves_at_low_resolution(
+    joined = low_resolution_join.join_halves_at_low_resolution(
         ft_y_0,
         ft_y_1,
         ft_ctf_0,
@@ -3249,7 +3249,7 @@ def test_join_halves_host_fallback_reserves_joined_numpy_half0_for_crop(monkeypa
 
 
 def test_joined_value_scatter_lowering_aliases_donated_first_device_buffer():
-    compiled = regularization_relion._scatter_joined_values_into_first_device
+    compiled = low_resolution_join._scatter_joined_values_into_first_device
     lowered = compiled.lower(
         regularization.jax.ShapeDtypeStruct((32,), jnp.complex64),
         regularization.jax.ShapeDtypeStruct((5,), jnp.int32),
@@ -3276,7 +3276,7 @@ def test_join_halves_at_low_resolution_host_fallback_can_reuse_numpy_storage(mon
     ft_y_0[idx_outside] = 20.0
     ft_y_1[idx_outside] = 4.0
 
-    joined = regularization_relion.join_halves_at_low_resolution(
+    joined = low_resolution_join.join_halves_at_low_resolution(
         ft_y_0,
         ft_y_1,
         ft_ctf_0,

@@ -41,8 +41,8 @@ from typing import TYPE_CHECKING
 import jax.numpy as jnp
 import numpy as np
 
-from relax.reconstruction.regularization import update_relion_growth_state_from_fsc
 from relax.reconstruction.resolution import zero_shells_past_current_size
+from relax.reconstruction.resolution_criteria import update_relion_growth_state_from_fsc
 from relax.refinement.refinement_state import RefinementState
 from relax.sampling.orientation_priors import DirectionPrior, initial_direction_priors_from_snapshot
 
