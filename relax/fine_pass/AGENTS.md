@@ -13,7 +13,7 @@ accumulation it feeds. It is the only pass-2 engine and it needs a CUDA GPU.
 | `resident_chunk_run.py` | one chunk's run (`run_resident_chunk`): its operands, projections and stage sequence, and the lone overflow chunk run in row blocks (`run_lone_resident_chunk`) |
 | `resident_configuration.py` | the configuration gate `require_resident_production_configuration`: the production configuration the drivers implement, checked before any device work |
 | `resident_chunk_memory.py` | chunk planning: the M-step block rows, the bytes of a chunk, `plan_resident_chunk_memory`, lone overflow chunks and the chunk budget |
-| `resident_stable_windows.py` | the physical window classes a refinement reuses (`stable_window_class_history`), the stable-window plan, the reference-model class and the capacity projection |
+| `resident_stable_windows.py` | the physical window classes a refinement reuses (`stable_window_class_history`), the stable-window plan, the reference-model class and the capacity projection, and what a pass sets up from its plan (spec, score weights and lookup, noise tables and Wavg rectangle, physical BPref cube and its finalize), shared by the global and the local resident passes |
 | `resident_projections.py` | where a pass's projections live: the whole-grid cache and its row blocks, significant-parent slots, streamed chunk projections, per-projection M-step sums, and their device budgets |
 | `resident_block_programs.py` | the M-step's pixel-axis device programs of one row block: weighted sums, ctf_probs, residual, noise and norm, Wavg terms and image power |
 | `resident_image_terms.py` | per-chunk image-level statistics (`accumulate_chunk_image_terms`, `fold_class_axis`): every term without a row-pixel axis |

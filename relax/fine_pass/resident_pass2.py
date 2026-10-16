@@ -64,8 +64,6 @@ from __future__ import annotations
 
 import logging
 import time
-from dataclasses import replace as dataclass_replace
-from functools import partial
 from typing import NamedTuple
 
 import jax
@@ -117,11 +115,10 @@ from relax.fine_pass.resident_significance import (
     fine_rotation_children,
 )
 from relax.fine_pass.scoring import (
-    _relion_cuda_fine_full_to_compact_lookup,
     relion_native_fine_units_enabled,
     relion_powerclass_noise_dtypes,
 )
-from relax.fine_pass.wavg import make_relion_wavg_rectangle, make_stable_relion_wavg_rectangle
+from relax.fine_pass.wavg import make_relion_wavg_rectangle
 from relax.fine_pass.window import (
     pass2_half_weights,
     pass2_window_setup,
@@ -132,20 +129,15 @@ from relax.fourier.half_spectrum import (
     mask_relion_noise_shell_indices_to_current_window,
 )
 from relax.fourier.preprocessing import half_translation_phase_table
-from relax.projection.adjoint import ReferenceSphereClip, mstep_adjoint_max_r
+from relax.projection.adjoint import mstep_adjoint_max_r
 from relax.projection.projection import relion_kernel_zero_rows
 from relax.projection.projection import (
     relion_scale_correction_pixel_mask as _relion_scale_correction_pixel_mask,
 )
 from relax.reconstruction.half_volume_mstep import (
     allocate_row_partial,
-    crop_public_full_volume,
-    crop_relion_x_half_accumulator,
-    finalize_half_volume_bpref,
     half_volume_accumulator_shape,
-    physical_bpref_finalize_applies,
     relion_backprojector_volume_shape,
-    relion_x_half_accumulators_to_public_layout,
     relion_x_half_mstep_accumulator_dtypes,
 )
 from relax.relion import ctf
@@ -315,12 +307,6 @@ class ResidentClassInputs(NamedTuple):
 
     significant_sample_indices: tuple
     rotation_log_priors: tuple
-
-
-def _runtime_mstep_radius(mstep_max_r) -> float:
-    """The adjoint's runtime radius in image Fourier pixels: ``max_r``, or a sphere clip's image radius."""
-
-    return float(mstep_max_r.image_radius) if isinstance(mstep_max_r, ReferenceSphereClip) else float(mstep_max_r)
 
 
 def _rows_within_rotated_sphere(label, r_max, rotations):
@@ -1029,29 +1015,10 @@ def _resident_pass2(
     # The spec's current size: the physical class with stable windows, RELION's otherwise.
     program_current_size = int(current_size)
     if stable_window_plan is not None:
-        # Capacity changes storage, not the projection or reconstruction
-        # cutoffs: the projector keeps the logical radius and crop, so the
-        # tail's projections never enter a logical pixel.
-        stable_window_spec = dataclass_replace(
-            stable_window_plan.packed_physical_spec(),
-            max_r=stable_window_plan.logical_spec.max_r,
-            projection_max_r=stable_window_plan.logical_spec.projection_max_r,
-            image_current_size=stable_window_plan.logical_spec.image_current_size,
-        )
+        stable_window_spec = resident_stable_windows.stable_window_spec(stable_window_plan)
         budget_window_spec = stable_window_spec
         program_current_size = int(stable_window_plan.physical_current_size)
-        logger.info(
-            "Resident pass-2 stable windows: logical current_size %d -> physical class %d "
-            "(score pixels %d -> %d, recon pixels %d -> %d, Wavg rectangle %d -> %d)",
-            stable_window_plan.logical_current_size,
-            stable_window_plan.physical_current_size,
-            stable_window_plan.logical_score_pixels,
-            stable_window_plan.physical_score_pixels,
-            stable_window_plan.logical_reconstruction_pixels,
-            stable_window_plan.physical_reconstruction_pixels,
-            stable_window_plan.logical_rectangle_pixels,
-            stable_window_plan.physical_rectangle_pixels,
-        )
+        resident_stable_windows.log_stable_window_plan("Resident pass-2", stable_window_plan)
     window_setup = sparse_pass2_window_setup(
         experiment_dataset,
         disc_type=disc_type,
@@ -1085,31 +1052,13 @@ def _resident_pass2(
         firstiter_cc_support=firstiter_cc_support,
         current_size=current_size,
     )
-    if stable_window_plan is None:
-        relion_score_full_to_compact = jnp.asarray(
-            _relion_cuda_fine_full_to_compact_lookup(image_shape, current_size, window_indices_np),
-            dtype=jnp.int32,
-        )
-    else:
-        # The score tail gets no weight, and the fine scorer's lookup covers the
-        # logical rectangle only (the runtime kernel never reads past it); its
-        # -1 pad keeps the buffer at the physical class's size.
-        half_weights_windowed = _times_logical_mask(
-            half_weights_windowed, jnp.int32(int(stable_window_plan.logical_score_pixels))
-        )
-        logical_lookup = _relion_cuda_fine_full_to_compact_lookup(
-            image_shape,
-            current_size,
-            window_indices_np[: int(stable_window_plan.logical_score_pixels)],
-        )
-        relion_score_full_to_compact = jnp.asarray(
-            np.pad(
-                logical_lookup,
-                (0, int(stable_window_plan.physical_rectangle_pixels) - logical_lookup.size),
-                constant_values=-1,
-            ),
-            dtype=jnp.int32,
-        )
+    half_weights_windowed, relion_score_full_to_compact = resident_stable_windows.score_weights_and_lookup(
+        half_weights_windowed,
+        image_shape=image_shape,
+        current_size=current_size,
+        window_indices_np=window_indices_np,
+        plan=stable_window_plan,
+    )
     noise_variance_half = noise_utils.to_batched_half_pixel_noise(
         noise_variance, image_shape
     ).squeeze()
@@ -1150,10 +1099,8 @@ def _resident_pass2(
     n_shells = image_shape[0] // 2 + 1
     # The crop mask sees RELION's logical window, not the physical class; with a weighted-sum size
     # above the scoring size it is that size's crop rectangle (the Wavg rectangle's).
-    noise_crop_indices = (
-        window_indices
-        if stable_window_plan is None
-        else window_indices_np[: int(stable_window_plan.logical_score_pixels)]
+    noise_crop_indices = resident_stable_windows.logical_score_indices(
+        window_indices, window_indices_np, stable_window_plan
     )
     if wsum_current_size != current_size:
         noise_crop_indices = make_relion_wavg_rectangle(
@@ -1170,59 +1117,38 @@ def _resident_pass2(
     )
     shell_indices_noise = window_spec.recon_values(shell_indices_half)
     noise_variance_for_noise = window_spec.recon_values(noise_variance_half)
-    if stable_window_plan is None:
-        relion_wavg_rectangle = make_relion_wavg_rectangle(
-            image_shape,
-            wsum_current_size,
-            recon_window_indices,
-            reconstruction_current_size=mstep_current_size,
-        )
-        logical_rect_pixels = int(relion_wavg_rectangle.centered_indices.size)
-        logical_recon_pixels = int(n_recon_windowed)
-    else:
-        # The recon tail holds real pixels above RELION's cutoff. They take the
-        # shell sentinel and zero noise variance, so every residual, power and
-        # scale term they could enter is exactly zero; the M-step masks their
-        # sums (_resident_mstep_block) and the Wavg kernels stop at the logical
-        # rectangle, whose layout is RELION's byte for byte.
-        shell_indices_noise, noise_variance_for_noise = _mask_recon_tail(
-            shell_indices_noise,
-            noise_variance_for_noise,
-            jnp.int32(int(stable_window_plan.logical_reconstruction_pixels)),
-            shell_sentinel=int(image_shape[0] // 2 + 1),
-        )
-        relion_wavg_rectangle = make_stable_relion_wavg_rectangle(image_shape, stable_window_plan)
-        logical_rect_pixels = int(stable_window_plan.logical_rectangle_pixels)
-        logical_recon_pixels = int(stable_window_plan.logical_reconstruction_pixels)
+    (
+        shell_indices_noise,
+        noise_variance_for_noise,
+        relion_wavg_rectangle,
+        logical_rect_pixels,
+        logical_recon_pixels,
+    ) = resident_stable_windows.stable_noise_tables(
+        shell_indices_noise,
+        noise_variance_for_noise,
+        plan=stable_window_plan,
+        image_shape=image_shape,
+        wsum_current_size=wsum_current_size,
+        recon_window_indices=recon_window_indices,
+        mstep_current_size=mstep_current_size,
+        n_recon_windowed=n_recon_windowed,
+    )
     n_rect = int(relion_wavg_rectangle.centered_indices.size)
-    # The BPref accumulators and the adjoint are keyed on the physical class
-    # too: the pass accumulates into the physical current-size cube and crops
-    # it to RELION's logical cube before finalizing (crop_relion_x_half_accumulator,
-    # as the local engine does). The logical pixels land on the same Fourier
-    # voxels of either cube, and the M-step gives the tail no weight.
-    program_volume_current_size = int(volume_current_size)
-    program_recon_volume_shape = tuple(int(v) for v in recon_volume_shape)
-    program_mstep_max_r = mstep_max_r
-    if stable_window_plan is not None:
-        program_volume_current_size = (
-            int(stable_window_plan.physical_reconstruction_current_size)
-            if reconstruction_volume_current_size is None
-            else resident_stable_windows.stable_reference_volume_class(
-                int(volume_shape[0]), int(volume_current_size), quantum=engine_tuning.stable_window_quantum
-            )
-        )
-        program_recon_volume_shape = tuple(
-            int(v)
-            for v in relion_backprojector_volume_shape(
-                volume_shape, reconstruction_padding_factor, current_size=program_volume_current_size
-            )
-        )
-        program_mstep_max_r = mstep_adjoint_max_r(
-            program_volume_current_size,
-            resident_stable_windows.reference_image_radius_at(reconstruction_image_radius, volume_current_size, program_volume_current_size),
-            reconstruction_padding_factor,
+    # The BPref accumulators and the adjoint are keyed on the physical class too.
+    program_volume_current_size, program_recon_volume_shape, program_mstep_max_r = (
+        resident_stable_windows.physical_reconstruction_volume(
+            stable_window_plan,
+            volume_shape=volume_shape,
+            volume_current_size=volume_current_size,
+            reconstruction_volume_current_size=reconstruction_volume_current_size,
+            recon_volume_shape=recon_volume_shape,
+            mstep_max_r=mstep_max_r,
+            reconstruction_image_radius=reconstruction_image_radius,
+            reconstruction_padding_factor=reconstruction_padding_factor,
             anisotropic_magnification=anisotropic_magnification,
+            quantum=engine_tuning.stable_window_quantum,
         )
+    )
     program_recon_volume_size = int(np.prod(half_volume_accumulator_shape(program_recon_volume_shape)))
     # One x-half BPref pair per accumulator slot: RELION's BPref[iclass], and for
     # VDAM's pseudo-halfsets BPref[iclass + half * nr_classes]. They exist before
@@ -1404,40 +1330,19 @@ def _resident_pass2(
     )
     projection_kwargs["mask_current_image_disk"] = bool(projection_mask_current_image_disk)
     projection_kwargs["texture_interp_default"] = scoring_overrides.projector_texture_interp
-    # Stable windows also project at the physical class: a center-padded capacity
-    # slab into the physical crop, with RELION's logical model and image radii as
-    # runtime values (_capacity_projection). The projection programs then keep one
-    # shape per class instead of compiling at every logical current size.
-    projection_halves = class_projector_halves
-    projection_r_max = relion_projector_r_max
-    capacity_projection_kwargs = {}
-    capacity_logical_output_size = None
-    if stable_window_plan is not None and resident_stable_windows.capacity_projection_applies(
-        use_relion_projector=use_relion_projector,
-        class_projector_halves=class_projector_halves,
-        relion_projector_r_max=relion_projector_r_max,
-        projection_padding_factor=projection_padding_factor,
-        projection_kwargs=projection_kwargs,
-        physical_current_size=int(stable_window_plan.physical_current_size),
-    ):
-        physical_size = int(stable_window_plan.physical_current_size)
-        projection_halves = [
-            resident_stable_windows.center_pad_relion_projector_half(
-                half,
-                logical_r_max=int(relion_projector_r_max),
-                physical_size=physical_size,
-                padding_factor=int(projection_padding_factor),
-            )
-            for half in class_projector_halves
-        ]
-        # The capacity route takes the model radius at runtime; its static radius is the sentinel 0.
-        projection_r_max = 0
-        capacity_projection_kwargs = {
-            "relion_projector_runtime_r_max": jnp.asarray(int(relion_projector_r_max), dtype=jnp.int32),
-            "relion_projector_image_size": jnp.asarray(int(projection_kwargs["projector_output_size"]), dtype=jnp.int32),
-        }
-        capacity_logical_output_size = int(projection_kwargs["projector_output_size"])
-        projection_kwargs["projector_output_size"] = physical_size
+    # Stable windows also project at the physical class (pass_capacity_projection).
+    projection_halves, projection_r_max, capacity_projection_kwargs, capacity_logical_output_size = (
+        resident_stable_windows.pass_capacity_projection(
+            stable_window_plan,
+            use_relion_projector=use_relion_projector,
+            class_projector_halves=class_projector_halves,
+            relion_projector_r_max=relion_projector_r_max,
+            projection_padding_factor=projection_padding_factor,
+            projection_kwargs=projection_kwargs,
+        )
+    )
+    if capacity_logical_output_size is not None:
+        projection_kwargs["projector_output_size"] = int(stable_window_plan.physical_current_size)
     # The fixed-radius projections stage each class's slab into a texture once, kept from pass to pass and
     # refilled (projection_blocks.open_pass_capacity_texture), not per projection call: a real tilt-series final
     # iteration projected every slot block through its own texture, about 45 CUDA array allocations and
@@ -2189,7 +2094,7 @@ def _resident_pass2(
         wavg_scale_pixel_mask=jnp.asarray(scale_pixel_mask_rect_np, dtype=bool),
         translation_sqdist_ang=None,
     )
-    window_logical = _window_logical_sizes(
+    window_logical = resident_stable_windows.window_logical_sizes(
         current_size=current_size,
         recon_pixels=logical_recon_pixels,
         rect_pixels=logical_rect_pixels,
@@ -2197,7 +2102,7 @@ def _resident_pass2(
         wsum_current_size=None if wsum_current_size == current_size else wsum_current_size,
         # The capacity cube's adjoint clips at RELION's radius: its compact
         # trilinear bound and 3-D radius check read it (recovar backproject_indexed).
-        mstep_max_r=None if stable_window_plan is None else _runtime_mstep_radius(mstep_max_r),
+        mstep_max_r=None if stable_window_plan is None else resident_stable_windows.runtime_mstep_radius(mstep_max_r),
     )
 
     max_adjoint_block_bytes = max_adjoint_block_bytes_for_pass(
@@ -2743,50 +2648,21 @@ def _resident_pass2(
         )
 
     # ---- finalize (identical to the compact return block) ------------------
-    # RELION symmetriseReconstructions (ml_optimiser.cpp:5541-5575): x=0
-    # Hermitian enforcement, then applyPointGroupSymmetry on BPref, per class.
-    # C1 is the x=0 enforcement alone.
-    # A stable-window C1 pass finalizes at its physical cube and crops the public
-    # volume, so the finalize programs keep the physical class's shapes across
-    # logical current sizes (they compiled at every logical size before).
-    logical_recon_volume_shape = tuple(int(v) for v in recon_volume_shape)
-    cropped = program_recon_volume_shape != logical_recon_volume_shape
-    finalize_physical = cropped and physical_bpref_finalize_applies(
-        program_recon_volume_shape, logical_recon_volume_shape, symmetry_label,
-        large_grid=engine_tuning.x_half_large_grid,
-    )
-    finalize_shape = program_recon_volume_shape if finalize_physical else logical_recon_volume_shape
+    # RELION symmetriseReconstructions, per class, at the physical cube for a
+    # stable-window C1 pass (resident_stable_windows.finalize_stable_bpref).
     Ft_y_out, Ft_ctf_out = [], []
     for class_Ft_y, class_Ft_ctf in zip(Ft_y_total, Ft_ctf_total):
-        if cropped and not finalize_physical:
-            class_Ft_y = crop_relion_x_half_accumulator(class_Ft_y, program_recon_volume_shape, recon_volume_shape)
-            class_Ft_ctf = crop_relion_x_half_accumulator(
-                class_Ft_ctf, program_recon_volume_shape, recon_volume_shape
-            )
-        class_Ft_y, class_Ft_ctf = finalize_half_volume_bpref(
+        class_Ft_y, class_Ft_ctf = resident_stable_windows.finalize_stable_bpref(
             class_Ft_y,
             class_Ft_ctf,
-            finalize_shape,
+            program_recon_volume_shape=program_recon_volume_shape,
+            recon_volume_shape=recon_volume_shape,
+            symmetry_label=symmetry_label,
+            engine_tuning=engine_tuning,
             logger=logger,
             label="Resident pass-2",
-            symmetry_label=symmetry_label,
-            relion_x_half=True,
-            symmetry_chunk_voxels=engine_tuning.bpref_symmetry_chunk_voxels,
-            large_grid=engine_tuning.x_half_large_grid,
+            keep_physical_bpref=keep_physical_bpref,
         )
-        class_Ft_y, class_Ft_ctf = relion_x_half_accumulators_to_public_layout(
-            class_Ft_y,
-            class_Ft_ctf,
-            finalize_shape,
-            large_grid=engine_tuning.x_half_large_grid,
-        )
-        # ``keep_physical_bpref``: the caller slices the logical cube out of the physical one itself
-        # (VDAM's accumulator adapter, on the host), so no crop program compiles per logical size.
-        if finalize_physical and not keep_physical_bpref:
-            class_Ft_y = crop_public_full_volume(class_Ft_y, program_recon_volume_shape, logical_recon_volume_shape)
-            class_Ft_ctf = crop_public_full_volume(
-                class_Ft_ctf, program_recon_volume_shape, logical_recon_volume_shape
-            )
         Ft_y_out.append(class_Ft_y)
         Ft_ctf_out.append(class_Ft_ctf)
 
@@ -3150,46 +3026,3 @@ def _global_chunk_loop_pipelined(stream_projections: bool, *, chunk_timing: bool
     """
 
     return not chunk_timing and not stream_projections
-
-
-@jax.jit
-def _times_logical_mask(values, n_logical):
-    """``values`` times the mask of its first ``n_logical`` pixels (last axis); one program per physical class.
-
-    The count is traced, so the logical sizes of a physical class share the program.
-    """
-
-    mask = jnp.arange(values.shape[-1], dtype=jnp.int32) < n_logical
-    return values * mask.astype(values.dtype)
-
-
-@partial(jax.jit, static_argnames=("shell_sentinel",))
-def _mask_recon_tail(shell_indices_noise, noise_variance_for_noise, n_logical, *, shell_sentinel: int):
-    """The recon tail past the ``n_logical`` pixels: the shell sentinel and zero noise variance.
-
-    ``noise_variance_for_noise`` is ``[P]`` or, with optics groups, ``[G, P]``; the tail
-    mask broadcasts over groups. One program per physical class (the count is traced).
-    """
-
-    tail = ~(jnp.arange(shell_indices_noise.shape[-1], dtype=jnp.int32) < n_logical)
-    return (
-        jnp.where(tail, jnp.int32(shell_sentinel), shell_indices_noise),
-        jnp.where(tail, jnp.zeros((), noise_variance_for_noise.dtype), noise_variance_for_noise),
-    )
-
-
-# ---------------------------------------------------------------------------
-# The per-chunk window sizes (the run is resident_chunk_run.py; its stages, records and programs resident_chunk_*.py)
-# ---------------------------------------------------------------------------
-
-
-def _window_logical_sizes(
-    *, current_size, recon_pixels, rect_pixels, place, mstep_max_r=None, wsum_current_size=None
-) -> resident_chunk_records.WindowLogicalSizes:
-    return resident_chunk_records.WindowLogicalSizes(
-        current_size=place.scalar(int(current_size), jnp.int32),
-        recon_pixels=place.scalar(int(recon_pixels), jnp.int32),
-        rect_pixels=place.scalar(int(rect_pixels), jnp.int32),
-        mstep_max_r=None if mstep_max_r is None else place.scalar(float(mstep_max_r), jnp.float32),
-        wsum_current_size=None if wsum_current_size is None else place.scalar(int(wsum_current_size), jnp.int32),
-    )

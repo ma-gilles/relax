@@ -1792,8 +1792,8 @@ def test_stable_window_reference_volume_on_another_grid(monkeypatch):
     assert resident_stable_windows.reference_image_radius_at(None, 54, physical) is None
     clip = mstep_adjoint_max_r(54, logical_radius, 2)
     assert isinstance(clip, ReferenceSphereClip)
-    assert rp._runtime_mstep_radius(clip) == pytest.approx(logical_radius)
-    assert rp._runtime_mstep_radius(mstep_adjoint_max_r(54, None, 2)) == 27.0
+    assert resident_stable_windows.runtime_mstep_radius(clip) == pytest.approx(logical_radius)
+    assert resident_stable_windows.runtime_mstep_radius(mstep_adjoint_max_r(54, None, 2)) == 27.0
 
 
 @requires_resident_gpu
