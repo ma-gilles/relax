@@ -16,7 +16,7 @@ from helpers.float_compare import assert_matches
 
 from relax.commands import refinement_arguments
 from relax.parity import oracle_admission
-from relax.refinement import follower_scale
+from relax.refinement import follower_oracles, follower_scale
 
 pytestmark = pytest.mark.unit
 LOG = logging.getLogger(__name__)
@@ -50,8 +50,8 @@ def dispatch_inputs(tmp_path):
     (oracle / "run_it001_sampling.star").write_text("numbered-sampling\n")
     (oracle / "run_sampling.star").write_text("final-sampling\n")
     artifacts = tuple(sorted(path.name for path in oracle.iterdir()))
-    manifest = follower_scale.relion_oracle_manifest_sha256(oracle, artifacts)
-    order = follower_scale.relion_ordered_particle_sha256(particles)
+    manifest = follower_oracles.relion_oracle_manifest_sha256(oracle, artifacts)
+    order = follower_oracles.relion_ordered_particle_sha256(particles)
     schedule_path = tmp_path / "dispatch.npz"
     np.savez(
         schedule_path,
@@ -60,7 +60,7 @@ def dispatch_inputs(tmp_path):
         owner_by_sorted_position=np.asarray([[0, 0]], dtype=np.int64),
         original_particle_id_by_sorted_position=np.asarray([[0, 1]], dtype=np.int64),
         n_followers=np.int64(1), pool_size=np.int64(2), random_seed=np.int64(9),
-        oracle_id=follower_scale.relion_oracle_id(
+        oracle_id=follower_oracles.relion_oracle_id(
             manifest_sha256=manifest, particle_order_sha256=order,
         ),
         oracle_manifest_sha256=manifest, oracle_artifact_paths=artifacts,
@@ -87,7 +87,7 @@ def test_dispatch_refuses_non_replay_before_loading(monkeypatch):
     def forbidden(*args, **kwargs):
         raise AssertionError("schedule should not be read")
 
-    monkeypatch.setattr(follower_scale, "load_relion_dispatch_schedule", forbidden)
+    monkeypatch.setattr(follower_oracles, "load_relion_dispatch_schedule", forbidden)
     with pytest.raises(SystemExit, match="strict K>1 RELION replay/init state only"):
         oracle_admission.load_verified_dispatch_schedule(
             SimpleNamespace(relion_dispatch_schedule="absent.npz"), object(), strict_replay=False, discovered_optimiser=None,
@@ -113,7 +113,7 @@ def test_verified_dispatch_keeps_particle_identity_and_root_order(dispatch_input
         expected_roots.append(args.relion_init_dir.resolve())
     assert admitted.oracle_dirs == expected_roots
     assert admitted.schedule.source == "command-admission test"
-    assert admitted.schedule.particle_order_sha256 == follower_scale.relion_ordered_particle_sha256(particles)
+    assert admitted.schedule.particle_order_sha256 == follower_oracles.relion_ordered_particle_sha256(particles)
     assert_matches(admitted.schedule.original_particle_id_by_sorted_position, [[0, 1]])
 
 
@@ -142,9 +142,9 @@ def test_dispatch_refuses_unbound_consumed_inputs(dispatch_inputs, tmp_path, dam
         source.unlink()
         schedule = dict(np.load(args.relion_dispatch_schedule, allow_pickle=False))
         paths = [str(p) for p in schedule["oracle_artifact_paths"] if str(p) != source.name]
-        manifest = follower_scale.relion_oracle_manifest_sha256(oracle, paths)
+        manifest = follower_oracles.relion_oracle_manifest_sha256(oracle, paths)
         schedule.update(oracle_artifact_paths=np.asarray(paths), oracle_manifest_sha256=np.asarray(manifest),
-                        oracle_id=np.asarray(follower_scale.relion_oracle_id(
+                        oracle_id=np.asarray(follower_oracles.relion_oracle_id(
                             manifest_sha256=manifest, particle_order_sha256=str(schedule["particle_order_sha256"]),
                         )))
         np.savez(args.relion_dispatch_schedule, **schedule)
@@ -167,13 +167,13 @@ def test_dispatch_verifies_all_roots_before_admitting_the_discovered_optimiser(d
     outside = tmp_path / "outside.star"
     outside.write_text("other optimiser\n")
     events = []
-    verify = follower_scale.verify_relion_dispatch_schedule_oracle
+    verify = follower_oracles.verify_relion_dispatch_schedule_oracle
 
     def record_verify(schedule, root):
         events.append(("verify", root))
         verify(schedule, root)
 
-    monkeypatch.setattr(follower_scale, "verify_relion_dispatch_schedule_oracle", record_verify)
+    monkeypatch.setattr(follower_oracles, "verify_relion_dispatch_schedule_oracle", record_verify)
     with pytest.raises(SystemExit, match="consumed RELION optimiser must belong"):
         oracle_admission.load_verified_dispatch_schedule(
             args, particles, strict_replay=True, discovered_optimiser=outside,
@@ -186,7 +186,7 @@ def test_dispatch_preserves_exception_scope(monkeypatch, failure, wrapped):
     def fail(path):
         raise failure
 
-    monkeypatch.setattr(follower_scale, "load_relion_dispatch_schedule", fail)
+    monkeypatch.setattr(follower_oracles, "load_relion_dispatch_schedule", fail)
     with pytest.raises(SystemExit if wrapped else RuntimeError) as caught:
         oracle_admission.load_verified_dispatch_schedule(
             SimpleNamespace(relion_dispatch_schedule="capture.npz"), object(), strict_replay=True, discovered_optimiser=None,

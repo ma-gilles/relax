@@ -12,35 +12,39 @@ from helpers.float_compare import assert_matches
 import relax.refinement.follower_scale as relion_worker_scale
 import relax.refinement.numbered_transitions as convergence_policy
 from relax.parity.final_replay import apply_replay_correction_overrides
-from relax.refinement.follower_scale import (
-    RELION_SCALE_REDUCTION_ALL_GROUPS,
-    RELION_SCALE_REDUCTION_OPTICS_PREFIX,
+from relax.refinement.follower_oracles import (
     RelionDispatchSchedule,
     RelionFollowerScaleReplay,
-    RelionFollowerScaleSetup,
-    _remap_relion_follower_runtime_inputs,
-    _require_relion_follower_owners,
-    _validate_coupled_relion_restart_state,
-    finalize_relion_follower_scale_replay_telemetry,
     load_relion_dispatch_schedule,
     load_relion_follower_scale_replay,
     make_relion_dispatch_schedule_from_chunks,
-    make_relion_follower_scale_state,
-    prepare_follower_topology,
-    relion_class3d_follower_owners_from_schedule,
     relion_oracle_id,
     relion_oracle_manifest_sha256,
     relion_ordered_particle_sha256,
+    validate_relion_follower_scale_replay,
+    validate_relion_follower_scale_replay_application,
+    verify_relion_dispatch_schedule_oracle,
+)
+from relax.refinement.follower_scale import (
+    RelionFollowerScaleSetup,
+    _remap_relion_follower_runtime_inputs,
+    _require_relion_follower_owners,
+    finalize_relion_follower_scale_replay_telemetry,
+    prepare_follower_topology,
+    relion_class3d_follower_owners_from_schedule,
+)
+from relax.refinement.follower_scale_state import (
+    RELION_SCALE_REDUCTION_ALL_GROUPS,
+    RELION_SCALE_REDUCTION_OPTICS_PREFIX,
+    make_relion_follower_scale_state,
     relion_rank1_serialized_scales,
     relion_scale_reduction_mode_from_command,
     relion_scale_reduction_mode_from_optimiser_star,
     relion_worker_group_ids,
     select_relion_follower_scales,
     update_relion_follower_scales,
-    validate_relion_follower_scale_replay,
-    validate_relion_follower_scale_replay_application,
+    validate_coupled_relion_restart_state,
     validate_relion_follower_scale_start,
-    verify_relion_dispatch_schedule_oracle,
 )
 from relax.relion.normalization import (
     update_relion_norm_scale_corrections,
@@ -1191,21 +1195,21 @@ def test_sparse_follower_scale_replay_replaces_state_before_remap_and_telemetry(
 
 
 def test_strict_restart_requires_coupled_perturbation_and_model_scale_state():
-    _validate_coupled_relion_restart_state(
+    validate_coupled_relion_restart_state(
         perturb_restart_state_iterations=(11,),
         follower_replay_by_iteration={12: np.ones((2, 4))},
         follower_replay_source_artifacts=("run_it011_model.star",),
     )
 
     with np.testing.assert_raises_regex(ValueError, "missing numbered iterations.*12"):
-        _validate_coupled_relion_restart_state(
+        validate_coupled_relion_restart_state(
             perturb_restart_state_iterations=(11,),
             follower_replay_by_iteration={},
             follower_replay_source_artifacts=(),
         )
 
     with np.testing.assert_raises_regex(ValueError, "unmatched numbered iterations.*12"):
-        _validate_coupled_relion_restart_state(
+        validate_coupled_relion_restart_state(
             perturb_restart_state_iterations=(),
             follower_replay_by_iteration={12: np.ones((2, 4))},
             follower_replay_source_artifacts=("run_it011_model.star",),

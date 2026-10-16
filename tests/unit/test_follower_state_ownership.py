@@ -7,6 +7,7 @@ import pytest
 from helpers.float_compare import assert_matches
 
 from relax.refinement import follower_scale as scale
+from relax.refinement import follower_scale_state
 from relax.steps.half_inputs import HalfSet
 
 pytestmark = pytest.mark.unit
@@ -14,13 +15,13 @@ pytestmark = pytest.mark.unit
 
 @pytest.fixture
 def correction_inputs():
-    state = scale.make_relion_follower_scale_state(
+    state = follower_scale_state.make_relion_follower_scale_state(
         n_followers=2, group_counts=[1, 1], n_optics_groups=1, initial_group_scales=[0.8, 1.2]
     )
     setup = SimpleNamespace(
         follower_scale_state=state,
         follower_owners_per_half=[np.array([0, 1]), np.array([1, 0])],
-        scale_reduction_mode=scale.RELION_SCALE_REDUCTION_OPTICS_PREFIX,
+        scale_reduction_mode=follower_scale_state.RELION_SCALE_REDUCTION_OPTICS_PREFIX,
     )
     halves = (
         HalfSet(index=0, dataset=object(), group_ids=np.array([0, 1])),

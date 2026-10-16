@@ -17,13 +17,10 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-
-from relax.refinement.follower_scale import (
-    load_relion_dispatch_schedule,
-    relion_class3d_follower_owners_from_schedule,
-    verify_relion_dispatch_schedule_oracle,
-)
 from recovar.utils.file_hash import sha256_file as _sha256_file
+
+from relax.refinement.follower_oracles import load_relion_dispatch_schedule, verify_relion_dispatch_schedule_oracle
+from relax.refinement.follower_scale import relion_class3d_follower_owners_from_schedule
 
 SCHEMA = "em_k4_control_topology_audit_v1"
 N_CLASSES = 4

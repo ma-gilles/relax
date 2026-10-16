@@ -35,10 +35,7 @@ def k4_oracle(healpix_order, oversampling, *, environ=None):
     actual = (int(sampling["rlnHealpixOrder"]), int(optimiser["rlnAdaptiveOversampleOrder"]))
     if actual != (healpix_order, oversampling):
         raise ValueError(f"K4 capture grid {actual} differs from requested {(healpix_order, oversampling)}")
-    from relax.refinement.follower_scale import (
-        load_relion_dispatch_schedule,
-        verify_relion_dispatch_schedule_oracle,
-    )
+    from relax.refinement.follower_oracles import load_relion_dispatch_schedule, verify_relion_dispatch_schedule_oracle
 
     schedule = load_relion_dispatch_schedule(schedule_path)
     verify_relion_dispatch_schedule_oracle(schedule, oracle)

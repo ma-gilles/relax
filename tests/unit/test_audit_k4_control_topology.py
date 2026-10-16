@@ -8,13 +8,13 @@ import pandas as pd
 import pytest
 import starfile
 
-from relax.refinement.follower_scale import (
+from relax.refinement.follower_oracles import (
     make_relion_dispatch_schedule_from_chunks,
-    relion_class3d_follower_owners_from_schedule,
     relion_oracle_id,
     relion_oracle_manifest_sha256,
     relion_ordered_particle_sha256,
 )
+from relax.refinement.follower_scale import relion_class3d_follower_owners_from_schedule
 from scripts import audit_k4_control_topology as auditor
 
 

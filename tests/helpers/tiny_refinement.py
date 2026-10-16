@@ -228,7 +228,8 @@ def follower_scale_replay(n_iterations, n_followers=2, replay=None):
     ``replay`` (None: none)."""
 
     from relax.parity.relion_replay_source import RelionReplay
-    from relax.refinement.follower_scale import RELION_SCALE_REDUCTION_MODES, PreparedFollowerTopology
+    from relax.refinement.follower_scale import PreparedFollowerTopology
+    from relax.refinement.follower_scale_state import RELION_SCALE_REDUCTION_MODES
     from relax.refinement.refinement_options import StartState
 
     n_half = N_IMAGES // 2

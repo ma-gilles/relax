@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, NamedTuple
 from relax.refinement.refinement_options import RestartProvenance
 
 if TYPE_CHECKING:
-    from relax.refinement.follower_scale import RelionDispatchSchedule
+    from relax.refinement.follower_oracles import RelionDispatchSchedule
 
 
 class VerifiedDispatchSchedule(NamedTuple):
@@ -32,7 +32,7 @@ def load_verified_dispatch_schedule(
     (the command's ``find_relion_optimiser_star``), or None; it must belong to a verified
     oracle's manifest. See ``docs/math/relion_refinement_algorithm.md#command-admission``.
     """
-    from relax.refinement.follower_scale import (
+    from relax.refinement.follower_oracles import (
         load_relion_dispatch_schedule,
         relion_ordered_particle_sha256,
         verify_relion_dispatch_schedule_oracle,
