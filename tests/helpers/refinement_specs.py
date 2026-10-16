@@ -7,7 +7,7 @@ from helpers.run_options import cli
 from relax.classification.probes import NoProbe as KClassNoProbe
 from relax.local_search import records
 from relax.numerics.precision import DensePrecisionPolicy
-from relax.refinement import dense_half, local_half, local_sampling
+from relax.refinement import dense_specs, local_half, local_sampling
 from relax.refinement.ports import NoProbe
 from relax.refinement.refinement_options import LocalAdaptivePass2Support
 from relax.runtime.engine_tuning import EngineTuning
@@ -244,7 +244,7 @@ def local_half_owners(**values):
 # RELION's values of the dense policy fields a test does not set: the production builders
 # (expectation.score_numbered_half, finalization.run_final_all_data) pass every field.
 def dense_sampling_spec(**fields):
-    return dense_half.DenseSamplingSpec(**{"coarse_engine": "auto", "symmetry": "C1", **fields})
+    return dense_specs.DenseSamplingSpec(**{"coarse_engine": "auto", "symmetry": "C1", **fields})
 
 
 def dense_batch_policy(**fields):
@@ -258,11 +258,11 @@ def dense_batch_policy(**fields):
             "class_batch_overrides",
         )
     )
-    return dense_half.DenseBatchPolicy(**{**unset, **fields})
+    return dense_specs.DenseBatchPolicy(**{**unset, **fields})
 
 
 def dense_variant_policy(**fields):
-    return dense_half.DenseVariantPolicy(
+    return dense_specs.DenseVariantPolicy(
         **{
             "coarse_window_size": None,
             "fine_window_size": None,
@@ -273,7 +273,7 @@ def dense_variant_policy(**fields):
 
 
 def dense_execution_policy(**fields):
-    return dense_half.DenseExecutionPolicy(
+    return dense_specs.DenseExecutionPolicy(
         **{
             "return_best_pose_details": True,
             "bpref_device_signature_active": False,

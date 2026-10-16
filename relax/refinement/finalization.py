@@ -20,13 +20,13 @@ from relax.reconstruction.resolution import (
     shell_index_to_resolution_angstrom,
 )
 from relax.refinement import final_reconstruction
-from relax.refinement.dense_half import (
+from relax.refinement.dense_half import score_half_dense_in_bpref_scope
+from relax.refinement.dense_specs import (
     DenseBatchPolicy,
     DenseExecutionPolicy,
     DensePriorSpec,
     DenseSamplingSpec,
     DenseVariantPolicy,
-    score_half_dense_in_bpref_scope,
 )
 from relax.refinement.iteration_planning import IterationCarry
 from relax.refinement.local_half import (

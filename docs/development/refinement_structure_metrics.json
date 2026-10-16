@@ -28,8 +28,8 @@
       "maximum_parameter_count": 19,
       "large_argument_function_count": 24,
       "very_large_argument_function_count": 0,
-      "physical_lines": 20856,
-      "nonblank_noncomment_lines": 17730
+      "physical_lines": 20874,
+      "nonblank_noncomment_lines": 17745
     }
   }
 }

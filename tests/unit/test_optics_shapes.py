@@ -17,7 +17,7 @@ from helpers.refinement_specs import local_half_owners
 from helpers.run_options import cli
 
 from relax.numerics.precision import DensePrecisionPolicy
-from relax.refinement import dense_half, local_half
+from relax.refinement import dense_half, dense_specs, local_half
 from relax.steps import half_inputs, optics_shapes, shape_class_scoring
 from relax.steps.half_inputs import HalfSet
 from relax.steps.score_outputs import ClassScoreSummary, HalfScoreResult, PerHalfOutputs
@@ -163,7 +163,7 @@ def _dense_owners(half, optics, *, class_batch_overrides=None):
             random_perturbation=0.0,
             image_window_size=None,
         ),
-        dense_half.DensePriorSpec(
+        dense_specs.DensePriorSpec(
             rotation_log_prior_k=None,
             class_rotation_log_prior_k=None,
             translation_log_prior=None,

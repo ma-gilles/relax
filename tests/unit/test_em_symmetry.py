@@ -13,6 +13,7 @@ from helpers.refinement_specs import local_half_owners
 from helpers.run_options import cli, stand_in
 
 from relax.numerics.precision import DensePrecisionPolicy
+from relax.refinement import dense_specs
 from relax.runtime.engine_tuning import EngineTuning
 from relax.runtime.scoring_overrides import ScoringOverrides
 from relax.sampling.symmetry import (
@@ -887,7 +888,7 @@ def _symmetric_dense_owners(dense_half, values):
             image_window_size=values.pop("cs_for_engine"),
             symmetry=values.pop("symmetry"),
         ),
-        dense_half.DensePriorSpec(
+        dense_specs.DensePriorSpec(
             rotation_log_prior_k=values.pop("rotation_log_prior_k"),
             class_rotation_log_prior_k=values.pop("class_rotation_log_prior_k"),
             translation_log_prior=values.pop("translation_log_prior"),
@@ -930,9 +931,13 @@ def test_non_c1_k1_adaptive_refinement_without_x_half_fails_before_scoring(monke
 
     from relax.refinement import dense_half
 
-    for name in ("prepare_adaptive_pass2_grids", "_score_kclass_firstiter_cc_pass2", "run_dense_k_class_em_adaptive"):
+    for owner, name in (
+        (dense_specs, "prepare_adaptive_pass2_grids"),
+        (dense_half, "_score_kclass_firstiter_cc_pass2"),
+        (dense_half, "run_dense_k_class_em_adaptive"),
+    ):
         monkeypatch.setattr(
-            dense_half,
+            owner,
             name,
             lambda *_args, _name=name, **_kwargs: pytest.fail(f"unsupported non-C1 route reached {_name}"),
         )

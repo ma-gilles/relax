@@ -222,7 +222,7 @@ def test_local_search_policies_carry_the_rule():
     import dataclasses
 
     from relax.local_search.records import LocalSearchKernelPolicy
-    from relax.refinement.dense_half import DenseExecutionPolicy
+    from relax.refinement.dense_specs import DenseExecutionPolicy
     from relax.refinement.local_half import LocalExecutionPolicy
 
     for policy in (DenseExecutionPolicy, LocalExecutionPolicy, LocalSearchKernelPolicy):

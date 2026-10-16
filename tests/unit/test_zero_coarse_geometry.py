@@ -16,6 +16,7 @@ from helpers.tiny_refinement import CallTrace, run_tiny_refinement
 from relax.numerics.precision import DensePrecisionPolicy
 from relax.refinement import (
     dense_half,
+    dense_specs,
     expectation,
     finalization,
     iteration_loop,
@@ -131,7 +132,7 @@ def test_only_coarse_engine_operand_changes(monkeypatch, oversampling, xhalf, ex
     _device_rotations_stand_in(monkeypatch)
     trace = CallTrace(monkeypatch)
     trace.wrap(dense_half, "_score_adaptive_k1_dense", "scorer")
-    trace.wrap(dense_half, "prepare_adaptive_pass2_grids", "grids")
+    trace.wrap(dense_specs, "prepare_adaptive_pass2_grids", "grids")
     trace.wrap(dense_half, "project_pass2_rotations", "projection")
     run_tiny_refinement(
         monkeypatch, final_after_max_iter=False,

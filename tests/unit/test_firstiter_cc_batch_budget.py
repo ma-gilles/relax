@@ -15,7 +15,7 @@ from relax.classification import k_class_results
 from relax.classification.k_class_results import KClassEMResult
 from relax.local_search import records
 from relax.numerics.precision import DensePrecisionPolicy
-from relax.refinement import dense_half, local_half, local_sampling
+from relax.refinement import dense_half, dense_specs, local_half, local_sampling
 from relax.runtime import batch_planning
 from relax.runtime.batch_planning import (
     estimate_relion_em_batch_sizes,
@@ -57,7 +57,7 @@ def _dense_owners(**values):
             image_window_size=values.pop("cs_for_engine"),
             coarse_rotation_ids=values.pop("coarse_rotation_ids", None),
         ),
-        dense_half.DensePriorSpec(
+        dense_specs.DensePriorSpec(
             rotation_log_prior_k=values.pop("rotation_log_prior_k"),
             class_rotation_log_prior_k=values.pop("class_rotation_log_prior_k"),
             translation_log_prior=values.pop("translation_log_prior"),
@@ -176,11 +176,11 @@ def test_firstiter_cc_core_keeps_owner_dependencies_visible():
         field.name
         for owner in (
             half_inputs.HalfScoringData,
-            dense_half.DenseSamplingSpec,
-            dense_half.DensePriorSpec,
-            dense_half.DenseBatchPolicy,
-            dense_half.DenseVariantPolicy,
-            dense_half.DenseExecutionPolicy,
+            dense_specs.DenseSamplingSpec,
+            dense_specs.DensePriorSpec,
+            dense_specs.DenseBatchPolicy,
+            dense_specs.DenseVariantPolicy,
+            dense_specs.DenseExecutionPolicy,
         )
         for field in dataclasses.fields(owner)
     }
@@ -205,11 +205,11 @@ def test_dense_half_core_keeps_owner_dependencies_visible():
         field.name
         for owner in (
             half_inputs.HalfScoringData,
-            dense_half.DenseSamplingSpec,
-            dense_half.DensePriorSpec,
-            dense_half.DenseBatchPolicy,
-            dense_half.DenseVariantPolicy,
-            dense_half.DenseExecutionPolicy,
+            dense_specs.DenseSamplingSpec,
+            dense_specs.DensePriorSpec,
+            dense_specs.DenseBatchPolicy,
+            dense_specs.DenseVariantPolicy,
+            dense_specs.DenseExecutionPolicy,
             shape_class_scoring.OpticsSpec,
         )
         for field in dataclasses.fields(owner)

@@ -15,13 +15,13 @@ from relax.classification.probes import KClassProbe
 from relax.numerics.precision import diagnostic_float64_pass2_matches
 from relax.reconstruction.resolution import ImageGeometry
 from relax.refinement import image_size_plans, iteration_planning, local_sampling
-from relax.refinement.dense_half import (
+from relax.refinement.dense_half import score_half_dense_in_bpref_scope
+from relax.refinement.dense_specs import (
     DenseBatchPolicy,
     DenseExecutionPolicy,
     DensePriorSpec,
     DenseSamplingSpec,
     DenseVariantPolicy,
-    score_half_dense_in_bpref_scope,
 )
 from relax.refinement.expectation_batches import BatchPlanner, prepare_half_batches
 from relax.refinement.firstiter_bpref import NumberedBPrefHalf

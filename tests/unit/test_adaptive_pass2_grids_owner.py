@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 from helpers.float_compare import matches
 
-from relax.refinement import dense_half
+from relax.refinement import dense_specs
 from relax.sampling.grids import rotation_grid_size
 from relax.sampling.oversampling import build_adaptive_pass2_grids
 from relax.sampling.perturbation import apply_relion_translation_perturbation
@@ -27,7 +27,7 @@ def _same(x, y):
 @pytest.mark.parametrize("oversampling", [0, 1])
 def test_owner_returns_the_builder_grids_and_perturbed_phase_source(oversampling):
     rot = np.repeat(np.eye(3, dtype=np.float32)[None], N_ROT, axis=0)
-    grids = dense_half.prepare_adaptive_pass2_grids(
+    grids = dense_specs.prepare_adaptive_pass2_grids(
         rot, BASE.astype(np.float32), BASE, healpix_order=ORDER, adaptive_oversampling=oversampling,
         translation_step=1.0, random_perturbation=0.25, coarse_rotation_ids=None,
     )
@@ -40,7 +40,7 @@ def test_owner_returns_the_builder_grids_and_perturbed_phase_source(oversampling
 
 def test_zero_oversampling_keeps_the_coarse_rotation_grid():
     rot = np.repeat(np.eye(3, dtype=np.float32)[None], N_ROT, axis=0)
-    grids = dense_half.prepare_adaptive_pass2_grids(
+    grids = dense_specs.prepare_adaptive_pass2_grids(
         rot, BASE.astype(np.float32), BASE, healpix_order=ORDER, adaptive_oversampling=0,
         translation_step=1.0, random_perturbation=0.0, coarse_rotation_ids=None,
     )

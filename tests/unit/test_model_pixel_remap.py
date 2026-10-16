@@ -214,10 +214,10 @@ def _local_grid(model_pixel, model_support_size=38):
 
 
 def _dense_grid(model_pixel, model_support_size=28):
-    from relax.refinement import dense_half
+    from relax.refinement import dense_half, dense_specs
 
     scale = optics_groups.scale_difference(128, STAR_PIXEL, 128, model_pixel)
-    sampling = dense_half.DenseSamplingSpec(
+    sampling = dense_specs.DenseSamplingSpec(
         effective_rotations=None, current_translations=None, base_translations=None, current_healpix_order=2,
         oversampling_order=1, translation_step=1.0, random_perturbation=0.0,
         image_window_size=optics_groups.group_current_size(28, 128, scale), coarse_engine="auto", symmetry="C1",

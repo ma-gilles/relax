@@ -15,7 +15,7 @@ Algorithm to code: `docs/math/relion_refinement_algorithm.md`.
 | `iteration_loop.py` | `refine_single_volume`: the numbered-iteration controller for K=1 and for K classes |
 | `setup_checks.py` | what the controller checks or resolves from its inputs before the first iteration |
 | `iteration_planning.py`, `image_size_plans.py`, `trial_grids.py`, `numbered_transitions.py`, `refinement_state.py`, `iteration_history.py`, `iteration_snapshot.py` | start-up state, sampling and convergence transitions, the state one iteration hands to the next |
-| `expectation.py`, `expectation_batches.py`, `dense_half.py`, `particle_poses.py`, `given_poses.py`, `firstiter_bpref.py` | preparing and running a half's expectation |
+| `expectation.py`, `expectation_batches.py`, `dense_half.py` (its engine records: `dense_specs.py`), `particle_poses.py`, `given_poses.py`, `firstiter_bpref.py` | preparing and running a half's expectation |
 | `local_half.py`, `local_sampling.py` | the exact-local route of a half: its sampling, its per-half adapter around the `relax/local_search/` engine |
 | `maximization.py` | the numbered M-steps (K=1 split-half, Class3D) the controller chooses, and their results |
 | `reference_state.py` | the reference model (half maps and tau2) and the class mixture a run carries between iterations |
