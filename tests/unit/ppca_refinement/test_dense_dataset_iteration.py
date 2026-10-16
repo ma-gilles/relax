@@ -14,8 +14,8 @@ from relax.ppca_refinement.config import (
     ScoringConfig,
     SparsePass2Config,
 )
+from relax.ppca_refinement.dense_blocks import iter_dense_ppca_dataset_blocks
 from relax.ppca_refinement.dense_dataset import (
-    iter_dense_ppca_dataset_blocks,
     run_dense_ppca_fused_em_iteration,
     run_dense_ppca_halfset_fused_em_iteration,
 )
@@ -840,10 +840,8 @@ def test_direct_spatial_residual_matches_observed_score_derivative():
 
 def test_full_real_observation_has_dc_and_outside_support_noise():
     from relax.fourier.half_spectrum import make_shell_indices_half
-    from relax.ppca_refinement.dense_dataset import (
-        accumulate_dense_ppca_statistics,
-        prepare_dense_ppca_dataset_inputs,
-    )
+    from relax.ppca_refinement.dense_blocks import prepare_dense_ppca_dataset_inputs
+    from relax.ppca_refinement.dense_dataset import accumulate_dense_ppca_statistics
 
     images = np.ones((2, N_HALF), np.complex64) * 2
     data = _TinyPPCAData(images)

@@ -466,7 +466,7 @@ def main() -> None:
         )
         fixed_mean_half = None
         if iter_idx <= int(args.freeze_mean_iters):
-            from relax.ppca_refinement.dense_dataset import coerce_augmented_half_volumes
+            from relax.ppca_refinement.dense_blocks import coerce_augmented_half_volumes
 
             fixed_mean_half = coerce_augmented_half_volumes(
                 current_mu,

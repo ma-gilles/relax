@@ -59,11 +59,8 @@ from recovar.reconstruction import noise as noise_utils
 
 from relax.fourier.half_spectrum import make_half_image_weights, make_shell_indices_half
 from relax.ppca_refinement.config import GeometryConfig, ScheduleConfig, ScoringConfig
-from relax.ppca_refinement.dense_dataset import (
-    DensePPCAEmbeddings,
-    prepare_dense_ppca_dataset_inputs,
-    prepare_dense_ppca_image_batch,
-)
+from relax.ppca_refinement.dense_blocks import prepare_dense_ppca_dataset_inputs, prepare_dense_ppca_image_batch
+from relax.ppca_refinement.dense_dataset import DensePPCAEmbeddings
 from relax.ppca_refinement.engine import (
     enforce_augmented_x0,
     pose_invariant_score_offset,

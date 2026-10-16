@@ -29,13 +29,9 @@ from relax.ppca_refinement.config import (
     ScoringConfig,
     SparsePass2Config,
 )
-from relax.ppca_refinement.dense_dataset import (
-    _centered_score_partition,
-    prepare_dense_ppca_dataset_inputs,
-)
-from relax.ppca_refinement.dense_dataset import (
-    _project_augmented_half_volumes as _project_local_augmented,
-)
+from relax.ppca_refinement.dense_blocks import _project_augmented_half_volumes as _project_local_augmented
+from relax.ppca_refinement.dense_blocks import prepare_dense_ppca_dataset_inputs
+from relax.ppca_refinement.dense_dataset import _centered_score_partition
 from relax.ppca_refinement.diagnostics import build_iteration_diagnostics, resolve_image_scale_range
 from relax.ppca_refinement.engine import (
     DensePPCAFusedEMResult,

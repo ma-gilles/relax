@@ -66,7 +66,7 @@ switch from single-set to halfset).
 | 2 | `config.py` | Geometry, batching, scoring and pose-selection options. | 3 min |
 | 3 | `state.py` | `PoseMarginalPPCAEMState` — what the loop carries between iterations. | 2 min |
 | 4 | `engine.py` | The JIT-compiled E+M kernel. The hard math is in `fused_dense_pose_ppca_block` and (in `recovar/ppca/pose_marginal.py`) `compute_ppca_pose_scores_and_moments_no_contrast`. | 10 min |
-| 5 | `dense_dataset.py` (or `scripts/lib/local_dataset.py`) | Turns a `CryoEMDataset` into the blocks `engine.py` consumes, then loops over them and assembles the M-step input. | 5 min |
+| 5 | `dense_blocks.py`, then `dense_dataset.py` (or `scripts/lib/local_dataset.py`) | Turns a `CryoEMDataset` into the blocks `engine.py` consumes, then loops over them and assembles the M-step input. | 5 min |
 | 6 | `scripts/lib/refinement_loop.py` | Multi-iteration driver: schedule, halfset gating, FSC checkpoints. | 5 min |
 
 ---
@@ -84,7 +84,9 @@ switch from single-set to halfset).
 | `diagnostics.py` | `build_iteration_diagnostics`, `resolve_image_scale_range`. Single home for the diagnostic-dict contract. |
 | `initialization.py` | `real_volume_to_centered_fourier_half` (the initializers and variance priors live in `scripts/lib/ppca_initialization.py`). |
 | `engine.py` | JIT-compiled E+M kernel: `fused_dense_pose_ppca_block` and `dense_pose_ppca_score_stats_blocked`. Shared by both flavors. |
-| `dense_dataset.py` | Dataset-facing dense-flavor iteration (`run_dense_ppca_fused_em_iteration`) + halfset wrapper + the dense block iterator. |
+| `dense_blocks.py` | The dense dataset blocks: volume coercion, `prepare_dense_ppca_dataset_inputs`, the image batch and the block iterator (`iter_dense_ppca_dataset_blocks`). |
+| `dense_dataset.py` | Dataset-facing dense-flavor iteration (`run_dense_ppca_fused_em_iteration`) + halfset wrapper + the statistics and embeddings over the dense blocks. |
+| `scripts/lib/dense_ppca_significance.py` (a script library; no relax command imports it) | The adaptive coarse significance of the oversampled local script (`compute_dense_ppca_adaptive_significance`). |
 | `scripts/lib/local_dataset.py` (a script library; no relax command imports it) | Dataset-facing exact-local-flavor iteration (`run_local_ppca_fused_em_iteration`) + halfset wrapper + the per-image bucket iterator. |
 | `scripts/lib/refinement_loop.py` (a script library; no relax command imports it) | `run_dense_ppca_refinement_loop` — the maintained dense multi-iteration driver and shared resolution gate. |
 | `scripts/lib/fixture_validation.py` (a script library; no relax command imports it) | Test fixtures shared with `tests/unit/ppca_refinement/`. |

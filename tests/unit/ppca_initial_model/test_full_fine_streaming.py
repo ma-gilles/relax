@@ -10,11 +10,8 @@ from helpers.full_row_tile import accumulate_full_row_tile
 from relax.fourier.half_spectrum import make_half_image_weights, make_shell_indices_half
 from relax.local_search.layout import build_pass2_hypothesis_layout
 from relax.ppca_refinement.config import GeometryConfig, ScheduleConfig, ScoringConfig, SparsePass2Config
-from relax.ppca_refinement.dense_dataset import (
-    _per_image_pose_prior_block,
-    accumulate_dense_ppca_statistics,
-    compute_dense_ppca_embeddings,
-)
+from relax.ppca_refinement.dense_blocks import _per_image_pose_prior_block
+from relax.ppca_refinement.dense_dataset import accumulate_dense_ppca_statistics, compute_dense_ppca_embeddings
 from relax.ppca_refinement.full_row_kernels import full_row_pose_log_prior
 from relax.ppca_refinement.full_row_stream import (
     FULL_ROW_ENGINE,

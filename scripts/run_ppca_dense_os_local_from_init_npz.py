@@ -32,7 +32,6 @@ from relax.ppca_refinement.config import (
     ScoringConfig,
     SparsePass2Config,
 )
-from relax.ppca_refinement.dense_dataset import compute_dense_ppca_adaptive_significance
 from relax.ppca_refinement.mean_regularization import (
     KCLASS_RELION_MINRES_MAP,
     MeanRegularizationConfig,
@@ -40,6 +39,7 @@ from relax.ppca_refinement.mean_regularization import (
 )
 from relax.ppca_refinement.postprocess import PostprocessConfig
 from relax.sampling.grids import get_relion_rotation_grid, get_translation_grid
+from scripts.lib.dense_ppca_significance import compute_dense_ppca_adaptive_significance
 from scripts.lib.highres_refinement import build_top_p_local_hypothesis_layout
 from scripts.lib.local_dataset import (
     run_local_ppca_fused_em_iteration,
@@ -683,7 +683,7 @@ def main() -> None:
         )
         fixed_mean_half = None
         if iter_idx <= int(args.freeze_mean_iters):
-            from relax.ppca_refinement.dense_dataset import coerce_augmented_half_volumes
+            from relax.ppca_refinement.dense_blocks import coerce_augmented_half_volumes
 
             fixed_mean_half = coerce_augmented_half_volumes(
                 current_mu,

@@ -17,17 +17,14 @@ os.environ.setdefault("XLA_PYTHON_CLIENT_PREALLOCATE", "false")
 
 import jax
 import jax.numpy as jnp
-
 from recovar.core.configs import ForwardModelConfig
 from recovar.data_io.cryoem_dataset import load_dataset
-from relax.relion.image_preprocessing import preprocess_batch
-from relax.ppca_refinement.dense_dataset import (
-    _project_augmented_half_volumes,
-    prepare_dense_ppca_dataset_inputs,
-)
-from relax.sampling.grids import get_rotation_grid_at_order, get_translation_grid
 from recovar.reconstruction import noise as noise_utils
 from recovar.utils.json_utils import to_jsonable
+
+from relax.ppca_refinement.dense_blocks import _project_augmented_half_volumes, prepare_dense_ppca_dataset_inputs
+from relax.relion.image_preprocessing import preprocess_batch
+from relax.sampling.grids import get_rotation_grid_at_order, get_translation_grid
 
 
 def _load_simulation_info(path: str | Path | None) -> dict[str, Any] | None:

@@ -29,7 +29,8 @@ from relax.ppca_refinement.config import (
     ScoringConfig,
     SparsePass2Config,
 )
-from relax.ppca_refinement.dense_dataset import coerce_augmented_half_volumes, run_dense_ppca_fused_em_iteration
+from relax.ppca_refinement.dense_blocks import coerce_augmented_half_volumes
+from relax.ppca_refinement.dense_dataset import run_dense_ppca_fused_em_iteration
 from relax.ppca_refinement.mean_regularization import (
     KCLASS_RELION_MINRES_MAP,
     MeanRegularizationConfig,
