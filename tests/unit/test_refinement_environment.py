@@ -492,3 +492,36 @@ def test_the_run_options_read_the_device_signature_target_once(monkeypatch):
     assert ExecutionOptions.from_environ().bpref_device_signature_target == (5, 1)
     monkeypatch.delenv("RECOVAR_BPREF_DEVICE_SIGNATURE_DUMP_DIR")
     assert ExecutionOptions.from_environ().bpref_device_signature_target is None
+
+
+def test_the_half_accumulator_guard_mode_is_read_once(monkeypatch):
+    """RELAX_EM_BPREF_FINITE_GUARD (RefinementEnvironment.half_accumulator_guard): on ("raise") by default; ``0``
+    switches it off, ``warn`` keeps going, the per-bucket warn switch demotes it too, anything else is refused when
+    the options are built."""
+    from relax.reconstruction.accumulator_guard import HALF_ACCUMULATOR_GUARD_ENV
+    from relax.runtime.engine_tuning import FINITE_CHECK_WARN_ENV
+
+    def guard():
+        return RefinementEnvironment.from_environ().half_accumulator_guard
+
+    monkeypatch.delenv(HALF_ACCUMULATOR_GUARD_ENV, raising=False)
+    monkeypatch.delenv(FINITE_CHECK_WARN_ENV, raising=False)
+    assert guard() == "raise" == RefinementEnvironment().half_accumulator_guard
+    for value in ("0", "off", "false", "no"):
+        monkeypatch.setenv(HALF_ACCUMULATOR_GUARD_ENV, value)
+        assert guard() == "off"
+    for value in ("1", "on", "raise", "  RAISE ", ""):
+        monkeypatch.setenv(HALF_ACCUMULATOR_GUARD_ENV, value)
+        assert guard() == "raise"
+    monkeypatch.setenv(HALF_ACCUMULATOR_GUARD_ENV, "warn")
+    assert guard() == "warn"
+
+    # The per-bucket warn switch demotes the guard as well.
+    monkeypatch.setenv(HALF_ACCUMULATOR_GUARD_ENV, "1")
+    monkeypatch.setenv(FINITE_CHECK_WARN_ENV, "1")
+    assert guard() == "warn"
+
+    monkeypatch.delenv(FINITE_CHECK_WARN_ENV, raising=False)
+    monkeypatch.setenv(HALF_ACCUMULATOR_GUARD_ENV, "maybe")
+    with pytest.raises(ValueError, match="RELAX_EM_BPREF_FINITE_GUARD"):
+        guard()
