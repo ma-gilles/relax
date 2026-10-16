@@ -45,6 +45,13 @@
 // BPref convention for the first operand; the noise operand always uses the
 // score convention used by ``shifted_score_half_with_dc``.
 //
+// Shifted table (relax#98).  When many rows read each image (a lone tilt
+// particle's M-step block is hundreds of rows of one image), the launcher first
+// writes every image's shifted operands at every (translation, pixel) into a
+// stream-ordered scratch table with the same phase, ``sincosf`` and rotation
+// functions, and the summing kernel loads them instead of forming them: the
+// values, and so every sum, are bitwise those of the inline path.
+//
 // This header is included from cuda_backproject.cu after the anonymous
 // namespace that defines relion_score_translate_f32.
 
@@ -99,9 +106,10 @@ __device__ __forceinline__ float2 translate_rotate_bpref_f32(
         __fmul_rn(translated_imag, factor));
 }
 
-template <int ROWS_PER_BLOCK, bool BPREF_RECON>
+template <int ROWS_PER_BLOCK, bool BPREF_RECON, bool SHIFTED_TABLE>
 __global__ void __launch_bounds__(kBlockThreads)
 translate_sum_flat_rows_f32_kernel(
+    const float4* __restrict__ shifted_table,        // [B, T, P] (recon, noise) when SHIFTED_TABLE
     const float2* __restrict__ recon_image,          // [B, P]
     const float2* __restrict__ noise_image,          // [B, P]
     const float* __restrict__ recon_weight,          // [B, P] or null
@@ -295,7 +303,7 @@ translate_sum_flat_rows_f32_kernel(
             recon_value[i] = make_float2(0.0f, 0.0f);
             noise_value[i] = make_float2(0.0f, 0.0f);
             recon_factor[i] = 0.0f;
-            if (live[i]) {
+            if (!SHIFTED_TABLE && live[i]) {
                 const int64_t base =
                     static_cast<int64_t>(image_ids[i]) * pixel_capacity + pixel;
                 recon_value[i] = recon_image[base];
@@ -325,26 +333,37 @@ translate_sum_flat_rows_f32_kernel(
                 const float weight =
                     shared_posterior[i * translation_count + translation];
                 if (weight == 0.0f) continue;
-                const int32_t table_image = shared_table ? -1 : image_ids[i];
-                if (table_image != phase_image) {
-                    const float* angles = shared_table
-                        ? shared_angles
-                        : translation_angles +
-                              static_cast<int64_t>(image_ids[i]) * angle_image_stride;
-                    const float phase = translate_phase_f32(
-                        x, y, angles[2 * translation], angles[2 * translation + 1]);
-                    sincosf(phase, &sine, &cosine);
-                    phase_image = table_image;
-                    shifted_image = -1;
-                }
-                if (image_ids[i] != shifted_image) {
-                    recon_shifted = BPREF_RECON
-                        ? translate_rotate_bpref_f32(
-                              recon_value[i], sine, cosine, recon_factor[i])
-                        : translate_rotate_f32(recon_value[i], sine, cosine);
-                    noise_shifted =
-                        translate_rotate_f32(noise_value[i], sine, cosine);
-                    shifted_image = image_ids[i];
+                if constexpr (SHIFTED_TABLE) {
+                    if (image_ids[i] != shifted_image) {
+                        const float4 shifted = shifted_table[
+                            (static_cast<int64_t>(image_ids[i]) * translation_count + translation) *
+                                pixel_capacity + pixel];
+                        recon_shifted = make_float2(shifted.x, shifted.y);
+                        noise_shifted = make_float2(shifted.z, shifted.w);
+                        shifted_image = image_ids[i];
+                    }
+                } else {
+                    const int32_t table_image = shared_table ? -1 : image_ids[i];
+                    if (table_image != phase_image) {
+                        const float* angles = shared_table
+                            ? shared_angles
+                            : translation_angles +
+                                  static_cast<int64_t>(image_ids[i]) * angle_image_stride;
+                        const float phase = translate_phase_f32(
+                            x, y, angles[2 * translation], angles[2 * translation + 1]);
+                        sincosf(phase, &sine, &cosine);
+                        phase_image = table_image;
+                        shifted_image = -1;
+                    }
+                    if (image_ids[i] != shifted_image) {
+                        recon_shifted = BPREF_RECON
+                            ? translate_rotate_bpref_f32(
+                                  recon_value[i], sine, cosine, recon_factor[i])
+                            : translate_rotate_f32(recon_value[i], sine, cosine);
+                        noise_shifted =
+                            translate_rotate_f32(noise_value[i], sine, cosine);
+                        shifted_image = image_ids[i];
+                    }
                 }
                 recon_acc[i].x = __fadd_rn(
                     recon_acc[i].x, __fmul_rn(weight, recon_shifted.x));
@@ -381,6 +400,63 @@ translate_sum_flat_rows_f32_kernel(
     }
 }
 
+// One image's shifted operands at every (translation, pixel), written by the
+// same phase, sincosf and rotation the summing kernel evaluates inline, so a
+// row reading the table adds exactly the values it would have formed itself.
+template <bool BPREF_RECON>
+__global__ void __launch_bounds__(kBlockThreads)
+translate_shifted_table_f32_kernel(
+    const float2* __restrict__ recon_image,          // [B, P]
+    const float2* __restrict__ noise_image,          // [B, P]
+    const float* __restrict__ recon_weight,          // [B, P] or null
+    const float* __restrict__ translation_angles,    // [T, 2], or [B, T, 2] with angle_image_stride
+    const int32_t* __restrict__ pixel_indices,       // [P]
+    float4* __restrict__ shifted_table,              // [B, T, P]
+    int64_t translation_count,
+    int64_t pixel_capacity,
+    int image_h,
+    int image_half_width,
+    int64_t angle_image_stride)
+{
+    const int64_t pixel = static_cast<int64_t>(blockIdx.x) * kBlockThreads + threadIdx.x;
+    const int64_t translation = blockIdx.y;
+    const int64_t image = blockIdx.z;
+    if (pixel >= pixel_capacity) return;
+    const int pixel_index = pixel_indices[pixel];
+    const int x = pixel_index % image_half_width;
+    const int y = relion_centered_row_to_relion_label(
+        pixel_index / image_half_width - image_h / 2, image_h);
+    const float* angles = translation_angles + image * angle_image_stride;
+    const float phase = translate_phase_f32(
+        x, y, angles[2 * translation], angles[2 * translation + 1]);
+    float sine;
+    float cosine;
+    sincosf(phase, &sine, &cosine);
+    const int64_t base = image * pixel_capacity + pixel;
+    const float2 recon = BPREF_RECON
+        ? translate_rotate_bpref_f32(recon_image[base], sine, cosine, recon_weight[base])
+        : translate_rotate_f32(recon_image[base], sine, cosine);
+    const float2 noise = translate_rotate_f32(noise_image[base], sine, cosine);
+    shifted_table[(image * translation_count + translation) * pixel_capacity + pixel] =
+        make_float4(recon.x, recon.y, noise.x, noise.y);
+}
+
+// The shifted table pays when many rows read each image's entries: one row
+// block of a lone particle is hundreds of rows of one image.  It is bounded by
+// kMaxShiftedTableBytes of stream-ordered scratch.
+constexpr int64_t kMaxShiftedTableBytes = int64_t(1) << 30;
+constexpr int64_t kMinRowsPerTableImage = 64;
+// With the table a row's work is a load and four rounded operations, so rows
+// share the load: four rows per block measured best on an H100 (relax#98:
+// a flat 256-row lone launch 7.18 -> 4.02 ms; two rows 5.49, eight 5.77).
+constexpr int kShiftedTableRowsPerBlock = 4;
+
+inline bool use_shifted_table(int64_t batch_size, int64_t row_count, int64_t translation_count, int64_t pixel_capacity)
+{
+    return batch_size * translation_count * pixel_capacity * int64_t(sizeof(float4)) <= kMaxShiftedTableBytes &&
+        row_count >= kMinRowsPerTableImage * batch_size;
+}
+
 inline int64_t shared_bytes_for(
     int rows_per_block, int64_t translation_count, bool shared_table)
 {
@@ -393,7 +469,8 @@ inline int64_t shared_bytes_for(
 }
 
 // Rows a block owns.  More rows share one sincosf and one pair of rotations
-// per image but cost registers and visit the union of the rows' translations.
+// per image (or one shifted-table load) but cost registers and visit the union
+// of the rows' translations.
 // The default is one: measured on an H100 (relax#91), one row per block with
 // the pixel spans was faster than four rows at every SPA and sparse tilt
 // shape, and 1.15x against four rows' 1.54x only for a flat posterior over
@@ -421,9 +498,10 @@ inline int64_t choose_pixel_spans(int64_t row_blocks, int64_t pixel_capacity)
     return spans < 1 ? 1 : (spans > passes ? passes : spans);
 }
 
-template <int ROWS_PER_BLOCK, bool BPREF_RECON>
+template <int ROWS_PER_BLOCK, bool BPREF_RECON, bool SHIFTED_TABLE>
 cudaError_t launch_templated(
     cudaStream_t stream,
+    const float4* shifted_table,
     const float2* recon_image,
     const float2* noise_image,
     const float* recon_weight,
@@ -453,8 +531,9 @@ cudaError_t launch_templated(
     const dim3 grid(
         static_cast<unsigned>(blocks),
         static_cast<unsigned>(choose_pixel_spans(blocks, pixel_capacity)));
-    translate_sum_flat_rows_f32_kernel<ROWS_PER_BLOCK, BPREF_RECON>
+    translate_sum_flat_rows_f32_kernel<ROWS_PER_BLOCK, BPREF_RECON, SHIFTED_TABLE>
         <<<grid, kBlockThreads, shared, stream>>>(
+            shifted_table,
             recon_image,
             noise_image,
             recon_weight,
@@ -477,6 +556,65 @@ cudaError_t launch_templated(
             image_half_width,
             angle_image_stride);
     return cudaGetLastError();
+}
+
+template <bool SHIFTED_TABLE>
+cudaError_t dispatch_sum(
+    cudaStream_t stream,
+    const float4* shifted_table,
+    int rows,
+    const float2* recon_image,
+    const float2* noise_image,
+    const float* recon_weight,
+    const float* ctf2_over_nv,
+    const int32_t* row_image_ids,
+    const float* posterior,
+    const float* translation_angles,
+    const int32_t* pixel_indices,
+    const int32_t* runtime_valid_rows,
+    const int32_t* runtime_logical_pixels,
+    float2* summed,
+    float2* summed_masked,
+    float* probs_sum_t,
+    float* ctf_probs,
+    int64_t batch_size,
+    int64_t row_count,
+    int64_t translation_count,
+    int64_t pixel_capacity,
+    int image_h,
+    int image_half_width,
+    int64_t angle_image_stride)
+{
+#define RELAX_TRANSLATE_SUM_DISPATCH(R, BPREF)                  \
+    case R:                                                       \
+        return launch_templated<R, BPREF, SHIFTED_TABLE>(         \
+            stream, shifted_table, recon_image, noise_image, recon_weight, \
+            ctf2_over_nv, row_image_ids, posterior,               \
+            translation_angles, pixel_indices, runtime_valid_rows,\
+            runtime_logical_pixels, summed, summed_masked,        \
+            probs_sum_t, ctf_probs, batch_size, row_count,        \
+            translation_count, pixel_capacity, image_h,           \
+            image_half_width, angle_image_stride)
+
+    if (recon_weight != nullptr) {
+        switch (rows) {
+            RELAX_TRANSLATE_SUM_DISPATCH(1, true);
+            RELAX_TRANSLATE_SUM_DISPATCH(2, true);
+            RELAX_TRANSLATE_SUM_DISPATCH(4, true);
+            RELAX_TRANSLATE_SUM_DISPATCH(8, true);
+            default:
+                return cudaErrorInvalidValue;
+        }
+    }
+    switch (rows) {
+        RELAX_TRANSLATE_SUM_DISPATCH(1, false);
+        RELAX_TRANSLATE_SUM_DISPATCH(2, false);
+        RELAX_TRANSLATE_SUM_DISPATCH(4, false);
+        RELAX_TRANSLATE_SUM_DISPATCH(8, false);
+        default:
+            return cudaErrorInvalidValue;
+    }
+#undef RELAX_TRANSLATE_SUM_DISPATCH
 }
 
 inline cudaError_t launch(
@@ -536,41 +674,47 @@ inline cudaError_t launch(
     if (translation_count == 0) return cudaSuccess;
 
     const bool shared_table = angle_image_stride == 0;
+    const bool table = use_shifted_table(batch_size, row_count, translation_count, pixel_capacity);
     const int rows = choose_rows_per_block(
-        requested_rows_per_block, row_count, translation_count, shared_table);
+        requested_rows_per_block > 0 ? requested_rows_per_block : (table ? kShiftedTableRowsPerBlock : 1),
+        row_count, translation_count, shared_table);
     if (shared_bytes_for(rows, translation_count, shared_table) > kMaxSharedBytes)
         return cudaErrorInvalidValue;
 
-#define RELAX_TRANSLATE_SUM_DISPATCH(R, BPREF)                  \
-    case R:                                                       \
-        return launch_templated<R, BPREF>(                        \
-            stream, recon_image, noise_image, recon_weight,       \
-            ctf2_over_nv, row_image_ids, posterior,               \
-            translation_angles, pixel_indices, runtime_valid_rows,\
-            runtime_logical_pixels, summed, summed_masked,        \
-            probs_sum_t, ctf_probs, batch_size, row_count,        \
-            translation_count, pixel_capacity, image_h,           \
-            image_half_width, angle_image_stride)
-
-    if (recon_weight != nullptr) {
-        switch (rows) {
-            RELAX_TRANSLATE_SUM_DISPATCH(1, true);
-            RELAX_TRANSLATE_SUM_DISPATCH(2, true);
-            RELAX_TRANSLATE_SUM_DISPATCH(4, true);
-            RELAX_TRANSLATE_SUM_DISPATCH(8, true);
-            default:
-                return cudaErrorInvalidValue;
-        }
+    if (table) {
+        float4* shifted_table = nullptr;
+        err = cudaMallocAsync(
+            reinterpret_cast<void**>(&shifted_table),
+            static_cast<size_t>(batch_size * translation_count * pixel_capacity) * sizeof(float4),
+            stream);
+        if (err != cudaSuccess) return err;
+        const dim3 table_grid(
+            static_cast<unsigned>((pixel_capacity + kBlockThreads - 1) / kBlockThreads),
+            static_cast<unsigned>(translation_count),
+            static_cast<unsigned>(batch_size));
+        if (recon_weight != nullptr)
+            translate_shifted_table_f32_kernel<true><<<table_grid, kBlockThreads, 0, stream>>>(
+                recon_image, noise_image, recon_weight, translation_angles, pixel_indices, shifted_table,
+                translation_count, pixel_capacity, image_h, image_half_width, angle_image_stride);
+        else
+            translate_shifted_table_f32_kernel<false><<<table_grid, kBlockThreads, 0, stream>>>(
+                recon_image, noise_image, recon_weight, translation_angles, pixel_indices, shifted_table,
+                translation_count, pixel_capacity, image_h, image_half_width, angle_image_stride);
+        err = cudaGetLastError();
+        if (err != cudaSuccess) return err;
+        err = dispatch_sum<true>(
+            stream, shifted_table, rows, recon_image, noise_image, recon_weight, ctf2_over_nv, row_image_ids,
+            posterior, translation_angles, pixel_indices, runtime_valid_rows, runtime_logical_pixels, summed,
+            summed_masked, probs_sum_t, ctf_probs, batch_size, row_count, translation_count, pixel_capacity,
+            image_h, image_half_width, angle_image_stride);
+        const cudaError_t free_err = cudaFreeAsync(shifted_table, stream);
+        return err != cudaSuccess ? err : free_err;
     }
-    switch (rows) {
-        RELAX_TRANSLATE_SUM_DISPATCH(1, false);
-        RELAX_TRANSLATE_SUM_DISPATCH(2, false);
-        RELAX_TRANSLATE_SUM_DISPATCH(4, false);
-        RELAX_TRANSLATE_SUM_DISPATCH(8, false);
-        default:
-            return cudaErrorInvalidValue;
-    }
-#undef RELAX_TRANSLATE_SUM_DISPATCH
+    return dispatch_sum<false>(
+        stream, nullptr, rows, recon_image, noise_image, recon_weight, ctf2_over_nv, row_image_ids,
+        posterior, translation_angles, pixel_indices, runtime_valid_rows, runtime_logical_pixels, summed,
+        summed_masked, probs_sum_t, ctf_probs, batch_size, row_count, translation_count, pixel_capacity,
+        image_h, image_half_width, angle_image_stride);
 }
 
 ffi::Error impl(

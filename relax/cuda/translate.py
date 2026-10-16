@@ -368,7 +368,10 @@ def relion_translate_sum_flat_rows_f32(
 
     ``rows_per_block`` selects how many packed rows share one ``sincosf``
     evaluation. Zero picks the kernel's default; it changes performance only,
-    never the arithmetic.
+    never the arithmetic. A launch with at least 64 rows per image (a lone tilt
+    particle's M-step block) first writes each image's shifted operands into a
+    stream-ordered table of at most 1 GiB and sums from it (relax#98); the
+    values, and so the outputs, are the inline path's.
     """
 
     recon_image = jnp.asarray(recon_image)

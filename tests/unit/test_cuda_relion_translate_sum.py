@@ -869,6 +869,47 @@ def test_per_image_tables_with_rows_of_one_image_per_block(
         assert np.all(np.asarray(a)[ids < 0] == 0)
 
 
+@pytest.mark.gpu
+@pytest.mark.parametrize("rows_per_block", [0, 1, 4])
+@pytest.mark.parametrize("bpref", [False, True], ids=["score", "bpref"])
+def test_shifted_table_launch_is_the_inline_launch(monkeypatch, custom_cuda_lib, gpu_device, rows_per_block, bpref):
+    """A launch with at least 64 rows per image reads a shifted-operand table (relax#98).
+
+    The launcher writes every image's shifted operands at every (translation, pixel) with the inline path's own
+    phase, sincosf and rotation functions, so each row of a 160-row launch over two images must get the result
+    of the same rows run 40 at a time (fewer than 64 rows per image: no table), all four outputs, with padding
+    rows, rows past the valid count, a pixel tail and sparse posteriors.
+    """
+
+    cuda_backproject = _cuda_backproject(monkeypatch, custom_cuda_lib)
+    rng = np.random.default_rng(9898)
+    image_capacity, n_trans, rows, n_valid_rows = 2, 37, 160, 157
+    operands = _operands(rng, rows=rows, image_capacity=image_capacity, n_trans=n_trans, n_pixels=600)
+    ids = np.repeat(np.arange(image_capacity, dtype=np.int32), [83, 77])
+    ids[[5, 90]] = -1
+    posterior = np.asarray(operands["posterior"]).copy()
+    posterior[rng.random(posterior.shape) < 0.5] = 0.0
+    per_image = (
+        -2.0 * np.pi * rng.uniform(-4.0, 4.0, size=(image_capacity, n_trans, 2)) / float(IMAGE_SHAPE[0])
+    ).astype(np.float32)
+    operands = dict(operands, row_image_ids=ids, posterior=posterior, translation_angles=per_image)
+    table = _kernel(
+        cuda_backproject, operands, n_valid_rows=n_valid_rows, logical_pixels=555, rows_per_block=rows_per_block,
+        bpref=bpref, with_ctf=True,
+    )
+    inline = [[] for _ in table]
+    for start in range(0, rows, 40):
+        part = dict(operands, row_image_ids=ids[start : start + 40], posterior=posterior[start : start + 40])
+        outputs = _kernel(
+            cuda_backproject, part, n_valid_rows=min(40, max(n_valid_rows - start, 0)), logical_pixels=555,
+            rows_per_block=rows_per_block, bpref=bpref, with_ctf=True,
+        )
+        for parts, output in zip(inline, outputs):
+            parts.append(np.asarray(output))
+    for got, want in zip(table, inline):
+        _assert_matches(np.asarray(got), np.concatenate(want))
+
+
 def _reference_float64(cuda_backproject, operands, *, bpref=False):
     """The production tile builder, then the weighted sums in float64 (NumPy), independent of the kernel's order.
 
