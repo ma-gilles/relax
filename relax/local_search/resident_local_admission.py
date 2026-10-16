@@ -9,7 +9,6 @@ any device work; imports nothing from the driver (``resident_pass2``).
 from __future__ import annotations
 
 import relax.runtime.engine_tuning
-import relax.runtime.env_flags
 from relax.fine_pass.policy import ResidentConfigurationUnsupported
 
 
