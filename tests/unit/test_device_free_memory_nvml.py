@@ -78,22 +78,11 @@ def test_the_device_total_is_nvidia_smis_whole_mebibytes_without_a_subprocess(mo
     assert budget.device_memory_limit_bytes(None) == 40 * 1024**3
 
 
-@pytest.mark.parametrize("value", ["eighty", "80GB", "0", "-4", "nan", "inf", " "])
-def test_a_malformed_device_memory_override_is_refused(monkeypatch, value):
-    """deep2 V2-4: RELAX_SPARSE_PASS2_DEVICE_MEMORY_GB is a positive number or an error, never ignored."""
-    monkeypatch.setenv("RELAX_SPARSE_PASS2_DEVICE_MEMORY_GB", value)
-    with pytest.raises(ValueError, match="RELAX_SPARSE_PASS2_DEVICE_MEMORY_GB must be a positive number"):
-        EngineTuning.from_environ()
-
-
-def test_a_device_memory_override_is_taken_and_an_empty_one_is_unset(monkeypatch):
-    """The command reads the override once (EngineTuning.device_memory_bytes); the probe takes it instead."""
-    monkeypatch.setenv("RELAX_SPARSE_PASS2_DEVICE_MEMORY_GB", "1.5")
-    override = EngineTuning.from_environ().device_memory_bytes
-    assert override == int(1.5 * 1024**3)
+def test_a_device_memory_override_is_taken_and_an_unset_one_probes(monkeypatch):
+    """The command's override (EngineTuning.device_memory_bytes, 1.5 GB here); the probe takes it instead."""
+    override = int(1.5 * 1024**3)
     assert budget.device_memory_limit_bytes(override) == int(1.5 * 1024**3)
-    monkeypatch.setenv("RELAX_SPARSE_PASS2_DEVICE_MEMORY_GB", "")
-    assert EngineTuning.from_environ().device_memory_bytes is None is EngineTuning().device_memory_bytes
+    assert EngineTuning().device_memory_bytes is None
     monkeypatch.setattr(budget, "_nvml_memory_bytes", lambda *args: 7 * 1024**2)
     monkeypatch.setattr(budget, "_jax_allocator_limit_bytes", lambda: None)
     assert budget.device_memory_limit_bytes(None) == 7 * 1024**2

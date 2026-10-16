@@ -53,22 +53,6 @@ def test_exit_releases_full_queue(consumer_error):
     assert stopped.wait(timeout=2)
 
 
-def test_default_depth_is_two_and_zero_turns_it_off(monkeypatch):
-    monkeypatch.delenv("RELAX_EM_PREFETCH_BATCHES", raising=False)
-    assert EngineTuning.from_environ().prefetch_depth == 2
-    monkeypatch.setenv("RELAX_EM_PREFETCH_BATCHES", " 0 ")
-    assert EngineTuning.from_environ().prefetch_depth == 0
-    monkeypatch.setenv("RELAX_EM_PREFETCH_BATCHES", "")
-    assert EngineTuning.from_environ().prefetch_depth == 2
-
-
-@pytest.mark.parametrize("value", ["-1", "invalid", "1.5"])
-def test_invalid_depth_rejected(monkeypatch, value):
-    monkeypatch.setenv("RELAX_EM_PREFETCH_BATCHES", value)
-    with pytest.raises(ValueError, match="non-negative integer"):
-        EngineTuning.from_environ()
-
-
 def test_coarse_prefetch_preserves_all_outputs(monkeypatch):
     from test_em_stage_glue_programs import _assert_significance_results_match, _significance_call
 

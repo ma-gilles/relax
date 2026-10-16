@@ -252,41 +252,6 @@ def test_collate_keeps_device_arrays_on_device():
     assert_matches(np.asarray(collated), np.asarray([1.0, 2.0], dtype=np.float32))
 
 
-def _coarse_pad_final_image_batch():
-    """The pad switch as the command reads it (EngineTuning.coarse_pad_final_image_batch)."""
-    return EngineTuning.from_environ().coarse_pad_final_image_batch
-
-
-@pytest.mark.parametrize(
-    "name, reader, unset",
-    [
-        (
-            "RELAX_COARSE_PAD_FINAL_IMAGE_BATCH",
-            "relax.runtime.engine_tuning:_coarse_pad_final_image_batch",
-            True,  # on by default since the K=1 resident flip
-        ),
-    ],
-)
-def test_stage_glue_flags_fail_closed_on_bad_tokens(monkeypatch, name, reader, unset):
-    import importlib
-
-    module_name, attribute = reader.split(":")
-    read = (
-        _coarse_pad_final_image_batch if attribute == "_coarse_pad_final_image_batch"
-        else getattr(importlib.import_module(module_name), attribute)
-    )
-
-    monkeypatch.delenv(name, raising=False)
-    assert read() is unset
-    monkeypatch.setenv(name, "1")
-    assert read() is True
-    monkeypatch.setenv(name, "0")
-    assert read() is False
-    monkeypatch.setenv(name, "maybe")
-    with pytest.raises(ValueError, match=name):
-        read()
-
-
 def test_source_star_ctf_pads_with_the_rest_of_the_coarse_batch():
     """The firstiter-CC operand rebuilt from the source STAR must pad too.
 

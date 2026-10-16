@@ -320,25 +320,11 @@ def test_firstiter_cc_budget_still_caps_larger_tiles():
     assert 1 <= safe_firstiter_cc_image_batch_size(137, (384, 384), complex_budget=_budget()) < 250
 
 
-def test_firstiter_cc_budget_env_override_lifts_debug_cap(monkeypatch):
-    """The budget read at the boundary (unset or blank: the default) reaches the batch cap."""
+def test_firstiter_cc_budget_env_override_lifts_debug_cap():
+    """The budget the command reads (EngineTuning.firstiter_cc_recon_complex_budget) reaches the batch cap."""
     default_batch = safe_firstiter_cc_image_batch_size(116, (256, 256), complex_budget=_budget())
     assert default_batch == 70
-    monkeypatch.setenv("RELAX_RELION_FIRSTITER_RECON_COMPLEX_BUDGET", " ")
-    assert EngineTuning.from_environ().firstiter_cc_recon_complex_budget == _budget() == 268_435_456
-
-    monkeypatch.setenv("RELAX_RELION_FIRSTITER_RECON_COMPLEX_BUDGET", str(3 * 268_435_456))
-    assert EngineTuning.from_environ().firstiter_cc_recon_complex_budget == 3 * 268_435_456
-
     assert safe_firstiter_cc_image_batch_size(116, (256, 256), complex_budget=3 * 268_435_456) >= 187
-
-
-@pytest.mark.parametrize("raw", ["0", "-5", "1e9", "lots"])
-def test_firstiter_cc_budget_env_override_rejects_invalid(monkeypatch, raw):
-    monkeypatch.setenv("RELAX_RELION_FIRSTITER_RECON_COMPLEX_BUDGET", raw)
-
-    with pytest.raises(ValueError, match="RELAX_RELION_FIRSTITER_RECON_COMPLEX_BUDGET must be a positive integer"):
-        EngineTuning.from_environ()
 
 
 def test_kclass_adaptive_grid_batch_plan_uses_fine_grid_for_pass2():

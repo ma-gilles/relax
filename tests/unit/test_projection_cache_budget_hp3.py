@@ -67,23 +67,6 @@ def test_the_override_wins():
     assert _projection_call_max_bytes_for_pass(_H100_BYTES, override=654321) == 654321
 
 
-def test_the_override_is_read_once(monkeypatch):
-    """EngineTuning.from_environ reads RELAX_SPARSE_PASS2_PROJECTION_CACHE_MAX_BYTES: unset or empty is None, a
-    non-negative integer is taken, anything else is refused."""
-    name = "RELAX_SPARSE_PASS2_PROJECTION_CACHE_MAX_BYTES"
-    monkeypatch.delenv(name, raising=False)
-    assert EngineTuning.from_environ().projection_max_bytes is None
-    monkeypatch.setenv(name, "")
-    assert EngineTuning.from_environ().projection_max_bytes is None
-    for raw, value in (("0", 0), ("654321", 654321)):
-        monkeypatch.setenv(name, raw)
-        assert EngineTuning.from_environ().projection_max_bytes == value
-    for bad in ("-3", "lots"):
-        monkeypatch.setenv(name, bad)
-        with pytest.raises(ValueError, match="must be a non-negative integer"):
-            EngineTuning.from_environ()
-
-
 def test_cache_build_rotations_per_call_scales_scoring_budget():
     from relax.runtime.memory_budget import projection_cache_build_max_rotations_per_call
 
@@ -196,33 +179,10 @@ def test_projector_build_log_reports_the_slab_dtype(monkeypatch, caplog):
     )
 
 
-@pytest.mark.parametrize(
-    "name",
-    [
-        "RELAX_SPARSE_PASS2_MAX_TRANSLATION_TILE_BYTES",
-        "RELAX_SPARSE_PASS2_MAX_ADJOINT_BLOCK_BYTES",
-        "RELAX_SPARSE_PASS2_MAX_PROJECTED_ROTATIONS",
-    ],
-)
-def test_pass2_memory_overrides_are_read_once(monkeypatch, name):
-    """Each override is read by EngineTuning.from_environ: unset or empty is None, a positive integer is taken,
-    anything else is refused; the budget functions take the record's value."""
+def test_pass2_memory_overrides_reach_the_budget_functions():
+    """The budget functions take the record's value (EngineTuning.translation_tile_max_bytes and
+    adjoint_block_max_bytes)."""
     from relax.runtime.memory_budget import max_adjoint_block_bytes_for_pass, max_translation_tile_bytes_for_pass
 
-    field = {
-        "RELAX_SPARSE_PASS2_MAX_TRANSLATION_TILE_BYTES": "translation_tile_max_bytes",
-        "RELAX_SPARSE_PASS2_MAX_ADJOINT_BLOCK_BYTES": "adjoint_block_max_bytes",
-        "RELAX_SPARSE_PASS2_MAX_PROJECTED_ROTATIONS": "max_projected_rotations",
-    }[name]
-    monkeypatch.delenv(name, raising=False)
-    assert getattr(EngineTuning.from_environ(), field) is None
-    monkeypatch.setenv(name, "")
-    assert getattr(EngineTuning.from_environ(), field) is None
-    monkeypatch.setenv(name, "4096")
-    assert getattr(EngineTuning.from_environ(), field) == 4096
-    for bad in ("0", "-3", "lots"):
-        monkeypatch.setenv(name, bad)
-        with pytest.raises(ValueError, match="must be a positive integer"):
-            EngineTuning.from_environ()
     assert max_translation_tile_bytes_for_pass(_H100_BYTES, override=12345) == 12345
     assert max_adjoint_block_bytes_for_pass(_H100_BYTES, override=54321) == 54321

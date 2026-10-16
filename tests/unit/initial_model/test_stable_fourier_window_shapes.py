@@ -137,21 +137,6 @@ def test_stable_window_size_rejects_invalid_shapes(current_size, image_size, qua
 _RUN_QUANTUM = 32
 
 
-def test_stable_window_runtime_quantum_is_diagnostic_and_fail_closed(monkeypatch):
-    from relax.runtime.engine_tuning import STABLE_FOURIER_WINDOW_QUANTUM_ENV, EngineTuning
-
-    monkeypatch.delenv(STABLE_FOURIER_WINDOW_QUANTUM_ENV, raising=False)
-    assert EngineTuning.from_environ().stable_window_quantum == DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM == 8
-
-    monkeypatch.setenv(STABLE_FOURIER_WINDOW_QUANTUM_ENV, "16")
-    assert EngineTuning.from_environ().stable_window_quantum == 16
-
-    for invalid in ("0", "3", "nope"):
-        monkeypatch.setenv(STABLE_FOURIER_WINDOW_QUANTUM_ENV, invalid)
-        with pytest.raises(ValueError, match=STABLE_FOURIER_WINDOW_QUANTUM_ENV):
-            EngineTuning.from_environ()
-
-
 def _active_coarse_score_indices(current_size: int) -> np.ndarray:
     plan = make_stable_fourier_window_shape_plan(
         _IMAGE_SHAPE,

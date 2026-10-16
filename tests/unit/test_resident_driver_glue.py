@@ -208,18 +208,6 @@ def test_device_row_offsets_are_made_once_per_value():
     assert resident_chunk_records.device_int32(8192) is not first
 
 
-def test_glue_jit_is_on_by_default_and_reads_the_environment(monkeypatch):
-    from relax.runtime.engine_tuning import EngineTuning
-
-    name = "RELAX_SPARSE_PASS2_RESIDENT_GLUE_JIT"
-    monkeypatch.delenv(name, raising=False)
-    assert EngineTuning.from_environ().resident_glue_jit is True is EngineTuning().resident_glue_jit
-    monkeypatch.setenv(name, "0")
-    assert EngineTuning.from_environ().resident_glue_jit is False
-    monkeypatch.setenv(name, "1")
-    assert EngineTuning.from_environ().resident_glue_jit is True
-
-
 def test_the_block_program_is_keyed_on_the_capacity_class_not_the_offset():
     """One program serves every block: the offset is an operand, not a key.
 

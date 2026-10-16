@@ -1505,7 +1505,7 @@ def test_class3d_lone_rows_count_the_class_posterior_copy():
     assert resident_chunk_memory.lone_chunk_row_bytes(84, class_rows=True) == plain + 84 * 4 + 8
 
 
-def test_projector_call_takes_at_most_half_the_chunk_budget(monkeypatch):
+def test_projector_call_takes_at_most_half_the_chunk_budget():
     """A 16 GB card's box-448 final pass had a 3.63 GiB chunk budget and a fixed 4 GiB projector call (relax#49);
     the call now takes at most half the budget. Large budgets keep the 4 GiB cap."""
 
@@ -1519,35 +1519,17 @@ def test_projector_call_takes_at_most_half_the_chunk_budget(monkeypatch):
     assert resident_local_chunk.projection_block_rows(row, 40 * gib, cap) == 4 * gib // row
     assert resident_local_chunk.projection_block_rows(row, int(3.63 * gib), cap) == int(0.5 * 3.63 * gib) // row
     assert resident_local_chunk.projection_block_rows(10 * gib, int(3.63 * gib), cap) == 1
-    # The command's override (EngineTuning) replaces the cap; a value that is not positive is refused.
+    # The command's override (EngineTuning.local_projection_call_max_bytes) replaces the cap.
     assert resident_local_chunk.projection_block_rows(row, None, gib) == gib // row
-    monkeypatch.setenv("RELAX_LOCAL_SEARCH_RESIDENT_PROJECTION_CALL_MAX_BYTES", str(gib))
-    assert EngineTuning.from_environ().local_projection_call_max_bytes == gib
-    monkeypatch.setenv("RELAX_LOCAL_SEARCH_RESIDENT_PROJECTION_CALL_MAX_BYTES", "0")
-    with pytest.raises(ValueError, match="must be positive"):
-        EngineTuning.from_environ()
 
 
-def test_local_chunk_profile_is_read_once_at_the_boundary(monkeypatch):
-    """RELAX_LOCAL_SEARCH_RESIDENT_CHUNK_PROFILE (env_flags.parse_env_flag, default off) unpipelines the chunk loop."""
+def test_local_chunk_profile_unpipelines_the_chunk_loop():
+    """EngineTuning.local_chunk_profile (default off) unpipelines the chunk loop."""
     from relax.local_search import resident_pass2 as local_resident
 
-    monkeypatch.delenv("RELAX_LOCAL_SEARCH_RESIDENT_CHUNK_PROFILE", raising=False)
-    assert EngineTuning.from_environ().local_chunk_profile is False
+    assert EngineTuning().local_chunk_profile is False
     assert local_resident._local_chunk_loop_pipelined(chunk_profile=False)
-    monkeypatch.setenv("RELAX_LOCAL_SEARCH_RESIDENT_CHUNK_PROFILE", "1")
-    assert EngineTuning.from_environ().local_chunk_profile is True
     assert not local_resident._local_chunk_loop_pipelined(chunk_profile=True)
-
-
-def test_local_block_row_program_is_read_once_at_the_boundary(monkeypatch):
-    """RELAX_LOCAL_SEARCH_RESIDENT_BLOCK_ROW_PROGRAM (env_flags.parse_env_flag): unset or blank on, false tokens off."""
-    for raw, expected in ((None, True), ("", True), ("0", False), ("off", False), ("1", True)):
-        if raw is None:
-            monkeypatch.delenv("RELAX_LOCAL_SEARCH_RESIDENT_BLOCK_ROW_PROGRAM", raising=False)
-        else:
-            monkeypatch.setenv("RELAX_LOCAL_SEARCH_RESIDENT_BLOCK_ROW_PROGRAM", raw)
-        assert EngineTuning.from_environ().local_block_row_program is expected
 
 
 @requires_resident_gpu

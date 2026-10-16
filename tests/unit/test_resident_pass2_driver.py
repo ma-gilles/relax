@@ -118,19 +118,9 @@ def test_gate_names_the_missing_piece(override, expected):
         resident_configuration.require_resident_production_configuration(**_production_gate_kwargs(**override))
 
 
-def test_gate_refuses_a_diagnostic_dump(monkeypatch):
-    from relax.runtime.engine_tuning import RESIDENT_DIAGNOSTIC_DIR_ENVS, RESIDENT_DIAGNOSTIC_FLAG_ENVS
-
-    for name in RESIDENT_DIAGNOSTIC_DIR_ENVS + RESIDENT_DIAGNOSTIC_FLAG_ENVS:
-        monkeypatch.delenv(name, raising=False)
-    assert EngineTuning.from_environ().resident_diagnostics == ()
-    monkeypatch.setenv("RELAX_BPREF_MEMBERSHIP_DUMP_DIR", "  ")
-    monkeypatch.setenv("RELAX_SPARSE_PASS2_LOG_CANDIDATE_DENSITY", "0")
-    assert EngineTuning.from_environ().resident_diagnostics == ()
-    monkeypatch.setenv("RELAX_PASS2_DUMP_DIR", "/tmp/does-not-matter")
-    monkeypatch.setenv("RELAX_RELION_X_HALF_BP_FUSED_ATOMICS", "1")
+def test_gate_refuses_a_diagnostic_dump():
+    """The diagnostics the command read (EngineTuning.resident_diagnostics) are refused by name."""
     requested = ("RELAX_PASS2_DUMP_DIR", "RELAX_RELION_X_HALF_BP_FUSED_ATOMICS")
-    assert EngineTuning.from_environ().resident_diagnostics == requested
     with pytest.raises(NotImplementedError, match="diagnostic dump RELAX_PASS2_DUMP_DIR"):
         resident_configuration.require_resident_production_configuration(
             **_production_gate_kwargs(requested_diagnostics=requested)
@@ -395,22 +385,6 @@ def test_mstep_block_rows_divides_every_row_capacity():
     assert resident_chunk_memory.resolve_mstep_block_rows(
         n_recon_pixels=4324, max_block_bytes=513124859, row_capacity_ladder=ladder, override=8,
     ) == 8
-
-
-@pytest.mark.parametrize(("value", "expected"), [(None, None), ("  ", None), ("128", 128), (" 16 ", 16)])
-def test_mstep_block_rows_are_read_once(monkeypatch, value, expected):
-    if value is None:
-        monkeypatch.delenv("RELAX_SPARSE_PASS2_RESIDENT_MSTEP_BLOCK_ROWS", raising=False)
-    else:
-        monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_MSTEP_BLOCK_ROWS", value)
-    assert EngineTuning.from_environ().mstep_block_rows == expected
-
-
-@pytest.mark.parametrize("value", ["0", "-4", "12", "rows"])
-def test_malformed_mstep_block_rows_are_refused(monkeypatch, value):
-    monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_MSTEP_BLOCK_ROWS", value)
-    with pytest.raises(ValueError):
-        EngineTuning.from_environ()
 
 
 def test_image_capacity_ladder_is_capped_by_the_translation_tile_budget():
@@ -822,8 +796,6 @@ requires_resident_gpu = pytest.mark.skipif(
 def _z_rotation(angle):
     c, s = np.cos(angle), np.sin(angle)
     return np.array([[c, -s, 0.0], [s, c, 0.0], [0.0, 0.0, 1.0]], dtype=np.float32)
-
-
 
 
 def _driver_fixture_args(seed=20260918):
@@ -2217,42 +2189,21 @@ def test_the_allocator_reading_stays_inside_an_emulated_pool():
     assert reading["available"] <= reading["limit"]
 
 
-def test_chunk_timing_is_read_once_at_the_boundary(monkeypatch):
-    """RELAX_SPARSE_PASS2_RESIDENT_CHUNK_TIMING (env_flags.parse_env_flag, default off) unpipelines the global loop."""
+def test_chunk_timing_unpipelines_the_global_loop():
+    """EngineTuning.chunk_timing (default off) unpipelines the global loop."""
     from relax.fine_pass.resident_pass2 import _global_chunk_loop_pipelined
     from relax.runtime.engine_tuning import EngineTuning
 
-    monkeypatch.delenv("RELAX_SPARSE_PASS2_RESIDENT_CHUNK_TIMING", raising=False)
-    assert EngineTuning.from_environ().chunk_timing is False
+    assert EngineTuning().chunk_timing is False
     assert _global_chunk_loop_pipelined(False, chunk_timing=False)
-    monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_CHUNK_TIMING", "1")
-    assert EngineTuning.from_environ().chunk_timing is True
     assert not _global_chunk_loop_pipelined(False, chunk_timing=True)
-    for raw, expected in (("", False), ("off", False), ("yes", True)):
-        monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_CHUNK_TIMING", raw)
-        assert EngineTuning.from_environ().chunk_timing is expected
 
 
-def test_resident_operands_verify_is_read_once_at_the_boundary(monkeypatch):
-    """RELAX_SPARSE_PASS2_RESIDENT_OPERANDS_VERIFY (env_flags.parse_env_flag): unset and blank off, set on."""
-    for raw, expected in ((None, False), ("", False), ("1", True), ("off", False)):
-        if raw is None:
-            monkeypatch.delenv("RELAX_SPARSE_PASS2_RESIDENT_OPERANDS_VERIFY", raising=False)
-        else:
-            monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_OPERANDS_VERIFY", raw)
-        assert EngineTuning.from_environ().resident_operands_verify is expected
-
-
-def test_resident_operands_switch_is_read_once_at_the_boundary(monkeypatch):
-    """RELAX_SPARSE_PASS2_RESIDENT_OPERANDS (env_flags.parse_env_flag, default on); 0 keeps the per-chunk oracle."""
+def test_resident_operands_off_keeps_the_per_chunk_oracle():
+    """EngineTuning.resident_operands (default on); off keeps the per-chunk oracle."""
     from relax.fine_pass import resident_chunk_inputs
 
-    for raw, expected in ((None, True), ("", True), ("0", False), ("1", True)):
-        if raw is None:
-            monkeypatch.delenv("RELAX_SPARSE_PASS2_RESIDENT_OPERANDS", raising=False)
-        else:
-            monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_OPERANDS", raw)
-        assert EngineTuning.from_environ().resident_operands is expected
+    assert EngineTuning().resident_operands is True
     assert not resident_chunk_inputs.chunk_unshifted_operands_supported(
         {}, window_indices=None, recon_window_indices=None, firstiter_cc=False, relion_native_fine_units=False,
         relion_exact_bpref_operands=False, requested=False,

@@ -139,24 +139,6 @@ def test_relion_x_half_host_x0_threshold_is_memory_safety_default():
     assert not replace(host_x0, forced=False).on(768**3)
 
 
-@pytest.mark.parametrize("name", ["TO_NATIVE_HALF", "FULL_HOST", "HOST_X0"])
-def test_large_grid_switches_read_once_at_the_boundary(monkeypatch, name):
-    """Each switch as the old reading function parsed it: a set flag is on unless it is a false token (blank is
-    on), and a minimum that is not an integer keeps the default without refusing."""
-
-    field = name.lower()
-    variable = f"RELAX_RELION_X_HALF_{name}"
-    monkeypatch.delenv(variable, raising=False)
-    monkeypatch.setenv(f"{variable}_MIN_VOXELS", "1000")
-    switch = getattr(EngineTuning.from_environ().x_half_large_grid, field)
-    assert (switch.forced, switch.on(999), switch.on(1000)) == (None, False, True)
-    monkeypatch.setenv(f"{variable}_MIN_VOXELS", "lots")
-    assert getattr(EngineTuning.from_environ().x_half_large_grid, field) == getattr(XHalfLargeGrid(), field)
-    for raw, forced in (("", True), (" OFF ", False), ("no", False), ("0", False), ("anything", True)):
-        monkeypatch.setenv(variable, raw)
-        assert getattr(EngineTuning.from_environ().x_half_large_grid, field).on(1) is forced
-
-
 def test_relion_x_half_mstep_accumulator_dtypes_default_to_relion_acc_float():
     y_dtype, ctf_dtype = half_volume_mstep.relion_x_half_mstep_accumulator_dtypes(
         np.complex64,

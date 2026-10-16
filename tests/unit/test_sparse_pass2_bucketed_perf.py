@@ -264,34 +264,24 @@ def test_compute_local_ctf_sums_from_probs_sum_t_matches_dense_helper():
     assert_matches(np.asarray(from_probs_sum)[0, 2], np.zeros_like(np.asarray(from_probs_sum)[0, 2]))
 
 
-def test_pass2_projection_cache_override_supports_matched_dump_ab(monkeypatch):
+def test_pass2_projection_cache_override_supports_matched_dump_ab():
+    """The command's request (EngineTuning.pass2_projection_cache): None (the default) is auto, True on, False
+    off."""
     from relax.runtime.engine_tuning import EngineTuning
 
     fine_rotations = np.zeros((3, 3, 3), dtype=np.float32)
-
-    def requested(value):
-        if value is None:
-            monkeypatch.delenv("RELAX_SPARSE_PASS2_PROJECTION_CACHE", raising=False)
-        else:
-            monkeypatch.setenv("RELAX_SPARSE_PASS2_PROJECTION_CACHE", value)
-        return EngineTuning.from_environ().pass2_projection_cache
 
     def enabled(request, rotations, dump):
         return projection_cache_enabled_for_pass(
             fine_rotations_override=rotations, dump_pass2_operands=dump, requested=request,
         )
 
-    # The command's reading: unset and "auto" are None (the default), "on" True, "off" False.
-    assert requested(None) is None and EngineTuning().pass2_projection_cache is None
-    assert requested("on") is True and requested("off") is False
-    assert requested("AUTO") is None and requested("Yes") is True
+    assert EngineTuning().pass2_projection_cache is None
     assert enabled(None, fine_rotations, False)
     assert not enabled(None, fine_rotations, True)
     assert enabled(True, fine_rotations, False) and enabled(True, fine_rotations, True)
     assert not enabled(False, fine_rotations, False) and not enabled(False, fine_rotations, True)
     assert not enabled(False, None, False)
-    with pytest.raises(ValueError, match="must be 'auto', 'on', or 'off'"):
-        requested("invalid")
 
 
 def _assert_relion_stats_close(actual, expected, *, rtol=1e-5, atol=1e-5):

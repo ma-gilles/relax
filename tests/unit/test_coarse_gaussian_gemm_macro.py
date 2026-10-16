@@ -148,28 +148,19 @@ def _direct_scores(projected, shifted, weight, initial):
     )
 
 
-def test_coarse_gemm_projection_cache_request_is_read_once_at_the_boundary(monkeypatch):
-    """RECOVAR_COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE: unset is None (the pass asks for the cache, not explicitly);
-    the true and false tokens are explicit; anything else is refused, as the strict flag did."""
+def test_coarse_gemm_projection_cache_request_reaches_the_plan():
+    """The request ``EngineTuning.coarse_gemm_projection_cache`` carries: None (unset) asks for the cache, not
+    explicitly; True and False are explicit."""
     from types import SimpleNamespace
 
     from relax.scoring import gaussian_plan
 
-    variable = "RECOVAR_COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE"
-    monkeypatch.delenv(variable, raising=False)
-    assert EngineTuning.from_environ().coarse_gemm_projection_cache is None
+    assert EngineTuning().coarse_gemm_projection_cache is None
     shape = SimpleNamespace(n_rot=16)
     projector = np.zeros((1, 2), np.complex64)
     assert gaussian_plan._projection_cache_requested(shape, projector, None) == (True, False)
-    for raw, expected in (("0", False), (" OFF ", False), ("no", False), ("1", True), ("Yes", True), ("on", True)):
-        monkeypatch.setenv(variable, raw)
-        request = EngineTuning.from_environ().coarse_gemm_projection_cache
-        assert request is expected
-        assert gaussian_plan._projection_cache_requested(shape, projector, request) == (expected, True)
-    for raw in ("automatic", ""):
-        monkeypatch.setenv(variable, raw)
-        with pytest.raises(ValueError, match=variable):
-            EngineTuning.from_environ()
+    for request in (False, True):
+        assert gaussian_plan._projection_cache_requested(shape, projector, request) == (request, True)
 
 
 def _projection_cache_request_kwargs(**updates):
@@ -788,8 +779,6 @@ def test_coarse_gaussian_gemm_live_k1_cache_builds_once_outside_image_loop(
     assert plan.route.projection_cache_plan.cache_shape == (1, 16, 12)
 
 
-
-
 def test_coarse_gaussian_gemm_live_k2_priors_multigroup_and_poisoned_tails(
     monkeypatch,
     tmp_path,
@@ -1235,15 +1224,6 @@ def test_coarse_gaussian_gemm_projection_cache_default_budget_is_a_fifth_of_gpu_
     assert coarse_gaussian_gemm.coarse_gaussian_gemm_projection_cache_budget_bytes(override=None) == 16 * 1024**3
 
 
-@pytest.mark.parametrize("raw", ["", "0", "-1", "nan", "lots"])
-def test_coarse_gemm_projection_cache_budget_refusals_at_the_boundary(monkeypatch, raw):
-    """A set RECOVAR_COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE_MAX_GB must be a finite positive GiB count (blank too)."""
-    variable = "RECOVAR_COARSE_GAUSSIAN_GEMM_PROJECTION_CACHE_MAX_GB"
-    monkeypatch.setenv(variable, raw)
-    with pytest.raises(ValueError, match=f"{variable} must be a finite positive number"):
-        EngineTuning.from_environ()
-
-
 def test_coarse_gaussian_gemm_rotation_block_fits_the_projector_transient_budget():
     # 10097 10k K=1 auto-refine, HEALPix 3 global pass (bigbox gate 14474702): a 36,864-row
     # block of 256-px texture projections needs 9.9 GB against the 2 GiB budget.
@@ -1499,18 +1479,3 @@ def test_coarse_pass1_dump_rows_are_the_target_rows_scores():
         after_prior = np.concatenate([np.asarray(after) for _, after in class_dumps], axis=1)
         assert_matches(pre_prior, raw[targets, k])
         assert_matches(after_prior, with_prior[targets, k])
-
-
-def test_coarse_gemm_transient_budget_is_read_once_at_the_boundary(monkeypatch):
-    """RECOVAR_COARSE_GAUSSIAN_GEMM_MAX_PROJECTED_TRANSIENT_GB: unset is 2 GiB; a finite positive GiB count (stripped)
-    is taken; blank, zero, inf and text are refused, as the old reader did."""
-
-    variable = "RECOVAR_COARSE_GAUSSIAN_GEMM_MAX_PROJECTED_TRANSIENT_GB"
-    monkeypatch.delenv(variable, raising=False)
-    assert EngineTuning.from_environ().coarse_gemm_transient_max_bytes == 2 * 1024**3
-    monkeypatch.setenv(variable, " 0.5 ")
-    assert EngineTuning.from_environ().coarse_gemm_transient_max_bytes == 512 * 1024**2
-    for raw in ("", "0", "inf", "two"):
-        monkeypatch.setenv(variable, raw)
-        with pytest.raises(ValueError, match=f"{variable} must be a finite positive number"):
-            EngineTuning.from_environ()

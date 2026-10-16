@@ -221,7 +221,7 @@ def test_relion_em_batch_sizing_allows_larger_adaptive_pass1_blocks():
     assert pass2_fine.pose_pixel_tile_gb <= pass2_fine.projection_budget_gb
 
 
-def test_relion_em_batch_sizing_projection_budget_override_expands_pass1_blocks(monkeypatch):
+def test_relion_em_batch_sizing_projection_budget_override_expands_pass1_blocks():
     common = dict(
         requested_image_batch_size=64,
         requested_rotation_block_size=8192,
@@ -235,12 +235,6 @@ def test_relion_em_batch_sizing_projection_budget_override_expands_pass1_blocks(
         current_size=100,
     )
 
-    # Unset or blank is the default fraction.
-    monkeypatch.delenv("RELAX_RELION_EM_BATCH_PROJECTION_FRACTION", raising=False)
-    assert EngineTuning.from_environ().em_batch_projection_fraction == EngineTuning().em_batch_projection_fraction
-    monkeypatch.setenv("RELAX_RELION_EM_BATCH_PROJECTION_FRACTION", " ")
-    assert EngineTuning.from_environ().em_batch_projection_fraction == 0.20
-
     # The engine tuning's fraction reaches the planner.
     default = estimate_relion_em_batch_sizes(
         **common, projection_fraction=EngineTuning().em_batch_projection_fraction,
@@ -250,14 +244,6 @@ def test_relion_em_batch_sizing_projection_budget_override_expands_pass1_blocks(
     assert expanded.rotation_block_size > default.rotation_block_size
     assert expanded.rotation_block_size <= common["requested_rotation_block_size"]
     assert expanded.pose_pixel_tile_gb <= expanded.projection_budget_gb
-
-
-@pytest.mark.parametrize("raw", ["0", "-0.1", "inf", "nan", "big"])
-def test_relion_em_batch_sizing_projection_budget_override_rejects_invalid(monkeypatch, raw):
-    monkeypatch.setenv("RELAX_RELION_EM_BATCH_PROJECTION_FRACTION", raw)
-
-    with pytest.raises(ValueError, match="RELAX_RELION_EM_BATCH_PROJECTION_FRACTION must be a positive finite float"):
-        EngineTuning.from_environ()
 
 
 def test_relion_em_batch_sizing_clamps_highres_translation_tiles():

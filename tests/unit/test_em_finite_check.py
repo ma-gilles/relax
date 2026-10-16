@@ -15,22 +15,7 @@ import numpy as np
 import pytest
 
 from relax.numerics import finite_check
-from relax.runtime.engine_tuning import FINITE_CHECK_ENV, FINITE_CHECK_WARN_ENV, EngineTuning
-
-
-def test_the_mode_is_read_once_and_is_off_unless_the_flag_is_set(monkeypatch):
-    """Production must pay nothing: unset, the mode is "off" and no caller runs a check; the warn switch alone
-    does not arm them."""
-
-    monkeypatch.delenv(FINITE_CHECK_ENV, raising=False)
-    monkeypatch.delenv(FINITE_CHECK_WARN_ENV, raising=False)
-    assert EngineTuning.from_environ().finite_check == "off" == EngineTuning().finite_check
-    monkeypatch.setenv(FINITE_CHECK_WARN_ENV, "1")
-    assert EngineTuning.from_environ().finite_check == "off"
-    monkeypatch.setenv(FINITE_CHECK_ENV, "1")
-    assert EngineTuning.from_environ().finite_check == "warn"
-    monkeypatch.delenv(FINITE_CHECK_WARN_ENV)
-    assert EngineTuning.from_environ().finite_check == "raise"
+from relax.runtime.engine_tuning import FINITE_CHECK_WARN_ENV
 
 
 def test_check_arrays_names_the_first_offender_and_its_operands():

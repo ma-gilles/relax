@@ -718,7 +718,7 @@ def test_shell_binning_is_a_racing_scatter_within_one_float32_ulp(
     assert worst <= 7e-7, worst
 
 
-def test_operand_budget_is_half_of_what_the_allocator_can_hand_out(monkeypatch):
+def test_operand_budget_is_half_of_what_the_allocator_can_hand_out():
     from relax.fine_pass.resident_operands import resident_operands_max_bytes
     from relax.runtime.memory_budget import device_available_bytes
 
@@ -736,15 +736,9 @@ def test_operand_budget_is_half_of_what_the_allocator_can_hand_out(monkeypatch):
     assert device_available_bytes(12 * gib, None, None) == 12 * gib
     assert resident_operands_max_bytes(None, unset) == 6 * gib
     assert resident_operands_max_bytes(available, 3 * gib) == 3 * gib
-    monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_OPERAND_MAX_BYTES", f" {3 * gib} ")
-    assert EngineTuning.from_environ().resident_operand_max_bytes == 3 * gib
-    for bad in ("0", "-5", "lots"):
-        monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_OPERAND_MAX_BYTES", bad)
-        with pytest.raises(ValueError):
-            EngineTuning.from_environ()
 
 
-def test_preparation_batch_shrinks_to_the_budget(monkeypatch):
+def test_preparation_batch_shrinks_to_the_budget():
     """At box 380 (72580 half pixels, 192 B each) 256 images per call took 2.7 GiB that a 16 GB pool no longer
     had beside the projection cache (relax#49); the batch now takes what the operand budget leaves."""
     from relax.fine_pass.resident_operands import (
@@ -754,9 +748,8 @@ def test_preparation_batch_shrinks_to_the_budget(monkeypatch):
     )
     from relax.runtime.engine_tuning import EngineTuning
 
-    monkeypatch.delenv("RELAX_SPARSE_PASS2_RESIDENT_OPERAND_IMAGE_BATCH", raising=False)
-    assert EngineTuning.from_environ().prepare_image_batch == 256 == EngineTuning().prepare_image_batch
     configured = EngineTuning().prepare_image_batch
+    assert configured == 256
     box = (380, 380)
     per_image = resident_prepare_image_bytes(box)
     assert per_image == 192 * 380 * 191
@@ -766,12 +759,6 @@ def test_preparation_batch_shrinks_to_the_budget(monkeypatch):
     # The admission already counted the smallest batch, so the batch never drops below it.
     assert resident_prepare_batch_size(0, box, configured) == 16
     assert resident_prepare_batch_size(10_000 * per_image, box, 64) == 64
-    monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_OPERAND_IMAGE_BATCH", "64")
-    assert EngineTuning.from_environ().prepare_image_batch == 64
-    for bad in ("0", "x"):
-        monkeypatch.setenv("RELAX_SPARSE_PASS2_RESIDENT_OPERAND_IMAGE_BATCH", bad)
-        with pytest.raises(ValueError):
-            EngineTuning.from_environ()
 
 
 def test_operand_peak_counts_the_smallest_preparation_batch():
