@@ -910,7 +910,7 @@ def _driver_fixture_args(seed=20260918):
         source_faithful_spectrum_norm=False,
         return_score_log_z=True,
         # Production K=1 reaches the M-step call through
-        # k_class.py::_run_sparse_k_class_adaptive_pass2, which always supplies
+        # k_class_sparse_pass2.py::run_sparse_k_class_adaptive_pass2, which always supplies
         # the other classes' log-Z. At K=1 there are no other classes, so the
         # vector is all -inf; carry it here so the fixture exercises the same
         # branch the matched Slurm pairs do.

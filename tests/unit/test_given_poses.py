@@ -99,7 +99,7 @@ def test_class3d_pose_seed_keeps_the_input_orientations_under_skip_align():
 
 
 def test_given_supports_carry_the_csr_that_limits_the_projection_cache():
-    from relax.classification.k_class import _given_support_csr
+    from relax.classification.given_pose_classes import _given_support_csr
     from relax.fine_pass.resident_significance import significant_coarse_parents
 
     n = 7
@@ -115,11 +115,11 @@ def test_given_supports_carry_the_csr_that_limits_the_projection_cache():
 
 
 def test_cross_correlation_class_at_given_poses_is_the_best_over_the_references():
-    from relax.classification import k_class
+    from relax.classification import given_pose_classes
 
     # Float64 values that differ below float32 resolution are RELION's float32 ties: the first class wins.
     cc = np.array([[0.25, 0.5, 0.3, 0.1 + 1e-12], [0.5, 0.5, 0.3 + 1e-10, 0.1], [0.1, 0.2, 0.9, 0.1]])
-    assert k_class.classes_of_best_given_pose_cc(cc.astype(np.float32)).tolist() == [1, 0, 2, 0]
+    assert given_pose_classes.classes_of_best_given_pose_cc(cc.astype(np.float32)).tolist() == [1, 0, 2, 0]
 
     scored = []
 
@@ -129,7 +129,7 @@ def test_cross_correlation_class_at_given_poses_is_the_best_over_the_references(
         # The pass's evidence: the CC less the image's own offset.
         evidence[class_index] = cc[class_index].astype(np.float32).astype(np.float64) - 2.0**21
 
-    winners = k_class._given_pose_cc_classes(score_class, 3, 4)
+    winners = given_pose_classes.given_pose_cc_classes(score_class, 3, 4)
     assert scored == [0, 1, 2] and winners.dtype == np.int32 and winners.tolist() == [1, 0, 2, 0]
     with pytest.raises(RuntimeError, match="not finite"):
-        k_class._given_pose_cc_classes(lambda assignments, evidence: None, 3, 4)
+        given_pose_classes.given_pose_cc_classes(lambda assignments, evidence: None, 3, 4)

@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from relax.classification.k_class import _apply_bpref_particle_order_policy
+from relax.classification.k_class_sparse_pass2 import apply_bpref_particle_order_policy
 from relax.refinement.setup_checks import validate_bpref_particle_order_scope
 from scripts.lib.bucket_shapes import plan_consecutive_padded_batches
 from scripts.lib.bucketed_pass2 import _bucket_pass2_inputs
@@ -277,14 +277,14 @@ def test_sparse_pass2_execution_order_can_stay_stable_within_size_buckets():
 
 def test_sparse_pass_order_policy_is_k1_only_and_dormant_by_default():
     common = {"sentinel": object()}
-    assert not _apply_bpref_particle_order_policy(
+    assert not apply_bpref_particle_order_policy(
         common,
         {},
         n_classes=4,
     )
     assert "preserve_bpref_particle_order" not in common
 
-    assert _apply_bpref_particle_order_policy(
+    assert apply_bpref_particle_order_policy(
         common,
         {"preserve_bpref_particle_order": True},
         n_classes=1,
@@ -292,7 +292,7 @@ def test_sparse_pass_order_policy_is_k1_only_and_dormant_by_default():
     assert common["preserve_bpref_particle_order"] is True
 
     with pytest.raises(ValueError, match="K=1-only"):
-        _apply_bpref_particle_order_policy(
+        apply_bpref_particle_order_policy(
             {},
             {"preserve_bpref_particle_order": True},
             n_classes=4,

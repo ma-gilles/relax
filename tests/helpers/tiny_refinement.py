@@ -367,7 +367,7 @@ def engine_stage_kwargs(monkeypatch, **engine_kwargs):
     for a K=1 half of three mock images with ``engine_kwargs`` added to the engine's keywords.
     """
 
-    from relax.classification import k_class
+    from relax.classification import k_class, k_class_sparse_pass2
     from relax.fine_pass import resident_pass2
     from relax.scoring import significance
 
@@ -400,7 +400,7 @@ def engine_stage_kwargs(monkeypatch, **engine_kwargs):
         except _Reached:
             stages[name] = recorded[-1]
     try:
-        k_class._run_sparse_k_class_adaptive_pass2(
+        k_class_sparse_pass2.run_sparse_k_class_adaptive_pass2(
             dataset, means, jnp.ones((1, VOLUME_SIZE)), jnp.ones(IMAGE_SIZE), coarse, translations, fine, None,
             rotation_parents, fine_translations, translation_parents, [[np.array([0], np.int32)] * 3], "linear_interp",
             class_log_priors=np.zeros(1), accumulate_noise=True, return_best_pose_details=False,

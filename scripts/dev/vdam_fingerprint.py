@@ -25,7 +25,7 @@ arithmetic on the same CPU; it is a check for move-only commits, not a merge gat
 Printed lines are log rows (rule 2): their digits are masked, so a timing report shows as its template.
 
 Subtomograms (``--ios``) run on a simulated RELION 5 project (12 particles, seven tilts, two tomograms) with the
-tilt pass (``tomo_scoring.score_tomo_half`` and the pass-2 result builders of ``k_class``) replaced by a stand-in
+tilt pass (``tomo_scoring.score_tomo_half`` and the pass-2 result builders of ``k_class_sparse_pass2``) replaced by a stand-in
 seeded the same way; optics groups on two image shapes run each shape class's engine call through the same
 stand-in as single particles.
 
@@ -214,7 +214,6 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
     from helpers.fake_adaptive_engine import adaptive_result
 
     import relax
-    from relax.classification import k_class
     from relax.commands import initial_model as command
     from relax.vdam import adaptive_estep, driver, shape_class_estep
 
@@ -225,6 +224,10 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
             from relax.refinement import tomo_scoring
         except ImportError:  # a source from before tomo_scoring.py existed: the pass was tomo_half's
             from relax.refinement import tomo_half as tomo_scoring
+    try:
+        from relax.classification import k_class_sparse_pass2 as pass2_results
+    except ImportError:  # the source before the pass-2 result builders left k_class
+        from relax.classification import k_class as pass2_results
 
     assert relax.__file__.startswith(source), relax.__file__
 
@@ -526,8 +529,8 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
         patch(adaptive_estep, "run_dense_k_class_em_adaptive", stand_in_engine)
         patch(shape_class_estep, "run_dense_k_class_em_adaptive", stand_in_engine)
         patch(tomo_scoring, "score_tomo_half", stand_in_tomo_scoring)
-        patch(k_class, "single_class_pass2_em_result", stand_in_pass2_result)
-        patch(k_class, "class_segmented_em_result", stand_in_pass2_result)
+        patch(pass2_results, "single_class_pass2_em_result", stand_in_pass2_result)
+        patch(pass2_results, "class_segmented_em_result", stand_in_pass2_result)
         original_run = driver.run_native_initial_model
 
         def run_and_keep(opts, **keywords):

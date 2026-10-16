@@ -108,7 +108,7 @@ def run_tomo_initial_model_estep(
     ``subtract_projected_reference`` False back-projects the tilt images instead of their residuals.
     """
 
-    from relax.classification.k_class import class_segmented_em_result, single_class_pass2_em_result
+    from relax.classification.k_class_sparse_pass2 import class_segmented_em_result, single_class_pass2_em_result
     from relax.reconstruction.half_volume_mstep import relion_backprojector_volume_shape
     from relax.sampling import tomo_particles
     from relax.steps.tomo_half import tomo_translation_grids

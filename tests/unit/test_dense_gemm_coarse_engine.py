@@ -116,7 +116,7 @@ def test_public_adaptive_dense_dispatch_uses_complete_grid(n_classes, symmetry, 
         seen.append((args, kwargs))
         return Returned()
 
-    monkeypatch.setattr(k_class, "_run_sparse_k_class_adaptive_pass2", fake_fine)
+    monkeypatch.setattr(k_class, "run_sparse_k_class_adaptive_pass2", fake_fine)
     take_coarse_engine_calls()
     rot = np.repeat(np.eye(3, dtype=np.float32)[None], 2, axis=0)
     fine_rot = np.repeat(np.eye(3, dtype=np.float32)[None], 3, axis=0)

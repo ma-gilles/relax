@@ -1,8 +1,9 @@
 """Validate and select inputs for dense and local K-class EM.
 
 Class scheduling and engine dispatch stay in ``k_class``. These helpers own
-class-axis validation, shared/per-class selection and local prior layouts;
-they do not import execution engines or change scoring precision.
+class-axis validation, shared/per-class selection, local prior layouts and the
+engine-kwarg readers the K-class routes share; they do not import execution
+engines or change scoring precision.
 """
 
 from __future__ import annotations
@@ -131,3 +132,28 @@ def seed_iteration_supports(first_class_supports, unit_seed_classes, n_classes: 
         [support if seeds[u] == k else empty for u, support in enumerate(first_class_supports)]
         for k in range(int(n_classes))
     ]
+
+
+### M- THIS SEEMS TO USE THE DATASET OBJECT OF RECOVAR - IS THIS OUTDATED - SHOULD WE REMOVE IT FOR BETTER EFFICIENCY/READABILITY? IT WASN'T MADE FOR THIS SO WE SHOULD THINK ABOUT JUST STRIPPING IT OUT/CLEANING IT
+
+def dataset_image_count(experiment_dataset, fallback: int | None = None) -> int:
+    if hasattr(experiment_dataset, "n_units"):
+        return int(experiment_dataset.n_units)
+    if hasattr(experiment_dataset, "n_images"):
+        return int(experiment_dataset.n_images)
+    if fallback is not None:
+        return int(fallback)
+    raise AttributeError("experiment_dataset must expose n_units or n_images")
+
+
+def translation_angle_scale_kwargs(kwargs: dict) -> dict:
+    """Forward a non-unit RELION model/optics translation-angle scale (K=1 only)."""
+
+    scale = float(kwargs.get("relion_translation_angle_scale", 1.0))
+    return {} if scale == 1.0 else {"relion_translation_angle_scale": scale}
+
+
+def projection_float64_from_kwargs(kwargs: dict) -> bool:
+    """Whether projections run in double; production projects in float32."""
+
+    return bool(kwargs.get("use_float64_projections", False))

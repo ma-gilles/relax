@@ -17,17 +17,17 @@ pytest.importorskip("jax")
 import jax.numpy as jnp
 
 import relax.classification.k_class as k_class_module
-from relax.classification import k_class_results
-from relax.classification.k_class import (
-    _run_sparse_firstiter_global_winner_subset_pass2,
-    _run_sparse_k_class_adaptive_pass2,
-    run_dense_k_class_em_adaptive,
-    sparse_pose_ids_to_fine_grid,
-)
+from relax.classification import k_class_firstiter, k_class_results
+from relax.classification.k_class import run_dense_k_class_em_adaptive
+from relax.classification.k_class_firstiter import run_sparse_firstiter_global_winner_subset_pass2
 from relax.classification.k_class_results import (
     assemble_result,
     expand_subset_noise_stats,
     zero_subset_noise_stats,
+)
+from relax.classification.k_class_sparse_pass2 import (
+    run_sparse_k_class_adaptive_pass2,
+    sparse_pose_ids_to_fine_grid,
 )
 from relax.classification.probes import NoProbe
 from relax.fine_pass.bucket_io import relion_translation_angles_f32
@@ -66,7 +66,7 @@ def _firstiter_probe_result(class_assignments, per_class_hard=None, n_rot=1):
     else:
         per_class_hard = np.asarray(per_class_hard, dtype=np.int32)
         n_classes = int(per_class_hard.shape[0])
-    return k_class_module._DenseKClassScoreProbeResult(
+    return k_class_firstiter._DenseKClassScoreProbeResult(
         class_log_evidence=np.zeros((n_classes, n_images), dtype=np.float64),
         per_class_hard_assignments=per_class_hard,
         per_class_stats=tuple(
@@ -123,7 +123,7 @@ def test_adaptive_coarse_state_activation_is_zero_soft_k1_only(
         return result
 
     monkeypatch.setattr(significance, "compute_k_class_significance_batched", coarse)
-    monkeypatch.setattr(k_class_module, "_run_sparse_k_class_adaptive_pass2", fine)
+    monkeypatch.setattr(k_class_module, "run_sparse_k_class_adaptive_pass2", fine)
     actual = run_dense_k_class_em_adaptive(
         SimpleNamespace(n_images=1), jnp.zeros((n_classes, 4), dtype=jnp.complex64),
         jnp.ones(4), jnp.ones(1), np.eye(3)[None], np.zeros((1, 2)),
@@ -216,7 +216,7 @@ def _adaptive_run_with_fake_coarse(monkeypatch, engine_tuning=EngineTuning()):
         return sparse_result
 
     monkeypatch.setattr(significance_module, "compute_k_class_significance_batched", fake_significance)
-    monkeypatch.setattr(k_class_module, "_run_sparse_k_class_adaptive_pass2", fake_sparse)
+    monkeypatch.setattr(k_class_module, "run_sparse_k_class_adaptive_pass2", fake_sparse)
 
     result = run_dense_k_class_em_adaptive(
         TinyDataset(),
@@ -758,7 +758,7 @@ def test_firstiter_score_probe_uses_joint_significance(monkeypatch, projection_d
         [[0.0, 0.0], [1.0 + 2.0**-30, 0.0], [2.0, 0.0]],
         dtype=np.float64,
     )
-    result = k_class_module._run_dense_k_class_joint_firstiter_score_probe(
+    result = k_class_firstiter.run_dense_k_class_joint_firstiter_score_probe(
         TinyDataset(),
         jnp.zeros((2, 4), dtype=jnp.complex64),
         jnp.ones(1, dtype=jnp.float32),
@@ -830,8 +830,8 @@ def test_adaptive_k_class_firstiter_uses_coarse_current_size_for_probe(monkeypat
             noise_stats=None,
         )
 
-    monkeypatch.setattr(k_class_module, "_run_dense_k_class_joint_firstiter_score_probe", fake_joint_probe)
-    monkeypatch.setattr(k_class_module, "_run_sparse_firstiter_global_winner_subset_pass2", fake_subset_pass2)
+    monkeypatch.setattr(k_class_module, "run_dense_k_class_joint_firstiter_score_probe", fake_joint_probe)
+    monkeypatch.setattr(k_class_module, "run_sparse_firstiter_global_winner_subset_pass2", fake_subset_pass2)
 
     run_dense_k_class_em_adaptive(
         TinyDataset(),
@@ -948,7 +948,7 @@ def test_adaptive_k_class_firstiter_sparse_fine_pass_uses_global_winner_subsets(
             n_rot=n_coarse_rot,
         )
 
-    monkeypatch.setattr(k_class_module, "_run_dense_k_class_joint_firstiter_score_probe", fake_joint_probe)
+    monkeypatch.setattr(k_class_module, "run_dense_k_class_joint_firstiter_score_probe", fake_joint_probe)
 
     result = run_dense_k_class_em_adaptive(
         TinyDataset(),
@@ -1051,7 +1051,7 @@ def test_sparse_firstiter_k1_adapter_forwards_exact_cc_and_spectrum_norm(monkeyp
         fake_compute_pass2_stats_sparse,
     )
 
-    _run_sparse_firstiter_global_winner_subset_pass2(
+    run_sparse_firstiter_global_winner_subset_pass2(
         TinyDataset(),
         jnp.zeros((1, 8), dtype=jnp.complex64),
         jnp.ones(8, dtype=jnp.float32),
@@ -1136,7 +1136,7 @@ def test_sparse_k1_adapter_forwards_source_faithful_spectrum_norm(monkeypatch, d
     )
     monkeypatch.setattr(cuda_backproject, "cuda_available", lambda: False)
 
-    _run_sparse_k_class_adaptive_pass2(
+    run_sparse_k_class_adaptive_pass2(
         TinyDataset(),
         jnp.zeros((1, 4), dtype=jnp.complex64),
         jnp.ones(4, dtype=jnp.float32),
@@ -1579,7 +1579,7 @@ def test_firstiter_score_probe_compacts_relion_projector_on_host(
         dtype=np.float32,
     ).reshape(1, projector_size, projector_size, padded_r_max + 2).astype(np.complex64)
 
-    k_class_module._run_dense_k_class_joint_firstiter_score_probe(
+    k_class_firstiter.run_dense_k_class_joint_firstiter_score_probe(
         TinyDataset(),
         jnp.zeros((1, 4), dtype=jnp.complex64),
         jnp.ones(1, dtype=jnp.float32),

@@ -64,7 +64,7 @@ def require_resident_production_configuration(**kwargs) -> None:
     require(bool(kwargs["accumulate_noise"]), "the production pass accumulates noise statistics")
     # The K=1 adaptive route always hands the M-step call an
     # ``normalization_other_score_log_z`` built from the *other* classes'
-    # log-Z (k_class.py::_run_sparse_k_class_adaptive_pass2). At K=1 there are
+    # log-Z (k_class_sparse_pass2.py::run_sparse_k_class_adaptive_pass2). At K=1 there are
     # no other classes, so that vector is all -inf and the compact engine's
     # own arithmetic collapses to its unnormalized branch: logaddexp(x, -inf)
     # is x, the reported log-evidence and score log-Z are taken from

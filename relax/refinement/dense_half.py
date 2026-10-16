@@ -412,7 +412,7 @@ def _score_kclass_at_given_poses(
     ``--skip_align``, collapses the sample range to the particle's own pose (ml_optimiser.cpp:4989) and
     scores it by normalized cross-correlation (exp_local_sqrtXi2, :8021), its one sample taking the whole
     weight: against the one reference when the classes start from one (``do_generate_seeds``, :4389-4402),
-    against every class otherwise, the class of the best CC winning (``k_class._given_pose_cc_classes``).
+    against every class otherwise, the class of the best CC winning (``given_pose_classes.given_pose_cc_classes``).
     The scale and sigma skips of that iteration apply as in the searched one (:6190, :6316, :6385).
     """
 

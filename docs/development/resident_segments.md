@@ -30,7 +30,7 @@ minimum, sum and significance over classes and poses without knowing about class
 - `row_class`: the row's class, or `None` for K=1;
 - `row_fine_rot`: the row's fine rotation;
 - `row_parent_local`: an index into the unit's parent bitsets;
-- `row_log_prior`: the rotation prior plus `log pdf_class[k]`, as the compact engine folds it (k_class.py:539).
+- `row_log_prior`: the rotation prior plus `log pdf_class[k]`, as the compact engine folds it (`k_class_sparse_pass2.rotation_prior_with_class_log_prior`).
 
 Coarse-translation bitsets are per (unit, class, parent). `merge_class_tables` builds the K-class table from K
 single-class tables, one per class's own significant support.
@@ -88,6 +88,6 @@ images.
 [`compute_k_class_pass2_stats_resident`](../../relax/fine_pass/resident_pass2.py) runs the class axis;
 `compute_pass2_stats_resident` is its one-class case. The K-class
 output has the field names of the exact-local engine's class-segmented output, so
-`k_class.class_segmented_em_result` builds the K-class result from either. Every K-class pass runs on it
+`k_class_sparse_pass2.class_segmented_em_result` builds the K-class result from either. Every K-class pass runs on it
 with the K=1 production arithmetic, since RELION's does not depend on the class count. The first iteration's `--firstiter_cc` winner, the zero-oversampling reuse and several optics groups are
 still K=1 only.

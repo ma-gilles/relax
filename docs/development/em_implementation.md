@@ -237,7 +237,7 @@ direction priors), which `RelionReplaySource.swapped_state` hands to the control
 read by field; the unchanged value is built once from the
 inputs and returned by both early exits
 ([`test_state_swap_values_owner.py`](../../tests/unit/test_state_swap_values_owner.py)).
-[`k_class._PerClassSubsetResults`](../../relax/classification/k_class.py) collects the
+[`k_class_firstiter._PerClassSubsetResults`](../../relax/classification/k_class_firstiter.py) collects the
 per-class outputs of the dense and sparse firstiter-CC global-winner subset passes in class
 order: a class without images gets zero accumulators, `-inf` best scores and zero posteriors,
 and a scored class has its subset accumulators, statistics, noise and best poses expanded to
@@ -281,10 +281,14 @@ with namespaces following the owner of each moved function.
 Local searches (the fine pass and RELION's pass-1 parent probe) run on the device-resident
 local pass, [`resident_local_pass2`](../../relax/local_search/resident_pass2.py).
 [`k_class`](../../relax/classification/k_class.py) supplies adaptive
-and local K-class orchestration.
+and local K-class orchestration; it selects the sparse fine pass
+([`k_class_sparse_pass2`](../../relax/classification/k_class_sparse_pass2.py)), the
+first-iteration routes ([`k_class_firstiter`](../../relax/classification/k_class_firstiter.py))
+and the given-pose supports ([`given_pose_classes`](../../relax/classification/given_pose_classes.py)).
 [`k_class_inputs`](../../relax/classification/k_class_inputs.py) owns
-class-axis validation, shared/per-class array selection and local prior layouts.
-It imports no execution engines; engine-specific keyword filtering stays in `k_class`.
+class-axis validation, shared/per-class array selection, local prior layouts and the
+engine-kwarg readers the K-class routes share.
+It imports no execution engines; engine-specific keyword filtering stays with the routes.
 [`k_class_results`](../../relax/classification/k_class_results.py) owns
 the shared result type, joint result assembly and host/device publication.
 Accumulator offloading and scheduling stay in the orchestrator.

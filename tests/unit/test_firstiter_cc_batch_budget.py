@@ -819,7 +819,7 @@ def test_firstiter_cc_dispatch_projects_every_grid_through_the_shape_class_matri
 
 def test_firstiter_cc_global_winner_pass2_carries_each_images_optics_group(monkeypatch):
     """The --firstiter_cc fine pass gives the resident engine each subset image's optics group."""
-    from relax.classification import k_class
+    from relax.classification import k_class_firstiter
     from relax.fine_pass import dispatch
 
     captured = {}
@@ -840,7 +840,7 @@ def test_firstiter_cc_global_winner_pass2_carries_each_images_optics_group(monke
     monkeypatch.setattr(dispatch, "compute_pass2_stats_sparse", fake_pass2)
     optics = np.array([0, 1, 1, 0, 1], dtype=np.int32)
     with pytest.raises(_Stop):
-        k_class._run_sparse_firstiter_global_winner_subset_pass2(
+        k_class_firstiter.run_sparse_firstiter_global_winner_subset_pass2(
             _Dataset(),
             np.zeros((1, 4), dtype=np.complex64),
             np.ones((1, 4), dtype=np.float32),
@@ -884,7 +884,7 @@ def test_firstiter_cc_global_winner_pass2_keeps_the_optics_group_noise_table_wit
     With two classes and two optics groups the class-0 subset pass took row 0 as "class 0's
     noise", so every image backprojected with group 1's spectrum (SPA Class3D, 2026-09-30).
     """
-    from relax.classification import k_class
+    from relax.classification import k_class_firstiter
     from relax.fine_pass import dispatch
 
     captured = {}
@@ -907,7 +907,7 @@ def test_firstiter_cc_global_winner_pass2_keeps_the_optics_group_noise_table_wit
     mean_variance = np.array([[1.0] * 4, [2.0] * 4], dtype=np.float32)
     optics = np.array([0, 1, 1, 0, 1], dtype=np.int32)
     with pytest.raises(_Stop):
-        k_class._run_sparse_firstiter_global_winner_subset_pass2(
+        k_class_firstiter.run_sparse_firstiter_global_winner_subset_pass2(
             _Dataset(),
             np.zeros((2, 4), dtype=np.complex64),
             mean_variance,

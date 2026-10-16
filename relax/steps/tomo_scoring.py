@@ -503,7 +503,7 @@ def _score_class_references_cc(half, *, volume, relion_projector_half, rotation_
     Every class is scored: each particle's coarse sample is the best over the classes
     (:func:`classes_of_best_coarse_cc`), and its children are scored against that class alone, the best cell
     taking the whole weight. So each class runs the K=1 pass over its own particles with the coarse winners
-    already found, as the single-particle engine does (``k_class._run_sparse_firstiter_global_winner_subset_pass2``).
+    already found, as the single-particle engine does (``k_class_firstiter.run_sparse_firstiter_global_winner_subset_pass2``).
     """
 
     n_classes, n_units = int(np.shape(relion_projector_half)[0]), int(half.n_units)
@@ -561,8 +561,8 @@ def winner_class_tomo_result(results, members, n_units: int, sampling: TomoSampl
     ``-inf``, their poses ``-1`` and zero, as :func:`_first_class_k_class_output` gives a single-class iteration.
     """
 
-    from relax.classification.k_class import sparse_pose_ids_to_fine_grid
     from relax.classification.k_class_results import expand_subset_noise_stats, sum_noise_stats
+    from relax.classification.k_class_sparse_pass2 import sparse_pose_ids_to_fine_grid
     from relax.fine_pass.resident_pass2 import ResidentKClassPass2Output
     from relax.types import make_relion_stats
 
@@ -647,7 +647,7 @@ def _first_class_k_class_output(pass2, n_classes: int, sampling: TomoSampling, p
     so their evidence and best scores are ``-inf``, their poses ``-1`` and their accumulators and sums zero.
     """
 
-    from relax.classification.k_class import sparse_pose_ids_to_fine_grid
+    from relax.classification.k_class_sparse_pass2 import sparse_pose_ids_to_fine_grid
     from relax.fine_pass.resident_pass2 import ResidentKClassPass2Output
 
     _, _, fine_px, _ = tomo_translation_grids(sampling, pixel_size)
@@ -721,7 +721,7 @@ def score_tomo_half_in_loop(
     Class3D (K>1): ``volume`` and ``relion_projector_half`` keep the loop's class axis,
     ``class_log_priors`` are the classes' ``log pdf_class`` and ``class_rotation_log_prior`` their
     direction priors ``[K, R]`` (or None: the shared ``rotation_log_prior``), folded as the SPA K-class
-    pass folds them (``k_class.rotation_prior_with_class_log_prior``). Class outputs use the same SPA result adaptation
+    pass folds them (``k_class_sparse_pass2.rotation_prior_with_class_log_prior``). Class outputs use the same SPA result adaptation
     (``class_segmented_em_result``, ``class_em_to_half_result``). ``unit_seed_classes`` are the particles' classes in RELION's
     first iteration from one reference (:func:`score_tomo_half`). ``normalized_cc`` is the
     ``--firstiter_cc`` iteration (:func:`score_tomo_half`).
@@ -799,7 +799,7 @@ def score_tomo_half_in_loop(
         if prior.shape != (n_rot,):
             raise ValueError(f"a global tomo pass needs one rotation log prior per coarse rotation, got {prior.shape}")
         if n_classes > 1:
-            from relax.classification.k_class import rotation_prior_with_class_log_prior
+            from relax.classification.k_class_sparse_pass2 import rotation_prior_with_class_log_prior
 
             class_priors = (
                 [prior] * n_classes
@@ -862,7 +862,7 @@ def score_tomo_half_in_loop(
         half.volume_shape, RECONSTRUCTION_PADDING_FACTOR, current_size=mstep_size
     )
     if n_classes > 1:
-        from relax.classification.k_class import class_segmented_em_result
+        from relax.classification.k_class_sparse_pass2 import class_segmented_em_result
         from relax.steps.score_outputs import class_em_to_half_result
 
         k_class_result = class_segmented_em_result(

@@ -12,6 +12,7 @@ Run: ``pixi run python -m pytest tests/unit/initial_model/test_refactor_invarian
 
 from __future__ import annotations
 
+import importlib
 import inspect
 import warnings
 from pathlib import Path
@@ -88,10 +89,11 @@ def test_initial_model_estep_reuses_shared_dense_em_engine():
     InitialModel owns its subset/controller and RELION layout conversion, but
     it must not grow private copies of coarse significance, pass-2 layout, or
     local K-class refinement.  Identity checks pin the adapter imports to the
-    canonical implementations; the definition scan makes a copied shadow
-    implementation fail even if it is not wired in yet.
+    canonical implementations; a module of the package that binds one of
+    those names to another object (a copied shadow implementation, wired in
+    or not) fails too.
     """
-    from relax.classification import k_class
+    from relax.classification import k_class, k_class_sparse_pass2
     from relax.steps import expected_accuracy
 
     shared_callables = {
@@ -109,11 +111,14 @@ def test_initial_model_estep_reuses_shared_dense_em_engine():
             f"InitialModel {name} no longer resolves to the shared dense EM implementation"
         )
 
-    initial_model_source = "\n".join(path.read_text() for path in PACKAGE_DIR.glob("*.py"))
+    shared = {name: shared_callable for name, (_, shared_callable) in shared_callables.items()}
+    shared["run_sparse_k_class_adaptive_pass2"] = k_class_sparse_pass2.run_sparse_k_class_adaptive_pass2
+    modules = [importlib.import_module(f"{init_model.__name__}.{path.stem}") for path in sorted(PACKAGE_DIR.glob("*.py"))]
     copied = [
-        name
-        for name in (*shared_callables, "_run_sparse_k_class_adaptive_pass2")
-        if f"def {name}(" in initial_model_source
+        f"{module.__name__}.{name}"
+        for module in modules
+        for name, shared_callable in shared.items()
+        if hasattr(module, name) and getattr(module, name) is not shared_callable
     ]
     assert not copied, f"InitialModel contains private copies of shared EM functions: {copied}"
 

@@ -716,8 +716,8 @@ def test_non_c1_zero_oversampling_reconstruction_fails_before_scoring(
 
 @pytest.mark.parametrize("label", ["C1", "C7", "D5", "T", "O", "I1", "I2", "I3", "I4"])
 def test_kclass_healpix_order_inference_uses_symmetry_reduced_grid(label):
-    from relax.classification.k_class import (
-        _infer_healpix_order_from_rotation_count,
+    from relax.classification.k_class_sparse_pass2 import (
+        infer_healpix_order_from_rotation_count,
     )
     from relax.sampling.grids import rotation_grid_size
 
@@ -726,7 +726,7 @@ def test_kclass_healpix_order_inference_uses_symmetry_reduced_grid(label):
     # valid for every supported proper rotational group.
     order = 3
     assert (
-        _infer_healpix_order_from_rotation_count(
+        infer_healpix_order_from_rotation_count(
             rotation_grid_size(order, label),
             label,
         )

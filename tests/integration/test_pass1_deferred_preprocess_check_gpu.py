@@ -67,13 +67,13 @@ def _run_adaptive_k2(monkeypatch, dataset_edit=None):
         **args,
     )
     pass2_calls = []
-    pass2 = k_class._run_sparse_k_class_adaptive_pass2
+    pass2 = k_class.run_sparse_k_class_adaptive_pass2
 
     def counted_pass2(*positional, **named):
         pass2_calls.append(1)
         return pass2(*positional, **named)
 
-    monkeypatch.setattr(k_class, "_run_sparse_k_class_adaptive_pass2", counted_pass2)
+    monkeypatch.setattr(k_class, "run_sparse_k_class_adaptive_pass2", counted_pass2)
 
     def run():
         return k_class.run_dense_k_class_em_adaptive(
