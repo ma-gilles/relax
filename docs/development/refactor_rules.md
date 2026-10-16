@@ -35,9 +35,8 @@ change is `refactor_procedure.md`; the target shape of a module is `module_templ
 
 5. **Decide once, at the owning boundary.** Arguments, modes, environment variables and defaults become
    option records where they enter, with their precedence preserved and each default defined once. Below
-   that point nothing reads `args`, `os.environ` or a mode string; the one exception is a dump destination
-   owned by `relax/diagnostics` that changes no computed value, read where the dump is written and listed in
-   the module's status document. Below the boundary, parameters whose values come from options have no
+   that point nothing reads `args`, `os.environ` or a mode string (the environment and its exceptions: rule
+   16). Below the boundary, parameters whose values come from options have no
    defaults: a default that copies an options default is a second owner (rule 7). Types are converted once,
    where a value enters relax (CLI and option builders, file readers, a value read off a device array, into a
    new name); inside relax a parameter has its annotated type and is not re-cast (`x = int(x)`,
@@ -69,9 +68,16 @@ change is `refactor_procedure.md`; the target shape of a module is `module_templ
     callback takes its inputs explicitly and returns its result, and the caller applies the state updates. A
     port receives values, not a function that reads the controller's locals later, and an operation does not
     receive an observer callback: the controller calls the observer with the operation's result.
-11. **Layers point down:** command, controller, operations, engines (and RECOVAR). Engines take arrays and
-    policies and know nothing of options, state or history. Workflows do not import each other's internals;
-    an authoritative formula has one home.
+11. **Layers point down.** relax's packages sit in the bands of `LAYERS` in `tests/unit/test_import_layers.py`,
+    bottom to top: foundation, primitives, engines, operations, controllers, adapters (`diagnostics`,
+    `parity`), command; RECOVAR is below them all. No import points up (top-level, lazy or under
+    `TYPE_CHECKING`), no controller imports another, and the package graph has no cycle. `ALLOWED_UPWARD` is
+    empty and stays empty: an upward need is met by moving the code to the layer that owns it, or by a port
+    (rule 15). A new package gets its band in the commit that adds it. Engines take arrays and policies and
+    know nothing of options, state or history; an authoritative formula has one home.
+    Before/after: 6164abb9 "test(layout): the package layers, an upward-import ratchet and an import-resolution
+    check (layout S0)" to 3e2ce2a7 "refactor(layout): the exact-bucket rotation sizes live in fine_pass (layout
+    S12)", the last edge removed. Check: `tests/unit/test_import_layers.py`.
 
 ## Checks
 
@@ -107,6 +113,75 @@ change is `refactor_procedure.md`; the target shape of a module is `module_templ
     not, and a value the algorithm uses never comes from one. A switch that changes what the run does is a
     run option, not a diagnostic (rule 9). A RELION-faithful step of the default path is the algorithm, not
     comparison machinery.
+
+## Repository-wide
+
+Each rule names a commit that shows it applied and the check that enforces it.
+
+16. **The environment is read once, at the command, into records.** Each variable is a field of one record,
+    parsed by that record's `from_environ()`, which the command calls once and passes down. By kind:
+    `EngineTuning` (`relax/runtime/engine_tuning.py`): execution settings that change no value;
+    `ScoringOverrides` (`relax/runtime/scoring_overrides.py`): switches that change computed values, each
+    defaulting to the production RELION-faithful path; and the module records `RefinementEnvironment`,
+    `ScoringVariants`, `ExecutionOptions` (`relax/refinement/refinement_options.py`), `ReconstructionPrograms`
+    (`relax/reconstruction/volume_solver.py`), `VdamEnvironment` (`relax/vdam/native_options.py`),
+    `DensePrecisionPolicy` (`relax/numerics/precision.py`). A value-changing switch never goes into
+    `EngineTuning`. The only reads elsewhere: a dump destination owned by `relax/diagnostics` that changes no
+    computed value, read where the dump is written and listed in the module's status document; and
+    process-level settings (device discovery from `CUDA_VISIBLE_DEVICES`, XLA and JAX settings).
+    Before/after: 135ce1ac "refactor(precision): the command reads the dense precision; scoring_policy reads no
+    environment for it (rule 5)". Check: `scripts/dev/smell_check.py` `env-read` (gate step `smell`, against
+    `scripts/dev/smell_baseline.json`; a new finding is a defect even though the step only warns).
+17. **Retire switches; delete what nothing uses.** A switch that no longer selects anything goes into the
+    `retired` table of `relax/renamed_environment.json`, so importing relax with it set raises. A flag, record
+    field, key or option that nothing reads or sets is deleted with its parsing, documentation and tests, not
+    kept (rule 2 decides what is a compatibility obligation). Retiring a switch that changes computed values
+    is a number change (rule 1), decided by a RELION comparison (b162480a "chore(scoring): retire
+    ScoringOverrides.fine_rotation_execution_order after a RELION A/B").
+    Before/after: 7169d97d "chore(env): retire RELAX_INITIALMODEL_EXPECTED_ACCURACY_SUBPROCESS"; af8097f0
+    "refactor(execution): --overlap_halves is deleted". Check: `tests/unit/test_renamed_environment_guard.py`
+    (`test_a_retired_name_is_an_error`, `test_import_fails_with_a_stale_name`); `smell_check.py`
+    `field-unread` and `dead-def` for what is left unread.
+18. **Every call passes what its callee requires.** Making a keyword required, or renaming or removing a
+    parameter, migrates every call in `relax/`, `scripts/` and `tests/`, including calls only a GPU path runs,
+    which the CPU fingerprint never executes. Before/after: d9179e95 "feat(dev): a static call-arity check
+    catches a required keyword that a call omits". Check: `scripts/dev/call_arity_check.py` on the base and
+    the head; a finding the head adds fails the gate (procedure, section 4); its tests are
+    `tests/unit/test_call_arity_check.py`.
+19. **A private name stays in its module.** When another relax module needs a `_name`, make it public, or move
+    it to its only reader. Before/after: 1b9e4adc "refactor(diagnostics): the diagnostics names other modules
+    read are public; observers own two dump helpers" through e32811a3 "chore(smell): the baseline follows the
+    private-name pass (1350 -> 1117)". Check: `smell_check.py` `private-import`.
+20. **Split a module when it does more than one job**, not because it is long: each contract (an engine route,
+    a replay, a record family) gets its own module. A split is a structure change (rule 1): one source module
+    per commit; moved definitions byte-identical apart from names made public (rule 19); importers,
+    monkeypatches and tests point at the new home in the same commit; no compatibility re-exports from the
+    old module; the new module keeps the old logger name, so log rows are unchanged; every fingerprint harness
+    (refinement, vdam) shows 0 differences. Before/after: 2ed61fdd "refactor(classification): the sparse fine
+    pass, the first-iteration routes and the given-pose supports leave k_class.py". Check: the gate's `fp`
+    step for each harness; byte identity has no check: state the source comparison in the commit.
+21. **Ceilings follow the code.** Lines that leave a ceilinged scope lower its ceiling by what left; lines
+    that arrive raise the receiving scope's ceiling by exactly that much (relocation: 99def6c2
+    "refactor(layout): the engine record lives in runtime (layout S12)"; 6d3a8647 "refactor(vdam):
+    VdamEnvironment owns the accumulator dump directory (rule 5)"). A split inside one package may raise that
+    package's ceiling by its overhead (the new module's docstring and imports), counted in the commit
+    (c4b8c888 "refactor(refinement): the dense engine records leave dense_half.py"). Growth from the owner's
+    own commits raises the ceiling by the measured amount, with each commit's SHA and count listed (b01b2e2e
+    "chore(structure): relax/refinement's line ceilings take the owner's own lines"). Growth from our own
+    commits is paid back by real reductions in the same scope, then the ceilings are lowered to the totals
+    (07fded0c "chore(structure): lower relax/refinement's ceilings to the paid-back totals"). Check:
+    `scripts/report_refinement_structure.py --check` and the ceiling tests through `scripts/dev/ceilings.py`.
+22. **Tests build records with explicit values:** `Record(...)`, `dataclasses.replace(Record(), field=value)`,
+    or a builder in `tests/helpers/` (`tests/helpers/engine_settings.py`). A test does not set a variable to
+    get a value through `from_environ()`; `from_environ()` appears only in the record's own parse tests, with
+    the environment set by `monkeypatch`. Before/after: e5e0d7a2 "test(env): EngineTuning tests pass explicit
+    values (rule 5)". Check: no check.
+23. **Importing a script changes no environment variable.** A script sets `JAX_PLATFORMS` and the like in its
+    `main` (`use_cpu_jax()` in `scripts/summarize_em_completion_bench.py`); a pytest session that collects
+    it, or a script importing it, otherwise passes the setting to every later child process. Before/after:
+    12ce590d "fix(scripts): the completion-bench reporter chooses the CPU platform in main, not at import".
+    Check: `tests/unit/test_summarize_em_completion_bench.py::test_importing_the_reporter_leaves_the_jax_platform_to_its_main`
+    (that reporter only); no check for other scripts.
 
 ## Changes from v1 (refactor_rules.md, main 2297cf4)
 
@@ -154,3 +229,20 @@ From the test of the rules on `relax/vdam` (gap numbers of `refactor_vdam_202610
   "do not just rename them" or "do not hide dependencies in closures". Extended from the deep review
   (`REVIEW_DEEP.md` findings 8 and 11): records for three or more results, read by name; ports receive values,
   not thunks over controller locals; observers are called by the controller, not handed to operations.
+
+## Added on 2026-10-16 (main 29331fd3)
+
+The decisions of the refactor from 2026-10-11 to 2026-10-16, numbered after rule 15 so cited numbers do not
+change:
+
+- Rule 11 rewritten: the layers are the bands of `test_import_layers.py`, adapters above controllers, and
+  `ALLOWED_UPWARD` is empty. The old order "command, controller, operations, engines" no longer matched the
+  package layout.
+- Rule 5: the environment sentence points to rule 16; its dump-destination exception moved there, joined by
+  process-level reads.
+- New: rules 16 (environment records), 17 (retired table; delete what nothing uses), 18 (call arity), 19
+  (private names), 20 (when and how to split a module), 21 (ceiling accounting), 22 (tests build records
+  explicitly), 23 (no environment changes at import).
+- No rule deleted: every earlier rule still holds.
+- Procedure: section 3's environment bullet names the rule 16 records; section 4 runs the call-arity check
+  and points to rule 21 for raised ceilings.

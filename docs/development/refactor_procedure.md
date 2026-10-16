@@ -80,13 +80,15 @@ device tests, a parser or option resolver by precedence, rejection and round-tri
       - set by nothing and reaching nothing: retire it. Add it to the `retired` table of
         `relax/renamed_environment.json` (importing relax then refuses it), naming the replacement flag if
         there is one;
-      - a diagnostic or engine-variant switch: a field of the module's option record
-        (`refinement_options.ExecutionOptions`, `vdam.native_options.VdamEnvironment`), read once by a named
-        constructor (`from_environ`) that the command calls, not by a `default_factory`; a test that sets the
-        variable calls that constructor too;
+      - a switch that changes no value: a field of `EngineTuning`, or of the module's record
+        (`RefinementEnvironment`, `ExecutionOptions`, `VdamEnvironment`; rule 16), read once by its
+        `from_environ` that the command calls, not by a `default_factory`; tests pass the field's value
+        explicitly (rule 22);
       - a dump destination owned by `relax/diagnostics` that changes no computed value: it may stay where
         the dump is written; list it in the status document;
-      - a switch that forks production scoring or reconstruction: ask the owner before changing it.
+      - a switch that changes computed values: a field of `ScoringOverrides` whose default is the production
+        path; retiring it or changing its default is a number change (rule 1) that a RELION comparison
+        decides (rule 17).
 - [ ] A dump, capture, profile or timing becomes an observer (rule 15): a `RunObserver` hook named for the
       moment of the run (`relax/refinement/ports.py`), the writing in `relax/diagnostics/observers.py`,
       built by the command (`command_observer`) and passed as `observer=`. An input taken from RELION
@@ -120,6 +122,8 @@ node only when `uptime` shows a load under 20. Each step prints one summary line
       `tests base <rev>` and `compare base head` remain for comparing a base by hand.
 - [ ] Repeat the search of all of `tests/` and `scripts/` for every moved or removed name: the CPU list does
       not run the GPU unit files.
+- [ ] Call arity (rule 18): `python scripts/dev/call_arity_check.py <base tree>` and the same on the head; the
+      head's report adds no line to the base's.
 - [ ] GPU tiers on the final head, same GPU model for every arm:
       `python scripts/run_test_tier.py submit smoke --where slurm --gpu-model h100 --run-root <dir>`, and the
       same with `medium`. `submit` builds the natives with nvcc on the host it runs on (about 4 minutes):
@@ -138,7 +142,8 @@ node only when `uptime` shows a load under 20. Each step prints one summary line
       fails above the slack. Name every warning in the report with the reason for the growth (upstream
       features and new records use up the slack). Never raise a
       ceiling to make a refactor pass; a requested feature may raise one by hand, with the value and the
-      reason in its commit.
+      reason in its commit. Relocations, in-package split overhead, the owner's own growth and the payback
+      of ours follow rule 21, with the per-commit counts in the commit message.
 
 ## 5. When the right result is "do not build it"
 
