@@ -748,34 +748,19 @@ def _optional_env_flag(name: str) -> bool | None:
 
 
 LOW_PMAX_REFINE_GUARD_ENV = "RELAX_EM_LOW_PMAX_REFINE_GUARD"
-_TRUE_ENV_VALUES = {"1", "true", "yes", "on"}
-_FALSE_ENV_VALUES = {"0", "false", "no", "off"}
-
-
-def _env_bool(name: str, default: bool) -> bool:
-    """A boolean token; unset or blank is ``default``, and an unrecognised value warns and is ``default``."""
-    value = read_env_text(name)
-    if value is None or value.strip() == "":
-        return default
-    normalized = value.strip().lower()
-    if normalized in _TRUE_ENV_VALUES:
-        return True
-    if normalized in _FALSE_ENV_VALUES:
-        return False
-    logging.getLogger(__name__).warning("Ignoring invalid %s=%r; using %s", name, value, default)
-    return default
 
 
 def _low_pmax_refine_guard() -> LowPmaxRefineGuard | None:
     """The diffuse-posterior guard: None unless RELAX_EM_LOW_PMAX_REFINE_GUARD is a true token
     (``parse_env_true_flag``); then RELAX_EM_LOW_PMAX_REFINE_MAX_AVE_PMAX (0.15), RELAX_EM_LOW_PMAX_REFINE_MIN_RES_STALL
-    (3; an invalid number warns and is the default) and RELAX_EM_LOW_PMAX_REFINE_REQUIRE_LOCAL (true; see
-    :func:`_env_bool`)."""
+    (3; an invalid number warns and is the default) and RELAX_EM_LOW_PMAX_REFINE_REQUIRE_LOCAL (true; unset, blank
+    or invalid is true, an invalid token warning: ``parse_env_optional_flag``)."""
     if not parse_env_true_flag(LOW_PMAX_REFINE_GUARD_ENV):
         return None
     log = logging.getLogger(__name__)
     return LowPmaxRefineGuard(
-        require_local_search=_env_bool("RELAX_EM_LOW_PMAX_REFINE_REQUIRE_LOCAL", True),
+        require_local_search=parse_env_optional_flag("RELAX_EM_LOW_PMAX_REFINE_REQUIRE_LOCAL", logger=log, fallback="True")
+        is not False,
         max_ave_pmax=parse_env_float_or_default("RELAX_EM_LOW_PMAX_REFINE_MAX_AVE_PMAX", 0.15, logger=log),
         min_res_stall=parse_env_int_or_default("RELAX_EM_LOW_PMAX_REFINE_MIN_RES_STALL", 3, logger=log),
     )
