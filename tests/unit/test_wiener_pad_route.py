@@ -159,6 +159,20 @@ def test_device_can_place_catches_only_out_of_memory(monkeypatch):
     with pytest.raises(JaxRuntimeError, match="INTERNAL"):
         xla_memory_reserve.device_can_place(2 * GIB)
 
+    # relax#104: the allocation can report the out-of-memory answer as a ValueError (16 GB, box 448, iteration 4).
+    def refuse_value(*_a, **_k):
+        raise ValueError("RESOURCE_EXHAUSTED: Out of memory while trying to allocate 2.01GiB.")
+
+    monkeypatch.setattr(jax.numpy, "zeros", refuse_value)
+    assert xla_memory_reserve.device_can_place(2 * GIB) is False
+
+    def bad_value(*_a, **_k):
+        raise ValueError("negative dimensions are not allowed")
+
+    monkeypatch.setattr(jax.numpy, "zeros", bad_value)
+    with pytest.raises(ValueError, match="negative dimensions"):
+        xla_memory_reserve.device_can_place(2 * GIB)
+
 
 def test_device_fits_skips_the_probe_well_inside_the_bounds(monkeypatch):
     from relax.runtime import xla_memory_reserve

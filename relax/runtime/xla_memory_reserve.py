@@ -251,7 +251,9 @@ def single_working_set_bytes(pool_limit_bytes: int | None = None) -> int | None:
 
 def device_can_place(n_bytes: int) -> bool | None:
     """Whether the running GPU allocator can hand out one block of ``n_bytes`` now: one probe allocation, released
-    (deleted and synchronized) at once. ``None`` off GPU. Only an out-of-memory answer is caught.
+    (deleted and synchronized) at once. ``None`` off GPU. Only an out-of-memory answer is caught: a
+    ``JaxRuntimeError`` or, as the allocation can also report it, a ``ValueError`` whose message carries
+    RESOURCE_EXHAUSTED (relax#104: a 2.01 GiB probe at a 16 GB device ended the run).
 
     The allocator's own statistics cannot answer it: jax 0.9's ``largest_free_block_bytes`` reads 0 with or without
     preallocation, and a fragmented pool can refuse a block much smaller than its free total (relax#49).
@@ -266,7 +268,7 @@ def device_can_place(n_bytes: int) -> bool | None:
     try:
         probe = jnp.zeros((max(int(n_bytes), 1),), dtype=jnp.uint8)
         probe.block_until_ready()
-    except JaxRuntimeError as exc:
+    except (JaxRuntimeError, ValueError) as exc:
         if "RESOURCE_EXHAUSTED" not in str(exc):
             raise
         _LOG.debug("device placement probe: %d bytes do not fit", int(n_bytes))
