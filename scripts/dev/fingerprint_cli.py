@@ -47,6 +47,17 @@ class Harness:
     jax_compilation_cache: bool  # True: a JAX compilation cache per child under --work-dir; False: none
 
 
+def either_name(owner, name: str) -> str:
+    """``name``, or its underscore twin where only the twin exists on ``owner``.
+
+    The gate fingerprints the base with the head's harness, and a pass that makes a private name public (or the
+    reverse) renames what a harness patches; the harness then patches whichever name the tree has.
+    """
+
+    twin = name[1:] if name.startswith("_") else "_" + name
+    return twin if not hasattr(owner, name) and hasattr(owner, twin) else name
+
+
 def _print_not_covered(harness: Harness) -> None:
     print("NOT covered by these fingerprints:")
     for item in harness.not_covered:

@@ -525,7 +525,7 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
         A base from before the removal of two parameters nothing read takes ``means`` (read only for its class
         count) as the second positional and ``disc_type`` as the sixth.
         """
-        function = significance._compute_k_class_significance_batched
+        function = getattr(significance, fingerprint_cli.either_name(significance, "_compute_k_class_significance_batched"))
         parameters = inspect.signature(function).parameters
         args = list(args)
         if "means" in parameters:

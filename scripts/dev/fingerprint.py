@@ -1279,6 +1279,7 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
         del trace[:]
 
         def patch(owner, name, replacement):
+            name = fingerprint_cli.either_name(owner, name)
             patches.append((owner, name, getattr(owner, name)))
             setattr(owner, name, replacement)
 
@@ -1767,6 +1768,7 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
         del trace[:]
 
         def patch(owner, name, replacement):
+            name = fingerprint_cli.either_name(owner, name)
             patches.append((owner, name, getattr(owner, name)))
             setattr(owner, name, replacement)
 

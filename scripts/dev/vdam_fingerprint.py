@@ -499,7 +499,7 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
 
     def modules_with(name):
         return [module for module_name, module in sorted(sys.modules.items())
-                if module_name.startswith("relax") and callable(getattr(module, name, None))]
+                if module_name.startswith("relax") and callable(getattr(module, fingerprint_cli.either_name(module, name), None))]
 
     def run_case(arguments, *, env=None, optics_groups=1, shapes=None, tomo=False):
         case_root = Path(tempfile.mkdtemp(dir=tmp_root, prefix="case"))
@@ -519,6 +519,7 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
         patches = []
 
         def patch(owner, name, replacement):
+            name = fingerprint_cli.either_name(owner, name)
             patches.append((owner, name, getattr(owner, name)))
             setattr(owner, name, replacement)
 
@@ -536,7 +537,7 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
 
         patch(driver, "run_native_initial_model", run_and_keep)
         for module in modules_with("_write_model_star"):
-            original_write = module._write_model_star
+            original_write = getattr(module, fingerprint_cli.either_name(module, "_write_model_star"))
 
             def write_and_record(path, state, class_mrcs, _original=original_write):
                 checkpoints[f"{Path(path).name}"] = flatten(state, scrub=scrub)
