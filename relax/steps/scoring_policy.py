@@ -52,10 +52,7 @@ def local_precision(
 def k1_relion_x_half_mstep_default_available() -> bool:
     """Return whether the default K=1 x-half M-step can use custom CUDA."""
 
-    from recovar.utils.cuda_env import custom_cuda_disabled_from_env
-
-    disabled, _ = custom_cuda_disabled_from_env()
-    if disabled or process_platform.jax_cpu_forced():
+    if process_platform.custom_cuda_disabled() or process_platform.jax_cpu_forced():
         return False
     try:
         return jax.default_backend() == "gpu"

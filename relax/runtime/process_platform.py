@@ -24,3 +24,13 @@ def jax_cpu_forced() -> bool:
         return False
     requested = [token.strip() for token in platforms.split(",") if token.strip()]
     return bool(requested) and all(token == "cpu" for token in requested)
+
+
+def custom_cuda_disabled() -> bool:
+    """Whether ``RECOVAR_DISABLE_CUDA`` turns recovar's custom CUDA kernels off, parsed by the loader's own
+    contract (``recovar.utils.cuda_env``), so relax and the loader never disagree on a token."""
+
+    from recovar.utils.cuda_env import custom_cuda_disabled_from_env
+
+    disabled, _ = custom_cuda_disabled_from_env()
+    return disabled

@@ -129,8 +129,9 @@ Each rule names a commit that shows it applied and the check that enforces it.
     `EngineTuning`. The only reads elsewhere: a dump destination owned by `relax/diagnostics` that changes no
     computed value, read where the dump is written and listed in the module's status document; and
     process-level settings (device discovery from `CUDA_VISIBLE_DEVICES`, XLA and JAX settings). The
-    platform switches `JAX_PLATFORMS`/`JAX_PLATFORM_NAME` are read only through `relax/runtime/process_platform.py`,
-    at call time, so relax's choice agrees with what JAX does in the same process.
+    platform switches `JAX_PLATFORMS`/`JAX_PLATFORM_NAME` and recovar's `RECOVAR_DISABLE_CUDA` are read only
+    through `relax/runtime/process_platform.py`, at call time, so relax's choice agrees with what JAX and recovar's
+    CUDA loader do in the same process (GPU tests change them between cases; a jit cache key holds the CUDA one).
     Before/after: 135ce1ac "refactor(precision): the command reads the dense precision; scoring_policy reads no
     environment for it (rule 5)". Check: `scripts/dev/smell_check.py` `env-read` (gate step `smell`, against
     `scripts/dev/smell_baseline.json`; a new finding is a defect even though the step only warns).

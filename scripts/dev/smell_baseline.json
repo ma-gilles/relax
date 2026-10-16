@@ -184,7 +184,6 @@
   "env-read:relax.diagnostics.reconstruction:write_bpref_accumulators:RELAX_BPREF_BOUNDARY_DUMP_RUN_ID",
   "env-read:relax.diagnostics.reconstruction:write_class_mstep:RELAX_KCLASS_DUMP_PRESERVE_DTYPE",
   "env-read:relax.diagnostics.reconstruction:write_premask_mean:RELAX_PREMASK_DUMP_PRESERVE_DTYPE",
-  "env-read:relax.fine_pass.resident_statistics:resolve_statistics_config:RECOVAR_DISABLE_CUDA",
   "env-read:relax.io.particle_io:prepare_particle_reads:_RECOVAR_CACHE_DIR_ENV",
   "env-read:relax.numerics.precision:DensePrecisionPolicy.from_environ:RELAX_USE_FLOAT64_PROJECTIONS",
   "env-read:relax.numerics.precision:DensePrecisionPolicy.from_environ:RELAX_USE_FLOAT64_SCORING",

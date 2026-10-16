@@ -54,7 +54,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from relax.runtime.env_flags import parse_env_flag
+from relax.runtime import process_platform
 from relax.runtime.shape_buckets import pow2_floor
 
 __all__ = [
@@ -255,7 +255,7 @@ def resolve_statistics_config(
     n_classes: int = 1,
     float32_bucketed_image_sums: bool = True,
 ) -> ResidentStatisticsConfig:
-    """Build a config (``RECOVAR_DISABLE_CUDA``, the process's CUDA switch, selects the CPU shell binning).
+    """Build a config (the CUDA switch, ``process_platform.custom_cuda_disabled``, selects the CPU shell binning).
 
     ``source_faithful_spectrum_norm`` mirrors
     ``sparse_pass2_wavg._weighted_image_power_shells_and_per_image``: it selects
@@ -273,7 +273,7 @@ def resolve_statistics_config(
         n_scale_groups=int(n_scale_groups),
         norm_unweighted_shell_cutoff=cutoff,
         include_unweighted_high_shell=bool(include_unweighted_high_shell),
-        disable_cuda_binning=parse_env_flag("RECOVAR_DISABLE_CUDA", default=False),
+        disable_cuda_binning=process_platform.custom_cuda_disabled(),
         deterministic_norm_reduction=bool(deterministic_norm_reduction),
         use_exact_relion_gaussian=bool(use_exact_relion_gaussian),
         relion_wavg_atomic_scale_aa=bool(relion_wavg_atomic_scale_aa),
