@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
-from helpers.reconstruction_settings import reconstruction_settings
+from helpers.reconstruction_settings import numbered_iteration, reconstruction_settings
 from helpers.run_options import reconstruction_programs
 from recovar.core import mask
 
@@ -263,10 +263,8 @@ def test_box_scale_reconstruction_caller_keeps_both_half_outputs_on_host(monkeyp
             jnp.ones(volume_shape[0] // 2 + 1, dtype=jnp.float32),
         ],
         settings,
-        iteration=0,
-        current_size=4,
+        this_iteration=numbered_iteration(iteration=0, current_size=4),
         accumulator_volume_shape=None,
-        relion_firstiter_cc_this_iter=False,
     )
 
     assert len(reconstruction_sources) == len(masks) == 2

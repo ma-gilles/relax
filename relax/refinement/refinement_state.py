@@ -20,7 +20,7 @@ G (angular sampling), H (speed tricks).
 
 import logging
 from dataclasses import dataclass, field, replace
-from typing import NamedTuple, Optional
+from typing import TYPE_CHECKING, NamedTuple, Optional
 
 import numpy as np
 
@@ -32,6 +32,9 @@ from relax.steps.convergence import (
     relion_optimizer_average_pmax,
 )
 from relax.types import total_sumw
+
+if TYPE_CHECKING:
+    from relax.refinement.particle_poses import PoseComparison
 
 logger = logging.getLogger(__name__)
 
@@ -1034,10 +1037,7 @@ def update_refinement_state(
     acc_rot: Optional[float] = None,
     acc_trans: Optional[float] = None,
     *,
-    current_rotation_matrices: Optional[np.ndarray] = None,
-    previous_rotation_matrices: Optional[np.ndarray] = None,
-    current_translations_pixel: Optional[np.ndarray] = None,
-    previous_translations_pixel: Optional[np.ndarray] = None,
+    pose_comparison: "PoseComparison",
     current_changes_classes: float = 0.0,
     ave_pmax_override: Optional[float] = None,
     voxel_size_angstrom: float = 1.0,
@@ -1071,16 +1071,15 @@ def update_refinement_state(
         Estimated angular accuracy in degrees.  If None, unchanged.
     acc_trans : float or None
         Estimated translation accuracy in Angstroms. If None, unchanged.
-    current_rotation_matrices, previous_rotation_matrices : np.ndarray, optional
-        Per-particle rotation matrices for the current and previous
-        iterations, shape ``(n_images, 3, 3)``. When both provided, the
-        RELION-exact ``current_changes_optimal_orientations`` is computed
-        and used in the new check_convergence path. The assignment-change
+    pose_comparison : PoseComparison
+        The current and previous iterations' per-particle poses (a stack is None when not measured).
+        Its rotation matrices, shape ``(n_images, 3, 3)``: when both are
+        provided, the RELION-exact ``current_changes_optimal_orientations`` is
+        computed and used in the new check_convergence path. The assignment-change
         ``frac_changed`` is still computed from the integer assignments.
-    current_translations_pixel, previous_translations_pixel : np.ndarray, optional
-        Per-particle translation vectors in PIXEL units, shape ``(n_images, 2)``.
-        When both provided, the RELION-exact
-        ``current_changes_optimal_offsets_angstrom`` is computed.
+        Its translation vectors in PIXEL units, shape ``(n_images, 2)``: when both
+        are provided, the RELION-exact ``current_changes_optimal_offsets_angstrom``
+        is computed.
     current_changes_classes : float, default 0.0
         Fraction of particles whose hard class changed, recorded as
         ``current_changes_optimal_classes``.  K-class refinement passes
@@ -1127,13 +1126,13 @@ def update_refinement_state(
 
     # --- Compute RELION-exact change tracking (B3) ---
     current_changes_orientations = compute_relion_orientation_changes(
-        current_rotation_matrices,
-        previous_rotation_matrices,
+        pose_comparison.current_rotations,
+        pose_comparison.previous_rotations,
         symmetry_label=symmetry_label,
     )
     current_changes_offsets_angstrom = compute_relion_offset_changes_angstrom(
-        current_translations_pixel,
-        previous_translations_pixel,
+        pose_comparison.current_translations_pixels,
+        pose_comparison.previous_translations_pixels,
         voxel_size_angstrom,
     )
 

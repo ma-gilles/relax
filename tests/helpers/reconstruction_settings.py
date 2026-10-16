@@ -1,5 +1,6 @@
-"""One builder of ``ReconstructionSettings`` for unit tests."""
+"""The builders of ``ReconstructionSettings`` and of the numbered iteration a reconstruction reads, for unit tests."""
 
+from relax.refinement.iteration_planning import ClassSeeding, FirstIterationPolicy, NumberedIteration
 from relax.refinement.numbered_reconstruction import ReconstructionSettings
 
 
@@ -19,4 +20,19 @@ def reconstruction_settings(**fields) -> ReconstructionSettings:
             "solvent_phase_stream": None,
             **fields,
         }
+    )
+
+
+def numbered_iteration(*, iteration: int, current_size: int, relion_firstiter_cc: bool = False) -> NumberedIteration:
+    """The ``NumberedIteration`` of a run started at RELION iteration 0 (no Class3D seeding): its 0-based
+    ``iteration``, its ``current_size`` and whether it is the first-iteration CC (``first_iteration_policy``)."""
+    return NumberedIteration(
+        iteration=iteration,
+        numbered_relion_iteration=iteration + 1,
+        has_previous_iteration=iteration > 0,
+        first_iteration=FirstIterationPolicy(
+            relion_firstiter_cc, "normalized_cc" if relion_firstiter_cc else "gaussian", relion_firstiter_cc,
+        ),
+        seeding=ClassSeeding(single_class_iteration=False, seed_classes=None),
+        current_size=current_size,
     )

@@ -170,7 +170,7 @@ def test_preserved_particle_order_selects_production_arithmetic_in_replays_too(m
     planning = expectation.prepare_half_batches
 
     def plan(*args, **inputs):
-        captured['batches'] = inputs['source_faithful_spectrum_norm']
+        captured['batches'] = inputs['preserve_bpref_particle_order']
         return planning(*args, **inputs)
 
     def dense(half, sampling, priors, batching, variant, execution, optics):

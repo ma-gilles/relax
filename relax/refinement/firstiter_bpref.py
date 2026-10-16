@@ -180,7 +180,6 @@ class _RelionFirstiterCompactBatchPlanningDecision(NamedTuple):
 
 def relion_firstiter_compact_batch_planning_decision(
     *,
-    source_faithful_spectrum_norm: bool,
     winner_take_all: bool,
     preserve_bpref_particle_order: bool,
     use_relion_x_half_mstep: bool,
@@ -193,7 +192,9 @@ def relion_firstiter_compact_batch_planning_decision(
 ) -> _RelionFirstiterCompactBatchPlanningDecision:
     """Preflight compact planning through the authoritative BPref gates, for the numbered ``half``.
     The fused-kernel request is the half's (``half.fused_request``); an armed finite check
-    (``engine_tuning.finite_check``) is a diagnostic that keeps the plan off the compact route."""
+    (``engine_tuning.finite_check``) is a diagnostic that keeps the plan off the compact route. RELION's
+    source-faithful powerClass normalisation, and with it the exact BPref operands, is on wherever RELION's
+    particle order is preserved (``preserve_bpref_particle_order``)."""
 
     if projector_half is None:
         return _RelionFirstiterCompactBatchPlanningDecision(False, False, 0)
@@ -204,7 +205,7 @@ def relion_firstiter_compact_batch_planning_decision(
         engine_tuning.finite_check != "off"
         or half.diagnostics_armed()
     )
-    fresh_k1_guard = bool(source_faithful_spectrum_norm)
+    fresh_k1_guard = bool(preserve_bpref_particle_order)
     relion_exact_bpref_operands = fresh_k1_guard
     relion_firstiter_fused_bpref = _relion_firstiter_fused_bpref_enabled(
         requested=half.fused_request,

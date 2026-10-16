@@ -7,7 +7,7 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
-from helpers.reconstruction_settings import reconstruction_settings
+from helpers.reconstruction_settings import numbered_iteration, reconstruction_settings
 from helpers.run_options import lowres_join, reconstruction_programs
 from recovar.core import fourier_transform_utils as ftu
 from recovar.reconstruction import relion_functions as rf
@@ -25,14 +25,12 @@ def test_mean_reconstruction_variants_share_run_level_settings():
     from relax.refinement import numbered_reconstruction as numbered_reconstruction_module
 
     assert tuple(inspect.signature(numbered_reconstruction_module.reconstruct_numbered_k1_halfmaps).parameters) == (
-        "numerators_by_half", "denominators_by_half", "tau_by_half", "settings", "iteration",
-        "current_size", "accumulator_volume_shape",
-        "relion_firstiter_cc_this_iter", "retained_first_numerator", "probe",
+        "numerators_by_half", "denominators_by_half", "tau_by_half", "settings", "this_iteration",
+        "accumulator_volume_shape", "retained_first_numerator", "probe",
     )
     assert tuple(inspect.signature(numbered_reconstruction_module.reconstruct_numbered_class_maps).parameters) == (
         "combined_numerators", "combined_denominators", "tau_by_class", "settings", "n_classes",
-        "iteration", "current_size", "accumulator_volume_shape",
-        "relion_firstiter_cc_this_iter", "probe", "unsolved",
+        "this_iteration", "accumulator_volume_shape", "probe", "unsolved",
     )
     assert tuple(field.name for field in dataclasses.fields(numbered_reconstruction_module.ReconstructionSettings)) == (
         "box_size", "voxel_size", "volume_shape", "padding_factor",
@@ -179,10 +177,8 @@ class TestReconstructionOwnership:
             (jnp.ones(VOLUME_SIZE, dtype=jnp.float32), jnp.ones(VOLUME_SIZE, dtype=jnp.float32)),
             tau_shells,
             settings,
-            iteration=0,
-            current_size=8,
+            this_iteration=numbered_iteration(iteration=0, current_size=8),
             accumulator_volume_shape=None,
-            relion_firstiter_cc_this_iter=False,
             retained_first_numerator=retained_half0,
         )
         assert len(calls) == 2
@@ -479,10 +475,8 @@ def test_k1_numpy_join_reservation_reaches_first_stage_a_only(monkeypatch):
         (joined[2], joined[3]),
         [jnp.ones(3, dtype=jnp.float32), jnp.ones(3, dtype=jnp.float32)],
         settings,
-        iteration=0,
-        current_size=4,
+        this_iteration=numbered_iteration(iteration=0, current_size=4),
         accumulator_volume_shape=accumulator_shape,
-        relion_firstiter_cc_this_iter=False,
         retained_first_numerator=retained_half0,
     )
     assert len(calls) == 2

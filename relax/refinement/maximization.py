@@ -235,10 +235,8 @@ def class_maximization(
         class_priors.shells,
         ctx.reconstruction_settings,
         n_classes=options.k_class.n_classes,
-        iteration=this_iteration.iteration,
-        current_size=this_iteration.current_size,
+        this_iteration=this_iteration,
         accumulator_volume_shape=operands.accumulator_shape,
-        relion_firstiter_cc_this_iter=this_iteration.first_iteration.relion_firstiter_cc,
         probe=ctx.maximization_probe,
         unsolved=unsolved,
     )
@@ -365,10 +363,8 @@ def k1_maximization(
         (Ft_ctf_0, Ft_ctf_1),
         split_prior.shells_per_half,
         ctx.reconstruction_settings,
-        iteration=this_iteration.iteration,
-        current_size=this_iteration.current_size,
+        this_iteration=this_iteration,
         accumulator_volume_shape=operands.accumulator_shape,
-        relion_firstiter_cc_this_iter=this_iteration.first_iteration.relion_firstiter_cc,
         retained_first_numerator=retained_Ft_y_0_device,
         probe=ctx.maximization_probe,
     )

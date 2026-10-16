@@ -18,7 +18,7 @@ import pytest
 from helpers.float_compare import assert_matches, matches
 from helpers.pass1_programs import clear_pass1_programs
 from helpers.pass1_stats import make_pass1_stats
-from helpers.reconstruction_settings import reconstruction_settings
+from helpers.reconstruction_settings import numbered_iteration, reconstruction_settings
 from helpers.rotation_perturbation import apply_relion_rotation_perturbation
 from helpers.run_options import reconstruction_programs
 from helpers.tiny_refinement import unconverged_accuracy
@@ -7029,10 +7029,8 @@ class TestRelionModeSmokeTest:
                 jnp.ones(VOLUME_SHAPE[0] // 2 + 1), jnp.ones(VOLUME_SHAPE[0] // 2 + 1),
             ],
             settings,
-            iteration=0,
-            current_size=8,
+            this_iteration=numbered_iteration(iteration=0, current_size=8, relion_firstiter_cc=True),
             accumulator_volume_shape=None,
-            relion_firstiter_cc_this_iter=True,
         )
 
         assert events[:3] == ["lowpass", "flatten_idft", "flatten_dft"]
@@ -7086,10 +7084,8 @@ class TestRelionModeSmokeTest:
             tau_shells,
             settings,
             n_classes=n_classes,
-            iteration=0,
-            current_size=8,
+            this_iteration=numbered_iteration(iteration=0, current_size=8),
             accumulator_volume_shape=None,
-            relion_firstiter_cc_this_iter=False,
         )
 
         assert len(calls) == n_classes

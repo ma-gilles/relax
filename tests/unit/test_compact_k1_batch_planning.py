@@ -212,7 +212,6 @@ def _compact_route_decision(
 ):
     sparse = firstiter_bpref
     return sparse.relion_firstiter_compact_batch_planning_decision(
-        source_faithful_spectrum_norm=True,
         winner_take_all=True,
         preserve_bpref_particle_order=True,
         use_relion_x_half_mstep=True,
@@ -365,7 +364,7 @@ def test_compact_planning_asks_the_probe_about_its_numbered_half(monkeypatch):
 
     host = SimpleNamespace(shape=(1603, 1603, 802), dtype=np.dtype(np.complex64))
     common = dict(
-        source_faithful_spectrum_norm=True, winner_take_all=True, preserve_bpref_particle_order=True,
+        winner_take_all=True, preserve_bpref_particle_order=True,
         use_relion_x_half_mstep=True, projector_half=host, score_complex_dtype=np.complex64,
         recon_volume_size=1603 * 1603 * 802, fixed_base_bytes=4_000_000_000, engine_tuning=EngineTuning(),
     )

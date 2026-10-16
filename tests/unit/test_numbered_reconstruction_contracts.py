@@ -5,7 +5,7 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
-from helpers.reconstruction_settings import reconstruction_settings
+from helpers.reconstruction_settings import numbered_iteration, reconstruction_settings
 from helpers.run_options import reconstruction_programs
 
 from relax.refinement import map_postprocess, numbered_reconstruction
@@ -19,7 +19,7 @@ POSTPROCESSING = pytest.mark.parametrize(
     [(False, False), (True, True), (False, True), (True, False)],
     ids=["unmodified", "first-cc-solvent", "solvent-only", "first-cc-only"],
 )
-COMMON = dict(iteration=0, current_size=2, accumulator_volume_shape=(4, 4, 4))
+
 
 
 def _settings(first_cc, flatten_solvent):
@@ -139,7 +139,8 @@ def test_numbered_k1_halfmaps_preserve_operands_and_operation_order(monkeypatch,
     monkeypatch.setattr(numbered_reconstruction, "_reconstruct_volume_eager", solve)
     result = numbered_reconstruction.reconstruct_numbered_k1_halfmaps(
         numerators, denominators, priors, settings, retained_first_numerator=retained,
-        relion_firstiter_cc_this_iter=first_cc, probe=record.observer, **COMMON,
+        this_iteration=numbered_iteration(iteration=0, current_size=2, relion_firstiter_cc=first_cc),
+        accumulator_volume_shape=(4, 4, 4), probe=record.observer,
     )
     slot_events = ["capture"] + ["filter"] * first_cc + ["mask", "flatten"] * flatten_solvent
     assert record.events == ["solve"] * 2 + slot_events * 2
@@ -167,7 +168,8 @@ def test_numbered_class_maps_preserve_operands_and_operation_order(monkeypatch, 
     monkeypatch.setattr(numbered_reconstruction, "_reconstruct_volume_eager", solve)
     result = numbered_reconstruction.reconstruct_numbered_class_maps(
         numerators, denominators, priors, settings, n_classes=n_classes,
-        relion_firstiter_cc_this_iter=first_cc, probe=record.observer, **COMMON,
+        this_iteration=numbered_iteration(iteration=0, current_size=2, relion_firstiter_cc=first_cc),
+        accumulator_volume_shape=(4, 4, 4), probe=record.observer,
     )
     # Both slots hold one stack: each is captured, then the stack is filtered and flattened once, in place.
     postprocess_events = ["filter"] * n_classes * first_cc + (["mask"] + ["flatten_class"] * n_classes) * flatten_solvent

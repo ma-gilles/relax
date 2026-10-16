@@ -167,7 +167,6 @@ def prepare_half_batches(
     relion_firstiter_cc_this_iter,
     firstiter_cc_tree_rescore_max_margin,
     firstiter_winner_take_all_this_iter,
-    source_faithful_spectrum_norm,
     preserve_bpref_particle_order,
     use_relion_x_half_mstep: bool,
     multi_shape_halves,
@@ -217,7 +216,6 @@ def prepare_half_batches(
         )
         compact_accumulator_shape = half_volume_accumulator_shape(recon_shape)
         decision = firstiter_bpref.relion_firstiter_compact_batch_planning_decision(
-            source_faithful_spectrum_norm=source_faithful_spectrum_norm,
             winner_take_all=firstiter_winner_take_all_this_iter,
             preserve_bpref_particle_order=preserve_bpref_particle_order,
             use_relion_x_half_mstep=use_relion_x_half_mstep,

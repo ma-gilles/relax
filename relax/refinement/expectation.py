@@ -551,7 +551,6 @@ def score_numbered_half(
         relion_firstiter_cc_this_iter=phase.variant.firstiter_cc,
         firstiter_cc_tree_rescore_max_margin=options.parity.firstiter_cc_tree_rescore_max_margin,
         firstiter_winner_take_all_this_iter=phase.variant.winner_take_all,
-        source_faithful_spectrum_norm=source_faithful_spectrum_norm,
         preserve_bpref_particle_order=options.parity.preserve_bpref_particle_order,
         use_relion_x_half_mstep=options.variants.k1_relion_x_half_mstep,
         multi_shape_halves=multi_shape_halves,

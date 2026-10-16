@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 import jax.numpy as jnp
 import numpy as np
@@ -17,6 +18,9 @@ from relax.reconstruction.volume_solver import (
 from relax.refinement import map_postprocess
 from relax.refinement.ports import MaximizationProbe, NoProbe
 from relax.runtime.timing import Stopwatch
+
+if TYPE_CHECKING:
+    from relax.refinement.iteration_planning import NumberedIteration
 
 logger = logging.getLogger(__name__)
 
@@ -228,14 +232,14 @@ def reconstruct_numbered_k1_halfmaps(
     tau_by_half,
     settings: ReconstructionSettings,
     *,
-    iteration,
-    current_size,
+    this_iteration: NumberedIteration,
     accumulator_volume_shape,
-    relion_firstiter_cc_this_iter,
     retained_first_numerator=None,
     probe: MaximizationProbe | None = None,
 ) -> list:
     """Solve two independent numbered K1 maps, then postprocess each half.
+
+    Reads from ``this_iteration``: its index, current size and first-iteration CC.
 
     Numerators, denominators and priors are ordered half pairs; each prior is
     a shell curve. The private solve frame owns promoted priors, host
@@ -250,17 +254,20 @@ def reconstruct_numbered_k1_halfmaps(
         denominators_by_half,
         tau_by_half,
         settings,
-        current_size=current_size,
+        current_size=this_iteration.current_size,
         accumulator_volume_shape=accumulator_volume_shape,
         retained_first_numerator=retained_first_numerator,
     )
     for k in range(2):
-        probe.map_solved(iteration, k, means[k], settings=settings, current_size=current_size, n_classes=1)
+        probe.map_solved(
+            this_iteration.iteration, k, means[k], settings=settings, current_size=this_iteration.current_size,
+            n_classes=1,
+        )
         # RELION filters Iref inside maximizationOtherParameters, then calls
         # solventFlatten from the outer iteration loop.  These operations do
         # not commute: masking in real space after the Fourier low-pass adds a
         # small, deterministic high-shell tail.
-        if relion_firstiter_cc_this_iter:
+        if this_iteration.first_iteration.relion_firstiter_cc:
             means[k] = map_postprocess.apply_relion_initial_lowpass_filter(
                 means[k],
                 settings.volume_shape,
@@ -275,7 +282,7 @@ def reconstruct_numbered_k1_halfmaps(
                 solvent_mask,
                 settings.volume_shape,
             )
-    if relion_firstiter_cc_this_iter:
+    if this_iteration.first_iteration.relion_firstiter_cc:
         map_postprocess.log_first_cc_lowpass(settings)
     return means
 
@@ -287,14 +294,14 @@ def reconstruct_numbered_class_maps(
     settings: ReconstructionSettings,
     *,
     n_classes,
-    iteration,
-    current_size,
+    this_iteration: NumberedIteration,
     accumulator_volume_shape,
-    relion_firstiter_cc_this_iter,
     probe: MaximizationProbe | None = None,
     unsolved=None,
 ) -> list:
     """Solve one numbered Class3D reference stack from combined partitions.
+
+    Reads from ``this_iteration``: its index, current size and first-iteration CC.
 
     Accumulators and priors have a leading class axis; each prior is a shell
     curve. All class solves finish before premask capture, initial filtering
@@ -312,22 +319,23 @@ def reconstruct_numbered_class_maps(
         tau_by_class,
         settings,
         n_classes=n_classes,
-        iteration=iteration,
-        current_size=current_size,
+        iteration=this_iteration.iteration,
+        current_size=this_iteration.current_size,
         accumulator_volume_shape=accumulator_volume_shape,
         unsolved=unsolved,
     )
     for k in range(2):
         probe.map_solved(
-            iteration, k, shared_classes, settings=settings, current_size=current_size, n_classes=n_classes
+            this_iteration.iteration, k, shared_classes, settings=settings, current_size=this_iteration.current_size,
+            n_classes=n_classes,
         )
     # As for K1, the low-pass precedes the solvent flatten and does not commute with it.
-    if relion_firstiter_cc_this_iter:
+    if this_iteration.first_iteration.relion_firstiter_cc:
         shared_classes = map_postprocess.lowpass_class_stack(shared_classes, settings, n_classes)
     if map_postprocess.solvent_flatten_requested(settings):
         solvent_mask = map_postprocess.numbered_solvent_mask(settings, dtype=jnp.finfo(shared_classes.dtype).dtype)
         shared_classes = map_postprocess.flatten_class_stack(shared_classes, solvent_mask, settings.volume_shape, n_classes)
-    if relion_firstiter_cc_this_iter:
+    if this_iteration.first_iteration.relion_firstiter_cc:
         map_postprocess.log_first_cc_lowpass(settings)
     return [shared_classes, shared_classes]
 

@@ -19,6 +19,7 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
+from relax.refinement.particle_poses import PoseComparison
 from relax.refinement.refinement_state import (
     MAX_NR_ITER_WO_LARGE_HIDDEN_VARIABLE_CHANGES,
     MAX_NR_ITER_WO_RESOL_GAIN,
@@ -50,6 +51,9 @@ _REFINEMENT_LOGGER = logging.getLogger("relax.refinement.iteration_loop")
 # The low-Pmax guard RELAX_EM_LOW_PMAX_REFINE_GUARD=1 turns on, with its other variables unset
 # (test_refinement_environment.test_low_pmax_refine_guard_is_read_once).
 _LOW_PMAX_GUARD = LowPmaxRefineGuard(max_ave_pmax=0.15, min_res_stall=3, require_local_search=True)
+
+# An iteration with no pose stacks to compare: its orientation and offset changes are unmeasured.
+NO_POSES = PoseComparison(None, None, None, None)
 
 
 def _refines_angular_sampling(state: RefinementState, guard=None) -> bool:
@@ -659,6 +663,7 @@ class TestUpdateRefinementState:
             n_trans,
             translations,
             new_resolution=4.5,
+            pose_comparison=NO_POSES,
             low_pmax_guard=None,
         )
         assert updated.iteration == 1
@@ -676,6 +681,7 @@ class TestUpdateRefinementState:
             new_resolution=4.5,
             max_posterior_per_image=np.asarray([0.1, 0.2, 0.3, 0.4]),
             ave_pmax_override=0.75,
+            pose_comparison=NO_POSES,
             low_pmax_guard=None,
         )
 
@@ -697,6 +703,7 @@ class TestUpdateRefinementState:
             n_trans,
             translations,
             new_resolution=4.0,  # better than 5.0
+            pose_comparison=NO_POSES,
             low_pmax_guard=None,
         )
         assert updated.nr_iter_wo_resol_gain == 0
@@ -717,6 +724,7 @@ class TestUpdateRefinementState:
             n_trans,
             translations,
             new_resolution=5.5,  # worse than 5.0
+            pose_comparison=NO_POSES,
             low_pmax_guard=None,
         )
         assert updated.nr_iter_wo_resol_gain == 1
@@ -736,6 +744,7 @@ class TestUpdateRefinementState:
             5,
             translations,
             new_resolution=4.999,
+            pose_comparison=NO_POSES,
             low_pmax_guard=None,
         )
 
@@ -759,6 +768,7 @@ class TestUpdateRefinementState:
             n_trans,
             translations,
             new_resolution=4.0,  # improving -> no resol stall -> no refinement
+            pose_comparison=NO_POSES,
             low_pmax_guard=None,
         )
         assert updated.fraction_changed == 0.0
@@ -779,6 +789,7 @@ class TestUpdateRefinementState:
             n_trans,
             translations,
             new_resolution=5.0,
+            pose_comparison=NO_POSES,
             low_pmax_guard=None,
         )
         assert updated.fraction_changed == 1.0
@@ -802,6 +813,7 @@ class TestUpdateRefinementState:
             n_trans,
             translations,
             new_resolution=5.5,  # stall
+            pose_comparison=NO_POSES,
             low_pmax_guard=None,
         )
         # After update: resol_gain=1, assignment_changes=1 -> should refine
@@ -829,6 +841,7 @@ class TestUpdateRefinementState:
             n_trans,
             translations,
             new_resolution=5.5,
+            pose_comparison=NO_POSES,
             low_pmax_guard=None,
         )
         assert updated.has_converged is False
@@ -853,6 +866,7 @@ class TestUpdateRefinementState:
             n_trans,
             translations,
             new_resolution=5.5,
+            pose_comparison=NO_POSES,
             low_pmax_guard=None,
         )
         assert updated.has_converged is True
@@ -877,6 +891,7 @@ class TestUpdateRefinementState:
             new_resolution=5.5,
             update_sampling=False,
             check_convergence_now=False,
+            pose_comparison=NO_POSES,
             low_pmax_guard=None,
         )
 
@@ -922,6 +937,7 @@ class TestUpdateRefinementState:
             translations,
             new_resolution=4.0,
             max_posterior_per_image=pmax,
+            pose_comparison=NO_POSES,
             low_pmax_guard=None,
         )
         assert abs(updated.ave_Pmax - 0.42) < 1e-6
@@ -943,6 +959,7 @@ class TestUpdateRefinementState:
                 np.array([0, 0, 1, 1, 2], dtype=np.int32),
                 np.array([0, 1, 1, 0, 2], dtype=np.int32),
             ),
+            pose_comparison=NO_POSES,
             low_pmax_guard=None,
         )
         assert updated.current_changes_optimal_classes == pytest.approx(0.4)
@@ -961,6 +978,7 @@ class TestUpdateRefinementState:
             n_trans,
             translations,
             new_resolution=4.0,
+            pose_comparison=NO_POSES,
             low_pmax_guard=None,
         )
         assert updated.current_changes_optimal_classes == 0.0
@@ -995,10 +1013,7 @@ class TestUpdateRefinementState:
             n_trans,
             translations,
             new_resolution=9.0,
-            current_rotation_matrices=rotations,
-            previous_rotation_matrices=rotations,
-            current_translations_pixel=current_trans,
-            previous_translations_pixel=previous_trans,
+            pose_comparison=PoseComparison(rotations, rotations, current_trans, previous_trans),
             voxel_size_angstrom=1.0,
             low_pmax_guard=None,
         )
@@ -1074,14 +1089,12 @@ class TestUpdateRefinementState:
             n_translations=1,
             translations=zeros[:1],
             new_resolution=22.6667,
-            current_rotation_matrices=self._rotation_delta(n_images, angle_deg),
-            previous_rotation_matrices=identity,
-            current_translations_pixel=self._translation_delta(
-                n_images,
-                offset_angstrom,
-                state.voxel_size_angstrom,
+            pose_comparison=PoseComparison(
+                self._rotation_delta(n_images, angle_deg),
+                identity,
+                self._translation_delta(n_images, offset_angstrom, state.voxel_size_angstrom),
+                zeros,
             ),
-            previous_translations_pixel=zeros,
             voxel_size_angstrom=state.voxel_size_angstrom,
             update_sampling=False,
             check_convergence_now=False,
@@ -1326,6 +1339,7 @@ class TestMultiIterationWorkflow:
             n_trans,
             translations,
             new_resolution=8.0,
+            pose_comparison=NO_POSES,
             low_pmax_guard=None,
         )
         assert state.iteration == 1
@@ -1340,6 +1354,7 @@ class TestMultiIterationWorkflow:
             n_trans,
             translations,
             new_resolution=9.0,  # worse
+            pose_comparison=NO_POSES,
             low_pmax_guard=None,
         )
         # update_refinement_state increments iteration to 2, then
@@ -1367,6 +1382,7 @@ class TestMultiIterationWorkflow:
             n_trans,
             translations,
             new_resolution=9.5,
+            pose_comparison=NO_POSES,
             low_pmax_guard=None,
         )
         assert state2.has_converged is False
@@ -1389,6 +1405,7 @@ class TestMultiIterationWorkflow:
             n_trans,
             translations,
             new_resolution=10.0,
+            pose_comparison=NO_POSES,
             low_pmax_guard=None,
         )
         assert state3.has_converged is True
@@ -1554,10 +1571,9 @@ def test_computed_assignment_fraction_survives_sampling_transition(update_sampli
         previous_assignments=np.array([0, 0, 2, 6]),
         n_translations=2, translations=np.zeros((2, 2)),
         new_resolution=8.0, update_sampling=update_sampling,
-        current_rotation_matrices=np.tile(np.eye(3), (4, 1, 1)),
-        previous_rotation_matrices=np.tile(np.eye(3), (4, 1, 1)),
-        current_translations_pixel=np.zeros((4, 2)),
-        previous_translations_pixel=np.zeros((4, 2)),
+        pose_comparison=PoseComparison(
+            np.tile(np.eye(3), (4, 1, 1)), np.tile(np.eye(3), (4, 1, 1)), np.zeros((4, 2)), np.zeros((4, 2)),
+        ),
         current_changes_classes=hard_class_change_fraction(np.zeros(4, dtype=int), np.zeros(4, dtype=int)),
         ave_pmax_override=1.0,
         check_convergence_now=False,

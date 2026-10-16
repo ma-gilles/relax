@@ -13,7 +13,7 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
-from helpers.reconstruction_settings import reconstruction_settings
+from helpers.reconstruction_settings import numbered_iteration, reconstruction_settings
 from helpers.run_options import reconstruction_programs, stand_in
 from helpers.tiny_refinement import record_calls, run_tiny_refinement, unconverged_accuracy
 
@@ -350,7 +350,7 @@ def test_every_k1_reconstruction_hands_the_solve_the_kernel(monkeypatch, kernel)
     pair = ("a", "b")
     numbered_reconstruction.reconstruct_numbered_k1_halfmaps(
         pair, pair, (np.ones(5), np.ones(5)), settings,
-        iteration=1, current_size=8, accumulator_volume_shape=None, relion_firstiter_cc_this_iter=False,
+        this_iteration=numbered_iteration(iteration=1, current_size=8), accumulator_volume_shape=None,
     )
     numbered_reconstruction.reconstruct_unregularized_k1_halfmaps(pair, pair, settings)
     final_reconstruction.reconstruct_unfiltered_halfmaps(
