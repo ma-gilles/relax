@@ -8,7 +8,7 @@ from helpers.array_padding import pad_axis
 from helpers.cuda_source import read_em_cuda_source
 from helpers.float_compare import assert_matches, matches
 
-from relax.fine_pass.scoring import _relion_cuda_fine_full_to_compact_lookup
+from relax.fine_pass.scoring import relion_cuda_fine_full_to_compact_lookup
 from relax.fine_pass.wavg import make_relion_wavg_rectangle, make_stable_relion_wavg_rectangle
 from relax.fourier.fourier_window import (
     make_fourier_window_indices_np,
@@ -163,7 +163,7 @@ def test_stable_coarse_square_preserves_logical_issue_prefix(monkeypatch):
         square=True,
         include_dc=True,
     )
-    logical_lookup = _relion_cuda_fine_full_to_compact_lookup(
+    logical_lookup = relion_cuda_fine_full_to_compact_lookup(
         _IMAGE_SHAPE,
         logical_size,
         logical_indices,
@@ -356,7 +356,7 @@ def test_disabled_coarse_square_layout_is_legacy_exact(monkeypatch):
         square=True,
         include_dc=True,
     )
-    legacy_lookup = _relion_cuda_fine_full_to_compact_lookup(
+    legacy_lookup = relion_cuda_fine_full_to_compact_lookup(
         _IMAGE_SHAPE,
         current_size,
         legacy_indices,

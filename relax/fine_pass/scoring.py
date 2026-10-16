@@ -43,7 +43,7 @@ def _relion_cuda_fine_reduce_lanes(lanes):
     return lanes[..., 0]
 
 
-def _relion_cuda_fine_full_to_compact_lookup(image_shape, current_size, compact_indices):
+def relion_cuda_fine_full_to_compact_lookup(image_shape, current_size, compact_indices):
     """Map RELION's full current-size packed pixel order to compact score rows."""
 
     box_size = int(image_shape[0])

@@ -21,7 +21,7 @@ import numpy as np
 
 from relax.fine_pass import resident_chunk_records
 from relax.fine_pass.projection_blocks import capacity_projection_window_union, projection_window_union
-from relax.fine_pass.scoring import _relion_cuda_fine_full_to_compact_lookup
+from relax.fine_pass.scoring import relion_cuda_fine_full_to_compact_lookup
 from relax.fine_pass.wavg import make_relion_wavg_rectangle, make_stable_relion_wavg_rectangle
 from relax.fourier.fourier_window import (
     make_stable_fourier_window_shape_plan,
@@ -288,11 +288,11 @@ def score_weights_and_lookup(half_weights_windowed, *, image_shape, current_size
 
     if plan is None:
         return half_weights_windowed, jnp.asarray(
-            _relion_cuda_fine_full_to_compact_lookup(image_shape, current_size, window_indices_np),
+            relion_cuda_fine_full_to_compact_lookup(image_shape, current_size, window_indices_np),
             dtype=jnp.int32,
         )
     half_weights_windowed = times_logical_mask(half_weights_windowed, jnp.int32(int(plan.logical_score_pixels)))
-    logical_lookup = _relion_cuda_fine_full_to_compact_lookup(
+    logical_lookup = relion_cuda_fine_full_to_compact_lookup(
         image_shape,
         current_size,
         window_indices_np[: int(plan.logical_score_pixels)],

@@ -209,7 +209,7 @@ def _build_case(current_size, *, row_capacity_ladder, image_capacity_ladder, see
     compact_indices = (
         window_indices if use_window else np.arange(n_half, dtype=np.int32)
     )
-    full_to_compact = spb._relion_cuda_fine_full_to_compact_lookup(
+    full_to_compact = spb.relion_cuda_fine_full_to_compact_lookup(
         image_shape, current_size, compact_indices
     )
     half_weights = make_scoring_half_image_weights(

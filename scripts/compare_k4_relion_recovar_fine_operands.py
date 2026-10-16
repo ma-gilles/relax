@@ -22,7 +22,7 @@ from recovar.utils.file_hash import sha256_file
 
 from relax.cuda.preprocess import relion_preprocess_real_f32
 from relax.fine_pass.bucket_io import _half_translation_phase_table_for_indices
-from relax.fine_pass.scoring import _relion_cuda_fine_full_to_compact_lookup, relion_cuda_fine_pixel_weights
+from relax.fine_pass.scoring import relion_cuda_fine_full_to_compact_lookup, relion_cuda_fine_pixel_weights
 from relax.fourier.half_spectrum import make_scoring_half_image_weights, make_shell_indices_half
 from relax.fourier.image_shifts import apply_relion_integer_pre_shifts
 from scripts.lib.bucketed_pass2_scoring import _relion_cuda_fine_diff2_sum
@@ -302,7 +302,7 @@ def _compact_indices_from_full_lookup(
     compact_indices[lookup[valid]] = (
         centered_rows * physical_half_width + columns
     ).astype(np.int32)
-    roundtrip = _relion_cuda_fine_full_to_compact_lookup(
+    roundtrip = relion_cuda_fine_full_to_compact_lookup(
         image_shape,
         current_size,
         compact_indices,

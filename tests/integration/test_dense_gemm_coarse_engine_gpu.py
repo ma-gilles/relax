@@ -367,7 +367,7 @@ def _save_k1_score_diagnostic(path, state, batch, control, candidate):
     from relax.fine_pass.bucket_io import relion_cuda_score_translation_angles_if_available
     from relax.fine_pass.projection_blocks import compute_sparse_pass2_windowed_projections_block
     from relax.fine_pass.resident_block_programs import relion_native_fine_units_in_place
-    from relax.fine_pass.scoring import _relion_cuda_fine_full_to_compact_lookup
+    from relax.fine_pass.scoring import relion_cuda_fine_full_to_compact_lookup
     from relax.fine_pass.window import sparse_pass2_window_setup
 
     path = Path(path)
@@ -416,7 +416,7 @@ def _save_k1_score_diagnostic(path, state, batch, control, candidate):
         dtype=np.float32, angle_scale=state.relion_translation_angle_scale,
     )
     phase = native_phase_table(angles, score_indices, tuple(state.dataset.image_shape))
-    full_to_compact = _relion_cuda_fine_full_to_compact_lookup(
+    full_to_compact = relion_cuda_fine_full_to_compact_lookup(
         tuple(state.dataset.image_shape), state.current_size, window.window_indices_np,
     )
     priors = _expanded_rotation_priors(
@@ -473,7 +473,7 @@ def _save_k1_cc_score_diagnostic(path, state, batch, grid, resident, control_chu
     from relax.dense.gemm_kernels import cc_score_tile, native_relion_callbacks
     from relax.fine_pass.resident_block_programs import relion_native_fine_units_in_place
     from relax.fine_pass.scoring import (
-        _relion_cuda_fine_full_to_compact_lookup,
+        relion_cuda_fine_full_to_compact_lookup,
         relion_cuda_fine_normalized_cc_score,
     )
     from relax.fine_pass.window import pass2_half_weights, sparse_pass2_window_setup
@@ -517,7 +517,7 @@ def _save_k1_cc_score_diagnostic(path, state, batch, grid, resident, control_chu
     )
     phase = grid.score_phase[:n_trans]
     shifted = batch.score_image[:n_images, None, :] * phase[None, :, :]
-    lookup = _relion_cuda_fine_full_to_compact_lookup(
+    lookup = relion_cuda_fine_full_to_compact_lookup(
         tuple(state.dataset.image_shape), state.current_size, window.window_indices_np,
     )
     fine_scores = relion_cuda_fine_normalized_cc_score(

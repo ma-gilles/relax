@@ -69,7 +69,7 @@ def analyze(
     from recovar.utils.helpers import load_relion_volume
 
     from relax.cuda import fine as cuda_fine
-    from relax.fine_pass.scoring import _relion_cuda_fine_full_to_compact_lookup
+    from relax.fine_pass.scoring import relion_cuda_fine_full_to_compact_lookup
     from relax.fourier.fourier_window import make_fourier_window_indices_np
     from relax.fourier.half_spectrum import make_scoring_half_image_weights
     from relax.projection.projection import compute_relion_projector_projections_block
@@ -133,7 +133,7 @@ def analyze(
         where=live_weight[None] != 0.0,
     )
     direct_weight = np.multiply(live_weight, score_half_weights, dtype=np.float32)
-    full_to_compact = _relion_cuda_fine_full_to_compact_lookup(
+    full_to_compact = relion_cuda_fine_full_to_compact_lookup(
         (full_image_size, full_image_size),
         current_size,
         score_indices,

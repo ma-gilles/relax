@@ -14,7 +14,7 @@ from helpers.sparse_pass2_test_support import (
 from relax.fine_pass.scoring import (
     _RELION_CUDA_FINE_REF3D_BLOCK_SIZE,
     _RELION_CUDA_POWERCLASS_BLOCK_SIZE,
-    _relion_cuda_fine_full_to_compact_lookup,
+    relion_cuda_fine_full_to_compact_lookup,
     relion_cuda_fine_pixel_weights,
     relion_cuda_powerclass_highres_xi2_half,
 )
@@ -391,7 +391,7 @@ def test_case20_current_grid_lookup_has_relion_56_by_29_topology():
     from relax.fourier.fourier_window import make_fourier_window_indices_np
 
     compact_indices, count = make_fourier_window_indices_np((256, 256), 56)
-    lookup = _relion_cuda_fine_full_to_compact_lookup(
+    lookup = relion_cuda_fine_full_to_compact_lookup(
         (256, 256), 56, compact_indices
     )
 

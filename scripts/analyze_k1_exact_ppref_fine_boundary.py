@@ -14,7 +14,7 @@ import jax.numpy as jnp
 import numpy as np
 from recovar.utils.file_hash import sha256_file  # noqa: E402 - follows repository path setup
 
-from relax.fine_pass.scoring import _relion_cuda_fine_full_to_compact_lookup
+from relax.fine_pass.scoring import relion_cuda_fine_full_to_compact_lookup
 from relax.projection.projection import compute_relion_projector_projections_block
 from scripts.analyze_k1_bpref_contributor_membership import match_rotations
 from scripts.analyze_k1_fine_direction_boundary import (
@@ -208,7 +208,7 @@ def analyze(
         dtype=np.float32,
     )
     window_indices = np.asarray(recovar["window_indices"], dtype=np.int32)
-    full_to_compact = _relion_cuda_fine_full_to_compact_lookup(
+    full_to_compact = relion_cuda_fine_full_to_compact_lookup(
         (128, 128), current_size, window_indices
     )
     highres = np.float32(np.asarray(recovar["relion_highres_xi2_half"]).item())
