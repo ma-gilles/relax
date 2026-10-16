@@ -525,3 +525,17 @@ def test_the_half_accumulator_guard_mode_is_read_once(monkeypatch):
     monkeypatch.setenv(HALF_ACCUMULATOR_GUARD_ENV, "maybe")
     with pytest.raises(ValueError, match="RELAX_EM_BPREF_FINITE_GUARD"):
         guard()
+
+
+def test_dense_precision_reads_the_float64_switches(monkeypatch):
+    """RELAX_USE_FLOAT64_SCORING and RELAX_USE_FLOAT64_PROJECTIONS (DensePrecisionPolicy.from_environ): unset is
+    the production float32 policy."""
+    from relax.numerics.precision import DensePrecisionPolicy
+
+    monkeypatch.delenv("RELAX_USE_FLOAT64_SCORING", raising=False)
+    monkeypatch.delenv("RELAX_USE_FLOAT64_PROJECTIONS", raising=False)
+    assert DensePrecisionPolicy.from_environ() == DensePrecisionPolicy()
+    monkeypatch.setenv("RELAX_USE_FLOAT64_SCORING", "1")
+    assert DensePrecisionPolicy.from_environ() == DensePrecisionPolicy(use_float64_scoring=True)
+    monkeypatch.setenv("RELAX_USE_FLOAT64_PROJECTIONS", "1")
+    assert DensePrecisionPolicy.from_environ() == DensePrecisionPolicy(use_float64_scoring=True, use_float64_projections=True)
