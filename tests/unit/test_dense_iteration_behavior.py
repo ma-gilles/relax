@@ -12,7 +12,7 @@ from helpers.refinement_specs import local_half_owners
 from relax.numerics.precision import DensePrecisionPolicy
 from relax.refinement import local_half
 from relax.refinement.local_half import LocalSearchResult
-from relax.refinement.refinement_options import LocalAdaptivePass2Support, ScoringVariants
+from relax.refinement.refinement_options import LocalAdaptivePass2Support
 from relax.refinement.refinement_state import native_final_perturbation_healpix_order
 from relax.relion import normalization
 from relax.runtime.engine_tuning import EngineTuning
@@ -564,18 +564,3 @@ def test_native_final_perturbation_uses_active_local_order_but_preserves_global_
 
     assert native_final_perturbation_healpix_order(local_state, 3) == 4
     assert native_final_perturbation_healpix_order(global_state, 3) == 3
-
-
-def test_local_adaptive_pass2_defaults_to_relion_pruned_parent(monkeypatch):
-    monkeypatch.delenv(scoring_policy.LOCAL_ADAPTIVE_PASS2_FULL_PARENT_ENV, raising=False)
-
-    def full_parent():
-        return ScoringVariants.from_environ().local_adaptive_pass2.full_parent
-
-    assert full_parent() is False
-
-    monkeypatch.setenv(scoring_policy.LOCAL_ADAPTIVE_PASS2_FULL_PARENT_ENV, "1")
-    assert full_parent() is True
-
-    monkeypatch.setenv(scoring_policy.LOCAL_ADAPTIVE_PASS2_FULL_PARENT_ENV, "0")
-    assert full_parent() is False

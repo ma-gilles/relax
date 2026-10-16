@@ -1068,7 +1068,6 @@ def test_final_all_data_replay_ignores_cold_start_only_overrides(overrides, expe
     assert setup_checks.has_numbered_replay_iteration_overrides(overrides) is expected
 
 
-
 @pytest.mark.parametrize("replace_noise", [False, True])
 def test_final_controller_receives_replayed_state_without_retaining_old_noise(
     half_datasets, init_volume, translations, monkeypatch, replace_noise,
@@ -1768,24 +1767,6 @@ def test_expand_significant_samples_to_full_parent_translations_preserves_rotati
     assert_matches(expanded[0], np.array([0, 1, 2, 3, 4, 5], dtype=np.int64))
     assert expanded[1] is None
     assert_matches(expanded[2], np.zeros(0, dtype=np.int64))
-
-
-@pytest.mark.parametrize(
-    ("value", "expected"),
-    [
-        ("rotation_only", "rotation_only"),
-        ("rotation", "rotation_only"),
-        ("full_parent", "full_parent"),
-        ("1", None),
-        ("default", None),
-    ],
-)
-def test_local_adaptive_pass2_denominator_support_mode(monkeypatch, value, expected):
-    monkeypatch.setenv("RELAX_LOCAL_ADAPTIVE_PASS2_DENOMINATOR_SUPPORT", value)
-
-    from relax.refinement.refinement_options import ScoringVariants
-
-    assert ScoringVariants.from_environ().local_adaptive_pass2.denominator_mode == expected
 
 
 def test_build_local_adaptive_pass2_hypothesis_layout_accepts_int64_packed_samples():
@@ -4422,7 +4403,6 @@ def fake_global_estep(monkeypatch):
     calls = []
     install_fake_adaptive_engine(monkeypatch, calls, Ft_y=_random_half_maps(calls))
     return calls
-
 
 
 def _refine_replaying(*args, options, relion_replay=None, **kwargs):

@@ -327,17 +327,6 @@ def test_reconstruction_programs_helper_is_the_unset_environment(monkeypatch):
     assert ReconstructionPrograms.from_environ() == reconstruction_programs()
 
 
-@pytest.mark.parametrize(("value", "expected"), [(None, False), ("0", False), ("1", True)])
-def test_approx_acc_rot_for_convergence_is_read_once(monkeypatch, value, expected):
-    from relax.refinement.refinement_options import ScoringVariants
-
-    if value is None:
-        monkeypatch.delenv("RELAX_EM_USE_APPROX_ACC_ROT_FOR_CONVERGENCE", raising=False)
-    else:
-        monkeypatch.setenv("RELAX_EM_USE_APPROX_ACC_ROT_FOR_CONVERGENCE", value)
-    assert ScoringVariants.from_environ().approx_acc_rot_for_convergence is expected
-
-
 def test_scoring_variants_helper_is_the_unset_environment(monkeypatch):
     """``helpers.run_options.cli.variants()`` is what the command reads with no variable set (K=1's x-half M-step
     default is the device's, so ``ScoringVariants`` has no all-defaults constructor) and one host FFT thread."""

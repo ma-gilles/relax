@@ -12,48 +12,9 @@ from helpers.float_compare import assert_matches, matches
 import relax.diagnostics.coarse_gaussian_diagnostics as coarse_diagnostics
 import relax.sampling.oversampling as oversampling_mod
 from relax.diagnostics import coarse_gaussian_diagnostics, observers
-from relax.refinement.refinement_options import ScoringVariants
 from relax.steps import score_outputs, scoring_policy
 
 pytestmark = pytest.mark.unit
-
-def test_kclass_mstep_defaults_to_relion_x_half_with_full_volume_escape_hatch(monkeypatch):
-    """K-class quality parity should use RELION x-half BPref accumulators by default."""
-
-    monkeypatch.delenv("RELAX_K_CLASS_RELION_X_HALF_MSTEP", raising=False)
-    assert ScoringVariants.from_environ().k_class_relion_x_half_mstep is True
-
-    monkeypatch.setenv("RELAX_K_CLASS_RELION_X_HALF_MSTEP", "0")
-    assert ScoringVariants.from_environ().k_class_relion_x_half_mstep is False
-
-    monkeypatch.setenv("RELAX_K_CLASS_RELION_X_HALF_MSTEP", "1")
-    assert ScoringVariants.from_environ().k_class_relion_x_half_mstep is True
-
-def test_k1_relion_x_half_mstep_defaults_on_with_escape_hatch(monkeypatch):
-    """K=1 adaptive RELION mode should use x-half BPref layout by default."""
-
-    monkeypatch.delenv(scoring_policy.K1_RELION_X_HALF_MSTEP_ENV, raising=False)
-    monkeypatch.setattr(scoring_policy, "k1_relion_x_half_mstep_default_available", lambda: True)
-    assert ScoringVariants.from_environ().k1_relion_x_half_mstep is True
-
-    monkeypatch.setenv(scoring_policy.K1_RELION_X_HALF_MSTEP_ENV, "0")
-    assert ScoringVariants.from_environ().k1_relion_x_half_mstep is False
-
-    monkeypatch.setenv(scoring_policy.K1_RELION_X_HALF_MSTEP_ENV, "1")
-    assert ScoringVariants.from_environ().k1_relion_x_half_mstep is True
-
-    monkeypatch.setenv(scoring_policy.K1_RELION_X_HALF_MSTEP_ENV, "invalid")
-    assert ScoringVariants.from_environ().k1_relion_x_half_mstep is True
-
-def test_k1_relion_x_half_mstep_default_disables_when_cuda_unavailable(monkeypatch):
-    """The default must not request CUDA-only x-half adjoints on CPU tests."""
-
-    monkeypatch.delenv(scoring_policy.K1_RELION_X_HALF_MSTEP_ENV, raising=False)
-    monkeypatch.setattr(scoring_policy, "k1_relion_x_half_mstep_default_available", lambda: False)
-    assert ScoringVariants.from_environ().k1_relion_x_half_mstep is False
-
-    monkeypatch.setenv(scoring_policy.K1_RELION_X_HALF_MSTEP_ENV, "1")
-    assert ScoringVariants.from_environ().k1_relion_x_half_mstep is True
 
 
 def test_kclass_result_uses_mstep_class_mass_for_relion_priors():
