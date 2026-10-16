@@ -460,3 +460,18 @@ def test_local_selector_chunking_is_read_once_at_the_boundary(monkeypatch):
     monkeypatch.setenv("RELAX_LOCAL_SELECTOR_CHUNK_SIZE", "seven")
     with pytest.raises(ValueError):
         EngineTuning.from_environ()
+
+
+def test_final_all_data_after_max_iter_is_read_once(monkeypatch, caplog):
+    """RELAX_FINAL_ALL_DATA_AFTER_MAX_ITER (FinalPassOptions.after_max_iter): unset off, 1 on, an invalid value
+    off with a warning."""
+    from relax.refinement.refinement_options import FinalPassOptions
+
+    env_name = "RELAX_FINAL_ALL_DATA_AFTER_MAX_ITER"
+    monkeypatch.delenv(env_name, raising=False)
+    assert FinalPassOptions.from_environ().after_max_iter is False
+    monkeypatch.setenv(env_name, "1")
+    assert FinalPassOptions.from_environ().after_max_iter is True
+    monkeypatch.setenv(env_name, "maybe")
+    assert FinalPassOptions.from_environ().after_max_iter is False
+    assert "Ignoring invalid RELAX_FINAL_ALL_DATA_AFTER_MAX_ITER" in caplog.text
