@@ -12,6 +12,7 @@ import numpy as np
 from recovar import utils
 
 from relax.cuda import backprojection as cuda_backprojection
+from relax.io.batch_fetch import held_half_images
 from relax.local_search.layout import (
     build_local_adaptive_pass2_hypothesis_layout,
     build_local_hypothesis_layout,
@@ -483,7 +484,8 @@ def _score_half_local(
     experiment_half = half.particles.dataset
     if not isinstance(experiment_half, optics_shapes.MultiShapeHalf):
         sampling, optics = single_shape_reconstruction_grid(experiment_half, sampling, optics)
-        return _score_half_local_one_shape(half, sampling, priors, batching, execution, diagnostics, optics)
+        with held_half_images(experiment_half):
+            return _score_half_local_one_shape(half, sampling, priors, batching, execution, diagnostics, optics)
     require_multi_shape_inputs(half, optics)
     shape_class_scoring.require_exact_local_parent_windows(
         {
@@ -496,11 +498,12 @@ def _score_half_local(
     results = []
     for index, shape_class in enumerate(experiment_half.classes):
         owners = _local_owners_for_shape(half, sampling, priors, optics, shape_class, index)
-        results.append(
-            _score_half_local_one_shape(
-                owners.half, owners.sampling, owners.priors, batching, execution, diagnostics, owners.optics
+        with held_half_images(owners.half.particles.dataset):
+            results.append(
+                _score_half_local_one_shape(
+                    owners.half, owners.sampling, owners.priors, batching, execution, diagnostics, owners.optics
+                )
             )
-        )
     return merge_shape_class_results(results, experiment_half)
 
 

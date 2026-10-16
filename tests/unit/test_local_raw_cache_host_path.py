@@ -120,3 +120,72 @@ def test_fetch_indexed_batch_without_a_host_path_uses_the_iterator(monkeypatch):
     images, ctf, fetched = fetch_indexed_batch(cryo, indices)
     assert np.asarray(images).shape[0] == indices.size
     np.testing.assert_array_equal(np.sort(np.asarray(fetched)), np.sort(indices))
+
+
+def _counted_host_reads(cryo):
+    """Count the image source's host reads (the held images must replace the repeated ones)."""
+
+    reads = []
+    original = cryo.image_source.host_images
+
+    def host_images(image_indices):
+        reads.append(np.asarray(image_indices).copy())
+        return original(image_indices)
+
+    cryo.image_source.host_images = host_images
+    return reads
+
+
+def test_held_half_images_serve_a_repeated_read_with_the_same_bytes():
+    from relax.io.batch_fetch import held_half_images
+
+    cryo = _dataset()
+    reads = _counted_host_reads(cryo)
+    first_indices = np.asarray([3, 0, 5], dtype=np.int32)
+    with held_half_images(cryo):
+        first = fetch_indexed_batch(cryo, first_indices)
+        again = fetch_indexed_batch(cryo, np.asarray([5, 3], dtype=np.int32))
+        # One image not read yet: the whole batch comes from the source.
+        mixed = fetch_indexed_batch(cryo, np.asarray([0, 1], dtype=np.int32))
+    after = fetch_indexed_batch(cryo, np.asarray([5, 3], dtype=np.int32))
+    assert [r.tolist() for r in reads] == [[3, 0, 5], [0, 1], [5, 3]]
+    np.testing.assert_array_equal(again[0], first[0][[2, 0]])
+    assert again[0].dtype == first[0].dtype
+    np.testing.assert_array_equal(again[0], after[0])
+    np.testing.assert_array_equal(np.asarray(again[1]), np.asarray(after[1]))
+    np.testing.assert_array_equal(again[2], np.asarray([5, 3], dtype=np.int32))
+    np.testing.assert_array_equal(mixed[0], fetch_indexed_batch(cryo, np.asarray([0, 1], dtype=np.int32))[0])
+
+
+def test_held_half_images_above_the_byte_cap_reread():
+    from relax.io.batch_fetch import held_half_images
+
+    cryo = _dataset()
+    reads = _counted_host_reads(cryo)
+    indices = np.asarray([1, 2], dtype=np.int32)
+    # N_IMAGES float32 D x D images do not fit under one image's bytes.
+    with held_half_images(cryo, max_bytes=D * D * 4):
+        first = fetch_indexed_batch(cryo, indices)
+        second = fetch_indexed_batch(cryo, indices)
+    assert len(reads) == 2
+    np.testing.assert_array_equal(first[0], second[0])
+
+
+def test_held_half_images_serve_a_read_from_another_thread():
+    """The fine pass reads its operands in a prefetch thread; the hold is not thread-local."""
+
+    import threading
+
+    from relax.io.batch_fetch import held_half_images
+
+    cryo = _dataset()
+    reads = _counted_host_reads(cryo)
+    indices = np.asarray([4, 2], dtype=np.int32)
+    out = {}
+    with held_half_images(cryo):
+        first = fetch_indexed_batch(cryo, indices)
+        worker = threading.Thread(target=lambda: out.setdefault("images", fetch_indexed_batch(cryo, indices)[0]))
+        worker.start()
+        worker.join()
+    assert len(reads) == 1
+    np.testing.assert_array_equal(out["images"], first[0])
