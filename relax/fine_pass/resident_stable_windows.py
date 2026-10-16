@@ -247,6 +247,50 @@ def resident_stable_window_plan(
 # ---------------------------------------------------------------------------
 
 
+def pass_stable_windows(
+    image_shape,
+    *,
+    current_size,
+    wsum_current_size,
+    mstep_current_size,
+    n_half,
+    square_window,
+    window_spec_kwargs,
+    firstiter_cc,
+    requested: bool,
+    quantum: int,
+    log_label: str,
+):
+    """``(plan, spec, program_current_size)`` of a resident pass, global or local.
+
+    The stable-window plan (:func:`resident_stable_window_plan`; a weighted-sum size above the scoring size
+    keeps RELION's logical window too), the window spec at its physical class (:func:`stable_window_spec`)
+    and the programs' current size: the physical class with stable windows, RELION's otherwise. Without a
+    plan the spec is None.
+    """
+
+    plan = (
+        None
+        if wsum_current_size != current_size
+        else resident_stable_window_plan(
+            image_shape,
+            current_size=current_size,
+            mstep_current_size=mstep_current_size,
+            n_half=n_half,
+            square_window=square_window,
+            window_spec_kwargs=window_spec_kwargs,
+            firstiter_cc=firstiter_cc,
+            requested=requested,
+            quantum=quantum,
+        )
+    )
+    if plan is None:
+        return None, None, int(current_size)
+    spec = stable_window_spec(plan)
+    log_stable_window_plan(log_label, plan)
+    return plan, spec, int(plan.physical_current_size)
+
+
 def stable_window_spec(plan):
     """The pass's window spec at the physical class, with RELION's logical cutoffs.
 

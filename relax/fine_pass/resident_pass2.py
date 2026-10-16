@@ -985,25 +985,22 @@ def _resident_pass2(
     # ---- window / weights / lookups (unchanged) ---------------------------
     # Tilt passes keep RELION's logical window sizes: their scoring and M-step (resident_tilts) do not
     # take a stable window's logical bounds.
-    stable_window_plan = None if tilt is not None or wsum_current_size != current_size else resident_stable_windows.resident_stable_window_plan(
+    # The spec's current size: the physical class with stable windows, RELION's otherwise.
+    stable_window_plan, stable_window_spec, program_current_size = resident_stable_windows.pass_stable_windows(
         image_shape,
         current_size=current_size,
+        wsum_current_size=wsum_current_size,
         mstep_current_size=mstep_current_size,
         n_half=n_half,
         square_window=square_window,
         window_spec_kwargs=window_spec_kwargs,
         firstiter_cc=firstiter_cc,
-        requested=engine_tuning.stable_windows,
+        requested=tilt is None and engine_tuning.stable_windows,
         quantum=engine_tuning.stable_window_quantum,
+        log_label="Resident pass-2",
     )
-    stable_window_spec = None
-    # The spec's current size: the physical class with stable windows, RELION's otherwise.
-    program_current_size = int(current_size)
     if stable_window_plan is not None:
-        stable_window_spec = resident_stable_windows.stable_window_spec(stable_window_plan)
         budget_window_spec = stable_window_spec
-        program_current_size = int(stable_window_plan.physical_current_size)
-        resident_stable_windows.log_stable_window_plan("Resident pass-2", stable_window_plan)
     window_setup = sparse_pass2_window_setup(
         experiment_dataset,
         disc_type=disc_type,

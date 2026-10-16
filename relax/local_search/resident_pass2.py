@@ -330,27 +330,19 @@ def compute_local_search_resident(
     # Stable windows (relax#95), as the global resident pass runs them and with its exclusions (the
     # --firstiter_cc iteration, a size at the box, a weighted-sum size above the score's): the pass runs
     # in its physical window class, so the logical sizes of a class share the chunk programs.
-    stable_window_plan = (
-        None
-        if wsum_current_size != current_size
-        else resident_stable_windows.resident_stable_window_plan(
-            image_shape,
-            current_size=current_size,
-            mstep_current_size=mstep_current_size,
-            n_half=n_half,
-            square_window=kernel.square_window,
-            window_spec_kwargs=window_spec_kwargs,
-            firstiter_cc=kernel.firstiter_cc,
-            requested=support.engine_tuning.stable_windows,
-            quantum=support.engine_tuning.stable_window_quantum,
-        )
+    stable_window_plan, stable_window_spec, program_current_size = resident_stable_windows.pass_stable_windows(
+        image_shape,
+        current_size=current_size,
+        wsum_current_size=wsum_current_size,
+        mstep_current_size=mstep_current_size,
+        n_half=n_half,
+        square_window=kernel.square_window,
+        window_spec_kwargs=window_spec_kwargs,
+        firstiter_cc=kernel.firstiter_cc,
+        requested=support.engine_tuning.stable_windows,
+        quantum=support.engine_tuning.stable_window_quantum,
+        log_label="Resident local pass-2",
     )
-    stable_window_spec = None
-    program_current_size = int(current_size)
-    if stable_window_plan is not None:
-        stable_window_spec = resident_stable_windows.stable_window_spec(stable_window_plan)
-        program_current_size = int(stable_window_plan.physical_current_size)
-        resident_stable_windows.log_stable_window_plan("Resident local pass-2", stable_window_plan)
 
     # ---- candidate rows ---------------------------------------------------
     # Read after the configuration checks, so a pass the driver refuses touches
