@@ -1447,6 +1447,7 @@ def main():
     from relax.diagnostics import observers
     from relax.diagnostics.k_class_diagnostics import KClassDiagnostics
     from relax.io.map_io import write_map_from_ft
+    from relax.reconstruction.volume_solver import ReconstructionPrograms
     from relax.refinement.iteration_loop import refine_single_volume
     from relax.refinement.ports import StartSeeds
     from relax.refinement.refinement_options import (
@@ -1464,6 +1465,8 @@ def main():
         SymmetryOptions,
     )
     from relax.refinement.startup_references import StartupHandoff
+    from relax.runtime.engine_tuning import EngineTuning
+    from relax.runtime.scoring_overrides import ScoringOverrides
     from relax.star.metadata import (
         read_relion_optimiser_metadata,
         read_relion_sampling_metadata,
@@ -2449,8 +2452,10 @@ def main():
             rotation_block_size=args.rotation_block_size,
         ),
         final_pass=FinalPassOptions.from_environ(),
-        environment=RefinementEnvironment.from_environ(),
-        variants=ScoringVariants.from_environ(),
+        environment=RefinementEnvironment.from_environ(
+            engine=EngineTuning.from_environ(), scoring=ScoringOverrides.from_environ(),
+        ),
+        variants=ScoringVariants.from_environ(reconstruction=ReconstructionPrograms.from_environ()),
         precision=DensePrecisionPolicy.from_environ(),
         adaptive=AdaptiveOptions(
             adaptive_oversampling=oversampling, max_significants=max_significants,

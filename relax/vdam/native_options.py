@@ -98,8 +98,9 @@ class VdamEnvironment:
     ``jax_persistent_cache_min_compile_time_secs`` (JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS); None when unset.
     ``projector_dump_dir`` (RELAX_INITIAL_MODEL_PROJECTOR_DUMP_DIR, stripped; None when unset or blank) dumps each projector.
     ``accum_dump_dir`` (RELAX_INITIAL_MODEL_ACCUM_DUMP_DIR as set; None when unset or empty) dumps each accumulator.
-    ``engine`` (``relax.runtime.engine_tuning.EngineTuning.from_environ``, VDAM's quantum): how the engines execute.
-    ``scoring`` (``relax.runtime.scoring_overrides.ScoringOverrides.from_environ``): overrides that change values.
+    ``engine`` (``relax.runtime.engine_tuning.EngineTuning``, read by the command with VDAM's quantum): how the
+    engines execute. ``scoring`` (``relax.runtime.scoring_overrides.ScoringOverrides``, read by the command):
+    overrides that change values.
     """
 
     clear_jax_caches_per_iteration: bool = False
@@ -115,7 +116,8 @@ class VdamEnvironment:
     scoring: ScoringOverrides = ScoringOverrides()
 
     @classmethod
-    def from_environ(cls) -> VdamEnvironment:
+    def from_environ(cls, *, engine: EngineTuning, scoring: ScoringOverrides) -> VdamEnvironment:
+        """The switches above; ``engine`` and ``scoring`` are the records the command read (rule 16)."""
         env = os.environ
         if env.get("RELAX_USE_FLOAT64_SCORING", "").strip().lower() in {"1", "true", "yes", "on"}:
             raise NotImplementedError("RELAX_USE_FLOAT64_SCORING: InitialModel's resident E-step scores in float32 only")
@@ -134,8 +136,8 @@ class VdamEnvironment:
                    read_env_text("JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS"),
                    read_env_text("RELAX_INITIAL_MODEL_PROJECTOR_DUMP_DIR", "").strip() or None,
                    read_env_text("RELAX_INITIAL_MODEL_ACCUM_DUMP_DIR") or None,
-                   EngineTuning.from_environ(stable_window_quantum=VDAM_STABLE_FOURIER_WINDOW_QUANTUM),
-                   ScoringOverrides.from_environ())
+                   engine,
+                   scoring)
 
 
 @dataclass(frozen=True, kw_only=True)

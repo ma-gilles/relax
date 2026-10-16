@@ -119,7 +119,10 @@ change is `refactor_procedure.md`; the target shape of a module is `module_templ
 Each rule names a commit that shows it applied and the check that enforces it.
 
 16. **The environment is read once, at the command, into records.** Each variable is a field of one record,
-    parsed by that record's `from_environ()`, which the command calls once and passes down. By kind:
+    parsed by that record's `from_environ()`, which the command calls once and passes down. `from_environ()`
+    stays next to its record but is called only in `relax/commands` (and in the records' parse tests, rule 22); a
+    record that holds another record takes it as an argument of its own `from_environ()`
+    (`RefinementEnvironment.from_environ(engine=..., scoring=...)`). By kind:
     `EngineTuning` (`relax/runtime/engine_tuning.py`): execution settings that change no value;
     `ScoringOverrides` (`relax/runtime/scoring_overrides.py`): switches that change computed values, each
     defaulting to the production RELION-faithful path; and the module records `RefinementEnvironment`,
@@ -134,7 +137,8 @@ Each rule names a commit that shows it applied and the check that enforces it.
     CUDA loader do in the same process (GPU tests change them between cases; a jit cache key holds the CUDA one).
     Before/after: 135ce1ac "refactor(precision): the command reads the dense precision; scoring_policy reads no
     environment for it (rule 5)". Check: `scripts/dev/smell_check.py` `env-read` (gate step `smell`, against
-    `scripts/dev/smell_baseline.json`; a new finding is a defect even though the step only warns).
+    `scripts/dev/smell_baseline.json`; a new finding is a defect even though the step only warns);
+    `tests/unit/test_from_environ_only_in_commands.py` for where `from_environ()` is called.
 17. **Retire switches; delete what nothing uses.** A switch that no longer selects anything goes into the
     `retired` table of `relax/renamed_environment.json`, so importing relax with it set raises. A flag, record
     field, key or option that nothing reads or sets is deleted with its parsing, documentation and tests, not
@@ -253,5 +257,8 @@ change:
   (private names), 20 (when and how to split a module), 21 (ceiling accounting), 22 (tests build records
   explicitly), 23 (no environment changes at import).
 - No rule deleted: every earlier rule still holds.
+- Rule 16 (auto-review of 2026-10-16, items 1, 3 and 4): `from_environ()` is called only in `relax/commands`, a
+  record holding another record takes it as an argument, and the platform switches are read through
+  `relax/runtime/process_platform.py`.
 - Procedure: section 3's environment bullet names the rule 16 records; section 4 runs the call-arity check
   and points to rule 21 for raised ceilings.

@@ -17,7 +17,6 @@ from relax.runtime.engine_tuning import (
     EngineTuning,
     XHalfLargeGrid,
 )
-from relax.vdam.native_options import VdamEnvironment
 
 pytestmark = pytest.mark.unit
 
@@ -476,11 +475,12 @@ def test_the_quantum_override_is_read_once_at_the_boundary(monkeypatch):
             monkeypatch.setenv(STABLE_FOURIER_WINDOW_QUANTUM_ENV, raw)
         assert EngineTuning.from_environ().stable_window_quantum == DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM
         assert EngineTuning.from_environ().stable_window_quantum == EngineTuning().stable_window_quantum
-        assert VdamEnvironment.from_environ().engine.stable_window_quantum == VDAM_STABLE_FOURIER_WINDOW_QUANTUM
+        vdam = EngineTuning.from_environ(stable_window_quantum=VDAM_STABLE_FOURIER_WINDOW_QUANTUM)
+        assert vdam.stable_window_quantum == VDAM_STABLE_FOURIER_WINDOW_QUANTUM
         assert EngineTuning.from_environ(stable_window_quantum=24).stable_window_quantum == 24
     monkeypatch.setenv(STABLE_FOURIER_WINDOW_QUANTUM_ENV, " 16 ")
     assert EngineTuning.from_environ().stable_window_quantum == 16
-    assert VdamEnvironment.from_environ().engine.stable_window_quantum == 16
+    assert EngineTuning.from_environ(stable_window_quantum=VDAM_STABLE_FOURIER_WINDOW_QUANTUM).stable_window_quantum == 16
     for bad in ("7", "0", "eight"):
         monkeypatch.setenv(STABLE_FOURIER_WINDOW_QUANTUM_ENV, bad)
         with pytest.raises(ValueError, match="must be an even integer >= 2"):

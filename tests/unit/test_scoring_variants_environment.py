@@ -13,11 +13,18 @@ from relax.steps import scoring_policy
 pytestmark = pytest.mark.unit
 
 
+def _variants():
+    """``ScoringVariants`` parsed from the environment, with an explicit reconstruction record."""
+    from helpers.run_options import reconstruction_programs
+
+    return ScoringVariants.from_environ(reconstruction=reconstruction_programs())
+
+
 def test_local_adaptive_pass2_defaults_to_relion_pruned_parent(monkeypatch):
     monkeypatch.delenv(scoring_policy.LOCAL_ADAPTIVE_PASS2_FULL_PARENT_ENV, raising=False)
 
     def full_parent():
-        return ScoringVariants.from_environ().local_adaptive_pass2.full_parent
+        return _variants().local_adaptive_pass2.full_parent
 
     assert full_parent() is False
 
@@ -41,20 +48,20 @@ def test_local_adaptive_pass2_defaults_to_relion_pruned_parent(monkeypatch):
 def test_local_adaptive_pass2_denominator_support_mode(monkeypatch, value, expected):
     monkeypatch.setenv("RELAX_LOCAL_ADAPTIVE_PASS2_DENOMINATOR_SUPPORT", value)
 
-    assert ScoringVariants.from_environ().local_adaptive_pass2.denominator_mode == expected
+    assert _variants().local_adaptive_pass2.denominator_mode == expected
 
 
 def test_kclass_mstep_defaults_to_relion_x_half_with_full_volume_escape_hatch(monkeypatch):
     """K-class quality parity should use RELION x-half BPref accumulators by default."""
 
     monkeypatch.delenv("RELAX_K_CLASS_RELION_X_HALF_MSTEP", raising=False)
-    assert ScoringVariants.from_environ().k_class_relion_x_half_mstep is True
+    assert _variants().k_class_relion_x_half_mstep is True
 
     monkeypatch.setenv("RELAX_K_CLASS_RELION_X_HALF_MSTEP", "0")
-    assert ScoringVariants.from_environ().k_class_relion_x_half_mstep is False
+    assert _variants().k_class_relion_x_half_mstep is False
 
     monkeypatch.setenv("RELAX_K_CLASS_RELION_X_HALF_MSTEP", "1")
-    assert ScoringVariants.from_environ().k_class_relion_x_half_mstep is True
+    assert _variants().k_class_relion_x_half_mstep is True
 
 
 def test_k1_relion_x_half_mstep_defaults_on_with_escape_hatch(monkeypatch):
@@ -62,16 +69,16 @@ def test_k1_relion_x_half_mstep_defaults_on_with_escape_hatch(monkeypatch):
 
     monkeypatch.delenv(scoring_policy.K1_RELION_X_HALF_MSTEP_ENV, raising=False)
     monkeypatch.setattr(scoring_policy, "k1_relion_x_half_mstep_default_available", lambda: True)
-    assert ScoringVariants.from_environ().k1_relion_x_half_mstep is True
+    assert _variants().k1_relion_x_half_mstep is True
 
     monkeypatch.setenv(scoring_policy.K1_RELION_X_HALF_MSTEP_ENV, "0")
-    assert ScoringVariants.from_environ().k1_relion_x_half_mstep is False
+    assert _variants().k1_relion_x_half_mstep is False
 
     monkeypatch.setenv(scoring_policy.K1_RELION_X_HALF_MSTEP_ENV, "1")
-    assert ScoringVariants.from_environ().k1_relion_x_half_mstep is True
+    assert _variants().k1_relion_x_half_mstep is True
 
     monkeypatch.setenv(scoring_policy.K1_RELION_X_HALF_MSTEP_ENV, "invalid")
-    assert ScoringVariants.from_environ().k1_relion_x_half_mstep is True
+    assert _variants().k1_relion_x_half_mstep is True
 
 
 def test_k1_relion_x_half_mstep_default_disables_when_cuda_unavailable(monkeypatch):
@@ -79,10 +86,10 @@ def test_k1_relion_x_half_mstep_default_disables_when_cuda_unavailable(monkeypat
 
     monkeypatch.delenv(scoring_policy.K1_RELION_X_HALF_MSTEP_ENV, raising=False)
     monkeypatch.setattr(scoring_policy, "k1_relion_x_half_mstep_default_available", lambda: False)
-    assert ScoringVariants.from_environ().k1_relion_x_half_mstep is False
+    assert _variants().k1_relion_x_half_mstep is False
 
     monkeypatch.setenv(scoring_policy.K1_RELION_X_HALF_MSTEP_ENV, "1")
-    assert ScoringVariants.from_environ().k1_relion_x_half_mstep is True
+    assert _variants().k1_relion_x_half_mstep is True
 
 
 @pytest.mark.parametrize(("value", "expected"), [(None, False), ("0", False), ("1", True)])
@@ -91,4 +98,4 @@ def test_approx_acc_rot_for_convergence_is_read_once(monkeypatch, value, expecte
         monkeypatch.delenv("RELAX_EM_USE_APPROX_ACC_ROT_FOR_CONVERGENCE", raising=False)
     else:
         monkeypatch.setenv("RELAX_EM_USE_APPROX_ACC_ROT_FOR_CONVERGENCE", value)
-    assert ScoringVariants.from_environ().approx_acc_rot_for_convergence is expected
+    assert _variants().approx_acc_rot_for_convergence is expected

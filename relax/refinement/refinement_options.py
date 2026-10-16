@@ -558,7 +558,7 @@ class ScoringVariants:
         return self.k_class_relion_x_half_mstep if k_class else self.k1_relion_x_half_mstep
 
     @classmethod
-    def from_environ(cls) -> ScoringVariants:
+    def from_environ(cls, *, reconstruction: ReconstructionPrograms) -> ScoringVariants:
         from relax.steps import scoring_policy as sp
 
         log = logging.getLogger(__name__)
@@ -583,7 +583,7 @@ class ScoringVariants:
                 ),
             ),
             approx_acc_rot_for_convergence=parse_env_true_flag(APPROX_ACC_ROT_CONVERGENCE_ENV),
-            reconstruction=ReconstructionPrograms.from_environ(),
+            reconstruction=reconstruction,
         )
 
 
@@ -757,7 +757,7 @@ class RefinementEnvironment:
     scoring: ScoringOverrides = ScoringOverrides()
 
     @classmethod
-    def from_environ(cls) -> RefinementEnvironment:
+    def from_environ(cls, *, engine: EngineTuning, scoring: ScoringOverrides) -> RefinementEnvironment:
         return cls(
             half_accumulator_guard=half_accumulator_guard_mode(
                 read_env_text(HALF_ACCUMULATOR_GUARD_ENV),
@@ -770,8 +770,8 @@ class RefinementEnvironment:
                 cache_dir=read_env_text("RELAX_RELION_PROJECTOR_CACHE_DIR", "").strip() or None,
                 dump_dir=read_env_text("RELAX_RELION_PROJECTOR_DUMP_DIR") or None,
             ),
-            engine=EngineTuning.from_environ(),
-            scoring=ScoringOverrides.from_environ(),
+            engine=engine,
+            scoring=scoring,
         )
 
 

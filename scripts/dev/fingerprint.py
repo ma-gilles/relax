@@ -1497,7 +1497,14 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
                 # The records the command passes where the source has no default for them.
                 **{
                     name: value() for name, value in (
-                        ("variants", lambda: refinement_options.ScoringVariants.from_environ()),
+                        # Since rule 16's command-only from_environ, the command reads the reconstruction record
+                        # and passes it in; older commits read it inside ScoringVariants.from_environ.
+                        ("variants", lambda: refinement_options.ScoringVariants.from_environ(**(
+                            {"reconstruction": refinement_options.ReconstructionPrograms.from_environ()}
+                            if "reconstruction" in inspect.signature(
+                                refinement_options.ScoringVariants.from_environ
+                            ).parameters else {}
+                        ))),
                         # The command reads it (DensePrecisionPolicy.from_environ); older commits kept it in
                         # relax.steps.scoring_policy.DENSE_PRECISION.
                         ("precision", lambda: getattr(

@@ -34,6 +34,9 @@ import numpy as np
 
 import relax
 import relax.commands.refinement_parser
+import relax.reconstruction.volume_solver
+import relax.runtime.engine_tuning
+import relax.runtime.scoring_overrides
 from relax.commands import refinement_arguments, refinement_particles
 from relax.diagnostics import observers, parity_dump
 from relax.numerics.precision import DensePrecisionPolicy, use_float32_matmuls
@@ -1272,8 +1275,13 @@ def main(command=None):
         ),
         execution=refinement_arguments.resolve_execution(args),
         final_pass=refinement_options.FinalPassOptions.from_environ(),
-        environment=refinement_options.RefinementEnvironment.from_environ(),
-        variants=refinement_options.ScoringVariants.from_environ(),
+        environment=refinement_options.RefinementEnvironment.from_environ(
+            engine=relax.runtime.engine_tuning.EngineTuning.from_environ(),
+            scoring=relax.runtime.scoring_overrides.ScoringOverrides.from_environ(),
+        ),
+        variants=refinement_options.ScoringVariants.from_environ(
+            reconstruction=relax.reconstruction.volume_solver.ReconstructionPrograms.from_environ(),
+        ),
         precision=dense_precision,
         adaptive=adaptive_options,
         optics_geometry=OpticsGeometry(

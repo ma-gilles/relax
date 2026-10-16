@@ -15,8 +15,15 @@ from helpers.tiny_main import controller_inputs
 from helpers.tiny_refinement import run_tiny_refinement
 
 from relax.refinement.refinement_options import RefinementEnvironment
+from relax.runtime.engine_tuning import EngineTuning
+from relax.runtime.scoring_overrides import ScoringOverrides
 
 pytestmark = pytest.mark.unit
+
+
+def _refinement_environment():
+    """``RefinementEnvironment`` read as the command reads it, with its engine and scoring records."""
+    return RefinementEnvironment.from_environ(engine=EngineTuning.from_environ(), scoring=ScoringOverrides.from_environ())
 
 
 def _from_environ(monkeypatch, name, value):
@@ -24,7 +31,7 @@ def _from_environ(monkeypatch, name, value):
         monkeypatch.delenv(name, raising=False)
     else:
         monkeypatch.setenv(name, value)
-    return RefinementEnvironment.from_environ()
+    return _refinement_environment()
 
 
 def _unset_relax_environment(monkeypatch):
@@ -124,12 +131,12 @@ def test_low_pmax_refine_guard_is_read_once(monkeypatch, caplog):
     monkeypatch.setenv("RELAX_EM_LOW_PMAX_REFINE_MAX_AVE_PMAX", "0.2")
     monkeypatch.setenv("RELAX_EM_LOW_PMAX_REFINE_MIN_RES_STALL", "5")
     monkeypatch.setenv("RELAX_EM_LOW_PMAX_REFINE_REQUIRE_LOCAL", "no")
-    assert RefinementEnvironment.from_environ().low_pmax_refine_guard == LowPmaxRefineGuard(
+    assert _refinement_environment().low_pmax_refine_guard == LowPmaxRefineGuard(
         max_ave_pmax=0.2, min_res_stall=5, require_local_search=False)
     # An unrecognised value warns and keeps its default, as before.
     monkeypatch.setenv("RELAX_EM_LOW_PMAX_REFINE_REQUIRE_LOCAL", "maybe")
     monkeypatch.setenv("RELAX_EM_LOW_PMAX_REFINE_MIN_RES_STALL", "x")
-    guard = RefinementEnvironment.from_environ().low_pmax_refine_guard
+    guard = _refinement_environment().low_pmax_refine_guard
     assert guard.require_local_search is True and guard.min_res_stall == 3
     assert "RELAX_EM_LOW_PMAX_REFINE_REQUIRE_LOCAL" in caplog.text
 
@@ -337,11 +344,12 @@ def test_scoring_variants_helper_is_the_unset_environment(monkeypatch):
     default is the device's, so ``ScoringVariants`` has no all-defaults constructor) and one host FFT thread."""
     from helpers.run_options import cli
 
+    from relax.reconstruction.volume_solver import ReconstructionPrograms
     from relax.refinement.refinement_options import ScoringVariants
 
     _unset_relax_environment(monkeypatch)
     monkeypatch.delenv("SLURM_CPUS_PER_TASK", raising=False)
-    assert ScoringVariants.from_environ() == cli.variants()
+    assert ScoringVariants.from_environ(reconstruction=ReconstructionPrograms.from_environ()) == cli.variants()
 
 
 def test_fsc_dump_reaches_the_command(monkeypatch, tmp_path):
@@ -398,7 +406,7 @@ def test_refinement_environment_defaults_are_the_unset_environment(monkeypatch):
     """``RefinementEnvironment()`` is what the command reads with no variable set; the tiny refinement runs with it
     unless a test gives another."""
     _unset_relax_environment(monkeypatch)
-    assert RefinementEnvironment.from_environ() == RefinementEnvironment()
+    assert _refinement_environment() == RefinementEnvironment()
 
 
 def test_final_pass_options_defaults_are_the_unset_environment(monkeypatch):
@@ -507,7 +515,7 @@ def test_the_half_accumulator_guard_mode_is_read_once(monkeypatch):
     from relax.runtime.engine_tuning import FINITE_CHECK_WARN_ENV
 
     def guard():
-        return RefinementEnvironment.from_environ().half_accumulator_guard
+        return _refinement_environment().half_accumulator_guard
 
     monkeypatch.delenv(HALF_ACCUMULATOR_GUARD_ENV, raising=False)
     monkeypatch.delenv(FINITE_CHECK_WARN_ENV, raising=False)

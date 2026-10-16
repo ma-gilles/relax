@@ -599,6 +599,8 @@ def main(argv: Sequence[str] | None = None, *, oracle_m_step=None) -> int:
         NATIVE_MSTEP_REPLAY_ENVS,
         vdam_input_source,
     )
+    from relax.runtime.engine_tuning import VDAM_STABLE_FOURIER_WINDOW_QUANTUM, EngineTuning
+    from relax.runtime.scoring_overrides import ScoringOverrides
     from relax.vdam.driver import run_native_initial_model
     from relax.vdam.native_options import NativeInitialModelOptions, VdamEnvironment
 
@@ -610,7 +612,10 @@ def main(argv: Sequence[str] | None = None, *, oracle_m_step=None) -> int:
         oracle_m_step=oracle_m_step,
     )
     result = run_native_initial_model(
-        NativeInitialModelOptions(**options_dict, environment=VdamEnvironment.from_environ()),
+        NativeInitialModelOptions(**options_dict, environment=VdamEnvironment.from_environ(
+            engine=EngineTuning.from_environ(stable_window_quantum=VDAM_STABLE_FOURIER_WINDOW_QUANTUM),
+            scoring=ScoringOverrides.from_environ(),
+        )),
         source=source,
         observer=vdam_command_observer(),
     )
