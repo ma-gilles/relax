@@ -448,16 +448,16 @@ def tilt_coarse_cc_winners(
     padding_factor: int, scale_corrections=None,
 ):
     """Each particle's coarse ``--firstiter_cc`` winner against one reference on the global C1 grid: the cell
-    ``rotation * T + translation`` and its normalized CC (:func:`relax.scoring.tomo_coarse.particle_coarse_cc_winners`).
+    ``rotation * T + translation`` and its normalized CC (:func:`relax.scoring.tomo_coarse_cc.particle_coarse_cc_winners`).
     ``scale_corrections`` are per particle."""
 
     from relax.fine_pass.bucket_arrays import relion_parent_execution_key
     from relax.sampling import grids
-    from relax.scoring import tomo_coarse
+    from relax.scoring import tomo_coarse_cc
 
     coarse_ids = np.arange(int(grids.rotation_grid_size(sampling.healpix_order, "C1")))
     _, coarse_px, _, _ = tomo_translation_grids(sampling, float(half.voxel_size))
-    return tomo_coarse.particle_coarse_cc_winners(
+    return tomo_coarse_cc.particle_coarse_cc_winners(
         half.images,
         unit_image_offsets=half.unit_image_offsets,
         image_projections=half.image_projections,

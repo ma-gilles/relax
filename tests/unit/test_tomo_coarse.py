@@ -14,7 +14,7 @@ import jax.numpy as jnp
 
 from relax.cuda import coarse as cuda_coarse
 from relax.cuda import translate as cuda_translate
-from relax.scoring import tomo_coarse
+from relax.scoring import tomo_coarse, tomo_coarse_gemm
 
 
 # Moved from relax/scoring/tomo_coarse.py (PLAN e1): no relax module uses them, only this test file.
@@ -39,7 +39,7 @@ def _coarse_gemm_projections(
     ``texture`` is the half's :class:`relax.cuda.projector.RelionCapacityHalfTextureF32`, staged once per pass.
     """
 
-    return tomo_coarse._score_window_projections(
+    return tomo_coarse_gemm._score_window_projections(
         projector_half,
         rotations,
         jnp.asarray(layout.score_indices_np, dtype=jnp.int32),
@@ -124,7 +124,7 @@ def test_particle_significance_cuts_the_summed_diff2_with_its_3d_offset_prior():
 def test_images_add_in_slot_order():
     rng = np.random.default_rng(7)
     image_diff2 = rng.uniform(1000.0, 1010.0, size=(2, 3, 5, 9)).astype(np.float32)
-    total = np.asarray(tomo_coarse._add_image_diff2_in_slot_order(jnp.zeros((2, 5, 9), jnp.float32), jnp.asarray(image_diff2)))
+    total = np.asarray(tomo_coarse_gemm._add_image_diff2_in_slot_order(jnp.zeros((2, 5, 9), jnp.float32), jnp.asarray(image_diff2)))
     expected = np.zeros((2, 5, 9), np.float32)
     for s in range(3):
         expected = (expected + image_diff2[:, s]).astype(np.float32)
@@ -148,7 +148,7 @@ def test_the_gemm_scorer_is_relions_direct_square_with_each_images_own_rows(monk
         return (images[:, None, :] * phase[:, :, None]).reshape(-1, images.shape[1])
 
     monkeypatch.setattr(cuda_translate, "relion_translate_score_f32", shift)
-    got, _bound = tomo_coarse._images_coarse_gemm_diff2.__wrapped__(
+    got, _bound = tomo_coarse_gemm._images_coarse_gemm_diff2.__wrapped__(
         jnp.asarray(projected), jnp.asarray(images), jnp.asarray(weight), jnp.asarray(initial), jnp.asarray(angles),
         jnp.arange(n_px, dtype=jnp.int32), image_shape=(8, 8),
     )
@@ -475,7 +475,7 @@ def test_the_gemm_scorer_follows_relions_direct_square_kernel(gpu_device, persis
             texture=texture,
         ).reshape(f["n_images"], f["n_rot"], -1)
         assert projected.dtype == (jnp.float32 if persistent_texture else jnp.complex64)
-        gemm, bounds = tomo_coarse._images_coarse_gemm_diff2(
+        gemm, bounds = tomo_coarse_gemm._images_coarse_gemm_diff2(
             projected, jnp.asarray(f["images"]), jnp.asarray(f["weight"]), jnp.asarray(f["initial"]),
             jnp.asarray(f["angles"]), jnp.asarray(layout.score_indices_np, jnp.int32), image_shape=(f["box"], f["box"]),
         )
@@ -517,7 +517,7 @@ def test_the_gemm_error_bound_holds_over_a_million_samples(gpu_device, box):
         projected = _coarse_gemm_projections(
             f["half"], jnp.asarray(f["rotations"]), layout, model_max_r=f["max_r"], padding_factor=f["pad"], texture=None
         ).reshape(n_images, n_rot, -1)
-        gemm, bound = tomo_coarse._images_coarse_gemm_diff2(
+        gemm, bound = tomo_coarse_gemm._images_coarse_gemm_diff2(
             projected, jnp.asarray(f["images"]), jnp.asarray(f["weight"]), jnp.asarray(f["initial"]),
             jnp.asarray(f["angles"]), jnp.asarray(layout.score_indices_np, jnp.int32), image_shape=(box, box),
         )
@@ -569,7 +569,7 @@ def test_the_bound_from_the_scorers_model_energy_leaves_the_diff2_bitwise(gpu_de
         initial, angles = jnp.asarray(f["initial"]), jnp.asarray(f["angles"])
         score_indices = jnp.asarray(layout.score_indices_np, jnp.int32)
         image_shape = (f["box"], f["box"])
-        diff2, bound = tomo_coarse._images_coarse_gemm_diff2(
+        diff2, bound = tomo_coarse_gemm._images_coarse_gemm_diff2(
             projected, images, weight, initial, angles, score_indices, image_shape=image_shape
         )
 
@@ -808,7 +808,7 @@ def _fake_coarse_kernels(monkeypatch, rng, flushes):
 
     monkeypatch.setattr(projection, "relion_projector_half_to_texture_full", lambda value: jnp.asarray(value))
     monkeypatch.setattr(tomo_coarse, "direct_rows_diff2", direct)
-    monkeypatch.setattr(tomo_coarse, "_coarse_gemm_slot_block", fake_block)
+    monkeypatch.setattr(tomo_coarse, "coarse_gemm_slot_block", fake_block)
     monkeypatch.setattr(tomo_coarse, "_all_image_coarse_operands", operands)
     monkeypatch.setattr(tomo_coarse, "particle_coarse_significance", capture)
     if flushes == "flush_per_particle":
@@ -1168,7 +1168,7 @@ def test_capped_particles_are_cut_on_the_direct_squares_of_their_undecided_rotat
 
     monkeypatch.setattr(device_rotations, "relion_adaptive_pass1_rotations", pass1_rotations)
     monkeypatch.setattr(projection, "relion_projector_half_to_texture_full", lambda value: jnp.asarray(value))
-    monkeypatch.setattr(tomo_coarse, "_coarse_gemm_slot_block", fake_block)
+    monkeypatch.setattr(tomo_coarse, "coarse_gemm_slot_block", fake_block)
     monkeypatch.setattr(tomo_coarse, "direct_rows_diff2", fake_direct)
     monkeypatch.setattr(tomo_coarse, "_all_image_coarse_operands", operands)
     monkeypatch.setattr(tomo_coarse, "particle_coarse_significance", capture)

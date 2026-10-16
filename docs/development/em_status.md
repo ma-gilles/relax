@@ -507,7 +507,7 @@ Maps lost in the 2026-10-03 cleanup incident (benchw job 14936017): the relax ar
   particles tens of thousands of significant samples.
 - `--firstiter_cc`: the coarse pass adds every tilt image's normalized CC on RELION's square
   current-size crop (DC and x=0 column included), with RELION's 128 atomic additions per image, and
-  keeps the first maximum in RELION's orientation order (`tomo_coarse.particle_coarse_cc_winners`);
+  keeps the first maximum in RELION's orientation order (`tomo_coarse_cc.particle_coarse_cc_winners`);
   pass 2 scores its children (`resident_tilts.tilt_cc_scores`: each image's CC operands translated per
   slot). The tilt-series Class3D CC iteration is K=1 against class 0, which is RELION's rule when it
   seeds the classes from one reference (`do_generate_seeds`, ml_optimiser.cpp:4392-4401); with one
@@ -529,7 +529,7 @@ Maps lost in the 2026-10-03 cleanup incident (benchw job 14936017): the relax ar
   93% of the E-step's GPU time (85 ms per particle; nsys,
   `em_work/cryoet_vdam_20261001/profile`).
 - The subtomogram coarse pass now scores each tilt image with the SPA coarse GEMM scorer
-  (`tomo_coarse._images_coarse_gemm_diff2`, `scoring._relion_coarse_gaussian_gemm_scores_jit`): the persistent
+  (`tomo_coarse_gemm._images_coarse_gemm_diff2`, `scoring._relion_coarse_gaussian_gemm_scores_jit`): the persistent
   projector texture writes the GEMM's packed `[Re | Im]` reference rows in one launch per slot block
   (`ProjectRelionHalfCapacityTextureCompactPacked`), diff2 is summed translation-major in `img_id` order and each
   significance flush is read back after the next is dispatched. Late E-step on one H100, same node, against the
