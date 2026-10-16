@@ -78,7 +78,9 @@ def _stable_window_physical_class(box_size: int, current_size: int, quantum: int
         return None
     quantized = stable_fourier_window_current_size(int(current_size), int(box_size), quantum=int(quantum))
     classes = history.setdefault((int(box_size), int(quantum)), set())
-    reusable = [size for size in classes if quantized < size <= quantized + int(quantum)]
+    # The full box is its own class (stable_fourier_window_current_size): a size below it never takes it,
+    # though a reference-model pass on another grid records it (a final pass at the box).
+    reusable = [size for size in classes if quantized < size <= quantized + int(quantum) and size < int(box_size)]
     chosen = min(reusable) if reusable else quantized
     classes.add(chosen)
     return chosen

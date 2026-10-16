@@ -28,6 +28,19 @@ def test_a_new_class_reuses_a_run_class_at_most_one_quantum_larger():
         assert _stable_window_physical_class(128, 80, 8) == 80  # a new refinement starts empty
 
 
+def test_a_size_below_the_box_never_reuses_the_box_class():
+    """A final pass at the box records the box class through its reference-model cube (images on another
+    grid); a pass at 126 of the 128 box then keeps its own class 126 (EMPIAR-10299 final iteration, relax#95)."""
+
+    with stable_window_class_history():
+        assert _stable_window_physical_class(128, 128, 8) == 128
+        assert _stable_window_physical_class(128, 126, 8) == 126
+        assert _stable_window_physical_class(128, 122, 8) == 126
+        make_stable_fourier_window_shape_plan(
+            (128, 128), 126, 128 * 65, enabled=True, quantum=8, physical_current_size=126
+        )
+
+
 def test_a_refinement_runs_on_its_own_quantum(monkeypatch):
     """Each command resolves its own quantum once, where it reads the environment: Class3D and auto-refine 8,
     VDAM 24; the passes receive it (EngineTuning.stable_window_quantum)."""
