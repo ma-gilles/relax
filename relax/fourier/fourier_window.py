@@ -19,7 +19,6 @@ See ``docs/math/plan_relion_parity.md``, Phase 3.
 """
 
 from dataclasses import dataclass, replace
-from functools import partial
 from typing import Any
 
 import jax
@@ -306,20 +305,15 @@ def centered_half_indices_to_fftw_half_indices(image_shape, indices):
     need this row remapping.
     """
 
-    return _centered_to_fftw_half_indices(
-        jnp.asarray(indices, dtype=jnp.int32), (int(image_shape[0]), int(image_shape[1]))
-    )
-
-
-@partial(jax.jit, static_argnames=("image_shape",))
-def _centered_to_fftw_half_indices(indices, image_shape):
-    # One integer program per window size instead of five eager ones.
-    height, width = image_shape
+    # Host integer arithmetic: a jitted form compiled once per window size (14 programs, 11.8 s of a cold
+    # EMPIAR-10299 run, relax#95) for a map the host computes in microseconds.
+    height, width = int(image_shape[0]), int(image_shape[1])
     half_width = width // 2 + 1
-    rows = indices // half_width
-    cols = indices % half_width
+    centered = np.asarray(indices, dtype=np.int32)
+    rows = centered // half_width
+    cols = centered % half_width
     fftw_rows = (rows + height // 2) % height
-    return (fftw_rows * half_width + cols).astype(jnp.int32)
+    return jnp.asarray((fftw_rows * half_width + cols).astype(np.int32))
 
 
 def relion_fftw_order_for_square_score_window(image_shape, current_size, score_indices):

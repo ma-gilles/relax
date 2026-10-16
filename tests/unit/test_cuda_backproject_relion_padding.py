@@ -1,7 +1,15 @@
-import pytest
+from functools import partial
 
+import jax
+import jax.numpy as jnp
+import numpy as np
+import pytest
 from recovar.cuda_backproject import _infer_backproject_upsampling, _project_ffi_kwargs
-from relax.fourier.fourier_window import centered_half_indices_to_fftw_half_indices
+
+from relax.fourier.fourier_window import (
+    centered_half_indices_to_fftw_half_indices,
+    make_fourier_window_indices_np,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -53,6 +61,41 @@ def test_centered_half_indices_to_fftw_half_indices_remaps_rows_only():
         100 * half_width + 5,
         28 * half_width + 7,
     ]
+
+
+def _jitted_centered_to_fftw_half_indices(indices, image_shape):
+    """The removed jitted map (relax#95), kept here as the reference the host map must equal."""
+
+    @partial(jax.jit, static_argnames=("shape",))
+    def remap(values, shape):
+        height, width = shape
+        half_width = width // 2 + 1
+        rows = values // half_width
+        cols = values % half_width
+        return (((rows + height // 2) % height) * half_width + cols).astype(jnp.int32)
+
+    return remap(jnp.asarray(indices, dtype=jnp.int32), tuple(int(v) for v in image_shape))
+
+
+@pytest.mark.parametrize("current_size", list(range(38, 129, 2)))
+def test_centered_half_indices_to_fftw_half_indices_equals_jitted_map(current_size):
+    image_shape = (128, 128)
+    for square in (False, True):
+        indices, _ = make_fourier_window_indices_np(image_shape, current_size, square=square)
+        mapped = centered_half_indices_to_fftw_half_indices(image_shape, indices)
+        assert mapped.dtype == jnp.int32
+        np.testing.assert_array_equal(
+            np.asarray(mapped), np.asarray(_jitted_centered_to_fftw_half_indices(indices, image_shape))
+        )
+
+
+@pytest.mark.parametrize("image_shape", [(127, 127), (129, 129), (130, 130), (126, 128)])
+def test_centered_half_indices_to_fftw_half_indices_equals_jitted_map_full_half(image_shape):
+    indices = np.arange(int(image_shape[0]) * (int(image_shape[1]) // 2 + 1), dtype=np.int32)
+    mapped = centered_half_indices_to_fftw_half_indices(image_shape, jnp.asarray(indices))
+    np.testing.assert_array_equal(
+        np.asarray(mapped), np.asarray(_jitted_centered_to_fftw_half_indices(indices, image_shape))
+    )
 
 
 def test_relion_texture_uses_one_canonical_boolean_ffi_mode(monkeypatch):
