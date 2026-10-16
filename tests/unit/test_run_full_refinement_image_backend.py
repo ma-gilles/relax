@@ -7,13 +7,13 @@ import os
 import pytest
 from helpers.tiny_main import controller_inputs, write_tiny_data_dir
 
-from relax.commands import refinement_arguments, refinement_particles
+from relax.commands import refinement_parser, refinement_particles
 
 BACKENDS = ("auto", "host_numpy", "jax_gpu", "relion_cuda")
 
 
 def _parse(*arguments):
-    return refinement_arguments.parse_refinement_args(["--data_dir", "data", "--output", "out", *arguments])
+    return refinement_parser.parse_refinement_args(["--data_dir", "data", "--output", "out", *arguments])
 
 
 def test_image_fourier_backend_cli_defaults_by_job_type_with_typed_choices():
@@ -54,12 +54,12 @@ def test_relion_softmask_reduction_routes_both_native_diagnostic_modes(monkeypat
     os.makedirs(tmp_path / "out")
     with pytest.raises(ValueError, match="requires --image-fourier-backend relion_cuda"):
         refinement_particles.load_particle_inputs(
-            refinement_arguments.parse_refinement_args([*arguments, "--image-fourier-backend", "host_numpy"]),
+            refinement_parser.parse_refinement_args([*arguments, "--image-fourier-backend", "host_numpy"]),
             relion_half_sets_from_input=False,
             image_fourier_backend="host_numpy",
         )
     refinement_particles.load_particle_inputs(
-        refinement_arguments.parse_refinement_args([*arguments, "--image-fourier-backend", "relion_cuda"]),
+        refinement_parser.parse_refinement_args([*arguments, "--image-fourier-backend", "relion_cuda"]),
         relion_half_sets_from_input=False,
         image_fourier_backend="relion_cuda",
     )

@@ -10,7 +10,7 @@ import numpy as np
 import pytest
 from helpers.tiny_main import controller_inputs
 
-from relax.commands import refinement_arguments
+from relax.commands import refinement_arguments, refinement_parser
 from relax.refinement.refinement_options import (
     AdaptiveOptions,
     ExecutionOptions,
@@ -22,7 +22,7 @@ LOG = logging.getLogger(__name__)
 
 
 def _args(*arguments):
-    return refinement_arguments.parse_refinement_args(["--data_dir", "d", "--output", "o", *arguments])
+    return refinement_parser.parse_refinement_args(["--data_dir", "d", "--output", "o", *arguments])
 
 
 def test_adaptive_options_parse_the_oracle_lists_and_keep_the_sampling_flags():

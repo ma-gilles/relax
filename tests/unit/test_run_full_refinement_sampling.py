@@ -254,10 +254,10 @@ def test_optimizer_seed_is_resolved_before_halfset_splitting(monkeypatch, tmp_pa
     are drawn with that resolved seed."""
     from helpers.tiny_main import controller_inputs
 
-    from relax.commands import refinement_arguments
+    from relax.commands import refinement_parser
     from relax.star.input_particle_table import glibc_rand_sequence
 
-    assert refinement_arguments.parse_refinement_args(["--data_dir", "d", "--output", "o"]).seed is None
+    assert refinement_parser.parse_refinement_args(["--data_dir", "d", "--output", "o"]).seed is None
     import relax.commands.refinement_run as driver
 
     monkeypatch.setattr(driver.time, "time", lambda: 18.25)

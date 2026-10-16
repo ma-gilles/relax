@@ -29,8 +29,9 @@ Algorithm to code: `docs/math/relion_refinement_algorithm.md`.
 | `startup_references.py`, `startup_noise.py` | start-up maps, prior and noise |
 
 The command that runs this controller lives in `relax/commands/`: `refinement_run.py` (`relax refine` and
-`relax class3d`: `run_from_command_line`, `main`, one 1,020-line function), `refinement_arguments.py` (the flags,
-the RELION GUI job defaults, input-mode admission) and `refinement_particles.py` (input loading and half sets).
+`relax class3d`: `run_from_command_line`, `main`, one 1,020-line function), `refinement_parser.py` (the flags
+and their RELION GUI job defaults), `refinement_arguments.py` (the job-type defaults, input-mode admission and
+the option resolvers) and `refinement_particles.py` (input loading and half sets).
 
 Steps this controller shares with VDAM live in `relax/steps/`: `half_inputs.py` (a half's scoring inputs), `score_outputs.py` (a half's score records), `scoring_policy.py` (the scoring execution defaults and diagnostic selectors), `optics_shapes.py` (the shape classes of optics groups with different pixel size or box, and their datasets), `shape_class_scoring.py` (scoring a half one shape class at a time and merging the results), `tomo_half.py` (the subtomogram dataset, half and sampling records, also read by PPCA), `tomo_scoring.py` (the E-step and M-step of a subtomogram half; the per-tilt-image arithmetic is `relax/sampling/tomo_particles.py`), `projector_preparation.py` (projector slabs), `expected_accuracy.py` (RELION's expected-accuracy estimate; its trial order is `relax/sampling/expected_accuracy.py`) and `convergence.py` (RELION's average Pmax and hidden-variable changes, which `refinement_state.py` reads).
 
@@ -47,7 +48,7 @@ Steps this controller shares with VDAM live in `relax/steps/`: `half_inputs.py` 
    call shared helpers that take no mode argument.
 5. Keep genuine scientific alternatives separate. The K=1 and Class3D prior formulas do not become one formula
    to remove a conditional, and the final pass is not folded into the numbered iterations.
-6. Define a flag and its default once, in `relax/commands/refinement_arguments.py`. A changed default updates
+6. Define a flag and its default once, in `relax/commands/refinement_parser.py`. A changed default updates
    `tests/unit/test_relion_gui_defaults.py` and `docs/development/relion_defaults.md`, and needs the long tier.
 7. The structure ceilings in `docs/development/refinement_structure_metrics.json` are review signals with
    slack (owner ruling, 2026-10-05): within the slack the check warns and the report names the growth and

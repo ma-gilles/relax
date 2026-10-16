@@ -12,7 +12,7 @@ import pytest
 from helpers.run_options import stand_in
 from helpers.tiny_refinement import run_tiny_refinement
 
-from relax.commands import refinement_arguments
+from relax.commands import refinement_arguments, refinement_parser
 from relax.parity.relion_replay_source import RelionReplay
 from relax.refinement import iteration_loop, iteration_snapshot
 from relax.refinement.ports import RunObserver
@@ -40,7 +40,7 @@ def test_every_default_is_relions_rule():
     options = stand_in.options().consistency
     assert {name: getattr(options, name) for name, _, _ in OPTIONS} == {name: default for name, default, _ in OPTIONS}
     assert options.non_default() == {}
-    parsed = refinement_arguments.resolve_consistency_options(refinement_arguments.parse_refinement_args(BASE_ARGS))
+    parsed = refinement_arguments.resolve_consistency_options(refinement_parser.parse_refinement_args(BASE_ARGS))
     assert parsed == RelionConsistencyOptions()
 
 
@@ -49,10 +49,10 @@ def test_option_is_named_validated_and_parsed(name, value):
     assert RelionConsistencyOptions(**{name: value}).non_default() == {name: value}
     with pytest.raises(ValueError, match=name):
         RelionConsistencyOptions(**{name: "no-such-rule"})
-    args = refinement_arguments.parse_refinement_args([*BASE_ARGS, f"--{name}", value])
+    args = refinement_parser.parse_refinement_args([*BASE_ARGS, f"--{name}", value])
     assert getattr(refinement_arguments.resolve_consistency_options(args), name) == value
     with pytest.raises(SystemExit):
-        refinement_arguments.parse_refinement_args([*BASE_ARGS, f"--{name}", "no-such-rule"])
+        refinement_parser.parse_refinement_args([*BASE_ARGS, f"--{name}", "no-such-rule"])
 
 
 @NON_DEFAULT
@@ -64,11 +64,11 @@ def test_command_line_refuses_the_option_on_relion_seeded_or_replayed_state(name
         ["--init_noise_from_npz", "noise.npz"],
         ["--init_relion_iteration", "3"],
     ):
-        args = refinement_arguments.parse_refinement_args([*BASE_ARGS, f"--{name}", value, *flags])
+        args = refinement_parser.parse_refinement_args([*BASE_ARGS, f"--{name}", value, *flags])
         with pytest.raises(SystemExit, match="RELION-seeded or replayed state"):
             refinement_arguments.resolve_consistency_options(args)
         # The default keeps every such route.
-        refinement_arguments.resolve_consistency_options(refinement_arguments.parse_refinement_args([*BASE_ARGS, *flags]))
+        refinement_arguments.resolve_consistency_options(refinement_parser.parse_refinement_args([*BASE_ARGS, *flags]))
 
 
 def _stub_half(owner=None):

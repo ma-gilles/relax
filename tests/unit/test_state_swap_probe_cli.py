@@ -28,7 +28,7 @@ pytestmark = pytest.mark.unit
 
 
 def _parse_state_swap_args(*tokens):
-    from relax.commands.refinement_arguments import parse_refinement_args
+    from relax.commands.refinement_parser import parse_refinement_args
 
     return parse_refinement_args(["--data_dir", "unused", "--output", "unused", *tokens])
 

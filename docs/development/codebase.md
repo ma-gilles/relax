@@ -34,8 +34,9 @@ Fourier preprocessor. Optimiser-source discovery belongs to
 `commands.refinement_arguments`; the controller retains half-set construction,
 startup-noise source selection, explicit state updates and invocation timing.
 
-Refinement flag definitions, job defaults and supported-mode validation belong to
-[`refinement_arguments.py`](../../relax/commands/refinement_arguments.py). The execution
+Refinement flag definitions belong to
+[`refinement_parser.py`](../../relax/commands/refinement_parser.py); job defaults and supported-mode validation
+belong to [`refinement_arguments.py`](../../relax/commands/refinement_arguments.py). The execution
 controller retains cache/import setup, seed assignment and validation timing.
 
 | Workflow | Entry point | Main implementation |

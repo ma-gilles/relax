@@ -7,14 +7,14 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from relax.commands import refinement_arguments
+from relax.commands import refinement_arguments, refinement_parser
 from relax.refinement.refinement_options import LocalSearchOptions
 from relax.refinement.refinement_state import RefinementState, refine_angular_sampling
 from relax.steps import half_inputs
 
 
 def _args(*extra):
-    return refinement_arguments.parse_refinement_args(["--data_dir", "data", "--output", "out", *extra])
+    return refinement_parser.parse_refinement_args(["--data_dir", "data", "--output", "out", *extra])
 
 
 @pytest.mark.unit

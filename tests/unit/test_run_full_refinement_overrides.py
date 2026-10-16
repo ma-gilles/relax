@@ -20,7 +20,7 @@ from helpers.em_fixtures import fixture_dir, fixture_root
 from helpers.float_compare import assert_matches, matches
 from recovar.utils.file_hash import sha256_file
 
-from relax.commands import refinement_arguments
+from relax.commands import refinement_arguments, refinement_parser
 from relax.commands import refinement_run as run_full_refinement
 from relax.commands.refinement_particles import _apply_relion_image_mask, prepare_relion_halfset_inputs
 from relax.commands.refinement_run import (
@@ -680,7 +680,7 @@ def test_frozen_boundary_noise_expands_in_float32_scoring_dtype():
     "flag", ["--relion-projector-capture-dir", "--relion-projector-capture-manifest", "--relion-projector-capture-iteration"],
 )
 def test_the_retired_projector_capture_flags_refuse_and_name_the_tag(flag, capsys):
-    from relax.commands.refinement_arguments import CAPTURED_PROJECTOR_TAG, parse_refinement_args
+    from relax.commands.refinement_parser import CAPTURED_PROJECTOR_TAG, parse_refinement_args
 
     with pytest.raises(SystemExit):
         parse_refinement_args(["--data_dir", "d", "--output", "o", flag, "x"])
@@ -920,7 +920,7 @@ def test_runner_threads_fail_closed_sparse_follower_scale_replay(monkeypatch, tm
         _run_main(monkeypatch, "refine", write_tiny_data_dir(tmp_path / "data"), tmp_path / "out", [])
     assert controller["source"].follower_topology.replay is replay
     assert archive["follower_replay"] is replay and archive["relion_dispatch_schedule"] is schedule
-    assert refinement_arguments.parse_refinement_args(
+    assert refinement_parser.parse_refinement_args(
         ["--data_dir", "d", "--output", "o", "--relion-follower-scale-replay", "r.npz"]
     ).relion_follower_scale_replay == "r.npz"
 

@@ -257,7 +257,7 @@ def _write_v3_boundary(root, **overrides):
 
 @pytest.fixture
 def boundary_cli_inputs(tmp_path):
-    from relax.commands.refinement_arguments import parse_refinement_args
+    from relax.commands.refinement_parser import parse_refinement_args
 
     source = tmp_path / "particles.star"
     halves = tmp_path / "halves.star"

@@ -53,15 +53,15 @@ def test_cold_start_and_autonomous_runs_skip_saved_order_check(replay_dir, init_
 
 
 def test_cli_validates_saved_order_before_refinement(tmp_path, monkeypatch):
-    from relax.commands import refinement_arguments
+    from relax.commands import refinement_parser
 
     _write_sampling(tmp_path, 16, 3)
-    args = refinement_arguments.parse_refinement_args([
+    args = refinement_parser.parse_refinement_args([
         "--data_dir", str(tmp_path), "--output", str(tmp_path / "output"),
         "--perturb_replay_relion_dir", str(tmp_path),
         "--init_relion_iteration", "16", "--healpix_order", "2",
     ])
-    monkeypatch.setattr(refinement_arguments, "parse_refinement_args", lambda: args)
+    monkeypatch.setattr(refinement_parser, "parse_refinement_args", lambda: args)
     monkeypatch.setattr(run_full_refinement, "activate_recovar_compilation_cache", lambda: None)
     monkeypatch.setattr(run_full_refinement, "_assert_expected_repo_imports", lambda: None)
 

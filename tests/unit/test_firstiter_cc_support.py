@@ -196,7 +196,7 @@ def test_refinement_hands_the_engine_the_support(monkeypatch, support):
 
 
 def test_a_run_without_the_cc_iteration_refuses_the_option():
-    from relax.commands import refinement_arguments
+    from relax.commands import refinement_arguments, refinement_parser
     from relax.refinement.refinement_options import require_consistency_route
 
     gaussian = RelionConsistencyOptions(firstiter_cc_support="gaussian")
@@ -205,6 +205,6 @@ def test_a_run_without_the_cc_iteration_refuses_the_option():
     with_cc = stand_in.options(consistency=gaussian, parity=stand_in.parity(emulate_relion_firstiter_cc=True))
     assert require_consistency_route(with_cc, subtomograms=False, several_image_shapes=False) is gaussian
     base = ["--data_dir", "data", "--output", "out", "--firstiter_cc_support", "gaussian"]
-    assert refinement_arguments.resolve_consistency_options(refinement_arguments.parse_refinement_args(base)) == gaussian
+    assert refinement_arguments.resolve_consistency_options(refinement_parser.parse_refinement_args(base)) == gaussian
     with pytest.raises(SystemExit, match="needs --firstiter_cc"):
-        refinement_arguments.resolve_consistency_options(refinement_arguments.parse_refinement_args([*base, "--no-firstiter_cc"]))
+        refinement_arguments.resolve_consistency_options(refinement_parser.parse_refinement_args([*base, "--no-firstiter_cc"]))

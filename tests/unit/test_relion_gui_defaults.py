@@ -4,14 +4,14 @@ from types import SimpleNamespace
 
 import pytest
 
-from relax.commands import refinement_arguments, refinement_particles
+from relax.commands import refinement_arguments, refinement_parser, refinement_particles
 from relax.refinement.refinement_options import RandomSeed
 
 pytestmark = pytest.mark.unit
 
 
 def _parsed(*tokens):
-    return refinement_arguments.parse_refinement_args(["--data_dir", "data", "--output", "out", *tokens])
+    return refinement_parser.parse_refinement_args(["--data_dir", "data", "--output", "out", *tokens])
 
 
 def test_refine3d_and_class3d_gui_defaults():
@@ -38,7 +38,7 @@ def test_input_and_output_are_required(missing, capsys):
     tokens = {"--data_dir": "data", "--output": "out"}
     tokens.pop(missing)
     with pytest.raises(SystemExit):
-        refinement_arguments.parse_refinement_args([item for pair in tokens.items() for item in pair])
+        refinement_parser.parse_refinement_args([item for pair in tokens.items() for item in pair])
     assert missing in capsys.readouterr().err
 
 

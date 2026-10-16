@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 from helpers.tiny_refinement import run_tiny_refinement
 
-from relax.commands import refinement_arguments
+from relax.commands import refinement_parser
 from relax.diagnostics import observers
 from relax.refinement.ports import FinishedIteration, RunObserver
 
@@ -48,7 +48,7 @@ def test_the_controller_tells_the_observer_each_moment_of_each_iteration_in_orde
 
 
 def _args(*arguments):
-    return refinement_arguments.parse_refinement_args(["--data_dir", "d", "--output", "o", *arguments])
+    return refinement_parser.parse_refinement_args(["--data_dir", "d", "--output", "o", *arguments])
 
 
 def test_the_command_builds_the_observers_its_flags_and_environment_ask_for(monkeypatch, tmp_path):

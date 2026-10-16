@@ -33,6 +33,7 @@ import jax.numpy as jnp
 import numpy as np
 
 import relax
+import relax.commands.refinement_parser
 from relax.commands import refinement_arguments, refinement_particles
 from relax.diagnostics import observers, parity_dump
 from relax.numerics.precision import DensePrecisionPolicy, use_float32_matmuls
@@ -382,7 +383,7 @@ def main(command=None):
     cache_directory = activate_recovar_compilation_cache()
     use_float32_matmuls()
     _assert_expected_repo_imports()
-    args = refinement_arguments.parse_refinement_args()
+    args = relax.commands.refinement_parser.parse_refinement_args()
     if command is not None:
         refinement_arguments.require_command_n_classes(command, int(args.n_classes))
     refinement_arguments.require_consistency_arguments(args)
