@@ -109,21 +109,30 @@ device tests, a parser or option resolver by precedence, rejection and round-tri
 On a frozen copy of the head (`git worktree add --detach <dir> <sha>`, with the checkout's `.pixi` linked
 into it), from that directory: `REFACTOR_SCRATCH=<dir> scripts/dev/refactor_gate.sh <step>`, or all steps as
 one Slurm CPU job, `sbatch --account=<account> --export=ALL scripts/dev/refactor_gate.sh all`. Use the login
-node only when `uptime` shows a load under 20. Each step prints one summary line. The steps:
+node only when `uptime` shows a load under 20. Each step prints one summary line per check. The steps:
 
 - [ ] `fp`: `fingerprint.py check origin/main`: results, files and checkpoints 0 differences; trace
       differences confined to log rows are allowed and are reported as such. After any rebase, run it and
       the lint again: a clean rebase can still leave a dangling name.
 - [ ] `selftest`: `fingerprint.py selftest --jobs 4`, every mutation detected.
 - [ ] `guard`: `bash scripts/run_em_fast_guard.sh` and `python scripts/check_agent_guides.py`.
+- [ ] `static [BASE]`, one line per check, each failing on a finding: `ruff` (findings of `relax`, `tests`
+      and `scripts` that the base lacks: none), `arity` (rule 18: `scripts/dev/call_arity_check.py` of the
+      head on a `git archive` of the base and on the head; the head's report adds no line to the base's),
+      `diffcheck` (`git diff --check BASE HEAD`), `anchors` (`scripts/dev/check_mutation_anchors.py`) and
+      `ceilings` (`scripts/report_refinement_structure.py --check
+      docs/development/refinement_structure_metrics.json`; a warning within the slack passes and is named
+      in the report). Each also runs alone, as its own step.
+- [ ] `smell`: `scripts/dev/smell_check.py` against its baseline; new findings are listed in its log as a
+      warning, never a failure.
+- [ ] `extra BASE FILE...` (`all BASE FILE...` runs it last): the given test files on the head and on a
+      snapshot of the base; the two failure lists must be identical.
 - [ ] `tests head HEAD`, `clean head`: the CPU unit list (`scripts/dev/refactor_cpu_unit_list.txt`) and every
       `test_*.py` of the module's test directories, on a detached git worktree of the head (the launcher tests
       need git and a pixi Python, which the step provides). Every test passes: `logs/fail_head.txt` is empty.
       `tests base <rev>` and `compare base head` remain for comparing a base by hand.
 - [ ] Repeat the search of all of `tests/` and `scripts/` for every moved or removed name: the CPU list does
       not run the GPU unit files.
-- [ ] Call arity (rule 18): `python scripts/dev/call_arity_check.py <base tree>` and the same on the head; the
-      head's report adds no line to the base's.
 - [ ] GPU tiers on the final head, same GPU model for every arm:
       `python scripts/run_test_tier.py submit smoke --where slurm --gpu-model h100 --run-root <dir>`, and the
       same with `medium`. `submit` builds the natives with nvcc on the host it runs on (about 4 minutes):

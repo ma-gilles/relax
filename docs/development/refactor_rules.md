@@ -145,9 +145,9 @@ Each rule names a commit that shows it applied and the check that enforces it.
 18. **Every call passes what its callee requires.** Making a keyword required, or renaming or removing a
     parameter, migrates every call in `relax/`, `scripts/` and `tests/`, including calls only a GPU path runs,
     which the CPU fingerprint never executes. Before/after: d9179e95 "feat(dev): a static call-arity check
-    catches a required keyword that a call omits". Check: `scripts/dev/call_arity_check.py` on the base and
-    the head; a finding the head adds fails the gate (procedure, section 4); its tests are
-    `tests/unit/test_call_arity_check.py`.
+    catches a required keyword that a call omits". Check: the gate runs `scripts/dev/call_arity_check.py` on
+    the base and the head (`refactor_gate.sh arity`, part of `static` and `all`); a finding the head adds
+    fails it (procedure, section 4); its tests are `tests/unit/test_call_arity_check.py`.
 19. **A private name stays in its module.** When another relax module needs a `_name`, make it public, or move
     it to its only reader. Before/after: 1b9e4adc "refactor(diagnostics): the diagnostics names other modules
     read are public; observers own two dump helpers" through e32811a3 "chore(smell): the baseline follows the

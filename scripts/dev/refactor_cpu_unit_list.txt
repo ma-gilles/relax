@@ -116,6 +116,7 @@ tests/unit/test_projection_cache_budget_hp3.py
 tests/unit/test_projector_backend_selection.py
 tests/unit/test_reconstruction_diagnostics.py
 tests/unit/test_reconstruction_ownership.py
+tests/unit/test_refactor_gate.py
 tests/unit/test_refinement_archive_metadata.py
 tests/unit/test_refinement_initial_state.py
 tests/unit/test_refinement_port_imports.py

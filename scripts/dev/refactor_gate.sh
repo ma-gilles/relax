@@ -13,10 +13,20 @@
 #   clean <label>             the failure list of a tests run must be empty
 #   compare <label> <label>   the two failure lists must be identical (to compare a base by hand)
 #   smell                     scripts/dev/smell_check.py against its baseline; a warning, never a failure
-#   all [BASE]                fp, selftest, guard, tests head HEAD, clean head, smell (about 40 minutes; more
-#                             with a module's test directories)
-# Each step prints one summary line and exits nonzero on failure ("tests" does not: "clean" or "compare"
-# decides; "smell" always exits 0 and lists its new findings in its log). Run it from the worktree, or as a Slurm job from there
+#   ruff [BASE]               ruff findings of relax, tests and scripts that BASE lacks: none
+#   arity [BASE]              scripts/dev/call_arity_check.py findings (rule 18) that BASE lacks: none
+#   diffcheck [BASE]          git diff --check BASE HEAD: clean
+#   anchors                   scripts/dev/check_mutation_anchors.py: no stale selftest mutation
+#   ceilings                  scripts/report_refinement_structure.py --check of the ceilings file: none above
+#                             its slack
+#   static [BASE]             ruff, arity, diffcheck, anchors, ceilings (a few minutes)
+#   extra BASE FILE...        the pytest FILEs on the head and on a snapshot of BASE: the failure lists must be
+#                             identical (a file BASE lacks runs on the head only)
+#   all [BASE [FILE...]]      fp, selftest, guard, tests head HEAD, clean head, static, smell, then extra when
+#                             FILEs are given (about 40 minutes; more with a module's test directories)
+# Each step prints one summary line per check and exits nonzero on failure ("tests" does not: "clean" or
+# "compare" decides; "smell" always exits 0 and lists its new findings in its log). New findings are listed
+# under their line. Run it from the worktree, or as a Slurm job from there
 # (sbatch --account=<account> --export=ALL scripts/dev/refactor_gate.sh all). REFACTOR_WORKTREE defaults to
 # the checkout of the current directory, REFACTOR_PYTHON to its pixi environment, REFACTOR_TAG (a suffix
 # for log names, so two gates can share one scratch directory) to the short head. REFACTOR_MODULE (default
@@ -79,6 +89,73 @@ step_smell() {
   cd "$W" && "$PY" scripts/dev/smell_check.py > "$S/logs/smell_$T.txt" 2>&1
   echo "$(tail -1 "$S/logs/smell_$T.txt") -> $S/logs/smell_$T.txt (warning only)"; return 0
 }
+# A git archive of BASE in $S/base_src_$T (no .git: the checkers read every file of the tree), for the
+# steps that diff a head report against a base report; "static" extracts it once for all of them.
+base_tree() {
+  local rev; rev=$(git -C "$W" rev-parse "${1:-origin/main}^{commit}") || return 2; B=$S/base_src_$T
+  [ "$(cat "$B/.gate_rev" 2>/dev/null)" = "$rev" ] && return 0
+  rm -rf "$B"; mkdir -p "$B" && git -C "$W" archive "$rev" | tar -x -C "$B" && echo "$rev" > "$B/.gate_rev"
+}
+# Lines of the head report $2 that the base report $1 lacks, under the summary line $3; fails when there are any.
+new_findings() {
+  local new; new=$(comm -13 "$1" "$2")
+  echo "$3: $(printf '%s' "$new" | grep -c .) new -> $2"; [ -z "$new" ] || { echo "$new"; return 1; }
+}
+ruff_findings() { "$PY" -m ruff check relax tests scripts --output-format concise 2>/dev/null | sed "s/:[0-9]*:[0-9]*:/:/" | grep -v "^Found\|fixable\|^All checks" | sort; }
+step_ruff() {
+  local base=${1:-origin/main}; base_tree "$base" || return 2
+  (cd "$B" && ruff_findings) > "$S/logs/ruff_base_$T.txt"; (cd "$W" && ruff_findings) > "$S/logs/ruff_head_$T.txt"
+  new_findings "$S/logs/ruff_base_$T.txt" "$S/logs/ruff_head_$T.txt" "ruff findings $base lacks"
+}
+step_arity() {
+  # The head's checker reads both trees, so a checker change does not show as findings.
+  local base=${1:-origin/main}; base_tree "$base" || return 2
+  "$PY" "$W/scripts/dev/call_arity_check.py" "$B" | sort > "$S/logs/arity_base_$T.txt"
+  "$PY" "$W/scripts/dev/call_arity_check.py" "$W" | sort > "$S/logs/arity_head_$T.txt"
+  new_findings "$S/logs/arity_base_$T.txt" "$S/logs/arity_head_$T.txt" "call arity findings $base lacks"
+}
+step_diffcheck() {
+  local base=${1:-origin/main}
+  git -C "$W" diff --check "$base" HEAD > "$S/logs/diffcheck_$T.txt" 2>&1; rc=$?
+  echo "git diff --check $base HEAD: rc=$rc $(grep -vc '^+' "$S/logs/diffcheck_$T.txt") findings"; [ $rc = 0 ] || { cat "$S/logs/diffcheck_$T.txt"; return 1; }
+}
+step_anchors() {
+  cd "$W" && PYTHONPATH=$W "$PY" scripts/dev/check_mutation_anchors.py > "$S/logs/anchors_$T.txt" 2>&1; rc=$?
+  echo "$(tail -1 "$S/logs/anchors_$T.txt"): rc=$rc"; [ $rc = 0 ] || { grep '^STALE' "$S/logs/anchors_$T.txt"; return 1; }
+}
+step_ceilings() {
+  # A metric above its ceiling within the slack is a warning (named in the report, procedure section 4).
+  cd "$W" && PYTHONPATH=$W "$PY" scripts/report_refinement_structure.py --check docs/development/refinement_structure_metrics.json \
+    > "$S/logs/ceilings_metrics_$T.json" 2> "$S/logs/ceilings_$T.txt"; rc=$?
+  echo "structure ceilings: rc=$rc $(grep -c '^warning: ' "$S/logs/ceilings_$T.txt") warnings $(grep -vc '^warning: ' "$S/logs/ceilings_$T.txt") above the slack -> $S/logs/ceilings_$T.txt"
+  grep '^warning: ' "$S/logs/ceilings_$T.txt"; [ $rc = 0 ] || { grep -v '^warning: ' "$S/logs/ceilings_$T.txt"; return 1; }
+}
+step_static() {
+  local base=${1:-origin/main} st=0
+  base_tree "$base" || { echo "base tree $base: cannot extract"; return 2; }
+  step_ruff "$base" || st=1; step_arity "$base" || st=1; step_diffcheck "$base" || st=1
+  step_anchors || st=1; step_ceilings || st=1; rm -rf "$S/base_src_$T"; return $st
+}
+step_extra() {
+  local base=${1:?extra needs a base and test files}; shift; [ $# -gt 0 ] || { echo "extra: no test files"; return 2; }
+  local f hx=() bx=(); for f in "$@"; do [ -f "$W/$f" ] && hx+=("$f"); done
+  [ ${#hx[@]} -gt 0 ] || { echo "extra: none of $* exists on the head"; return 1; }
+  cd "$W" && PYTHONPATH=$W "$PY" -m pytest "${hx[@]}" -q -p no:cacheprovider --basetemp="$S/pytest_tmp_extra_head_$T" -rfE \
+    > "$S/logs/extra_head_$T.log" 2>&1
+  grep -E "^(FAILED|ERROR) " "$S/logs/extra_head_$T.log" | sed 's/ - .*//' | sort > "$S/logs/fail_extra_head_$T.txt"
+  base_tree "$base" || return 2; [ -e "$W/.pixi" ] && ln -sfn "$(readlink -f "$W/.pixi")" "$B/.pixi"
+  for f in "${hx[@]}"; do [ -f "$B/$f" ] && bx+=("$f"); done
+  if [ ${#bx[@]} -gt 0 ]; then
+    (cd "$B" && PYTHONPATH=$B "$PY" -m pytest "${bx[@]}" -q -p no:cacheprovider --basetemp="$S/pytest_tmp_extra_base_$T" -rfE \
+      > "$S/logs/extra_base_$T.log" 2>&1)
+  else echo "no extra file exists on $base" > "$S/logs/extra_base_$T.log"; fi
+  grep -E "^(FAILED|ERROR) " "$S/logs/extra_base_$T.log" | sed 's/ - .*//' | sort > "$S/logs/fail_extra_base_$T.txt"
+  rm -rf "$S/base_src_$T"
+  echo "extra tests head: $(tail -1 "$S/logs/extra_head_$T.log") | base: $(tail -1 "$S/logs/extra_base_$T.log")"
+  if cmp -s "$S/logs/fail_extra_base_$T.txt" "$S/logs/fail_extra_head_$T.txt"; then
+    echo "extra failure lists base / head: identical ($(wc -l < "$S/logs/fail_extra_head_$T.txt") failed on both)"; return 0; fi
+  echo "extra failure lists base / head: DIFFER"; diff "$S/logs/fail_extra_base_$T.txt" "$S/logs/fail_extra_head_$T.txt"; return 1
+}
 step_compare() {
   local a=$S/logs/fail_${1:?compare needs two labels}.txt b=$S/logs/fail_${2:?compare needs two labels}.txt
   if cmp -s "$a" "$b"; then echo "failure lists $1 / $2: identical ($(wc -l < "$a") failed on both)"; return 0; fi
@@ -93,9 +170,18 @@ tests) step_tests "${2:-}" "${3:-}";;
 clean) step_clean "${2:-}";;
 compare) step_compare "${2:-}" "${3:-}";;
 smell) step_smell;;
-all) status=0; base=${2:-origin/main}
+ruff) step_ruff "${2:-}";;
+arity) step_arity "${2:-}";;
+diffcheck) step_diffcheck "${2:-}";;
+anchors) step_anchors;;
+ceilings) step_ceilings;;
+static) step_static "${2:-}";;
+extra) shift; step_extra "$@";;
+all) status=0; base=${2:-origin/main}; shift $(($# < 2 ? $# : 2))
   step_fp "$base" || status=1; step_selftest || status=1; step_guard || status=1
   step_tests head HEAD || status=1; step_clean head || status=1
-  step_smell; exit $status;;
-*) sed -n '6,24p' "$0"; exit 2;;
+  step_static "$base" || status=1; step_smell
+  [ $# = 0 ] || step_extra "$base" "$@" || status=1
+  exit $status;;
+*) sed -n '6,34p' "$0"; exit 2;;
 esac
