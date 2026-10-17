@@ -67,3 +67,42 @@ def test_nonfinite_statistics_outside_the_support_are_ignored_and_inside_stop_th
     coupled_direction(tri, gradients, np.asarray([True, False]), floor=FLOOR)
     with pytest.raises(ValueError, match="Nonfinite or materially indefinite PPCA metric"):
         coupled_direction(tri, gradients, np.asarray([True, True]), floor=FLOOR)
+
+
+def _definite_blocks(count, rng):
+    """``count`` packed 3x3 (q = 2) definite blocks and their complex gradients."""
+    factor = rng.standard_normal((count, 3, 3)).astype(np.float32)
+    matrix = factor @ factor.swapaxes(-1, -2) + np.eye(3, dtype=np.float32)
+    tri = np.asarray(pack_upper_tri(jnp.asarray(matrix)))
+    gradient = (rng.standard_normal((count, 3)) + 1j * rng.standard_normal((count, 3))).astype(np.complex64)
+    return tri, gradient
+
+
+def test_chunked_eigh_solves_each_block_as_one_batch_does(monkeypatch):
+    """Chunking the batch and solving only the support rows change no value of the direction."""
+    from relax.ppca_initial_model import update
+
+    tri, gradient = _definite_blocks(50, np.random.default_rng(5))
+    support = np.random.default_rng(6).random(50) < 0.7
+    whole, whole_info = coupled_direction(tri, gradient, support, floor=FLOOR)
+    monkeypatch.setattr(update, "EIGH_BATCH_BLOCKS", 7)
+    chunked, chunked_info = coupled_direction(tri, gradient, support, floor=FLOOR)
+    np.testing.assert_array_equal(np.asarray(chunked), np.asarray(whole))
+    assert chunked_info == whole_info
+    assert not np.any(np.asarray(whole)[~support])
+
+
+@pytest.mark.gpu
+def test_a_box_192_half_volume_of_blocks_is_solved_on_the_gpu():
+    """192 x 192 x 97 = 3,575,808 blocks: one batched cuSolver syevj call rejects it (jaxlib 0.9.0.1,
+    'gpusolverDnSsyevjBatched_bufferSize ... invalid value' above about 2M blocks); the chunked solve gives each
+    block the value a small batch gives it."""
+    count = 192 * 192 * 97
+    tri, gradient = _definite_blocks(count, np.random.default_rng(7))
+    direction, _ = coupled_direction(tri, gradient, np.ones(count, bool), floor=FLOOR)
+    direction = np.asarray(direction)
+    for start in (0, 2_000_000, count - 100):
+        part, _ = coupled_direction(
+            tri[start : start + 100], gradient[start : start + 100], np.ones(100, bool), floor=FLOOR
+        )
+        np.testing.assert_array_equal(direction[start : start + 100], np.asarray(part))

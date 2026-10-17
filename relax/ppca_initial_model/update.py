@@ -38,6 +38,23 @@ def metric_floor(image_size):
     return np.float32(0.5 / int(image_size) ** 4)
 
 
+# Blocks per batched eigh call: cuSolver's syevjBatched rejects batches between 2.0M and 3.6M 3x3 blocks
+# (jaxlib 0.9.0.1, "gpusolverDnSsyevjBatched_bufferSize ... invalid value"); each block is solved on its own,
+# so the chunking does not change a value.
+EIGH_BATCH_BLOCKS = 1 << 20
+
+
+def _batched_eigh(matrix):
+    """``jnp.linalg.eigh`` of ``[F, n, n]`` in batches of at most :data:`EIGH_BATCH_BLOCKS` blocks."""
+    if matrix.shape[0] <= EIGH_BATCH_BLOCKS:
+        return jnp.linalg.eigh(matrix)
+    parts = [
+        jnp.linalg.eigh(matrix[start : start + EIGH_BATCH_BLOCKS])
+        for start in range(0, matrix.shape[0], EIGH_BATCH_BLOCKS)
+    ]
+    return jnp.concatenate([p[0] for p in parts]), jnp.concatenate([p[1] for p in parts])
+
+
 @full_float32
 def coupled_direction(lhs_tri, residual_gradient, support, *, floor):
     """Solve the symmetric block with an orthogonally invariant spectral floor on the update's support.
@@ -47,19 +64,20 @@ def coupled_direction(lhs_tri, residual_gradient, support, *, floor):
     they are neither solved nor checked, and their direction is zero (algorithm section 17).
     """
     support = np.asarray(support, bool)
-    kept = jnp.asarray(support)
-    matrix = unpack_tri_to_full(jnp.asarray(lhs_tri), residual_gradient.shape[-1])
-    matrix = jnp.where(kept[:, None, None], (matrix + matrix.swapaxes(-1, -2)) * 0.5, 0)
-    residual_gradient = jnp.where(kept[:, None], jnp.asarray(residual_gradient), 0)
-    values, vectors = jnp.linalg.eigh(matrix)
-    values_host = np.asarray(values)[support]
+    rows = jnp.asarray(np.flatnonzero(support))
+    matrix = unpack_tri_to_full(jnp.asarray(lhs_tri)[rows], residual_gradient.shape[-1])
+    matrix = (matrix + matrix.swapaxes(-1, -2)) * 0.5
+    kept_gradient = jnp.asarray(residual_gradient)[rows]
+    values, vectors = _batched_eigh(matrix)
+    values_host = np.asarray(values)
     bound = 32 * np.finfo(values_host.dtype).eps * np.maximum(np.max(np.abs(values_host), axis=-1), floor)
     if not np.all(np.isfinite(values_host)) or np.any(values_host[:, 0] < -bound):
         raise ValueError("Nonfinite or materially indefinite PPCA metric")
-    if not np.all(np.isfinite(np.asarray(residual_gradient))):
+    if not np.all(np.isfinite(np.asarray(kept_gradient))):
         raise ValueError("Nonfinite direct PPCA residual gradient")
-    projected = jnp.einsum("fji,fj->fi", vectors, residual_gradient)
-    direction = jnp.einsum("fij,fj->fi", vectors, projected / jnp.maximum(values, floor))
+    projected = jnp.einsum("fji,fj->fi", vectors, kept_gradient)
+    kept_direction = jnp.einsum("fij,fj->fi", vectors, projected / jnp.maximum(values, floor))
+    direction = jnp.zeros(residual_gradient.shape, kept_direction.dtype).at[rows].set(kept_direction)
     return direction, {
         "minimum_eigenvalue": float(values_host.min()),
         "floored_eigenvalues": int(np.sum(values_host < floor)),
