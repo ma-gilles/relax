@@ -437,7 +437,8 @@ def tilt_image_accuracy_inputs(half: TomoHalf) -> TiltImageAccuracyInputs:
     Each image's ``Aproj`` and CTF as Experiment::addImageToParticle stores them (exp_model.cpp:196-243):
     defocus, astigmatism angle, scale and phase shift from the tilt's CTF; the cumulative dose as the
     CTF dose (Grant-Grigorieff damping, ctf.h:219-231), or, with a B-factor per electron dose, dose
-    ``-999`` and B-factor ``B_dose * dose``. Also each image's optics constants (voltage, Cs, Q0).
+    ``-999`` and B-factor ``B_dose * dose``, each rounded to float32 as ExpImage holds it. Also each image's
+    optics constants (voltage, Cs, Q0).
     """
 
     from recovar.data_io.starfile import read_star, star_column
@@ -455,7 +456,9 @@ def tilt_image_accuracy_inputs(half: TomoHalf) -> TiltImageAccuracyInputs:
             return np.full(rows.size, float(default))
         return np.asarray(values, dtype=np.float64)[rows]
 
-    dose = column("rlnMicrographPreExposure")
+    # ExpImage stores these as float (exp_model.h:53): addImageToParticle takes the dose as float, and the
+    # B-factor B_dose * dose and every other field are rounded to float32 when stored.
+    dose = column("rlnMicrographPreExposure").astype(np.float32).astype(np.float64)
     b_per_dose = column("rlnCtfBfactorPerElectronDose", 0.0)
     per_dose = b_per_dose > 0.0
     image_ctf = np.stack(
@@ -469,7 +472,7 @@ def tilt_image_accuracy_inputs(half: TomoHalf) -> TiltImageAccuracyInputs:
             np.where(per_dose, -999.0, dose),
         ],
         axis=1,
-    )
+    ).astype(np.float32).astype(np.float64)
     group_of = np.asarray(star_column(table, "rlnOpticsGroup", required=True), dtype=np.int64)[rows]
     labels = np.asarray(star_column(optics, "rlnOpticsGroup", required=True), dtype=np.int64)
     row_of_label = {int(label): i for i, label in enumerate(labels)}

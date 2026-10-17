@@ -161,6 +161,18 @@ def test_particle_index_follows_particles_star(project):
     assert len(optics) == 2
 
 
+def _as_relion_stores_tilt_ctf(params):
+    """The simulator's per-tilt CTF parameters as relion_refine evaluates them: ExpImage holds a tilt's defocus,
+    angle, scale and dose as float (exp_model.h:53), so they reach getCTF rounded to float32."""
+
+    from recovar.core import CTFParamIndex
+
+    params = np.array(params, dtype=np.float64)
+    for column in (CTFParamIndex.DFU, CTFParamIndex.DFV, CTFParamIndex.DFANG, CTFParamIndex.CONTRAST, CTFParamIndex.DOSE):
+        params[:, column] = params[:, column].astype(np.float32).astype(np.float64)
+    return params
+
+
 @pytest.mark.unit
 def test_exact_ctf_matches_simulated_tomo_ctf(project, monkeypatch):
     """relax's exact CTF of each tilt row equals the CTF the images were made with."""
@@ -191,6 +203,7 @@ def test_exact_ctf_matches_simulated_tomo_ctf(project, monkeypatch):
     ctf_params[:, CTFParamIndex.W] = optics_col("rlnAmplitudeContrast")
     ctf_params[:, CTFParamIndex.CONTRAST] = np.asarray(star_column(rows, "rlnCtfScalefactor"), dtype=np.float64)
     ctf_params[:, CTFParamIndex.DOSE] = np.asarray(star_column(rows, "rlnMicrographPreExposure"), dtype=np.float64)
+    ctf_params = _as_relion_stores_tilt_ctf(ctf_params)
     expected = relion_tomo.relion_tomo_ctf(ctf_params, (GRID, GRID), VOXEL, half_image=True)
     assert expected.dtype == np.float64
     expected = np.asarray(expected)
@@ -444,6 +457,7 @@ def test_exact_ctf_of_aberrated_tilts_matches_the_simulator(aberrated_project, m
     ):
         params[:, column] = np.asarray(star_column(rows, label), dtype=np.float64)
     params[:, CTFParamIndex.VOLT], params[:, CTFParamIndex.CS], params[:, CTFParamIndex.W] = 300.0, 2.7, 0.1
+    params = _as_relion_stores_tilt_ctf(params)
     _, inside = _inside_nyquist_half()
     for g, optics in (
         (1, {}),

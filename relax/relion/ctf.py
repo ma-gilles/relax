@@ -33,7 +33,10 @@ def relion_tomo_damping(freq_sq, dose, bfactor_per_electron_dose=0.0):
 
     - dose: ``exp(-0.5 dose / Ne)``, ``Ne = 0.245 k^-1.665 + 2.81`` (Grant and
       Grigorieff), no critical-exposure cutoff and no voltage factor;
-    - B-factor: ``exp(-B k^2 / 4)``.
+    - B-factor: ``exp(K4 k^2)``, ``K4 = -B / 4`` (``CTF::initialise``).
+
+    ``ExpImage`` holds the dose and the B-factor as ``float`` (``exp_model.h:53``; ``addImageToParticle``
+    takes the dose as ``float``), so both are rounded to float32 before the double formula, as here.
 
     The tilt series' own ``rlnCtfBfactor`` is not passed on by ``relion_refine``.
     ``freq_sq`` is ``k^2`` in 1/A^2 and ``dose`` in e/A^2. At ``k = 0`` ``Ne`` is
@@ -52,34 +55,16 @@ def relion_tomo_damping(freq_sq, dose, bfactor_per_electron_dose=0.0):
     if any(isinstance(value, jax.Array) for value in (freq_sq, dose, bfactor_per_electron_dose)):
         xp = jnp
     freq_sq = xp.asarray(freq_sq, dtype=xp.float64)
-    dose = xp.asarray(dose, dtype=xp.float64)
-    bfactor = xp.broadcast_to(xp.asarray(bfactor_per_electron_dose, dtype=xp.float64), dose.shape)
+    # ExpImage's float fields: the dose, and the B-factor BfactorPerElectronDose * dose (exp_model.cpp:228-237).
+    dose = xp.asarray(xp.asarray(dose, dtype=xp.float64).astype(xp.float32), dtype=xp.float64)
+    per_dose = xp.broadcast_to(xp.asarray(bfactor_per_electron_dose, dtype=xp.float64), dose.shape)
+    bfactor = xp.asarray((per_dose * dose).astype(xp.float32), dtype=xp.float64)
     per_image = (...,) + (None,) * freq_sq.ndim
     with np.errstate(divide="ignore"):
         critical_exposure = 0.245 * xp.power(freq_sq, -0.8325) + 2.81
-    by_bfactor = xp.exp(-0.25 * bfactor[per_image] * dose[per_image] * freq_sq)
+    by_bfactor = xp.exp((-bfactor[per_image] / 4.0) * freq_sq)
     by_dose = xp.exp(-0.5 * dose[per_image] / critical_exposure)
-    return xp.where((bfactor > 0.0)[per_image], by_bfactor, by_dose)
-
-
-def fftw_half_freq_sq(image_h: int, image_w: int, pixel_size: float, mag_matrix=None) -> np.ndarray:
-    """``k^2`` (1/A^2) on RELION's FFTW half grid, ``(image_h, image_w // 2 + 1)``.
-
-    Rows follow ``FOR_ALL_ELEMENTS_IN_FFTW_TRANSFORM2D`` as ``CTF::getFftwImage``
-    uses it (``src/ctf.cpp:443-449``): ``ip = i`` for ``i < image_w // 2 + 1``, else
-    ``i - image_h``. With an optics group's anisotropic magnification ``M`` (2x2) it is
-    ``|M k|^2``: ``CTF::getCTF`` magnifies the frequency before the damping (``src/ctf.h:189-197``).
-    """
-
-    rows = np.arange(image_h)
-    ip = np.where(rows < image_w // 2 + 1, rows, rows - image_h)
-    jp = np.arange(image_w // 2 + 1)
-    x = np.broadcast_to(jp[None, :] / (image_w * pixel_size), (image_h, jp.size))
-    y = np.broadcast_to(ip[:, None] / (image_h * pixel_size), (image_h, jp.size))
-    if mag_matrix is not None:
-        m = np.asarray(mag_matrix, dtype=np.float64)
-        x, y = m[0, 0] * x + m[0, 1] * y, m[1, 0] * x + m[1, 1] * y
-    return y**2 + x**2
+    return xp.where((per_dose > 0.0)[per_image], by_bfactor, by_dose)
 
 
 def dataset_optics_source_star(experiment_dataset) -> Path | None:
@@ -435,8 +420,8 @@ def _relion_ctf_program(constants, pixels, extent, one, mag, offset, dose, squar
     ``a * b * one + c`` into a fused multiply-add (XLA's CPU backend does, through an optimization barrier
     too) the result is still the twice-rounded ``fl(fl(a * b) + c)`` and gamma is the double the
     source expression gives, one operation at a time (a compiled RELION may itself contract: its gamma
-    then differs by one rounding, about 1e-13 at the edge of the grid). The dose damping multiplies after the scale and the floor, where RELION multiplies before
-    them (ctf.h:219-253): one product reordered and the floor moved, both below 1e-8 absolute.
+    then differs by one rounding, about 1e-13 at the edge of the grid). A tomo image's dose damping takes the
+    place of the B-factor envelope, before the scale and the floor, as in RELION (ctf.h:219-253).
 
     Last-ulp difference from RELION: ``sin`` and ``exp`` (and the dose damping, its ``pow`` and one
     unguarded sum) are XLA's float64 routines on the device that runs this program, where RELION's CPU
@@ -479,13 +464,13 @@ def _relion_ctf_program(constants, pixels, extent, one, mag, offset, dose, squar
     gamma = gamma - k5 - k3
     if offset is not None:
         gamma = gamma + offset
-    # do_damping: the B-factor envelope exp(K4 u2) before the scale (ctf.h:219-246); a particle without a
-    # B-factor multiplies by exp(-0.0) = 1. CTF = -sin(gamma) * envelope * scale.
-    ctf = jnp.sin(gamma) * jnp.exp(k4 * u2) * neg_scale
-    # |CTF| >= 1e-8 with SGN(0) = 1 (ctf.h:250-253, macros.h:143).
+    # do_damping before the scale (ctf.h:219-246): a tomo image's dose or dose B-factor envelope
+    # (relion_tomo_damping), otherwise the B-factor envelope exp(K4 u2); a particle without a B-factor multiplies
+    # by exp(-0.0) = 1. CTF = -sin(gamma) * envelope * scale.
+    envelope = jnp.exp(k4 * u2) if dose is None else relion_tomo_damping(u2, dose[:, 0], dose[:, 1])
+    ctf = jnp.sin(gamma) * envelope * neg_scale
+    # |CTF| >= 1e-8 with SGN(0) = 1 (ctf.h:250-253, macros.h:143), after the damping and the scale.
     ctf = jnp.where(jnp.abs(ctf) < 1e-8, jnp.where(ctf >= 0, 1e-8, -1e-8), ctf)
-    if dose is not None:
-        ctf = ctf * relion_tomo_damping(u2, dose[:, 0], dose[:, 1])
     if square is not None:
         ctf = jnp.where(square[:, None], ctf * ctf, ctf)
     return -ctf if centered_rows else ctf
@@ -560,7 +545,7 @@ def _relion_ctf_rows(
     return blocks[0] if len(blocks) == 1 else jnp.concatenate(blocks, axis=0)
 
 
-def relion_ctf_fftw_half(params, box_size: int, pixel_size: float, *, gamma_offset=None, mag_matrix=None):
+def relion_ctf_fftw_half(params, box_size: int, pixel_size: float, *, gamma_offset=None, mag_matrix=None, dose=None):
     """RELION's ``CTF::getFftwImage`` for particles of one optics group, ``(N, size, size // 2 + 1)`` float64.
 
     The CTF relion_refine evaluates per particle (``setValuesByGroup`` + ``getFftwImage``,
@@ -568,14 +553,17 @@ def relion_ctf_fftw_half(params, box_size: int, pixel_size: float, *, gamma_offs
     note applies). ``params`` rows are defU, defV, defAng (degrees), voltage (kV), Cs (mm), Q0, the
     particle's CTF B-factor (rlnCtfBfactor, A^2), scale (rlnCtfScalefactor), phase shift (degrees).
     ``gamma_offset`` (the group's even Zernike phase on this grid, ``ObservationModel::getGammaOffset``)
-    and ``mag_matrix`` (its 2x2 anisotropic magnification) are the optics-table terms. No RELION code runs
+    and ``mag_matrix`` (its 2x2 anisotropic magnification) are the optics-table terms. ``dose`` (``(N, 2)``:
+    cumulative dose, B-factor per electron dose) damps tomo tilt images (:func:`relion_tomo_damping`) in place
+    of the B-factor envelope. No RELION code runs
     here: the binding's ``get_ctf_images_batch`` / ``optics_ctf_images_batch`` are the test oracles
     (tests/unit/test_relion_ctf_formula.py). Returns a host array the caller owns.
     """
 
     size = int(box_size)
     rows = _relion_ctf_rows(
-        _relion_ctf_constants(params), size, float(size) * float(pixel_size), mag=mag_matrix, offset=gamma_offset
+        _relion_ctf_constants(params), size, float(size) * float(pixel_size), mag=mag_matrix, offset=gamma_offset,
+        dose=dose,
     )
     return np.array(rows).reshape(-1, size, size // 2 + 1)
 
@@ -613,7 +601,8 @@ def _ctf_particle_table(cache) -> dict:
     """Per particle of the source STAR, the scalars its CTF rows need; built once with the parsed tables.
 
     ``groups`` (optics group), ``constants`` (:func:`_relion_ctf_constants`; a tomo row has no B-factor: it
-    is damped by its dose, as RELION does for dose >= 0), ``dose`` (``(N, 2)``, tomo only),
+    is damped by its dose, as RELION does for dose >= 0; its defocus, angle, scale and phase shift are rounded
+    to float32, as ExpImage holds them), ``dose`` (``(N, 2)``, tomo only),
     ``premultiplied``, and ``pixel_size`` per optics group.
     """
 
@@ -625,6 +614,10 @@ def _ctf_particle_table(cache) -> dict:
         dose = None
         if cache["tomo"]:
             columns[:, 6] = 0.0
+            # A tomo tilt's defocus U/V, angle, scale and phase shift reach getCTF through ExpImage's float fields
+            # (exp_model.h:53, exp_model.cpp:218-224; ml_optimiser.cpp setValuesByGroup), rounded to float32.
+            for column in (0, 1, 2, 7, 8):
+                columns[:, column] = columns[:, column].astype(np.float32).astype(np.float64)
             dose = np.stack(
                 [
                     _relion_ctf_column(cache, "rlnMicrographPreExposure", None),

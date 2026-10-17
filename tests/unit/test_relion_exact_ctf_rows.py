@@ -62,7 +62,8 @@ def _column(table, label, default):
 def _relion_rows(star, particles, indices, size, *, tomo=False):
     """RELION's ``Fctf`` of these particles: getFftwImage with damping, squared for a premultiplied group
     (ml_optimiser.cpp:6461-6492); a tilt image is damped by its dose, or by ``BfactorPerElectronDose * dose``
-    as a B-factor when that is positive (exp_model.cpp:228-237)."""
+    as a B-factor when that is positive (exp_model.cpp:228-237), with its CTF fields rounded to float32 as
+    ExpImage stores them."""
 
     rows = particles.iloc[np.asarray(indices)]
     bfactor, dose = _column(rows, "rlnCtfBfactor", 0.0), np.full(len(rows), -1.0)
@@ -84,6 +85,14 @@ def _relion_rows(star, particles, indices, size, *, tomo=False):
         ],
         axis=1,
     )
+    if tomo:
+        # relion_refine hands a tilt image's CTF fields to setValuesByGroup from ExpImage, whose fields are float
+        # (exp_model.h:53; addImageToParticle takes the dose as float): the binding takes doubles.
+        exposure = exposure.astype(np.float32).astype(np.float64)
+        params[:, 3] = np.where(per_dose > 0.0, per_dose * exposure, 0.0)
+        params[:, 7] = np.where(per_dose > 0.0, -999.0, exposure)
+        for column in (0, 1, 2, 3, 4, 5, 7):
+            params[:, column] = params[:, column].astype(np.float32).astype(np.float64)
     ctf = np.asarray(relion_bind.optics_ctf_images_batch(str(star), params, size, size, True, 1))
     _, optics = read_star(str(star))
     flags = star_column(optics, "rlnCtfDataAreCtfPremultiplied")
@@ -246,7 +255,11 @@ def test_tomo_damping_agrees_on_numpy_and_jax(tilt_table):
 
     particles, optics, size = tilt_table
     dose = np.unique(np.asarray(particles["rlnMicrographPreExposure"], dtype=np.float64))
-    freq_sq = relion_ctf.fftw_half_freq_sq(size, size, float(optics["rlnImagePixelSize"][0])).reshape(-1)
+    # k^2 on RELION's FFTW half grid (CTF::getFftwImage's rows: ip = i up to size / 2, i - size after).
+    rows = np.arange(size)
+    ip = np.where(rows < size // 2 + 1, rows, rows - size)
+    extent = size * float(optics["rlnImagePixelSize"][0])
+    freq_sq = ((np.arange(size // 2 + 1)[None, :] / extent) ** 2 + (ip[:, None] / extent) ** 2).reshape(-1)
     for per_dose in (np.zeros_like(dose), np.where(np.arange(dose.size) % 2 == 0, 4.0, 0.0)):
         host = relion_ctf.relion_tomo_damping(freq_sq, dose, per_dose)
         device = relion_ctf.relion_tomo_damping(jnp.asarray(freq_sq), jnp.asarray(dose), jnp.asarray(per_dose))

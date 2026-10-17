@@ -447,11 +447,11 @@ def trial_ctf_images(trial_local, *, defocus, optics, pixel_size, box_size, curr
 
     Evaluated on the full image by :func:`relax.relion.ctf.relion_ctf_fftw_half` and
     windowed to the current size. A tilt image with a cumulative dose takes RELION's dose
-    damping (ctf.h:219-233) through :func:`relax.relion.ctf.relion_tomo_damping`.
+    damping (ctf.h:219-233, :func:`relax.relion.ctf.relion_tomo_damping`) inside the CTF program.
     ``optics=None`` takes each tilt image's own optics constants (its optics group's).
     """
 
-    from relax.relion.ctf import fftw_half_freq_sq, relion_ctf_fftw_half, relion_tomo_damping
+    from relax.relion.ctf import relion_ctf_fftw_half
 
     if optics is not None:
         voltage, cs, q0 = optics
@@ -476,10 +476,13 @@ def trial_ctf_images(trial_local, *, defocus, optics, pixel_size, box_size, curr
         params = np.column_stack(
             [c[:, 0], c[:, 1], c[:, 2], voltage * ones, cs * ones, q0 * ones, np.where(dosed, 0.0, c[:, 3]), c[:, 4], c[:, 5]]
         )
-        rows = relion_ctf_fftw_half(params, box_size, pixel_size)
+        # A dosed image's damping replaces the B-factor envelope before the scale and the floor (ctf.h:219-253).
+        rows = np.empty((images.size, box_size, box_size // 2 + 1))
+        if np.any(~dosed):
+            rows[~dosed] = relion_ctf_fftw_half(params[~dosed], box_size, pixel_size)
         if np.any(dosed):
-            freq_sq = fftw_half_freq_sq(box_size, box_size, pixel_size)
-            rows[dosed] = rows[dosed] * relion_tomo_damping(freq_sq, c[dosed, 6])
+            dose = np.column_stack([c[dosed, 6], np.zeros(int(dosed.sum()))])
+            rows[dosed] = relion_ctf_fftw_half(params[dosed], box_size, pixel_size, dose=dose)
     return _window_fftw_half(rows, int(current_image_size))
 
 
