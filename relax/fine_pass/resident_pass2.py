@@ -187,18 +187,15 @@ __all__ = [
 
 def _resident_wavg_arithmetic(
     *,
-    accumulate_noise,
-    scale_groups_available,
     preserve_bpref_particle_order,
     source_faithful_spectrum_norm,
 ):
-    """Resolve the pass's Wavg arithmetic: RELION's atomic triplet with the direct low-shell residual.
+    """Resolve the pass's Wavg arithmetic: RELION's powerClass spectrum and its exact BPref operands.
 
-    Returns ``(spectrum_norm, exact_bpref_operands, atomic_scale_aa)``: the atomic triplet, and with it the
-    direct low-shell residual, runs whenever the pass accumulates noise with the triplet's groups.
-    The resident statistics stage implements RELION's atomic Wavg triplet
-    only, for fresh passes and subset or focused replays alike (user decision 2026-09-26: the
-    replays' earlier unordered, non-atomic arithmetic was the compact engine's).
+    Returns ``(spectrum_norm, exact_bpref_operands)``; whether the atomic triplet runs is
+    ``resident_statistics.resident_scale_and_triplet``'s. The resident statistics stage implements
+    RELION's atomic Wavg triplet only, for fresh passes and subset or focused replays alike (user
+    decision 2026-09-26: the replays' earlier unordered, non-atomic arithmetic was the compact engine's).
     ``preserve_bpref_particle_order`` no longer changes it.
     """
 
@@ -206,10 +203,7 @@ def _resident_wavg_arithmetic(
     # A pass that preserves RELION's BPref order (every fresh K=1 pass) runs RELION's
     # powerClass spectrum with its exact BPref operands; there is no other variant.
     spectrum_norm = exact_bpref_operands = bool(source_faithful_spectrum_norm)
-    atomic_scale_aa = resident_statistics.relion_wavg_atomic_triplet_runs(
-        accumulate_noise=accumulate_noise, scale_groups_available=scale_groups_available
-    )
-    return spectrum_norm, exact_bpref_operands, atomic_scale_aa
+    return spectrum_norm, exact_bpref_operands
 
 
 def _require_gpu_pass2() -> None:
@@ -680,21 +674,10 @@ def _resident_pass2(
         # reported before any device work like the checks below.
         raise ResidentConfigurationUnsupported(str(exc)) from exc
 
-    scale_groups_available = group_ids is not None
-    # RELION runs the Wavg triplet whether or not it corrects scales: without
-    # --scale every particle's scale is 1 and only the XA/AA sums are skipped
-    # (acc_ml_optimiser_impl.h:4367-4372, 4907, 4980). The triplet therefore runs
-    # without groups too (scale 1, group -1, so no scale sums accumulate); the
-    # scale statistics themselves stay tied to real groups (``accumulate_scale``).
-    # The local driver passes group_ids alone: its admission refuses group_ids=None, so the two agree.
-    wavg_triplet_available = bool(scale_groups_available or accumulate_noise)
-    (
-        resolved_spectrum_norm,
-        relion_exact_bpref_operands,
-        relion_wavg_atomic_scale_aa,
-    ) = _resident_wavg_arithmetic(
-        accumulate_noise=accumulate_noise,
-        scale_groups_available=wavg_triplet_available,
+    scale_groups_available, relion_wavg_atomic_scale_aa = resident_statistics.resident_scale_and_triplet(
+        group_ids=group_ids, accumulate_noise=accumulate_noise
+    )
+    resolved_spectrum_norm, relion_exact_bpref_operands = _resident_wavg_arithmetic(
         preserve_bpref_particle_order=preserve_bpref_particle_order,
         source_faithful_spectrum_norm=source_faithful_spectrum_norm,
     )

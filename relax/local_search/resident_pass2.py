@@ -297,10 +297,8 @@ def compute_local_search_resident(
     # exact BPref operands here, because the exact local engine never enables
     # those on its production path.
     resolved_spectrum_norm = bool(kernel.source_faithful_spectrum_norm)
-    # group_ids alone, not the global driver's (group_ids or accumulate_noise): admission refuses group_ids=None.
-    scale_groups_available = data.group_ids is not None
-    relion_wavg_atomic_scale_aa = resident_statistics.relion_wavg_atomic_triplet_runs(
-        accumulate_noise=kernel.accumulate_noise, scale_groups_available=scale_groups_available
+    scale_groups_available, relion_wavg_atomic_scale_aa = resident_statistics.resident_scale_and_triplet(
+        group_ids=data.group_ids, accumulate_noise=kernel.accumulate_noise
     )
     resident_local_admission.require_resident_local_configuration(
         requested_diagnostics=support.engine_tuning.resident_diagnostics,

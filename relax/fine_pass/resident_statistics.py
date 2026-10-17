@@ -229,14 +229,17 @@ class ResidentStatisticsConfig:
             raise ValueError("accumulate_scale requires at least one scale group")
 
 
-def relion_wavg_atomic_triplet_runs(*, accumulate_noise: bool, scale_groups_available: bool) -> bool:
-    """Whether a resident pass runs RELION's atomic Wavg triplet, and with it the direct low-shell residual.
+def resident_scale_and_triplet(*, group_ids, accumulate_noise: bool) -> tuple[bool, bool]:
+    """``(accumulate_scale, atomic_triplet)`` of a resident pass, for the global and the local driver.
 
-    The triplet runs whenever the pass accumulates noise with the triplet's groups
-    (``scale_groups_available``: the caller says which groups feed the triplet).
+    RELION runs the Wavg triplet whether or not it corrects scales: without --scale every particle's
+    scale is 1 and only the XA/AA sums are skipped (acc_ml_optimiser_impl.h:4367-4372, 4907, 4980).
+    The atomic triplet, and with it the direct low-shell residual, therefore runs whenever the pass
+    accumulates noise, groups or not (scale 1, group -1, so no scale sums accumulate); the scale
+    statistics themselves need real groups.
     """
 
-    return bool(accumulate_noise and scale_groups_available)
+    return group_ids is not None, bool(accumulate_noise)
 
 
 def resolve_statistics_config(
