@@ -285,10 +285,10 @@ def pass_stable_windows(
         )
     )
     if plan is None:
-        return None, None, int(current_size)
+        return None, None, current_size
     spec = stable_window_spec(plan)
     log_stable_window_plan(log_label, plan)
-    return plan, spec, int(plan.physical_current_size)
+    return plan, spec, plan.physical_current_size
 
 
 def stable_window_spec(plan):

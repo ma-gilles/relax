@@ -39,7 +39,7 @@ def optics_group_rows(noise_variance_half, optics_group_ids, *, n_images: int) -
     image; a single noise spectrum has no rows (None).
     """
 
-    n_optics_groups = 1 if noise_variance_half.ndim == 1 else int(noise_variance_half.shape[0])
+    n_optics_groups = 1 if noise_variance_half.ndim == 1 else noise_variance_half.shape[0]
     optics_groups_np = None
     if n_optics_groups > 1:
         if optics_group_ids is None:
@@ -119,7 +119,7 @@ def scale_pixel_masks_rect(
     (acc_ml_optimiser_impl.h:4893-4912): ``[K, n_shells]`` curves, or one shell vector for every class.
     """
 
-    n_rect = int(relion_wavg_rectangle.centered_indices.size)
+    n_rect = relion_wavg_rectangle.centered_indices.size
     scale_dvp_by_class = [scale_correction_data_vs_prior] * n_classes
     if scale_correction_data_vs_prior is not None and n_classes > 1:
         scale_dvp_array = np.asarray(scale_correction_data_vs_prior)
@@ -158,7 +158,7 @@ def reconstruction_volume(
     volume_current_size = (
         mstep_current_size
         if reconstruction_volume_current_size is None
-        else int(reconstruction_volume_current_size)
+        else reconstruction_volume_current_size
     )
     recon_volume_shape = relion_backprojector_volume_shape(
         volume_shape,
