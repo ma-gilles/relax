@@ -686,6 +686,7 @@ def _resident_pass2(
     # (acc_ml_optimiser_impl.h:4367-4372, 4907, 4980). The triplet therefore runs
     # without groups too (scale 1, group -1, so no scale sums accumulate); the
     # scale statistics themselves stay tied to real groups (``accumulate_scale``).
+    # The local driver passes group_ids alone: its admission refuses group_ids=None, so the two agree.
     wavg_triplet_available = bool(scale_groups_available or accumulate_noise)
     (
         resolved_spectrum_norm,
