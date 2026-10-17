@@ -2784,7 +2784,7 @@ def test_cli_gpu_allows_explicit_deterministic_cuda(monkeypatch):
 def test_log_likelihood_contribution_is_relions_dll():
     # ml_optimiser.cpp:9029-9058: dLL = log(sum_weight) - min_diff2 - logsigma2, logsigma2 summed over the current-size
     # Mresol_fine pixels with ires > 0 (each FFTW half-grid pixel once), once per image of the particle.
-    from relax.vdam.particle_update import relion_log_likelihood_contributions
+    from relax.relion.log_likelihood import relion_log_likelihood_contributions
 
     ori, cs = 16, 10
     sigma2 = np.stack([np.linspace(1.0, 2.0, ori // 2 + 1), np.linspace(3.0, 4.0, ori // 2 + 1)])
@@ -2806,7 +2806,7 @@ def test_log_likelihood_contribution_of_a_group_on_another_grid():
     # each ires reading the model shell ROUND(remap_image_sizes * ires) (ml_optimiser.cpp:9046-9055).
     import math
 
-    from relax.vdam.particle_update import relion_log_likelihood_contributions
+    from relax.relion.log_likelihood import relion_log_likelihood_contributions
 
     ori, ori_pixel, cs = 128, 4.25, 38
     box, pixel = 112, 5.44

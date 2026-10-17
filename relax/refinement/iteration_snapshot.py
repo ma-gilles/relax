@@ -101,6 +101,8 @@ class IterationSnapshot:
     acc_rot_per_class: np.ndarray | None
     acc_trans_per_class_angstrom: np.ndarray | None
     extra: dict
+    # Per half: RELION's rlnLogLikeliContribution of each particle (relax.relion.log_likelihood); None: not known.
+    log_likelihood_contribution: list | None = None
 
     @property
     def k_class(self) -> bool:
@@ -296,7 +298,15 @@ def _host_direction_prior(direction_priors):
 
 
 def _host_particle_state(
-    half_inputs, max_posterior, significant_counts, avg_norm_correction, *, direction_priors, box_size, consistency
+    half_inputs,
+    max_posterior,
+    significant_counts,
+    avg_norm_correction,
+    *,
+    direction_priors,
+    box_size,
+    consistency,
+    log_likelihood_contribution=None,
 ) -> dict:
     """Per-particle arrays of both halves, the norm corrections, and the dtype, prior-order and consistency tags.
 
@@ -325,6 +335,9 @@ def _host_particle_state(
         ],
         max_posterior=host_half_pair(max_posterior),
         significant_counts=host_half_pair(significant_counts),
+        log_likelihood_contribution=(
+            None if log_likelihood_contribution is None else host_half_pair(log_likelihood_contribution)
+        ),
         # None: the norm was not estimated (a subtomogram run, --no_norm;
         # relion_normalization.update_relion_norm_scale_corrections): RELION's 1.0 in relax's frame.
         avg_norm_correction=tuple(
@@ -423,6 +436,7 @@ class SnapshotCapture:
         max_posterior,
         significant_counts,
         avg_norm_correction,
+        log_likelihood_contribution=None,
     ) -> IterationSnapshot:
         """Complete a checkpoint in the layout of the run's mode (``finish_class`` or ``finish_k1``).
 
@@ -444,6 +458,7 @@ class SnapshotCapture:
                 max_posterior=max_posterior,
                 significant_counts=significant_counts,
                 avg_norm_correction=avg_norm_correction,
+                log_likelihood_contribution=log_likelihood_contribution,
             )
         return self.finish_k1(
             assembly,
@@ -459,6 +474,7 @@ class SnapshotCapture:
             max_posterior=max_posterior,
             significant_counts=significant_counts,
             avg_norm_correction=avg_norm_correction,
+            log_likelihood_contribution=log_likelihood_contribution,
         )
 
     def finish_k1(
@@ -477,6 +493,7 @@ class SnapshotCapture:
         max_posterior,
         significant_counts,
         avg_norm_correction,
+        log_likelihood_contribution=None,
     ) -> IterationSnapshot:
         """Copy a K=1 iteration's maps, spectra, priors and particles into a complete checkpoint.
 
@@ -510,6 +527,7 @@ class SnapshotCapture:
                 direction_priors=direction_priors,
                 box_size=self.box_size,
                 consistency=self.consistency,
+                log_likelihood_contribution=log_likelihood_contribution,
             ),
             class_assignments=None,
         )
@@ -531,6 +549,7 @@ class SnapshotCapture:
         max_posterior,
         significant_counts,
         avg_norm_correction,
+        log_likelihood_contribution=None,
     ) -> IterationSnapshot:
         """Copy a Class3D iteration's maps, spectra, priors and particles into a complete checkpoint.
 
@@ -564,6 +583,7 @@ class SnapshotCapture:
                 direction_priors=direction_priors,
                 box_size=self.box_size,
                 consistency=self.consistency,
+                log_likelihood_contribution=log_likelihood_contribution,
             ),
             class_assignments=host_half_pair(class_assignments),
         )
@@ -612,6 +632,7 @@ def k1_run_files_snapshot(
         fsc=mstep.fsc, fsc_for_growth=mstep.fsc, class_weights=None, direction_priors=carry.direction_priors,
         half_inputs=halves, class_assignments=None, max_posterior=expected.per_half.max_posterior,
         significant_counts=expected.significance.per_half, avg_norm_correction=corrections.avg_norm_correction_per_half,
+        log_likelihood_contribution=expected.per_half.log_likelihood_contribution,
     )
 
 
@@ -647,4 +668,5 @@ def class_run_files_snapshot(
         direction_priors=carry.direction_priors, half_inputs=halves, class_assignments=carry.class_assignments,
         max_posterior=expected.per_half.max_posterior, significant_counts=expected.significance.per_half,
         avg_norm_correction=corrections.avg_norm_correction_per_half,
+        log_likelihood_contribution=expected.per_half.log_likelihood_contribution,
     )

@@ -163,6 +163,8 @@ class PerHalfOutputs:
     Ft_ctf: list = field(default_factory=lambda: [None, None])
     coarse_ha: list = field(default_factory=lambda: [None, None])
     max_posterior: list = field(default_factory=lambda: [None, None])
+    # RELION's rlnLogLikeliContribution per particle (relax.relion.log_likelihood), set by the numbered expectation.
+    log_likelihood_contribution: list = field(default_factory=lambda: [None, None])
     rotation_posterior: list = field(default_factory=lambda: [None, None])
     class_assignments: list = field(default_factory=lambda: [None, None])
     class_posterior: list = field(default_factory=lambda: [None, None])

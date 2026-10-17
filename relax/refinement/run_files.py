@@ -475,7 +475,8 @@ def _write_model_stars(root: Path, snapshot: IterationSnapshot, settings: RunSet
             ("rlnSigmaPriorRotAngle", float(np.degrees(state["sigma_rot"]))),
             ("rlnSigmaPriorTiltAngle", tilt_prior_deg if tilt_prior_deg > 0.0 else float(np.degrees(state["sigma_rot"]))),
             ("rlnSigmaPriorPsiAngle", float(np.degrees(state["sigma_psi"]))),
-            ("rlnLogLikelihood", 0.0),
+            # RELION's wsum_model.LL: the sum of the half's (K>1: every particle's) dLL (acc_ml_optimiser_impl.h:3656).
+            ("rlnLogLikelihood", _model_log_likelihood(snapshot, h)),
             ("rlnAveragePmax", float(state["ave_Pmax"])),
         ]
         text = [f"# Created by relax ({RUN_FILES_FORMAT})\n", _list_block("model_general", general)]
@@ -610,6 +611,17 @@ def _write_sampling_star(root: Path, snapshot: IterationSnapshot, settings: RunS
     )
 
 
+def _model_log_likelihood(snapshot: IterationSnapshot, half_index: int) -> float:
+    """model.star's ``rlnLogLikelihood``: the sum of the particles' dLL of half ``half_index`` (a Class3D model,
+    one for both halves: every particle's), 0.0 when the iteration has none (MlModel's initial value)."""
+
+    values = snapshot.log_likelihood_contribution
+    if values is None:
+        return 0.0
+    halves = [v for v in values if v is not None] if snapshot.k_class else [values[half_index]]
+    return float(sum(np.sum(np.asarray(v, dtype=np.float64)) for v in halves if v is not None))
+
+
 def _per_row(values_per_half, half_rows, n_rows, fill, dtype):
     out = np.full(n_rows, fill, dtype=dtype)
     for rows, values in zip(half_rows, values_per_half):
@@ -683,6 +695,11 @@ def _write_data_star(root: Path, snapshot: IterationSnapshot, particles, optics,
         columns["rlnMaxValueProbDistribution"] = _per_row(snapshot.max_posterior, half_rows, n_rows, 0.0, np.float64)
     if snapshot.significant_counts is not None:
         columns["rlnNrOfSignificantSamples"] = _per_row(snapshot.significant_counts, half_rows, n_rows, 0, np.int64)
+    # RELION's per-particle dLL of the iteration (relax.relion.log_likelihood); the input STAR's column is replaced.
+    if snapshot.log_likelihood_contribution is not None:
+        columns["rlnLogLikeliContribution"] = _per_row(
+            snapshot.log_likelihood_contribution, half_rows, n_rows, 0.0, np.float64
+        )
     for label, values in columns.items():
         table[label] = values
     blocks = []

@@ -1130,6 +1130,16 @@ The files carry RELION's values where relax's internal frame differs: spectra an
 sum to the class fraction (ml_optimiser.cpp:5325; relax scores with per-class conditionals
 and a separate class prior), and each class's own expected accuracy in `model_classes`,
 zero before the first estimate as in `MlModel` (ml_model.cpp:68).
+Each particle's `rlnLogLikeliContribution` is RELION's dLL of the iteration (storeWeightedSums,
+acc_ml_optimiser_impl.h:3555-3578): `log(sum_weight) - min_diff2 - logsigma2`, with `logsigma2` the
+sum of `log(2 pi sigma2_noise)` over the E-step's current-size pixels once per image (a subtomogram counts
+its tilt images), and `-min_diff2 / nr_images` on a cross-correlation iteration. relax takes the fine pass's
+log evidence, adds RELION's uniform `log(1 / n_directions)` where a global search scores without a learned
+direction prior (relax's scorers leave that constant out), and computes the rest in
+[`relion/log_likelihood.py`](../../relax/relion/log_likelihood.py) (`log_likelihood_contributions` in
+[`expectation.py`](../../relax/refinement/expectation.py)); the column replaces the input STAR's. Each model.star's
+`rlnLogLikelihood` is the sum over its half (Class3D: over all particles), RELION's `wsum_model.LL`
+(relax#88).
 `relax refine --write-iteration-every N` (default 1) sets the frequency and
 `--keep-iterations N` (default 0, keep all, as RELION) keeps only the newest N iterations'
 files. A background thread writes each iteration's files while the next one runs.

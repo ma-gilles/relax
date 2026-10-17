@@ -92,6 +92,8 @@ def add_log_likelihood_contributions(meta: dict, state, optics_state, optics_gro
     if (evidence := meta.get("log_evidence_per_image")) is None:
         return
     ids = np.asarray(meta["selected_particle_ids"], dtype=np.int64)
+    from relax.relion.log_likelihood import relion_log_likelihood_contributions
+
     meta["log_likelihood_contribution"] = relion_log_likelihood_contributions(
         evidence,
         sigma2_noise=state.sigma2_noise,
@@ -125,36 +127,3 @@ def optics_group_grids(optics_state, optics_group_ids, model_box):
         remap = (float(int(model_box)) * model_pixel) / (float(box) * pixel)
         grids[int(group)] = (box, scale_difference(box, pixel, int(model_box), model_pixel), remap)
     return grids
-
-
-def relion_log_likelihood_contributions(
-    log_evidence, *, sigma2_noise, groups, n_images, box_size: int, current_size: int, group_grids=None
-):
-    """RELION's per-particle dLL, ``log(sum_weight) - min_diff2 - logsigma2`` (ml_optimiser.cpp:9029-9058).
-
-    ``log_evidence`` is the E-step's ``log(sum_weight) - min_diff2`` per particle; ``logsigma2`` sums
-    ``log(2 pi sigma2_noise[group][ires])`` over the current-size ``Mresol_fine`` pixels with ``ires > 0``
-    once per image of the particle (``n_images``: 1, or a subtomogram's tilt images).
-
-    ``group_grids`` (optics groups on several image shapes) maps a group to its ``(box, scale, remap)``:
-    its ``Mresol_fine`` is its own image's at its remapped current size (``scale``, the group's
-    ``remap_sizes``), and each ``ires`` reads the model shell ``ROUND(remap * ires)``
-    (``remap_image_sizes``, ml_optimiser.cpp:9046-9055).
-    """
-    from relax.relion.ctf import fftw_shell_labels
-    from relax.relion.optics_groups import group_current_size
-
-    shells = fftw_shell_labels(int(box_size), int(current_size), centered_rows=False)
-    sigma2 = np.atleast_2d(np.asarray(sigma2_noise, dtype=np.float64))
-    shells = shells[(shells > 0) & (shells < sigma2.shape[1])]
-    logsigma2 = np.log(2.0 * np.pi * sigma2[:, shells]).sum(axis=1)
-    for group, (box, scale, remap) in (group_grids or {}).items():
-        if int(box) == int(box_size) and float(scale) == 1.0 and float(remap) == 1.0:
-            continue  # the model's own grid: the shared sum above
-        ires = fftw_shell_labels(int(box), group_current_size(current_size, box, scale), centered_rows=False)
-        ires = ires[ires > 0]
-        # RELION's ROUND of a positive value: (int)(x + 0.5).
-        remapped = np.floor(float(remap) * ires + 0.5).astype(np.int64)
-        remapped = remapped[remapped < sigma2.shape[1]]
-        logsigma2[group] = np.log(2.0 * np.pi * sigma2[group, remapped]).sum()
-    return np.asarray(log_evidence, np.float64) - np.asarray(n_images, np.float64) * logsigma2[np.asarray(groups, np.int64)]

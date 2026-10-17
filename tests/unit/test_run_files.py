@@ -725,6 +725,25 @@ def test_run_files_use_relion_blocks_and_keep_input_columns(tmp_path):
     assert data["optics"]["rlnImagePixelSize"] == ["2.5"]
 
 
+def test_data_star_writes_the_iterations_log_likelihood_contribution_and_model_star_its_half_sum(tmp_path):
+    """rlnLogLikeliContribution is the iteration's dLL of each particle, replacing whatever the input carried; each
+    half's model.star rlnLogLikelihood is the sum over that half (RELION's wsum_model.LL, relax#88)."""
+    rng = np.random.default_rng(3)
+    input_star = _write_input_star(tmp_path, 7)
+    half_rows = [np.array([4, 0, 2, 6]), np.array([5, 1, 3])]
+    dll = [np.array([10.5, -3.25, 7.0, 1.0]), np.array([2.0, 4.5, -1.5])]
+    snapshot = dataclasses.replace(_k1_snapshot([4, 3], rng), log_likelihood_contribution=dll)
+    _writer(tmp_path, input_star, half_rows)(snapshot)
+
+    particles = read_star_blocks(tmp_path / "out" / "run_it005_data.star")["particles"]
+    column = np.asarray(particles["rlnLogLikeliContribution"], dtype=np.float64)
+    for rows, values in zip(half_rows, dll):
+        assert np.array_equal(column[rows], values)
+    for half, values in ((1, dll[0]), (2, dll[1])):
+        model = read_star_blocks(tmp_path / "out" / f"run_it005_half{half}_model.star")["model_general"]
+        assert float(model["rlnLogLikelihood"]) == pytest.approx(float(np.sum(values)))
+
+
 def test_class3d_run_files_round_trip(tmp_path):
     rng = np.random.default_rng(2)
     n, k = 6, 3
