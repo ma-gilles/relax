@@ -253,7 +253,9 @@ def test_every_pass_within_the_size_rule_owns_a_partial_unless_the_stock_switch_
     ``ScoringOverrides.stock_relion_direct_accumulation`` (set by the tier for its stock-fixture cold starts,
     relax#109) gives a pass no partial; its environment variable is parsed in test_scoring_overrides_environment.py."""
 
-    assert isinstance(hvm.allocate_row_partial(1000, np.complex64, np.float32), hvm.RowPartial)
+    assert isinstance(
+        hvm.allocate_row_partial(1000, np.complex64, np.float32, stock_relion_direct_accumulation=False), hvm.RowPartial
+    )
     assert not ScoringOverrides().stock_relion_direct_accumulation
     assert hvm.allocate_row_partial(1000, np.complex64, np.float32, stock_relion_direct_accumulation=True) is None
 
@@ -268,7 +270,15 @@ def test_the_partial_changes_the_accumulators_where_the_loss_shows(monkeypatch):
         "direct": float(np.asarray(_stage_driver(monkeypatch, weights, None)[1])[0]),
         # what a pass asks, once
         "partial": float(
-            np.asarray(_stage_driver(monkeypatch, weights, hvm.allocate_row_partial(VOLUME, jnp.complex64, jnp.float32))[1])[0]
+            np.asarray(
+                _stage_driver(
+                    monkeypatch,
+                    weights,
+                    hvm.allocate_row_partial(
+                        VOLUME, jnp.complex64, jnp.float32, stock_relion_direct_accumulation=False
+                    ),
+                )[1]
+            )[0]
         ),
     }
     assert results["direct"] != results["partial"]
@@ -284,11 +294,14 @@ def test_pairs_above_the_size_rule_get_no_partial(caplog, monkeypatch):
     pair_itemsize = np.dtype(np.complex64).itemsize + np.dtype(np.float32).itemsize
     assert pair_itemsize == 12
     assert isinstance(
-        hvm.allocate_row_partial(1000, np.complex64, np.float32), hvm.RowPartial
+        hvm.allocate_row_partial(1000, np.complex64, np.float32, stock_relion_direct_accumulation=False), hvm.RowPartial
     )
     too_large = hvm.ROW_PARTIAL_MAX_PAIR_BYTES // pair_itemsize + 1
     with caplog.at_level(logging.INFO, logger="relax.reconstruction.half_volume_mstep"):
-        assert hvm.allocate_row_partial(too_large, np.complex64, np.float32) is None
+        assert (
+            hvm.allocate_row_partial(too_large, np.complex64, np.float32, stock_relion_direct_accumulation=False)
+            is None
+        )
     assert "accumulated directly" in caplog.text
     # Box 256 at padding 2 (515 x 515 x 258 half grid) is 0.76 GiB a pair; box 800 (1603 x 1603 x 802) is 23 GiB.
     assert 515 * 515 * 258 * pair_itemsize < hvm.ROW_PARTIAL_MAX_PAIR_BYTES < 1603 * 1603 * 802 * pair_itemsize

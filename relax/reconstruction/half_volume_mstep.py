@@ -118,7 +118,7 @@ class RowPartial:
 
 
 def allocate_row_partial(
-    volume_size: int, y_dtype, ctf_dtype, *, stock_relion_direct_accumulation: bool = False
+    volume_size: int, y_dtype, ctf_dtype, *, stock_relion_direct_accumulation: bool
 ) -> RowPartial | None:
     """The pass's :class:`RowPartial`, or ``None`` (direct accumulation) for a pair above ``ROW_PARTIAL_MAX_PAIR_BYTES``
     or under ``stock_relion_direct_accumulation`` (``ScoringOverrides``; the stock-fixture parity gates only).
