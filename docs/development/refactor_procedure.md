@@ -154,6 +154,22 @@ node only when `uptime` shows a load under 20. Each step prints one summary line
       reason in its commit. Relocations, in-package split overhead, the owner's own growth and the payback
       of ours follow rule 21, with the per-commit counts in the commit message.
 
+Land by a fast-forward of main to the gated head. When the owner's commits arrive between the gate and the
+push, rebase over them and gate the rebased head again, with one exception, the fast landing (approved
+2026-10-17). It applies only when all of these hold:
+
+- [ ] the stack passed the full gate and the GPU tiers on the previous base;
+- [ ] the rebase had no conflict;
+- [ ] the owner's new commits touch none of the stack's files, `scripts/dev/smell_baseline.json` excepted
+      (`git diff --name-only OLD_BASE NEW_BASE` against `git diff --name-only OLD_BASE OLD_HEAD`);
+- [ ] the owner's new code uses none of the names the stack renames, moves or deletes (grep the added lines
+      of `git diff OLD_BASE NEW_BASE` for each of them).
+
+Before pushing, on the rebased head: the `static` step, the placement tests (`tests/unit/test_import_layers.py`
+and the `*_structure_metrics.py` tests), and an import of every relax module
+(`pytest --collect-only -q tests/unit`, no collection error). Right after the push, run the full gate and the
+smoke tier on the new main. If either fails, push a fix within the hour or revert the stack.
+
 ## 5. When the right result is "do not build it"
 
 Stop and report instead of building when: the slice has no concrete benefit; the operation gets a short
