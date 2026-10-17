@@ -68,23 +68,33 @@ def relion_tomo_damping(freq_sq, dose, bfactor_per_electron_dose=0.0):
 
 
 def dataset_optics_source_star(experiment_dataset) -> Path | None:
-    """The dataset's RELION source STAR, or ``None`` for a dataset built in memory.
+    """The dataset's RELION source STAR, or ``None`` for a dataset that declares no optics table.
 
     The optics table (CTF-premultiplied, aberrated or magnified groups) is read from this
-    STAR. ``particles_file=None`` declares a dataset built from arrays, which has no
-    optics table: ``None``, unless the dataset flags its images CTF-premultiplied
-    (``premultiplied_ctf``), which only the STAR's exact CTF rows can serve, so that
-    raises. A dataset that names a non-STAR source raises, as its optics are unknown;
-    an object that cannot name a source at all (``MultiShapeHalf``: ask its shape
-    classes' datasets) raises AttributeError.
+    STAR. Two datasets declare they have none: one built from arrays (``particles_file=None``)
+    and one whose CTF comes from a cryoDRGN ``.pkl`` (``ctf_file``) beside a non-STAR image
+    stack, as the PPCA training manifest's bare ``.mrcs`` (the pickle holds defocus, voltage,
+    Cs, amplitude contrast and phase shift per image, no optics group). Either gives ``None``,
+    unless the dataset flags its images CTF-premultiplied (``premultiplied_ctf``), which only
+    the STAR's exact CTF rows can serve, so that raises. Any other non-STAR source raises, as
+    its optics are unknown; an object that cannot name a source at all (``MultiShapeHalf``: ask
+    its shape classes' datasets) raises AttributeError.
     """
 
     dataset_source = experiment_dataset.particles_file
-    if dataset_source is None:
+    ctf_file = getattr(experiment_dataset, "ctf_file", None)
+    pickled_ctf = (
+        dataset_source is not None
+        and Path(dataset_source).suffix.lower() != ".star"
+        and ctf_file is not None
+        and Path(ctf_file).suffix.lower() == ".pkl"
+    )
+    if dataset_source is None or pickled_ctf:
         if getattr(experiment_dataset, "premultiplied_ctf", False):
             raise ValueError(
-                f"{type(experiment_dataset).__name__} is built in memory (particles_file=None) with CTF-premultiplied "
-                "images; RELION's premultiplied operands are evaluated from a particle STAR's optics table"
+                f"{type(experiment_dataset).__name__} is built in memory or from a pickled CTF "
+                f"(particles_file={dataset_source!r}) with CTF-premultiplied images; RELION's premultiplied operands "
+                "are evaluated from a particle STAR's optics table"
             )
         return None
     if Path(dataset_source).suffix.lower() != ".star":

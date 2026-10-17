@@ -36,10 +36,10 @@ def test_noise_only_initial_estimator():
     )
 
 
-def test_training_loader_needs_no_truth_and_checks_inputs(tmp_path):
+def _write_bare_mrcs_manifest(tmp_path, count, n):
+    """A training manifest of the documented bare-.mrcs form: an image stack, a cryoDRGN CTF pickle, neutral poses."""
     import mrcfile
 
-    count, n = 4, 8
     images = np.random.default_rng(19).normal(size=(count, n, n)).astype(np.float32)
     with mrcfile.new(tmp_path / "particles.mrcs") as stack:
         stack.set_data(images)
@@ -68,6 +68,12 @@ def test_training_loader_needs_no_truth_and_checks_inputs(tmp_path):
     )
     path = tmp_path / "manifest.json"
     path.write_text(json.dumps(manifest))
+    return path, manifest, images, names
+
+
+def test_training_loader_needs_no_truth_and_checks_inputs(tmp_path):
+    count = 4
+    path, manifest, images, names = _write_bare_mrcs_manifest(tmp_path, count, 8)
     data, _, identity = load_training(path)
     assert data.n_images == count
     assert identity == {"manifest_sha256": file_hash(path)}
@@ -134,3 +140,29 @@ def test_source_identity_covers_the_shared_modules_ppca_imports():
     assert "relax/projection/adjoint.py" in first
     assert "relax/relion/project.py" in first
     assert "relax/refinement/iteration_loop.py" not in first
+
+
+def test_one_expectation_step_runs_from_a_bare_mrcs_manifest(tmp_path):
+    """A bare .mrcs with a pickled CTF declares no RELION optics table, so the RELION image preprocessing (odd
+    aberration demodulation) leaves its images alone instead of refusing them (regression of 364dba79)."""
+    import jax.numpy as jnp
+
+    from relax.ppca_initial_model import iteration_loop
+    from relax.ppca_initial_model.config import Config
+    from relax.ppca_initial_model.state import State
+    from relax.relion.ctf import dataset_optics_source_star
+
+    count, n = 6, 8
+    path, _, _, _ = _write_bare_mrcs_manifest(tmp_path, count, n)
+    data, _, _ = load_training(path)
+    assert dataset_optics_source_star(data) is None
+    n_freq = n * n * (n // 2 + 1)
+    theta = jnp.asarray(np.random.default_rng(3).normal(size=(n_freq, 3)) * 1e-2, jnp.complex64)
+    state = State(
+        theta, iteration_loop.empty_moments(theta), jnp.ones(n // 2 + 1, jnp.float32), 0, np.arange(count),
+        np.random.default_rng(1).bit_generator.state, 2.0, 2, {"seed": 1},
+    )
+    config = Config(stages=((1, 2, 0),), oversampling=0, image_batch_size=3, rotation_block_size=64)
+    stats = iteration_loop.expectation(data, state, config, np.arange(count), 1)
+    assert stats.n_images == count
+    assert np.isfinite(float(stats.log_likelihood))
