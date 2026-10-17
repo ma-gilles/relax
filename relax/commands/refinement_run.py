@@ -753,8 +753,9 @@ def main(command=None):
         relion_model_pixel_size = references.model_pixel_size
 
     # RELION remaps every optics group against its model pixel size, the reference header's
-    # (ml_model.cpp:944-962, ml_optimiser.cpp:6917-6923): several image shapes scale their classes by it.
-    if shape_class_rows is not None and relion_model_pixel_size is not None:
+    # (ml_model.cpp:944-962, ml_optimiser.cpp:6917-6923): several image shapes scale their classes by it, and tilt
+    # images their left matrices (applyScaleDifference; relax#89).
+    if (shape_class_rows is not None or tomo_run) and relion_model_pixel_size is not None:
         ds = ds.with_model_pixel_size(relion_model_pixel_size)
     ds_half1 = ds.subset(particle_layout.half1_rows)
     ds_half2 = ds.subset(particle_layout.half2_rows)

@@ -11,6 +11,7 @@ particle-STAR row order, over a flat dataset of their tilt images in RELION's ``
 
 from __future__ import annotations
 
+import copy
 import dataclasses
 
 import numpy as np
@@ -81,6 +82,27 @@ class TomoDataset:
         self.volume_shape = tuple(int(size) for size in images.volume_shape)
         self.voxel_size = float(images.voxel_size)
         self.grid_size = self.image_shape[0]
+        # RELION's model pixel size (the reference map header's); None until with_model_pixel_size.
+        self.model_pixel_size = None
+
+    def with_model_pixel_size(self, model_pixel_size):
+        """The same particles against RELION's model grid: every tilt image's left matrix times RELION's
+        ``applyScaleDifference`` factor ``s = (box * pixel) / (ori_size * model pixel)`` (obs_model.cpp:1332-1340).
+
+        RELION multiplies each image's ``mag`` by ``s`` before it becomes the coarse plan's, the fine pass's and the
+        weighted sums' left matrix (acc_ml_optimiser_impl.h:1099, 1722, 3222) and the expected-accuracy ``A1``/``A2``
+        (ml_optimiser.cpp:9527, 9590). The model pixel is the reference header's float32 (2.7 reads 2.700000048 A),
+        so ``s`` is not 1 even on the reference grid: 1 - 1.8e-8 on the RELION 5 tutorial's bin-2 data, which moves
+        about half of the float32 scorer-matrix entries by one ulp (relax#89).
+        """
+
+        from relax.relion import optics_groups
+
+        out = copy.copy(self)
+        out.model_pixel_size = float(model_pixel_size)
+        scale = optics_groups.scale_difference(self.grid_size, self.voxel_size, self.volume_shape[0], model_pixel_size)
+        out.image_left = self.image_left * scale
+        return out
 
     def subset(self, units):
         """The :class:`TomoHalf` of these particle rows, in this order."""
@@ -104,6 +126,7 @@ class TomoDataset:
             image_shape=self.image_shape,
             volume_shape=self.volume_shape,
             voxel_size=self.voxel_size,
+            model_pixel_size=self.model_pixel_size,
         )
 
     def startup_noise_images(self, units, *, unit_groups, minimum_nr_particles: int = 10):
@@ -159,8 +182,8 @@ def tilt_left_matrices(images, image_projections, image_rows) -> np.ndarray:
     ``ObservationModel::applyAnisoMag``), ``M3`` the image's optics-group ``rlnMagMat`` in a 3x3
     identity; without magnification ``L = Aproj``. The 3D shift still projects through ``Aproj``
     (``Experiment::getTranslationInTiltSeries``). ``images`` is the flat per-tilt dataset and
-    ``image_rows`` the dataset rows of ``image_projections``. The scale difference
-    (``applyScaleDifference``) is 1: tilt images are on the reference grid.
+    ``image_rows`` the dataset rows of ``image_projections``. RELION's scale difference
+    (``applyScaleDifference``) against the model grid is applied by :meth:`TomoDataset.with_model_pixel_size`.
     """
 
     from recovar.data_io.starfile import star_column
@@ -215,7 +238,9 @@ class TomoHalf:
     ``n_units`` counts particles; ``images`` is the flat dataset of their tilt images, particle ``u``'s
     at ``unit_image_offsets[u]:[u + 1]`` in ``img_id`` order, with ``image_projections`` (RELION's
     ``Aproj``, which places the particle's 3D shifts) and ``image_left`` (the projection's left matrix,
-    :func:`tilt_left_matrices`). ``image_shape``, ``volume_shape`` and ``voxel_size`` are the reference model's.
+    :func:`tilt_left_matrices`, with RELION's scale difference when ``model_pixel_size`` is set). ``image_shape``,
+    ``volume_shape`` and ``voxel_size`` are the reference model's; ``model_pixel_size`` is RELION's model pixel size
+    (the reference header's), ``voxel_size`` when None.
     """
 
     def __init__(
@@ -232,6 +257,7 @@ class TomoHalf:
         voxel_size,
         image_frames,
         unit_tomogram,
+        model_pixel_size=None,
     ):
         self.images = images
         self.unit_image_offsets = np.asarray(unit_image_offsets, dtype=np.int64)
@@ -244,6 +270,7 @@ class TomoHalf:
         self.image_shape = tuple(int(size) for size in image_shape)
         self.volume_shape = tuple(int(size) for size in volume_shape)
         self.voxel_size = float(voxel_size)
+        self.model_pixel_size = self.voxel_size if model_pixel_size is None else float(model_pixel_size)
         self.grid_size = self.image_shape[0]
         self.n_units = int(self.unit_image_offsets.size - 1)
         self.n_images = int(self.unit_image_offsets[-1])
@@ -275,6 +302,7 @@ class TomoHalf:
             voxel_size=self.voxel_size,
             image_frames=self.image_frames[images],
             unit_tomogram=self.unit_tomogram[units],
+            model_pixel_size=self.model_pixel_size,
         )
 
     def image_particle(self) -> np.ndarray:

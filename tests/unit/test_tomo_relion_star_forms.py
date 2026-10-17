@@ -225,3 +225,28 @@ def test_simulated_project_in_relions_forms_loads_the_same_dataset(simulated, tm
     assert np.array_equal(np.asarray(a.images.CTF_params), np.asarray(b.images.CTF_params))
     for unit in range(a.n_units):
         assert np.array_equal(np.asarray(a.unit_images(unit)), np.asarray(b.unit_images(unit))), unit
+
+
+@pytest.mark.unit
+def test_the_model_pixel_size_scales_every_tilt_left_matrix_as_relions_apply_scale_difference(simulated, tmp_path):
+    """RELION multiplies each tilt image's ``mag`` by ``s = (box * pixel) / (ori_size * model pixel)`` before its
+    coarse, fine and weighted-sum matrices (obs_model.cpp:1332-1340, acc_ml_optimiser_impl.h:1099, 1722, 3222), with
+    the reference header's float32 model pixel (relax#89). The halves carry the scaled matrices and the model pixel;
+    ``Aproj`` (the 3D shifts) is unchanged."""
+
+    from relax.steps.tomo_half import load_tomo_dataset
+
+    project, _ = simulated
+    dataset = load_tomo_dataset(
+        project / "particles.star", project / "tomograms.star", tmp_path / "particles_2d.star", datadir=str(project), lazy=True
+    )
+    header_pixel = dataset.voxel_size * (1.0 + 2.0**-20)  # a header that is not the STAR pixel
+    scaled = dataset.with_model_pixel_size(header_pixel)
+    s = (dataset.grid_size * dataset.voxel_size) / (dataset.volume_shape[0] * header_pixel)
+    assert dataset.model_pixel_size is None and scaled.model_pixel_size == header_pixel
+    assert s != 1.0 and np.array_equal(scaled.image_left, dataset.image_left * s)
+    assert np.array_equal(scaled.image_projections, dataset.image_projections)
+    half = scaled.subset(np.arange(min(3, scaled.n_units)))
+    assert half.model_pixel_size == header_pixel
+    assert np.array_equal(half.image_left, scaled.image_left[: half.n_images])
+    assert dataset.subset(np.arange(1)).model_pixel_size == dataset.voxel_size  # no model grid: s = 1

@@ -935,6 +935,8 @@ def _estimate_tomo_half(
                 pixel_size=float(half.voxel_size),
                 model_box_size=model_box_size,
                 current_image_size=int(current_image_size),
+                # RELION's A1/A2 carry applyScaleDifference against the header's model pixel (ml_optimiser.cpp:9527).
+                group_grid=dict(model_pixel_size=float(half.model_pixel_size)),
                 padding_factor=int(padding_factor),
                 sigma2_fudge=float(sigma2_fudge),
                 random_seed=int(random_seed),
