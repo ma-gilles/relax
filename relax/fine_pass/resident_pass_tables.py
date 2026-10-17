@@ -19,6 +19,19 @@ from relax.projection.projection import relion_scale_correction_pixel_mask
 from relax.reconstruction.half_volume_mstep import relion_backprojector_volume_shape
 
 
+def resident_scale_and_triplet(*, group_ids, accumulate_noise: bool) -> tuple[bool, bool]:
+    """``(accumulate_scale, atomic_triplet)`` of a resident pass, for the global and the local driver.
+
+    RELION runs the Wavg triplet whether or not it corrects scales: without --scale every particle's
+    scale is 1 and only the XA/AA sums are skipped (acc_ml_optimiser_impl.h:4367-4372, 4907, 4980).
+    The atomic triplet, and with it the direct low-shell residual, therefore runs whenever the pass
+    accumulates noise, groups or not (scale 1, group -1, so no scale sums accumulate); the scale
+    statistics themselves need real groups.
+    """
+
+    return group_ids is not None, bool(accumulate_noise)
+
+
 def optics_group_rows(noise_variance_half, optics_group_ids, *, n_images: int) -> tuple[int, np.ndarray | None]:
     """``(n_optics_groups, optics_groups_np)``: the noise table's group count and each image's row of it.
 

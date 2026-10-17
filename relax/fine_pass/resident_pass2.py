@@ -193,7 +193,7 @@ def _resident_wavg_arithmetic(
     """Resolve the pass's Wavg arithmetic: RELION's powerClass spectrum and its exact BPref operands.
 
     Returns ``(spectrum_norm, exact_bpref_operands)``; whether the atomic triplet runs is
-    ``resident_statistics.resident_scale_and_triplet``'s. The resident statistics stage implements
+    ``resident_pass_tables.resident_scale_and_triplet``'s. The resident statistics stage implements
     RELION's atomic Wavg triplet only, for fresh passes and subset or focused replays alike (user
     decision 2026-09-26: the replays' earlier unordered, non-atomic arithmetic was the compact engine's).
     ``preserve_bpref_particle_order`` no longer changes it.
@@ -674,7 +674,7 @@ def _resident_pass2(
         # reported before any device work like the checks below.
         raise ResidentConfigurationUnsupported(str(exc)) from exc
 
-    scale_groups_available, relion_wavg_atomic_scale_aa = resident_statistics.resident_scale_and_triplet(
+    scale_groups_available, relion_wavg_atomic_scale_aa = resident_pass_tables.resident_scale_and_triplet(
         group_ids=group_ids, accumulate_noise=accumulate_noise
     )
     resolved_spectrum_norm, relion_exact_bpref_operands = _resident_wavg_arithmetic(

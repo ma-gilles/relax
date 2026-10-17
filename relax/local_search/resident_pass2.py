@@ -297,7 +297,7 @@ def compute_local_search_resident(
     # exact BPref operands here, because the exact local engine never enables
     # those on its production path.
     resolved_spectrum_norm = bool(kernel.source_faithful_spectrum_norm)
-    scale_groups_available, relion_wavg_atomic_scale_aa = resident_statistics.resident_scale_and_triplet(
+    scale_groups_available, relion_wavg_atomic_scale_aa = resident_pass_tables.resident_scale_and_triplet(
         group_ids=data.group_ids, accumulate_noise=kernel.accumulate_noise
     )
     resident_local_admission.require_resident_local_configuration(
