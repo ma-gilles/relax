@@ -168,7 +168,9 @@ push, rebase over them and gate the rebased head again, with one exception, the 
 Before pushing, on the rebased head: the `static` step, the placement tests (`tests/unit/test_import_layers.py`
 and the `*_structure_metrics.py` tests), and an import of every relax module
 (`pytest --collect-only -q tests/unit`, no collection error). Right after the push, run the full gate and the
-smoke tier on the new main. If either fails, push a fix within the hour or revert the stack.
+smoke tier on the new main. If either fails, push a fix within the hour or revert the stack. These post-landing
+runs belong to the fast landing only: a stack that lands as the very head the gate and the tiers checked needs
+none.
 
 ## 5. When the right result is "do not build it"
 
