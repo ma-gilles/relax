@@ -82,6 +82,7 @@ tests/unit/test_initial_coarse_grid_owner.py
 tests/unit/test_initial_half_arrays.py
 tests/unit/test_iteration_capture.py
 tests/unit/test_iteration_convergence.py
+tests/unit/test_jit_programs_helper.py
 tests/unit/test_k1_bpref_execution_order.py
 tests/unit/test_k1_mean_lifecycle.py
 tests/unit/test_k_class_joint_semantics.py
