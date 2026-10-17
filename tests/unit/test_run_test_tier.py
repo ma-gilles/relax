@@ -30,6 +30,16 @@ def test_medium_plan_covers_fast_tier_sweep_and_end_to_end():
     assert not any(i.required for n, i in items.items() if n.startswith("unit_"))
 
 
+def test_only_the_stock_fixture_cold_starts_run_the_stock_accumulation():
+    """The three cold starts scored against stock RELION 5.0.1 GPU fixtures run stock GPU RELION's direct
+    accumulation (relax#109); every other item runs production's partial pair (relax#92)."""
+
+    items = {i.name: i for i in run_test_tier.plan("medium", REPO_ROOT, "HEAD")}
+    stock = {n for n, i in items.items() if i.env.get("RELAX_EM_STOCK_RELION_DIRECT_ACCUMULATION") == "1"}
+    assert stock == {"e2e_k1_5k_standalone", "k1_gui60_coldstart_standalone", "k1_os1_coldstart_standalone"}
+    assert set(run_test_tier.STOCK_FIXTURE_CASES) == stock
+
+
 def test_smoke_plan_covers_local_search_and_global_k1():
     items = {i.name: i for i in run_test_tier.plan("smoke", REPO_ROOT, "HEAD")}
     nodes = [a.split("::")[1] for a in items["replays"].argv if "::" in a]

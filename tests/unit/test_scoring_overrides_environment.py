@@ -8,10 +8,10 @@ import pytest
 
 from relax.runtime.scoring_overrides import (
     COARSE_GEMM_FLOAT64_ENV,
-    EXACT_FLOAT32_ACCUMULATION_ENV,
     F32_COARSE_SUPPORT_ENV,
     F32_FINE_POSTERIOR_ENV,
     PROJECTOR_TEXTURE_INTERP_ENV,
+    STOCK_RELION_DIRECT_ACCUMULATION_ENV,
     X_HALF_MSTEP_DOUBLE_ENV,
     ScoringOverrides,
 )
@@ -91,14 +91,16 @@ def test_the_projector_texture_route_is_read_once(monkeypatch):
         ScoringOverrides.from_environ()
 
 
-def test_the_exact_float32_accumulation_switch_is_read_once(monkeypatch):
-    """RELAX_EM_EXACT_FLOAT32_ACCUMULATION: unset or 0 off, 1 on."""
+def test_the_stock_relion_direct_accumulation_switch_is_read_once(monkeypatch):
+    """RELAX_EM_STOCK_RELION_DIRECT_ACCUMULATION: unset or 0 off, 1 on (relax#109). The relax#65 opt-in
+    RELAX_EM_EXACT_FLOAT32_ACCUMULATION is gone: exact accumulation is the production path (relax#92)."""
     for value in (None, "0"):
         if value is None:
-            monkeypatch.delenv(EXACT_FLOAT32_ACCUMULATION_ENV, raising=False)
+            monkeypatch.delenv(STOCK_RELION_DIRECT_ACCUMULATION_ENV, raising=False)
         else:
-            monkeypatch.setenv(EXACT_FLOAT32_ACCUMULATION_ENV, value)
-        assert not ScoringOverrides.from_environ().exact_float32_accumulation
-    assert EXACT_FLOAT32_ACCUMULATION_ENV == "RELAX_EM_EXACT_FLOAT32_ACCUMULATION"
-    monkeypatch.setenv(EXACT_FLOAT32_ACCUMULATION_ENV, "1")
-    assert ScoringOverrides.from_environ().exact_float32_accumulation
+            monkeypatch.setenv(STOCK_RELION_DIRECT_ACCUMULATION_ENV, value)
+        assert not ScoringOverrides.from_environ().stock_relion_direct_accumulation
+    assert STOCK_RELION_DIRECT_ACCUMULATION_ENV == "RELAX_EM_STOCK_RELION_DIRECT_ACCUMULATION"
+    monkeypatch.setenv(STOCK_RELION_DIRECT_ACCUMULATION_ENV, "1")
+    assert ScoringOverrides.from_environ().stock_relion_direct_accumulation
+    assert not hasattr(ScoringOverrides(), "exact_float32_accumulation")

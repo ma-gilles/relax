@@ -18,7 +18,7 @@ from relax.runtime.env_flags import parse_env_binary_flag, parse_env_flag, parse
 F32_COARSE_SUPPORT_ENV = "RECOVAR_K1_RELION_F32_COARSE_SUPPORT"
 COARSE_GEMM_FLOAT64_ENV = "RELAX_COARSE_GEMM_FLOAT64"
 COARSE_ROTATED_RADIUS_ENV = "RELAX_K1_COARSE_ROTATED_RADIUS"
-EXACT_FLOAT32_ACCUMULATION_ENV = "RELAX_EM_EXACT_FLOAT32_ACCUMULATION"
+STOCK_RELION_DIRECT_ACCUMULATION_ENV = "RELAX_EM_STOCK_RELION_DIRECT_ACCUMULATION"
 X_HALF_MSTEP_DOUBLE_ENV = "RELAX_RELION_X_HALF_MSTEP_DOUBLE"
 PROJECTOR_TEXTURE_INTERP_ENV = "RELAX_RELION_PROJECTOR_TEXTURE_INTERP"
 F32_FINE_POSTERIOR_ENV = "RELAX_RELION_X_HALF_F32_FINE_POSTERIOR"
@@ -36,11 +36,12 @@ class ScoringOverrides:
     ``coarse_rotated_radius`` (RELAX_K1_COARSE_ROTATED_RADIUS, :func:`parse_coarse_rotated_radius`; default None,
     RELION's rotated-radius clipping wherever the compact RELION texture projector runs): False keeps the legacy
     source-pixel disk, True asks for the rotated radius (refused without the compact projector).
-    ``exact_float32_accumulation`` (RELAX_EM_EXACT_FLOAT32_ACCUMULATION, ``env_flags.parse_env_binary_flag``; default
-    off): the M-step scatters backprojected rows into a zeroed partial pair flushed into the totals every
-    ``half_volume_mstep.ROW_PARTIAL_FLUSH_ROWS`` rows (``half_volume_mstep.allocate_row_partial``), for one-to-one
-    comparison with RELION builds that accumulate in double; production keeps stock RELION's direct float32
-    accumulation (relax#65, user 2026-10-11).
+    ``stock_relion_direct_accumulation`` (RELAX_EM_STOCK_RELION_DIRECT_ACCUMULATION, ``env_flags.parse_env_binary_flag``;
+    default off): every pass scatters its backprojected rows straight into the totals, as stock GPU RELION 5.0.1 does,
+    instead of through the production partial pair (``half_volume_mstep.allocate_row_partial``, relax#92). It exists
+    only so that the medium tier's three cold starts scored against stock 5.0.1 GPU fixtures (e2e_k1_5k_standalone,
+    k1_gui60_coldstart_standalone, k1_os1_coldstart_standalone; ``scripts/run_test_tier.py``) keep measuring parity
+    with those fixtures; its exit is regenerating them with the page RELION build (relax#109).
     ``x_half_mstep_double`` (RELAX_RELION_X_HALF_MSTEP_DOUBLE, ``env_flags.parse_env_flag``; default off): the RELION
     x-half M-step accumulates ``Ft_y``/``Ft_ctf`` in complex128/float64 instead of RELION's single-precision
     ``BackProjector`` (``half_volume_mstep.relion_x_half_mstep_accumulator_dtypes``), a diagnostic for isolating
@@ -57,7 +58,7 @@ class ScoringOverrides:
     f32_coarse_support: bool = True
     coarse_gemm_float64: bool = False
     coarse_rotated_radius: bool | None = None
-    exact_float32_accumulation: bool = False
+    stock_relion_direct_accumulation: bool = False
     x_half_mstep_double: bool = False
     projector_texture_interp: bool = True
     f32_fine_posterior: bool = False
@@ -68,7 +69,7 @@ class ScoringOverrides:
             f32_coarse_support=parse_strict_flag(F32_COARSE_SUPPORT_ENV, read_env_text(F32_COARSE_SUPPORT_ENV), True),
             coarse_gemm_float64=parse_coarse_gemm_float64(read_env_text(COARSE_GEMM_FLOAT64_ENV, "0")),
             coarse_rotated_radius=parse_coarse_rotated_radius(read_env_text(COARSE_ROTATED_RADIUS_ENV)),
-            exact_float32_accumulation=parse_env_binary_flag(EXACT_FLOAT32_ACCUMULATION_ENV),
+            stock_relion_direct_accumulation=parse_env_binary_flag(STOCK_RELION_DIRECT_ACCUMULATION_ENV),
             x_half_mstep_double=parse_env_flag(X_HALF_MSTEP_DOUBLE_ENV),
             projector_texture_interp=parse_env_strict_flag(PROJECTOR_TEXTURE_INTERP_ENV, default=True),
             f32_fine_posterior=parse_env_flag(F32_FINE_POSTERIOR_ENV),

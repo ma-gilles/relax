@@ -637,53 +637,66 @@ owns packed-half conventions, the Hermitian `x=0` plane and conversions to
 public layouts. Do not assume all accumulators have the full native volume
 shape: padding and current-size backprojector grids change their dimensions.
 
-### Exact float32 accumulation (diagnostic switch)
+### Exact float32 accumulation
 
-`Ft_y` and `Ft_ctf` are complex64 and float32 (`relion_x_half_mstep_accumulator_dtypes`), and by default every
-row of a pass is scattered into one pair per accumulator slot. A float32 accumulator drops an addend smaller
-than half an ulp of its running total, so a pass with millions of rows loses weight where every row lands,
-the lowest shells first. Stock GPU RELION accumulates its device backprojection in single precision too and
-loses the same weight; production relax keeps this direct accumulation and matches it (iteration-1 half maps
-of a 5k K=1 cold start agree with stock RELION to a few 1e-6).
+`Ft_y` and `Ft_ctf` are complex64 and float32 (`relion_x_half_mstep_accumulator_dtypes`). A float32
+accumulator drops an addend smaller than half an ulp of its running total, so a pass that scatters millions of
+rows into one pair loses weight where every row lands, the lowest shells first. Stock GPU RELION 5.0.1
+backprojects that way and loses that weight; RELION builds whose device backprojection accumulates in double do
+not.
 
-`RELAX_EM_EXACT_FLOAT32_ACCUMULATION=1` is an opt-in diagnostic, off by default, for one-to-one comparison
-with RELION builds whose device backprojection accumulates in double. Under it, every row that is
-backprojected on its own is scattered into a zeroed partial pair, which is added into the pass's totals every
-`ROW_PARTIAL_FLUSH_ROWS` = 32,768 backprojected rows and when a slot's row blocks of a chunk end
-(`allocate_row_partial`, `RowPartial`, `flush_partial`, `flushed_block_loop` and `blocks_per_flush` in
-[`half_volume_mstep.py`](../../relax/reconstruction/half_volume_mstep.py)). No accumulator is double. The
-command reads the switch once (`ScoringOverrides.exact_float32_accumulation`), and each pass consults it when it
-allocates its accumulators; without it nothing is allocated and
-the three row-block loops run as before: `resident_chunk_stages_finish` in
-[`fine_pass/resident_chunk_stages.py`](../../relax/fine_pass/resident_chunk_stages.py), `tilt_mstep_program` in
-[`resident_tilt_mstep.py`](../../relax/fine_pass/resident_tilt_mstep.py) (a row is one tilt image there) and
+Since relax#92 (user 2026-10-16) production relax scatters every row that is backprojected on its own into a
+zeroed partial pair, which is added into the pass's totals every `ROW_PARTIAL_FLUSH_ROWS` = 32,768
+backprojected rows and when a slot's row blocks of a chunk end (`allocate_row_partial`, `RowPartial`,
+`flush_partial`, `flushed_block_loop` and `blocks_per_flush` in
+[`half_volume_mstep.py`](../../relax/reconstruction/half_volume_mstep.py)). No accumulator is double. Until then
+this was the opt-in diagnostic `RELAX_EM_EXACT_FLOAT32_ACCUMULATION=1` (relax#65); that switch is removed. The
+off-by-default `RELAX_EM_STOCK_RELION_DIRECT_ACCUMULATION=1` (`ScoringOverrides.stock_relion_direct_accumulation`)
+restores stock GPU RELION's direct accumulation; it exists only so that the medium tier's three cold starts scored
+against stock 5.0.1 GPU fixtures keep measuring parity with them (`STOCK_FIXTURE_CASES` in
+`scripts/run_test_tier.py`), until those fixtures are regenerated with the page RELION build (relax#109). Each pass allocates the partial with its
+accumulators, before it sizes its chunks, and the three row-block loops flush it: `resident_chunk_stages_finish`
+in [`fine_pass/resident_chunk_stages.py`](../../relax/fine_pass/resident_chunk_stages.py), `tilt_mstep_program`
+in [`resident_tilt_mstep.py`](../../relax/fine_pass/resident_tilt_mstep.py) (a row is one tilt image there) and
 `run_resident_mstep_blocks` (local searches and the final pass, from
 [`local_search/resident_local_chunk.py`](../../relax/local_search/resident_local_chunk.py)). The flush points are a
 static block count, so they depend on the row order alone.
 
-Measured loss of the default accumulation, and what the switch leaves (relax#65):
+Measured loss of the direct accumulation, and what the partial leaves (relax#65):
 
-| Case | Rows per accumulator | Weight missing at shell 0, default | With the switch |
+| Case | Rows per accumulator | Weight missing at shell 0, direct | With the partial |
 | --- | --- | --- | --- |
 | Tilt-series VDAM K=1, iteration 1 | about 3M tilt images times poses | 9.9e-3 and 1.5e-2 (two pseudo-halves) | at most 2e-7 with partials of 31k rows |
 | K=1 Refine3D, 5k images, iteration 1 | 11.2M | 1.6e-2 | at most 1.1e-5 with partials of 30k rows |
 | K=1 refinement, 100k images, box 256, final full-size pass | 4.4M | 8.5e-3 (2.9e-3 at shell 1, 5.5e-5 at shell 63) | not run |
 
 On the tilt case, iteration-1 `rlnSsnrMap` is 0.990 to 0.9994 of a double-backprojection RELION's over
-shells 0 to 12 by default and 0.99997 to 1.00002 with the switch; on 5k K=1 cold starts the switched
-iteration-3 half maps agree with a double-backprojection RELION run at FSC-AUC 0.999999 and 1.000000. The
-float32 total of the partials equals their float64 total to 5e-8 per shell.
+shells 0 to 12 with the direct accumulation and 0.99997 to 1.00002 with the partial; on 5k K=1 cold starts the
+partial's iteration-3 half maps agree with a double-backprojection RELION run at FSC-AUC 0.999999 and 1.000000.
+The float32 total of the partials equals their float64 total to 5e-8 per shell. Against stock GPU RELION, which
+accumulates directly, agreement at matched iterations is correspondingly a little lower; the parity fixtures are
+stock 5.0.1 GPU runs. On the RELION 5 tutorial's bin-6 subtomogram refinement the partial's maps score higher
+than the direct path's against the independent 3.3 A tutorial map inside `mask_fsc` (relax#92).
 
-Limits of the switch. A pass that sums a projection's rows before one backprojection per pass (K>1 without
-tilt series) is unchanged by it (its loss was at most 7e-5 in the same census). A pair larger than
-`ROW_PARTIAL_MAX_PAIR_BYTES` = 4 GiB, a current size above about 440 at padding 2, keeps the direct
-accumulation and logs one line; the rule reads the pair's size only, never free device memory. The switch
-needs one extra accumulator pair on the device and is not qualified under 16 GB emulation. Cost on H100
-pairs: 309 s against 309 s for three iterations of the 5k cold start and 786 s against 783 s for a 50k
-box-256 refinement to convergence. Converged runs are trajectory-sensitive: one particle crossing the coarse
-significance threshold separates two runs by 1e-2 in map FSC-AUC twelve iterations later, between two RELION
-runs as between relax and RELION, so the switch gives agreement at matched iterations, not identical
-converged maps.
+Passes that keep the direct accumulation:
+
+| Pass | Why |
+| --- | --- |
+| K>1 without tilt series when it sums a projection's rows before one backprojection per pass | no per-row scatter; its loss was at most 7e-5 in the same census |
+| any pass whose pair exceeds `ROW_PARTIAL_MAX_PAIR_BYTES` = 4 GiB: a current size above about 440 at padding 2 | size rule (pair size only, never free memory; one log line). The full-size passes of box 448 and larger (ms2 448/512, EMPIAR-10202 at 800) are unchanged by relax#92; their intermediate current sizes up to about 440 take the partial |
+
+Cost. The partial is one extra accumulator pair on the device: 0.04 GiB at current size 96, 0.76 GiB at 256,
+2.49 GiB at 380, 3.85 GiB at 440 (padding 2). The pass's chunk budget counts it. On 80 GB cards no chunk plan
+changed in the cells measured (box-380 K=1 local refinement; Slurm 15688592/15688593); H100 pairs ran 309 s
+against 309 s for three iterations of the 5k cold start and 786 s against 783 s for a 50k box-256 refinement to
+convergence. Under 16 GB emulation (`gpu_matrix --emulate-gb 16`, A100) every completed cell kept its reserved
+peak; live peaks rose by 0.05 to 1.17 GiB. The one plan change is the final local pass of the box-380 K=1 local
+refinement (`refine_k1_10073_10k380_local`): its chunk budget fell from 4.34 to 2.85 GiB, it ran in twice the
+chunks (1253 to 2504 and 1267 to 2538 per half), and the cell took 846 s against 716 s (+18%, two nodes). The
+box-380 K=3 local Class3D and the box-192 tilt refinement kept their plans (1162 against 1148 s, 3284 against
+3220 s). Converged runs are trajectory-sensitive: one particle crossing the coarse significance threshold
+separates two runs by 1e-2 in map FSC-AUC twelve iterations later, between two RELION runs as between relax and
+RELION, so the partial gives agreement at matched iterations, not identical converged maps.
 
 [`numbered_reconstruction.py`](../../relax/refinement/numbered_reconstruction.py) owns the numbered K1
 and class reconstruction operations (`reconstruct_numbered_k1_halfmaps` and

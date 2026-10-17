@@ -659,17 +659,16 @@ def test_driver_does_not_narrow_the_projector_slab():
 
 
 @requires_resident_gpu
-def test_exact_float32_accumulation_switch_runs_the_local_driver(monkeypatch):
-    """``RELAX_EM_EXACT_FLOAT32_ACCUMULATION=1`` routes the local pass through the partial pair (relax#65).
+def test_local_driver_accumulates_through_the_partial_and_agrees_with_the_direct_route(monkeypatch):
+    """The local pass owns a partial pair (relax#65, production since relax#92) and agrees with the direct route
+    (a pair above the size rule, stock GPU RELION's accumulation) to the driver's own repeat band.
 
-    Too few rows here for one accumulator to lose weight, so the switched pass agrees with the default one to
-    the driver's own repeat band; the loss is shown by test_row_partial_accumulator.py.
+    Too few rows here for one accumulator to lose weight; the loss is shown by test_row_partial_accumulator.py.
     """
 
     from relax.reconstruction import half_volume_mstep as hvm
 
     case = _case()
-    default = _run(case, engine_tuning=LOCAL_RESIDENT_ENGINE)
     allocated = []
     real_allocate = rlp.allocate_row_partial
 
@@ -678,10 +677,12 @@ def test_exact_float32_accumulation_switch_runs_the_local_driver(monkeypatch):
         return allocated[-1]
 
     monkeypatch.setattr(rlp, "allocate_row_partial", allocate)
-    exact = _run(case, engine_tuning=LOCAL_RESIDENT_ENGINE, scoring_overrides=ScoringOverrides(exact_float32_accumulation=True))
-    assert allocated and all(isinstance(p, hvm.RowPartial) for p in allocated), "the switched pass must own a partial pair"
-    assert_matches(np.asarray(default.hard_assignment), np.asarray(exact.hard_assignment))
-    a, b = np.asarray(default.Ft_y, dtype=np.complex128), np.asarray(exact.Ft_y, dtype=np.complex128)
+    exact = _run(case, engine_tuning=LOCAL_RESIDENT_ENGINE)
+    assert allocated and all(isinstance(p, hvm.RowPartial) for p in allocated), "the production pass must own a partial pair"
+    monkeypatch.setattr(rlp, "allocate_row_partial", lambda *a, **kw: None)
+    direct = _run(case, engine_tuning=LOCAL_RESIDENT_ENGINE)
+    assert_matches(np.asarray(direct.hard_assignment), np.asarray(exact.hard_assignment))
+    a, b = np.asarray(direct.Ft_y, dtype=np.complex128), np.asarray(exact.Ft_y, dtype=np.complex128)
     assert float(np.linalg.norm(a - b) / np.linalg.norm(a)) < 1e-6
 
 
@@ -996,26 +997,26 @@ def _numerator_distance(explicit, unset) -> float:
     return float(np.linalg.norm(a - b) / np.linalg.norm(a))
 
 
-def _assert_the_same_pass(default_pairs, exact_pair):
-    """Two routes ran one pass: ``(explicit, unset)`` results, several pairs on the default path and one pair under
-    ``RELAX_EM_EXACT_FLOAT32_ACCUMULATION=1``.
+def _assert_the_same_pass(direct_pairs, production_pair):
+    """Two routes ran one pass: ``(explicit, unset)`` results, several pairs on the direct accumulation path (a pair
+    above the size rule; the production path before relax#92) and one pair on the production partial pair.
 
     The bound is ``sqrt(N_IMAGES) * float32 eps`` on the numerator's relative distance (8.06e-08 times its norm
     for this case). What varies between two runs of the same pass is the float32 row-by-row backprojection sum,
     whose order the GPU does not fix: about 330 of the 1331 voxels differ, most at the origin voxel and its two
     x-neighbours, which every image and candidate adds into (7 to 8.5 float32 steps in the widest draws;
     relax#65, relax#71). Everything upstream of that sum agrees: assignments, rotation posterior sums and noise
-    sums were identical in every one of 12,000 draws. As a fraction of the bound, one default-path pair measured
+    sums were identical in every one of 12,000 draws. As a fraction of the bound, one direct-path pair measured
     q50 0.38, q99 0.69, max 1.04 (1 of 1742 pairs above it; Slurm 15358610, 15359167, 15359175), so a single draw
-    fails about once in 1700 runs; with the partial pair of the exact-accumulation switch it measured q50 0.35,
-    q99 0.42, max 0.49 over 2613 draws (15359175). Hence:
+    fails about once in 1700 runs; with the partial pair it measured q50 0.35, q99 0.42, max 0.49 over 2613 draws
+    (15359175). Hence:
 
-    - the default path's numerators are judged by the median of the pairs, and
-    - one pair is judged alone where the accumulation walk is removed.
+    - the direct path's numerators are judged by the median of the pairs, and
+    - the production pair is judged alone: the partial removes the accumulation walk.
     """
 
     bound = np.sqrt(N_IMAGES) * np.finfo(np.float32).eps
-    for explicit, unset in [*default_pairs, exact_pair]:
+    for explicit, unset in [*direct_pairs, production_pair]:
         assert np.array_equal(np.asarray(explicit.hard_assignment), np.asarray(unset.hard_assignment))
         assert_matches(
             np.asarray(explicit.relion_stats.rotation_posterior_sums),
@@ -1024,8 +1025,8 @@ def _assert_the_same_pass(default_pairs, exact_pair):
         assert_matches(
             np.asarray(explicit.noise_stats.wsum_sigma2_noise), np.asarray(unset.noise_stats.wsum_sigma2_noise)
         )
-    assert np.median([_numerator_distance(explicit, unset) for explicit, unset in default_pairs]) <= bound
-    assert _numerator_distance(*exact_pair) <= bound
+    assert np.median([_numerator_distance(explicit, unset) for explicit, unset in direct_pairs]) <= bound
+    assert _numerator_distance(*production_pair) <= bound
 
 
 @requires_resident_gpu
@@ -1037,13 +1038,15 @@ def test_full_box_iteration_without_a_current_size_runs_resident(monkeypatch):
     case = _case()
     box = int(case["dataset"].image_shape[0])
 
-    def pair(scoring_overrides=ScoringOverrides()):
-        unset = _run(case, engine_tuning=LOCAL_RESIDENT_ENGINE, current_size=None, scoring_overrides=scoring_overrides)
-        return _run(case, engine_tuning=LOCAL_RESIDENT_ENGINE, current_size=box, scoring_overrides=scoring_overrides), unset
+    def pair(direct=False):
+        with monkeypatch.context() as patch:
+            if direct:  # the direct accumulation route of a pair above the size rule
+                patch.setattr(rlp, "allocate_row_partial", lambda *a, **kw: None)
+            unset = _run(case, engine_tuning=LOCAL_RESIDENT_ENGINE, current_size=None)
+            return _run(case, engine_tuning=LOCAL_RESIDENT_ENGINE, current_size=box), unset
 
-    default_pairs = [pair() for _ in range(5)]
-    exact_pair = pair(ScoringOverrides(exact_float32_accumulation=True))
-    _assert_the_same_pass(default_pairs, exact_pair)
+    direct_pairs = [pair(direct=True) for _ in range(5)]
+    _assert_the_same_pass(direct_pairs, pair())
 
 
 def _stand_in_pass(numerator, *, assignment=None, rotation_sums=None, noise_sums=None):
@@ -1077,20 +1080,20 @@ def test_same_pass_assertions_pass_accumulation_noise_and_catch_a_changed_pass()
     def pair(steps=0.0, **changed):
         return _stand_in_pass(off_by(steps), **changed), _stand_in_pass(numerator)
 
-    # The bound is sqrt(8) = 2.83 steps. Default pairs at 0.38 of it with one draw above it; the exact pair at 0.35.
+    # The bound is sqrt(8) = 2.83 steps. Direct-path pairs at 0.38 of it with one draw above it; the production pair at 0.35.
     noise = [pair(1.1), pair(1.0), pair(3.0), pair(1.2), pair(0.9)]
     _assert_the_same_pass(noise, pair(1.0))
 
     broken = [
-        ([pair(4.0) for _ in range(5)], pair(1.0)),  # the default path's numerator, 4 steps off throughout
-        (noise, pair(4.0)),  # the exact-accumulation numerator
+        ([pair(4.0) for _ in range(5)], pair(1.0)),  # the direct path's numerator, 4 steps off throughout
+        (noise, pair(4.0)),  # the production (partial) numerator
         (noise, pair(1.0, rotation_sums=np.linspace(0.1, 1.0, 12) * (1.0 + 1e-9))),
         ([*noise[:4], pair(0.9, noise_sums=np.linspace(1.0, 2.0, 5, dtype=np.float32) * np.float32(1.0 + 1e-4))], pair(1.0)),
         (noise, pair(1.0, assignment=np.arange(N_IMAGES, dtype=np.int32)[::-1].copy())),
     ]
-    for default_pairs, exact_pair in broken:
+    for direct_pairs, production_pair in broken:
         with pytest.raises(AssertionError):
-            _assert_the_same_pass(default_pairs, exact_pair)
+            _assert_the_same_pass(direct_pairs, production_pair)
 
 
 @requires_resident_gpu

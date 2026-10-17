@@ -106,6 +106,12 @@ FAST_CASES = {  # item name: pytest node id
     "kclass_nonadaptive_replay": "test_em_parity_fast_kclass_nonadaptive_replay",
     "kclass_strict_oversample_coldstart": "test_em_parity_fast_kclass_strict_oversample_coldstart",
 }
+# Cold starts scored against stock RELION 5.0.1 GPU fixtures, whose device backprojection scatters every row straight
+# into float32 totals: they run with the stock accumulation (ScoringOverrides.stock_relion_direct_accumulation) so
+# their approved gates keep measuring parity with those fixtures; production relax goes through the partial pair
+# (relax#92). Exit: regenerate the fixtures with the page RELION build (relax#109).
+STOCK_FIXTURE_ENV = {"RELAX_EM_STOCK_RELION_DIRECT_ACCUMULATION": "1"}
+STOCK_FIXTURE_CASES = ("e2e_k1_5k_standalone", "k1_gui60_coldstart_standalone", "k1_os1_coldstart_standalone")
 # The 5-minute smoke budget holds on an A100 (local fallback): 254 s of the 363 s for all four
 # fixed-state replays. k1_local_replay stays because smoke must cover the local-search regime
 # (a past merge broke it while the global checks stayed green); the global K1 path is still
@@ -435,7 +441,13 @@ def plan(tier: str, src: Path, base: str, run_root: Path | None = None) -> list[
     if tier == "medium":
         items = [guard, merge_units]
         items += [
-            Item(name, _pytest(py, f"{FAST}::{node}"), True, FAST_CASE_SECONDS.get(name, NEW_CASE_SECONDS))
+            Item(
+                name,
+                _pytest(py, f"{FAST}::{node}"),
+                True,
+                FAST_CASE_SECONDS.get(name, NEW_CASE_SECONDS),
+                env=dict(STOCK_FIXTURE_ENV) if name in STOCK_FIXTURE_CASES else {},
+            )
             for name, node in fast_cases(src, py).items()
         ]
         items.append(
@@ -455,7 +467,7 @@ def plan(tier: str, src: Path, base: str, run_root: Path | None = None) -> list[
                 _pytest(py, f"{E2E}::test_k1_5k128_standalone_autorefine"),
                 True,
                 1500,
-                env={"RELAX_TEST_XLA_PREALLOCATE": "true"},
+                env={"RELAX_TEST_XLA_PREALLOCATE": "true", **STOCK_FIXTURE_ENV},
             )
         )
         items += sweep_shards(src, py)

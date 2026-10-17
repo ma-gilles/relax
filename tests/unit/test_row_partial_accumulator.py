@@ -1,7 +1,7 @@
-"""The M-step's partial accumulator pair (relax#65), the diagnostic behind ``RELAX_EM_EXACT_FLOAT32_ACCUMULATION=1``.
+"""The M-step's partial accumulator pair (relax#65; the production path since relax#92).
 
-Float32 rows are scattered into a zeroed pair that is flushed into the totals; without the switch (the default)
-the pass allocates no partial and every loop accumulates directly, as before.
+Float32 rows are scattered into a zeroed pair that is flushed into the totals; a pair above the size rule gets no
+partial, and then every loop accumulates directly, as stock GPU RELION does.
 
 A float32 accumulator drops an addend below half an ulp of its running total, so a pass that scatters
 millions of rows into one pair loses weight where every row lands (the low shells). The references here are
@@ -248,32 +248,32 @@ def test_flush_count_is_ceil_blocks_over_blocks_per_flush(monkeypatch, n_blocks,
     assert len(flushes) == expected == -(-n_blocks // hvm.blocks_per_flush(BLOCK_ROWS))
 
 
-def test_the_switch_is_off_by_default_and_then_nothing_is_allocated(monkeypatch):
-    """Unset or 0: the pass gets no partial, so the row-block loops take the direct path with no extra pair."""
+def test_every_pass_within_the_size_rule_owns_a_partial_unless_the_stock_switch_is_set():
+    """Production allocates the partial for every pair within the size rule (relax#92). Only the off-by-default
+    ``ScoringOverrides.stock_relion_direct_accumulation`` (set by the tier for its stock-fixture cold starts,
+    relax#109) gives a pass no partial; its environment variable is parsed in test_scoring_overrides_environment.py."""
 
-    def no_allocation(*args, **kwargs):
-        raise AssertionError("a partial pair was allocated with the switch off")
-
-    monkeypatch.setattr(hvm, "RowPartial", no_allocation)
-    assert not ScoringOverrides().exact_float32_accumulation
-    assert hvm.allocate_row_partial(1000, np.complex64, np.float32, exact_float32_accumulation=False) is None
+    assert isinstance(hvm.allocate_row_partial(1000, np.complex64, np.float32), hvm.RowPartial)
+    assert not ScoringOverrides().stock_relion_direct_accumulation
+    assert hvm.allocate_row_partial(1000, np.complex64, np.float32, stock_relion_direct_accumulation=True) is None
 
 
-def test_the_switch_changes_the_accumulators_where_the_loss_shows(monkeypatch):
-    """Off and on must differ on rows built to show the loss; identical results would mean the switch does nothing."""
+def test_the_partial_changes_the_accumulators_where_the_loss_shows(monkeypatch):
+    """The partial and the direct path (a pair above the size rule) must differ on rows built to show the loss;
+    identical results would mean the partial does nothing."""
 
     weights = _weights()
     reference = float(weights.astype(np.float64).sum())
-    results = {}
-    for value in ("0", "1"):
-        row_partial = hvm.allocate_row_partial(  # what a pass asks, once
-            VOLUME, jnp.complex64, jnp.float32, exact_float32_accumulation=value == "1"
-        )
-        assert (row_partial is None) == (value == "0")
-        results[value] = float(np.asarray(_stage_driver(monkeypatch, weights, row_partial)[1])[0])
-    assert results["0"] != results["1"]
-    assert abs(1.0 - results["0"] / reference) > 1e-3  # off: one accumulator, the production path
-    assert abs(1.0 - results["1"] / reference) < 1e-6  # on: the exact float32 path
+    results = {
+        "direct": float(np.asarray(_stage_driver(monkeypatch, weights, None)[1])[0]),
+        # what a pass asks, once
+        "partial": float(
+            np.asarray(_stage_driver(monkeypatch, weights, hvm.allocate_row_partial(VOLUME, jnp.complex64, jnp.float32))[1])[0]
+        ),
+    }
+    assert results["direct"] != results["partial"]
+    assert abs(1.0 - results["direct"] / reference) > 1e-3  # one accumulator, stock GPU RELION's path
+    assert abs(1.0 - results["partial"] / reference) < 1e-6  # the exact float32 path, production
 
 
 def test_pairs_above_the_size_rule_get_no_partial(caplog, monkeypatch):
@@ -284,11 +284,11 @@ def test_pairs_above_the_size_rule_get_no_partial(caplog, monkeypatch):
     pair_itemsize = np.dtype(np.complex64).itemsize + np.dtype(np.float32).itemsize
     assert pair_itemsize == 12
     assert isinstance(
-        hvm.allocate_row_partial(1000, np.complex64, np.float32, exact_float32_accumulation=True), hvm.RowPartial
+        hvm.allocate_row_partial(1000, np.complex64, np.float32), hvm.RowPartial
     )
     too_large = hvm.ROW_PARTIAL_MAX_PAIR_BYTES // pair_itemsize + 1
     with caplog.at_level(logging.INFO, logger="relax.reconstruction.half_volume_mstep"):
-        assert hvm.allocate_row_partial(too_large, np.complex64, np.float32, exact_float32_accumulation=True) is None
+        assert hvm.allocate_row_partial(too_large, np.complex64, np.float32) is None
     assert "accumulated directly" in caplog.text
     # Box 256 at padding 2 (515 x 515 x 258 half grid) is 0.76 GiB a pair; box 800 (1603 x 1603 x 802) is 23 GiB.
     assert 515 * 515 * 258 * pair_itemsize < hvm.ROW_PARTIAL_MAX_PAIR_BYTES < 1603 * 1603 * 802 * pair_itemsize

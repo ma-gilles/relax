@@ -1214,7 +1214,7 @@ def _resident_pass2(
             program_recon_volume_size,
             recon_y_accum_dtype,
             recon_ctf_accum_dtype,
-            exact_float32_accumulation=scoring_overrides.exact_float32_accumulation,
+            stock_relion_direct_accumulation=scoring_overrides.stock_relion_direct_accumulation,
         )
     )
     logger.info(

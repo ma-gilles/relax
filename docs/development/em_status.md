@@ -870,11 +870,14 @@ maintained callers migrate together; main heterogeneity APIs and serialized
 formats remain compatible. Production EM is float32; double precision is a
 labeled diagnostic only.
 
-Diagnostic switch, off by default: `RELAX_EM_EXACT_FLOAT32_ACCUMULATION=1` (2026-10-11, relax#65: the per-row
-backprojection goes through a float32 partial pair flushed every 32,768 rows, for one-to-one comparison with
-RELION builds that backproject in double; production keeps the direct accumulation, which loses the same
-low-resolution weight as stock GPU RELION, 1e-2 at shell 0 of a soft pass; see "Exact float32 accumulation" in
-[the algorithm map](../math/relion_refinement_algorithm.md)).
+Exact float32 accumulation is the production default since relax#92 (user 2026-10-16): the per-row
+backprojection goes through a float32 partial pair flushed every 32,768 rows (relax#65 introduced it as the
+opt-in switch `RELAX_EM_EXACT_FLOAT32_ACCUMULATION=1`, now removed; `RELAX_EM_STOCK_RELION_DIRECT_ACCUMULATION=1`,
+off by default, restores the stock path for the medium tier's three stock-fixture cold starts only, relax#109). Passes that sum projections before one
+backprojection, and passes whose pair exceeds 4 GiB (full-size passes of box 448 and larger), keep stock GPU
+RELION's direct accumulation. Cost: one extra pair (2.49 GiB at current size 380); on 16 GB cards the box-380
+local final pass runs in twice the chunks (+18% on that cell). See "Exact float32 accumulation" in
+[the algorithm map](../math/relion_refinement_algorithm.md).
 
 ## Feature gaps (moved from the README, 2026-09-29)
 

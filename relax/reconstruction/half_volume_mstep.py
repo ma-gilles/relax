@@ -29,21 +29,21 @@ def relion_x_half_mstep_accumulator_dtypes(dataset_dtype, *, use_relion_x_half_m
     return base_dtype, base_dtype
 
 
-# Opt-in diagnostic, default off (ScoringOverrides.exact_float32_accumulation): exact float32 accumulation of the
-# per-row backprojection, for one-to-one comparison with RELION builds whose device backprojection accumulates in
-# double. Production keeps the direct accumulation, which loses the same low-resolution weight as stock GPU RELION
-# (relax#65, user 2026-10-11).
+# Exact float32 accumulation of the per-row backprojection, the production path since relax#92 (user 2026-10-16;
+# until then an opt-in diagnostic, relax#65). Stock GPU RELION 5.0.1 scatters every row into one float32 pair and
+# loses low-resolution weight; RELION builds whose device backprojection accumulates in double do not.
 # A float32 accumulator loses an addend below half an ulp of the running total. With every row of a pass
 # scattered into one pair, the low shells of a soft pass lost 1e-2 of their weight (relax#65: 9.9e-3 and 1.5e-2
 # at shell 0 of a tilt-series VDAM iteration, 1.6e-2 at shell 0 of a Refine3D iteration 1 with 11.2M rows).
-# Under the switch, rows are scattered into a zeroed partial pair that is added into the totals every
+# Rows are therefore scattered into a zeroed partial pair that is added into the totals every
 # ``ROW_PARTIAL_FLUSH_ROWS`` backprojected rows (a tilt row counts once per tilt image): at 32,768 rows the
 # weight missing at shell 0 was <= 2e-7 on the tilt case and <= 1.1e-5 on the Refine3D one, and the float32
 # total of the partials equals their float64 total to 5e-8 per shell.
-# Formulation and measurements: docs/math/relion_refinement_algorithm.md, "Exact float32 accumulation (diagnostic switch)".
+# Formulation and measurements: docs/math/relion_refinement_algorithm.md, "Exact float32 accumulation".
 ROW_PARTIAL_FLUSH_ROWS = 32768
-# The partial is a second accumulator pair. Above this size the pass accumulates directly, as before
-# (22.9 GiB at box 800, padding 2, full size). A shape rule, so that numerics never depend on the card.
+# The partial is a second accumulator pair. Above this size the pass accumulates directly, as stock GPU RELION does
+# (a current size above about 440 at padding 2; 22.9 GiB at box 800, full size). A shape rule, so that numerics never
+# depend on the card.
 ROW_PARTIAL_MAX_PAIR_BYTES = 4 * 1024**3
 
 
@@ -118,27 +118,24 @@ class RowPartial:
 
 
 def allocate_row_partial(
-    volume_size: int, y_dtype, ctf_dtype, *, exact_float32_accumulation: bool
+    volume_size: int, y_dtype, ctf_dtype, *, stock_relion_direct_accumulation: bool = False
 ) -> RowPartial | None:
-    """The pass's :class:`RowPartial` under ``exact_float32_accumulation`` (``ScoringOverrides``, set by
-    ``RELAX_EM_EXACT_FLOAT32_ACCUMULATION=1``), else ``None`` (direct accumulation).
+    """The pass's :class:`RowPartial`, or ``None`` (direct accumulation) for a pair above ``ROW_PARTIAL_MAX_PAIR_BYTES``
+    or under ``stock_relion_direct_accumulation`` (``ScoringOverrides``; the stock-fixture parity gates only).
 
-    ``None`` without the switch (the default: nothing is allocated and every row-block loop runs as before), and
-    under it for a pair above ``ROW_PARTIAL_MAX_PAIR_BYTES``.
-
-    Above that size (a current size over about 440 at padding 2) the accumulation is unchanged from before
-    relax#65, and what it loses there has not been measured. Below it, one pair per pass lost 8.5e-3 of the
-    weight at shell 0 in the final pass of a 100k-image box-256 refinement. See "Exact float32 accumulation
-    (diagnostic switch)" in ``docs/math/relion_refinement_algorithm.md``.
+    A pass whose rows are backprojected one by one asks once, before it sizes its chunks, which then count the pair.
+    Above the size rule (a current size over about 440 at padding 2) the pass accumulates directly, as stock GPU
+    RELION does, and what it loses there has not been measured. With direct accumulation, one pair per pass lost
+    8.5e-3 of the weight at shell 0 in the final pass of a 100k-image box-256 refinement. See "Exact float32
+    accumulation" in ``docs/math/relion_refinement_algorithm.md``.
     """
 
-    if not exact_float32_accumulation:
+    if stock_relion_direct_accumulation:
         return None
     pair_bytes = int(volume_size) * (np.dtype(y_dtype).itemsize + np.dtype(ctf_dtype).itemsize)
     if pair_bytes > ROW_PARTIAL_MAX_PAIR_BYTES:
         logging.getLogger(__name__).info(
-            "%s=1: M-step accumulators of %.2f GiB a pair exceed %.0f GiB, rows are accumulated directly, without partials",
-            "RELAX_EM_EXACT_FLOAT32_ACCUMULATION",
+            "M-step accumulators of %.2f GiB a pair exceed %.0f GiB, rows are accumulated directly, without partials",
             pair_bytes / float(1024**3),
             ROW_PARTIAL_MAX_PAIR_BYTES / float(1024**3),
         )

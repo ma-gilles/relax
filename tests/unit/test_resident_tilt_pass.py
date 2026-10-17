@@ -89,10 +89,10 @@ def test_one_image_particles_reproduce_the_spa_pass():
 
 
 @requires_resident_gpu
-def test_exact_float32_accumulation_switch_runs_the_tilt_driver(monkeypatch):
-    """``RELAX_EM_EXACT_FLOAT32_ACCUMULATION=1`` routes the tilt M-step through the partial pair (relax#65).
+def test_tilt_driver_accumulates_through_the_partial_pair(monkeypatch):
+    """The tilt M-step goes through the partial pair (relax#65, production since relax#92).
 
-    With one image per particle the switched tilt pass must still reproduce the SPA pass, as the default one does.
+    With one image per particle the tilt pass must still reproduce the SPA pass.
     """
 
     from relax.fine_pass import resident_pass2 as rp
@@ -110,9 +110,9 @@ def test_exact_float32_accumulation_switch_runs_the_tilt_driver(monkeypatch):
     monkeypatch.setattr(rp, "allocate_row_partial", allocate)
     tomo = rp._resident_pass2(**dict(args, translation_log_prior=None), tilt=_one_image_tilt_inputs(
         args), engine_tuning=RESIDENT_PRODUCTION_ENGINE,
-        scoring_overrides=ScoringOverrides(exact_float32_accumulation=True),
+        scoring_overrides=ScoringOverrides(),
     )
-    assert allocated and all(isinstance(p, hvm.RowPartial) for p in allocated), "the switched pass must own a partial pair"
+    assert allocated and all(isinstance(p, hvm.RowPartial) for p in allocated), "the tilt pass must own a partial pair"
     _assert_tilt_pass_matches_spa(spa, tomo)
 
 

@@ -800,7 +800,7 @@ def compute_local_search_resident(
             recon_volume_size,
             recon_y_accum_dtype,
             recon_ctf_accum_dtype,
-            exact_float32_accumulation=support.scoring_overrides.exact_float32_accumulation,
+            stock_relion_direct_accumulation=support.scoring_overrides.stock_relion_direct_accumulation,
         )
 
         # The operand family decides what a chunk holds, so it is chosen before the
