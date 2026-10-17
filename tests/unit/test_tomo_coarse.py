@@ -607,8 +607,9 @@ def test_the_bound_from_the_scorers_model_energy_leaves_the_diff2_bitwise(gpu_de
 @pytest.mark.parametrize("block_rows", [None, 2], ids=["one_block", "blocks_of_two_rows"])
 def test_direct_rows_are_the_one_image_kernels_rows_in_slot_order(gpu_device, monkeypatch, block_rows):
     """A particle's re-scored rotations: any subset of rows, at any position in the call, gives the full
-    direct-square pass's values for those rows, the images added in slot order; scored in blocks of rows
-    (the kernel's int32 output count) they are the one-block values."""
+    direct-square pass's values for those rows, the images added in slot order as RELION adds them
+    (``total = (total + Xi2_k / 2) + s_k``); scored in blocks of rows (the kernel's int32 output count) they are
+    the one-block values."""
 
     import jax
     from recovar.cuda_backproject import custom_cuda_requested
@@ -624,16 +625,16 @@ def test_direct_rows_are_the_one_image_kernels_rows_in_slot_order(gpu_device, mo
         rotations = f["rotations"].reshape(n_particles, n_slots, n_rot, 3, 3)
         full = np.zeros((n_particles, n_rot, 200), np.float32)
         for p_ in range(n_particles):
-            total = None
+            total = np.zeros((n_rot, 200), np.float32)
             for s_ in range(n_slots):
                 b = p_ * n_slots + s_
                 image = np.asarray(
                     tilt_image_coarse_diff2(
-                        f["full"], rotations[p_, s_], f["images"][b], f["weight"][b], f["initial"][b], f["angles"][b],
+                        f["full"], rotations[p_, s_], f["images"][b], f["weight"][b], np.float32(0.0), f["angles"][b],
                         layout, model_max_r=f["max_r"], padding_factor=f["pad"],
                     )
                 )
-                total = image if total is None else total + image
+                total = (total + np.float32(f["initial"][b])) + image
             full[p_] = total
         ids = np.array([[250, 3, 129, 128, 0], [7, 255, 64, 200, 127]])
 

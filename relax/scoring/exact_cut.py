@@ -197,7 +197,8 @@ def direct_rows_diff2(
 
     RELION's fused coarse kernel on every image ``[B, S]`` with its own phases ``[B, S, T, 2]``
     (:func:`relax.cuda.coarse.relion_coarse_diff2_projector_per_image_f32`, the translations in blocks of
-    its capacity), the particle's ``S`` images added in slot order; a single-particle image is ``S = 1``.
+    its capacity), the particle's ``S`` images added in slot order with their Xi2 / 2 as RELION adds them
+    (:func:`_add_in_slot_order`); a single-particle image is ``S = 1``.
     A rotation's diff2 does not depend on the other rotations of the call.
     """
 
@@ -210,6 +211,9 @@ def direct_rows_diff2(
     # The rows go in blocks whose per-image diff2 [images, rows, T] stays within DIRECT_ROWS_BLOCK_ELEMENTS: the
     # kernel counts its outputs in int32, and a flat K>1 posterior can leave thousands of rows undecided.
     block_rows = max(1, min(n_rows, DIRECT_ROWS_BLOCK_ELEMENTS // max(n_images * n_trans, 1)))
+    # The kernel returns each image's own sum; each image's Xi2 / 2 joins the running total in RELION's order.
+    initial = jnp.asarray(initial_diff2, dtype=jnp.float32).reshape(n_particles, n_slots)
+    zero_initial = jnp.zeros((n_images,), dtype=jnp.float32)
     totals = []
     for first in range(0, n_rows, block_rows):
         rows = images[:, first : first + block_rows]
@@ -220,7 +224,7 @@ def direct_rows_diff2(
                 unshifted.reshape(n_images, -1),
                 angles[:, start : start + FUSED_TRANSLATION_CAPACITY],
                 pixel_weight.reshape(n_images, -1),
-                initial_diff2.reshape(n_images),
+                zero_initial,
                 full_to_compact,
                 current_size=int(current_size),
                 physical_image_size=int(physical_image_size),
@@ -232,13 +236,21 @@ def direct_rows_diff2(
         image_diff2 = (blocks[0] if len(blocks) == 1 else jnp.concatenate(blocks, axis=2)).reshape(
             n_particles, n_slots, int(rows.shape[1]), n_trans
         )
-        totals.append(_add_in_slot_order(image_diff2))
+        totals.append(_add_in_slot_order(image_diff2, initial))
     return totals[0] if len(totals) == 1 else jnp.concatenate(totals, axis=1)
 
 
 @jax.jit
-def _add_in_slot_order(image_diff2):
-    total = image_diff2[:, 0]
-    for slot in range(1, int(image_diff2.shape[1])):
-        total = total + image_diff2[:, slot]
+def _add_in_slot_order(image_diff2, initial):
+    """A particle's diff2 ``[B, M, T]`` from its images' kernel sums ``[B, S, M, T]`` and Xi2 / 2 ``[B, S]``.
+
+    RELION's per-image running total in float32 (acc_ml_optimiser_impl.h getAllSquaredDifferencesCoarse): before
+    image ``k``'s kernel the whole array gets ``+= Xi2_k / 2``, and the kernel then adds its sum,
+    ``total = (total + Xi2_k / 2) + s_k``. Folding ``Xi2_k / 2`` into ``s_k`` first moves a particle's diff2 by a
+    few float32 units in a correlated way.
+    """
+
+    total = jnp.zeros_like(image_diff2[:, 0])
+    for slot in range(int(image_diff2.shape[1])):
+        total = (total + initial[:, slot, None, None]) + image_diff2[:, slot]
     return total
