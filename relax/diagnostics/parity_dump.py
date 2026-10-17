@@ -9,7 +9,13 @@ no-op so the dump has zero behavioral effect. Optional env vars:
   before saving (default 2 → 64³ for 128³ box).
 - ``RELAX_PARITY_TIMING_DIR`` — lightweight per-iteration timing-only NPZs.
   Unlike ``RELAX_PARITY_DUMP_DIR``, this does not collect E-step tensors or
-  downsampled volumes, so it is suitable for performance guardrails.
+  downsampled volumes, so it is suitable for performance guardrails. The
+  command's ``--timing_dir`` takes its place (``observers.command_observer``);
+  the directory reaches :func:`dump_timing_iteration` as an argument.
+
+The timers (:func:`start_iteration`, :func:`mark_stage`) are driven by
+``observers.ParityDumpObserver`` only, which the command builds when a capture
+or a timing directory is asked for.
 """
 
 from __future__ import annotations
@@ -34,17 +40,8 @@ def is_active() -> bool:
     return bool(os.environ.get("RELAX_PARITY_DUMP_DIR"))
 
 
-def timing_is_active() -> bool:
-    return is_active() or bool(os.environ.get("RELAX_PARITY_TIMING_DIR"))
-
-
 def start_iteration(iteration: int) -> None:
-    """Stamp the start of an iteration so ``mark_stage`` can record cumulative time.
-
-    No-op unless either full parity dumps or lightweight timing dumps are active.
-    """
-    if not timing_is_active():
-        return
+    """Stamp the start of an iteration so ``mark_stage`` can record cumulative time."""
     _ITER_TIMERS[int(iteration)] = {"t0": time.time(), "stages": {}}
 
 
@@ -54,11 +51,9 @@ def mark_stage(iteration: int, stage: str) -> None:
     Stage names mirror the production perf baseline vocabulary plus EM-specific
     stages: ``"e_step"``, ``"m_step"``, ``"recon"``, ``"fsc"``, ``"noise_update"``.
     Calling with the same stage name twice overwrites; the cumulative-since-t0
-    semantics make this safe — later calls dominate. No-op when inactive or when
+    semantics make this safe — later calls dominate. No-op when
     ``start_iteration`` was never called for that iteration.
     """
-    if not timing_is_active():
-        return
     timer = _ITER_TIMERS.get(int(iteration))
     if timer is None:
         return
@@ -95,7 +90,9 @@ def dump_dir() -> Path | None:
 
 
 def timing_dir() -> Path | None:
-    return _created_dir(os.environ.get("RELAX_PARITY_TIMING_DIR"))
+    """``RELAX_PARITY_TIMING_DIR`` (None when unset or empty); created when the first timing row is written."""
+    raw = os.environ.get("RELAX_PARITY_TIMING_DIR")
+    return Path(raw) if raw else None
 
 
 def collect_e_step(
@@ -325,19 +322,18 @@ def dump_iteration(
 
 def dump_timing_iteration(
     *,
+    out: Path,
     iteration: int,
     init_relion_iteration: int,
 ) -> None:
-    """Write a lightweight timing-only NPZ for one iteration.
+    """Write a lightweight timing-only NPZ for one iteration into ``out`` (created if missing).
 
     This is intentionally separate from :func:`dump_iteration`: performance
     guardrails need stage timings without the large tensor/volume payloads that
     full parity debugging records.
     """
 
-    out = timing_dir()
-    if out is None:
-        return
+    out.mkdir(parents=True, exist_ok=True)
 
     wall_time_s, stage_seconds = get_iteration_timing(iteration)
 

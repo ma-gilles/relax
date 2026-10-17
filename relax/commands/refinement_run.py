@@ -447,7 +447,6 @@ def main(command=None):
     if args.timing_dir:
         timing_dir_path = Path(args.timing_dir)
         timing_dir_path.mkdir(parents=True, exist_ok=True)
-        os.environ["RELAX_PARITY_TIMING_DIR"] = str(timing_dir_path)
     else:
         timing_dir_path = None
 
@@ -1351,7 +1350,7 @@ def main(command=None):
             init_noise_variance=noise_variance,
             translations=translations_jnp,
             options=run_options,
-            observer=observers.command_observer(args),
+            observer=observers.command_observer(args, timing_dir=timing_dir_path),
             k_class_probe=observers.command_k_class_probe(),
             source=relion_replay_source.RelionReplaySource.for_run(
                 relion_replay_source.RelionReplay.from_environ(

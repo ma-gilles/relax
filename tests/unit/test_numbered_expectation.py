@@ -287,7 +287,7 @@ def test_recording_uses_published_half_identity_and_preserves_capture_order(
     monkeypatch.setattr(observers.parity_dump, 'collect_e_step', capture)
     monkeypatch.setattr(observers.parity_dump, 'is_active', lambda: True)
     # The captures are the observers' (in the order the environment builds them), told through the probe.
-    captures_observer = observers.ObserverGroup([observers.BpRefDiagnosticsObserver(), observers.ParityDumpObserver()])
+    captures_observer = observers.ObserverGroup([observers.BpRefDiagnosticsObserver(), observers.ParityDumpObserver(None)])
     expectation.record_numbered_half(result, particle_half, expectation.NumberedHalfRecording(
         outputs, significance, profile_history=profile_history, iteration=4, image_window_size=None,
         healpix_order=2, k_class_enabled=n_classes > 1, probe=ObserverExpectationProbe(captures_observer),
@@ -448,7 +448,7 @@ def test_recorded_half_hands_the_parity_dump_its_input_rows_only_when_it_dumps(m
     collected = {}
     monkeypatch.setattr(observers.parity_dump, 'is_active', lambda: dump_active)
     monkeypatch.setattr(observers.parity_dump, 'collect_e_step', lambda **kw: collected.update(kw))
-    probe = ObserverExpectationProbe(observers.ParityDumpObserver())
+    probe = ObserverExpectationProbe(observers.ParityDumpObserver(None))
     per_half = PerHalfOutputs()
     recording = expectation.NumberedHalfRecording(
         per_half, expectation.SignificanceStatistics(), profile_history=[], iteration=0, image_window_size=4,

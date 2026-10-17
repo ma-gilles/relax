@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import logging
 import os
+from pathlib import Path
 
 import numpy as np
 
@@ -201,9 +202,13 @@ class ParityDumpObserver(RunObserver):
     """The per-iteration parity capture and stage timings of ``relax.diagnostics.parity_dump``.
 
     The capture (``RELAX_PARITY_DUMP_DIR``) writes each numbered iteration's state, maps and poses and asks for
-    the unregularized maps; without it, the timing directory (``RELAX_PARITY_TIMING_DIR``) receives each
-    iteration's stage times. Both are read from the environment when each hook runs, as the module does.
+    the unregularized maps, read from the environment when each hook runs, as the module does; without it,
+    ``timing_dir`` (``--timing_dir`` or ``RELAX_PARITY_TIMING_DIR``, chosen by :func:`observers_from_environment`;
+    None: no timing rows) receives each iteration's stage times.
     """
+
+    def __init__(self, timing_dir: Path | None):
+        self.timing_dir = timing_dir
 
     def wants_unfiltered_maps(self, numbered_relion_iteration: int) -> bool:
         return parity_dump.is_active()
@@ -263,9 +268,10 @@ class ParityDumpObserver(RunObserver):
                 corrections=finished.corrections, scale_correction_data_vs_prior=finished.scale_correction_data_vs_prior,
                 log=logger,
             )
-        elif parity_dump.timing_is_active():
+        elif self.timing_dir is not None:
             try:
                 parity_dump.dump_timing_iteration(
+                    out=self.timing_dir,
                     iteration=finished.iteration,
                     init_relion_iteration=int(finished.init_relion_iteration),
                 )
@@ -486,17 +492,19 @@ class ObserverGroup(RunObserver):
             o.final_half_scored(scored)
 
 
-def observers_from_environment() -> list[RunObserver]:
+def observers_from_environment(*, timing_dir: Path | None) -> list[RunObserver]:
     """The observers the environment asks for: the BPref device-panel capture, the parity capture or its
     timings, the BPref accumulator captures, the noise-update terms, the Class3D M-step and image-size dumps, the pre-mask maps, a one-half dump
-    target. A malformed ``RELAX_BPREF_BOUNDARY_DUMP_ITERATION`` refuses here."""
+    target. ``timing_dir`` (the command's ``--timing_dir``; None: ``RELAX_PARITY_TIMING_DIR``, if set) receives
+    the stage timings. A malformed ``RELAX_BPREF_BOUNDARY_DUMP_ITERATION`` refuses here."""
 
     found = []
     # Before the parity capture, as the device-panel flush came before the E-step capture of each half.
     if any(os.environ.get(name, "").strip() for name in bpref_diagnostics.BPREF_DIAGNOSTIC_ENVS):
         found.append(BpRefDiagnosticsObserver())
-    if parity_dump.timing_is_active():
-        found.append(ParityDumpObserver())
+    timings = timing_dir if timing_dir is not None else parity_dump.timing_dir()
+    if parity_dump.is_active() or timings is not None:
+        found.append(ParityDumpObserver(timings))
     accumulators = BpRefAccumulatorObserver.from_environment()
     if accumulators.prejoin_dir or accumulators.accum_dir:
         found.append(accumulators)
@@ -520,16 +528,16 @@ def combine(observers: list[RunObserver]) -> RunObserver:
     return observers[0] if len(observers) == 1 else ObserverGroup(observers)
 
 
-def command_observer(args) -> RunObserver:
+def command_observer(args, *, timing_dir: Path | None) -> RunObserver:
     """The observer a refinement command line (and the environment it runs in) asks for (``RunObserver()``:
-    none)."""
+    none); ``timing_dir`` is the command's ``--timing_dir`` (None when not given)."""
 
     observers = []
     if args.save_intermediates_dir is not None:
         observers.append(IntermediatesObserver(
             args.save_intermediates_dir, skip_unregularized=bool(args.save_intermediates_skip_unregularized),
         ))
-    return combine(observers + observers_from_environment())
+    return combine(observers + observers_from_environment(timing_dir=timing_dir))
 
 
 def command_k_class_probe() -> KClassDiagnostics:

@@ -31,14 +31,10 @@ def test_inactive_when_env_unset(monkeypatch):
 
     p._ITER_TIMERS.clear()
     assert not p.is_active()
-    assert not p.timing_is_active()
-    p.start_iteration(0)
-    p.mark_stage(0, "e_step")
+    assert p.timing_dir() is None
     wall, stages = p.get_iteration_timing(0)
     assert wall is None
     assert stages == {}
-    # No state should have been recorded.
-    assert 0 not in p._ITER_TIMERS
 
 
 def test_start_and_mark_stage_records_cumulative_seconds(parity_env):
@@ -108,12 +104,12 @@ def test_timing_only_dump_does_not_require_full_parity_env(tmp_path, monkeypatch
     p._ITER_TIMERS.clear()
     p._E_STEP.clear()
     assert not p.is_active()
-    assert p.timing_is_active()
+    assert p.timing_dir() == timing
 
     p.start_iteration(2)
     time.sleep(0.02)
     p.mark_stage(2, "e_step")
-    p.dump_timing_iteration(iteration=2, init_relion_iteration=3)
+    p.dump_timing_iteration(out=timing, iteration=2, init_relion_iteration=3)
 
     files = sorted(timing.glob("iter_*.npz"))
     assert len(files) == 1

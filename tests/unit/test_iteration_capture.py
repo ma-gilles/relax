@@ -1,6 +1,7 @@
 """Completed-iteration correction reporting and parity capture boundaries."""
 
 import logging
+from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
@@ -239,10 +240,9 @@ def test_actual_inactive_capture_gate_does_not_read_full_payload(monkeypatch, ti
         raise AssertionError('full capture must remain gated')
 
     monkeypatch.setattr(parity_dump, 'is_active', lambda: False)
-    monkeypatch.setattr(parity_dump, 'timing_is_active', lambda: timing)
     monkeypatch.setattr(parity_dump, 'dump_timing_iteration', lambda **values: events.append(values))
     monkeypatch.setattr(observers, 'dump_numbered_iteration', reject_full)
-    run_tiny_refinement(monkeypatch, final_after_max_iter=False, observer=observers.ParityDumpObserver())
+    run_tiny_refinement(monkeypatch, final_after_max_iter=False, observer=observers.ParityDumpObserver(Path('timing') if timing else None))
     assert [(event['iteration'], event['init_relion_iteration']) for event in events] == (
         [(0, 0), (1, 0)] if timing else []
     )

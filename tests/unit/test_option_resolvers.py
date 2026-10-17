@@ -144,8 +144,8 @@ def test_the_intermediates_observer_comes_from_its_flags(tmp_path):
     from relax.diagnostics.observers import IntermediatesObserver, command_observer
     from relax.refinement.ports import RunObserver
 
-    assert type(command_observer(_args())) is RunObserver
-    observer = command_observer(_args("--save_intermediates_dir", str(tmp_path / "dump"), "--save_intermediates_skip_unregularized"))
+    assert type(command_observer(_args(), timing_dir=None)) is RunObserver
+    observer = command_observer(_args("--save_intermediates_dir", str(tmp_path / "dump"), "--save_intermediates_skip_unregularized"), timing_dir=None)
     assert isinstance(observer, IntermediatesObserver) and (tmp_path / "dump").is_dir()
     assert observer.directory == str(tmp_path / "dump") and observer.skip_unregularized
     assert not observer.wants_unfiltered_maps(1)

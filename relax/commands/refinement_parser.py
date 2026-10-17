@@ -642,7 +642,7 @@ def parse_refinement_args(argv=None):
         default=None,
         help=(
             "Optional directory for lightweight per-iteration timing NPZs. "
-            "This uses RELAX_PARITY_TIMING_DIR internally and does not "
+            "It takes the place of RELAX_PARITY_TIMING_DIR and does not "
             "write full parity tensor/volume dumps."
         ),
     )

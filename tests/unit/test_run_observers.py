@@ -1,5 +1,6 @@
 """The run observers (code rule 15): what the controller tells them, and which ones a command builds."""
 
+from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
@@ -54,17 +55,22 @@ def _args(*arguments):
 def test_the_command_builds_the_observers_its_flags_and_environment_ask_for(monkeypatch, tmp_path):
     for name in ("RELAX_PARITY_DUMP_DIR", "RELAX_PARITY_TIMING_DIR"):
         monkeypatch.delenv(name, raising=False)
-    assert type(observers.command_observer(_args())) is RunObserver
+    assert type(observers.command_observer(_args(), timing_dir=None)) is RunObserver
+    # --timing_dir reaches the parity observer as its directory, without the environment.
+    timed = observers.command_observer(_args(), timing_dir=tmp_path / "flag")
+    assert isinstance(timed, observers.ParityDumpObserver) and timed.timing_dir == tmp_path / "flag"
     monkeypatch.setenv("RELAX_PARITY_TIMING_DIR", str(tmp_path / "timing"))
-    assert isinstance(observers.command_observer(_args()), observers.ParityDumpObserver)
-    group = observers.command_observer(_args("--save_intermediates_dir", str(tmp_path / "dump")))
+    observer = observers.command_observer(_args(), timing_dir=None)
+    assert isinstance(observer, observers.ParityDumpObserver) and observer.timing_dir == tmp_path / "timing"
+    assert observers.command_observer(_args(), timing_dir=tmp_path / "flag").timing_dir == tmp_path / "flag"
+    group = observers.command_observer(_args("--save_intermediates_dir", str(tmp_path / "dump")), timing_dir=None)
     assert isinstance(group, observers.ObserverGroup)
     assert [type(o) for o in group.observers] == [observers.IntermediatesObserver, observers.ParityDumpObserver]
     assert group.keeps_rotation_posteriors and group.collects_local_search_profiles
     # Timing alone does not need the unregularized maps; the full capture and the intermediates do.
-    assert not observers.ParityDumpObserver().wants_unfiltered_maps(1)
+    assert not observers.ParityDumpObserver(tmp_path / "timing").wants_unfiltered_maps(1)
     monkeypatch.setenv("RELAX_PARITY_DUMP_DIR", str(tmp_path / "parity"))
-    assert observers.ParityDumpObserver().wants_unfiltered_maps(1)
+    assert observers.ParityDumpObserver(None).wants_unfiltered_maps(1)
 
 
 def test_the_parity_observer_writes_the_capture_or_else_the_timing(monkeypatch):
@@ -74,11 +80,10 @@ def test_the_parity_observer_writes_the_capture_or_else_the_timing(monkeypatch):
     finished = FinishedIteration(*([None] * len(FinishedIteration._fields)))._replace(
         iteration=3, init_relion_iteration=2,
     )
-    for active, timing in ((True, True), (False, True), (False, False)):
+    for active, timing in ((True, Path("t")), (False, Path("t")), (False, None)):
         monkeypatch.setattr(observers.parity_dump, "is_active", lambda active=active: active)
-        monkeypatch.setattr(observers.parity_dump, "timing_is_active", lambda timing=timing: timing)
-        observers.ParityDumpObserver().iteration_finished(finished)
-    assert calls == [("capture", 3), ("timing", dict(iteration=3, init_relion_iteration=2))]
+        observers.ParityDumpObserver(timing).iteration_finished(finished)
+    assert calls == [("capture", 3), ("timing", dict(out=Path("t"), iteration=3, init_relion_iteration=2))]
 
 
 def test_a_group_hands_each_hook_to_every_observer_in_order():
@@ -96,7 +101,7 @@ def test_the_environment_dump_observers_come_from_their_variables(monkeypatch, t
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("RELAX_KCLASS_DUMP_DIR", str(tmp_path / "kclass"))
     monkeypatch.setenv("RELAX_PREMASK_DUMP_DIR", str(tmp_path / "premask"))
-    found = observers.observers_from_environment()
+    found = observers.observers_from_environment(timing_dir=None)
     assert [type(o) for o in found] == [observers.ClassDumpObserver, observers.PremaskObserver]
     assert [o.directory for o in found] == [str(tmp_path / "kclass"), str(tmp_path / "premask")]
 
@@ -122,14 +127,14 @@ def test_the_controller_asks_the_observer_which_halves_each_numbered_iteration_s
 def test_a_one_half_dump_target_is_the_environment_target_half_observer(monkeypatch, tmp_path):
     for name in _TARGET_HALF_ENV:
         monkeypatch.delenv(name, raising=False)
-    assert not any(isinstance(o, observers.TargetHalfObserver) for o in observers.observers_from_environment())
+    assert not any(isinstance(o, observers.TargetHalfObserver) for o in observers.observers_from_environment(timing_dir=None))
     for name, value in {
         "RELAX_SIGNIFICANCE_DUMP_TARGET_HALF": "2", "RELAX_SIGNIFICANCE_DUMP_STOP_AFTER_TARGET": "1",
         "RELAX_SIGNIFICANCE_DUMP_DIR": str(tmp_path), "RELAX_SIGNIFICANCE_DUMP_ITERATION": "2",
         "RELAX_SIGNIFICANCE_DUMP_ORIGINAL_INDICES": "1,3",
     }.items():
         monkeypatch.setenv(name, value)
-    target = [o for o in observers.observers_from_environment() if isinstance(o, observers.TargetHalfObserver)]
+    target = [o for o in observers.observers_from_environment(timing_dir=None) if isinstance(o, observers.TargetHalfObserver)]
     assert len(target) == 1
     datasets = [SimpleNamespace(dataset_indices=np.asarray(rows)) for rows in ([2, 4], [1, 3])]
     # Only the target iteration scores the target half alone; a group defers to the observer that targets one.
@@ -157,10 +162,10 @@ def test_the_controller_tells_the_observer_of_each_recorded_numbered_half(monkey
 def test_the_parity_capture_asks_for_the_pose_eulers_only_while_it_dumps(monkeypatch, tmp_path):
     monkeypatch.delenv("RELAX_PARITY_DUMP_DIR", raising=False)
     assert not RunObserver().keeps_pose_rotation_eulers
-    assert not observers.ParityDumpObserver().keeps_pose_rotation_eulers
+    assert not observers.ParityDumpObserver(None).keeps_pose_rotation_eulers
     monkeypatch.setenv("RELAX_PARITY_DUMP_DIR", str(tmp_path / "parity"))
-    assert observers.ParityDumpObserver().keeps_pose_rotation_eulers
-    assert observers.ObserverGroup([RunObserver(), observers.ParityDumpObserver()]).keeps_pose_rotation_eulers
+    assert observers.ParityDumpObserver(None).keeps_pose_rotation_eulers
+    assert observers.ObserverGroup([RunObserver(), observers.ParityDumpObserver(None)]).keeps_pose_rotation_eulers
 
 
 def test_a_bpref_device_panel_variable_builds_its_observer_ahead_of_the_parity_capture(monkeypatch, tmp_path):
@@ -168,10 +173,10 @@ def test_a_bpref_device_panel_variable_builds_its_observer_ahead_of_the_parity_c
 
     for name in (*bpref_diagnostics.BPREF_DIAGNOSTIC_ENVS, "RELAX_PARITY_DUMP_DIR", "RELAX_PARITY_TIMING_DIR"):
         monkeypatch.delenv(name, raising=False)
-    assert not any(isinstance(o, observers.BpRefDiagnosticsObserver) for o in observers.observers_from_environment())
+    assert not any(isinstance(o, observers.BpRefDiagnosticsObserver) for o in observers.observers_from_environment(timing_dir=None))
     monkeypatch.setenv("RECOVAR_BPREF_DEVICE_SIGNATURE_DUMP_DIR", str(tmp_path / "panels"))
     monkeypatch.setenv("RELAX_PARITY_TIMING_DIR", str(tmp_path / "timing"))
-    assert [type(o) for o in observers.observers_from_environment()][:2] == [
+    assert [type(o) for o in observers.observers_from_environment(timing_dir=None)][:2] == [
         observers.BpRefDiagnosticsObserver, observers.ParityDumpObserver,
     ]
     flushed = []

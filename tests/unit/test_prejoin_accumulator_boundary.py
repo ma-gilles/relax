@@ -90,7 +90,7 @@ def test_malformed_capture_target_refuses_when_the_observers_are_built(monkeypat
     monkeypatch.delenv('RELAX_BPREF_PREJOIN_DUMP_DIR', raising=False)
     monkeypatch.setenv('RELAX_BPREF_BOUNDARY_DUMP_ITERATION', 'bad')
     with pytest.raises(ValueError):
-        observers.observers_from_environment()
+        observers.observers_from_environment(timing_dir=None)
 
 
 def test_capture_precedes_guard_failure(monkeypatch, tmp_path):

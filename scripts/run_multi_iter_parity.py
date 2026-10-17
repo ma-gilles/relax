@@ -2517,7 +2517,7 @@ def main():
             k_class_probe=KClassDiagnostics(),
             observer=observers.combine(
                 ([] if save_intermediates_dir is None else [observers.IntermediatesObserver(save_intermediates_dir)])
-                + observers.observers_from_environment()
+                + observers.observers_from_environment(timing_dir=None)
             ),
             source=replay_source(
                 run_options,

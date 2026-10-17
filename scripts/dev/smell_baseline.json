@@ -180,7 +180,6 @@
   "env-read:relax.diagnostics.parity_dump:dump_dir:RELAX_PARITY_DUMP_DIR",
   "env-read:relax.diagnostics.parity_dump:is_active:RELAX_PARITY_DUMP_DIR",
   "env-read:relax.diagnostics.parity_dump:timing_dir:RELAX_PARITY_TIMING_DIR",
-  "env-read:relax.diagnostics.parity_dump:timing_is_active:RELAX_PARITY_TIMING_DIR",
   "env-read:relax.diagnostics.reconstruction:write_bpref_accumulators:RELAX_BPREF_BOUNDARY_DUMP_RUN_ID",
   "env-read:relax.diagnostics.reconstruction:write_class_mstep:RELAX_KCLASS_DUMP_PRESERVE_DTYPE",
   "env-read:relax.diagnostics.reconstruction:write_premask_mean:RELAX_PREMASK_DUMP_PRESERVE_DTYPE",
