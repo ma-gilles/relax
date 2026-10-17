@@ -108,7 +108,7 @@ def resident_block_weighted_sums_kernel(
     recon_image,  # complex64 [C_B, P], unshifted
     recon_weight,  # float32 [C_B, P] (BPref weighted CTF) or None
     noise_image,  # complex64 [C_B, P], unshifted
-    ctf2_over_nv_recon,  # float32 [C_B, P]
+    ctf2_over_nv_recon,  # float32 [C_B, P]; read by the XLA resident_block_ctf_probs, not by the kernel
     recon_pixel_indices,  # int32 [P], centered packed-half indices
     translation_angles,  # float32 [T, 2]
     *,
@@ -155,7 +155,6 @@ def resident_block_weighted_sums_kernel(
         recon_weight=(
             None if recon_weight is None else jnp.asarray(recon_weight, dtype=jnp.float32)
         ),
-        ctf2_over_nv=None,
         image_shape=tuple(int(size) for size in image_shape),
     )
     summed, summed_masked, _kernel_mass = outputs
