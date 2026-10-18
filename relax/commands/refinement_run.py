@@ -212,13 +212,6 @@ def _resolve_tau2_fudge(n_classes, cli_tau2_fudge, relion_init_tau2_fudge):
     return 1.0, "RELION auto-refine default"
 
 
-def _resolve_replay_normcorr(perturb_replay_relion_dir, replay_relion_normcorr):
-    """Default normcorr replay on only for explicit RELION replay runs."""
-    if replay_relion_normcorr is not None:
-        return bool(replay_relion_normcorr)
-    return perturb_replay_relion_dir is not None
-
-
 def _validate_replay_saved_healpix_order(
     perturb_replay_relion_dir,
     init_relion_iteration,
@@ -998,8 +991,7 @@ def main(command=None):
     # does not run the C1 sigma_offset update so iter-2 would otherwise use the
     # 10 Å default — 6× too wide vs RELION ~1.6 Å — depressing iter-2 Pmax by
     # ~22%). Per-image normCorrection / group-scale replay is part of strict
-    # RELION replay and can be disabled with --no-replay_relion_normcorr for
-    # diagnostics.
+    # RELION replay.
     replay_target = replay_inputs.ReplayTarget(
         half1_rows=particle_layout.half1_rows,
         half2_rows=particle_layout.half2_rows,
@@ -1023,7 +1015,6 @@ def main(command=None):
                 replay_target,
                 max_iter=job.max_iter,
                 init_relion_iteration=args.init_relion_iteration,
-                include_normcorr=_resolve_replay_normcorr(args.perturb_replay_relion_dir, args.replay_relion_normcorr),
                 include_k1_state_swap=args.state_swap_target_relion_iteration is not None,
             )
 

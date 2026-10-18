@@ -416,7 +416,6 @@ def numbered_star_replay(
     *,
     max_iter: int,
     init_relion_iteration: int,
-    include_normcorr: bool,
     include_k1_state_swap: bool,
 ) -> list:
     """RELION's per-iteration replay overrides from its run files: slot k is the state numbered iteration k+1
@@ -433,7 +432,7 @@ def numbered_star_replay(
         int(max_iter),
         ds_voxel=target.voxel_size,
         ds_grid=target.box_size,
-        include_normcorr=include_normcorr,
+        include_normcorr=True,
         init_relion_iteration=init_relion_iteration,
         particle_names=target.particle_names,
         include_k1_mean_variance=include_k1_state_swap,

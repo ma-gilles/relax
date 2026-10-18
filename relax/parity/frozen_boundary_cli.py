@@ -682,8 +682,6 @@ def _validate_fixed_diagnostic_arm_cli(args) -> None:
         )
     if str(args.perturb_replay_restart_state_iterations).strip():
         raise ValueError("fixed diagnostic arm rejects sampling-restart substitution")
-    if args.replay_relion_normcorr is not None:
-        raise ValueError("fixed diagnostic arm rejects external norm-correction replay")
     if args.relion_scale_followers is not None:
         raise ValueError("fixed diagnostic arm rejects follower-scale emulation")
 

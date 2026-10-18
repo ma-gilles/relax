@@ -26,7 +26,6 @@ from relax.commands.refinement_particles import _apply_relion_image_mask, prepar
 from relax.commands.refinement_run import (
     _k1_relion_live_initial_noise_enabled,
     _replay_complete_initial_particle_state,
-    _resolve_replay_normcorr,
     _resolve_tau2_fudge,
     _use_fresh_auto_refine_particle_order,
 )
@@ -485,7 +484,6 @@ def _fixed_diagnostic_args():
         stop_after_local_search_score_only=False,
         diagnostic_single_half=False,
         perturb_replay_restart_state_iterations="",
-        replay_relion_normcorr=None,
         relion_scale_followers=None,
     )
 
@@ -1398,13 +1396,6 @@ def test_tau2_fudge_resolver_matches_relion_mode_defaults():
     assert _resolve_tau2_fudge(4, None, None) == (4.0, "RELION Class3D default")
     assert _resolve_tau2_fudge(4, 2.5, None) == (2.5, "explicit CLI")
     assert _resolve_tau2_fudge(4, 2.5, 4.0) == (4.0, "RELION it000 optimiser")
-
-
-def test_replay_normcorr_defaults_to_strict_replay_only():
-    assert _resolve_replay_normcorr(None, None) is False
-    assert _resolve_replay_normcorr("/relion/run", None) is True
-    assert _resolve_replay_normcorr("/relion/run", False) is False
-    assert _resolve_replay_normcorr(None, True) is True
 
 
 @pytest.mark.usefixtures("verified_k1_relion_os0")

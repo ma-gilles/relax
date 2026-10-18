@@ -339,23 +339,6 @@ def parse_refinement_args(argv=None):
     )
     frozen_boundary_cli.add_frozen_boundary_arguments(parser)
     parser.add_argument(
-        "--replay_relion_normcorr",
-        dest="replay_relion_normcorr",
-        action="store_true",
-        default=None,
-        help="If set together with --perturb_replay_relion_dir, also inject "
-        "RELION's per-iter rlnNormCorrection / rlnGroupScaleCorrection into "
-        "recovar's E-step at iter 2+. This is the default when "
-        "--perturb_replay_relion_dir is set.",
-    )
-    parser.add_argument(
-        "--no-replay_relion_normcorr",
-        dest="replay_relion_normcorr",
-        action="store_false",
-        help="Disable RELION normCorrection / group-scale replay while still "
-        "using other per-iteration replay overrides.",
-    )
-    parser.add_argument(
         "--init_resolution", type=float, default=60.0,
         help="RELION --ini_high in Angstrom: the initial low-pass and the iteration-1 current size; "
         "GUI default 60 (pipeline_jobs.cpp:4172)",
