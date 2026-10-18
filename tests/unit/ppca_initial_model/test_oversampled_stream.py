@@ -517,13 +517,10 @@ def test_job_chunk_fits_one_kernel_launch():
 
 
 def test_chunks_cover_the_kept_positions_in_a_few_sizes():
-    """A tile's jobs run in whole chunks of the planned size, then of 1/4 and 1/16 of it; the padding is less than
-    one smallest chunk and addresses the padding slot."""
+    """A tile's jobs run in whole chunks of the first size, the remainder in the last; the padding is less than one
+    smallest chunk and addresses the padding slot."""
     from relax.ppca_refinement import oversampled_stream as oss
 
-    assert (
-        oss._chunk_sizes(1024) == (1024, 256, 64) and oss._chunk_sizes(8) == (8, 2, 1) and oss._chunk_sizes(1) == (1,)
-    )
     rng = np.random.default_rng(0)
     for n_kept in (0, 1, 63, 64, 2000, 6500):
         mask = np.zeros(15000, bool)
@@ -543,14 +540,51 @@ def test_chunks_cover_the_kept_positions_in_a_few_sizes():
 
 
 def test_job_chunk_plan_fits_the_budget():
-    """Pass 2's job programs go through the planner: the chunk halves until their compiled memory fits."""
-    from relax.ppca_refinement.oversampled_stream import MAX_JOB_CHUNK, job_program_bytes, plan_job_chunk
+    """Pass 2's job chunk is a constant per platform, not the device's memory (a chunk planned from memory changed
+    the numbers): every budget its programs fit gives the same chunk, and a budget they do not fit is refused."""
+    from relax.ppca_refinement.oversampled_stream import (
+        CPU_JOB_CHUNK,
+        GPU_JOB_CHUNK,
+        fixed_job_chunk,
+        job_program_bytes,
+        plan_job_chunk,
+    )
 
     coarse, (fine_rotations, fine_translations) = _spa_stream()
     ostream = prepare_oversampled_stream(coarse, fine_rotations, fine_translations)
-    assert plan_job_chunk(ostream, 4, memory_bytes=1e15, device_bytes=1e15) == MAX_JOB_CHUNK
-    budget = job_program_bytes(ostream, 4, 16)
-    planned = plan_job_chunk(ostream, 4, memory_bytes=budget, device_bytes=1)
-    assert planned <= 16 and job_program_bytes(ostream, 4, planned) <= budget
-    with pytest.raises(ValueError, match="pass-2 job"):
-        plan_job_chunk(ostream, 4, memory_bytes=1, device_bytes=1)
+    chunk = fixed_job_chunk(ostream)
+    assert chunk == (GPU_JOB_CHUNK if ostream.fine.static.cuda_kernels else CPU_JOB_CHUNK)
+    needed = job_program_bytes(ostream, 4, chunk)
+    for memory in (2 * needed, 8 * needed, 1e15):
+        assert plan_job_chunk(ostream, 4, memory_bytes=memory, device_bytes=1) == chunk
+    with pytest.raises(ValueError, match="pass-2 program"):
+        plan_job_chunk(ostream, 4, memory_bytes=needed / 2, device_bytes=1)
+
+
+def test_padded_rows_add_exact_zeros(monkeypatch):
+    """The last chunk of a tile is padded past its kept rows; a padded row's weights are exact zeros, so the rows it
+    gathers do not matter: padding with another row than row 0 gives the same bits (-0.0 included) everywhere."""
+    from relax.ppca_refinement import oversampled_stream as oss
+
+    coarse, (fine_rotations, fine_translations) = _spa_stream()
+    ostream = prepare_oversampled_stream(
+        coarse, fine_rotations, fine_translations, adaptive_fraction=0.9, max_significant=40, job_chunk=32
+    )
+    if ostream.fine.static.cuda_kernels:
+        pytest.skip("the GPU moment scatter adds atomically: two GPU runs differ in the last bits whatever the padding")
+    ids = np.arange(4)
+    chunks = oss._chunks
+    results = []
+    for row_padding in (0, 7):
+
+        def padded(mask, sizes, padding, row_padding=row_padding):
+            # The row chunks are the ones padded with 0; the job chunks pad with the padding slot.
+            return chunks(mask, sizes, row_padding if padding == 0 else padding)
+
+        monkeypatch.setattr(oss, "_chunks", padded)
+        results.append((accumulate_oversampled_tile(ostream, ids), oversampled_tile_embeddings(ostream, ids)))
+    (stats, embedded), (other_stats, other_embedded) = results
+    for name in ("lhs_tri", "residual_gradient", "residual_num", "embeddings"):
+        assert np.asarray(getattr(stats, name)).tobytes() == np.asarray(getattr(other_stats, name)).tobytes(), name
+    for name in ("embeddings", "log_evidence", "max_posterior"):
+        assert np.asarray(getattr(embedded, name)).tobytes() == np.asarray(getattr(other_embedded, name)).tobytes()

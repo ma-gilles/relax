@@ -210,6 +210,12 @@ def plan_tile_images(
     a tile size (never fewer for smaller tiles). Tiles are read ahead only within a call, so when
     every call holds one tile at the plan without read-ahead, that plan is used; otherwise (or when
     it is None) the next tile's reader is counted.
+
+    The tile size sets the order of the update's sums (each tile's statistics are added in tile order), so a
+    plan that shrinks tiles makes the numbers follow the device's memory. At the default 150 images per tile it
+    does not on our A100s: every stage of the box-128 and box-192 schedules up to HEALPix 4, radius 37, keeps
+    150 images on an 80 GB card and on one limited to a 40 GB card's allocator (largest tile 26.9 of 31 GiB;
+    Slurm 15779102, 2026-10-18). Larger boxes, finer grids or smaller cards can shrink them.
     """
     if tiles_per_call is not None and tiles_per_call(requested) <= 1:
         single = _planned_tile_images(stream, requested, memory_bytes, device_bytes, pipelined=False)

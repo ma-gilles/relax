@@ -192,10 +192,10 @@ def test_an_80_gb_card_keeps_the_requested_tile_at_every_stage(kind, stage):
     "kind, stage", [("subtomogram", (31, 3)), ("single_particle", (31, 3)), ("single_particle", (16, 3))]
 )
 def test_an_80_gb_card_keeps_the_largest_oversampling_job_chunk(kind, stage):
-    """Adaptive oversampling's job plan changes nothing on a large card either: on 80 GB a pass-2 program takes
-    as many jobs as one kernel launch does (1024 for single particles, 128 at 41 tilts), with the compiled job
-    programs and the job results of 150 particles x 100 samples counted."""
+    """Adaptive oversampling's fixed job chunk (128 jobs, also what one kernel launch takes at 41 tilts) fits an 80 GB
+    card and a 16 GB one, with the compiled job programs and the job results of 150 particles x 100 samples counted."""
     from relax.ppca_refinement.oversampled_stream import (
+        GPU_JOB_CHUNK,
         job_program_bytes,
         launch_job_chunk,
         plan_job_chunk,
@@ -212,14 +212,12 @@ def test_an_80_gb_card_keeps_the_largest_oversampling_job_chunk(kind, stage):
         np.zeros(((1 << dimensions) * int(stream.translations.shape[0]), dimensions), np.float32),
     )
     device = 80 * GIB
-    largest = launch_job_chunk(ostream)
-    assert largest == (128 if kind == "subtomogram" else 1024)
-    assert plan_job_chunk(ostream, 150, memory_bytes=device - _resident(stream), device_bytes=device) == largest
-    # A 16 GB card plans fewer jobs per program when the largest chunk does not fit it.
+    assert launch_job_chunk(ostream) == (128 if kind == "subtomogram" else 1024)
+    assert plan_job_chunk(ostream, 150, memory_bytes=device - _resident(stream), device_bytes=device) == GPU_JOB_CHUNK
     small = 16 * GIB
     planned = plan_job_chunk(ostream, 150, memory_bytes=small - _resident(stream), device_bytes=small)
     budget = small - _resident(stream) - TILE_FRAGMENTATION_HEADROOM * small
-    assert planned <= largest and job_program_bytes(ostream, 150, planned) <= budget
+    assert planned == GPU_JOB_CHUNK and job_program_bytes(ostream, 150, planned) <= budget
 
 
 def test_a_cpu_stream_refuses_a_rotation_block_its_host_cannot_hold():

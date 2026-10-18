@@ -101,8 +101,8 @@ class OversampledStream(NamedTuple):
     translation_children: int  # T_c
     adaptive_fraction: float
     max_significant: int  # significant coarse samples kept per image at most (RELION's maxsig)
-    # Jobs per pass-2 program at most (:func:`_chunk_sizes`); the moment programs take ``rotation_children`` rows
-    # per job of a chunk.
+    # Jobs per pass-2 program (:func:`fixed_job_chunk` in production); the moment programs take
+    # ``rotation_children`` rows per job of a chunk.
     job_chunk: int
     fine_fraction: float  # the posterior mass an image's accumulated fine samples hold at least
     # (F_1,) int32: each pass-1 operand slot's position in a frame of the pass-2 operands (-1: GEMM padding).
@@ -527,20 +527,11 @@ def _moment_rows(
     return scatter_moment_images(carry, arrays, static, rhs_parts, lhs_images, rotations)
 
 
-# A tile's jobs (and rows) run in chunks of the planned size and of 1/4 and 1/16 of it: whole large chunks first,
-# the remainder in the smallest, so a tile runs a few programs and pads less than one smallest chunk.
-CHUNK_RATIO = 4
-CHUNK_LEVELS = 3
-
-
-def _chunk_sizes(largest: int) -> tuple[int, ...]:
-    return tuple(dict.fromkeys(max(1, int(largest) // CHUNK_RATIO**level) for level in range(CHUNK_LEVELS)))
-
-
 def _chunks(mask, sizes, padding: int):
     """The set positions of the flattened ``mask``, followed by ``padding`` up to its size plus the largest of the
     chunk ``sizes`` (so a program that slices a chunk of them has one shape per chunk size and mask size), how many
-    are set, and the ``(start, size)`` chunks that cover them (:func:`_chunk_sizes`)."""
+    are set, and the ``(start, size)`` chunks that cover them: whole chunks of the first size, the remainder in the
+    last. Pass 2 runs one size, the stream's ``job_chunk`` (:func:`fixed_job_chunk`)."""
     mask = np.asarray(mask).reshape(-1)
     kept = np.flatnonzero(mask).astype(np.int32)
     order = np.full(mask.size + sizes[0], padding, np.int32)
@@ -651,7 +642,7 @@ def _oversampled_tile(ostream: OversampledStream, image_indices, significant_row
     B, S = valid.shape
     R_c, T_c = ostream.rotation_children, ostream.translation_children
     table = _job_table(rotation, translation, valid)
-    sizes = _chunk_sizes(ostream.job_chunk)
+    sizes = (ostream.job_chunk,)
     order, _, chunks = _chunks(jax.device_get(valid), sizes, padding=B * S)
     results = _empty_results(B * S + 1, R_c, T_c, fine.static.basis_size - 1)
     for start, size in chunks:
@@ -853,8 +844,16 @@ def job_program_bytes(ostream: OversampledStream, n_images: int, chunk: int) -> 
     return _JOB_PROGRAM_BYTES[key]
 
 
-# Jobs per pass-2 program at most; the plan halves it until the programs fit the device.
+# Jobs per pass-2 program at most (one kernel launch's).
 MAX_JOB_CHUNK = 1024
+# Jobs per pass-2 program: a constant per platform, never the device's memory. Each program scores and sums its
+# chunk at once, so a chunk planned from free memory (up to 1024 jobs) made the same oversampling command give
+# other numbers on another card (CPU, chunks of 32 to 128: theta 1e-7, z 1e-5 relative). 128 jobs cost nothing
+# against 1024 on an A100 (26.0 s against 26.6 s per oversampled update, Slurm 15780529); a CPU program of 128 jobs
+# takes 8-16 GiB, of 32 about 3. CPU and GPU runs therefore sum in different chunks: their numbers differ at
+# float32 rounding, as they do anyway (other kernels, other reduction orders); runs on one platform agree.
+GPU_JOB_CHUNK = 128
+CPU_JOB_CHUNK = 32
 # Rotations one launch of the CUDA window projector and moment scatter takes (their grids are one block row per
 # rotation; CUDA's grid limit). A job chunk projects ``chunk * rotation_children * frames`` rotations.
 KERNEL_LAUNCH_ROTATIONS = 65535
@@ -876,11 +875,18 @@ def launch_job_chunk(ostream: OversampledStream) -> int:
 _JOB_CHUNKS: dict = {}
 
 
+def fixed_job_chunk(ostream: OversampledStream) -> int:
+    """The pass-2 job chunk: :data:`GPU_JOB_CHUNK` on GPU streams, :data:`CPU_JOB_CHUNK` on the CPU, at most what
+    one kernel launch takes (:func:`launch_job_chunk`, which depends on the tile's frames, not on memory)."""
+    return min(launch_job_chunk(ostream), GPU_JOB_CHUNK if ostream.fine.static.cuda_kernels else CPU_JOB_CHUNK)
+
+
 def plan_job_chunk(ostream: OversampledStream, n_images: int, *, memory_bytes=None, device_bytes=None) -> int:
-    """Jobs per pass-2 program: the most one kernel launch takes (:func:`launch_job_chunk`), halved until the job
-    programs (:func:`job_program_bytes`) fit the device's free memory less the planner's fragmentation headroom
-    (:func:`relax.ppca_refinement.full_row_tile_plan.plan_tile_images`). Pass 1's buffers are released before pass 2,
-    so the job programs have the device to themselves, apart from the tile's unshifted operands and job results."""
+    """Jobs per pass-2 program, :func:`fixed_job_chunk`, once its programs (:func:`job_program_bytes`) are known to
+    fit the device's free memory less the planner's fragmentation headroom
+    (:func:`relax.ppca_refinement.full_row_tile_plan.plan_tile_images`); a device they do not fit is refused. Pass 1's
+    buffers are released before pass 2, so the job programs have the device to themselves, apart from the tile's
+    unshifted operands and job results."""
     if memory_bytes is None and device_bytes is None:
         # The device probes run nvidia-smi (tens of ms); a stage's shapes are planned once.
         key = (plan_shape_key(ostream.fine), int(n_images), getattr(ostream.fine.device, "id", None))
@@ -893,19 +899,17 @@ def plan_job_chunk(ostream: OversampledStream, n_images: int, *, memory_bytes=No
             )
         return _JOB_CHUNKS[key]
     budget = memory_bytes - TILE_FRAGMENTATION_HEADROOM * (device_bytes or memory_bytes)
-    chunk = launch_job_chunk(ostream)
-    while chunk > 1 and job_program_bytes(ostream, n_images, chunk) > budget:
-        chunk //= 2
+    chunk = fixed_job_chunk(ostream)
     counted = job_program_bytes(ostream, n_images, chunk)
     if counted > budget:
         raise ValueError(
-            f"One pass-2 job needs {counted / 2**30:.2f} GiB, more than the {budget / 2**30:.2f} GiB budget: "
-            "use a smaller image batch or rotation grid"
+            f"A pass-2 program of {chunk} jobs needs {counted / 2**30:.2f} GiB, more than the "
+            f"{budget / 2**30:.2f} GiB budget: use a smaller --image-batch-size (images per tile) or --maxsig "
+            "(samples per image)"
         )
     logger.info(
-        "PPCA oversampling plan: %d of %d jobs per pass-2 program; counted %.2f GiB of a %.2f GiB budget",
+        "PPCA oversampling plan: %d jobs per pass-2 program; counted %.2f GiB of a %.2f GiB budget",
         chunk,
-        MAX_JOB_CHUNK,
         counted / 2**30,
         budget / 2**30,
     )
