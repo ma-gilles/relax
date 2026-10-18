@@ -674,7 +674,7 @@ def _resident_pass2(
         # reported before any device work like the checks below.
         raise ResidentConfigurationUnsupported(str(exc)) from exc
 
-    scale_groups_available, relion_wavg_atomic_scale_aa = resident_pass_tables.resident_scale_and_triplet(
+    accumulate_scale, relion_wavg_atomic_scale_aa = resident_pass_tables.resident_scale_and_triplet(
         group_ids=group_ids, accumulate_noise=accumulate_noise
     )
     resolved_spectrum_norm, relion_exact_bpref_operands = _resident_wavg_arithmetic(
@@ -911,7 +911,7 @@ def _resident_pass2(
             use_exact_relion_gaussian=use_exact_relion_gaussian,
             source_faithful_spectrum_norm=resolved_spectrum_norm,
             relion_wavg_atomic_scale_aa=relion_wavg_atomic_scale_aa,
-            accumulate_scale=scale_groups_available,
+            accumulate_scale=accumulate_scale,
             relion_exact_bpref_operands=relion_exact_bpref_operands,
             relion_native_fine_units=relion_native_fine_units,
             relion_firstiter_score_mode=relion_firstiter_score_mode,
@@ -2008,7 +2008,7 @@ def _resident_pass2(
         include_unweighted_high_shell=include_unweighted_norm_high_shell,
         use_exact_relion_gaussian=use_exact_relion_gaussian,
         relion_wavg_atomic_scale_aa=relion_wavg_atomic_scale_aa,
-        accumulate_scale=scale_groups_available,
+        accumulate_scale=accumulate_scale,
         source_faithful_spectrum_norm=resolved_spectrum_norm,
         n_optics_groups=n_optics_groups,
         n_classes=n_classes,
