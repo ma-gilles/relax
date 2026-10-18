@@ -41,6 +41,17 @@ def scale_difference(box_size, pixel_size, model_box_size, ref_pixel_size) -> fl
     return float(box_size) * float(pixel_size) / (float(model_box_size) * float(ref_pixel_size))
 
 
+def optics_group_grid(box_size, pixel_size, model_box_size, model_pixel_size) -> tuple:
+    """One optics group's ``(box, scale, remap)`` against the model grid: :func:`scale_difference` and RELION's
+    ``remap_image_sizes``, ``(ori_size * model pixel) / (box * pixel)`` (ml_optimiser.cpp:9046), computed in its
+    operand order: ``ROUND(remap * ires)`` meets exact ties (14 * 544 / 609.28 = 12.5 for 128 x 4.25 A against
+    112 x 5.44 A)."""
+
+    box, pixel, model_box, model_pixel = int(box_size), float(pixel_size), int(model_box_size), float(model_pixel_size)
+    remap = (float(model_box) * model_pixel) / (float(box) * pixel)
+    return box, scale_difference(box, pixel, model_box, model_pixel), remap
+
+
 def group_current_size(current_size, box_size, scale) -> int:
     """``image_current_size[g] = min(box_g, 2 ceil(0.5 s_g current_size))``."""
 

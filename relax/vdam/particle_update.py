@@ -106,24 +106,18 @@ def add_log_likelihood_contributions(meta: dict, state, optics_state, optics_gro
 
 
 def optics_group_grids(optics_state, optics_group_ids, model_box):
-    """Each optics group's ``(box, scale, remap)`` on several image shapes, else None (one grid).
-
-    ``remap`` is RELION's ``remap_image_sizes``, ``(ori_size * model pixel) / (box * pixel)``
-    (ml_optimiser.cpp:9046), computed in its operand order: ``ROUND(remap * ires)`` meets exact
-    ties (14 * 544 / 609.28 = 12.5 for 128 x 4.25 A against 112 x 5.44 A).
-    """
+    """Each optics group's ``(box, scale, remap)`` on several image shapes, else None (one grid), by
+    :func:`relax.relion.optics_groups.optics_group_grid`, from the images' own boxes and pixel sizes."""
 
     if optics_state is None or optics_state.image_box is None or optics_group_ids is None:
         return None
-    from relax.relion.optics_groups import scale_difference
+    from relax.relion.optics_groups import optics_group_grid
 
     groups = np.asarray(optics_group_ids)
     grids = {}
     for group in np.unique(groups):
         rows = groups == group
-        box = int(np.unique(np.asarray(optics_state.image_box)[rows]).item())
-        pixel = float(np.unique(np.asarray(optics_state.image_pixel_size)[rows]).item())
-        model_pixel = float(optics_state.pixel_size)
-        remap = (float(int(model_box)) * model_pixel) / (float(box) * pixel)
-        grids[int(group)] = (box, scale_difference(box, pixel, int(model_box), model_pixel), remap)
+        box = np.unique(np.asarray(optics_state.image_box)[rows]).item()
+        pixel = np.unique(np.asarray(optics_state.image_pixel_size)[rows]).item()
+        grids[int(group)] = optics_group_grid(box, pixel, model_box, optics_state.pixel_size)
     return grids

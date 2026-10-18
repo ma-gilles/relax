@@ -236,16 +236,14 @@ def uniform_direction_log_priors(plan, *, use_local: bool, symmetry: str) -> tup
 
 
 def optics_group_grids(optics) -> dict:
-    """Each optics group's ``(box, scale, remap)`` against the model grid (``RunOptics``): RELION's ``remap_sizes``
-    scale and ``remap_image_sizes`` ``(ori_size * model pixel) / (box * pixel)`` in its operand order
-    (ml_optimiser.cpp:9046)."""
+    """Each optics group's ``(box, scale, remap)`` against the model grid (``RunOptics``), by
+    :func:`relax.relion.optics_groups.optics_group_grid`."""
 
-    from relax.relion.optics_groups import scale_difference
+    from relax.relion.optics_groups import optics_group_grid
 
-    model_box, model_pixel = int(optics.image_geometry.box_size), float(optics.model_pixel_size)
+    model_box, model_pixel = optics.image_geometry.box_size, optics.model_pixel_size
     return {
-        g: (int(box), scale_difference(int(box), float(pixel), model_box, model_pixel),
-            (float(model_box) * model_pixel) / (float(int(box)) * float(pixel)))
+        g: optics_group_grid(box, pixel, model_box, model_pixel)
         for g, (box, pixel) in enumerate(zip(optics.optics_image_sizes, optics.optics_pixel_sizes))
     }
 
