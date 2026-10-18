@@ -1,11 +1,12 @@
-"""Accumulator captures remain readable by the existing boundary analyzer."""
+"""Accumulator captures keep their schema, stage and per-half arrays."""
 
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
 from relax.diagnostics.reconstruction import write_bpref_accumulators
-from scripts.analyze_k1_half1_raw_accumulator import _load_recovar
+
+_SCHEMA_BY_STAGE = {"pre_lowres_join": "recovar-bpref-prejoin-v2", "post_lowres_join": "recovar-bpref-accum-v2"}
 
 
 @pytest.mark.unit
@@ -56,12 +57,14 @@ def test_dump_round_trip(tmp_path, monkeypatch, stage, loaded_stage, dtype, run_
         ):
             assert saved[key].dtype == np.int32
         assert saved["voxel_size"].dtype == np.float32
-    for half in (1, 2):
-        loaded = _load_recovar(path, half=half)
-        assert loaded["stage"] == loaded_stage
-        assert loaded["numerator"].dtype == numerators[half - 1].dtype
-        assert loaded["weight"].dtype == weights[half - 1].real.dtype
-        assert_matches(loaded["numerator"], numerators[half - 1])
-        assert_matches(loaded["weight"], weights[half - 1].real)
+    with np.load(path, allow_pickle=False) as saved:
+        assert saved["schema"].item() == _SCHEMA_BY_STAGE[loaded_stage]
+        for half_index in (0, 1):
+            numerator = np.asarray(saved[f"Ft_y_{half_index}"])
+            weight = np.asarray(saved[f"Ft_ctf_{half_index}"])
+            assert numerator.dtype == numerators[half_index].dtype
+            assert weight.dtype == weights[half_index].real.dtype
+            assert_matches(numerator, numerators[half_index])
+            assert_matches(weight, weights[half_index].real)
     for value, before in zip(numerators + weights, original, strict=True):
         assert_matches(value, before)

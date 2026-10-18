@@ -27,7 +27,6 @@ tests/unit/test_audit_em_particle_state_distribution.py
 tests/unit/test_audit_k4_control_topology.py
 tests/unit/test_audit_k4_fsc_trajectory.py
 tests/unit/test_bpref_device_signature_scope.py
-tests/unit/test_bpref_device_signature_validator.py
 tests/unit/test_bucket_io_lattice_cache.py
 tests/unit/test_check_agent_guides.py
 tests/unit/test_class3d_auto_refine_transitions.py
