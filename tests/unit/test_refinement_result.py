@@ -29,7 +29,6 @@ def _history():
     history.fsc_history.extend([np.ones(5), np.full(5, 0.5)])
     history.wall_times.extend([1.0, 2.0])
     history.significant_counts.extend([None, np.arange(3)])
-    history.state_swap_probe_applied_relion_iterations.append(4)
     return history
 
 
@@ -85,7 +84,7 @@ def _assert_same_mapping(got, expected):
     assert list(got) == list(expected)
     for key, value in expected.items():
         if isinstance(value, list) and key not in ("means", "class_assignments", "hard_assignments"):
-            # A history list (or, for the profile stop and the state-swap list, a fresh list): equal items.
+            # A history list (or, for the profile stop, a fresh list): equal items.
             assert len(got[key]) == len(value), key
             for got_item, item in zip(got[key], value):
                 assert got_item is item, key

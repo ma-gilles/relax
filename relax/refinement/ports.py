@@ -188,22 +188,6 @@ class NumberedState(NamedTuple):
     sampling_healpix_order: int | None
 
 
-class ScoringState(NamedTuple):
-    """A numbered iteration's scoring state as the run holds it at a source's call: the ``RefinementState``, the
-    current size, the reference and noise models, the halves (poses and corrections), the previous best
-    rotations, the ``SigmaOffset`` and the direction priors. A source that keeps any of it past the call copies
-    it."""
-
-    state: Any
-    current_size: int
-    reference_model: Any
-    noise_model: Any
-    halves: Any
-    previous_best_rotations: Any
-    sigma_offset: Any
-    direction_priors: Any
-
-
 class ScoringArrays(NamedTuple):
     """The arrays the run scores with, as it holds them at a source's call: the reference and noise models, the
     ``SigmaOffset``, the halves, the direction priors and the experiment datasets."""
@@ -267,8 +251,6 @@ class InputSource:
     sealed_scoring_context = None
     # The first iteration's seeds taken from elsewhere (a frozen boundary's); natively the run's own start.
     start_seeds = StartSeeds()
-    # Whether a state-swap probe swaps state in some iteration (it then admits a fresh BPref particle order).
-    swaps_state = False
     # Whether the run follows a RELION run's numbered STAR files or override slots, and whether it starts from a
     # frozen boundary (a sealed sampling state or its RefinementState fields); a continuation refuses both.
     replays_relion_trajectory = False
@@ -279,7 +261,7 @@ class InputSource:
 
     def replays_relion_state(self) -> bool:
         """Whether the run's state comes from a RELION run (replayed slots, STAR files, final-pass state or
-        sampling, a frozen boundary or a state-swap probe; a follower topology alone is not), which options
+        sampling or a frozen boundary; a follower topology alone is not), which options
         computed with relax's own rules cannot be combined with."""
         return False
 
@@ -311,20 +293,6 @@ class InputSource:
         corrections) and the ``direction_priors`` list in place, and says so.
         """
         return inputs
-
-    def state_swap_snapshot(self, iteration: int, scoring: ScoringState) -> None:
-        """Before iteration ``iteration``'s numbered state is installed, with the run's own ``scoring`` state."""
-
-    def scoring_references(self, iteration: int, reference_model, *, volume_shape):
-        """The maps iteration ``iteration`` scores against (the native source: the model's own)."""
-        return reference_model.maps
-
-    def swapped_state(self, iteration: int, scoring: ScoringState, *, volume_shape):
-        """The ``scoring`` state with a probe's components swapped back to the run's own snapshot (a
-        ``ScoringState``; the controller installs its size, models, previous best rotations, sigma offset and
-        direction priors, while ``state`` and ``halves`` are the run's own, updated in place), or None when
-        iteration ``iteration`` swaps nothing."""
-        return None
 
     def scoring_state_bound(self, arrays: ScoringArrays) -> None:
         """Before the first iteration, with the ``arrays`` the run will score with."""

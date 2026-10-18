@@ -230,12 +230,11 @@ def host_half_pair(values, dtype=None):
 
 def validate_resume_snapshot(
     snapshot: IterationSnapshot, *, init_relion_iteration, n_classes, box_size, options, replays_relion_trajectory,
-    starts_from_frozen_boundary, swaps_state, hands_reference_real=False,
+    starts_from_frozen_boundary, hands_reference_real=False,
 ):
     """Refuse a continuation the loop cannot start exactly from ``snapshot``.
 
-    The input source says whether the run replays a RELION trajectory, starts from a frozen boundary or swaps
-    state with a state-swap probe.
+    The input source says whether the run replays a RELION trajectory or starts from a frozen boundary.
     """
 
     problems = []
@@ -253,8 +252,6 @@ def validate_resume_snapshot(
         problems.append("a continuation cannot start from a frozen boundary")
     if options.parity.use_per_half_mean_variance:
         problems.append("per-half scoring tau2 is a frozen-boundary diagnostic")
-    if swaps_state:
-        problems.append("state-swap probes need a replayed trajectory")
     if options.adaptive.relion_current_sizes is not None or options.adaptive.relion_healpix_orders is not None:
         problems.append("sampling oracles do not apply to a continuation")
     if hands_reference_real:

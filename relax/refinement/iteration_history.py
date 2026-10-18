@@ -32,7 +32,6 @@ class RefinementHistory:
     """Accumulates per-iteration trajectories for one RELION refinement run."""
 
     current_sizes: list = field(default_factory=list)
-    state_swap_probe_applied_relion_iterations: list = field(default_factory=list)
     fsc_history: list = field(default_factory=list)
     fsc_for_growth_history: list = field(default_factory=list)
     pixel_resolutions: list = field(default_factory=list)
@@ -276,7 +275,6 @@ class RefinementHistory:
             "class_mstep_weight_trajectory": self.class_mstep_weight_trajectory,
             "class_full_posterior_weight_trajectory": self.class_full_posterior_weight_trajectory,
             "class_assignment_history": self.class_assignment_history,
-            "state_swap_probe_applied_relion_iterations": list(self.state_swap_probe_applied_relion_iterations),
             "local_profile_history": self.local_profile_history,
             "global_profile_history": self.global_profile_history,
         }

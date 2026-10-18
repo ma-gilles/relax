@@ -11,7 +11,6 @@ import argparse
 
 from relax.io.particle_io import add_particle_read_arguments
 from relax.parity import frozen_boundary_cli
-from relax.parity.state_swap_probe import add_state_swap_probe_arguments
 from relax.refinement.refinement_options import (
     FIRSTITER_CC_TREE_RESCORE_DEFAULT_MAX_MARGIN,
     RELAX_MODE_CONSISTENCY,
@@ -269,7 +268,6 @@ def parse_refinement_args(argv=None):
         "this directory. This is not an autonomous trajectory; omit it and use "
         "--perturb_seed for same-seed autonomous refinement.",
     )
-    add_state_swap_probe_arguments(parser)
     for flag in ("--relion-projector-capture-dir", "--relion-projector-capture-manifest",
                  "--relion-projector-capture-iteration"):
         parser.add_argument(flag, action=RetiredFlag, feature="the captured RELION projector",

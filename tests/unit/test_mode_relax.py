@@ -182,7 +182,7 @@ def test_a_continuation_must_resolve_to_the_recorded_options():
         )
         iteration_snapshot.validate_resume_snapshot(
             snapshot, init_relion_iteration=2, n_classes=1, box_size=8, options=stand_in.options(consistency=consistency),
-            replays_relion_trajectory=False, starts_from_frozen_boundary=False, swaps_state=False,
+            replays_relion_trajectory=False, starts_from_frozen_boundary=False,
         )
 
     relax = _resolve(RELAX)

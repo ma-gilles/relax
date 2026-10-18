@@ -68,7 +68,7 @@ SCHEMA = 1
 NOT_COVERED = (
     "in refinement_run.main: inputs from RELION run directories (--relion_init_dir, --relion_half_sets, the "
     "STAR replays), schema-v3 frozen boundaries (the fixed diagnostic arm; "
-    "main_k1_frozen_boundary runs a schema-v2 one), state-swap probes, "
+    "main_k1_frozen_boundary runs a schema-v2 one), "
     "follower-scale topologies, noise or poses from an earlier archive, several optics groups, subtomograms",
     "the real E-step engines and their numbers (a stand-in seeded by its operands replaces the dense adaptive engine)",
     "local search with adaptive oversampling (its parent and fine local passes), Class3D local search and the "
@@ -649,7 +649,6 @@ def _cases() -> dict[str, tuple[str, dict]]:
         add(f"k{k}_final_prior", f"K={k} final-only replay prior at the run's order", final_prior=2, dump=False, **common)
         add(f"k{k}_star_prior", f"K={k} priors and sampling replayed from RELION STAR files", star_prior=[2, 1, 2, 2], writer=True, **common)
         add(f"k{k}_star_prior_preserved", f"K={k} STAR replay with a start-up prior", star_prior=[2, 2, 2, 2], init_prior=2, dump=False, **common)
-        add(f"k{k}_state_swap", f"K={k} state-swap probe restoring the run's own direction prior", iter_prior=[None, 2, 2], dump=False, swap="recovar_direction_prior", **common)
         add(f"k{k}_continued_writer", f"K={k} resumed run that writes checkpoints", max_iter=3, converge_after=None, dump=False, continued=True, writer=True, **common)
     add("k1_star_optimiser", "K=1 STAR replay with optimiser files", n_classes=1, join=0.0, star_prior=[2, 2, 2, 2], star_optimiser=True, dump=False, writer=True)
     add("k2_star_optimiser", "K=2 STAR replay with optimiser files", n_classes=2, join=0.0, star_prior=[2, 2, 2, 2], star_optimiser=True, dump=False)
@@ -764,8 +763,6 @@ MUTATIONS = (
      "the final-pass replay prior of a class run is installed unnormalised", True),
     ("resumed_prior_order_dropped", "DirectionPrior(prior.values, order)", "DirectionPrior(prior.values, None)",
      "a resumed direction prior loses its saved HEALPix order", True),
-    ("state_swap_prior_order_dropped", 'recovar_snapshot["direction_prior_order_per_half"][k],', "None,",
-     "the state-swap probe restores a prior without its order", True),
     ("replay_prior_reversed", "direction_priors[_half_idx] = DirectionPrior(prior_k, prior_order_k)", "direction_priors[_half_idx] = DirectionPrior(prior_k[::-1], prior_order_k)",
      "a replayed K1 prior is installed reversed", True),
     ("snapshot_prior_order_dropped", "direction_prior_order = [p.healpix_order for p in direction_priors]", "direction_prior_order = [None for p in direction_priors]",
@@ -1263,7 +1260,7 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
 
     def run_case(n_classes, join, *, max_iter=4, converge_after=2, dump=True, cc=False, oversampling=0, env=None,
                  writer=False, skip_final=False, continued=False, resume=None, perturb=None, init_prior=None,
-                 iter_prior=None, final_prior=None, star_prior=None, star_optimiser=False, swap=None, frozen=False,
+                 iter_prior=None, final_prior=None, star_prior=None, star_optimiser=False, frozen=False,
                  seed=False, orders=None, accuracy=False, init_order=2, replay_max_iter=None,
                  consistency=None, current_sizes=None, sealed=False, local=None, frozen_seeds=None):
         first_pass = None
@@ -1408,8 +1405,6 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
         if replay_max_iter is not None:
             parity["perturb_replay_max_iter"] = replay_max_iter
         debug_fields = {}
-        if swap is not None:
-            debug_fields["state_swap_probe"] = {"iteration": 1, "variant": swap}
         if frozen:
             debug_fields["assert_initial_scoring_state_immutable"] = True
         observer = {}
@@ -1442,10 +1437,9 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
             replay_class = getattr(importlib.import_module("relax.parity.relion_replay_source"), "RelionReplay", None)
         source_fields = {}
         if replay_class is not None and "sealed_sampling_state" in {f.name for f in dataclasses.fields(replay_class)}:
-            # A source whose frozen boundary and state-swap probe enter through the input source (code rule 15).
-            for name in ("state_swap_probe", "sealed_sampling_state"):
-                if name in debug_fields:
-                    source_fields[name] = debug_fields.pop(name)
+            # A source whose frozen boundary enters through the input source (code rule 15).
+            if "sealed_sampling_state" in debug_fields:
+                source_fields["sealed_sampling_state"] = debug_fields.pop("sealed_sampling_state")
             if debug_fields.pop("assert_initial_scoring_state_immutable", False):
                 # A frozen boundary's (empty) RefinementState fields: with them the source checks the scoring
                 # state; a source older than deep2 O-D5 also takes its separate assert_scoring_state_unchanged.

@@ -36,8 +36,6 @@ def _build_replay_iteration_overrides(
     init_relion_iteration=0,
     particle_names=None,
     include_initial_state=False,
-    include_k1_mean_variance=False,
-    include_k1_scoring_scale=False,
     strict=False,
     noise_dtype=np.float32,
 ):
@@ -50,9 +48,6 @@ def _build_replay_iteration_overrides(
       * image_corrections: per-image (avg_norm/normcorr) * group_scale
       * serialized_scale_corrections: per-image model-STAR group scale,
         retained as provenance rather than forced onto the live scorer
-      * scoring_scale_corrections: optional exact K=1 split-half scorer scale
-        for state-swap diagnostics whose half-specific model STARs are owned
-        by the two scoring ranks
       * previous_best_translations / previous_best_rotation_eulers: RELION's
         previous hard assignments for local-search centering
 
@@ -343,25 +338,9 @@ def _build_replay_iteration_overrides(
             override_k["direction_prior"] = [direction_prior_h1, direction_prior_h2]
         if class_tau2 is not None and class_tau2.shape[0] > 1:
             override_k["class_tau2"] = class_tau2
-        elif class_tau2 is not None and include_k1_mean_variance:
-            override_k["mean_variance"] = np.asarray(
-                utils.make_radial_image(
-                    class_tau2[0],
-                    (int(ds_grid), int(ds_grid), int(ds_grid)),
-                    extend_last_frequency=True,
-                ),
-                dtype=np.float64,
-            ).reshape(-1)
         if include_normcorr:
             override_k["image_corrections"] = [corr_h1, corr_h2]
             override_k["serialized_scale_corrections"] = [scale_corr_h1, scale_corr_h2]
-            if include_k1_scoring_scale:
-                if model_paths[0] == model_paths[1]:
-                    raise ValueError(
-                        "exact K=1 scoring-scale replay requires distinct half-specific "
-                        f"model STARs; got shared source {model_paths[0]}"
-                    )
-                override_k["scoring_scale_corrections"] = [scale_corr_h1, scale_corr_h2]
         overrides[recovar_iter] = override_k
         if include_normcorr:
             logger.info(
@@ -416,7 +395,6 @@ def numbered_star_replay(
     *,
     max_iter: int,
     init_relion_iteration: int,
-    include_k1_state_swap: bool,
 ) -> list:
     """RELION's per-iteration replay overrides from its run files: slot k is the state numbered iteration k+1
     consumes."""
@@ -435,8 +413,6 @@ def numbered_star_replay(
         include_normcorr=True,
         init_relion_iteration=init_relion_iteration,
         particle_names=target.particle_names,
-        include_k1_mean_variance=include_k1_state_swap,
-        include_k1_scoring_scale=include_k1_state_swap,
         strict=True,
         noise_dtype=target.noise_dtype,
     )

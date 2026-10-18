@@ -235,7 +235,6 @@ def validate_continue_args(args) -> None:
             ("--init_noise_from_npz", args.init_noise_from_npz),
             ("--relion_current_sizes", args.relion_current_sizes),
             ("--relion_healpix_orders", args.relion_healpix_orders),
-            ("--state-swap-variant", args.state_swap_variant),
         )
         if value is not None
     ]
@@ -373,7 +372,6 @@ def require_consistency_arguments(args) -> None:
             ("--relion_init_dir", args.relion_init_dir),
             ("--frozen-boundary-dir", args.frozen_boundary_dir),
             ("--init_noise_from_npz", args.init_noise_from_npz),
-            ("--state-swap-variant", args.state_swap_variant),
         )
         if value is not None
     ]

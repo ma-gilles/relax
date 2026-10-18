@@ -6,8 +6,7 @@ STAR replay is live (``--perturb_replay_relion_dir`` up to ``perturb_replay_max_
 controls and direction priors of its numbered STAR files. ``relax.parity.relion_replay`` reads and
 installs them. A frozen boundary (``--frozen-boundary-dir``) supplies a sealed sampling state, its
 ``RefinementState`` fields and the scoring state it checks before the first iteration
-(``relax.parity.frozen_boundary``); a state-swap probe (``--state-swap-*``) swaps components of the
-replayed state back to the run's own (``relax.parity.state_swap_runtime``).
+(``relax.parity.frozen_boundary``).
 
 The command resolves what to replay into a ``RelionReplay`` and builds the source
 (``RelionReplaySource.for_run``); the run's options hold none of it.
@@ -36,15 +35,12 @@ from relax.parity.relion_replay import (
     apply_iter_replay_overrides,
     class_tau2_replay,
     install_sealed_sampling,
-    replay_class_relion_references,
-    replay_k1_relion_references,
     resolve_replay_random_perturbation,
     sealed_rotation_ids_for_scoring,
     sealed_sampling_base_grids,
 )
-from relax.parity.state_swap_runtime import apply_state_swap_probe, snapshot_state_swap_inputs
 from relax.refinement.image_size_plans import CoarseImageSize
-from relax.refinement.ports import ClassTau2, FinalState, InputSource, NumberedState, ScoringState, StartSeeds
+from relax.refinement.ports import ClassTau2, FinalState, InputSource, NumberedState, StartSeeds
 from relax.refinement.reference_state import class_mixture_from_weights
 from relax.refinement.setup_checks import has_numbered_replay_iteration_overrides
 from relax.refinement.sigma_offset import SigmaOffset
@@ -277,8 +273,7 @@ class RelionReplay:
     and its ``frozen_refinement_state_fields`` (with them, the source checks, right before the first iteration
     scores, that the scoring state is the one bound before it). ``start_seeds``: the first FSC, Pmax, high-FSC
     flag and RELION increment the first iteration starts from (a frozen boundary's, or the completed RELION
-    iteration's of scripts/run_multi_iter_parity.py; ``relax.refinement.ports.StartSeeds``). ``state_swap_probe``: the
-    state-swap probe's settings (``relax.parity.state_swap_probe.build_state_swap_probe``).
+    iteration's of scripts/run_multi_iter_parity.py; ``relax.refinement.ports.StartSeeds``).
     ``preserve_initial_direction_prior``: the run keeps its start-up direction priors (a frozen boundary's) instead
     of reloading them from the STAR replay's model files.
     ``follower_topology``: an MPI RELION run's followers, its captured dispatch schedule (which follower scored
@@ -298,7 +293,6 @@ class RelionReplay:
     sealed_scoring_context: Any | None = None
     frozen_refinement_state_fields: Any | None = None
     start_seeds: StartSeeds | None = None
-    state_swap_probe: dict | None = None
     preserve_initial_direction_prior: bool = False
     follower_topology: Any | None = None
 
@@ -357,9 +351,8 @@ class RelionReplay:
     @property
     def replays_relion_state(self) -> bool:
         """Whether the run's state comes from a RELION run: override slots, a STAR replay directory, a final-pass
-        replay (its override, reference maps or sampling directory), the forced last-numbered-state replay, a
-        frozen boundary (sealed sampling state, sealed scoring context, state fields), start seeds or a state-swap
-        probe.
+        replay's override, the forced last-numbered-state replay, a frozen boundary (sealed sampling state, sealed
+        scoring context, state fields) or start seeds.
         The one field list: ``replays`` and the consistency refusal (``InputSource.replays_relion_state``) read it."""
         return any(
             value is not None
@@ -367,7 +360,6 @@ class RelionReplay:
                 self.replay_iteration_overrides, self.perturb_replay_relion_dir, self.final_replay_override,
                 self.sealed_sampling_state,
                 self.sealed_scoring_context, self.frozen_refinement_state_fields, self.start_seeds,
-                self.state_swap_probe,
             )
         ) or self.final_all_data_replay_last_numbered_state
 
@@ -388,7 +380,6 @@ class RelionReplaySource(InputSource):
         self.replay = replay
         self.options = options
         self._cutoff_announced = False
-        self._state_swap_snapshot = None
         self._bound_scoring_state = None
         # The sampling record (a RELION STAR's or a sealed state's) the last numbered_state installed, or None.
         self._sampling_meta = None
@@ -416,10 +407,6 @@ class RelionReplaySource(InputSource):
     @property
     def start_seeds(self):
         return StartSeeds() if self.replay.start_seeds is None else self.replay.start_seeds
-
-    @property
-    def swaps_state(self):
-        return self.replay.state_swap_probe is not None
 
     @property
     def replays_relion_trajectory(self):
@@ -508,47 +495,6 @@ class RelionReplaySource(InputSource):
     def scoring_rotation_ids(self, trial_grid, *, use_local):
         """A sealed global grid's captured rotation ids."""
         return sealed_rotation_ids_for_scoring(self.replay.sealed_sampling_state, trial_grid, use_local=use_local)
-
-    def _swaps_at(self, iteration):
-        probe = self.replay.state_swap_probe
-        return probe is not None and int(probe.get("iteration", -1)) == int(iteration)
-
-    def state_swap_snapshot(self, iteration, scoring):
-        """The run's own state at the probe's target iteration, before RELION's is installed (a copy)."""
-        if self._swaps_at(iteration):
-            self._state_swap_snapshot = snapshot_state_swap_inputs(**_state_swap_keywords(scoring))
-
-    def scoring_references(self, iteration, reference_model, *, volume_shape):
-        """RELION's maps at the probe's target iteration when the probe replays references, else the model's."""
-        replay = replay_k1_relion_references if int(self.options.k_class.n_classes) == 1 else replay_class_relion_references
-        return replay(
-            reference_model, self.options, probe=self.replay.state_swap_probe, iteration=iteration,
-            replay_dir=self._star_directory(iteration), replay_prefix=self.replay.perturb_replay_relion_prefix,
-            volume_shape=volume_shape,
-        )
-
-    def swapped_state(self, iteration, scoring, *, volume_shape):
-        """The probe's variant of the replayed state at its target iteration: its components restored from the
-        run's own snapshot. The ``state`` and ``halves`` it restores are updated in place."""
-        if not self._swaps_at(iteration):
-            return None
-        swapped = apply_state_swap_probe(
-            probe=self.replay.state_swap_probe,
-            iteration=iteration,
-            recovar_snapshot=self._state_swap_snapshot,
-            volume_shape=volume_shape,
-            **_state_swap_keywords(scoring),
-        )
-        return scoring._replace(
-            current_size=swapped.cs,
-            reference_model=swapped.reference_model,
-            noise_model=swapped.noise_model,
-            previous_best_rotations=swapped.previous_best_rotations,
-            sigma_offset=SigmaOffset(
-                swapped.current_sigma_offset_angstrom, swapped.current_sigma_offset_angstrom_per_half,
-            ),
-            direction_priors=swapped.direction_priors,
-        )
 
     def _frozen_arrays(self, arrays):
         return _frozen_scoring_state_arrays(
@@ -903,21 +849,6 @@ def build_sealed_initial_coarse_grids(
         ),
         base_translations=np.asarray(current_translations, dtype=np.float64),
         translations=current_translations,
-    )
-
-
-def _state_swap_keywords(scoring: ScoringState) -> dict:
-    """The state-swap probe's keywords for the run's ``scoring`` state."""
-    return dict(
-        state=scoring.state,
-        cs=scoring.current_size,
-        reference_model=scoring.reference_model,
-        noise_model=scoring.noise_model,
-        relion_half_inputs=scoring.halves,
-        previous_best_rotations=scoring.previous_best_rotations,
-        current_sigma_offset_angstrom=scoring.sigma_offset.shared_angstrom,
-        current_sigma_offset_angstrom_per_half=scoring.sigma_offset.per_half_angstrom,
-        direction_priors=scoring.direction_priors,
     )
 
 

@@ -516,7 +516,6 @@ class RunReport:
     symmetry_provenance: dict
     initial_pose_source: "PoseProvenance"
     diagnostic_single_half: bool
-    state_swap_probe: dict | None
 
 
 def _report_fields(fields: dict, report: RunReport) -> dict:
@@ -576,10 +575,6 @@ def write_profile_only_summary(result: RefinementResult, report: RunReport, *, b
         "setup_phase_seconds": _setup_phase_seconds(fields),
         "local_profile_rows": local_profile_rows,
         "global_profile_rows": profile_rows_for_json(fields.get("global_profile_history", [])),
-        "state_swap_probe": report.state_swap_probe,
-        "state_swap_probe_applied_relion_iterations": [
-            int(iteration) for iteration in fields.get("state_swap_probe_applied_relion_iterations", [])
-        ],
     }
     profile_path = Path(report.output_dir) / "local_search_profile_only.json"
     _write_json(profile_path, profile_summary)

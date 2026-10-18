@@ -83,7 +83,7 @@ def test_complete_initial_particle_state_is_autorefine_only():
     assert not _replay_complete_initial_particle_state(1, 1)
 
 
-def test_fresh_auto_refine_particle_order_excludes_kclass_imports_and_state_swaps():
+def test_fresh_auto_refine_particle_order_excludes_kclass_imports_and_frozen_boundaries():
     args = SimpleNamespace(
         n_classes=1,
         init_relion_iteration=0,
@@ -100,29 +100,8 @@ def test_fresh_auto_refine_particle_order_excludes_kclass_imports_and_state_swap
     # A perturbation replay from iteration 0 is RELION's fresh run.
     args.perturb_replay_relion_dir = "/sealed/restart"
     assert _use_fresh_auto_refine_particle_order(args, None)
-    args.state_swap_variant = "all_relion"
-    assert not _use_fresh_auto_refine_particle_order(args, None)
-    args.state_swap_variant = None
     args.perturb_replay_relion_dir = None
     assert not _use_fresh_auto_refine_particle_order(args, object())
-
-
-def test_state_swap_diagnostic_can_preserve_fresh_auto_refine_particle_order():
-    args = SimpleNamespace(
-        n_classes=1,
-        init_relion_iteration=0,
-        perturb_replay_relion_dir="/sealed/restart",
-        state_swap_variant="all_relion",
-        state_swap_target_relion_iteration=2,
-    )
-    env = {"RELAX_STATE_SWAP_FORCE_FRESH_PARTICLE_ORDER": "1"}
-
-    assert _use_fresh_auto_refine_particle_order(args, None, environ=env)
-    assert not _use_fresh_auto_refine_particle_order(args, object(), environ=env)
-
-    args.state_swap_variant = None
-    with pytest.raises(ValueError, match="complete state-swap replay diagnostic"):
-        _use_fresh_auto_refine_particle_order(args, None, environ=env)
 
 
 @pytest.mark.parametrize("token", ["1", "true", "YES", "on"])
@@ -387,7 +366,7 @@ def test_fixed_arm_can_keep_per_half_tau2_across_updates():
     )
 
 
-def test_default_state_swap_scores_both_halves_with_substituted_shared_tau2():
+def test_a_substituted_shared_tau2_scores_both_halves():
     model = ReferenceModel(maps=[None, None], tau2=np.asarray([1.0, 2.0], dtype=np.float32), tau2_per_half=None)
     substituted_shared = np.asarray([30.0, 40.0], dtype=np.float32)
 
@@ -644,7 +623,7 @@ def test_frozen_boundary_schedule_is_threaded_exactly_to_refinement_loop(monkeyp
     fresh, fresh_seeds = fresh["options"], fresh["source"].start_seeds
     assert (fresh_seeds.relion_incr_size, fresh_seeds.fsc, fresh_seeds.ave_pmax) == (10, None, None)
     boundary = _StandInBoundary()
-    monkeypatch.setattr(frozen_boundary_cli, "load_cli_boundary", lambda args, **_kwargs: (boundary, None))
+    monkeypatch.setattr(frozen_boundary_cli, "load_cli_boundary", lambda args, **_kwargs: frozen_boundary_cli.BoundaryInputs(boundary, None))
     monkeypatch.setattr(frozen_boundary_cli, "validate_particle_half_inputs", lambda *a, **k: None)
     monkeypatch.setattr(frozen_boundary_cli, "validate_empty_replay_slots", lambda *a, **k: None)
     frozen = controller_inputs(monkeypatch, tmp_path / "frozen", "refine")
@@ -1466,30 +1445,6 @@ def test_replay_overrides_include_normcorr_adds_image_corrections():
     assert h2.shape == (2485,)
 
 
-@pytest.mark.usefixtures("verified_k1_relion_os0")
-def test_replay_overrides_k1_state_swap_adds_exact_half_scoring_scale():
-    half1_idx = np.arange(2515, dtype=np.int64)
-    half2_idx = np.arange(2515, 5000, dtype=np.int64)
-
-    overrides = _build_replay_iteration_overrides(
-        FIXTURE,
-        half1_idx,
-        half2_idx,
-        max_iter=2,
-        ds_voxel=4.25,
-        ds_grid=128,
-        include_normcorr=True,
-        include_k1_scoring_scale=True,
-    )
-
-    serialized_h1, serialized_h2 = overrides[1]["serialized_scale_corrections"]
-    scoring_h1, scoring_h2 = overrides[1]["scoring_scale_corrections"]
-    assert_matches(scoring_h1, serialized_h1)
-    assert_matches(scoring_h2, serialized_h2)
-    assert scoring_h1 is serialized_h1
-    assert scoring_h2 is serialized_h2
-
-
 def test_replay_overrides_use_shared_class3d_model_star(tmp_path):
     pd = pytest.importorskip("pandas")
     starfile = pytest.importorskip("starfile")
@@ -1572,79 +1527,6 @@ def test_replay_overrides_use_shared_class3d_model_star(tmp_path):
     r1, r2 = overrides[1]["previous_best_rotations"]
     np.testing.assert_allclose(r1, utils.R_from_relion(expected_e1, degrees=True).astype(np.float32))
     np.testing.assert_allclose(r2, utils.R_from_relion(expected_e2, degrees=True).astype(np.float32))
-
-    with pytest.raises(ValueError, match="distinct half-specific model STARs"):
-        _build_replay_iteration_overrides(
-            tmp_path,
-            half1_idx=np.asarray([0, 2], dtype=np.int64),
-            half2_idx=np.asarray([1, 3], dtype=np.int64),
-            max_iter=2,
-            ds_voxel=2.0,
-            ds_grid=8,
-            include_normcorr=True,
-            include_k1_scoring_scale=True,
-        )
-
-
-def test_replay_overrides_k1_mean_variance_is_explicit_and_n4_scaled(tmp_path):
-    pd = pytest.importorskip("pandas")
-    starfile = pytest.importorskip("starfile")
-
-    particles = pd.DataFrame(
-        {
-            "rlnImageName": ["1@particles.mrcs", "2@particles.mrcs"],
-            "rlnNormCorrection": [1.0, 1.0],
-            "rlnGroupNumber": [1, 1],
-        }
-    )
-    raw_tau2 = np.asarray([0.1, 0.2], dtype=np.float64)
-    starfile.write({"particles": particles}, tmp_path / "run_it001_data.star")
-    starfile.write(
-        {
-            "model_general": pd.DataFrame(
-                {
-                    "rlnNormCorrectionAverage": [1.0],
-                    "rlnSigmaOffsetsAngst": [2.0],
-                }
-            ),
-            "model_class_1": pd.DataFrame({"rlnReferenceTau2": raw_tau2}),
-        },
-        tmp_path / "run_it001_model.star",
-    )
-    common_kwargs = {
-        "relion_dir": tmp_path,
-        "half1_idx": np.asarray([0], dtype=np.int64),
-        "half2_idx": np.asarray([1], dtype=np.int64),
-        "max_iter": 1,
-        "ds_voxel": 2.0,
-        "ds_grid": 4,
-        "include_normcorr": False,
-    }
-
-    default_overrides = _build_replay_iteration_overrides(**common_kwargs)
-    diagnostic_overrides = _build_replay_iteration_overrides(
-        **common_kwargs,
-        include_k1_mean_variance=True,
-    )
-
-    assert "mean_variance" not in default_overrides[1]
-    assert "class_tau2" not in default_overrides[1]
-    assert "class_tau2" not in diagnostic_overrides[1]
-
-    from recovar import utils
-
-    expected = np.asarray(
-        utils.make_radial_image(
-            raw_tau2 * 4**4,
-            (4, 4, 4),
-            extend_last_frequency=True,
-        ),
-        dtype=np.float64,
-    ).reshape(-1)
-    observed = diagnostic_overrides[1]["mean_variance"]
-    assert observed.shape == (4**3,)
-    assert observed.dtype == np.float64
-    assert_matches(observed, expected)
 
 
 def test_replay_overrides_map_noncontiguous_subset_stack_indices(tmp_path):

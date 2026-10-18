@@ -301,7 +301,6 @@ def _validate_k1_bpref_particle_order_scope(
     sealed_sampling_state,
     sealed_scoring_context,
     allow_replayed_bpref_particle_order: bool = False,
-    allow_state_swap_fresh_bpref_particle_order: bool = False,
     continues_own_run: bool = False,
 ) -> None:
     """Fail closed unless RELION's physical order can be preserved for this K=1 run.
@@ -323,20 +322,6 @@ def _validate_k1_bpref_particle_order_scope(
         raise ValueError(
             "RELION BPref particle-order preservation cannot alter a sealed boundary"
         )
-    if allow_state_swap_fresh_bpref_particle_order:
-        if int(init_relion_iteration) != 0:
-            raise ValueError(
-                "state-swap RELION BPref particle-order preservation requires a fresh iteration-0 run"
-            )
-        if perturb_replay_relion_dir is None:
-            raise ValueError(
-                "state-swap RELION BPref particle-order preservation requires perturbation replay"
-            )
-        if not has_numbered_replay_iteration_overrides(replay_iteration_overrides):
-            raise ValueError(
-                "state-swap RELION BPref particle-order preservation requires numbered replay state"
-            )
-        return
     if int(init_relion_iteration) > 0 and continues_own_run:
         if perturb_replay_relion_dir is not None or has_numbered_replay_iteration_overrides(
             replay_iteration_overrides
@@ -373,7 +358,6 @@ def validate_bpref_particle_order_scope(
     sealed_sampling_state,
     sealed_scoring_context,
     allow_replayed_bpref_particle_order: bool = False,
-    allow_state_swap_fresh_bpref_particle_order: bool = False,
     continues_own_run: bool = False,
 ) -> None:
     """Fail closed unless RELION's physical order can be preserved for this run.
@@ -396,7 +380,6 @@ def validate_bpref_particle_order_scope(
         sealed_sampling_state=sealed_sampling_state,
         sealed_scoring_context=sealed_scoring_context,
         allow_replayed_bpref_particle_order=allow_replayed_bpref_particle_order,
-        allow_state_swap_fresh_bpref_particle_order=allow_state_swap_fresh_bpref_particle_order,
         continues_own_run=continues_own_run,
     )
 

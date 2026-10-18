@@ -49,11 +49,6 @@ from relax.parity import (
     replay_inputs,
     startup_noise_inputs,
 )
-from relax.parity.state_swap_probe import (
-    build_state_swap_probe,
-    state_swap_probe_loop_index,
-    validate_state_swap_probe_application,
-)
 from relax.refinement import refinement_options, run_files, startup_noise, startup_references
 from relax.refinement.result_files import (
     RunReport,
@@ -87,9 +82,6 @@ _CONCRETE_RECOVAR_PROVENANCE_MODULES = (
     "relax.scoring.significance",
 )
 _K1_RELION_LIVE_INITIAL_NOISE_ENV = "RELAX_K1_RELION_LIVE_INITIAL_NOISE"
-_STATE_SWAP_FORCE_FRESH_PARTICLE_ORDER_ENV = (
-    "RELAX_STATE_SWAP_FORCE_FRESH_PARTICLE_ORDER"
-)
 
 
 def _k1_relion_live_initial_noise_enabled(
@@ -253,41 +245,15 @@ def _replay_complete_initial_particle_state(n_classes, init_relion_iteration):
     return int(n_classes) == 1 and int(init_relion_iteration) == 0
 
 
-def _use_fresh_auto_refine_particle_order(
-    args,
-    frozen_boundary,
-    *,
-    environ=None,
-) -> bool:
+def _use_fresh_auto_refine_particle_order(args, frozen_boundary) -> bool:
     """Whether this run owns RELION's one-time fresh AutoRefine ordering."""
 
-    env = os.environ if environ is None else environ
-    force_state_swap_order = (
-        str(env.get(_STATE_SWAP_FORCE_FRESH_PARTICLE_ORDER_ENV, "0"))
-        .strip()
-        .lower()
-        in {"1", "true", "yes", "on"}
-    )
-    if force_state_swap_order and (
-        args.perturb_replay_relion_dir is None
-        or getattr(args, "state_swap_variant", None) is None
-        or getattr(args, "state_swap_target_relion_iteration", None) is None
-    ):
-        raise ValueError(
-            f"{_STATE_SWAP_FORCE_FRESH_PARTICLE_ORDER_ENV}=1 requires a complete "
-            "state-swap replay diagnostic"
-        )
     # A perturbation replay from iteration 0 is still RELION's fresh run, so it
     # takes the fresh order and the production arithmetic that comes with it.
-    # A state-swap diagnostic keeps the order it was captured with unless forced.
     return (
         int(args.n_classes) == 1
         and int(args.init_relion_iteration) == 0
         and frozen_boundary is None
-        and (
-            getattr(args, "state_swap_variant", None) is None
-            or force_state_swap_order
-        )
     )
 
 
@@ -369,19 +335,6 @@ def main(command=None):
     refinement_arguments.validate_sigma_ang(args)
     refinement_arguments.validate_sigma_tilt(args)
     refinement_arguments.validate_strict_highres_exp(args)
-    if (
-        args.state_swap_target_relion_iteration is not None
-        or args.state_swap_variant is not None
-        or args.state_swap_replay_relion_references
-    ) and int(args.n_classes) != 1:
-        raise SystemExit("state-swap diagnostics currently require --n_classes 1")
-    state_swap_probe_loop_index(
-        target_relion_iteration=args.state_swap_target_relion_iteration,
-        variant=args.state_swap_variant,
-        replay_relion_references=args.state_swap_replay_relion_references,
-        init_relion_iteration=args.init_relion_iteration,
-        max_iter=job.max_iter,
-    )
     if args.frozen_boundary_dir is None:
         # A sealed frozen boundary owns its sampling state, including coarse size.
         _validate_replay_saved_healpix_order(
@@ -1016,7 +969,6 @@ def main(command=None):
                 replay_target,
                 max_iter=job.max_iter,
                 init_relion_iteration=args.init_relion_iteration,
-                include_k1_state_swap=args.state_swap_target_relion_iteration is not None,
             )
 
     # ``--relion_init_dir`` is the strict cold-start contract, not merely a
@@ -1127,24 +1079,6 @@ def main(command=None):
         skip_align=bool(args.skip_align),
         log=logger,
     )
-
-    state_swap_probe = build_state_swap_probe(
-        target_relion_iteration=args.state_swap_target_relion_iteration,
-        variant=args.state_swap_variant,
-        replay_relion_references=args.state_swap_replay_relion_references,
-        init_relion_iteration=args.init_relion_iteration,
-        max_iter=job.max_iter,
-        replay_iteration_overrides=replay_iteration_overrides,
-    )
-    if state_swap_probe is not None:
-        logger.warning(
-            "State-swap diagnostic: physical RELION target=%d, "
-            "zero-based RECOVAR loop index=%d, variant=%s, RELION references=%s",
-            int(state_swap_probe["target_relion_iteration"]),
-            int(state_swap_probe["iteration"]),
-            state_swap_probe["variant"],
-            bool(state_swap_probe["replay_relion_references"]),
-        )
 
     run_file_writer = None
     if int(args.write_iteration_every) > 0:
@@ -1295,7 +1229,6 @@ def main(command=None):
                     frozen_boundary,
                     perturb_replay_relion_dir=args.perturb_replay_relion_dir,
                     replay_iteration_overrides=replay_iteration_overrides,
-                    state_swap_probe=state_swap_probe,
                     follower_topology=follower_topology,
                 ),
                 run_options,
@@ -1306,10 +1239,6 @@ def main(command=None):
 
     if run_file_writer is not None:
         run_file_writer.wait()  # the last iteration's files, written in the background
-    validate_state_swap_probe_application(
-        state_swap_probe,
-        result.history.state_swap_probe_applied_relion_iterations,
-    )
 
     total_time = time.time() - t_start
     logger.info("=" * 70)
@@ -1345,7 +1274,6 @@ def main(command=None):
         symmetry_provenance=symmetry_provenance,
         initial_pose_source=initial_poses.provenance,
         diagnostic_single_half=args.diagnostic_single_half,
-        state_swap_probe=state_swap_probe,
     )
     if result.profile_only:
         write_profile_only_summary(result, report, benchmark_ledger_json=args.benchmark_ledger_json)
@@ -1369,8 +1297,6 @@ def main(command=None):
         particle_layout=particle_layout,
         replay_provenance=archive_provenance.replay_archive_metadata(
             frozen_boundary=frozen_boundary,
-            state_swap_probe=state_swap_probe,
-            state_swap_probe_applied_relion_iterations=result.history.state_swap_probe_applied_relion_iterations,
             relion_dispatch_schedule=relion_dispatch_schedule,
         ),
         symmetry_provenance=symmetry_provenance,

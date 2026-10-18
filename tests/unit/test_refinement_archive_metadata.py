@@ -66,11 +66,6 @@ def metadata_inputs(*, n_classes, diagnostics, max_order):
             oracle_id="dispatch-oracle", oracle_manifest_sha256="dispatch-manifest",
             particle_order_sha256="particle-order",
         ) if diagnostics else None,
-        state_swap_probe=dict(
-            target_relion_iteration=2, iteration=1, variant="recovar",
-            replay_relion_references=False, replay_override_keys=["noise_variance"],
-            required_replay_override_keys=["noise_variance"],
-        ) if diagnostics else None,
         total_time=7.5,
         use_fresh_auto_refine_order=not diagnostics,
     )
@@ -85,18 +80,16 @@ def test_archive_metadata_roundtrip_keeps_source_units_and_half_identity(
     inputs = metadata_inputs(n_classes=n_classes, diagnostics=diagnostics, max_order=max_order)
     result = refinement_result(history=RefinementHistory(
         current_sizes=[16, 24], pixel_resolutions=[12.0, 8.0], wall_times=[2.5, 3.5],
-        state_swap_probe_applied_relion_iterations=[2] if diagnostics else [],
     ))
     replay = {
         name: inputs.pop(name)
-        for name in ("frozen_boundary", "state_swap_probe", "relion_dispatch_schedule")
+        for name in ("frozen_boundary", "relion_dispatch_schedule")
     }
     metadata = build_archive_metadata(
         result,
         **inputs,
         replay_provenance=replay_archive_metadata(
             **replay,
-            state_swap_probe_applied_relion_iterations=result.history.state_swap_probe_applied_relion_iterations,
         ),
     )
     assert metadata["half1_indices"] is inputs["particle_layout"].half1_rows
@@ -140,7 +133,6 @@ def test_archive_metadata_roundtrip_keeps_source_units_and_half_identity(
             assert saved["max_significants_argument"].item() == 211
             assert_matches(saved["particle_diameter_ang"], 24.0, rtol=1e-13)
             assert saved["relion_dispatch_oracle_id"].item() == "dispatch-oracle"
-            np.testing.assert_array_equal(saved["state_swap_probe_replay_override_keys"], ["noise_variance"])
         else:
             assert saved["frozen_boundary_dir"].item() == ""
             assert saved["frozen_boundary_completed_relion_iteration"].item() == -1
@@ -149,4 +141,3 @@ def test_archive_metadata_roundtrip_keeps_source_units_and_half_identity(
             assert np.isnan(saved["max_significants_argument"])
             assert np.isnan(saved["particle_diameter_ang"])
             assert "relion_dispatch_oracle_id" not in saved.files
-            assert saved["state_swap_probe_replay_override_keys"].size == 0

@@ -1,7 +1,7 @@
 """Production modules never import a port implementation or a diagnostic (code rules 15 and 51).
 
 Observers (``relax.diagnostics.observers``) and comparison input sources (``relax.parity``, which alone holds the
-RELION replay, the frozen boundary and the state-swap probe) are chosen by the command and handed to the
+RELION replay and the frozen boundary) are chosen by the command and handed to the
 controller through ``relax.refinement.ports``; the algorithm imports only the ports. Outside the command boundary
 no module of any ``relax`` package imports ``relax.diagnostics`` or ``relax.parity``, except the edges listed in
 ``ALLOWED_IMPORTS``: each names why it is still there, and the list can only shrink (it is empty since layout S11).

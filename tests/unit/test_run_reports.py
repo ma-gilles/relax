@@ -40,7 +40,7 @@ def _report(tmp_path):
         initial_sampling=SimpleNamespace(coarse_order=1, fine_order=2, max_order=None, max_order_source="none"),
         frozen_boundary=None, symmetry_provenance={"label": "C1"},
         initial_pose_source=SimpleNamespace(requested_source="auto", resolved_source="input-star", sha256="ef" * 32),
-        diagnostic_single_half=True, state_swap_probe={"iteration": 4},
+        diagnostic_single_half=True,
     )
 
 
@@ -48,7 +48,7 @@ def test_profile_only_summary_writes_the_summary_and_the_ledger_copy(tmp_path, c
     result = refinement_result(
         history=RefinementHistory(
             current_sizes=[12, 16], wall_times=[1.0], local_profile_history=[{"iteration": 1, "rows": 3}],
-            global_profile_history=[], state_swap_probe_applied_relion_iterations=[5],
+            global_profile_history=[],
         ),
         numbered=numbered_metadata(setup_phase_seconds={"state_init": 0.5}),
         follower_scale=None,
@@ -62,12 +62,11 @@ def test_profile_only_summary_writes_the_summary_and_the_ledger_copy(tmp_path, c
     assert set(summary) == SHARED | {
         "symmetry", "initial_pose_source_requested", "initial_pose_source_resolved", "initial_pose_source_sha256",
         "profile_only", "stop_after_local_search_score_only", "diagnostic_single_half", "setup_phase_seconds",
-        "local_profile_rows", "global_profile_rows", "state_swap_probe", "state_swap_probe_applied_relion_iterations",
+        "local_profile_rows", "global_profile_rows",
     }
     assert summary["profile_only"] is True and summary["diagnostic_single_half"] is True
     # The captured projector is retired, and its ledger keys with it.
     assert "relion_projector_replay_slot" not in summary
-    assert summary["state_swap_probe_applied_relion_iterations"] == [5]
     assert summary["stop_after_local_search_score_only"] is True
     assert summary["setup_phase_seconds"] == {"state_init": 0.5}
     assert summary["wall_times_trajectory"] == [2.0]  # the stopped iteration's own wall time

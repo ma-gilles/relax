@@ -1,7 +1,7 @@
 """What a run replayed from RELION, as keys of its refinement archive (code rule 15).
 
 The command adds them to the archive metadata (``relax.refinement.result_files.build_archive_metadata``,
-``replay_provenance``): a frozen boundary, a state-swap probe and the dispatch capture of an MPI RELION run.
+``replay_provenance``): a frozen boundary and the dispatch capture of an MPI RELION run.
 A run that replays nothing writes the same keys with their empty values (the dispatch capture only when
 present).
 """
@@ -10,8 +10,7 @@ import numpy as np
 
 
 def replay_archive_metadata(
-    *, frozen_boundary, state_swap_probe, state_swap_probe_applied_relion_iterations,
-    relion_dispatch_schedule,
+    *, frozen_boundary, relion_dispatch_schedule,
 ) -> dict:
     """The archive keys of a run's replay provenance, in their stored order."""
     save_dict = {
@@ -26,36 +25,6 @@ def replay_archive_metadata(
         ),
         "frozen_boundary_completed_relion_iteration": np.int64(
             -1 if frozen_boundary is None else frozen_boundary.completed_relion_iteration
-        ),
-        "state_swap_probe_target_relion_iteration": np.int64(
-            -1
-            if state_swap_probe is None
-            else int(state_swap_probe["target_relion_iteration"])
-        ),
-        "state_swap_probe_loop_index": np.int64(
-            -1 if state_swap_probe is None else int(state_swap_probe["iteration"])
-        ),
-        "state_swap_probe_variant": np.asarray(
-            "" if state_swap_probe is None else str(state_swap_probe["variant"])
-        ),
-        "state_swap_probe_replay_relion_references": np.bool_(
-            False
-            if state_swap_probe is None
-            else bool(state_swap_probe["replay_relion_references"])
-        ),
-        "state_swap_probe_applied_relion_iterations": np.asarray(
-            state_swap_probe_applied_relion_iterations,
-            dtype=np.int64,
-        ),
-        "state_swap_probe_replay_override_keys": np.asarray(
-            [] if state_swap_probe is None else state_swap_probe["replay_override_keys"],
-            dtype=np.str_,
-        ),
-        "state_swap_probe_required_replay_override_keys": np.asarray(
-            []
-            if state_swap_probe is None
-            else state_swap_probe["required_replay_override_keys"],
-            dtype=np.str_,
         ),
     }
     if relion_dispatch_schedule is not None:

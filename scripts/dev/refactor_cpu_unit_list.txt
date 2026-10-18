@@ -33,7 +33,6 @@ tests/unit/test_command_admission.py
 tests/unit/test_convergence_input_owners.py
 tests/unit/test_convergence.py
 tests/unit/test_cuda_relion_translation.py
-tests/unit/test_debug_relion_reference_replay.py
 tests/unit/test_dense_iteration_behavior.py
 tests/unit/test_dense_scale_group_routing.py
 tests/unit/test_dev_fingerprint.py
@@ -174,8 +173,6 @@ tests/unit/test_snapshot_direction_priors.py
 tests/unit/test_source_euler_publication.py
 tests/unit/test_sparse_pass2_window_setup_owner.py
 tests/unit/test_stable_reconstruction_class.py
-tests/unit/test_state_swap_probe_cli.py
-tests/unit/test_state_swap_values_owner.py
 tests/unit/test_summarize_em_completion_bench.py
 tests/unit/test_summarize_em_k1_realdata_science_equivalence.py
 tests/unit/test_summarize_em_k4_class_fsc_auc_scorecard.py

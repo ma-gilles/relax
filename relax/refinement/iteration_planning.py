@@ -97,7 +97,6 @@ def initialize_refinement_state(
             options=options,
             replays_relion_trajectory=source.replays_relion_trajectory,
             starts_from_frozen_boundary=source.starts_from_frozen_boundary,
-            swaps_state=source.swaps_state,
             hands_reference_real=hands_reference_real,
         )
         state = resume.refinement_state(state)
@@ -181,7 +180,7 @@ class IterationCarry:
 
     The controller replaces it with ``dataclasses.replace`` after each statement that changes a field. Frozen,
     not deeply immutable: ``state`` (the ``RefinementState``) is updated in place by the input source's
-    ``numbered_state`` and ``swapped_state`` and by the controller's convergence latch and accuracy install,
+    ``numbered_state`` and by the controller's convergence latch and accuracy install,
     and the ``direction_priors`` list's entries are replaced in place (the input source's ``numbered_state``,
     the learned priors, the Class3D copy). The reference model, the halves and the history are not carried: the
     controller holds them, and they are updated in place.

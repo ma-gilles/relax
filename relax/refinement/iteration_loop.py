@@ -3,8 +3,7 @@
 ``refine_single_volume`` validates options and manages refinement state and dispatch.
 ``dense_half`` and ``local_half`` own the per-half dense and local engine calls; ``scoring_policy``
 owns their shared execution defaults and diagnostic selectors. Local chunks
-are implemented in ``local_half``; state-swap diagnostics belong
-to ``parity.state_swap_runtime``. Pure trial-grid construction belongs to
+are implemented in ``local_half``. Pure trial-grid construction belongs to
 ``sampling``.
 See ``docs/math/relion_refinement_algorithm.md`` for the algorithm map.
 """
@@ -503,7 +502,6 @@ def refine_single_volume(
         sealed_sampling_state=source.sealed_sampling_state,
         sealed_scoring_context=source.sealed_scoring_context,
         allow_replayed_bpref_particle_order=options.parity.allow_replayed_bpref_particle_order,
-        allow_state_swap_fresh_bpref_particle_order=source.swaps_state,
         continues_own_run=options.checkpoint.resume is not None,
     )
     class_mixture = reference_state.initialize_class_log_priors(options.k_class.n_classes, options.start.init_direction_prior)
@@ -767,14 +765,6 @@ def refine_single_volume(
             state_healpix_order=carry.state.healpix_order, replay_saved_healpix_order=carry.replay_saved_healpix_order,
         )
 
-        source.state_swap_snapshot(
-            iteration,
-            ports.ScoringState(
-                carry.state, current_size, reference_model, carry.noise_model, halves, carry.previous_best_rotations,
-                carry.sigma_offset,
-                carry.direction_priors,
-            ),
-        )
         # The input source supplies the state this iteration scores with (the native source: the run's own).
         numbered = source.numbered_state(
             iteration,
@@ -795,24 +785,6 @@ def refine_single_volume(
         if carry.replay_saved_healpix_order is not None:
             carry = replace(carry, replay_saved_healpix_order=int(carry.state.healpix_order))
 
-        reference_model.maps = source.scoring_references(iteration, reference_model, volume_shape=ctx.volume_shape)
-        swapped = source.swapped_state(
-            iteration,
-            ports.ScoringState(
-                carry.state, current_size, reference_model, carry.noise_model, halves, carry.previous_best_rotations,
-                carry.sigma_offset,
-                carry.direction_priors,
-            ),
-            volume_shape=ctx.volume_shape,
-        )
-        if swapped is not None:
-            current_size = swapped.current_size
-            reference_model = swapped.reference_model
-            carry = replace(
-                carry, noise_model=swapped.noise_model, previous_best_rotations=swapped.previous_best_rotations,
-                sigma_offset=swapped.sigma_offset, direction_priors=swapped.direction_priors,
-            )
-            history.state_swap_probe_applied_relion_iterations.append(numbered_relion_iteration)
         checked = source.scoring_state_checked(
             iteration,
             ports.ScoringArrays(

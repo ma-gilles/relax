@@ -28,6 +28,11 @@ from relax.steps.half_inputs import optional_half_arrays
 logger = logging.getLogger("relax.diagnostics.relion_replay")  # the name before the move to relax.parity: log rows keep it
 
 
+
+def _copy_half_pair(values):
+    """Each half's array copied (None stays None)."""
+    return [None if value is None else np.asarray(value).copy() for value in values]
+
 def _install_final_replay_particle_state(
     final_replay_override,
     halves,
@@ -42,8 +47,6 @@ def _install_final_replay_particle_state(
     The translation prior width, the previous poses and corrections of ``halves`` (written in place) and the
     noise model. An absent field keeps the argument's value.
     """
-    from relax.parity.state_swap_runtime import copy_half_pair
-
     _final_replay_fields = []
     _final_replay_sigma_per_half = final_replay_override.get("translation_sigma_angstrom_per_half")
     if _final_replay_sigma_per_half is not None:
@@ -55,12 +58,12 @@ def _install_final_replay_particle_state(
         _final_replay_fields.append("translation_sigma_angstrom")
     _final_replay_prev_trans = final_replay_override.get("previous_best_translations")
     if _final_replay_prev_trans is not None:
-        for particle_half, value_for_half in zip(halves, copy_half_pair(_final_replay_prev_trans), strict=True):
+        for particle_half, value_for_half in zip(halves, _copy_half_pair(_final_replay_prev_trans), strict=True):
             particle_half.translations = value_for_half
         _final_replay_fields.append("previous_best_translations")
     _final_replay_prev_eulers = final_replay_override.get("previous_best_rotation_eulers")
     if _final_replay_prev_eulers is not None:
-        for particle_half, value_for_half in zip(halves, copy_half_pair(_final_replay_prev_eulers), strict=True):
+        for particle_half, value_for_half in zip(halves, _copy_half_pair(_final_replay_prev_eulers), strict=True):
             particle_half.rotation_eulers = value_for_half
         _final_replay_fields.append("previous_best_rotation_eulers")
     _final_replay_fields.extend(

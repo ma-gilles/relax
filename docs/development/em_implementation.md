@@ -230,12 +230,6 @@ convert to half images and back-project. In [`vdam.estep_common`](../../relax/vd
 dense and the RELION-x-half BPref converters, and `_bpref_slab_outputs` applies RELION's
 double-precision cast and denormal-weight clamp
 ([`test_covariance_rhs_and_bpref_source_owner.py`](../../tests/unit/test_covariance_rhs_and_bpref_source_owner.py)).
-[`state_swap_runtime.apply_state_swap_probe`](../../relax/parity/state_swap_runtime.py)
-returns a `_StateSwapValues` named tuple (current size, maps, tau2, noise, poses, sigma offset and
-direction priors), which `RelionReplaySource.swapped_state` hands to the controller as a `ScoringState`
-read by field; the unchanged value is built once from the
-inputs and returned by both early exits
-([`test_state_swap_values_owner.py`](../../tests/unit/test_state_swap_values_owner.py)).
 [`k_class_firstiter._PerClassSubsetResults`](../../relax/classification/k_class_firstiter.py) collects the
 per-class outputs of the dense and sparse firstiter-CC global-winner subset passes in class
 order: a class without images gets zero accumulators, `-inf` best scores and zero posteriors,
@@ -521,16 +515,7 @@ checkout merely because the same report can still be rendered.
 
 ### Replay state diagnostics
 
-`parity/state_swap_probe.py` owns the supported component variants and CLI
-validation. It can enumerate variants without importing the refinement
-controller. `parity/state_swap_runtime.py` owns snapshot copying, map-amplitude
-scaling and restoration of the selected components. The controller still owns
-when the snapshot is taken and applies it after the RELION replay override.
-
-Snapshots preserve the existing ownership contract: array inputs are copied,
-while `state_fields` is a shallow copy of `state.__dict__`. Changing that
-ownership, the ordered return tuple or the restoration sequence requires its
-own behavior review. The in-memory scoring-state inventory and overwrite guard are owned by
+The in-memory scoring-state inventory and overwrite guard are owned by
 `parity/frozen_boundary.py`, alongside the sealed-boundary loader.
 The controller takes and checks those snapshots at the existing boundaries.
 

@@ -59,8 +59,8 @@ scope is explicitly cross-device-unverified, and results from it must not be
 classified as same-device equivalence or numerical noise.
 
 Per-half scorer tau2 is an explicit property of this fixed arm. The ordinary
-K=1 path retains its historical shared tau2 before and after every update,
-including state-swap diagnostics; v3 cannot silently change default EM
+K=1 path retains its historical shared tau2 before and after every update;
+v3 cannot silently change default EM
 behavior.
 
 The runtime requires explicit matching provenance flags plus the environment,

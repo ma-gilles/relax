@@ -12,7 +12,6 @@ from __future__ import annotations
 import logging
 import os
 from dataclasses import dataclass
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import jax.numpy as jnp
@@ -209,129 +208,6 @@ def class_tau2_replay(*, iteration, n_classes, iter_replay_override, replay, log
                 replay_class_tau2_shape,
             )
     return replay_class_tau2, replay_tau2_enabled, kclass_tau2_source
-
-
-def _state_swap_reference_dir(probe, perturb_replay_relion_dir, *, iteration: int):
-    """The RELION directory a state-swap probe reads its references from, or ``None`` to keep the run's own.
-
-    Only the probe's target iteration replaces references, and only when the probe asks for it. Reads the
-    ``probe``'s ``iteration`` and ``replay_relion_references`` entries (None: no probe).
-    """
-
-    if (
-        probe is None
-        or int(probe.get("iteration", -1)) != int(iteration)
-        or not bool(probe.get("replay_relion_references", False))
-    ):
-        return None
-    if perturb_replay_relion_dir is None:
-        logger.warning(
-            "RELION reference replay requested at iteration %d but perturb_replay_relion_dir is unset; "
-            "keeping RECOVAR references",
-            int(iteration) + 1,
-        )
-        return None
-    return Path(perturb_replay_relion_dir)
-
-
-def _load_relion_replay_reference(
-    relion_dir, *, prefix: str, relion_iter: int, iteration_number: int, half_idx: int, class_number: int, volume_shape
-):
-    """One RELION map as a flat centered Fourier volume: the half's own file, else the one both halves share."""
-
-    from recovar.core import fourier_transform_utils
-    from recovar.utils.helpers import load_relion_volume as _load_relion_volume
-
-    map_path = relion_dir / (
-        f"{prefix}_it{relion_iter:03d}_half{half_idx + 1}_"
-        f"class{class_number:03d}.mrc"
-    )
-    if not map_path.exists():
-        shared_path = relion_dir / (
-            f"{prefix}_it{relion_iter:03d}_class{class_number:03d}.mrc"
-        )
-        if shared_path.exists():
-            map_path = shared_path
-    if not map_path.exists():
-        raise FileNotFoundError(
-            "State-swap probe requested RELION reference "
-            f"for scoring iteration {iteration_number}, half {half_idx + 1}, "
-            f"class {class_number}, but {map_path} is missing"
-        )
-    real_volume = np.asarray(_load_relion_volume(str(map_path)), dtype=np.float32)
-    if tuple(real_volume.shape) != tuple(volume_shape):
-        raise ValueError(
-            f"RELION replay reference {map_path} has shape {real_volume.shape}, "
-            f"expected {tuple(volume_shape)}"
-        )
-    reference = jnp.asarray(fourier_transform_utils.get_dft3(real_volume).reshape(-1))
-    logger.info(
-        "Debug RELION reference replay: scoring iter %d half %d class %d <- %s",
-        iteration_number,
-        half_idx + 1,
-        class_number,
-        map_path,
-    )
-    return reference
-
-
-def replay_k1_relion_references(
-    reference_model, options, *, probe, iteration: int, replay_dir, replay_prefix, volume_shape,
-):
-    """The two K=1 scoring references: RELION's half maps at a state-swap ``probe``'s target, else the model's own.
-
-    ``replay_dir`` is the replay directory still live at this iteration and ``replay_prefix`` its file prefix.
-    Reads ``reference_model.maps``; from ``options``: ``schedule.init_relion_iteration``.
-    """
-
-    relion_dir = _state_swap_reference_dir(probe, replay_dir, iteration=iteration)
-    if relion_dir is None:
-        return reference_model.maps
-    return [
-        _load_relion_replay_reference(
-            relion_dir,
-            prefix=replay_prefix,
-            relion_iter=int(options.schedule.init_relion_iteration) + int(iteration),
-            iteration_number=int(iteration) + 1,
-            half_idx=half_idx,
-            class_number=1,
-            volume_shape=volume_shape,
-        )
-        for half_idx in range(2)
-    ]
-
-
-def replay_class_relion_references(
-    reference_model, options, *, probe, iteration: int, replay_dir, replay_prefix, volume_shape,
-):
-    """Each half's class stack of scoring references: RELION's class maps at a state-swap ``probe``'s target.
-
-    Elsewhere the model's own maps. ``replay_dir`` is the replay directory still live at this iteration.
-    Reads ``reference_model.maps``; from ``options``: ``schedule.init_relion_iteration`` and
-    ``k_class.n_classes`` (``replay_prefix``: the replay's file prefix).
-    """
-
-    relion_dir = _state_swap_reference_dir(probe, replay_dir, iteration=iteration)
-    if relion_dir is None:
-        return reference_model.maps
-    return [
-        jnp.stack(
-            [
-                _load_relion_replay_reference(
-                    relion_dir,
-                    prefix=replay_prefix,
-                    relion_iter=int(options.schedule.init_relion_iteration) + int(iteration),
-                    iteration_number=int(iteration) + 1,
-                    half_idx=half_idx,
-                    class_number=class_idx + 1,
-                    volume_shape=volume_shape,
-                )
-                for class_idx in range(int(options.k_class.n_classes))
-            ],
-            axis=0,
-        )
-        for half_idx in range(2)
-    ]
 
 
 def _replay_control_model_iteration(init_relion_iteration: int, loop_iteration: int) -> int:

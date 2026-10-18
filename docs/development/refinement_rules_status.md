@@ -100,9 +100,9 @@ Through the ports (`relax/refinement/ports.py`), chosen by the command:
   cutoff, perturbation, optimiser and restart counters, the Class3D prior replay, the final pass's replayed
   state and sampling STAR (the final-only replay rides these call sites; its functions are unchanged).
   The frozen boundary (`--frozen-boundary-dir`: its sealed sampling state and scoring context, its
-  `RefinementState` fields and the check that the scoring state is unchanged before the first iteration) and
-  the state-swap probe (`--state-swap-*`: its snapshot, RELION references and swap) are `RelionReplay` fields;
-  only the source calls `relax.parity.frozen_boundary` and `state_swap_runtime`
+  `RefinementState` fields and the check that the scoring state is unchanged before the first iteration) are
+  `RelionReplay` fields (the state-swap probe was deleted 2026-10-18); only the source calls
+  `relax.parity.frozen_boundary`
   (`tests/unit/test_refinement_port_imports.py`). The follower topology of an MPI RELION run
   (`--relion-scale-followers`, the captured dispatch schedule `--relion-dispatch-schedule` and the follower-scale
   replay) is `RelionReplay.follower_topology`; the controller reads it as `source.follower_topology`. It is a
