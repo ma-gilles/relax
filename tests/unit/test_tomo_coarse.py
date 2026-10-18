@@ -244,10 +244,11 @@ def test_rescore_groups_fit_their_bytes():
     assert tomo_coarse._rescore_rows_per_call(30, 41, 27, 1, 32) == 1
 
 
-@pytest.mark.parametrize("capacity", [1, 4, 16, 64])
+@pytest.mark.parametrize("capacity", [1, 4, 16, 64, 256])
 def test_significant_cells_are_the_first_true_cells_in_order(capacity):
     """The two-step compaction (rows holding a true cell, then their cells) gives ``nonzero``'s first
-    ``capacity`` flat ids, -1 past the true cells, including rows with several true cells."""
+    ``capacity`` flat ids, -1 past the true cells, including rows with several true cells and a capacity past
+    the 15 rows (16, 64) and past all 105 cells (256)."""
 
     rng = np.random.default_rng(capacity)
     mask = rng.random((3, 5 * 7)) < 0.04

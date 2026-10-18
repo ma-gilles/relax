@@ -231,8 +231,10 @@ def _significant_cells(mask, *, capacity: int, row_length: int):
 
     rows = mask.reshape(-1, row_length)
     hit = jnp.any(rows, axis=1)
-    row_ids = jnp.nonzero(hit, size=capacity, fill_value=0)[0]
-    held = rows[row_ids] & (jnp.arange(capacity) < jnp.sum(hit))[:, None]
+    # At most every row holds a cell: a larger capacity only pads ``held``, whose nonzero scans all its cells.
+    row_capacity = min(int(capacity), int(rows.shape[0]))
+    row_ids = jnp.nonzero(hit, size=row_capacity, fill_value=0)[0]
+    held = rows[row_ids] & (jnp.arange(row_capacity) < jnp.sum(hit))[:, None]
     cell = jnp.nonzero(held.reshape(-1), size=capacity, fill_value=-1)[0]
     return jnp.where(cell >= 0, row_ids[cell // row_length] * row_length + cell % row_length, -1)
 
@@ -1055,7 +1057,9 @@ def particle_coarse_supports(
             flat = _significant_cells(
                 mask, capacity=pow2_ceil(n_significant), row_length=n_coarse_trans
             )
-        cells_capacity = max(int(cells_capacity), pow2_ceil(2 * n_significant, minimum=2))
+        # The next flush's guess follows this flush, not the largest so far: one flat-posterior particle's
+        # millions of cells kept every later flush compacting at its size (0.9 s per flush, relax#98's real case).
+        cells_capacity = pow2_ceil(2 * n_significant, minimum=2)
         flat = np.asarray(flat, dtype=np.int64)[:n_significant]
         particle_pmax = np.asarray(pmax, dtype=np.float64)
         cell_offsets = np.concatenate([[0], np.cumsum(counts)])
