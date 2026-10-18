@@ -1,7 +1,6 @@
 """Startup pose sources, matched input-STAR poses and normalization corrections."""
 
 import argparse
-import re
 from logging import Logger
 from pathlib import Path
 from typing import TYPE_CHECKING, NamedTuple
@@ -470,8 +469,6 @@ def prepare_initial_poses(
     has_relion_half_sets: bool,
     diagnostic_single_half: bool,
     frozen_boundary,
-    poses_npz_path,
-    pose_iteration,
     has_replay_pose_source: bool,
     class3d_translations,
     class3d_translation_path,
@@ -492,7 +489,6 @@ def prepare_initial_poses(
     """
     has_competing_initial_pose_source = (
         frozen_boundary is not None
-        or poses_npz_path is not None
         or has_replay_pose_source
     )
     try:
@@ -523,21 +519,6 @@ def prepare_initial_poses(
                 frozen_boundary.previous_best_translations
             ),
         }
-    elif poses_npz_path is not None:
-        init_previous_best_poses = _load_init_previous_best_poses_npz(
-            poses_npz_path,
-            pose_iteration,
-        )
-        log.info(
-            "Diagnostic local-search seed: loaded previous best poses from %s (iter=%s; half sizes=%s)",
-            poses_npz_path,
-            init_previous_best_poses["iteration"],
-            [
-                arr.shape[0]
-                for arr in init_previous_best_poses["previous_best_rotation_eulers"]
-            ],
-        )
-
     elif class3d_translations is not None:
         init_previous_best_poses = {
             "iteration": "000_translation_only",
@@ -658,78 +639,3 @@ def prepare_initial_poses(
             sha256=initial_pose_source_sha256,
         ),
     )
-
-
-def _load_init_previous_best_poses_npz(path, pose_iter="last"):
-    """Load previous best poses from a RECOVAR refinement_results.npz file.
-
-    This is a diagnostic/debugging hook for starting directly in the local
-    search branch. It does not affect the default GUI/CLI path.
-    """
-
-    pose_path = Path(path)
-    with np.load(pose_path, allow_pickle=False) as npz:
-        if str(pose_iter).lower() in {"last", "latest"}:
-            pattern = re.compile(r"^best_rotation_eulers_iter_(\d{3})_half0$")
-            available = sorted(
-                int(match.group(1))
-                for key in npz.files
-                if (match := pattern.match(key)) is not None
-                and f"best_rotation_eulers_iter_{match.group(1)}_half1" in npz.files
-                and f"best_translations_iter_{match.group(1)}_half0" in npz.files
-                and f"best_translations_iter_{match.group(1)}_half1" in npz.files
-            )
-            if not available:
-                raise ValueError(f"No numbered per-half best-pose arrays found in {pose_path}")
-            iter_label = f"{available[-1]:03d}"
-        elif str(pose_iter).lower() in {"final_all_data", "final-all-data"}:
-            euler_keys = [
-                "best_rotation_eulers_final_all_data_half0",
-                "best_rotation_eulers_final_all_data_half1",
-            ]
-            trans_keys = [
-                "best_translations_final_all_data_half0",
-                "best_translations_final_all_data_half1",
-            ]
-            missing = [key for key in euler_keys + trans_keys if key not in npz.files]
-            if missing:
-                raise ValueError(f"Missing final-all-data pose arrays in {pose_path}: {missing}")
-            eulers = [np.asarray(npz[key], dtype=np.float32) for key in euler_keys]
-            translations = [np.asarray(npz[key], dtype=np.float32) for key in trans_keys]
-            return {
-                "iteration": "final_all_data",
-                "previous_best_rotation_eulers": eulers,
-                "previous_best_translations": translations,
-            }
-        else:
-            iter_label = f"{int(pose_iter):03d}"
-
-        euler_keys = [
-            f"best_rotation_eulers_iter_{iter_label}_half0",
-            f"best_rotation_eulers_iter_{iter_label}_half1",
-        ]
-        trans_keys = [
-            f"best_translations_iter_{iter_label}_half0",
-            f"best_translations_iter_{iter_label}_half1",
-        ]
-        missing = [key for key in euler_keys + trans_keys if key not in npz.files]
-        if missing:
-            raise ValueError(f"Missing pose arrays for iter {iter_label} in {pose_path}: {missing}")
-        eulers = [np.asarray(npz[key], dtype=np.float32) for key in euler_keys]
-        translations = [np.asarray(npz[key], dtype=np.float32) for key in trans_keys]
-
-    for half, (euler, translation) in enumerate(zip(eulers, translations), start=1):
-        if euler.ndim != 2 or euler.shape[1] != 3:
-            raise ValueError(f"half-{half} Euler array must have shape (N, 3), got {euler.shape}")
-        if translation.ndim != 2 or translation.shape[1] != 2:
-            raise ValueError(f"half-{half} translation array must have shape (N, 2), got {translation.shape}")
-        if euler.shape[0] != translation.shape[0]:
-            raise ValueError(
-                f"half-{half} Euler/translation row mismatch: {euler.shape[0]} vs {translation.shape[0]}",
-            )
-
-    return {
-        "iteration": iter_label,
-        "previous_best_rotation_eulers": eulers,
-        "previous_best_translations": translations,
-    }

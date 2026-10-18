@@ -51,7 +51,7 @@ def test_malformed_poses_are_refused():
 def _args(**overrides):
     values = dict(
         skip_align=True, n_classes=2, firstiter_cc=False, continue_optimiser_star=None,
-        initial_pose_source="auto", relion_init_dir=None, init_previous_best_poses_npz=None,
+        initial_pose_source="auto", relion_init_dir=None,
     )
     values.update(overrides)
     return SimpleNamespace(**values)

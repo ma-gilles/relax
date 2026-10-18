@@ -137,8 +137,6 @@ def _prepare(tmp_path, particles, *, requested_source, caplog):
             has_relion_half_sets=True,
             diagnostic_single_half=False,
             frozen_boundary=None,
-            poses_npz_path=None,
-            pose_iteration="last",
             has_replay_pose_source=False,
             class3d_translations=None,
             class3d_translation_path=None,

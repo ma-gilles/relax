@@ -62,7 +62,6 @@ from relax.relion.initial_noise import (
 from relax.runtime.engine_tuning import DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM
 from relax.sampling.orientation_priors import DirectionPrior
 from relax.star.input_particle_table import prepare_relion_halfset_layout
-from relax.star.input_poses import _load_init_previous_best_poses_npz
 from relax.star.metadata import (
     parse_relion_cli_ini_high,
     parse_relion_tau2_fudge,
@@ -473,7 +472,6 @@ def _fixed_diagnostic_args():
         relion_follower_scale_replay=None,
         init_class_volumes=None,
         init_volume=None,
-        init_previous_best_poses_npz=None,
         init_noise_from_npz=None,
         relion_init_dir=None,
         relion_optimiser=None,
@@ -1231,60 +1229,6 @@ def test_replay_mapping_distinguishes_repeated_indices_across_stacks(tmp_path):
     h1_eulers, h2_eulers = overrides[1]["previous_best_rotation_eulers"]
     np.testing.assert_allclose(h1_eulers[:, 0], [20.0])
     np.testing.assert_allclose(h2_eulers[:, 0], [10.0])
-
-
-def test_load_init_previous_best_poses_npz_selects_latest_numbered_iter(tmp_path):
-    path = tmp_path / "refinement_results.npz"
-    np.savez(
-        path,
-        best_rotation_eulers_iter_000_half0=np.ones((2, 3), dtype=np.float32),
-        best_rotation_eulers_iter_000_half1=np.ones((1, 3), dtype=np.float32) * 2,
-        best_translations_iter_000_half0=np.ones((2, 2), dtype=np.float32),
-        best_translations_iter_000_half1=np.ones((1, 2), dtype=np.float32) * 2,
-        best_rotation_eulers_iter_003_half0=np.ones((2, 3), dtype=np.float32) * 3,
-        best_rotation_eulers_iter_003_half1=np.ones((1, 3), dtype=np.float32) * 4,
-        best_translations_iter_003_half0=np.ones((2, 2), dtype=np.float32) * 5,
-        best_translations_iter_003_half1=np.ones((1, 2), dtype=np.float32) * 6,
-    )
-
-    got = _load_init_previous_best_poses_npz(path, "last")
-
-    assert got["iteration"] == "003"
-    np.testing.assert_allclose(got["previous_best_rotation_eulers"][0], np.ones((2, 3)) * 3)
-    np.testing.assert_allclose(got["previous_best_rotation_eulers"][1], np.ones((1, 3)) * 4)
-    np.testing.assert_allclose(got["previous_best_translations"][0], np.ones((2, 2)) * 5)
-    np.testing.assert_allclose(got["previous_best_translations"][1], np.ones((1, 2)) * 6)
-
-
-def test_load_init_previous_best_poses_npz_accepts_final_all_data(tmp_path):
-    path = tmp_path / "refinement_results.npz"
-    np.savez(
-        path,
-        best_rotation_eulers_final_all_data_half0=np.ones((2, 3), dtype=np.float32),
-        best_rotation_eulers_final_all_data_half1=np.ones((1, 3), dtype=np.float32) * 2,
-        best_translations_final_all_data_half0=np.ones((2, 2), dtype=np.float32) * 3,
-        best_translations_final_all_data_half1=np.ones((1, 2), dtype=np.float32) * 4,
-    )
-
-    got = _load_init_previous_best_poses_npz(path, "final_all_data")
-
-    assert got["iteration"] == "final_all_data"
-    np.testing.assert_allclose(got["previous_best_rotation_eulers"][0], np.ones((2, 3)))
-    np.testing.assert_allclose(got["previous_best_translations"][1], np.ones((1, 2)) * 4)
-
-
-def test_load_init_previous_best_poses_npz_rejects_shape_mismatch(tmp_path):
-    path = tmp_path / "refinement_results.npz"
-    np.savez(
-        path,
-        best_rotation_eulers_iter_000_half0=np.ones((2, 3), dtype=np.float32),
-        best_rotation_eulers_iter_000_half1=np.ones((1, 3), dtype=np.float32),
-        best_translations_iter_000_half0=np.ones((3, 2), dtype=np.float32),
-        best_translations_iter_000_half1=np.ones((1, 2), dtype=np.float32),
-    )
-
-    with pytest.raises(ValueError, match="row mismatch"):
-        _load_init_previous_best_poses_npz(path, 0)
 
 
 def _write_minimal_relion_model_star(path: Path, *, sigma2_noise_start: float) -> None:

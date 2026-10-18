@@ -1115,8 +1115,6 @@ def main(command=None):
         has_relion_half_sets=relion_half_sets is not None,
         diagnostic_single_half=args.diagnostic_single_half,
         frozen_boundary=frozen_boundary,
-        poses_npz_path=args.init_previous_best_poses_npz,
-        pose_iteration=args.init_previous_best_poses_iter,
         has_replay_pose_source=(
             args.relion_init_dir is not None or args.perturb_replay_relion_dir is not None
         ),

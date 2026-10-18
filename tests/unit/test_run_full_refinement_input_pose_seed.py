@@ -60,7 +60,7 @@ def _pose_preparation_inputs(tmp_path, *, n_classes=1, angstrom_origins=False, n
         particle_layout=layout, relion_halfset_particles=halfset, pixel_size_angstrom=2.0,
         data_dir=tmp_path, requested_source="auto", n_classes=n_classes, init_relion_iteration=0,
         has_relion_half_sets=n_classes == 1, diagnostic_single_half=False, frozen_boundary=None,
-        poses_npz_path=None, pose_iteration="last", has_replay_pose_source=False,
+        has_replay_pose_source=False,
         class3d_translations=None, class3d_translation_path=None, log=logging.getLogger("test.initial_poses"),
     )
 
@@ -129,7 +129,7 @@ def test_frozen_pose_arrays_keep_precedence_and_aliases(tmp_path, requested):
         frozen_boundary=SimpleNamespace(
             completed_relion_iteration=4, previous_best_rotation_eulers=eulers, previous_best_translations=translations,
         ),
-        poses_npz_path=tmp_path / "missing.npz", has_replay_pose_source=True,
+        has_replay_pose_source=True,
     )
     (tmp_path / "particles.star").unlink()
     prepared = prepare_initial_poses(particles, **inputs)
@@ -140,29 +140,6 @@ def test_frozen_pose_arrays_keep_precedence_and_aliases(tmp_path, requested):
     assert prepared.image_corrections is None and prepared.scale_corrections is None
     assert prepared.provenance.resolved_source == "diagnostic_replay"
     assert prepared.provenance.path is None and prepared.provenance.sha256 is None
-
-
-def test_npz_pose_source_keeps_numbered_selection_and_source_labels(tmp_path, caplog):
-    particles, inputs = _pose_preparation_inputs(tmp_path)
-    path = tmp_path / "poses.npz"
-    arrays = {}
-    for iteration in (1, 3):
-        for half in range(2):
-            arrays[f"best_rotation_eulers_iter_{iteration:03d}_half{half}"] = np.full((2, 3), iteration + half, np.float64)
-            arrays[f"best_translations_iter_{iteration:03d}_half{half}"] = np.full((2, 2), -iteration - half, np.float64)
-    np.savez(path, **arrays)
-    inputs.update(poses_npz_path=path, has_replay_pose_source=True)
-    (tmp_path / "particles.star").unlink()
-    with caplog.at_level(logging.INFO):
-        prepared = prepare_initial_poses(particles, **inputs)
-    assert prepared.poses["iteration"] == "003"
-    for half in range(2):
-        assert_matches(prepared.poses["previous_best_rotation_eulers"][half], np.full((2, 3), 3 + half, np.float32))
-        assert_matches(prepared.poses["previous_best_translations"][half], np.full((2, 2), -3 - half, np.float32))
-        assert prepared.poses["previous_best_rotation_eulers"][half].dtype == np.float32
-    assert prepared.provenance.resolved_source == "diagnostic_replay"
-    assert prepared.provenance.path is None and prepared.provenance.sha256 is None
-    assert any("Diagnostic local-search seed" in record.message and "iter=003" in record.message for record in caplog.records)
 
 
 @pytest.mark.parametrize("requested", ["auto", "none"])
@@ -456,4 +433,3 @@ def test_class3d_replay_translation_seed_centres_local_searches_on_the_input_ang
     )[rows]
     assert_matches(np.asarray(eulers[0], dtype=np.float64), expected.astype(np.float32).astype(np.float64))
     assert eulers[1].shape == (0, 3)
-

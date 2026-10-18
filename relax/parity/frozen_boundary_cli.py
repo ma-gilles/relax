@@ -131,11 +131,8 @@ def load_cli_boundary(args, *, job: "JobDefaults") -> BoundaryInputs:
                 "--frozen-boundary-dir cannot be combined with --init_volume or "
                 "--init_noise_from_npz"
             )
-        if args.init_previous_best_poses_npz is not None or job.apply_initial_lowpass:
-            raise SystemExit(
-                "--frozen-boundary-dir cannot be combined with pose overrides or "
-                "--apply-initial-lowpass"
-            )
+        if job.apply_initial_lowpass:
+            raise SystemExit("--frozen-boundary-dir cannot be combined with --apply-initial-lowpass")
         if args.relion_half_sets is None:
             raise SystemExit(
                 "--frozen-boundary-dir requires --relion_half_sets so the sealed "
@@ -640,7 +637,6 @@ def _validate_fixed_diagnostic_arm_cli(args) -> None:
         "relion_follower_scale_replay",
         "init_class_volumes",
         "init_volume",
-        "init_previous_best_poses_npz",
         "init_noise_from_npz",
         "relion_init_dir",
         "relion_optimiser",

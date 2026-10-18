@@ -212,7 +212,7 @@ def validate_skip_align_args(args) -> None:
         reasons.append("it classifies, so it needs --n_classes > 1")
     if args.continue_optimiser_star is not None:
         reasons.append("--continue is not implemented for it")
-    if args.initial_pose_source == "none" or args.relion_init_dir is not None or args.init_previous_best_poses_npz is not None:
+    if args.initial_pose_source == "none" or args.relion_init_dir is not None:
         reasons.append("its poses are the input STAR's (no other pose source)")
     if reasons:
         raise SystemExit("--skip_align: " + "; ".join(reasons))
@@ -233,7 +233,6 @@ def validate_continue_args(args) -> None:
             ("--relion_init_dir", args.relion_init_dir),
             ("--frozen-boundary-dir", args.frozen_boundary_dir),
             ("--init_noise_from_npz", args.init_noise_from_npz),
-            ("--init_previous_best_poses_npz", args.init_previous_best_poses_npz),
             ("--relion_current_sizes", args.relion_current_sizes),
             ("--relion_healpix_orders", args.relion_healpix_orders),
             ("--state-swap-variant", args.state_swap_variant),

@@ -531,24 +531,6 @@ def parse_refinement_args(argv=None):
         ),
     )
     parser.add_argument(
-        "--init_previous_best_poses_npz",
-        default=None,
-        help=(
-            "Diagnostic only: seed local-search priors from a RECOVAR "
-            "refinement_results.npz file containing per-half best Euler and "
-            "translation arrays."
-        ),
-    )
-    parser.add_argument(
-        "--init_previous_best_poses_iter",
-        default="last",
-        help=(
-            "Iteration selector for --init_previous_best_poses_npz. Use an "
-            "integer, 'last' for the latest numbered iteration, or "
-            "'final_all_data'."
-        ),
-    )
-    parser.add_argument(
         "--init_noise_from_npz",
         default=None,
         help=(
