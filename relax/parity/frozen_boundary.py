@@ -476,21 +476,13 @@ def _scalar(npz, key: str, dtype):
     return value.item()
 
 
-def load_frozen_refinement_boundary(
-    boundary_dir: str | Path,
-    *,
-    manifest_path: str | Path | None = None,
-) -> FrozenRefinementBoundary:
+def load_frozen_refinement_boundary(boundary_dir: str | Path) -> FrozenRefinementBoundary:
     """Load and validate one sealed primitive-only boundary bundle."""
 
     source_dir = Path(boundary_dir).expanduser().resolve()
     if not source_dir.is_dir():
         raise ValueError(f"frozen-boundary directory does not exist: {source_dir}")
-    source_manifest = (
-        Path(manifest_path).expanduser().resolve()
-        if manifest_path is not None
-        else source_dir / FROZEN_BOUNDARY_MANIFEST
-    )
+    source_manifest = source_dir / FROZEN_BOUNDARY_MANIFEST
     if not source_manifest.is_file():
         raise ValueError(f"frozen-boundary manifest does not exist: {source_manifest}")
     expected_sha256, relative_name = _parse_single_file_manifest(source_manifest)

@@ -55,14 +55,6 @@ def add_frozen_boundary_arguments(parser) -> None:
         ),
     )
     parser.add_argument(
-        "--frozen-boundary-manifest",
-        default=None,
-        help=(
-            "SHA-256 manifest for --frozen-boundary-dir. Defaults to "
-            "FROZEN_BOUNDARY_SHA256SUMS in that directory."
-        ),
-    )
-    parser.add_argument(
         "--require-fixed-diagnostic-boundary",
         action="store_true",
         help=(
@@ -154,10 +146,7 @@ def load_cli_boundary(args, *, job: "JobDefaults") -> BoundaryInputs:
                 "--frozen-boundary-dir cannot be combined with unsealed sampling oracles"
             )
         try:
-            frozen_boundary = load_frozen_refinement_boundary(
-                args.frozen_boundary_dir,
-                manifest_path=args.frozen_boundary_manifest,
-            )
+            frozen_boundary = load_frozen_refinement_boundary(args.frozen_boundary_dir)
         except (OSError, TypeError, ValueError) as exc:
             raise SystemExit(f"Invalid frozen refinement boundary: {exc}") from exc
         if args.require_fixed_diagnostic_boundary and not frozen_boundary.fixed_diagnostic_arm:
@@ -230,8 +219,6 @@ def load_cli_boundary(args, *, job: "JobDefaults") -> BoundaryInputs:
             frozen_boundary.boundary_sha256,
             frozen_boundary.completed_relion_iteration,
         )
-    elif args.frozen_boundary_manifest is not None:
-        raise SystemExit("--frozen-boundary-manifest requires --frozen-boundary-dir")
     elif args.require_fixed_diagnostic_boundary or any(
         value is not None
         for value in (
