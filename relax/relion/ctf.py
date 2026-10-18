@@ -327,24 +327,46 @@ def refuse_generic_ctf_for_optics(experiment_dataset) -> bool:
     return True
 
 
+# The columns of :func:`_relion_ctf_batch_params`, in get_ctf_image's argument order: (STAR label, default,
+# read from the optics table only).
+CTF_BATCH_COLUMNS = (
+    ("rlnDefocusU", None, False),
+    ("rlnDefocusV", None, False),
+    ("rlnDefocusAngle", None, False),
+    ("rlnVoltage", None, True),
+    ("rlnSphericalAberration", None, True),
+    ("rlnAmplitudeContrast", None, True),
+    ("rlnCtfBfactor", 0.0, False),
+    ("rlnImagePixelSize", None, True),
+    ("rlnPhaseShift", 0.0, False),
+    ("rlnCtfScalefactor", 1.0, False),
+)
+# The nine columns :func:`_relion_ctf_constants` takes, in CTF::initialise's order.
+CTF_CONSTANT_COLUMNS = (
+    "rlnDefocusU",
+    "rlnDefocusV",
+    "rlnDefocusAngle",
+    "rlnVoltage",
+    "rlnSphericalAberration",
+    "rlnAmplitudeContrast",
+    "rlnCtfBfactor",
+    "rlnCtfScalefactor",
+    "rlnPhaseShift",
+)
+# A tomo tilt's CTF fields held in ExpImage's float fields, rounded to float32 before getCTF.
+TOMO_FLOAT32_CTF_COLUMNS = ("rlnDefocusU", "rlnDefocusV", "rlnDefocusAngle", "rlnCtfScalefactor", "rlnPhaseShift")
+
+
+def _batch_column(label: str) -> int:
+    return next(k for k, (name, _, _) in enumerate(CTF_BATCH_COLUMNS) if name == label)
+
+
 def _relion_ctf_batch_params(cache, original_indices: np.ndarray) -> np.ndarray:
-    """``get_ctf_images_batch`` rows for these particles, in the get_ctf_image argument order."""
+    """``get_ctf_images_batch`` rows for these particles, in the get_ctf_image argument order (:data:`CTF_BATCH_COLUMNS`)."""
 
     idx = np.asarray(original_indices, dtype=np.int64)
-    names = (
-        ("rlnDefocusU", None, False),
-        ("rlnDefocusV", None, False),
-        ("rlnDefocusAngle", None, False),
-        ("rlnVoltage", None, True),
-        ("rlnSphericalAberration", None, True),
-        ("rlnAmplitudeContrast", None, True),
-        ("rlnCtfBfactor", 0.0, False),
-        ("rlnImagePixelSize", None, True),
-        ("rlnPhaseShift", 0.0, False),
-        ("rlnCtfScalefactor", 1.0, False),
-    )
     return np.ascontiguousarray(
-        np.stack([_relion_ctf_column(cache, n, d, optics_only=o)[idx] for n, d, o in names], axis=1)
+        np.stack([_relion_ctf_column(cache, n, d, optics_only=o)[idx] for n, d, o in CTF_BATCH_COLUMNS], axis=1)
     )
 
 
@@ -620,13 +642,13 @@ def _ctf_particle_table(cache) -> dict:
     if table is None:
         groups = np.asarray(star_column(cache["particles"], "rlnOpticsGroup", required=True), dtype=np.int64)
         params = _relion_ctf_batch_params(cache, np.arange(groups.size))
-        columns = params[:, [0, 1, 2, 3, 4, 5, 6, 9, 8]]  # ..., Q0, Bfac, scale, phase shift
+        columns = params[:, [_batch_column(label) for label in CTF_CONSTANT_COLUMNS]]
         dose = None
         if cache["tomo"]:
-            columns[:, 6] = 0.0
+            columns[:, CTF_CONSTANT_COLUMNS.index("rlnCtfBfactor")] = 0.0
             # A tomo tilt's defocus U/V, angle, scale and phase shift reach getCTF through ExpImage's float fields
             # (exp_model.h:53, exp_model.cpp:218-224; ml_optimiser.cpp setValuesByGroup), rounded to float32.
-            for column in (0, 1, 2, 7, 8):
+            for column in (CTF_CONSTANT_COLUMNS.index(label) for label in TOMO_FLOAT32_CTF_COLUMNS):
                 columns[:, column] = columns[:, column].astype(np.float32).astype(np.float64)
             dose = np.stack(
                 [
@@ -637,7 +659,7 @@ def _ctf_particle_table(cache) -> dict:
             )
         pixel_size = {}
         for group in np.unique(groups):
-            pixel = np.unique(params[groups == group, 7])
+            pixel = np.unique(params[groups == group, _batch_column("rlnImagePixelSize")])
             if pixel.size != 1:
                 raise ValueError(f"optics group {int(group)} has several pixel sizes")
             pixel_size[int(group)] = float(pixel[0])
