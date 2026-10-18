@@ -112,7 +112,6 @@
   "alias-local:relax.vdam.shape_class_estep:run_by_shape_class:estep_sampling=config.sampling",
   "alias-local:relax.vdam.subset_schedule:select_subset_for_iter:stored_order=state.sorted_particle_ids",
   "alias-local:relax.vdam.subset_schedule:select_subset_for_iter:stored_part_ids=state.sorted_particle_part_ids",
-  "def-outside-only:relax.cuda.backprojection:relion_firstiter_bpref_fused_x_half",
   "def-outside-only:relax.cuda.backprojection:relion_fused_x_half_backproject_particle_grid_indexed",
   "def-outside-only:relax.cuda.coarse:relion_coarse_diff2_rectangular_f32",
   "def-outside-only:relax.cuda.fine:relion_fine_diff2_pairs_f32",
