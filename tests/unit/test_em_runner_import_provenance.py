@@ -11,7 +11,6 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 ACTIVE_RUNNERS = (
     REPO_ROOT / "scripts/run_em_completion_bench_slurm.sh",
     REPO_ROOT / "scripts/run_em_k1_robustness_matrix_slurm.sh",
-    REPO_ROOT / "scripts/run_em_kclass_robustness_matrix_slurm.py",
 )
 
 

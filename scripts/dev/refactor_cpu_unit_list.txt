@@ -161,7 +161,6 @@ tests/unit/test_resident_wide_translation_mask.py
 tests/unit/test_resolution_scheduling.py
 tests/unit/test_run_em_completion_bench_slurm.py
 tests/unit/test_run_em_k1_robustness_matrix_slurm.py
-tests/unit/test_run_em_kclass_robustness_matrix_slurm.py
 tests/unit/test_run_files.py
 tests/unit/test_run_full_refinement_image_backend.py
 tests/unit/test_run_full_refinement_input_pose_seed.py
@@ -186,7 +185,6 @@ tests/unit/test_state_swap_values_owner.py
 tests/unit/test_summarize_em_completion_bench.py
 tests/unit/test_summarize_em_k1_realdata_science_equivalence.py
 tests/unit/test_summarize_em_k4_class_fsc_auc_scorecard.py
-tests/unit/test_summarize_em_robustness_matrix.py
 tests/unit/test_tilt_prior_selection.py
 tests/unit/test_tomo_input.py
 tests/unit/test_tomo_relion_star_forms.py

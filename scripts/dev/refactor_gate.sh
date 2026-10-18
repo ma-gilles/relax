@@ -72,7 +72,7 @@ step_tests() {
     | while read -r f; do [ -f "$f" ] && echo "$f"; done | sort -u)
   # shellcheck disable=SC2086
   # The robustness-matrix and completion launchers need an installed pixi Python as their base environment.
-  EM_COMPLETION_PIXI_PY=$PY EM_K1_MATRIX_PIXI_PY=$PY EM_KCLASS_MATRIX_PIXI_PY=$PY \
+  EM_COMPLETION_PIXI_PY=$PY EM_K1_MATRIX_PIXI_PY=$PY \
     PYTHONPATH=$src JAX_COMPILATION_CACHE_DIR=$S/jax_cache_tests_$label RECOVAR_JAX_CACHE_DIR=$S/recovar_jax_cache_tests_$label \
     "$PY" -m pytest $files -p no:cacheprovider --basetemp="$S/pytest_tmp_$label" -rfEs -v > "$S/logs/tests_$label.log" 2>&1; rc=$?
   grep -E "^(FAILED|ERROR) " "$S/logs/tests_$label.log" | sed 's/ - .*//' | sort > "$S/logs/fail_$label.txt"
