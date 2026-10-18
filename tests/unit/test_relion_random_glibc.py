@@ -56,3 +56,20 @@ def test_class3d_seed_classes_refuse_seed_sums_beyond_int():
     with pytest.raises(ValueError, match="init_random_generator"):
         relion_class3d_seed_classes(np.arange(3), 2**31 - 2, 2)
     relion_class3d_seed_classes(np.arange(3), 2**31 - 3, 2)
+
+
+def test_rand_array_in_segments_is_the_one_at_a_time_stream(monkeypatch):
+    """A long rand_array forms its words in vectorised segments: the values and the stream after them are those of
+    the one-at-a-time recurrence, for counts around the switch and a phase-randomisation-sized draw."""
+
+    from relax.numerics import relion_random
+
+    for seed, counts in [(1750713862, [5, 70_000, 2_000_003, 3]), (0, [65_535, 65_536, 65_537])]:
+        vector, loop = relion_random.GlibcRand(seed), relion_random.GlibcRand(seed)
+        for count in counts:
+            got = vector.rand_array(count)
+            monkeypatch.setattr(relion_random, "_VECTOR_DRAWS", 1 << 62)
+            want = loop.rand_array(count)
+            monkeypatch.undo()
+            np.testing.assert_array_equal(got, want)
+        assert vector.rand() == loop.rand() and vector.draws == loop.draws

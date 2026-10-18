@@ -47,6 +47,60 @@ def _glibc_srand_table(seeds) -> np.ndarray:
     return table & _MASK32
 
 
+# rand_array draws at least this many words in vectorised segments (_glibc_words) rather than one at a time.
+_VECTOR_DRAWS = 1 << 16
+# Words each step of _glibc_words forms per segment: one turn of the 31-word ring.
+_RING = 31
+
+
+def _ring_step_matrix() -> np.ndarray:
+    """``M`` ``[31, 31]`` uint64: the next 31 words ``r[n..n+30]`` of the recurrence ``r[i] = r[i-31] + r[i-3]``
+    (mod 2**32) as sums of the 31 before them, ``r[n-31..n-1]``."""
+
+    rows = [np.eye(_RING, dtype=np.uint64)[k] for k in range(_RING)]  # r[n-31+k] in terms of the state
+    for i in range(_RING):
+        rows.append((rows[i] + rows[i + _RING - 3]) & np.uint64(_MASK32))
+    return np.stack(rows[_RING:])
+
+
+def _matmul_mod32(a: np.ndarray, b: np.ndarray) -> np.ndarray:
+    """``a @ b`` mod 2**32 for uint64 operands below 2**32: products and sums wrap mod 2**64, which keeps
+    their low 32 bits."""
+
+    return np.matmul(a, b) & np.uint64(_MASK32)
+
+
+def _glibc_words(start, count: int) -> np.ndarray:
+    """The recurrence's next ``count`` words (and the 30 after them) from the 31 words ``start``, uint64.
+
+    The words are formed a ring (31) at a time in segments that run side by side: each segment starts from its
+    state ``M**k`` ahead (``M`` :func:`_ring_step_matrix`), found by repeated squaring; the arithmetic is the
+    recurrence's own, mod 2**32, so the words are the ones one-at-a-time addition gives.
+    """
+
+    step = _ring_step_matrix()
+    rings = -(-(count + _RING - 1) // _RING)  # rings to cover count words and the 30 after them
+    segments = max(1, min(1024, rings // 64))
+    per_segment = -(-rings // segments)
+    # step ** per_segment by squaring: a segment's start is that many rings after the previous one's.
+    jump, power, exponent = np.eye(_RING, dtype=np.uint64), step, per_segment
+    while exponent:
+        if exponent & 1:
+            jump = _matmul_mod32(power, jump)
+        power = _matmul_mod32(power, power)
+        exponent >>= 1
+    states = np.empty((segments, _RING), dtype=np.uint64)
+    states[0] = np.asarray(start, dtype=np.uint64)
+    for k in range(1, segments):
+        states[k] = _matmul_mod32(jump, states[k - 1])
+    out = np.empty((segments, per_segment, _RING), dtype=np.uint64)
+    transposed = step.T.copy()
+    for ring in range(per_segment):
+        states = _matmul_mod32(states, transposed)
+        out[:, ring] = states
+    return out.reshape(-1)[: count + _RING - 1]
+
+
 class GlibcRand:
     """glibc ``srand(seed)`` then ``rand()`` (stdlib/random_r.c, TYPE_3).
 
@@ -81,15 +135,22 @@ class GlibcRand:
         if count < 0:
             raise ValueError(f"count must be non-negative, got {count}")
         # The ring holds r[i-31..i-1] from the front; r[i] = r[i-31] + r[i-3] (front and rear words).
-        words = [self._state[(self._front + k) % 31] for k in range(31)]
-        append = words.append
-        for i in range(31, 31 + count):
-            append((words[i - 31] + words[i - 3]) & _MASK32)
-        self._state = words[-31:]
+        start = [self._state[(self._front + k) % 31] for k in range(31)]
+        if count >= _VECTOR_DRAWS:
+            words = np.concatenate([np.asarray(start, dtype=np.uint64), _glibc_words(start, count)])
+            self._state = [int(value) for value in words[count : count + 31]]
+            values = words[31 : 31 + count].astype(np.int64)
+        else:
+            words = start
+            append = words.append
+            for i in range(31, 31 + count):
+                append((words[i - 31] + words[i - 3]) & _MASK32)
+            self._state = words[-31:]
+            values = np.asarray(words[31:], dtype=np.int64)
         self._front = 0
         self._rear = 28
         self.draws += count
-        return np.asarray(words[31:], dtype=np.int64) >> 1
+        return values >> 1
 
 
 def check_init_random_generator_seeds(seeds) -> None:
