@@ -1,7 +1,4 @@
-"""Training-only fixture loading and actual initial-noise normalization."""
-
-import json
-import pickle
+"""Particle STAR loading for single-particle PPCA and actual initial-noise normalization."""
 
 import numpy as np
 import pytest
@@ -36,67 +33,48 @@ def test_noise_only_initial_estimator():
     )
 
 
-def _write_bare_mrcs_manifest(tmp_path, count, n):
-    """A training manifest of the documented bare-.mrcs form: an image stack, a cryoDRGN CTF pickle, neutral poses."""
+def _write_training_star(root, count, n, images=None):
+    """A RELION particle STAR of the kind ``relax ppca_initial_model --i`` reads: a stack and one optics group."""
     import mrcfile
 
-    images = np.random.default_rng(19).normal(size=(count, n, n)).astype(np.float32)
-    with mrcfile.new(tmp_path / "particles.mrcs") as stack:
+    from scripts.lib.ppca_training_star import write_training_star
+
+    root.mkdir(parents=True, exist_ok=True)
+    if images is None:
+        images = np.random.default_rng(19).normal(size=(count, n, n)).astype(np.float32)
+    with mrcfile.new(root / "particles.mrcs", overwrite=True) as stack:
         stack.set_data(images)
         stack.voxel_size = 2
-    poses = (np.broadcast_to(np.eye(3), (count, 3, 3)).copy(), np.zeros((count, 2)))
-    ctf = np.tile([n, 2, 15000, 15000, 0, 300, 2.7, 0.07, 0], (count, 1)).astype(np.float32)
-    for name, value in [("neutral_poses.pkl", poses), ("ctf.pkl", ctf)]:
-        with open(tmp_path / name, "wb") as stream:
-            pickle.dump(value, stream)
-    np.save(tmp_path / "particle_ids.npy", np.arange(count))
-    names = ["particles.mrcs", "ctf.pkl", "neutral_poses.pkl", "particle_ids.npy"]
-    manifest = dict(
-        schema="recovar-ppca-training-v1",
-        n_images=count,
-        box=n,
-        voxel_size=2,
-        particle_diameter_ang=14,
-        shift_range_px=6,
-        particles=names[0],
-        ctf=names[1],
-        neutral_poses=names[2],
-        particle_ids=names[3],
-        contrast=1,
-        image_multiplier=1,
-        files={name: file_hash(tmp_path / name) for name in names},
-    )
-    path = tmp_path / "manifest.json"
-    path.write_text(json.dumps(manifest))
-    return path, manifest, images, names
+    ctf = np.tile([15000, 15000, 0, 300, 2.7, 0.07, 0], (count, 1))
+    ctf[:, 0] += 100 * np.arange(count)
+    return write_training_star(root / "particles.star", "particles.mrcs", ctf, voxel_size=2, box=n), images
 
 
-def test_training_loader_needs_no_truth_and_checks_inputs(tmp_path):
+def test_training_loader_reads_the_star_as_stored(tmp_path):
+    """Images as stored (no inversion) in STAR row order, CTF from the STAR; the identity is the STAR and its stack,
+    not the way the images are read."""
+    from relax.commands.ppca_initial_model import training_identity
+
     count = 4
-    path, manifest, images, names = _write_bare_mrcs_manifest(tmp_path, count, 8)
-    data, _, identity = load_training(path)
-    assert data.n_images == count
-    assert identity == {"manifest_sha256": file_hash(path)}
-    assert data.data_multiplier == manifest["image_multiplier"]
+    path, images = _write_training_star(tmp_path, count, 8)
+    data, identity, reading = load_training(path)
+    assert data.n_images == count and data.grid_size == 8 and data.voxel_size == 2
+    assert identity == {
+        "particles_star_sha256": file_hash(path),
+        "particle_stacks_sha256": training_identity(path, [tmp_path / "particles.mrcs"])["particle_stacks_sha256"],
+    }
+    assert reading["setting"] == "auto"
     np.testing.assert_allclose(np.asarray(data.get_image_real(0)), images[0], rtol=1e-6, atol=1e-6)
-    # Image reading is not identity: a preread and a per-tile stack give the same images.
+    np.testing.assert_array_equal(np.asarray(data.CTF_params)[:, 0], 15000 + 100 * np.arange(count))
     for setting in ("on", "off"):
-        data, _, read_identity = load_training(path, setting)
-        assert read_identity == identity
+        data, read_identity, reading = load_training(path, setting)
+        assert read_identity == identity and reading["preread"] == (setting == "on")
         np.testing.assert_allclose(np.asarray(data.get_image_real(3)), images[3], rtol=1e-6, atol=1e-6)
-    for change, message in [
-        ({"truth": "absent.npz"}, "Unexpected"),
-        ({"files": {}}, "recorded identity"),
-        ({"voxel_size": 3}, "pixel size"),
-    ]:
-        path.write_text(json.dumps({**manifest, **change}))
-        with pytest.raises(ValueError, match=message):
-            load_training(path)
-    np.save(tmp_path / names[3], np.arange(count)[::-1])
-    manifest["files"][names[3]] = file_hash(tmp_path / names[3])
-    path.write_text(json.dumps(manifest))
-    with pytest.raises(ValueError, match="stable original"):
-        load_training(path)
+    # An edited stack, under the same STAR, is another input.
+    _write_training_star(tmp_path, count, 8, images[::-1].copy())
+    _, edited, _ = load_training(path)
+    assert edited["particles_star_sha256"] == identity["particles_star_sha256"]
+    assert edited["particle_stacks_sha256"] != identity["particle_stacks_sha256"]
 
 
 def test_preread_decision():
@@ -142,9 +120,9 @@ def test_source_identity_covers_the_shared_modules_ppca_imports():
     assert "relax/refinement/iteration_loop.py" not in first
 
 
-def test_one_expectation_step_runs_from_a_bare_mrcs_manifest(tmp_path):
-    """A bare .mrcs with a pickled CTF declares no RELION optics table, so the RELION image preprocessing (odd
-    aberration demodulation) leaves its images alone instead of refusing them (regression of 364dba79)."""
+def test_one_expectation_step_runs_from_a_particle_star(tmp_path):
+    """The RELION image preprocessing (odd aberration demodulation) reads the STAR's optics table; one expectation
+    step runs on the loaded particles."""
     import jax.numpy as jnp
 
     from relax.ppca_initial_model import iteration_loop
@@ -153,9 +131,9 @@ def test_one_expectation_step_runs_from_a_bare_mrcs_manifest(tmp_path):
     from relax.relion.ctf import dataset_optics_source_star
 
     count, n = 6, 8
-    path, _, _, _ = _write_bare_mrcs_manifest(tmp_path, count, n)
+    path, _ = _write_training_star(tmp_path, count, n)
     data, _, _ = load_training(path)
-    assert dataset_optics_source_star(data) is None
+    assert dataset_optics_source_star(data) == path
     n_freq = n * n * (n // 2 + 1)
     theta = jnp.asarray(np.random.default_rng(3).normal(size=(n_freq, 3)) * 1e-2, jnp.complex64)
     state = State(
@@ -179,7 +157,7 @@ def test_final_embedding_pass_reports_each_images_scores(tmp_path, stream):
     from relax.ppca_initial_model.state import State
 
     count, n = 6, 8
-    path, _, _, _ = _write_bare_mrcs_manifest(tmp_path, count, n)
+    path, _ = _write_training_star(tmp_path, count, n)
     data, _, _ = load_training(path)
     n_freq = n * n * (n // 2 + 1)
     theta = jnp.asarray(np.random.default_rng(3).normal(size=(n_freq, 3)) * 1e-2, jnp.complex64)
@@ -203,53 +181,3 @@ def test_final_embedding_pass_reports_each_images_scores(tmp_path, stream):
     np.testing.assert_allclose(
         final.max_posterior, np.exp(final.best_pose_log_score.astype(np.float64) - final.log_evidence), rtol=1e-3
     )
-
-
-def test_a_white_stack_logs_the_inverted_bootstrap_warning(caplog):
-    """A density positive inside the particle passes RECOVAR's sign test; its negative (a RELION-sign stack read as
-    stored) logs the warning. Nothing else changes."""
-    import logging
-
-    from relax.ppca_initial_model.initialization import bootstrap_looks_inverted, warn_if_inverted
-
-    n = 16
-    z, y, x = np.indices((n, n, n)) - n // 2
-    blob = np.exp(-(x**2 + y**2 + z**2) / 8.0).astype(np.float32)
-    assert not bootstrap_looks_inverted(blob, (n, n, n))
-    assert bootstrap_looks_inverted(-blob, (n, n, n))
-    with caplog.at_level(logging.WARNING, logger="relax.ppca_initial_model.initialization"):
-        warn_if_inverted(blob, (n, n, n))
-        assert not caplog.records
-        warn_if_inverted(-blob, (n, n, n))
-    assert "RELION-sign" in caplog.text
-
-
-def test_the_bootstrap_of_a_negated_stack_warns(tmp_path, caplog):
-    """The whole bootstrap on a stack and on its negative: only the negated one warns (the start is the same up to
-    the blob fields' sign)."""
-    import logging
-
-    import mrcfile
-
-    from relax.ppca_initial_model.initialization import initialize
-
-    count, n = 64, 16
-    path, manifest, images, _ = _write_bare_mrcs_manifest(tmp_path, count, n)
-    z, y = np.indices((n, n)) - n // 2
-    projection = 3.0 * np.exp(-(z**2 + y**2) / 6.0).astype(np.float32)
-    for sign, folder in ((1, "dark"), (-1, "white")):
-        # RECOVAR's CTF is negative at low frequency: a positive density images dark.
-        root = tmp_path / folder
-        root.mkdir()
-        for name in ("ctf.pkl", "neutral_poses.pkl", "particle_ids.npy"):
-            (root / name).write_bytes((tmp_path / name).read_bytes())
-        with mrcfile.new(root / "particles.mrcs") as stack:
-            stack.set_data((sign * -projection[None] + 0.1 * images).astype(np.float32))
-            stack.voxel_size = 2
-        changed = dict(manifest, files={**manifest["files"], "particles.mrcs": file_hash(root / "particles.mrcs")})
-        (root / "manifest.json").write_text(json.dumps(changed))
-        data, _, _ = load_training(root / "manifest.json")
-        caplog.clear()
-        with caplog.at_level(logging.WARNING, logger="relax.ppca_initial_model.initialization"):
-            initialize(data, seed=3, diameter_ang=24.0, q=2)
-        assert ("RELION-sign" in caplog.text) == (sign == -1), folder

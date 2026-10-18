@@ -5,13 +5,10 @@ of positive-minus-half-negative blob fields; q+1 fields map to one mean and
 q normalized Helmert contrasts. Native double bootstrap is not called.
 """
 
-import logging
-
 import jax.numpy as jnp
 import numpy as np
 from recovar import core
 from recovar.core import fourier_transform_utils as ftu
-from recovar.core import mask as recovar_mask
 from scipy.spatial.transform import Rotation
 
 from relax.ppca_initial_model.noise import relion_to_coefficient_variance
@@ -19,8 +16,6 @@ from relax.ppca_refinement.residual_statistics import full_float32
 from relax.reconstruction.resolution import compute_ini_high_shell
 from relax.relion.geometry import soft_mask_weights
 from relax.relion.initial_noise import compute_avg_unaligned_and_sigma2
-
-logger = logging.getLogger(__name__)
 
 
 def seed_maps_to_model(volumes, *, compute_dtype=jnp.float32):
@@ -156,7 +151,6 @@ def seed_model(rhs, lhs, volume_shape, voxel_size, diameter_ang, radius, rng):
     half_shape = ftu.volume_shape_to_half_volume_shape(volume_shape)
     reconstruction = jnp.where(lhs > 0, rhs / jnp.where(lhs > 0, lhs, 1), 0)
     real = np.asarray(ftu.get_idft3_real(reconstruction.reshape((channels,) + half_shape), volume_shape), np.float32)
-    warn_if_inverted(real.mean(axis=0), volume_shape)
     diameter = diameter_ang / voxel_size
     mask = support_mask(n, diameter)
     fields = []
@@ -172,29 +166,6 @@ def seed_model(rhs, lhs, volume_shape, voxel_size, diameter_ang, radius, rng):
     if not np.all(np.isfinite(np.asarray(theta))) or np.any(np.linalg.norm(np.asarray(theta[:, 1:]), axis=0) == 0):
         raise ValueError("Random initialization requires finite, nonzero loadings")
     return theta
-
-
-def bootstrap_looks_inverted(volume, volume_shape) -> bool:
-    """RECOVAR's sign test (``recovar.commands.pipeline``, ``uninvert_data='automatic'``): the cubed density summed
-    inside the sphere of radius a third of the box is negative."""
-    radial = np.asarray(recovar_mask.get_radial_mask(volume_shape, radius=volume_shape[0] // 3)).reshape(volume_shape)
-    return bool(np.sum(np.asarray(volume, np.float64) ** 3 * radial) < 0)
-
-
-def warn_if_inverted(volume, volume_shape):
-    """Log when the bootstrap reconstruction is negative where the particle is (no number changes).
-
-    The training manifest's images carry RECOVAR's sign: its CTF (``recovar.core.ctf.evaluate_ctf``) is negative at
-    low frequency, so positive density appears dark, as the simulator writes it; the loader reads the pixels as stored
-    (``uninvert_data=False``). A RELION- or cryoSPARC-convention stack (protein white) trains a negative model; its
-    exporter negates the pixels.
-    """
-    if bootstrap_looks_inverted(volume, volume_shape):
-        logger.warning(
-            "The bootstrap reconstruction is negative inside the particle (sum of density cubed within a third of "
-            "the box < 0): the stack is probably RELION-sign (protein white). The PPCA manifest expects RECOVAR's "
-            "sign (protein dark); negate the pixels when exporting the stack."
-        )
 
 
 def initial_noise(images_for_noise, image_shape, voxel_size, diameter_ang, *, n_groups=None):

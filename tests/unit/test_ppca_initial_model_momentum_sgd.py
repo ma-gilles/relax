@@ -161,7 +161,7 @@ def test_cli_config_and_optimizer_checkpoint(tmp_path):
     parser = argparse.ArgumentParser()
     add_args(parser)
     args = parser.parse_args(
-        ["manifest.json", "-o", str(tmp_path), "--optimizer", "momentum_sgd", "--sgd-learning-rate", "0.25"]
+        ["--i", "particles.star", "--particle-diameter", "100", "-o", str(tmp_path), "--optimizer", "momentum_sgd", "--sgd-learning-rate", "0.25"]
     )
     config = Config(optimizer=args.optimizer, sgd_learning_rate=args.sgd_learning_rate)
     assert (config.optimizer, config.sgd_learning_rate) == ("momentum_sgd", 0.25)

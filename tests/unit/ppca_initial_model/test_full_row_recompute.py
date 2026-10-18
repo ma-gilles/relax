@@ -19,7 +19,7 @@ pytestmark = pytest.mark.unit
 def test_coarse_recompute_cli_is_the_default():
     parser = argparse.ArgumentParser()
     add_args(parser)
-    required = ["manifest.json", "--output", "out"]
+    required = ["--i", "particles.star", "--particle-diameter", "100", "--output", "out"]
     assert parser.parse_args(required).stream_coarse_recompute
     assert parser.parse_args([*required, "--stream-coarse-recompute"]).stream_coarse_recompute
     assert not parser.parse_args([*required, "--no-stream-coarse-recompute"]).stream_coarse_recompute
@@ -227,22 +227,22 @@ def test_defaults_are_the_dense_stream_and_oversampling_is_opt_in():
     assert (config.image_batch_size, config.rotation_block_size) == (150, 512)
     parser = argparse.ArgumentParser()
     add_args(parser)
-    args = parser.parse_args(["manifest.json", "--output", "out"])
+    args = parser.parse_args(["--i", "particles.star", "--particle-diameter", "100", "--output", "out"])
     assert args.oversampling == 0 and args.stream_coarse_recompute
     assert (args.image_batch_size, args.rotation_block_size) == (150, 512)
     assert config.pass2_mass_floor == args.ppca_pass2_mass_floor == 1e-10
-    host_mask = parser.parse_args(["manifest.json", "--output", "out", "--no-stream-coarse-recompute"])
+    host_mask = parser.parse_args(["--i", "particles.star", "--particle-diameter", "100", "--output", "out", "--no-stream-coarse-recompute"])
     assert not host_mask.stream_coarse_recompute
     for change in ({"oversampling": 2}, {"stream_full_fine_rows": True}, {"fine_devices": 2}):
         with pytest.raises(ValueError, match="section 14"):
             Config(stream_coarse_recompute=False, **change)
-    oversampled = parser.parse_args(["manifest.json", "--output", "out", "--oversampling", "1", "--maxsig", "50"])
+    oversampled = parser.parse_args(["--i", "particles.star", "--particle-diameter", "100", "--output", "out", "--oversampling", "1", "--maxsig", "50"])
     assert (oversampled.oversampling, oversampled.maxsig, args.maxsig) == (1, 50, 100)
     assert Config(oversampling=1).max_significant == config.max_significant == 100
     with pytest.raises(ValueError, match="streamed engine"):
         Config(oversampling=1, stream_coarse_recompute=False)
     with pytest.raises(SystemExit):
-        parser.parse_args(["manifest.json", "--output", "out", "--oversampling", "2"])
+        parser.parse_args(["--i", "particles.star", "--particle-diameter", "100", "--output", "out", "--oversampling", "2"])
 
 
 def test_gemm_precision_flag_config_and_checkpoint_default(tmp_path):
@@ -254,7 +254,7 @@ def test_gemm_precision_flag_config_and_checkpoint_default(tmp_path):
 
     parser = argparse.ArgumentParser()
     add_args(parser)
-    required = ["manifest.json", "--output", "out"]
+    required = ["--i", "particles.star", "--particle-diameter", "100", "--output", "out"]
     assert parser.parse_args(required).ppca_gemm_precision == "auto"
     assert parser.parse_args([*required, "--ppca-gemm-precision", "fp32"]).ppca_gemm_precision == "fp32"
     assert parser.parse_args([*required, "--ppca-gemm-precision", "tf32"]).ppca_gemm_precision == "tf32"

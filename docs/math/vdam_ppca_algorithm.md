@@ -1627,23 +1627,16 @@ Native frequency and angular adaptation remains active within those caps, so
 its effective per-iteration support must be reported rather than assumed equal
 to the PPCA milestones. Defaults for either method are unchanged.
 
-The [PPCA training loader](../../relax/commands/ppca_initial_model.py)
-preserves the simulator particle sign when the manifest declares unit
-contrast and `image_multiplier=1`. The subset MRC stack is stored in that
-sign convention, and the K3 STAR loader consumes it without inversion.
+In the pilot the [PPCA training loader](../../relax/commands/ppca_initial_model.py),
+then a reader of training manifests, preserved the simulator particle sign
+(unit contrast, `image_multiplier=1`). The subset MRC stack was stored in that
+sign convention, and the K3 STAR loader consumed it without inversion.
 Setting `uninvert_data=True` in PPCA changed every processed Fourier image
 to its negative before scoring; this was corrected after the first small
 pilot pair identified the exact first differing observation array. A loader
 regression checks the processed image against the stored MRC pixels.
 
-The sign contract of a training manifest follows: its CTF is RECOVAR's
-(`recovar.core.ctf.evaluate_ctf`, negative at low frequency), so positive
-density appears dark in the stored images, as the simulator writes them.
-`contrast` and `image_multiplier` are amplitudes and must be 1; neither declares
-a sign. An exporter of RELION- or cryoSPARC-convention particles (protein white)
-negates the pixels. The bootstrap logs a warning when its reconstruction fails
-RECOVAR's own sign test (the cubed density inside a third of the box sums
-negative), without changing any number.
+PPCA reads RELION particle STARs as `relax refine` does (`relax ppca_initial_model --i particles.star`: images as stored, CTF from the STAR); its internal frame is the one [map_io](../../relax/io/map_io.py) describes.
 
 The [pilot evaluator](../../scripts/evaluate_vdam_ppca_pilot.py) retains its
 full shellwise FSC and full-band AUC. When an active radius is declared, shared

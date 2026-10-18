@@ -51,7 +51,7 @@ def _identity_config(config_dict):
 
 # Provenance: the code a checkpoint was written by. Stored in every checkpoint (and run.json) and logged
 # on resume, but not part of the resume identity, so a run resumes after a code update. The inputs
-# (manifest or optimisation-set hashes) and the model-defining configuration stay in the identity.
+# (particle STAR and stack, or optimisation-set, hashes) and the model-defining configuration stay in the identity.
 PROVENANCE_IDENTITY_FIELDS = ("source",)
 
 

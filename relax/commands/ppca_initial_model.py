@@ -21,9 +21,13 @@ logger = logging.getLogger(__name__)
 
 
 def add_args(parser):
-    parser.add_argument("manifest", nargs="?", help="Training-only fixture manifest (single particles)")
+    parser.add_argument(
+        "--i",
+        dest="particles",
+        help="RELION particle STAR of single particles, read as relax refine reads it (input poses are not used)",
+    )
     parser.add_argument("--ios", help="RELION 5 optimisation set of subtomogram particles (2D stacks) instead")
-    parser.add_argument("--particle-diameter", type=float, help="Particle diameter in Angstrom (with --ios)")
+    parser.add_argument("--particle-diameter", type=float, required=True, help="Particle diameter in Angstrom")
     parser.add_argument("-o", "--output", required=True)
     parser.add_argument("--q", type=int, default=2)
     parser.add_argument("--seed", type=int, default=11)
@@ -128,86 +132,84 @@ def resolve_preread_images(setting, stack_bytes, memory_bytes):
     }
 
 
-def training_image_reading(path, preread_images):
-    """:func:`resolve_preread_images` for a training manifest's particle stack on this host."""
-    path = Path(path).resolve()
-    particles = path.parent / json.loads(path.read_text())["particles"]
-    return resolve_preread_images(preread_images, particles.stat().st_size, available_memory_bytes())
+def training_stack_files(particles_star):
+    """The image stacks a particle STAR's ``rlnImageName`` rows name, one per distinct file, in first-use order.
+
+    Resolved as every read resolves them (recovar's loader, relative to the STAR), without staging.
+    """
+    from recovar.data_io.image_loader import load_images
+
+    loader = load_images(str(particles_star), lazy=True, skip_staging=True)
+    try:
+        return [Path(path) for path in loader.stack_files()]
+    finally:
+        loader.close()
 
 
-def load_training(path, preread_images="auto"):
-    """Load the training fixture with its unit-contrast image sign (algorithm §15).
+def training_identity(particles_star, stacks):
+    """Checkpoint identity of single-particle training inputs: the particle STAR and every stack it reads.
 
-    The stack is read as stored (``uninvert_data=False``) and its CTF is RECOVAR's, negative at low frequency, so
-    the manifest's images show positive density dark, as the RECOVAR simulator writes them. A RELION- or
-    cryoSPARC-convention stack (protein white) is negated by its exporter; ``contrast`` and ``image_multiplier`` are
-    amplitudes and must be 1, not a sign. The bootstrap logs a warning when the start looks inverted
-    (:func:`relax.ppca_initial_model.initialization.warn_if_inverted`).
+    The STAR fixes the image names, their order (the particle ids) and the CTF; ``particle_stacks_sha256`` is one
+    sha256 over the stacks' own sha256 in first-use order, so an edited stack refuses a resume and a moved dataset
+    does not. Image reading (preread or per tile) is no part of it.
+    """
+    import hashlib
 
-    ``preread_images`` (``Config.preread_images``) decides whether the particle stack is read into
-    host memory once (:func:`training_image_reading`); the decision is logged.
+    digest = hashlib.sha256()
+    for stack in stacks:
+        digest.update(f"{file_hash(stack)}\0".encode())
+    return {"particles_star_sha256": file_hash(particles_star), "particle_stacks_sha256": digest.hexdigest()}
+
+
+def training_image_reading(particles_star, preread_images, stacks=None):
+    """:func:`resolve_preread_images` for the stacks a particle STAR reads (their whole file sizes) on this host."""
+    stacks = training_stack_files(particles_star) if stacks is None else stacks
+    return resolve_preread_images(preread_images, sum(stack.stat().st_size for stack in stacks), available_memory_bytes())
+
+
+def load_training(particles_star, preread_images="auto"):
+    """Single particles of a RELION particle STAR, read as ``relax refine`` and ``relax initial_model`` read them.
+
+    The images are taken as stored (RELION sign, protein white; no inversion) with the CTF of the STAR's particle
+    and optics tables (recovar's ``load_dataset``), so the internal model frame is that of every relax volume
+    (:mod:`relax.io.map_io` converts at map I/O). Input angles and offsets are not read: PPCA searches every pose,
+    and a STAR without them reads as zero (``absent_angles_zero``, as relion_refine). The particle ids are the STAR
+    row order. CTF-premultiplied images, even aberrations and anisotropic magnification, which the generic CTF does
+    not apply, fail at the first CTF evaluation instead of training on wrong images
+    (:func:`relax.relion.ctf.refuse_generic_ctf_for_optics`).
+
+    ``preread_images`` (``Config.preread_images``) decides whether the stacks are read into host memory once
+    (:func:`training_image_reading`); the decision is logged. Returns the dataset, its checkpoint identity
+    (:func:`training_identity`) and the reading record.
     """
     from recovar.data_io.cryoem_dataset import load_dataset
 
-    path = Path(path).resolve()
-    manifest = json.loads(path.read_text())
-    if manifest["schema"] != "recovar-ppca-training-v1":
-        raise ValueError("Unsupported training manifest")
-    allowed = {
-        "schema",
-        "n_images",
-        "box",
-        "voxel_size",
-        "particle_diameter_ang",
-        "shift_range_px",
-        "particles",
-        "ctf",
-        "neutral_poses",
-        "particle_ids",
-        "contrast",
-        "image_multiplier",
-        "files",
-    }
-    if set(manifest) - allowed:
-        raise ValueError("Unexpected training metadata; truth must stay outside the trainer")
-    inputs = [manifest[key] for key in ("particles", "ctf", "neutral_poses", "particle_ids")]
-    if len(set(inputs)) != 4 or set(inputs) != set(manifest["files"]):
-        raise ValueError("Every training input must have exactly one recorded identity")
-    for name, digest in manifest["files"].items():
-        if Path(name).name != name or file_hash(path.parent / name) != digest:
-            raise ValueError("Training input identity mismatch")
-    if manifest["contrast"] != 1 or manifest["image_multiplier"] != 1:
-        raise ValueError("First version requires unit contrast and unscaled particles")
-    particles = path.parent / manifest["particles"]
-    preread, reading = training_image_reading(path, preread_images)
+    from relax.io.particle_io import ParticleReadPolicy, prepare_particle_reads
+    from relax.relion.ctf import refuse_generic_ctf_for_optics
+
+    particles_star = Path(particles_star).resolve()
+    stacks = training_stack_files(particles_star)
+    preread, reading = training_image_reading(particles_star, preread_images, stacks)
     logger.info(
-        "PPCA particle images: %s (setting %s; stack %.2f GB, memory %.1f GB, preread limit %.0f%%)",
+        "PPCA particle images: %s (setting %s; stacks %.2f GB, memory %.1f GB, preread limit %.0f%%)",
         "read into host memory once" if preread else "read from disk per tile",
         reading["setting"],
         reading["stack_gb"],
         reading["memory_gb"],
         100 * PREREAD_MEMORY_FRACTION,
     )
+    # No --scratch_dir: the stacks are read in place (recovar's implicit staging off, as in refine).
+    prepare_particle_reads(str(particles_star), ParticleReadPolicy(preread_images=preread))
     data = load_dataset(
-        str(particles),
-        poses_file=str(path.parent / manifest["neutral_poses"]),
-        ctf_file=str(path.parent / manifest["ctf"]),
-        uninvert_data=False,
-        dtype=np.complex64,
+        str(particles_star),
         lazy=not preread,
+        dtype=np.complex64,
+        absent_angles_zero=True,
     )
-    if not np.allclose(np.asarray(data.rotation_matrices), np.eye(3), atol=0, rtol=0) or np.any(
-        np.asarray(data.translations)
-    ):
-        raise ValueError("Training poses must be neutral; supplied poses are not accepted")
-    ids = np.load(path.parent / manifest["particle_ids"], allow_pickle=False)
-    if not np.array_equal(ids, np.arange(data.n_images)):
-        raise ValueError("Expected contiguous stable original particle IDs")
-    if data.grid_size != manifest["box"] or data.n_images != manifest["n_images"]:
-        raise ValueError("Training geometry mismatch")
-    if not np.isclose(data.voxel_size, manifest["voxel_size"], rtol=1e-6, atol=0):
-        raise ValueError("Training pixel size mismatch")
-    return data, manifest, {"manifest_sha256": file_hash(path)}
+    if data.tilt_series_flag:
+        raise ValueError("Subtomogram particles train from a RELION 5 optimisation set (--ios)")
+    refuse_generic_ctf_for_optics(data)
+    return data, training_identity(particles_star, stacks), reading
 
 
 def refuse_unsupported_tilt_optics(particles_star):
@@ -377,18 +379,16 @@ def main(args=None):
         pass2_mass_floor=args.ppca_pass2_mass_floor,
         stages=tuple(tuple(stage) for stage in json.loads(args.stages)) if args.stages else Config().stages,
     )
-    if (args.ios is None) == (args.manifest is None):
-        raise ValueError("Give either a training manifest or --ios")
+    if (args.ios is None) == (args.particles is None):
+        raise ValueError("Give either a particle STAR (--i) or an optimisation set (--ios)")
     output = Path(args.output)
     output.mkdir(parents=True, exist_ok=True)
     if args.ios:
-        if args.particle_diameter is None:
-            raise ValueError("--ios needs --particle-diameter")
         data, identity = load_tilt_training(args.ios, output)
-        diameter = args.particle_diameter
+        # Subtomogram stacks are always read into memory (load_tilt_training).
+        image_reading = None
     else:
-        data, manifest, identity = load_training(args.manifest, config.preread_images)
-        diameter = manifest["particle_diameter_ang"]
+        data, identity, image_reading = load_training(args.particles, config.preread_images)
     identity["source"] = source_identity()
     if not args.resume and list(output.glob("checkpoint_*.npz")):
         raise ValueError("Output already contains checkpoints; use --resume or a new directory")
@@ -402,8 +402,8 @@ def main(args=None):
             {
                 "config": dataclasses.asdict(config),
                 "identity": identity,
-                # Subtomogram stacks are always read into memory (load_tilt_training).
-                "image_reading": None if args.ios else training_image_reading(args.manifest, config.preread_images)[1],
+                "input": {"particles": args.particles, "ios": args.ios, "particle_diameter_ang": args.particle_diameter},
+                "image_reading": image_reading,
             },
             indent=2,
         )
@@ -414,7 +414,7 @@ def main(args=None):
         config,
         output,
         identity,
-        diameter,
+        args.particle_diameter,
         resume=args.resume,
         stop_after=args.stop_after,
         stop_file=args.stop_file,
