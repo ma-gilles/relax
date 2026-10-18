@@ -83,7 +83,7 @@ Steps this controller shares with VDAM live in `relax/steps/`: `half_inputs.py` 
   controller and returns what it was handed (`controller_inputs`); the fingerprint's `main_*` cases compare
   the whole command. No test reads its text; a test that needs a run fact the tiny data cannot produce
   (a frozen boundary, a follower topology) stands in for the one callee that provides it.
-- RELION replay inputs the command reads (numbered STAR replay, final-only replay, K=1 initial state, Class3D
+- RELION replay inputs the command reads (numbered STAR replay, K=1 initial state, Class3D
   initial translations) live in `relax/parity/replay_inputs.py`, not in the command.
 - An execution or diagnostic environment variable of the controller is a field of an option record
   (`ExecutionOptions`, `FinalPassOptions`), read by its `from_environ` constructor, which the command calls; do

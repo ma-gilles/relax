@@ -102,103 +102,6 @@ def _select_final_replay_override(*, requested_index, diagnostic_override, repla
     return override_index, override
 
 
-def _check_final_replay_source_iteration(*, replay, diagnostic_override, numbered_iteration_count) -> None:
-    """Refuse a final-only substitution whose source is not the boundary the numbered iterations reached."""
-    if (
-        (diagnostic_override is not None or replay.final_replay_reference_maps is not None)
-        and replay.final_replay_source_iteration is not None
-        and numbered_iteration_count != int(replay.final_replay_source_iteration)
-    ):
-        raise RuntimeError(
-            "Diagnostic final-only substitution source does not match autonomous convergence boundary: "
-            f"source_iteration={int(replay.final_replay_source_iteration)} "
-            f"numbered_iteration_count={numbered_iteration_count}"
-        )
-
-
-def _prepare_k1_final_replay_references(
-    *,
-    replay,
-    diagnostic_override,
-    numbered_iteration_count,
-    means,
-    final_join_means,
-    logger,
-):
-    """Validate the K=1 final-only substitution boundary and prepare the two half references.
-
-    Without supplied reference maps, return the existing reference list itself.
-    Supplied maps retain each half's current dtype. Override-state application
-    remains in the controller after this selection and validation boundary.
-    """
-    _check_final_replay_source_iteration(
-        replay=replay, diagnostic_override=diagnostic_override, numbered_iteration_count=numbered_iteration_count
-    )
-    if replay.final_replay_reference_maps is not None:
-        if len(replay.final_replay_reference_maps) != 2:
-            raise ValueError("Diagnostic final-only RELION reference substitution requires exactly two half maps")
-        expected_reference_shape = tuple(np.asarray(means[0]).shape)
-        candidate_reference_shapes = [
-            tuple(np.asarray(reference).shape) for reference in replay.final_replay_reference_maps
-        ]
-        if any(shape != expected_reference_shape for shape in candidate_reference_shapes):
-            raise ValueError(
-                "Diagnostic final-only RELION reference shape mismatch: "
-                f"expected={expected_reference_shape} got={candidate_reference_shapes}"
-            )
-        final_join_means = [
-            jnp.asarray(reference, dtype=means[half_idx].dtype)
-            for half_idx, reference in enumerate(replay.final_replay_reference_maps)
-        ]
-        logger.info(
-            "Diagnostic final-only RELION reference substitution at numbered boundary %d",
-            numbered_iteration_count,
-        )
-    return final_join_means
-
-
-def _validate_class_final_replay_boundary(*, replay, diagnostic_override, numbered_iteration_count) -> None:
-    """Validate the Class3D final-only substitution boundary; Class3D has no reference substitution."""
-    _check_final_replay_source_iteration(
-        replay=replay, diagnostic_override=diagnostic_override, numbered_iteration_count=numbered_iteration_count
-    )
-    if replay.final_replay_reference_maps is not None:
-        raise RuntimeError("Diagnostic final-only RELION reference substitution is currently K=1 only")
-
-
-def _prepare_final_replay_references(
-    *,
-    replay,
-    diagnostic_override,
-    numbered_iteration_count,
-    means,
-    final_join_means,
-    k_class_enabled,
-    logger,
-):
-    """Validate the final-only substitution boundary and prepare half references.
-
-    This is the one remaining mode decision of the final reference
-    preparation, to be removed when the K=1 trajectory calls
-    ``_prepare_k1_final_replay_references`` and the Class3D trajectory calls
-    ``_validate_class_final_replay_boundary`` directly. Class3D keeps the
-    reference list it was given.
-    """
-    if k_class_enabled:
-        _validate_class_final_replay_boundary(
-            replay=replay, diagnostic_override=diagnostic_override, numbered_iteration_count=numbered_iteration_count
-        )
-        return final_join_means
-    return _prepare_k1_final_replay_references(
-        replay=replay,
-        diagnostic_override=diagnostic_override,
-        numbered_iteration_count=numbered_iteration_count,
-        means=means,
-        final_join_means=final_join_means,
-        logger=logger,
-    )
-
-
 def _perturbation_restart_state_iteration(
     restart_state_iterations,
     relion_iteration: int,
@@ -381,8 +284,8 @@ class RelionReplay:
     precision and the iterations whose saved RNG state a restart resumes from.
     ``replay_iteration_overrides``: one slot (a dict, or None) per numbered iteration, the state installed in
     it (the numbered STAR replay's, ``--relion_init_dir``'s run_it000 state, captured projectors).
-    ``final_replay_*`` and ``final_sampling_replay_relion_dir``: a final-only replay
-    (``--final-replay-relion-dir``). The last two switches force (``RELAX_FINAL_ALL_DATA_REPLAY_LAST_NUMBERED_STATE``)
+    ``final_replay_override``: a final-only replay's state (``--final-replay-fields`` of
+    scripts/run_multi_iter_parity.py). The last two switches force (``RELAX_FINAL_ALL_DATA_REPLAY_LAST_NUMBERED_STATE``)
     or forbid (``RELAX_FINAL_ALL_DATA_DISABLE_REPLAY_LAST_NUMBERED_STATE``) replaying the last numbered state in
     the final pass; ``from_environ``, which the command calls, reads them.
     A frozen boundary (``--frozen-boundary-dir``): its ``sealed_sampling_state`` and ``sealed_scoring_context``,
@@ -404,9 +307,6 @@ class RelionReplay:
     perturb_replay_restart_state_iterations: tuple[int, ...] = ()
     replay_iteration_overrides: Any | None = None
     final_replay_override: Any | None = None
-    final_replay_reference_maps: Any | None = None
-    final_replay_source_iteration: int | None = None
-    final_sampling_replay_relion_dir: str | None = None
     # From the environment, by from_environ (the command calls it).
     final_all_data_replay_last_numbered_state: bool = False
     final_all_data_disable_replay_last_numbered_state: bool = False
@@ -487,7 +387,7 @@ class RelionReplay:
             value is not None
             for value in (
                 self.replay_iteration_overrides, self.perturb_replay_relion_dir, self.final_replay_override,
-                self.final_replay_reference_maps, self.final_sampling_replay_relion_dir, self.sealed_sampling_state,
+                self.sealed_sampling_state,
                 self.sealed_scoring_context, self.frozen_refinement_state_fields, self.start_seeds,
                 self.state_swap_probe,
             )
@@ -735,25 +635,17 @@ class RelionReplaySource(InputSource):
 
     def final_state(self, inputs, *, means, numbered_iteration_count, halves, direction_priors, healpix_order,
                     image_geometry):
-        """The final pass's RELION state: a final-only replay's references and state, else the last numbered
+        """The final pass's RELION state: a final-only replay override's state, else the last numbered
         slot's (when the replay has numbered slots, or RELAX_FINAL_ALL_DATA_REPLAY_LAST_NUMBERED_STATE asks and
         RELAX_FINAL_ALL_DATA_DISABLE_REPLAY_LAST_NUMBERED_STATE does not forbid it). Installs the particle state
         in the ``halves`` and the priors in ``direction_priors`` in place, as apply_final_replay_state does."""
-        options, replay = self.options, self.replay
+        options = self.options
         k_class_enabled = options.k_class.n_classes > 1
         final_replay_override = self.replay.final_replay_override
         sigma_offset, noise_model = inputs.sigma_offset, inputs.noise_model
         disabled = self.replay.final_all_data_disable_replay_last_numbered_state
         has_overrides = self.replay.replay_iteration_overrides is not None and len(self.replay.replay_iteration_overrides) > 0
-        join_means = _prepare_final_replay_references(
-            replay=replay,
-            diagnostic_override=final_replay_override,
-            numbered_iteration_count=numbered_iteration_count,
-            means=means,
-            final_join_means=inputs.join_means,
-            k_class_enabled=k_class_enabled,
-            logger=logger,
-        )
+        join_means = inputs.join_means
         replay_last_numbered_state = final_replay_override is not None or (
             not disabled
             and (
@@ -792,16 +684,11 @@ class RelionReplaySource(InputSource):
         return FinalState(join_means, sigma_offset, noise_model)
 
     def final_sampling_settings(self, state, image_geometry, *, grid_order, relion_iteration, native):
-        """RELION's final (or last numbered) sampling STAR of the final-pass replay directory, else of the live
-        STAR replay; with neither, the run's own. A replay without the STAR leaves the final grid unperturbed."""
+        """RELION's final (or last numbered) sampling STAR of the live STAR replay; without a replay, the run's
+        own. A replay without the STAR leaves the final grid unperturbed."""
         options, parity = self.options, self.options.parity
         last_numbered_iteration = relion_iteration - 1
-        active_replay_dir = self._live_directory
-        replay_dir = (
-            self.replay.final_sampling_replay_relion_dir
-            if self.replay.final_sampling_replay_relion_dir is not None
-            else active_replay_dir
-        )
+        replay_dir = self._live_directory
         if replay_dir is None:
             return native()
         star, source, candidates = select_final_sampling_star(
@@ -854,11 +741,9 @@ class RelionReplaySource(InputSource):
             "leaving final trial grid unperturbed",
             relion_iteration, ", ".join(path for path, _source in candidates),
         )
-        # A final-only replay directory historically applies a zero perturbation
-        # when native perturbation is enabled, without advancing its RNG.
         return native_final_sampling_settings(
             state, image_geometry, options, grid_order=grid_order, relion_iteration=relion_iteration,
-            perturbation=0.0 if active_replay_dir is None and parity.perturb_factor > 0 else None,
+            perturbation=None,
         )
 
     def class_tau2(self, iteration, n_classes):

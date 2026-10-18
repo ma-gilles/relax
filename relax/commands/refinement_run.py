@@ -1027,19 +1027,6 @@ def main(command=None):
                 include_k1_state_swap=args.state_swap_target_relion_iteration is not None,
             )
 
-    final_replay = replay_inputs.FinalReplay()
-    if args.final_replay_relion_dir is not None:
-        final_replay = replay_inputs.final_only_replay(
-            args.final_replay_relion_dir,
-            replay_target,
-            max_iter=job.max_iter,
-            explicit_source_iteration=args.final_replay_source_iteration,
-            fields=args.final_replay_fields,
-            init_relion_iteration=args.init_relion_iteration,
-            n_classes=args.n_classes,
-            log=logger,
-        )
-
     # ``--relion_init_dir`` is the strict cold-start contract, not merely a
     # noise/tau bootstrap. RELION's run_it000 particle/model state includes
     # large pre-centering offsets on real data; omitting them makes iter-1
@@ -1320,10 +1307,6 @@ def main(command=None):
                     perturb_replay_relion_dir=args.perturb_replay_relion_dir,
                     perturb_replay_restart_state_iterations=restart_provenance.iterations,
                     replay_iteration_overrides=replay_iteration_overrides,
-                    final_replay_override=final_replay.override,
-                    final_replay_reference_maps=final_replay.reference_maps,
-                    final_replay_source_iteration=final_replay.source_iteration,
-                    final_sampling_replay_relion_dir=final_replay.sampling_dir,
                     state_swap_probe=state_swap_probe,
                     follower_topology=follower_topology,
                 ),

@@ -110,18 +110,16 @@ def test_optics_groups_on_several_image_shapes_refuse_the_option(name, value):
     [
         dict(relion_replay=RelionReplay(replay_iteration_overrides=[{}])),
         dict(relion_replay=RelionReplay(final_replay_override={})),
-        dict(relion_replay=RelionReplay(final_replay_reference_maps=[None, None])),
         dict(relion_replay=RelionReplay(frozen_refinement_state_fields={})),
         dict(relion_replay=RelionReplay(perturb_replay_relion_dir="relion")),
         dict(relion_replay=RelionReplay(sealed_sampling_state=object())),
         dict(relion_replay=RelionReplay(state_swap_probe={"iteration": 0})),
         # deep2 O-B2: the three replays the refusal's own field list used to omit.
-        dict(relion_replay=RelionReplay(final_sampling_replay_relion_dir="relion")),
         dict(relion_replay=RelionReplay(sealed_scoring_context=object())),
         dict(relion_replay=RelionReplay(final_all_data_replay_last_numbered_state=True)),
     ],
-    ids=["iteration-overrides", "final-override", "final-references", "frozen-state", "star-replay", "sealed", "swap",
-         "final-sampling", "sealed-scoring", "forced-last-state"],
+    ids=["iteration-overrides", "final-override", "frozen-state", "star-replay", "sealed", "swap",
+         "sealed-scoring", "forced-last-state"],
 )
 def test_replayed_or_frozen_relion_state_refuses_the_option(name, value, group):
     """Replayed statistics, references and frozen sampling were computed with RELION's rules."""
@@ -138,7 +136,6 @@ def test_one_field_list_decides_what_replays_relion_state():
     options = stand_in.options()
     state_fields = dict(
         replay_iteration_overrides=[{}], perturb_replay_relion_dir="relion", final_replay_override={},
-        final_replay_reference_maps=[None, None], final_sampling_replay_relion_dir="relion",
         sealed_sampling_state=object(), sealed_scoring_context=object(), frozen_refinement_state_fields={},
         state_swap_probe={"iteration": 0}, final_all_data_replay_last_numbered_state=True,
     )

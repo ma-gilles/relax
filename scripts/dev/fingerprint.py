@@ -67,7 +67,7 @@ import fingerprint_cli  # noqa: E402  (the shared command line; it imports no ha
 SCHEMA = 1
 NOT_COVERED = (
     "in refinement_run.main: inputs from RELION run directories (--relion_init_dir, --relion_half_sets, the "
-    "STAR replays, --final-replay-relion-dir), schema-v3 frozen boundaries (the fixed diagnostic arm; "
+    "STAR replays), schema-v3 frozen boundaries (the fixed diagnostic arm; "
     "main_k1_frozen_boundary runs a schema-v2 one), state-swap probes, "
     "follower-scale topologies, noise or poses from an earlier archive, several optics groups, subtomograms",
     "the real E-step engines and their numbers (a stand-in seeded by its operands replaces the dense adaptive engine)",

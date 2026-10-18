@@ -170,18 +170,14 @@ def test_replay_uses_its_sampling_iteration_without_advancing_native_rng(prepara
     assert result.settings.sampling_star_source == source
 
 
-@pytest.mark.parametrize("active_replay, factor, applied", [(True, 0.5, False), (False, 0.5, True), (False, 0.0, False)])
-def test_missing_final_star_preserves_zero_application_and_rng_semantics(preparation, monkeypatch, tmp_path, active_replay, factor, applied):
+def test_missing_final_star_leaves_the_replayed_final_grid_unperturbed(preparation, monkeypatch, tmp_path):
     inputs, events, _ = preparation
-    inputs["options"] = replace(inputs["options"], parity=stand_in.parity(perturb_factor=factor))
-    _replay_source(
-        inputs, star_directory=str(tmp_path) if active_replay else None,
-        final_sampling_replay_relion_dir=str(tmp_path),
-    )
+    inputs["options"] = replace(inputs["options"], parity=stand_in.parity(perturb_factor=0.5))
+    _replay_source(inputs, star_directory=str(tmp_path))
     monkeypatch.setattr(relion_replay_source, "select_final_sampling_star", lambda *a, **kw: (None, None, []))
     result = trial_grids.prepare_final_sampling(**inputs)
-    assert [name for name, _ in events] == (["perturb"] if applied else [])
-    assert (result.settings.perturbation is not None) == applied
+    assert [name for name, _ in events] == []
+    assert result.settings.perturbation is None
     assert_matches(result.settings.random_perturbation, 0.0)
 
 

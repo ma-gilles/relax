@@ -469,7 +469,6 @@ def _fixed_diagnostic_args():
         firstiter_cc=True,
         apply_initial_lowpass=False,
         image_fourier_backend="relion_cuda",
-        final_replay_relion_dir=None,
         perturb_replay_restart_provenance=None,
         relion_dispatch_schedule=None,
         relion_follower_scale_replay=None,

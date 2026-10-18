@@ -53,7 +53,6 @@ tests/unit/test_exact_coarse_operand_precision.py
 tests/unit/test_expected_accuracy_inputs_owner.py
 tests/unit/test_expected_accuracy_optics_groups.py
 tests/unit/test_expected_accuracy_trial_order.py
-tests/unit/test_final_boundary_factorial.py
 tests/unit/test_final_half_preparation.py
 tests/unit/test_finalize_frozen_boundary_v3.py
 tests/unit/test_final_local_pass1_size_guard.py

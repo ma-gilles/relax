@@ -269,39 +269,7 @@ def parse_refinement_args(argv=None):
         "this directory. This is not an autonomous trajectory; omit it and use "
         "--perturb_seed for same-seed autonomous refinement.",
     )
-    parser.add_argument(
-        "--final-replay-relion-dir",
-        default=None,
-        help=(
-            "Diagnostic-only final-boundary substitution source. Numbered refinement remains "
-            "autonomous; selected last-numbered state fields and/or the unnumbered final sampling "
-            "state are loaded only after convergence."
-        ),
-    )
     add_state_swap_probe_arguments(parser)
-    parser.add_argument(
-        "--final-replay-fields",
-        default="all",
-        help=(
-            "Comma-separated diagnostic final-only groups: poses, sampling, corrections, "
-            "noise, direction_prior, norm_factor, scoring_scale, references, or all. "
-            "poses replaces previous rotations/translations; sampling replaces translation sigma "
-            "and final sampling grid/perturbation; corrections replaces noise, direction prior, "
-            "and the norm factor while retaining the resident scoring scale; norm_factor and "
-            "scoring_scale form an orthogonal diagnostic pair; references replaces only the two "
-            "input half-reference maps used by the final all-data expectation."
-        ),
-    )
-    parser.add_argument(
-        "--final-replay-source-iteration",
-        type=int,
-        default=None,
-        help=(
-            "Exact last-numbered RELION iteration used by --final-replay-relion-dir. "
-            "Defaults to the latest contiguous complete numbered state and fails closed "
-            "if it exceeds --max_iter or lacks final convergence provenance."
-        ),
-    )
     parser.add_argument(
         "--perturb-replay-restart-state-iterations",
         default="",

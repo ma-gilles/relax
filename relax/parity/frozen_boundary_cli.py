@@ -648,7 +648,6 @@ def _validate_fixed_diagnostic_arm_cli(args) -> None:
             )
 
     forbidden_options = {
-        "final_replay_relion_dir",
         "perturb_replay_restart_provenance",
         "relion_dispatch_schedule",
         "relion_follower_scale_replay",

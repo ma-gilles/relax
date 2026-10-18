@@ -93,7 +93,6 @@
 "tests/unit/test_em_steps.py": 3,
 "tests/unit/test_em_symmetry.py": 28,
 "tests/unit/test_exact_coarse_operand_precision.py": 7,
-"tests/unit/test_final_boundary_factorial.py": 0,
 "tests/unit/test_fine_translation_prior.py": 0,
 "tests/unit/test_firstiter_bpref_native.py": 1,
 "tests/unit/test_firstiter_bpref_scope_recovery.py": 0,
