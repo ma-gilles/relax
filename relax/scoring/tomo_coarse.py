@@ -105,6 +105,7 @@ def tilt_image_coarse_operands(
     optics_group_ids=None,
     scale_corrections=None,
     score_with_masked_images: bool = True,
+    fetched=None,
 ):
     """Corrected images, pixel weights and initial diff2 of tilt images: the SPA exact coarse operands.
 
@@ -112,7 +113,8 @@ def tilt_image_coarse_operands(
     ``optics_group_ids`` per dataset image. No pre-shift and no norm correction: RELION
     neither translates nor normalises a tomo image (acc_ml_optimiser_impl.h:429-476);
     ``scale_corrections`` (per dataset image) still divide the image and weight the
-    CTF, as for SPA (:1244-1263).
+    CTF, as for SPA (:1244-1263). ``fetched`` is the images' host read
+    (:func:`relax.io.batch_fetch.fetch_indexed_batch`) when it was made ahead.
     """
 
     from relax.fine_pass.scoring import relion_cuda_powerclass_highres_xi2_half
@@ -127,7 +129,7 @@ def tilt_image_coarse_operands(
 
     image_indices = np.asarray(image_indices, dtype=np.int64)
     # One vectorized host read (the dataset's batch iterator collates image by image, 15x slower).
-    batch_data, _ctf_params, fetched = fetch_indexed_batch(experiment_dataset, image_indices)
+    batch_data, _ctf_params, fetched = fetch_indexed_batch(experiment_dataset, image_indices) if fetched is None else fetched
     if not np.array_equal(np.asarray(fetched), image_indices):
         raise RuntimeError("the dataset returned the tilt images in another order")
     batch_data = np.asarray(batch_data)
@@ -693,18 +695,29 @@ def shared_frames(image_left, unit_image_offsets) -> SharedFrames | None:
     return SharedFrames(image_key, key_rank, key_image.astype(np.int64), unit_order.astype(np.int64))
 
 
-def _indexed_image_coarse_operands(
-    experiment_dataset, image_indices, layout, *, noise_variance_half, optics_group_ids, scale_corrections
-):
-    """:func:`tilt_image_coarse_operands` of the dataset images ``image_indices``, in batches of
-    ``_OPERAND_IMAGE_BATCH`` (the last padded with its last image, so every batch runs the same programs)."""
+def _operand_batches(image_indices):
+    """``image_indices`` in batches of ``_OPERAND_IMAGE_BATCH``, the last padded with its last image (so every
+    batch runs the same programs)."""
 
     image_indices = np.asarray(image_indices, dtype=np.int64)
-    n_images = int(image_indices.size)
+    return [
+        np.concatenate([indices, np.full(_OPERAND_IMAGE_BATCH - indices.size, indices[-1])])
+        for indices in (
+            image_indices[start : start + _OPERAND_IMAGE_BATCH]
+            for start in range(0, image_indices.size, _OPERAND_IMAGE_BATCH)
+        )
+    ]
+
+
+def _indexed_image_coarse_operands(
+    experiment_dataset, image_indices, layout, *, noise_variance_half, optics_group_ids, scale_corrections, fetched=None
+):
+    """:func:`tilt_image_coarse_operands` of the dataset images ``image_indices``, in the batches of
+    :func:`_operand_batches`; ``fetched`` holds their host reads when they were made ahead."""
+
+    n_images = int(np.size(image_indices))
     parts = []
-    for start in range(0, n_images, _OPERAND_IMAGE_BATCH):
-        indices = image_indices[start : start + _OPERAND_IMAGE_BATCH]
-        padded = np.concatenate([indices, np.full(_OPERAND_IMAGE_BATCH - indices.size, indices[-1])])
+    for i, padded in enumerate(_operand_batches(image_indices)):
         parts.append(
             tilt_image_coarse_operands(
                 experiment_dataset,
@@ -713,11 +726,23 @@ def _indexed_image_coarse_operands(
                 noise_variance_half=noise_variance_half,
                 optics_group_ids=optics_group_ids,
                 scale_corrections=scale_corrections,
+                fetched=None if fetched is None else fetched[i],
             )
         )
     return tuple(
         (values[0] if len(parts) == 1 else jnp.concatenate(values, axis=0))[:n_images] for values in zip(*parts)
     )
+
+
+def _group_image_reads(experiment_dataset, plan, offsets):
+    """Each frame group's host image reads (:func:`relax.io.batch_fetch.fetch_indexed_batch`), one list of its
+    operand batches per group, in group order; nothing without a plan."""
+
+    from relax.io.batch_fetch import fetch_indexed_batch
+
+    for units in [] if plan is None else plan.groups:
+        images = np.concatenate([np.arange(offsets[unit], offsets[unit + 1]) for unit in units])
+        yield [fetch_indexed_batch(experiment_dataset, padded) for padded in _operand_batches(images)]
 
 
 @partial(jax.jit, static_argnames=("n_frames",))
@@ -1144,6 +1169,7 @@ def particle_coarse_supports(
     cut weight below the cut's rank is significant but not counted.
     """
 
+    from relax.io.batch_fetch import prefetched_batches
     from relax.projection.projection import relion_projector_half_to_texture_full
     from relax.sampling import tomo_particles
     from relax.sampling.device_rotations import relion_adaptive_pass1_rotations
@@ -1494,13 +1520,15 @@ def particle_coarse_supports(
         _indexed_image_coarse_operands, experiment_dataset, layout=layout, noise_variance_half=noise_variance_half,
         optics_group_ids=optics_group_ids, scale_corrections=scale_corrections,
     )
-    for units in [] if plan is None else plan.groups:
-        diff2, error, n_valid, operands, last_total = _score_frame_group(
-            units, plan, tilt, operands_of, scorer, r_pad=r_pad_all, slots=slots
-        )
-        n_scored += int(units.size) * n_classes * r_pad_all * n_coarse_trans
-        pending.append((units, diff2, error, n_valid, operands))
-        flush()
+    # The groups' host image reads run one group ahead, on a worker thread.
+    with prefetched_batches(_group_image_reads(experiment_dataset, plan, offsets), depth=1) as reads:
+        for units, fetched in zip([] if plan is None else plan.groups, reads):
+            diff2, error, n_valid, operands, last_total = _score_frame_group(
+                units, plan, tilt, partial(operands_of, fetched=fetched), scorer, r_pad=r_pad_all, slots=slots
+            )
+            n_scored += int(units.size) * n_classes * r_pad_all * n_coarse_trans
+            pending.append((units, diff2, error, n_valid, operands))
+            flush()
     for units, r_pad, p_pad, slot_block in batches if plan is None else ():
         diff2, error, n_valid, operands, last_total = _score_slot_batch(
             units, tilt, operands_for, scorer, r_pad=r_pad, p_pad=p_pad, slots=slots, slot_block=slot_block,
