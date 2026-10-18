@@ -101,15 +101,16 @@ def test_undecided_rotations_at_the_adaptive_fraction_cut_cover_every_cut_within
         assert not flipped.reshape(n_rot, n_trans)[~rows[image]].any(), f"image {image}"
     assert n_flipped >= 1  # the perturbations do move the cut somewhere
 
-    # Sorting the samples of the leading rotations only gives the same rows when it resolves an image, and
-    # says when it does not.
+    # Sorting the samples of the leading rotations only gives the same rows for every image it resolves, and
+    # says which images it does not (each image's rows are its own, whatever the others in the call).
     args = (jnp.asarray(values), jnp.asarray(mask), jnp.asarray(cutoff_count), jnp.asarray(margin), None, None)
     static = dict(n_trans=n_trans, max_significants=0, adaptive_fraction=fraction)
-    partial_rows, _, unresolved = exact_cut.undecided_rotations(*args, **static, sorted_rotations=n_rot - 5)
-    if int(unresolved) == 0:
-        np.testing.assert_array_equal(np.asarray(partial_rows), rows)
-    few_rows, _, unresolved = exact_cut.undecided_rotations(*args, **static, sorted_rotations=2)
-    assert int(unresolved) >= 1  # two rotations do not hold the 0.1% tail of these weights
+    for sorted_rotations in (n_rot - 5, 2):
+        partial_rows, _, unresolved = exact_cut.undecided_rotations(*args, **static, sorted_rotations=sorted_rotations)
+        unresolved = np.asarray(unresolved)
+        assert unresolved.shape == (values.shape[0],)
+        np.testing.assert_array_equal(np.asarray(partial_rows)[~unresolved], rows[~unresolved])
+    assert unresolved.any()  # two rotations do not hold the 0.1% tail of these weights
 
 
 def test_the_error_bound_scales_with_the_pixels_and_the_largest_term():

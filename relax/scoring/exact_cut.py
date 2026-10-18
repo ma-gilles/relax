@@ -84,7 +84,7 @@ def undecided_rotations(
     The fraction rule sorts only the samples of each image's ``sorted_rotations`` rotations with the largest
     log weights (all of them with ``None``) and counts the other rotations' weight as lying below them. That
     is the same rule when every sample of the other rotations is out with certainty; the third result
-    counts the images for which it is not, whose rows must be taken again with ``sorted_rotations=None``.
+    ``[B]`` marks the images for which it is not, whose rows must be taken again with ``sorted_rotations=None``.
 
     ``diff2`` ``[B, N, T]`` and its smallest value per image ``smallest_diff2`` ``[B]`` are given when the log
     weights are RELION's ``prior + min_diff2 - diff2``: at a diff2 of thousands the first sum is rounded to the
@@ -100,7 +100,7 @@ def undecided_rotations(
     scoreable = margin >= 0  # a negative margin marks an image that is not to be scored again (padding)
     low = jnp.where(capped & scoreable, cut - margin, jnp.inf)
     high = jnp.where(capped & scoreable, jnp.nextafter(cut + margin, jnp.float32(jnp.inf)), -jnp.inf)
-    unresolved = jnp.zeros((), jnp.int32)
+    unresolved = jnp.zeros(n_images, bool)
     if adaptive_fraction is not None:
         table = values.reshape(n_images, -1, n_trans)
         best = jnp.max(values, axis=1)
@@ -133,7 +133,7 @@ def undecided_rotations(
         surely_in = jnp.where(isolated, at(first_in), jnp.nextafter(at(first_in) + margin, jnp.float32(jnp.inf)))
         if floor is not None:
             # Every sample of the unsorted rotations must be out with certainty.
-            unresolved = jnp.sum(~capped & scoreable & ~(surely_out > floor), dtype=jnp.int32)
+            unresolved = ~capped & scoreable & ~(surely_out > floor)
         low = jnp.where(capped | ~scoreable, low, surely_out)
         high = jnp.where(capped | ~scoreable, high, surely_in)
     undecided = (jnp.isfinite(values) & (values >= low[:, None]) & (values < high[:, None])).reshape(

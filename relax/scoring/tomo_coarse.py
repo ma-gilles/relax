@@ -284,6 +284,21 @@ def _near_cut_rows(
     )
 
 
+def _particle_near_cut_rows(cut_inputs, full_sort, *, max_significants: int, adaptive_fraction: float):
+    """Each particle's undecided rotations (:func:`_near_cut_rows` of ``cut_inputs``), their largest count and the
+    particles the sort of the leading ``_SORTED_ROTATIONS`` rotations leaves unresolved. The particles marked in
+    ``full_sort`` (``[P]``, or None) take their rows from every rotation sorted: a particle's rows depend on its own
+    values alone, not on the flush it is cut in."""
+
+    static = dict(max_significants=max_significants, adaptive_fraction=adaptive_fraction)
+    rows, _most, unresolved = _near_cut_rows(*cut_inputs, **static, sorted_rotations=_SORTED_ROTATIONS)
+    if full_sort is not None:
+        every, _most, _unresolved = _near_cut_rows(*cut_inputs, **static, sorted_rotations=None)
+        rows = jnp.where(full_sort[:, None], every, rows)
+        unresolved = unresolved & ~full_sort
+    return rows, jnp.max(jnp.sum(rows, axis=1)), unresolved
+
+
 # Scorer matrices built per call of the exact cut's rotation kernel: the call builds every pairing of its
 # particles' images and rotations, of which each particle's own are kept.
 _UNDECIDED_ROTATION_CALL_BYTES = 64 << 20
@@ -880,7 +895,7 @@ def particle_coarse_supports(
     )
     class_full = [None] * n_classes  # each class's full projector for the direct-square kernel, built on first use
     eulers_f32 = jnp.asarray(np.asarray(coarse_eulers_deg, dtype=np.float32))  # the exact cut's rotations, gathered on the device
-    rescored, n_scored = [], 0
+    rescored, n_scored, full_sorted = [], 0, []
     supports, pmax_by_unit, count_by_unit = [{} for _ in range(n_classes)], {}, {}
     last_total = None
     pending = []
@@ -922,7 +937,7 @@ def particle_coarse_supports(
             max_significants=max_significants,
         )
 
-    def exact_cut(units_all, diff2, error, n_images, operands, n_real, *, sorted_rotations, capacity):
+    def exact_cut(units_all, diff2, error, n_images, operands, n_real, *, capacity, full_sort=None):
         """The flushed particles' cut on exact scores: the rotations the GEMM rounding leaves undecided at a
         particle's cut (max_significants or the adaptive fraction) and at its smallest diff2 are scored again by
         the direct-square kernel, and the cut is taken on those values (:mod:`relax.scoring.exact_cut`).
@@ -931,12 +946,12 @@ def particle_coarse_supports(
         their scorer matrices built there (:func:`_undecided_scorer_rotations`). Returns the cut and the device
         scalars ``(most, unresolved, rows, particles)``; the caller reads them later and takes the cut again
         (``exact_cut_again``) when a particle held more than ``capacity`` undecided rotations or the fraction
-        rule needs every rotation sorted.
+        rule needs every rotation of a particle sorted (``full_sort``).
         """
 
         stats = significance(units_all, diff2)
         cut_inputs = (diff2, stats["log_weights"], stats["mask"], stats["cutoff_count"], error, n_images)
-        rows, most, unresolved = _near_cut_rows(*cut_inputs, **cut_static, sorted_rotations=sorted_rotations)
+        rows, most, unresolved = _particle_near_cut_rows(cut_inputs, full_sort, **cut_static)
         ids, use = first_rows(rows, capacity=capacity)
         for class_index, class_projector in enumerate(class_projectors):
             if class_full[class_index] is None:
@@ -952,7 +967,8 @@ def particle_coarse_supports(
             chunk = slice(first, first + per_call)
             exact = rescore(units_all, exact, ids[:, chunk], use[:, chunk], operands)
         real = (jnp.arange(units_all.size) < n_real)[:, None] & use  # a padded flush's copies are not counted
-        check = (most, unresolved, jnp.sum(real, dtype=jnp.int32), jnp.sum(jnp.any(real, axis=1), dtype=jnp.int32))
+        n_unresolved = jnp.sum(unresolved & (jnp.arange(units_all.size) < n_real), dtype=jnp.int32)
+        check = (most, n_unresolved, jnp.sum(real, dtype=jnp.int32), jnp.sum(jnp.any(real, axis=1), dtype=jnp.int32))
         return significance(units_all, exact), check
 
     def rescore(units_all, diff2, ids, use, operands):
@@ -991,16 +1007,17 @@ def particle_coarse_supports(
         )
 
     def exact_cut_again(cut_operands, unresolved):
-        """The flush's exact cut at the size its undecided rotations need (read from the device): every
-        rotation sorted when the fraction rule needed it, and room for the particle with the most."""
+        """The flush's exact cut at the size its undecided rotations need (read from the device): every rotation
+        sorted for the particles whose fraction rule needed it (when ``unresolved`` counts any), and room for the
+        particle with the most."""
 
         units_all, diff2, error, n_images, operands, _n_real = cut_operands
-        sorted_rotations = None if unresolved else _SORTED_ROTATIONS
         stats = significance(units_all, diff2)
         cut_inputs = (diff2, stats["log_weights"], stats["mask"], stats["cutoff_count"], error, n_images)
-        rows, most, _ = _near_cut_rows(*cut_inputs, **cut_static, sorted_rotations=sorted_rotations)
+        full_sort = _particle_near_cut_rows(cut_inputs, None, **cut_static)[2] if unresolved else None
+        rows, most, _ = _particle_near_cut_rows(cut_inputs, full_sort, **cut_static)
         capacity = row_capacity(int(most), rows.shape[1], least=_UNDECIDED_ROTATIONS)
-        return exact_cut(*cut_operands, sorted_rotations=sorted_rotations, capacity=capacity)
+        return exact_cut(*cut_operands, capacity=capacity, full_sort=full_sort)
 
     def compacted(stats, n_real):
         # The significant cells are compacted on the device; only their ids come back (the dense mask is
@@ -1036,7 +1053,7 @@ def particle_coarse_supports(
         # One copy of the flush's operands, held until it is collected; the batches' slices are freed with the list.
         operands = tuple(jnp.concatenate(parts, axis=0) for parts in zip(*operands))
         cut_operands = (units_all, diff2, error, n_images, operands, n_real)
-        stats, check = exact_cut(*cut_operands, sorted_rotations=_SORTED_ROTATIONS, capacity=_UNDECIDED_ROTATIONS)
+        stats, check = exact_cut(*cut_operands, capacity=_UNDECIDED_ROTATIONS)
         for value in check:
             value.copy_to_host_async()
         # The flush's GEMM scores and operands stay until it is collected, in case its cut is taken again.
@@ -1047,6 +1064,8 @@ def particle_coarse_supports(
         n_real = cut_operands[5]
         units_all = cut_operands[0][:n_real]
         most, unresolved, n_rows, n_particles = (int(value) for value in check)
+        if unresolved:
+            full_sorted.append(unresolved)
         if unresolved or most > _UNDECIDED_ROTATIONS:
             stats, check = exact_cut_again(cut_operands, unresolved)
             most, unresolved, n_rows, n_particles = (int(value) for value in check)
@@ -1189,8 +1208,9 @@ def particle_coarse_supports(
         n_rows, n_particles = (int(sum(int(v) for v in column)) for column in zip(*rescored))
         logger.info(
             "Coarse cut: %d of %d particles had rotations within the GEMM error bound of their cut or of their "
-            "smallest diff2; %d rotations scored again by the direct square (%.3g%% of the pass's samples)",
-            n_particles, n_units, n_rows, 100.0 * n_rows * n_coarse_trans / max(n_scored, 1),
+            "smallest diff2; %d rotations scored again by the direct square (%.3g%% of the pass's samples); %d "
+            "particles needed every rotation sorted", n_particles, n_units, n_rows,
+            100.0 * n_rows * n_coarse_trans / max(n_scored, 1), sum(full_sorted),
         )
     for k, texture in enumerate(class_textures):
         if texture is not None and last_total is not None:
