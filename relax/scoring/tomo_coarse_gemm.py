@@ -3,8 +3,11 @@
 ``coarse_gemm_slot_block`` scores one block of image slots: each tilt image's window projections
 (``_score_window_projections``) against its coarse operands as one GEMM per image with its rounding bound
 (``_images_coarse_gemm_diff2``), the images' diff2 added per particle in slot order
-(``_add_image_diff2_in_slot_order``). The significance pass (``tomo_coarse.particle_coarse_supports``) calls it
-and rescores the rows the bound leaves near the cut; this module imports nothing from ``tomo_coarse``.
+(``_add_image_diff2_in_slot_order``). ``coarse_gemm_frame`` scores the images of a particle group that share one
+projection left matrix (one tilt frame of one tomogram): the frame's projections once, the images' cross terms as
+one GEMM, each image's model energy as its own product, as ``_images_coarse_gemm_diff2`` scores each image. The
+significance pass (``tomo_coarse.particle_coarse_supports``) calls them and rescores the rows the bound leaves near
+the cut; this module imports nothing from ``tomo_coarse``.
 """
 
 from __future__ import annotations
@@ -152,3 +155,111 @@ def _add_image_diff2_in_slot_order(total, image_diff2):
     for slot in range(int(image_diff2.shape[1])):
         total = total + image_diff2[:, slot]
     return total
+
+
+@partial(jax.jit, static_argnames=("image_shape",))
+def _frame_images_coarse_gemm_diff2(
+    projected, unshifted, pixel_weight, initial_diff2, translation_angles, score_indices, *, image_shape
+):
+    """:func:`_images_coarse_gemm_diff2` of ``N`` tilt images that share the projections ``projected`` ``[R, 2 P]``
+    (packed ``[Re | Im]``, or complex ``[R, P]``): diff2 ``[N, T, R]`` and each image's GEMM error bound ``[N]``.
+
+    The cross terms of all the images are one GEMM against the shared rows; the model energy ``A`` is each image's
+    own product of its weights with the rows' ``|p|^2`` (formed once), as the per-image scorer forms it, and the
+    scores are assembled as :func:`relax.scoring.coarse_kernels.relion_coarse_gaussian_gemm_scores_jit` assembles
+    them. A zero-weight image scores zero.
+    """
+
+    from relax.cuda import translate as cuda_translate
+    from relax.scoring.coarse_kernels import relion_coarse_gemm_terms
+
+    n_images, n_trans = (int(n) for n in translation_angles.shape[:2])
+    shifted_all = cuda_translate.relion_translate_score_f32(
+        unshifted, translation_angles, score_indices, image_shape
+    ).reshape(n_images, n_trans, -1)
+    wide = jnp.float32
+    cross, _shared_energy, image_energy, active = relion_coarse_gemm_terms(
+        projected, shifted_all, pixel_weight, jnp.int32(n_images), n_images=n_images, n_trans=n_trans, wide=wide
+    )
+    if jnp.iscomplexobj(projected):
+        reference_re, reference_im = projected.real.astype(wide), projected.imag.astype(wide)
+    else:
+        n_pixels = projected.shape[-1] // 2
+        reference_re, reference_im = projected[..., :n_pixels].astype(wide), projected[..., n_pixels:].astype(wide)
+    abs2_rows = (reference_re * reference_re + reference_im * reference_im).T
+    weight = jnp.where(active[:, None], pixel_weight, 0).astype(wide)
+    # One image's weights at a time: the per-image scorer's product (a GEMM over the images rounds otherwise).
+    model_energy = jax.lax.map(
+        lambda w: jax.lax.dot(
+            w[None], abs2_rows, precision=jax.lax.DotAlgorithmPreset.F32_F32_F32, preferred_element_type=wide
+        )[0],
+        weight,
+    )
+    initial = jnp.where(active, initial_diff2, 0).astype(wide)
+    half = jnp.asarray(0.5, dtype=wide)
+    scores = cross - half * model_energy[:, None, :] - half * image_energy[:, :, None] - initial[:, None, None]
+    scores = jnp.where(active[:, None, None], scores, 0).astype(pixel_weight.dtype)
+    weight32 = pixel_weight.astype(jnp.float32)
+    unshifted_energy = jnp.sum((unshifted.real * unshifted.real + unshifted.imag * unshifted.imag) * weight32, axis=-1)
+    return -scores, gemm_error_bound(
+        jnp.max(model_energy, axis=1), unshifted_energy, initial_diff2, int(weight32.shape[-1])
+    )
+
+
+@partial(
+    jax.jit,
+    static_argnames=("image_shape", "current_size", "model_max_r", "padding_factor", "texture"),
+    donate_argnums=(0, 1),
+)
+def coarse_gemm_frame(
+    total, bounds, projector_half, frame_rotations, frame, unshifted, pixel_weight, initial_diff2, translation_angles,
+    score_indices, unit_index, slot_index, *, image_shape, current_size, model_max_r, padding_factor, texture,
+):
+    """The images ``(unit_index, slot_index)`` of a particle group that share frame ``frame``'s projection left
+    matrix, in one program: the frame's projections (its rotations ``frame_rotations[frame]`` ``[R, 3, 3]``) once,
+    the images' diff2 (:func:`_frame_images_coarse_gemm_diff2`) added to their particles' ``total`` ``[G, T, R]``
+    and their GEMM error bounds put at ``bounds[unit, slot]`` ``[G, S]``.
+
+    The operands are the group's ``[G, S, ...]``; a particle has at most one image per frame, so each total takes
+    one addition, and the frames go in every particle's slot order (``img_id``), so a particle's images add in that
+    order. An entry with ``unit_index == G`` is padding and changes nothing.
+    """
+
+    n_group = int(total.shape[0])
+    rotations = jax.lax.dynamic_index_in_dim(frame_rotations, frame, axis=0, keepdims=False)
+    projected = _score_window_projections(
+        projector_half,
+        rotations,
+        score_indices,
+        image_shape=image_shape,
+        current_size=current_size,
+        model_max_r=model_max_r,
+        padding_factor=padding_factor,
+        texture=texture,
+    )
+    unit = jnp.minimum(unit_index, n_group - 1)
+    real = unit_index < n_group
+    image_diff2, bound = _frame_images_coarse_gemm_diff2(
+        projected,
+        unshifted[unit, slot_index],
+        jnp.where(real[:, None], pixel_weight[unit, slot_index], 0),
+        jnp.where(real, initial_diff2[unit, slot_index], 0),
+        translation_angles[unit, slot_index],
+        score_indices,
+        image_shape=image_shape,
+    )
+    total = total.at[unit_index].add(image_diff2, mode="drop")
+    return total, bounds.at[unit_index, slot_index].set(bound, mode="drop")
+
+
+@partial(jax.jit, static_argnames=("slot_block",))
+def slot_block_error(bounds, *, slot_block: int):
+    """The particles' GEMM error bounds ``[G]`` from their images' ``bounds`` ``[G, S]``, summed as the slot-block
+    programs sum them (:func:`coarse_gemm_slot_block`): block by block, each block's images first."""
+
+    n_particles, n_slots = (int(n) for n in bounds.shape)
+    error = jnp.zeros(n_particles, jnp.float32)
+    for first in range(0, n_slots, int(slot_block)):
+        count = min(int(slot_block), n_slots - first)
+        error = error + jnp.sum(bounds[:, first : first + count].reshape(n_particles, count), axis=1)
+    return error

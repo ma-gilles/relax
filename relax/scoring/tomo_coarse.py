@@ -43,7 +43,7 @@ from relax.scoring.exact_cut import (
     row_capacity,
     undecided_rotations,
 )
-from relax.scoring.tomo_coarse_gemm import coarse_gemm_slot_block
+from relax.scoring.tomo_coarse_gemm import coarse_gemm_frame, coarse_gemm_slot_block, slot_block_error
 
 logger = logging.getLogger(__name__)
 
@@ -618,6 +618,116 @@ def _all_image_coarse_operands(
     return tuple(buffers)
 
 
+class SharedFrames(NamedTuple):
+    """The tilt frames a global coarse pass shares (:func:`shared_frames`): images with one projection left matrix."""
+
+    image_key: np.ndarray  # [I] each image's frame
+    key_rank: np.ndarray  # [F] each frame's place in an order that every particle's slots follow
+    key_image: np.ndarray  # [F] an image of each frame
+    unit_order: np.ndarray  # [U] the particles, those sharing frames (one tomogram's) next to each other
+
+
+def shared_frames(image_left, unit_image_offsets) -> SharedFrames | None:
+    """The frames of the tilt images with bitwise-equal projection left matrices, when they hold two images each on
+    average, else None.
+
+    The images of one tomogram's tilt frame have one left matrix (``Aproj`` with the optics group's
+    magnification), so their coarse scorer matrices and projections are the same: the pass projects each frame once
+    for a group of particles. A particle's images add in its slot (``img_id``) order, so the frames are ranked in an
+    order every particle's slots follow (None when there is none, or a particle has two images in one frame).
+    """
+
+    offsets = np.asarray(unit_image_offsets, dtype=np.int64)
+    # The matrices' bits: -0.0 and 0.0 are different frames.
+    left = np.ascontiguousarray(np.asarray(image_left, dtype=np.float64).reshape(-1, 9)).view(np.uint64)
+    n_images, n_units = int(left.shape[0]), int(offsets.size - 1)
+    if n_images == 0:
+        return None
+    _rows, key_image, image_key = np.unique(left, axis=0, return_index=True, return_inverse=True)
+    image_key = image_key.reshape(-1).astype(np.int64)
+    n_keys = int(key_image.size)
+    if n_images < 2 * n_keys:
+        return None
+    unit_of_image = np.repeat(np.arange(n_units), np.diff(offsets))
+    if np.unique(unit_of_image * n_keys + image_key).size != n_images:
+        return None  # a particle with two images in one frame
+    # Each particle's consecutive slots: its frame order. Kahn's order over them, the earliest image first on ties.
+    same = unit_of_image[1:] == unit_of_image[:-1]
+    edges = np.unique(np.stack([image_key[:-1][same], image_key[1:][same]], axis=1), axis=0)
+    indegree = np.bincount(edges[:, 1], minlength=n_keys)
+    successors = np.split(edges[:, 1], np.cumsum(np.bincount(edges[:, 0], minlength=n_keys))[:-1])
+    import heapq
+
+    ready = [(int(key_image[k]), k) for k in np.flatnonzero(indegree == 0)]
+    heapq.heapify(ready)
+    key_rank = np.full(n_keys, -1, dtype=np.int64)
+    rank = 0
+    while ready:
+        _first, key = heapq.heappop(ready)
+        key_rank[key] = rank
+        rank += 1
+        for nxt in successors[key]:
+            indegree[nxt] -= 1
+            if indegree[nxt] == 0:
+                heapq.heappush(ready, (int(key_image[nxt]), int(nxt)))
+    if rank != n_keys:
+        return None  # two particles' slots order two frames both ways
+    # The frames a particle's slots link are one component (one tomogram's): its particles go together.
+    parent = np.arange(n_keys)
+
+    def root(k):
+        while parent[k] != k:
+            parent[k] = parent[parent[k]]
+            k = parent[k]
+        return k
+
+    for a, b in edges:
+        ra, rb = root(a), root(b)
+        if ra != rb:
+            parent[max(ra, rb)] = min(ra, rb)
+    component = np.asarray([root(k) for k in range(n_keys)])[image_key[offsets[:-1]]] if n_units else np.zeros(0, int)
+    first_unit = {}
+    for unit, c in enumerate(component):
+        first_unit.setdefault(int(c), unit)
+    unit_order = np.lexsort((np.arange(n_units), np.asarray([first_unit[int(c)] for c in component])))
+    return SharedFrames(image_key, key_rank, key_image.astype(np.int64), unit_order.astype(np.int64))
+
+
+def _indexed_image_coarse_operands(
+    experiment_dataset, image_indices, layout, *, noise_variance_half, optics_group_ids, scale_corrections
+):
+    """:func:`tilt_image_coarse_operands` of the dataset images ``image_indices``, in batches of
+    ``_OPERAND_IMAGE_BATCH`` (the last padded with its last image, so every batch runs the same programs)."""
+
+    image_indices = np.asarray(image_indices, dtype=np.int64)
+    n_images = int(image_indices.size)
+    parts = []
+    for start in range(0, n_images, _OPERAND_IMAGE_BATCH):
+        indices = image_indices[start : start + _OPERAND_IMAGE_BATCH]
+        padded = np.concatenate([indices, np.full(_OPERAND_IMAGE_BATCH - indices.size, indices[-1])])
+        parts.append(
+            tilt_image_coarse_operands(
+                experiment_dataset,
+                padded,
+                layout,
+                noise_variance_half=noise_variance_half,
+                optics_group_ids=optics_group_ids,
+                scale_corrections=scale_corrections,
+            )
+        )
+    return tuple(
+        (values[0] if len(parts) == 1 else jnp.concatenate(values, axis=0))[:n_images] for values in zip(*parts)
+    )
+
+
+@partial(jax.jit, static_argnames=("n_frames",))
+def _lay_out_frame_rotations(built, rot, *, n_frames: int):
+    """``built[:, rot]`` ``[F, R_pad, 3, 3]`` padded to ``n_frames`` frames (repeats of the last), one program."""
+
+    laid_out = built[:, rot]
+    return jnp.concatenate([laid_out, jnp.repeat(laid_out[-1:], n_frames - laid_out.shape[0], axis=0)], axis=0)
+
+
 def particle_coarse_significance(
     particle_diff2,
     rotation_log_prior,
@@ -832,6 +942,145 @@ def _score_slot_batch(
     operands = (batch_unshifted[:n], batch_weight[:n], batch_initial[:n], batch_angles[:n])
     # The block and the batch's padded operands are freed on return: only operands_for and the pending particles
     # keep operands, so a new block is allocated after the old one is freed.
+    return diff2, error[:n], image_valid[:n].sum(axis=1), operands, total
+
+
+class FrameGroupPlan(NamedTuple):
+    """A global coarse pass's frame-shared schedule (:func:`_frame_group_plan`)."""
+
+    frames: SharedFrames
+    groups: list  # the particles of each group, one flush each, one tomogram's together
+    group_size: int  # the flush size every group's arrays are padded to
+    images_per_call: int  # a frame's images scored per program call
+    slot_block: int  # the slot blocks the per-image programs sum the error bounds in
+    frame_ids: list  # device int32 scalars: a group's frame positions
+
+
+def _frame_group_plan(
+    tilt: TiltCoarseInputs, *, flush_size, slots, slot_block, r_pad, n_trans, n_score_pixels, projection_bytes, batch_bytes
+) -> FrameGroupPlan | None:
+    """The frame-shared schedule of a global pass whose images share frames (:func:`shared_frames`), else None.
+
+    The particles go in groups of one flush, one tomogram's together; each frame of a group is projected once and
+    its images scored ``images_per_call`` at a time, as many as the batch budget holds (``batch_bytes``: a frame's
+    projections at ``projection_bytes`` per score pixel and, per image, its diff2, scores and cross terms).
+    """
+
+    frames = shared_frames(tilt.image_left, tilt.offsets)
+    if frames is None:
+        return None
+    per_image = n_trans * r_pad * 4 * 3 + n_trans * n_score_pixels * 8 * 2
+    per_frame = r_pad * n_score_pixels * projection_bytes * 3 // 2
+    images_per_call = int(min(flush_size, max(1, (int(batch_bytes) - per_frame) // per_image)))
+    n_units = int(tilt.offsets.size - 1)
+    n_frames = pow2_ceil(min(int(frames.key_rank.size), slots * flush_size))
+    logger.info(
+        "Coarse pass shares each tilt frame's projections: %d images in %d frames; particles in groups of %d, up to "
+        "%d images per frame call", int(frames.image_key.size), int(frames.key_rank.size), flush_size, images_per_call,
+    )
+    return FrameGroupPlan(
+        frames,
+        [frames.unit_order[start : start + flush_size] for start in range(0, n_units, flush_size)],
+        int(flush_size),
+        images_per_call,
+        int(slot_block),
+        [jax.device_put(np.int32(i)) for i in range(n_frames)],
+    )
+
+
+def _frame_group_calls(plan: FrameGroupPlan, group_frames, image_frame, entry_unit, entry_slot):
+    """The group's frame program calls, frames in slot order: ``(frame position, unit index, slot index)``, each
+    call's images padded to a power of two (at most ``images_per_call``) with the group size as their unit."""
+
+    calls = []
+    for f, frame in enumerate(group_frames):
+        entries = np.flatnonzero(image_frame == frame)
+        for start in range(0, entries.size, plan.images_per_call):
+            chunk = entries[start : start + plan.images_per_call]
+            n_pad = min(pow2_ceil(int(chunk.size)), plan.images_per_call)
+            unit_index = np.full(n_pad, plan.group_size, dtype=np.int32)
+            slot_index = np.zeros(n_pad, dtype=np.int32)
+            unit_index[: chunk.size] = entry_unit[chunk]
+            slot_index[: chunk.size] = entry_slot[chunk]
+            calls.append((plan.frame_ids[f], jnp.asarray(unit_index), jnp.asarray(slot_index)))
+    return calls
+
+
+def _score_frame_group(units, plan: FrameGroupPlan, tilt: TiltCoarseInputs, operands_of, scorer: CoarseScorer, *, r_pad, slots):
+    """A group's per-particle diff2 ``[G, K * R_pad, T]``, GEMM error bounds ``[G]``, image counts, operands
+    (``[G, S, ...]``, as the exact cut takes them) and its last total, scored frame by frame.
+
+    ``operands_of(images)`` gives the dataset images' coarse operands (:func:`_indexed_image_coarse_operands`).
+    Each frame's scorer matrices are built once (``make_eulers_3D`` with the frame's left matrix) and its
+    projections made once per call of :func:`relax.scoring.tomo_coarse_gemm.coarse_gemm_frame`; the error bounds
+    add in the slot blocks of the per-image programs (:func:`relax.scoring.tomo_coarse_gemm.slot_block_error`).
+    """
+
+    from relax.sampling import tomo_particles
+    from relax.sampling.device_rotations import relion_adaptive_pass1_rotations
+
+    offsets, g_pad = tilt.offsets, plan.group_size
+    n_trans = int(np.asarray(tilt.coarse_translations_px).shape[0])
+    images = np.concatenate([np.arange(offsets[unit], offsets[unit + 1]) for unit in units])
+    unshifted, weight, initial = operands_of(images)
+    angles = np.zeros((g_pad, slots, n_trans, 2), dtype=np.float32)
+    image_index = np.zeros((g_pad, slots), dtype=np.int64)
+    image_valid = np.zeros((g_pad, slots), dtype=bool)
+    entry_unit = np.zeros(images.size, dtype=np.int32)
+    entry_slot = np.zeros(images.size, dtype=np.int32)
+    position = 0
+    for p, unit in enumerate(units):
+        unit_images = np.arange(offsets[unit], offsets[unit + 1])
+        angles[p, : unit_images.size] = tomo_particles.tilt_translation_angles(
+            tilt.coarse_translations_px,
+            tilt.old_offsets[unit : unit + 1],
+            tilt.image_projections[unit_images],
+            np.zeros(unit_images.size, int),
+            tilt.box_size,
+        )
+        image_index[p, : unit_images.size] = np.arange(position, position + unit_images.size)
+        image_valid[p, : unit_images.size] = True
+        entry_unit[position : position + unit_images.size] = p
+        entry_slot[position : position + unit_images.size] = np.arange(unit_images.size)
+        position += unit_images.size
+    index, valid = jnp.asarray(image_index), jnp.asarray(image_valid)
+    batch_unshifted = jnp.where(valid[..., None], unshifted[index], jnp.zeros((), unshifted.dtype))
+    batch_weight = jnp.where(valid[..., None], weight[index], jnp.zeros((), weight.dtype))
+    batch_initial = jnp.where(valid, initial[index], jnp.zeros((), initial.dtype))
+    batch_angles = jnp.asarray(angles)
+    # The group's frames in an order every particle's slots follow, each frame's scorer matrices built once.
+    image_frame = plan.frames.image_key[images]
+    group_frames = np.unique(image_frame)
+    group_frames = group_frames[np.argsort(plan.frames.key_rank[group_frames], kind="stable")]
+    left, _applies = tomo_particles.relion_left_matrices(tilt.image_left[plan.frames.key_image[group_frames]])
+    built = jnp.asarray(
+        relion_adaptive_pass1_rotations(
+            tilt.coarse_eulers_deg, tilt.random_perturbation, tilt.angular_sampling_deg, left_matrices=left
+        ),
+        dtype=jnp.float32,
+    )
+    frame_rotations = _lay_out_frame_rotations(
+        built,
+        jnp.asarray(np.minimum(np.arange(r_pad), int(built.shape[1]) - 1)),
+        n_frames=pow2_ceil(int(group_frames.size)),
+    )
+    calls = _frame_group_calls(plan, group_frames, image_frame, entry_unit, entry_slot)
+    class_totals, error, total = [], None, None
+    for projector, texture in zip(scorer.projectors, scorer.textures):
+        total = jnp.zeros((g_pad, n_trans, r_pad), dtype=jnp.float32)
+        bounds = jnp.zeros((g_pad, slots), dtype=jnp.float32)
+        for frame_id, unit_index, slot_index in calls:
+            total, bounds = coarse_gemm_frame(
+                total, bounds, projector, frame_rotations, frame_id, batch_unshifted, batch_weight, batch_initial,
+                batch_angles, scorer.score_indices, unit_index, slot_index, texture=texture, **scorer.statics,
+            )
+        class_error = slot_block_error(bounds, slot_block=plan.slot_block)
+        class_totals.append(total[: units.size].swapaxes(1, 2))
+        error = class_error if error is None else jnp.maximum(error, class_error)
+    # K>1: [P, K * R_pad, T], class-major along the rotation axis.
+    diff2 = class_totals[0] if len(class_totals) == 1 else jnp.concatenate(class_totals, axis=1)
+    n = units.size
+    operands = (batch_unshifted[:n], batch_weight[:n], batch_initial[:n], batch_angles[:n])
     return diff2, error[:n], image_valid[:n].sum(axis=1), operands, total
 
 
@@ -1233,7 +1482,26 @@ def particle_coarse_supports(
         image_shape=tuple(layout.image_shape), current_size=int(layout.current_size), model_max_r=int(model_max_r),
         padding_factor=int(padding_factor),
     ))
-    for units, r_pad, p_pad, slot_block in batches:
+    plan = None if local or not batches else _frame_group_plan(
+        tilt, flush_size=flush_size, slots=slots, slot_block=int(batches[0][3]), r_pad=r_pad_all,
+        n_trans=n_coarse_trans, n_score_pixels=n_score_pixels, batch_bytes=budget.batch,
+        projection_bytes=_coarse_projection_bytes_per_pixel(
+            class_textures, jnp.asarray(class_projectors[0]).dtype, box_size=int(layout.image_shape[0]),
+            current_size=int(layout.current_size), model_max_r=int(model_max_r),
+        ),
+    )
+    operands_of = partial(
+        _indexed_image_coarse_operands, experiment_dataset, layout=layout, noise_variance_half=noise_variance_half,
+        optics_group_ids=optics_group_ids, scale_corrections=scale_corrections,
+    )
+    for units in [] if plan is None else plan.groups:
+        diff2, error, n_valid, operands, last_total = _score_frame_group(
+            units, plan, tilt, operands_of, scorer, r_pad=r_pad_all, slots=slots
+        )
+        n_scored += int(units.size) * n_classes * r_pad_all * n_coarse_trans
+        pending.append((units, diff2, error, n_valid, operands))
+        flush()
+    for units, r_pad, p_pad, slot_block in batches if plan is None else ():
         diff2, error, n_valid, operands, last_total = _score_slot_batch(
             units, tilt, operands_for, scorer, r_pad=r_pad, p_pad=p_pad, slots=slots, slot_block=slot_block,
             slot_offsets=slot_offsets, unit_rotations=None if not local else [unit_rotations[unit] for unit in units],

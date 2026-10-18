@@ -292,6 +292,32 @@ def test_significant_cells_are_the_first_true_cells_in_order(capacity):
     np.testing.assert_array_equal(got, want)
 
 
+def test_shared_frames_group_a_tomograms_particles_and_rank_frames_in_slot_order():
+    """Images with one left matrix are one frame; the frames are ranked in an order every particle's slots follow,
+    and the particles sharing frames go together. None when frames hold fewer than two images on average, when a
+    particle has two images in one frame, or when two particles order two frames both ways."""
+
+    rng = np.random.default_rng(3)
+    tomo_a, tomo_b = rng.normal(size=(4, 3, 3)), rng.normal(size=(3, 3, 3))
+    # Particles 0, 2, 4 in tomogram A (frames 0-3, 1-3, 0-2), 1, 3, 5 in tomogram B (frames 0-2, 0-1, 1-2).
+    images = [tomo_a[[0, 1, 2, 3]], tomo_b[[0, 1, 2]], tomo_a[[1, 2, 3]], tomo_b[[0, 1]], tomo_a[[0, 1, 2]], tomo_b[[1, 2]]]
+    offsets = np.concatenate([[0], np.cumsum([len(i) for i in images])])
+    frames = tomo_coarse.shared_frames(np.concatenate(images), offsets)
+    assert frames is not None
+    key = frames.image_key
+    assert np.unique(key).size == 7
+    for unit in range(6):
+        assert np.all(np.diff(frames.key_rank[key[offsets[unit] : offsets[unit + 1]]]) > 0)
+    np.testing.assert_array_equal(frames.unit_order, [0, 2, 4, 1, 3, 5])
+    np.testing.assert_array_equal(np.concatenate(images)[frames.key_image[key]], np.concatenate(images))
+    # One image per frame: nothing to share.
+    assert tomo_coarse.shared_frames(rng.normal(size=(6, 3, 3)), [0, 3, 6]) is None
+    # Two images of one particle in one frame.
+    assert tomo_coarse.shared_frames(tomo_a[[0, 0, 1, 0, 1, 1]], [0, 3, 6]) is None
+    # Particle 0 sees frame 0 before frame 1, particle 1 the other way.
+    assert tomo_coarse.shared_frames(tomo_a[[0, 1, 1, 0]], [0, 2, 4]) is None
+
+
 def test_coarse_batches_share_one_shape_within_the_budget():
     batches = tomo_coarse._coarse_batches(
         [130, 90, 200, 50, 70], n_slots=39, n_trans=81, budget_bytes=40 * 256 * 81 * 4 * 2
@@ -531,6 +557,74 @@ def test_the_gemm_scorer_follows_relions_direct_square_kernel(gpu_device, persis
             assert 0.0 < worst <= bound, f"image {b}"
             # The worst case over the pixels: measured 18 float32 units of the diff2 here, the bound about 2000.
             assert bound <= 1e-3 * float(np.max(direct))
+
+
+@pytest.mark.gpu
+@pytest.mark.parametrize("persistent_texture", [False, True], ids=["complex_rows", "packed_rows"])
+def test_frame_programs_score_as_the_slot_block_programs(gpu_device, persistent_texture):
+    """Particles whose images share frames (one left matrix per tilt frame): projecting each frame once and scoring
+    its images in one call (coarse_gemm_frame, frames in slot order, padded calls) gives each particle the totals
+    and GEMM error bounds of the slot-block programs that project every image (coarse_gemm_slot_block), including a
+    particle with a padded slot."""
+
+    import jax
+    from recovar.cuda_backproject import custom_cuda_requested
+
+    if not custom_cuda_requested():
+        pytest.skip("custom CUDA is disabled")
+    n_group, n_slots, n_frames, n_rot, n_trans, slot_block = 3, 4, 5, 256, 37, 2
+    with jax.default_device(gpu_device):
+        f = _gemm_fixture(np.random.default_rng(37), n_images=n_group * n_slots, n_rot=n_rot, n_trans=n_trans)
+        layout = f["layout"]
+        texture = (
+            tomo_coarse._coarse_capacity_texture(
+                f["half"], layout, model_max_r=f["max_r"], padding_factor=f["pad"], class_index=0
+            )
+            if persistent_texture else None
+        )
+        frame_rotations = jnp.asarray(f["rotations"][: n_frames * n_rot].reshape(n_frames, n_rot, 3, 3))
+        # Particle p's slot s is frame s + p (particle 1 starts one frame later); particle 2 has three images.
+        frame_of = np.add.outer(np.arange(n_group), np.arange(n_slots)) % n_frames
+        valid = np.ones((n_group, n_slots), bool)
+        valid[2, 3] = False
+        shape = (n_group, n_slots)
+        unshifted = jnp.asarray(np.where(valid[..., None], f["images"].reshape(*shape, -1), 0))
+        weight = jnp.asarray(np.where(valid[..., None], f["weight"].reshape(*shape, -1), 0))
+        initial = jnp.asarray(np.where(valid, f["initial"].reshape(shape), 0))
+        angles = jnp.asarray(f["angles"].reshape(*shape, n_trans, 2))
+        score_indices = jnp.asarray(layout.score_indices_np, jnp.int32)
+        static = dict(
+            image_shape=(f["box"], f["box"]), current_size=int(layout.current_size), model_max_r=f["max_r"],
+            padding_factor=f["pad"], texture=texture,
+        )
+        rotations = jnp.where(
+            jnp.asarray(valid)[..., None, None, None], frame_rotations[jnp.asarray(frame_of)], 0.0
+        )  # [G, S, R, 3, 3], as the batch path lays them out
+        total = jnp.zeros((n_group, n_trans, n_rot), jnp.float32)
+        error = jnp.zeros(n_group, jnp.float32)
+        for first in range(0, n_slots, slot_block):
+            total, error = tomo_coarse_gemm.coarse_gemm_slot_block(
+                total, error, f["half"], rotations, unshifted, weight, initial, angles, score_indices,
+                jnp.int32(first), count=slot_block, **static,
+            )
+        frame_total = jnp.zeros((n_group, n_trans, n_rot), jnp.float32)
+        bounds = jnp.zeros((n_group, n_slots), jnp.float32)
+        for frame in range(n_frames):  # every particle's slots follow the frame order
+            units, slots = np.nonzero((frame_of == frame) & valid)
+            n_pad = 4  # padded entries (unit index = the group size) change nothing
+            unit_index = np.full(n_pad, n_group, np.int32)
+            slot_index = np.zeros(n_pad, np.int32)
+            unit_index[: units.size], slot_index[: units.size] = units, slots
+            frame_total, bounds = tomo_coarse_gemm.coarse_gemm_frame(
+                frame_total, bounds, f["half"], frame_rotations, jnp.int32(frame), unshifted, weight, initial, angles,
+                score_indices, jnp.asarray(unit_index), jnp.asarray(slot_index), **static,
+            )
+        frame_error = tomo_coarse_gemm.slot_block_error(bounds, slot_block=slot_block)
+        if texture is not None:
+            texture.close_after(frame_total)  # the programs used it inside a trace: close after their result
+    assert_matches(np.asarray(frame_total), np.asarray(total))
+    assert_matches(np.asarray(frame_error), np.asarray(error))
+    assert np.count_nonzero(np.asarray(total)) == total.size
 
 
 @pytest.mark.gpu
