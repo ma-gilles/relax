@@ -533,27 +533,53 @@ translate_sum_tiled_table_f32_kernel(
     // The mass of a row: lanes 0..kTiledRows-1 of the first pixel tile sum their row sequentially.
     float mass = 0.0f;
 
+    // The next chunk's weights and values are loaded into registers while the current one is summed from shared
+    // memory (each thread its share: kTiledLoadsW weights, kTiledLoadsV values).
+    constexpr int kTiledLoadsW = kTiledTranslations * kTiledRows / kBlockThreads;
+    constexpr int kTiledLoadsV = kTiledTranslations * kTiledPixels / kBlockThreads;
+    float next_weight[kTiledLoadsW];
+    float4 next_value[kTiledLoadsV];
+    auto load_chunk = [&](int64_t chunk_first) {
+        const int chunk_count = active_count - chunk_first < kTiledTranslations
+            ? static_cast<int>(active_count - chunk_first)
+            : kTiledTranslations;
+#pragma unroll
+        for (int k = 0; k < kTiledLoadsW; ++k) {
+            const int index = threadIdx.x + k * kBlockThreads;
+            const int t = index / kTiledRows;
+            const int i = index - t * kTiledRows;
+            next_weight[k] = (t < chunk_count && shared_live[i] == 1)
+                ? posterior[(row_base + i) * translation_count + tiled_active[chunk_first + t]]
+                : 0.0f;
+        }
+#pragma unroll
+        for (int k = 0; k < kTiledLoadsV; ++k) {
+            const int index = threadIdx.x + k * kBlockThreads;
+            const int t = index / kTiledPixels;
+            const int j = index - t * kTiledPixels;
+            const int64_t pixel = pixel_base + j;
+            next_value[k] = (t < chunk_count && pixel < pixel_capacity)
+                ? shifted_table[static_cast<int64_t>(tiled_active[chunk_first + t]) * pixel_capacity + pixel]
+                : make_float4(0.0f, 0.0f, 0.0f, 0.0f);
+        }
+    };
+    if (active_count > 0) load_chunk(0);
     for (int64_t first = 0; first < active_count; first += kTiledTranslations) {
         const int count = active_count - first < kTiledTranslations
             ? static_cast<int>(active_count - first)
             : kTiledTranslations;
-        for (int index = threadIdx.x; index < kTiledTranslations * kTiledRows; index += kBlockThreads) {
-            const int t = index / kTiledRows;
-            const int i = index - t * kTiledRows;
-            const int64_t row = row_base + i;
-            shared_weight[t][i] = (t < count && shared_live[i] == 1)
-                ? posterior[row * translation_count + tiled_active[first + t]]
-                : 0.0f;
+#pragma unroll
+        for (int k = 0; k < kTiledLoadsW; ++k) {
+            const int index = threadIdx.x + k * kBlockThreads;
+            shared_weight[index / kTiledRows][index % kTiledRows] = next_weight[k];
         }
-        for (int index = threadIdx.x; index < kTiledTranslations * kTiledPixels; index += kBlockThreads) {
-            const int t = index / kTiledPixels;
-            const int j = index - t * kTiledPixels;
-            const int64_t pixel = pixel_base + j;
-            shared_value[t][j] = (t < count && pixel < pixel_capacity)
-                ? shifted_table[static_cast<int64_t>(tiled_active[first + t]) * pixel_capacity + pixel]
-                : make_float4(0.0f, 0.0f, 0.0f, 0.0f);
+#pragma unroll
+        for (int k = 0; k < kTiledLoadsV; ++k) {
+            const int index = threadIdx.x + k * kBlockThreads;
+            shared_value[index / kTiledPixels][index % kTiledPixels] = next_value[k];
         }
         __syncthreads();
+        if (first + kTiledTranslations < active_count) load_chunk(first + kTiledTranslations);
         if (threadIdx.x < kTiledRows && shared_live[threadIdx.x] == 1) {
             for (int t = 0; t < count; ++t) mass = __fadd_rn(mass, shared_weight[t][threadIdx.x]);
         }

@@ -1833,7 +1833,6 @@ relion_wavg_tiled_one_image_triplet_f32_kernel(
     __shared__ float shared_weight[kWavgTiledTranslations][kRows + 1];
     __shared__ float2 shared_value[kWavgTiledTranslations][kWavgTiledPixels];
     __shared__ int32_t shared_live[kRows];
-    __shared__ int32_t shared_active[kWavgTiledTranslations];
     if (threadIdx.x < kRows) {
         const int64_t row = row_base + threadIdx.x;
         // 1: image 0; 0: past the rows or padding (zeros); -1: an id past the one image (fails closed).
@@ -1873,29 +1872,53 @@ relion_wavg_tiled_one_image_triplet_f32_kernel(
     }
     const int64_t active_count = active_counts[blockIdx.x];
     const int32_t* tile_active = active_lists + static_cast<int64_t>(blockIdx.x) * translation_count;
+    // The next chunk's weights and values are loaded into registers while the current one is summed from shared
+    // memory.
+    constexpr int kLoadsW = kWavgTiledTranslations * kRows / kWavgThreads;
+    constexpr int kLoadsV = kWavgTiledTranslations * kWavgTiledPixels / kWavgThreads;
+    float next_weight[kLoadsW];
+    float2 next_value[kLoadsV];
+    auto load_chunk = [&](int64_t chunk_first) {
+        const int chunk_count = active_count - chunk_first < kWavgTiledTranslations
+            ? static_cast<int>(active_count - chunk_first)
+            : kWavgTiledTranslations;
+#pragma unroll
+        for (int k = 0; k < kLoadsW; ++k) {
+            const int index = threadIdx.x + k * kWavgThreads;
+            const int t = index / kRows;
+            const int i = index - t * kRows;
+            next_weight[k] = (t < chunk_count && shared_live[i] == 1)
+                ? posterior[(row_base + i) * translation_count + tile_active[chunk_first + t]]
+                : 0.0f;
+        }
+#pragma unroll
+        for (int k = 0; k < kLoadsV; ++k) {
+            const int index = threadIdx.x + k * kWavgThreads;
+            const int t = index / kWavgTiledPixels;
+            const int j = index - t * kWavgTiledPixels;
+            const int64_t pixel = pixel_base + j;
+            next_value[k] = (t < chunk_count && pixel < pixel_capacity)
+                ? shifted_images[static_cast<int64_t>(tile_active[chunk_first + t]) * pixel_capacity + pixel]
+                : make_float2(0.0f, 0.0f);
+        }
+    };
+    if (active_count > 0) load_chunk(0);
     for (int64_t first = 0; first < active_count; first += kWavgTiledTranslations) {
         const int count = active_count - first < kWavgTiledTranslations
             ? static_cast<int>(active_count - first)
             : kWavgTiledTranslations;
-        if (threadIdx.x < kWavgTiledTranslations)
-            shared_active[threadIdx.x] = threadIdx.x < count ? tile_active[first + threadIdx.x] : 0;
-        __syncthreads();
-        for (int index = threadIdx.x; index < kWavgTiledTranslations * kRows; index += kWavgThreads) {
-            const int t = index / kRows;
-            const int i = index - t * kRows;
-            shared_weight[t][i] = (t < count && shared_live[i] == 1)
-                ? posterior[(row_base + i) * translation_count + shared_active[t]]
-                : 0.0f;
+#pragma unroll
+        for (int k = 0; k < kLoadsW; ++k) {
+            const int index = threadIdx.x + k * kWavgThreads;
+            shared_weight[index / kRows][index % kRows] = next_weight[k];
         }
-        for (int index = threadIdx.x; index < kWavgTiledTranslations * kWavgTiledPixels; index += kWavgThreads) {
-            const int t = index / kWavgTiledPixels;
-            const int j = index - t * kWavgTiledPixels;
-            const int64_t pixel = pixel_base + j;
-            shared_value[t][j] = (t < count && pixel < pixel_capacity)
-                ? shifted_images[static_cast<int64_t>(shared_active[t]) * pixel_capacity + pixel]
-                : make_float2(0.0f, 0.0f);
+#pragma unroll
+        for (int k = 0; k < kLoadsV; ++k) {
+            const int index = threadIdx.x + k * kWavgThreads;
+            shared_value[index / kWavgTiledPixels][index % kWavgTiledPixels] = next_value[k];
         }
         __syncthreads();
+        if (first + kWavgTiledTranslations < active_count) load_chunk(first + kWavgTiledTranslations);
         for (int t = 0; t < count; ++t) {
 #pragma unroll
             for (int i = 0; i < kWavgTiledRowsPerThread; ++i) {
