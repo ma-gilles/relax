@@ -182,9 +182,6 @@ These focused checks cover the contracts below; their presence is not a claim of
 9. `tests/unit/ppca_refinement/test_ppca_postprocess.py` verifies mean
    background fill, W zero-mask behavior, Fourier bandlimiting, and the
    shell-power cap.
-10. `tests/unit/ppca_refinement/test_synthetic_recovery_checker.py` verifies
-    the embedding/recovery diagnostics and guards the exact+HEALPix candidate
-    source used to distinguish pose-grid misses from PPCA algebra failures.
 
 ## Historical evidence and limits
 

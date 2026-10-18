@@ -86,7 +86,6 @@ switch from single-set to halfset).
 | `engine.py` | JIT-compiled E+M kernel: `fused_dense_pose_ppca_block` and `dense_pose_ppca_score_stats_blocked`. Shared by both flavors. |
 | `dense_blocks.py` | The dense dataset blocks: volume coercion, `prepare_dense_ppca_dataset_inputs`, the image batch and the block iterator (`iter_dense_ppca_dataset_blocks`). |
 | `dense_dataset.py` | Dataset-facing dense-flavor iteration (`run_dense_ppca_fused_em_iteration`) + halfset wrapper + the statistics and embeddings over the dense blocks. |
-| `scripts/lib/dense_ppca_significance.py` (a script library; no relax command imports it) | The adaptive coarse significance of the oversampled local script (`compute_dense_ppca_adaptive_significance`). |
 | `scripts/lib/local_dataset.py` (a script library; no relax command imports it) | Dataset-facing exact-local-flavor iteration (`run_local_ppca_fused_em_iteration`) + halfset wrapper + the per-image bucket iterator. |
 | `scripts/lib/refinement_loop.py` (a script library; no relax command imports it) | `run_dense_ppca_refinement_loop` — the maintained dense multi-iteration driver and shared resolution gate. |
 | `scripts/lib/fixture_validation.py` (a script library; no relax command imports it) | Test fixtures shared with `tests/unit/ppca_refinement/`. |

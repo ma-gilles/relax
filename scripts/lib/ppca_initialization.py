@@ -233,8 +233,7 @@ def pipeline_variance_W_prior(
 
     The recovar pipeline saves per-Fourier-voxel signal-variance arrays in
     ``params.pkl['variance_est']`` (``'prior'`` and ``'combined'`` keys). When
-    re-exported into a PPCA init NPZ by ``prepare_ppca_init_from_pipeline_output.py``
-    the array is already flattened in half-spectrum order and matches the EM
+    re-exported into a PPCA init NPZ the array is already flattened in half-spectrum order and matches the EM
     refinement's per-voxel W prior layout. To produce the ``(half_size, q)``
     array the M-step expects, we repeat the same prior across q columns. By
     default the per-PC variance budget is the total signal variance divided

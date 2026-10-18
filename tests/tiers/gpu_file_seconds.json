@@ -66,8 +66,6 @@
 "tests/unit/ppca_refinement/test_pose_score_grid_recovery.py": 67,
 "tests/unit/ppca_refinement/test_postprocess_w_only_mask.py": 12,
 "tests/unit/ppca_refinement/test_ppca_schedule.py": 0,
-"tests/unit/ppca_refinement/test_random_volume_ppca_init.py": 2,
-"tests/unit/ppca_refinement/test_synthetic_recovery_checker.py": 0,
 "tests/unit/ppca_refinement/test_top_p_pose_selection.py": 1,
 "tests/unit/test_accumulator_offload.py": 0,
 "tests/unit/test_adaptive_engine_call_owner.py": 0,

@@ -1,12 +1,10 @@
 """EM/VDAM fixture scripts enable recovar's atomic-volume preset and load its truth."""
 
 import json
-import pickle
 import sys
 
 import numpy as np
 import pytest
-from recovar.simulation import solvent_contrast
 
 pytestmark = pytest.mark.unit
 
@@ -168,53 +166,6 @@ def test_cryobench_manifest_points_fixture_validation_at_simulated_truth(tmp_pat
         tmp_path / "old_manifest.json", recovar_to_relion=None
     )
     assert old == raw
-
-
-def _corrected_simulation_info(path):
-    info = {
-        "image_assignment": np.array([0, 1], dtype=np.int64),
-        "grid_size": 4,
-        solvent_contrast.METADATA_KEY: solvent_contrast.make_record(True, voxel_size=2.0, grid_size=4),
-    }
-    with path.open("wb") as f:
-        pickle.dump(info, f)
-    return path
-
-
-def test_gt_weighted_init_refuses_raw_maps_for_corrected_dataset(tmp_path):
-    from scripts.prepare_gt_weighted_ppca_init import prepare_gt_weighted_ppca_init
-
-    with pytest.raises(ValueError, match="--apply-simulation-scale"):
-        prepare_gt_weighted_ppca_init(
-            volume_paths=[tmp_path / "vol0000.mrc", tmp_path / "vol0001.mrc"],
-            simulation_info_path=_corrected_simulation_info(tmp_path / "simulation_info.pkl"),
-            output_dir=tmp_path / "out",
-            q=1,
-            frame="recovar",
-            write_maps=False,
-        )
-
-
-def test_synthetic_recovery_check_refuses_raw_maps_for_corrected_dataset(tmp_path):
-    from scripts.check_ppca_synthetic_recovery import run_checks
-
-    run_dir = tmp_path / "run"
-    (run_dir / "embedding_best_pose").mkdir(parents=True)
-    np.savez(run_dir / "final_ppca_dense.npz", placeholder=np.zeros(1))
-    np.save(run_dir / "embedding_best_pose" / "embedding_z.npy", np.zeros((2, 1)))
-    with pytest.raises(ValueError, match="simulation-info"):
-        run_checks(
-            run_dir=run_dir,
-            simulation_info_path=_corrected_simulation_info(tmp_path / "simulation_info.pkl"),
-            volume_glob=str(tmp_path / "vol*.mrc"),
-            healpix_order=1,
-            rotation_source="healpix",
-            offset_range_px=0.0,
-            offset_step_px=1.0,
-            q=1,
-            gt_volume_source="mrc-glob",
-            translation_source="grid",
-        )
 
 
 @pytest.mark.parametrize(
