@@ -22,7 +22,6 @@ TARGET_PROJECT_RELION_HALF_CAPACITY_TEXTURE = "cuda_project_relion_half_capacity
 TARGET_PROJECT_RELION_HALF_CAPACITY_TEXTURE_COMPACT_PACKED = "cuda_project_relion_half_capacity_texture_compact_packed"
 TARGET_RELION_PROJECTOR_HALF_TEXTURE_F32 = "cuda_relion_projector_half_texture_f32"
 TARGET_RELION_PROJECTOR_PERSISTENT_HALF_TEXTURE_F32 = "cuda_relion_projector_persistent_half_texture_f32"
-TARGET_RELION_FIRSTITER_BPREF_FUSED_X_HALF = "cuda_relion_firstiter_bpref_fused_x_half"
 TARGET_RELION_FUSED_X_HALF_BP = "cuda_relion_fused_x_half_bp"
 TARGET_RELION_FUSED_X_HALF_BP_PARTICLE_GRID = (
     "cuda_relion_fused_x_half_bp_particle_grid"
@@ -193,7 +192,6 @@ _RELAX_CUDA_BUILD_SOURCE_NAMES = (
 
 FFI_REGISTRATIONS: tuple[tuple[str, str], ...] = (
     (TARGET_RELION_FUSED_X_HALF_BP, "RelionFusedXHalfBackproject"),
-    (TARGET_RELION_FIRSTITER_BPREF_FUSED_X_HALF, "RelionFirstiterBprefFusedXHalf"),
     (TARGET_RELION_PROJECTOR_HALF_TEXTURE_F32, "RelionProjectorHalfTextureF32"),
     (TARGET_RELION_PROJECTOR_PERSISTENT_HALF_TEXTURE_F32, "RelionProjectorPersistentHalfTextureF32"),
     (

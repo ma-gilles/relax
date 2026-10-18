@@ -94,7 +94,6 @@
 "tests/unit/test_em_symmetry.py": 28,
 "tests/unit/test_exact_coarse_operand_precision.py": 7,
 "tests/unit/test_fine_translation_prior.py": 0,
-"tests/unit/test_firstiter_bpref_native.py": 1,
 "tests/unit/test_firstiter_bpref_scope_recovery.py": 0,
 "tests/unit/test_firstiter_cc_batch_budget.py": 1,
 "tests/unit/test_firstiter_cc_projector_class_axis.py": 0,
