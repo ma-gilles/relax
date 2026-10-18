@@ -68,7 +68,8 @@ def build_adaptive_pass2_grids(
 
     Return coarse rotations/translations, fine rotations/translations, and the
     two fine-to-coarse parent maps. ``return_mstep_rotations`` appends a seventh
-    array for reconstruction. Nonpositive oversampling keeps the coarse rotation
+    array for reconstruction: RELION's host-inverse matrices of the fine grid, also
+    without oversampling. Nonpositive oversampling keeps the coarse rotation
     grid and identity parent maps; fine translations still receive perturbation.
 
     Preserve host-double base translations through subdivision and perturbation.
@@ -108,7 +109,30 @@ def build_adaptive_pass2_grids(
             trans_parent_map,
         )
         if return_mstep_rotations:
-            return (*outputs, coarse_rot_np.copy())
+            # The M-step backprojects with RELION's host-inverse matrices of the same perturbed orientations
+            # (generateEulerMatrices(inverse=true)), not the scoring rows: the two differ by a float32 unit in
+            # about a quarter of the entries, which moves the outer-shell radius test and the sparse edge voxels
+            # of an oversampling-0 reconstruction (relax#81).
+            ids = (
+                np.arange(n_rot, dtype=np.int64)
+                if coarse_rotation_ids is None
+                else np.asarray(coarse_rotation_ids, dtype=np.int64)
+            )
+            mstep_rotations = get_oversampled_rotation_grid_from_samples(
+                ids,
+                parent_nside_level=int(coarse_healpix_order),
+                oversampling_order=0,
+                random_perturbation=float(random_perturbation),
+                return_mstep_rotations=True,
+                dtype=coarse_rot_np.dtype,
+                symmetry=symmetry,
+            )[2]
+            if mstep_rotations.shape != coarse_rot_np.shape:
+                raise ValueError(
+                    f"oversampling-0 M-step rotations {mstep_rotations.shape} do not match the coarse grid "
+                    f"{coarse_rot_np.shape}"
+                )
+            return (*outputs, mstep_rotations)
         return outputs
 
     adaptive_os = int(adaptive_oversampling)

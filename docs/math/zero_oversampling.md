@@ -85,3 +85,16 @@ device-built coarse rows for any number of classes
 ([`builds_coarse_pass1_rotations`](../../relax/refinement/trial_grids.py)). Tests against a NumPy reference
 written from RELION's lines:
 [`test_k_class_zero_oversampling.py`](../../tests/unit/test_k_class_zero_oversampling.py).
+
+## M-step rotations without oversampling
+
+RELION scores both passes with its device-built rows and backprojects with
+`generateEulerMatrices(inverse=true)` of the same perturbed orientations, whose
+cofactor inverse is cast to float32 on the host. At oversampling zero the two
+sets differ by a float32 unit in part of their entries. The M-step's outer-shell
+radius test and the sparsely covered edge voxels are sensitive to that, so
+[`build_adaptive_pass2_grids`](../../relax/sampling/oversampling.py) returns the
+host-inverse rows as the M-step rotations at oversampling zero too.
+
+On a Class3D K=4 oversampling-0 iteration (relax#81), this took the class maps from
+2.5e-5 to 9.9e-5 of RELION's down to 2.4e-6 to 4.6e-6; RELION's own builds differ by up to 7.8e-6.

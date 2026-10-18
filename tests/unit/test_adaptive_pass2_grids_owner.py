@@ -45,3 +45,25 @@ def test_zero_oversampling_keeps_the_coarse_rotation_grid():
         translation_step=1.0, random_perturbation=0.0, coarse_rotation_ids=None,
     )
     assert _same(grids.fine_rotations, rot) and matches(grids.rotation_parent_map, np.arange(N_ROT))
+
+
+def test_zero_oversampling_backprojects_with_relion_host_inverse_rows():
+    """relax#81: without oversampling RELION scores with its device-built rows but backprojects with
+    generateEulerMatrices(inverse=true) of the same perturbed orientations (the cofactor inverse, cast to float32).
+    The two differ by a float32 unit in part of the entries, which moves the outer-shell radius test of the M-step,
+    so the M-step rows are the host-inverse builder's, whatever rows pass 1 and pass 2 score."""
+    from relax.sampling.oversampled_grids import get_oversampled_rotation_grid_from_samples
+
+    order, rp = 2, -0.11470896005630493
+    exact = get_oversampled_rotation_grid_from_samples(
+        np.arange(rotation_grid_size(order)), parent_nside_level=order, oversampling_order=0, random_perturbation=rp,
+        return_mstep_rotations=True, dtype=np.float32,
+    )[2]
+    # Scored rows one float32 unit off in every other entry, as device-built rows can be.
+    scoring = exact.copy()
+    scoring.reshape(-1)[::2] = np.nextafter(scoring.reshape(-1)[::2], np.float32(2.0))
+    grids = build_adaptive_pass2_grids(
+        scoring, BASE.astype(np.float32), BASE, order, 0, 1.0, rp, return_mstep_rotations=True,
+    )
+    assert np.array_equal(grids[0], scoring) and np.array_equal(grids[2], scoring)  # both passes score them
+    assert grids[6].dtype == scoring.dtype and np.array_equal(grids[6], exact)
