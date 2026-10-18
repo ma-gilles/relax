@@ -138,6 +138,12 @@ def training_image_reading(path, preread_images):
 def load_training(path, preread_images="auto"):
     """Load the training fixture with its unit-contrast image sign (algorithm §15).
 
+    The stack is read as stored (``uninvert_data=False``) and its CTF is RECOVAR's, negative at low frequency, so
+    the manifest's images show positive density dark, as the RECOVAR simulator writes them. A RELION- or
+    cryoSPARC-convention stack (protein white) is negated by its exporter; ``contrast`` and ``image_multiplier`` are
+    amplitudes and must be 1, not a sign. The bootstrap logs a warning when the start looks inverted
+    (:func:`relax.ppca_initial_model.initialization.warn_if_inverted`).
+
     ``preread_images`` (``Config.preread_images``) decides whether the particle stack is read into
     host memory once (:func:`training_image_reading`); the decision is logged.
     """

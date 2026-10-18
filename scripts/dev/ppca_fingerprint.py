@@ -164,14 +164,19 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
                 trace.append(log_row(log_record.name, log_record.levelname, template, text, scrub=scrub))
 
     def write_tiny_manifest(root, *, n_images=120, box=64, voxel=6.0, seed=5):
-        """A bare-.mrcs training manifest: a stack of a soft blob's noisy images, a cryoDRGN CTF pickle, neutral poses."""
+        """A bare-.mrcs training manifest: a stack of a soft blob's noisy images (dark, the manifest's sign), a cryoDRGN
+        CTF pickle, neutral poses."""
         root = Path(root)
         root.mkdir(parents=True, exist_ok=True)
         rng = np.random.default_rng(seed)
         x = np.arange(box) - box / 2
         yy, xx = np.meshgrid(x, x, indexing="ij")
         blob = np.exp(-(xx**2 + yy**2) / 60.0)
-        images = blob[None] * (1.0 + 0.3 * rng.standard_normal((n_images, 1, 1))) + rng.standard_normal((n_images, box, box))
+        # The manifest's sign (RECOVAR's CTF is negative at low frequency): a positive density images dark, so the
+        # bootstrap passes its sign test (initialization.warn_if_inverted stays silent).
+        images = -blob[None] * (1.0 + 0.3 * rng.standard_normal((n_images, 1, 1))) + rng.standard_normal(
+            (n_images, box, box)
+        )
         with mrcfile.new(root / "particles.mrcs") as stack:
             stack.set_data(images.astype(np.float32))
             stack.voxel_size = voxel
@@ -255,6 +260,8 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
             root_logger.removeHandler(handler)
             root_logger.setLevel(old_level)
             command.source_identity = original_identity
+        if any("RELION-sign" in " ".join(map(str, row)) for row in trace):
+            raise AssertionError("the harness stack breaks the manifest's sign contract (the bootstrap warned)")
         files = hash_output_files(outdir, {}) if outdir.exists() else {}
         checkpoints = {key: value for key, value in files.items() if key.startswith("checkpoint_")}
         files = {key: value for key, value in files.items() if not key.startswith("checkpoint_")}

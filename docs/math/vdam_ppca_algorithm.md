@@ -1636,6 +1636,15 @@ to its negative before scoring; this was corrected after the first small
 pilot pair identified the exact first differing observation array. A loader
 regression checks the processed image against the stored MRC pixels.
 
+The sign contract of a training manifest follows: its CTF is RECOVAR's
+(`recovar.core.ctf.evaluate_ctf`, negative at low frequency), so positive
+density appears dark in the stored images, as the simulator writes them.
+`contrast` and `image_multiplier` are amplitudes and must be 1; neither declares
+a sign. An exporter of RELION- or cryoSPARC-convention particles (protein white)
+negates the pixels. The bootstrap logs a warning when its reconstruction fails
+RECOVAR's own sign test (the cubed density inside a third of the box sums
+negative), without changing any number.
+
 The [pilot evaluator](../../scripts/evaluate_vdam_ppca_pilot.py) retains its
 full shellwise FSC and full-band AUC. When an active radius is declared, shared
 and individual rigid fits use both maps low-passed to that radius; the active

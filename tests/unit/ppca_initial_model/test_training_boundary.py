@@ -203,3 +203,53 @@ def test_final_embedding_pass_reports_each_images_scores(tmp_path, stream):
     np.testing.assert_allclose(
         final.max_posterior, np.exp(final.best_pose_log_score.astype(np.float64) - final.log_evidence), rtol=1e-3
     )
+
+
+def test_a_white_stack_logs_the_inverted_bootstrap_warning(caplog):
+    """A density positive inside the particle passes RECOVAR's sign test; its negative (a RELION-sign stack read as
+    stored) logs the warning. Nothing else changes."""
+    import logging
+
+    from relax.ppca_initial_model.initialization import bootstrap_looks_inverted, warn_if_inverted
+
+    n = 16
+    z, y, x = np.indices((n, n, n)) - n // 2
+    blob = np.exp(-(x**2 + y**2 + z**2) / 8.0).astype(np.float32)
+    assert not bootstrap_looks_inverted(blob, (n, n, n))
+    assert bootstrap_looks_inverted(-blob, (n, n, n))
+    with caplog.at_level(logging.WARNING, logger="relax.ppca_initial_model.initialization"):
+        warn_if_inverted(blob, (n, n, n))
+        assert not caplog.records
+        warn_if_inverted(-blob, (n, n, n))
+    assert "RELION-sign" in caplog.text
+
+
+def test_the_bootstrap_of_a_negated_stack_warns(tmp_path, caplog):
+    """The whole bootstrap on a stack and on its negative: only the negated one warns (the start is the same up to
+    the blob fields' sign)."""
+    import logging
+
+    import mrcfile
+
+    from relax.ppca_initial_model.initialization import initialize
+
+    count, n = 64, 16
+    path, manifest, images, _ = _write_bare_mrcs_manifest(tmp_path, count, n)
+    z, y = np.indices((n, n)) - n // 2
+    projection = 3.0 * np.exp(-(z**2 + y**2) / 6.0).astype(np.float32)
+    for sign, folder in ((1, "dark"), (-1, "white")):
+        # RECOVAR's CTF is negative at low frequency: a positive density images dark.
+        root = tmp_path / folder
+        root.mkdir()
+        for name in ("ctf.pkl", "neutral_poses.pkl", "particle_ids.npy"):
+            (root / name).write_bytes((tmp_path / name).read_bytes())
+        with mrcfile.new(root / "particles.mrcs") as stack:
+            stack.set_data((sign * -projection[None] + 0.1 * images).astype(np.float32))
+            stack.voxel_size = 2
+        changed = dict(manifest, files={**manifest["files"], "particles.mrcs": file_hash(root / "particles.mrcs")})
+        (root / "manifest.json").write_text(json.dumps(changed))
+        data, _, _ = load_training(root / "manifest.json")
+        caplog.clear()
+        with caplog.at_level(logging.WARNING, logger="relax.ppca_initial_model.initialization"):
+            initialize(data, seed=3, diameter_ang=24.0, q=2)
+        assert ("RELION-sign" in caplog.text) == (sign == -1), folder
