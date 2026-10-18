@@ -729,6 +729,112 @@ def _lay_out_rotations(built, rows, rot, valid):
     return jnp.where(valid[:, :, None, None, None], laid_out, jnp.zeros((), laid_out.dtype))
 
 
+class TiltCoarseInputs(NamedTuple):
+    """The tilt images' geometry and the pass's rotations, as :func:`particle_coarse_supports` takes them."""
+
+    offsets: np.ndarray
+    image_left: np.ndarray
+    image_projections: np.ndarray
+    old_offsets: np.ndarray  # RELION's rounded old offsets per particle (tomo_particles.relion_gpu_old_offsets)
+    coarse_translations_px: np.ndarray
+    box_size: int
+    coarse_eulers_deg: np.ndarray
+    random_perturbation: float
+    angular_sampling_deg: float
+
+
+class CoarseScorer(NamedTuple):
+    """Each class's projector and texture, the score pixels and the static settings of the GEMM programs."""
+
+    projectors: tuple
+    textures: list
+    score_indices: jax.Array
+    statics: dict
+
+
+def _score_slot_batch(
+    units, tilt: TiltCoarseInputs, operands_for, scorer: CoarseScorer, *, r_pad, p_pad, slots, slot_block,
+    slot_offsets, unit_rotations,
+):
+    """A coarse batch's per-particle diff2 ``[P, K * R_pad, T]``, GEMM error bounds ``[P]``, image counts, operands
+    (``[P, S, ...]``, as the exact cut takes them) and its last total, by the slot-block programs.
+
+    The batch's operands are padded to ``[P_pad, S, R_pad, ...]``: padded rotations repeat the particle's last one,
+    padded slots and particles carry zero weight (their diff2 adds zeros and is not read). The scorer matrices are
+    built and laid out on the device (:func:`_batch_scoring_rotations`); ``operands_for(units)`` gives the operand
+    block holding the batch's images; ``unit_rotations`` are a local search's rows per particle (None: the grid's).
+    """
+
+    from relax.sampling import tomo_particles
+    from relax.sampling.device_rotations import relion_adaptive_pass1_rotations
+
+    offsets = tilt.offsets
+    n_trans = int(np.asarray(tilt.coarse_translations_px).shape[0])
+    angles = np.zeros((p_pad, slots, n_trans, 2), dtype=np.float32)
+    image_index = np.zeros((p_pad, slots), dtype=np.int64)
+    image_valid = np.zeros((p_pad, slots), dtype=bool)
+    rotations = _batch_scoring_rotations(
+        units,
+        offsets,
+        tilt.image_left,
+        tilt.coarse_eulers_deg,
+        unit_rotations,
+        tilt.random_perturbation,
+        tilt.angular_sampling_deg,
+        p_pad=p_pad,
+        slots=slots,
+        r_pad=r_pad,
+        pass1_rotations=relion_adaptive_pass1_rotations,
+    )
+    for p, unit in enumerate(units):
+        images = np.arange(offsets[unit], offsets[unit + 1])
+        angles[p, : images.size] = tomo_particles.tilt_translation_angles(
+            tilt.coarse_translations_px,
+            tilt.old_offsets[unit : unit + 1],
+            tilt.image_projections[images],
+            np.zeros(images.size, int),
+            tilt.box_size,
+        )
+        image_index[p, : images.size] = images
+        image_valid[p, : images.size] = True
+    block_start, _block_stop, unshifted, weight, initial = operands_for(units)
+    index = jnp.asarray(np.where(image_valid, image_index - block_start, 0))
+    valid = jnp.asarray(image_valid)
+    batch_unshifted = jnp.where(valid[..., None], unshifted[index], jnp.zeros((), unshifted.dtype))
+    batch_weight = jnp.where(valid[..., None], weight[index], jnp.zeros((), weight.dtype))
+    batch_initial = jnp.where(valid, initial[index], jnp.zeros((), initial.dtype))
+    batch_angles = jnp.asarray(angles)
+    class_totals, error, total = [], None, None
+    for projector, texture in zip(scorer.projectors, scorer.textures):
+        total = jnp.zeros((p_pad, n_trans, r_pad), dtype=jnp.float32)
+        class_error = jnp.zeros(p_pad, dtype=jnp.float32)
+        for first in range(0, slots, slot_block):
+            total, class_error = coarse_gemm_slot_block(
+                total,
+                class_error,
+                projector,
+                rotations,
+                batch_unshifted,
+                batch_weight,
+                batch_initial,
+                batch_angles,
+                scorer.score_indices,
+                slot_offsets[first],
+                count=int(min(slot_block, slots - first)),
+                texture=texture,
+                **scorer.statics,
+            )
+        class_totals.append(total[: units.size].swapaxes(1, 2))
+        error = class_error if error is None else jnp.maximum(error, class_error)
+    # K>1: [P, K * R_pad, T], class-major along the rotation axis.
+    diff2 = class_totals[0] if len(class_totals) == 1 else jnp.concatenate(class_totals, axis=1)
+    n = units.size
+    operands = (batch_unshifted[:n], batch_weight[:n], batch_initial[:n], batch_angles[:n])
+    # The block and the batch's padded operands are freed on return: only operands_for and the pending particles
+    # keep operands, so a new block is allocated after the old one is freed.
+    return diff2, error[:n], image_valid[:n].sum(axis=1), operands, total
+
+
 def particle_coarse_supports(
     experiment_dataset,
     *,
@@ -1119,88 +1225,22 @@ def particle_coarse_supports(
     # The slot-block program's traced slot offsets, on the device once per pass: a host scalar argument is a
     # host-to-device copy on every call, and a late pass makes tens of thousands of calls.
     slot_offsets = [jax.device_put(np.int32(first)) for first in range(slots)]
+    tilt = TiltCoarseInputs(
+        offsets, image_left, image_projections, old, coarse_translations_px, box_size, coarse_eulers_deg,
+        random_perturbation, angular_sampling_deg,
+    )
+    scorer = CoarseScorer(class_projectors, class_textures, score_indices, dict(
+        image_shape=tuple(layout.image_shape), current_size=int(layout.current_size), model_max_r=int(model_max_r),
+        padding_factor=int(padding_factor),
+    ))
     for units, r_pad, p_pad, slot_block in batches:
-        # Operands of the batch, padded to [P_pad, S, R_pad, ...]: padded rotations repeat the particle's
-        # last one, padded slots and particles carry zero weight (their diff2 adds zeros and is not read).
-        # The scorer matrices are built and laid out on the device (_batch_scoring_rotations).
-        angles = np.zeros((p_pad, slots, n_coarse_trans, 2), dtype=np.float32)
-        image_index = np.zeros((p_pad, slots), dtype=np.int64)
-        image_valid = np.zeros((p_pad, slots), dtype=bool)
-        rotations = _batch_scoring_rotations(
-            units,
-            offsets,
-            image_left,
-            coarse_eulers_deg,
-            None if not local else [unit_rotations[unit] for unit in units],
-            random_perturbation,
-            angular_sampling_deg,
-            p_pad=p_pad,
-            slots=slots,
-            r_pad=r_pad,
-            pass1_rotations=relion_adaptive_pass1_rotations,
+        diff2, error, n_valid, operands, last_total = _score_slot_batch(
+            units, tilt, operands_for, scorer, r_pad=r_pad, p_pad=p_pad, slots=slots, slot_block=slot_block,
+            slot_offsets=slot_offsets, unit_rotations=None if not local else [unit_rotations[unit] for unit in units],
         )
-        for p, unit in enumerate(units):
-            images = np.arange(offsets[unit], offsets[unit + 1])
-            angles[p, : images.size] = tomo_particles.tilt_translation_angles(
-                coarse_translations_px,
-                old[unit : unit + 1],
-                image_projections[images],
-                np.zeros(images.size, int),
-                box_size,
-            )
-            image_index[p, : images.size] = images
-            image_valid[p, : images.size] = True
-        block_start, _block_stop, unshifted, weight, initial = operands_for(units)
-        index = jnp.asarray(np.where(image_valid, image_index - block_start, 0))
-        valid = jnp.asarray(image_valid)
-        batch_unshifted = jnp.where(valid[..., None], unshifted[index], jnp.zeros((), unshifted.dtype))
-        batch_weight = jnp.where(valid[..., None], weight[index], jnp.zeros((), weight.dtype))
-        batch_initial = jnp.where(valid, initial[index], jnp.zeros((), initial.dtype))
-        batch_angles = jnp.asarray(angles)
-        class_totals, error = [], None
-        for class_index, class_projector in enumerate(class_projectors):
-            total = jnp.zeros((p_pad, n_coarse_trans, r_pad), dtype=jnp.float32)
-            class_error = jnp.zeros(p_pad, dtype=jnp.float32)
-            for first in range(0, slots, slot_block):
-                total, class_error = coarse_gemm_slot_block(
-                    total,
-                    class_error,
-                    class_projector,
-                    rotations,
-                    batch_unshifted,
-                    batch_weight,
-                    batch_initial,
-                    batch_angles,
-                    score_indices,
-                    slot_offsets[first],
-                    count=int(min(slot_block, slots - first)),
-                    image_shape=tuple(layout.image_shape),
-                    current_size=int(layout.current_size),
-                    model_max_r=int(model_max_r),
-                    padding_factor=int(padding_factor),
-                    texture=class_textures[class_index],
-                )
-            class_totals.append(total[: units.size].swapaxes(1, 2))
-            error = class_error if error is None else jnp.maximum(error, class_error)
-            last_total = total
-        # K>1: [P, K * R_pad, T], class-major along the rotation axis.
-        diff2 = class_totals[0] if n_classes == 1 else jnp.concatenate(class_totals, axis=1)
         n_scored += int(units.size) * n_classes * r_pad * n_coarse_trans
         # The flush cuts these particles, and scores their undecided rotations again from these operands.
-        pending.append(
-            (
-                units,
-                diff2,
-                error[: units.size],
-                image_valid[: units.size].sum(axis=1),
-                (
-                    batch_unshifted[: units.size], batch_weight[: units.size], batch_initial[: units.size],
-                    batch_angles[: units.size],
-                ),
-            )
-        )
-        # Only operands_for and the pending particles keep operands, so a new block is allocated after the old one is freed.
-        del unshifted, weight, initial, batch_unshifted, batch_weight, batch_initial
+        pending.append((units, diff2, error, n_valid, operands))
         if sum(int(u.size) for u, *_ in pending) >= significance_batch:
             flush()
     flush(last=True)
