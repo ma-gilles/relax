@@ -16,21 +16,16 @@ from relax.refinement.startup_noise import StartupNoise, estimate_startup_sigma2
 from relax.steps.half_inputs import HalfPair
 
 
-def _load_init_noise_radial_npz(path, noise_iter="last"):
-    """Load a diagnostic initial noise spectrum from refinement_results.npz."""
+def _load_init_noise_radial_npz(path):
+    """Load a diagnostic initial noise spectrum, the latest numbered one, from refinement_results.npz."""
 
     noise_path = Path(path)
     with np.load(noise_path, allow_pickle=False) as npz:
-        if str(noise_iter).lower() in {"last", "latest"}:
-            pattern = re.compile(r"^noise_radial_iter_(\d{3})$")
-            available = sorted(
-                int(match.group(1)) for key in npz.files if (match := pattern.match(key)) is not None
-            )
-            if not available:
-                raise ValueError(f"No numbered noise_radial_iter arrays found in {noise_path}")
-            iter_label = f"{available[-1]:03d}"
-        else:
-            iter_label = f"{int(noise_iter):03d}"
+        pattern = re.compile(r"^noise_radial_iter_(\d{3})$")
+        available = sorted(int(match.group(1)) for key in npz.files if (match := pattern.match(key)) is not None)
+        if not available:
+            raise ValueError(f"No numbered noise_radial_iter arrays found in {noise_path}")
+        iter_label = f"{available[-1]:03d}"
         key = f"noise_radial_iter_{iter_label}"
         if key not in npz.files:
             raise ValueError(f"Missing {key} in {noise_path}")
@@ -60,12 +55,13 @@ def frozen_boundary_noise(frozen_boundary, image_shape) -> StartupNoise:
     )
 
 
-def archived_noise(path, iteration, image_shape, *, log) -> StartupNoise:
-    """The radial noise an earlier run's archive recorded at ``iteration`` (``--init_noise_from_npz``)."""
+def archived_noise(path, image_shape, *, log) -> StartupNoise:
+    """The radial noise an earlier run's archive recorded at its latest numbered iteration
+    (``--init_noise_from_npz``)."""
     from recovar.reconstruction import noise as recon_noise
 
 
-    init_noise = _load_init_noise_radial_npz(path, iteration)
+    init_noise = _load_init_noise_radial_npz(path)
     radial = init_noise["noise_radial"]
     log.info(
         "Diagnostic init: loaded sigma2_noise from %s iter=%s: min=%.3e median=%.3e max=%.3e",

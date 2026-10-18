@@ -1013,7 +1013,7 @@ def test_init_noise_from_npz_loader_uses_latest_numbered_spectrum(tmp_path):
         noise_radial_iter_003=np.asarray([3.0, 4.0], dtype=np.float64),
     )
 
-    loaded = _load_init_noise_radial_npz(path, "last")
+    loaded = _load_init_noise_radial_npz(path)
 
     assert loaded["iteration"] == "003"
     np.testing.assert_allclose(loaded["noise_radial"], np.asarray([3.0, 4.0], dtype=np.float64))

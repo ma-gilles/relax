@@ -183,7 +183,7 @@ def test_init_noise_from_npz_replaces_the_startup_estimate(monkeypatch, tmp_path
     assert len(trace.calls("estimate")) == 1
     from recovar.reconstruction import noise as recon_noise
 
-    radial = startup_noise_inputs._load_init_noise_radial_npz(str(archive), "last")["noise_radial"]
+    radial = startup_noise_inputs._load_init_noise_radial_npz(str(archive))["noise_radial"]
     expected = recon_noise.make_radial_noise(radial, loaded["experiment_datasets"][0].image_shape)
     assert_matches(np.asarray(loaded["init_noise_variance"].half1), np.asarray(expected))
 

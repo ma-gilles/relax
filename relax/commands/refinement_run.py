@@ -793,7 +793,7 @@ def main(command=None):
         )
     elif args.init_noise_from_npz is not None:
         initial_noise = startup_noise_inputs.archived_noise(
-            args.init_noise_from_npz, args.init_noise_iter, ds.image_shape, log=logger,
+            args.init_noise_from_npz, ds.image_shape, log=logger,
         )
     elif args.relion_init_dir is not None:
         # The RELION-seeded debug start loads RELION's iteration-0 model noise below.

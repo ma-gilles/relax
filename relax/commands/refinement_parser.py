@@ -540,11 +540,6 @@ def parse_refinement_args(argv=None):
         ),
     )
     parser.add_argument(
-        "--init_noise_iter",
-        default="last",
-        help="Iteration selector for --init_noise_from_npz. Use an integer or 'last'.",
-    )
-    parser.add_argument(
         "--skip_final_iteration",
         action="store_true",
         help="Diagnostic only: skip the final all-data Nyquist iteration.",
