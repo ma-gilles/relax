@@ -141,6 +141,7 @@ def test_staged_snapshot_capture_copies_complete_k1_state():
         max_posterior=[np.full(2, 0.7), np.full(2, 0.8)],
         significant_counts=[np.ones(2, dtype=np.int32), np.full(2, 2, dtype=np.int32)],
         avg_norm_correction=(0.95, None),
+        log_likelihood_contribution=None,
     )
 
     assert result.relion_iteration == 3 and result.n_classes == 1
@@ -517,7 +518,7 @@ def _unestimated_norm_snapshot(snapshot, input_norms, rng):
     ]
     state = iteration_snapshot_module._host_particle_state(
         halves, snapshot.max_posterior, snapshot.significant_counts, update.avg_norm_correction_per_half,
-        direction_priors=[], box_size=BOX, consistency={},
+        direction_priors=[], box_size=BOX, consistency={}, log_likelihood_contribution=None,
     )
     return dataclasses.replace(
         snapshot,

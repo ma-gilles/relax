@@ -306,7 +306,7 @@ def _host_particle_state(
     direction_priors,
     box_size,
     consistency,
-    log_likelihood_contribution=None,
+    log_likelihood_contribution,
 ) -> dict:
     """Per-particle arrays of both halves, the norm corrections, and the dtype, prior-order and consistency tags.
 
@@ -436,7 +436,7 @@ class SnapshotCapture:
         max_posterior,
         significant_counts,
         avg_norm_correction,
-        log_likelihood_contribution=None,
+        log_likelihood_contribution,
     ) -> IterationSnapshot:
         """Complete a checkpoint in the layout of the run's mode (``finish_class`` or ``finish_k1``).
 
@@ -493,7 +493,7 @@ class SnapshotCapture:
         max_posterior,
         significant_counts,
         avg_norm_correction,
-        log_likelihood_contribution=None,
+        log_likelihood_contribution,
     ) -> IterationSnapshot:
         """Copy a K=1 iteration's maps, spectra, priors and particles into a complete checkpoint.
 
@@ -549,7 +549,7 @@ class SnapshotCapture:
         max_posterior,
         significant_counts,
         avg_norm_correction,
-        log_likelihood_contribution=None,
+        log_likelihood_contribution,
     ) -> IterationSnapshot:
         """Copy a Class3D iteration's maps, spectra, priors and particles into a complete checkpoint.
 

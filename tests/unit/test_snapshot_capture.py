@@ -33,6 +33,7 @@ def _shared_inputs(dtype, offset_dimension, empty_second_half):
         half_inputs=halves,
         max_posterior=[np.full(n, 0.75, dtype=dtype) for n in rows],
         significant_counts=[np.ones(n, dtype=np.int32) for n in rows], avg_norm_correction=(1.0, None),
+        log_likelihood_contribution=None,
     )
 
 
