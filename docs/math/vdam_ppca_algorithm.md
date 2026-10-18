@@ -1580,14 +1580,17 @@ existing simulator's MRC/Fourier path, white `noise_level/50000` spectrum and
 one recorded volume normalization. It omits the optional common image-power
 rescale and all per-particle normalization. The standard simulator's zero
 shift distribution is explicit. Source maps and truth stay in the evaluator
-bundle; training manifests contain neutral poses required by the existing
-loader, known CTFs and stable particle IDs. Simulator arithmetic retains its
+bundle; the training directory holds a RELION particle STAR (known CTFs, no
+poses; the particle ids are its row order) and its stack in RELION's sign, the
+simulator images negated. Simulator arithmetic retains its
 existing float64 noise RNG; stored particles and the new production model are
 float32/complex64. Simulation precision is not EM production precision.
 
-The [training-only STAR bridge](../../scripts/prepare_vdam_ppca_star.py)
-transcribes the fixture's hashed particle/CTF inputs for the independent K3
-VDAM run. The [seed exporter](../../scripts/export_vdam_ppca_seed_maps.py)
+PPCA and the independent K3 VDAM run read the same particle STAR. The
+[manifest converter](../../scripts/prepare_vdam_ppca_star.py) turns a fixture
+written before the STAR (a `recovar-ppca-training-v1` manifest: bare stack,
+cryoDRGN CTF pickle, neutral poses, particle ids) into such a STAR with a
+negated stack copy. The [seed exporter](../../scripts/export_vdam_ppca_seed_maps.py)
 inverts the q2 initial mean/loading basis at checkpoint zero and records the
 three float32 RELION-frame maps. The VDAM override skips its native double
 bootstrap when these maps are supplied; later projection and M-step backends

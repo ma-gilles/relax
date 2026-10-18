@@ -3,6 +3,11 @@
 Uses the simulator's MRC downsampling, common volume normalization and
 noise_level/50000 white spectrum. No per-particle normalization is applied.
 Pilot-scale generation must run under Slurm. See vdam_ppca_implementation_plan.
+
+training/ holds what relax ppca_initial_model --i reads: particles.star (one optics
+group, the simulated CTF, no poses) and particles.mrcs in RELION's sign, the
+simulator images negated (scripts/lib/ppca_training_star.py); fixture.json records
+the particle diameter to train with. evaluation/ keeps the simulator's sign.
 """
 
 import argparse
@@ -128,14 +133,13 @@ def prepare(output, source, counts, seed=1729, box=64, noise_level=0.01, *,
         noise_rng_batch_size=64,
         noise_transform_batch_size=64,
     )
-    helpers.write_mrc_stack(str(training / "particles.mrcs"), particles, voxel_size=voxel_size, dtype=np.float32)
-    simulator.save_ctf_params(str(training), box, ctf, voxel_size)
-    # Loader-required poses are explicitly neutral; never contain simulation poses.
-    helpers.pickle_dump(
-        (np.broadcast_to(np.eye(3, dtype=np.float32), (n, 3, 3)).copy(), np.zeros((n, 2), np.float32)),
-        str(training / "neutral_poses.pkl"),
+    from scripts.lib.ppca_training_star import relion_sign_images, write_training_star
+
+    # RELION sign (protein white): the simulator images negated. No simulation pose enters the STAR.
+    helpers.write_mrc_stack(
+        str(training / "particles.mrcs"), relion_sign_images(particles), voxel_size=voxel_size, dtype=np.float32
     )
-    np.save(training / "particle_ids.npy", np.arange(n, dtype=np.int64))
+    write_training_star(training / "particles.star", "particles.mrcs", ctf, voxel_size=voxel_size, box=box)
     np.savez(
         evaluation / "truth.npz",
         labels=labels,
@@ -211,23 +215,18 @@ def prepare(output, source, counts, seed=1729, box=64, noise_level=0.01, *,
         "downsampling": "existing Fourier crop; common field of view preserved",
     }
     (evaluation / "manifest.json").write_text(json.dumps(characterization, indent=2) + "\n")
-    manifest = {
-        "schema": "recovar-ppca-training-v1",
+    fixture = {
+        "particles_star": "training/particles.star",
+        "sign": "RELION (protein white): the simulator images negated",
         "n_images": n,
         "box": box,
         "voxel_size": float(voxel_size),
         "particle_diameter_ang": float(0.75 * box * voxel_size),
         "shift_range_px": 6.0,
-        "particles": "particles.mrcs",
-        "ctf": "ctf.pkl",
-        "neutral_poses": "neutral_poses.pkl",
-        "particle_ids": "particle_ids.npy",
-        "contrast": 1.0,
-        "image_multiplier": 1.0,
-        "files": {p.name: sha256(p) for p in training.iterdir()},
+        "files": {f"training/{p.name}": sha256(p) for p in sorted(training.iterdir())},
     }
-    (training / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
-    return manifest
+    (output / "fixture.json").write_text(json.dumps(fixture, indent=2) + "\n")
+    return fixture
 
 
 def main():

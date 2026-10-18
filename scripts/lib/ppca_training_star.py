@@ -103,8 +103,8 @@ def training_star_geometry(star_path):
         raise ValueError(f"{star_path}: expected one optics group")
     return {
         "n_images": int(len(particles)),
-        "box": int(star_column(optics, "rlnImageSize", required=True)[0]),
-        "voxel_size": float(star_column(optics, "rlnImagePixelSize", required=True)[0]),
+        "box": int(star_column(optics, "rlnImageSize", required=True).iloc[0]),
+        "voxel_size": float(star_column(optics, "rlnImagePixelSize", required=True).iloc[0]),
     }
 
 
@@ -126,3 +126,23 @@ def simulator_sign_theta(theta):
     that infers its own latents may negate the mean alone (the latents absorb the loadings' sign).
     """
     return np.negative(np.asarray(theta))
+
+
+def training_star_ctf(star_path):
+    """The ``(n, 7)`` float64 CTF rows of a single-optics-group particle STAR, in :func:`write_training_star`'s order."""
+    from recovar.data_io.starfile import read_star, star_column
+
+    particles, optics = read_star(str(star_path))
+    if optics is None or len(optics) != 1:
+        raise ValueError(f"{star_path}: expected one optics group")
+    n = len(particles)
+    columns = [
+        star_column(particles, label, required=True) for label in ("rlnDefocusU", "rlnDefocusV", "rlnDefocusAngle")
+    ]
+    columns += [
+        np.full(n, float(star_column(optics, label, required=True).iloc[0]))
+        for label in ("rlnVoltage", "rlnSphericalAberration", "rlnAmplitudeContrast")
+    ]
+    phase_shift = star_column(particles, "rlnPhaseShift")
+    columns.append(np.zeros(n) if phase_shift is None else phase_shift)
+    return np.stack([np.asarray(column, np.float64) for column in columns], axis=1)
