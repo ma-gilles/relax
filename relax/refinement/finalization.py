@@ -469,7 +469,7 @@ def run_final_all_data(
                     oversampling_order=final_local_sampling.search.oversampling_order,
                     translation_range_px=final_sampling.settings.translation_range,
                     translation_step_px=final_sampling.settings.translation_step,
-                    voxel_size=image_geometry.pixel_size_angstrom,
+                    model_pixel_size=ctx.optics.model_pixel_size,
                     random_perturbation=final_local_sampling.perturbation,
                     pass1_size=final_local_sampling.coarse_image_window_size,
                     current_size=final_current_size,
@@ -486,7 +486,7 @@ def run_final_all_data(
                     oversampling_order=carry.state.adaptive_oversampling,
                     translation_range_px=final_sampling.settings.translation_range,
                     translation_step_px=final_sampling.settings.translation_step,
-                    voxel_size=image_geometry.pixel_size_angstrom,
+                    model_pixel_size=ctx.optics.model_pixel_size,
                     random_perturbation=final_sampling.settings.random_perturbation,
                     pass1_size=relion_coarse_image_size(
                         angular_sampling_deg(final_sampling.settings.grid_order),

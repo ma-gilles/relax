@@ -423,7 +423,8 @@ def run_numbered_expectation(
     )
     tomo_sampling = (
         numbered_iteration_tomo_sampling(
-            carry.state, ctx.image_geometry, local_sampling=plan.sampling_plan.local,
+            carry.state, ctx.image_geometry, model_pixel_size=ctx.optics.model_pixel_size,
+            local_sampling=plan.sampling_plan.local,
             grid_healpix_order=carry.coarse_grids.rotation_grid.healpix_order,
             random_perturbation=carry.random_perturbation,
             coarse_size=plan.sampling_plan.local.coarse_image_window_size if use_local else plan.coarse_cs,

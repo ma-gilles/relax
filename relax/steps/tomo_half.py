@@ -331,6 +331,7 @@ def numbered_iteration_tomo_sampling(
     state,
     image_geometry,
     *,
+    model_pixel_size: float,
     local_sampling,
     grid_healpix_order: int,
     random_perturbation: float,
@@ -341,7 +342,8 @@ def numbered_iteration_tomo_sampling(
 
     ``local_sampling`` is the iteration's local-search sampling, or None for a global search on the
     exhaustive grid of ``grid_healpix_order``. ``coarse_size`` and ``fine_size`` are the pass-1 and
-    pass-2 Fourier windows; None is the full image.
+    pass-2 Fourier windows; None is the full image. ``model_pixel_size`` is RELION's model pixel size
+    (:func:`local_tomo_sampling`).
     """
     use_local = local_sampling is not None
     tomo_oversampling = int(state.adaptive_oversampling)
@@ -352,7 +354,7 @@ def numbered_iteration_tomo_sampling(
         oversampling_order=tomo_oversampling,
         translation_range_px=state.translation_range,
         translation_step_px=state.translation_step,
-        voxel_size=image_geometry.pixel_size_angstrom,
+        model_pixel_size=model_pixel_size,
         random_perturbation=local_sampling.perturbation if use_local else random_perturbation,
         pass1_size=box_size if coarse_size is None else coarse_size,
         current_size=box_size if fine_size is None else fine_size,
@@ -365,7 +367,7 @@ def local_tomo_sampling(
     oversampling_order: int,
     translation_range_px: float,
     translation_step_px: float,
-    voxel_size: float,
+    model_pixel_size: float,
     random_perturbation: float,
     pass1_size: int | None,
     current_size: int,
@@ -375,14 +377,19 @@ def local_tomo_sampling(
 
     ``pass1_size`` is RELION's parent-pass image size; without one (no adaptive parent pass, e.g. the
     final pass at a high order) the coarse size is the current size, as RELION's coarse_size is.
-    The refinement state keeps the offset range and step in pixels of the model grid.
+    The refinement state keeps the offset range and step in pixels of the model grid. RELION's offsets in
+    Angstrom are those pixels times the model pixel size, the reference header's float32
+    (``sampling.offset_step *= mymodel.pixel_size``, ml_optimiser.cpp:590-597), and each trial shift goes back to
+    pixels with the images' optics pixel size (getTranslationsInPixel, healpix_sampling.cpp:1758;
+    :func:`tomo_translation_grids`). With the optics pixel in place of the model one the shifts were off by their
+    ratio (1 + 1.8e-8 on the RELION 5 tutorial), and the translation phases a float32 unit off (relax#89).
     """
 
     return TomoSampling(
         healpix_order=int(fine_order) - int(oversampling_order),
         oversampling_order=int(oversampling_order),
-        offset_range_angst=float(translation_range_px) * float(voxel_size),
-        offset_step_angst=float(translation_step_px) * float(voxel_size),
+        offset_range_angst=float(translation_range_px) * float(model_pixel_size),
+        offset_step_angst=float(translation_step_px) * float(model_pixel_size),
         random_perturbation=float(random_perturbation),
         coarse_size=int(current_size if pass1_size is None else pass1_size),
         fine_size=int(current_size),

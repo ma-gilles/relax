@@ -372,7 +372,7 @@ def test_final_pass_local_tomo_sampling_without_a_parent_pass_size(pass1_size):
         oversampling_order=1,
         translation_range_px=0.4,
         translation_step_px=0.15,
-        voxel_size=4.25,
+        model_pixel_size=4.25,
         random_perturbation=-0.2,
         pass1_size=pass1_size,
         current_size=128,
@@ -396,6 +396,7 @@ def test_numbered_iteration_tomo_sampling_reads_the_state_grid_or_local_search(l
     sampling = numbered_iteration_tomo_sampling(
         SimpleNamespace(adaptive_oversampling=1, translation_range=0.4, translation_step=0.15),
         ImageGeometry(image_shape=(64, 64), pixel_size_angstrom=4.25),
+        model_pixel_size=4.25,
         local_sampling=(
             SimpleNamespace(search=SimpleNamespace(healpix_order=6), perturbation=-0.2) if local else None
         ),
@@ -410,6 +411,31 @@ def test_numbered_iteration_tomo_sampling_reads_the_state_grid_or_local_search(l
     assert sampling.random_perturbation == (-0.2 if local else 0.125)
     assert (sampling.coarse_size, sampling.fine_size) == (coarse_size or 64, fine_size or 64)
     assert_matches(np.array([sampling.offset_range_angst, sampling.offset_step_angst]), np.array([1.7, 0.6375]))
+
+
+@pytest.mark.unit
+def test_tomo_trial_shifts_are_relion_angstrom_offsets_of_the_model_pixel_over_the_optics_pixel():
+    """relax#89: RELION's offsets in Angstrom are the command line's pixels times the model pixel size (the
+    reference header's float32, ml_optimiser.cpp:590-597), and a trial shift is that grid point over the optics
+    pixel size (healpix_sampling.cpp:1758). Independent reading: integer steps times the Angstrom step, kept
+    within the range (+0.001 A^2), over the optics pixel."""
+    from relax.steps.tomo_half import local_tomo_sampling, tomo_translation_grids
+
+    model_pixel, optics_pixel = float(np.float32(2.7)), 2.7
+    sampling = local_tomo_sampling(
+        fine_order=5, oversampling_order=1, translation_range_px=5.0, translation_step_px=2.0,
+        model_pixel_size=model_pixel, random_perturbation=0.0, pass1_size=None, current_size=64,
+    )
+    _angst, coarse_px, _fine_px, _parent = tomo_translation_grids(sampling, optics_pixel)
+    step, extent = 2.0 * model_pixel, 5.0 * model_pixel
+    n = int(np.ceil(extent / step))
+    points = np.array(
+        [(i * step, j * step, k * step) for i in range(-n, n + 1) for j in range(-n, n + 1) for k in range(-n, n + 1)]
+    )
+    points = points[np.sum(points * points, axis=1) < extent * extent + 0.001]
+    np.testing.assert_array_equal(coarse_px, points / optics_pixel)
+    # The optics pixel in the model pixel's place is off by their ratio: not the same shifts.
+    assert not np.array_equal(coarse_px, points / model_pixel)
 
 
 @pytest.mark.unit
