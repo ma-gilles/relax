@@ -9,6 +9,7 @@ import jax.numpy as jnp
 import numpy as np
 from recovar import core
 from recovar.core import fourier_transform_utils as ftu
+from recovar.core import mask as recovar_mask
 from scipy.spatial.transform import Rotation
 
 from relax.ppca_initial_model.noise import relion_to_coefficient_variance
@@ -153,19 +154,31 @@ def seed_model(rhs, lhs, volume_shape, voxel_size, diameter_ang, radius, rng):
     real = np.asarray(ftu.get_idft3_real(reconstruction.reshape((channels,) + half_shape), volume_shape), np.float32)
     diameter = diameter_ang / voxel_size
     mask = support_mask(n, diameter)
+    # The blob fields take the bootstrap's magnitude only; their sign follows the bootstrap's density (relax's
+    # internal frame: negative for a RELION-sign stack, relax/io/map_io.py), so negated images seed the exactly
+    # negated model.
+    sign = np.float32(_bootstrap_sign(real.mean(axis=0), volume_shape))
     fields = []
     for volume in real:
         field = _blob_field(volume, diameter, rng) - np.float32(0.5) * _blob_field(volume, diameter, rng)
         sd = np.std(field, dtype=np.float32)
         if sd <= 0:
             raise ValueError("Random bootstrap produced a zero blob field")
-        fields.append(field * (np.std(volume, dtype=np.float32) / sd))
+        fields.append(sign * (field * (np.std(volume, dtype=np.float32) / sd)))
     augmented = seed_maps_to_model(np.stack(fields))
     theta = ftu.get_dft3_real(augmented).reshape(channels, -1).T
     theta = bandlimit_and_mask(theta, volume_shape, radius, mask)
     if not np.all(np.isfinite(np.asarray(theta))) or np.any(np.linalg.norm(np.asarray(theta[:, 1:]), axis=0) == 0):
         raise ValueError("Random initialization requires finite, nonzero loadings")
     return theta
+
+
+def _bootstrap_sign(volume, volume_shape) -> int:
+    """-1 when the bootstrap density is negative where the particle is, else 1: RECOVAR's sign test
+    (``recovar.commands.pipeline``, ``uninvert_data='automatic'``), the cubed density summed inside the sphere of
+    radius a third of the box. Negating the images negates the bootstrap exactly, and with it this sign."""
+    radial = np.asarray(recovar_mask.get_radial_mask(volume_shape, radius=volume_shape[0] // 3)).reshape(volume_shape)
+    return -1 if np.sum(np.asarray(volume, np.float64) ** 3 * radial) < 0 else 1
 
 
 def initial_noise(images_for_noise, image_shape, voxel_size, diameter_ang, *, n_groups=None):

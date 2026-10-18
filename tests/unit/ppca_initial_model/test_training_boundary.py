@@ -181,3 +181,23 @@ def test_final_embedding_pass_reports_each_images_scores(tmp_path, stream):
     np.testing.assert_allclose(
         final.max_posterior, np.exp(final.best_pose_log_score.astype(np.float64) - final.log_evidence), rtol=1e-3
     )
+
+
+def test_negated_images_seed_the_negated_model(tmp_path):
+    """The seed's blob fields take the bootstrap's magnitude and its sign: a stack and its negation (a simulator
+    stack and its RELION-sign STAR copy) start from exactly negated models, with the same noise."""
+    from relax.ppca_initial_model.initialization import initialize
+
+    count, n = 64, 16
+    z, y = np.indices((n, n)) - n // 2
+    projection = (3.0 * np.exp(-(z**2 + y**2) / 6.0)).astype(np.float32)
+    noise = np.random.default_rng(4).normal(size=(count, n, n)).astype(np.float32)
+    starts = []
+    for sign, folder in ((1, "white"), (-1, "dark")):
+        star, _ = _write_training_star(tmp_path / folder, count, n, images=sign * (projection[None] + 0.1 * noise))
+        data, _, _ = load_training(star)
+        theta, noise_spectrum, _ = initialize(data, seed=3, diameter_ang=24.0, q=2)
+        starts.append((np.asarray(theta), np.asarray(noise_spectrum)))
+    (theta_white, noise_white), (theta_dark, noise_dark) = starts
+    np.testing.assert_array_equal(theta_dark, -theta_white)
+    np.testing.assert_array_equal(noise_dark, noise_white)
