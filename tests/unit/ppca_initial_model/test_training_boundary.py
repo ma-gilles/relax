@@ -166,3 +166,40 @@ def test_one_expectation_step_runs_from_a_bare_mrcs_manifest(tmp_path):
     stats = iteration_loop.expectation(data, state, config, np.arange(count), 1)
     assert stats.n_images == count
     assert np.isfinite(float(stats.log_likelihood))
+
+
+@pytest.mark.parametrize("stream", [True, False], ids=["streamed", "host_mask"])
+def test_final_embedding_pass_reports_each_images_scores(tmp_path, stream):
+    """The embedding pass returns, per image in particle order, its log-evidence (log-sum-exp of the pose
+    log-scores), its best pose log-score and that pose's posterior probability."""
+    import jax.numpy as jnp
+
+    from relax.ppca_initial_model import iteration_loop
+    from relax.ppca_initial_model.config import Config
+    from relax.ppca_initial_model.state import State
+
+    count, n = 6, 8
+    path, _, _, _ = _write_bare_mrcs_manifest(tmp_path, count, n)
+    data, _, _ = load_training(path)
+    n_freq = n * n * (n // 2 + 1)
+    theta = jnp.asarray(np.random.default_rng(3).normal(size=(n_freq, 3)) * 1e-2, jnp.complex64)
+    state = State(
+        theta, iteration_loop.empty_moments(theta), jnp.ones(n // 2 + 1, jnp.float32), 0, np.arange(count),
+        np.random.default_rng(1).bit_generator.state, 2.0, 2, {"seed": 1},
+    )
+    config = Config(
+        stages=((1, 2, 0),), oversampling=0, image_batch_size=3, rotation_block_size=64, stream_coarse_recompute=stream
+    )
+    final = iteration_loop.expectation(data, state, config, np.arange(count), 1, embeddings_only=True)
+    assert final.embeddings.shape == (count, 2)
+    for name in ("log_evidence", "best_pose_log_score", "max_posterior", "null_log_likelihood"):
+        values = getattr(final, name)
+        assert values.shape == (count,) and values.dtype == np.float32 and np.all(np.isfinite(values)), name
+    # log-sum-exp over the poses is at least the largest pose score, and the best pose's posterior is in (0, 1].
+    assert np.all(final.log_evidence >= final.best_pose_log_score - 1e-3 * np.abs(final.best_pose_log_score))
+    assert np.all((final.max_posterior > 0) & (final.max_posterior <= 1))
+    # "No particle" scores the whitened image alone, -|y|^2 / 2: never positive, and in both absolute scores.
+    assert np.all(final.null_log_likelihood <= 0)
+    np.testing.assert_allclose(
+        final.max_posterior, np.exp(final.best_pose_log_score.astype(np.float64) - final.log_evidence), rtol=1e-3
+    )

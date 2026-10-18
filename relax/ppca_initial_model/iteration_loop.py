@@ -360,6 +360,10 @@ def _expectation(dataset, state, config, ids, iteration, *, embeddings_only=Fals
                         jnp.concatenate([part.embeddings for part in group_parts]),
                         np.concatenate([part.original_image_ids for part in group_parts]),
                         sum(part.n_images for part in group_parts),
+                        *(
+                            np.concatenate([getattr(part, name) for part in group_parts])
+                            for name in ("log_evidence", "best_pose_log_score", "max_posterior", "null_log_likelihood")
+                        ),
                     )
                 )
                 continue
@@ -697,5 +701,14 @@ def run(
         )
         if not np.array_equal(np.sort(final.original_image_ids), ids):
             raise ValueError("Final embedding does not cover every particle exactly once")
-        np.savez(output / "embeddings.npz", particle_ids=final.original_image_ids, z=np.asarray(final.embeddings))
+        # Per-image scores of the same pass (DensePPCAEmbeddings), aligned with particle_ids.
+        np.savez(
+            output / "embeddings.npz",
+            particle_ids=final.original_image_ids,
+            z=np.asarray(final.embeddings),
+            log_evidence=final.log_evidence,
+            best_pose_log_score=final.best_pose_log_score,
+            max_posterior=final.max_posterior,
+            null_log_likelihood=final.null_log_likelihood,
+        )
     return state

@@ -214,7 +214,11 @@ def test_controller_pools_direct_residual_and_restarts_with_velocity(tmp_path, m
 
     def expectation(_dataset, _state, _config, ids, _iteration, *, embeddings_only=False, diameter_ang=None):
         if embeddings_only:
-            return SimpleNamespace(original_image_ids=np.asarray(ids), embeddings=jnp.zeros((len(ids), 2)))
+            zeros = np.zeros(len(ids), np.float32)
+            return SimpleNamespace(
+                original_image_ids=np.asarray(ids), embeddings=jnp.zeros((len(ids), 2)),
+                log_evidence=zeros, best_pose_log_score=zeros, max_posterior=zeros + 1, null_log_likelihood=zeros,
+            )
         return SimpleNamespace(
             residual_gradient=jnp.asarray(gradient),
             lhs_tri=jnp.asarray(_pack(h)),

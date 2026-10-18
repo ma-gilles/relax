@@ -46,7 +46,7 @@ from recovar.ppca.triangular import tri_size
 
 from relax.cuda.ppca import ppca_window_project_f32
 from relax.fourier.preprocessing import half_translation_phase_table
-from relax.ppca_refinement.dense_dataset import DensePPCAEmbeddings
+from relax.ppca_refinement.dense_dataset import DensePPCAEmbeddings, image_scores
 from relax.ppca_refinement.full_row_kernels import (
     HIGHEST,
     SHIFT_ALIGN,
@@ -760,11 +760,16 @@ def oversampled_tile_embeddings(
     :func:`relax.ppca_refinement.full_row_stream.full_row_tile_embeddings`."""
     significant_rows = [None] * len(image_indices) if significant_rows is None else significant_rows
     with jax.default_device(ostream.coarse.device):
-        tile, layout, _, carry, _ = _oversampled_tile(
+        tile, layout, posterior, carry, _ = _oversampled_tile(
             ostream, image_indices, significant_rows, collect_observation=False, moments=False
         )
         n_real = real_image_count(tile, layout)
-        return DensePPCAEmbeddings(carry.embedding[:n_real], layout["original_ids"], n_real)
+        # Over the pass-2 poses: the children of each image's significant coarse samples.
+        scores = image_scores(
+            posterior.center[:n_real], posterior.centered_logZ[:n_real], posterior.top_score[:n_real],
+            tile.y_norm[:n_real],
+        )
+        return DensePPCAEmbeddings(carry.embedding[:n_real], layout["original_ids"], n_real, *scores)
 
 
 _JOB_PROGRAM_BYTES: dict = {}

@@ -190,11 +190,17 @@ def test_coarse_route_uses_one_parent_and_keeps_default_dense(monkeypatch):
             embeddings=jnp.ones((len(tile_ids), 2), jnp.float32),
             original_image_ids=np.asarray(tile_ids),
             n_images=len(tile_ids),
+            log_evidence=np.zeros(len(tile_ids), np.float32),
+            best_pose_log_score=np.zeros(len(tile_ids), np.float32),
+            max_posterior=np.ones(len(tile_ids), np.float32),
+            null_log_likelihood=np.zeros(len(tile_ids), np.float32),
         ),
     )
     embedded = iteration_loop.expectation(data, state, config, ids, 1, embeddings_only=True)
     np.testing.assert_array_equal(embedded.original_image_ids, ids)
     assert embedded.embeddings.shape == (5, 2)
+    assert embedded.log_evidence.shape == embedded.best_pose_log_score.shape == embedded.max_posterior.shape == (5,)
+    assert embedded.null_log_likelihood.shape == (5,)
 
     dense_called = []
     monkeypatch.setattr(

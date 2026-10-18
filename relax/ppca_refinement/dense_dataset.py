@@ -591,11 +591,24 @@ def accumulate_dense_ppca_statistics(
 
 
 class DensePPCAEmbeddings(NamedTuple):
-    """Final pose-marginal coordinates and stable original particle IDs."""
+    """Final pose-marginal coordinates and stable original particle IDs, with each image's scores.
+
+    The scores come from the embedding pass's own pose posterior, one per image in ``original_image_ids``
+    order: ``log_evidence`` is the absolute log-partition over the pass's poses (log-sum-exp of the pose
+    log-scores, each the pose's log prior plus its latent-marginal log-likelihood); ``best_pose_log_score``
+    the largest of those pose log-scores; ``max_posterior`` that pose's posterior probability;
+    ``null_log_likelihood`` the image's log-likelihood under "no particle" with the same whitening, ``-|y|^2 / 2``
+    (:func:`pose_invariant_score_offset`), which both absolute scores carry: ``log_evidence -
+    null_log_likelihood`` is the log-likelihood ratio of the model against an empty image.
+    """
 
     embeddings: jax.Array
     original_image_ids: np.ndarray
     n_images: int
+    log_evidence: np.ndarray | None = None  # (n_images,) float32
+    best_pose_log_score: np.ndarray | None = None  # (n_images,) float32
+    max_posterior: np.ndarray | None = None  # (n_images,) float32
+    null_log_likelihood: np.ndarray | None = None  # (n_images,) float32
 
 
 @full_float32
@@ -647,7 +660,7 @@ def compute_dense_ppca_embeddings(
         full_real_observation=scoring.full_real_observation,
         relion_texture_interp=scoring.relion_texture_interp,
     )
-    embedding_batches = []
+    embedding_batches, scores = [], []
     n_images = 0
     for group in blocks:
         scored = [
@@ -661,6 +674,7 @@ def compute_dense_ppca_embeddings(
             for block in group
         ]
         center, centered_logZ = _centered_score_partition([block.score for block in scored])
+        scores.append(image_scores(center, centered_logZ, center, group[0].y_norm))
         batch_embedding = jnp.zeros((int(group[0].Y1.shape[0]), geometry.q), jnp.float32)
         for block in scored:
             gamma = jnp.exp(block.score - center[:, None, None] - centered_logZ[:, None, None])
@@ -674,7 +688,34 @@ def compute_dense_ppca_embeddings(
     original_ids = experiment_dataset.original_image_indices_from_local(selected)
     if n_images != len(original_ids):
         raise ValueError("Embedding pass did not cover each selected image")
-    return DensePPCAEmbeddings(jnp.concatenate(embedding_batches), original_ids, n_images)
+    return DensePPCAEmbeddings(
+        jnp.concatenate(embedding_batches), original_ids, n_images,
+        *(np.concatenate([batch[k] for batch in scores]) for k in range(4)),
+    )
+
+
+def image_scores(center, centered_logZ, top_score, y_norm):
+    """``(log_evidence, best_pose_log_score, max_posterior, null_log_likelihood)`` per image, host float32 arrays,
+    from a pose posterior's normalization (``center``, ``centered_logZ``), its largest pose score and the images'
+    norms.
+
+    The pose scores leave out the pose-invariant ``-y_norm / 2`` (:func:`pose_invariant_score_offset`); the absolute
+    values add it back, as the E-step's ``log_likelihood`` does. The posterior is the host float64 one of
+    ``select_distinct_top_poses``.
+    """
+    offset = pose_invariant_score_offset(y_norm)
+    log_evidence, best, top_centered, centered, null = jax.device_get(
+        (center + centered_logZ + offset, top_score + offset, top_score - center, centered_logZ, offset)
+    )
+    with np.errstate(over="ignore", invalid="ignore"):
+        posterior = np.exp(np.asarray(top_centered, np.float64) - np.asarray(centered, np.float64))
+    posterior = np.where(np.isfinite(top_centered), posterior, 0.0)
+    return (
+        np.asarray(log_evidence, np.float32),
+        np.asarray(best, np.float32),
+        posterior.astype(np.float32),
+        np.asarray(null, np.float32),
+    )
 
 
 def run_dense_ppca_fused_em_iteration(

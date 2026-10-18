@@ -60,7 +60,7 @@ from recovar.reconstruction import noise as noise_utils
 from relax.fourier.half_spectrum import make_half_image_weights, make_shell_indices_half
 from relax.ppca_refinement.config import GeometryConfig, ScheduleConfig, ScoringConfig
 from relax.ppca_refinement.dense_blocks import prepare_dense_ppca_dataset_inputs, prepare_dense_ppca_image_batch
-from relax.ppca_refinement.dense_dataset import DensePPCAEmbeddings
+from relax.ppca_refinement.dense_dataset import DensePPCAEmbeddings, image_scores
 from relax.ppca_refinement.engine import (
     enforce_augmented_x0,
     pose_invariant_score_offset,
@@ -605,4 +605,8 @@ def full_row_tile_embeddings(stream: FullRowStream, image_indices, significant_r
         posterior = drop_padding(posterior, n_real)
         carry = empty_carry(stream, int(tile.y_norm.shape[0]), jnp.float32(0))
         carry = run_skipping_pass2(stream, tile, kept, posterior, layout, carry, moments=False)
-        return DensePPCAEmbeddings(carry.embedding[:n_real], layout["original_ids"], n_real)
+        scores = image_scores(
+            posterior.center[:n_real], posterior.centered_logZ[:n_real], posterior.top_score[:n_real],
+            tile.y_norm[:n_real],
+        )
+        return DensePPCAEmbeddings(carry.embedding[:n_real], layout["original_ids"], n_real, *scores)
