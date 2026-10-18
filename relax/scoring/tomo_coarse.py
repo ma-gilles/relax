@@ -713,9 +713,9 @@ def _indexed_image_coarse_operands(
     experiment_dataset, image_indices, layout, *, noise_variance_half, optics_group_ids, scale_corrections, fetched=None
 ):
     """:func:`tilt_image_coarse_operands` of the dataset images ``image_indices``, in the batches of
-    :func:`_operand_batches`; ``fetched`` holds their host reads when they were made ahead."""
+    :func:`_operand_batches`, rows past the images included (repeats of the last one): whole batches give the
+    programs that read them few shapes. ``fetched`` holds the host reads when they were made ahead."""
 
-    n_images = int(np.size(image_indices))
     parts = []
     for i, padded in enumerate(_operand_batches(image_indices)):
         parts.append(
@@ -729,9 +729,7 @@ def _indexed_image_coarse_operands(
                 fetched=None if fetched is None else fetched[i],
             )
         )
-    return tuple(
-        (values[0] if len(parts) == 1 else jnp.concatenate(values, axis=0))[:n_images] for values in zip(*parts)
-    )
+    return tuple(values[0] if len(parts) == 1 else jnp.concatenate(values, axis=0) for values in zip(*parts))
 
 
 def _group_image_reads(experiment_dataset, plan, offsets):
@@ -745,12 +743,11 @@ def _group_image_reads(experiment_dataset, plan, offsets):
         yield [fetch_indexed_batch(experiment_dataset, padded) for padded in _operand_batches(images)]
 
 
-@partial(jax.jit, static_argnames=("n_frames",))
-def _lay_out_frame_rotations(built, rot, *, n_frames: int):
-    """``built[:, rot]`` ``[F, R_pad, 3, 3]`` padded to ``n_frames`` frames (repeats of the last), one program."""
+@jax.jit
+def _lay_out_frame_rotations(built, rot):
+    """``built[:, rot]`` ``[F, R_pad, 3, 3]``: each frame's rotations at the pass's padded rotation rows."""
 
-    laid_out = built[:, rot]
-    return jnp.concatenate([laid_out, jnp.repeat(laid_out[-1:], n_frames - laid_out.shape[0], axis=0)], axis=0)
+    return built[:, rot]
 
 
 def particle_coarse_significance(
@@ -1077,18 +1074,18 @@ def _score_frame_group(units, plan: FrameGroupPlan, tilt: TiltCoarseInputs, oper
     image_frame = plan.frames.image_key[images]
     group_frames = np.unique(image_frame)
     group_frames = group_frames[np.argsort(plan.frames.key_rank[group_frames], kind="stable")]
-    left, _applies = tomo_particles.relion_left_matrices(tilt.image_left[plan.frames.key_image[group_frames]])
+    # The frames' left matrices padded to a power of two with the last one, so the builds take few shapes.
+    n_frames = pow2_ceil(int(group_frames.size))
+    frame_images = plan.frames.key_image[group_frames]
+    frame_images = np.concatenate([frame_images, np.repeat(frame_images[-1:], n_frames - frame_images.size)])
+    left, _applies = tomo_particles.relion_left_matrices(tilt.image_left[frame_images])
     built = jnp.asarray(
         relion_adaptive_pass1_rotations(
             tilt.coarse_eulers_deg, tilt.random_perturbation, tilt.angular_sampling_deg, left_matrices=left
         ),
         dtype=jnp.float32,
     )
-    frame_rotations = _lay_out_frame_rotations(
-        built,
-        jnp.asarray(np.minimum(np.arange(r_pad), int(built.shape[1]) - 1)),
-        n_frames=pow2_ceil(int(group_frames.size)),
-    )
+    frame_rotations = _lay_out_frame_rotations(built, jnp.asarray(np.minimum(np.arange(r_pad), int(built.shape[1]) - 1)))
     calls = _frame_group_calls(plan, group_frames, image_frame, entry_unit, entry_slot)
     class_totals, error, total = [], None, None
     for projector, texture in zip(scorer.projectors, scorer.textures):
