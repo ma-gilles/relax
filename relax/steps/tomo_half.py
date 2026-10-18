@@ -208,6 +208,41 @@ def tilt_left_matrices(images, image_projections, image_rows) -> np.ndarray:
     return np.einsum("nij,njk->nik", left.reshape(-1, 3, 3), image_projections)
 
 
+# Threads that open the tilt stacks ahead of the dataset's loader: the opens wait on the file system, not the CPU.
+_WARM_STACK_THREADS = 32
+
+
+def warm_tilt_stacks(particles_star, datadir) -> None:
+    """Open every particle's tilt stack (``rlnImageName``) and read its header, many at a time.
+
+    The lazy dataset then opens each stack once for its header, one after another; a stack the node has not read
+    costs a file-system block read there (10-30 ms on GPFS), 115-343 s for a 10,837-particle project, against seconds
+    once the stacks' first blocks are cached. Reads nothing into the dataset; a stack it cannot open is left to the
+    loader to report.
+    """
+
+    import os
+    from concurrent.futures import ThreadPoolExecutor
+
+    from recovar.data_io.starfile import read_star, star_column
+
+    names = star_column(read_star(str(particles_star))[0], "rlnImageName")
+    if names is None:
+        return
+    paths = sorted({str(name).split("@")[-1] for name in np.asarray(names)})
+    paths = [path if os.path.isabs(path) or not datadir else os.path.join(str(datadir), path) for path in paths]
+
+    def header(path):
+        try:
+            with open(path, "rb") as handle:
+                handle.read(1024)
+        except OSError:
+            pass
+
+    with ThreadPoolExecutor(max_workers=_WARM_STACK_THREADS) as pool:
+        list(pool.map(header, paths))
+
+
 def load_tomo_dataset(
     particles_star, tomograms_star, flat_star, *, datadir, lazy: bool, read_policy=None
 ) -> TomoDataset:
@@ -227,6 +262,8 @@ def load_tomo_dataset(
     scratch = None if read_policy is None else prepare_particle_reads(
         str(flat_star), read_policy, datadir=datadir, compact=False
     )
+    if scratch is None:
+        warm_tilt_stacks(particles_star, datadir)
     images = load_dataset(str(flat_star), datadir=datadir, lazy=lazy, dtype=np.complex64, absent_angles_zero=True)
     assert_reads_from_scratch(images, scratch)
     return TomoDataset(images, read_star(str(flat_star))[0], particles_star, tomograms_star)
