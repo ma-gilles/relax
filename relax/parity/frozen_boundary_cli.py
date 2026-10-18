@@ -632,7 +632,6 @@ def _validate_fixed_diagnostic_arm_cli(args) -> None:
             )
 
     forbidden_options = {
-        "perturb_replay_restart_provenance",
         "relion_dispatch_schedule",
         "relion_follower_scale_replay",
         "init_class_volumes",
@@ -663,8 +662,6 @@ def _validate_fixed_diagnostic_arm_cli(args) -> None:
             "fixed diagnostic arm rejects early-stop/single-half modes: "
             + ", ".join(enabled_flags)
         )
-    if str(args.perturb_replay_restart_state_iterations).strip():
-        raise ValueError("fixed diagnostic arm rejects sampling-restart substitution")
     if args.relion_scale_followers is not None:
         raise ValueError("fixed diagnostic arm rejects follower-scale emulation")
 

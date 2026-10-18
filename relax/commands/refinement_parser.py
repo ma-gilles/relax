@@ -270,31 +270,10 @@ def parse_refinement_args(argv=None):
         "--perturb_seed for same-seed autonomous refinement.",
     )
     add_state_swap_probe_arguments(parser)
-    parser.add_argument(
-        "--perturb-replay-restart-state-iterations",
-        default="",
-        help=(
-            "Comma-separated numbered RELION sampling-state iterations where a "
-            "provenance-qualified continuation restarted its sampling object. "
-            "The next expectation reconstructs the unrounded perturbation from "
-            "RELION's seed-1 restart state and random_seed+iteration; STAR values "
-            "remain strict consistency guards. Example: 11 for a rescue whose "
-            "first continued expectation is numbered iteration 12."
-        ),
-    )
     for flag in ("--relion-projector-capture-dir", "--relion-projector-capture-manifest",
                  "--relion-projector-capture-iteration"):
         parser.add_argument(flag, action=RetiredFlag, feature="the captured RELION projector",
                             tag=CAPTURED_PROJECTOR_TAG)
-    parser.add_argument(
-        "--perturb-replay-restart-provenance",
-        default=None,
-        help=(
-            "Required provenance file for --perturb-replay-restart-state-iterations. "
-            "Its resolved path and SHA256 are recorded in refinement_results.npz and "
-            "the benchmark ledger."
-        ),
-    )
     parser.add_argument(
         "--relion-scale-followers",
         type=int,

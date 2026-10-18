@@ -138,21 +138,6 @@ def test_a_source_without_a_replayed_sampling_leaves_the_perturbation_and_grids_
         assert source.initial_coarse_grids(initialized_healpix_order=2, voxel_size=1.0, symmetry="C1") is None
 
 
-def test_replay_restart_uses_physical_iteration(tmp_path):
-    from relax.parity.relion_replay_source import RelionReplay, RelionReplaySource
-
-    (tmp_path / "run_it012_optimiser.star").write_text("data_\n\n_rlnRandomSeed 1778628798\n")
-    options = _options(stand_in.parity(perturb_factor=0.5), 11)
-    replay = RelionReplay(
-        perturb_replay_restart_state_iterations=(11,),
-        perturb_replay_relion_dir=str(tmp_path),
-    )
-    source = RelionReplaySource(replay, options)
-    source._sampling_meta = {"random_perturbation": -0.06873, "perturbation_factor": 0.5, "healpix_order": 3}
-    result = source.random_perturbation(0)
-    assert_matches(result, -0.06873074173927307)
-
-
 def test_disabled_perturbation_preserves_value_without_rng_consumption(monkeypatch):
     monkeypatch.setattr(perturbation, "advance_relion_perturbation_for_iteration", lambda *_args, **_kwargs: pytest.fail("RNG advance"))
     result = trial_grids.resolve_numbered_perturbation(

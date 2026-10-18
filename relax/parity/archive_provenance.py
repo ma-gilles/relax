@@ -1,7 +1,7 @@
 """What a run replayed from RELION, as keys of its refinement archive (code rule 15).
 
 The command adds them to the archive metadata (``relax.refinement.result_files.build_archive_metadata``,
-``replay_provenance``): a perturbation replay's restart provenance, a frozen boundary, a state-swap probe and
+``replay_provenance``): a frozen boundary, a state-swap probe and
 the follower-scale replay and dispatch capture of an MPI RELION run. A run that replays nothing writes the
 same keys with their empty values (the last two groups only when present).
 """
@@ -10,23 +10,11 @@ import numpy as np
 
 
 def replay_archive_metadata(
-    *, restart, frozen_boundary, state_swap_probe, state_swap_probe_applied_relion_iterations, follower_replay,
+    *, frozen_boundary, state_swap_probe, state_swap_probe_applied_relion_iterations, follower_replay,
     relion_dispatch_schedule,
 ) -> dict:
     """The archive keys of a run's replay provenance, in their stored order."""
     save_dict = {
-        "perturb_replay_restart_state_iterations": np.asarray(
-            restart.iterations,
-            dtype=np.int64,
-        ),
-        "perturb_replay_restart_provenance_path": np.asarray(
-            ""
-            if restart.path is None
-            else str(restart.path)
-        ),
-        "perturb_replay_restart_provenance_sha256": np.asarray(
-            restart.sha256 or ""
-        ),
         "frozen_boundary_dir": np.asarray(
             "" if frozen_boundary is None else str(frozen_boundary.source_dir)
         ),

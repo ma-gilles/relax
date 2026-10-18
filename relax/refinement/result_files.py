@@ -28,7 +28,7 @@ from relax.runtime.engine_record import take_coarse_engine_calls, take_pass_engi
 from relax.runtime.git_provenance import git_head_or_none, git_worktree_provenance
 
 if TYPE_CHECKING:
-    from relax.refinement.refinement_options import InitialSampling, RandomSeed, RestartProvenance
+    from relax.refinement.refinement_options import InitialSampling, RandomSeed
     from relax.star.input_poses import PoseProvenance
     from relax.star.metadata import MaxSignificantsResolution
 
@@ -506,7 +506,6 @@ class RunReport:
     adaptive_oversampling: int
     max_significants: int
     max_significants_resolution: "MaxSignificantsResolution"
-    restart: "RestartProvenance"
     # Sampling and seed, which the benchmark ledger records.
     max_iter: int
     random_seed: int
@@ -552,13 +551,6 @@ def _report_fields(fields: dict, report: RunReport) -> dict:
         "max_significants_resolution": dataclasses.asdict(report.max_significants_resolution),
         "timing_rows": report.timing_rows,
         "timing_summary": report.timing_summary,
-        "perturb_replay_restart_state_iterations": list(report.restart.iterations),
-        "perturb_replay_restart_provenance_path": (
-            str(report.restart.path)
-            if report.restart.path is not None
-            else None
-        ),
-        "perturb_replay_restart_provenance_sha256": report.restart.sha256,
     }
 
 

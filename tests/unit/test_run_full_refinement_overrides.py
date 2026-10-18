@@ -467,7 +467,6 @@ def _fixed_diagnostic_args():
         firstiter_cc=True,
         apply_initial_lowpass=False,
         image_fourier_backend="relion_cuda",
-        perturb_replay_restart_provenance=None,
         relion_dispatch_schedule=None,
         relion_follower_scale_replay=None,
         init_class_volumes=None,
@@ -481,7 +480,6 @@ def _fixed_diagnostic_args():
         stop_after_local_search=False,
         stop_after_local_search_score_only=False,
         diagnostic_single_half=False,
-        perturb_replay_restart_state_iterations="",
         relion_scale_followers=None,
     )
 

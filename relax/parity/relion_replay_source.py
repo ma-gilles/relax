@@ -102,21 +102,6 @@ def _select_final_replay_override(*, requested_index, diagnostic_override, repla
     return override_index, override
 
 
-def _perturbation_restart_state_iteration(
-    restart_state_iterations,
-    relion_iteration: int,
-) -> int | None:
-    """Return the latest explicit restart boundary preceding an iteration."""
-    if restart_state_iterations is None:
-        return None
-    candidates = [
-        int(value)
-        for value in restart_state_iterations
-        if int(value) < int(relion_iteration)
-    ]
-    return max(candidates) if candidates else None
-
-
 def _past_perturb_replay_max_iter(iteration: int, perturb_replay_max_iter: int | None) -> bool:
     """Return whether ``iteration`` (0-indexed) is past the diagnostic replay cutoff.
 
@@ -304,7 +289,6 @@ class RelionReplay:
     perturb_replay_relion_dir: str | None = None
     perturb_replay_relion_prefix: str = "run"
     perturb_replay_max_iter: int | None = None
-    perturb_replay_restart_state_iterations: tuple[int, ...] = ()
     replay_iteration_overrides: Any | None = None
     final_replay_override: Any | None = None
     # From the environment, by from_environ (the command calls it).
@@ -321,12 +305,6 @@ class RelionReplay:
     def __post_init__(self):
         if self.perturb_replay_max_iter is not None and self.perturb_replay_max_iter < 0:
             raise ValueError(f"perturb_replay_max_iter must be non-negative, got {self.perturb_replay_max_iter!r}")
-        iterations = tuple(sorted({int(value) for value in self.perturb_replay_restart_state_iterations}))
-        if any(value < 0 for value in iterations):
-            raise ValueError("perturbation replay restart-state iterations must be non-negative")
-        if iterations and self.perturb_replay_relion_dir is None:
-            raise ValueError("perturbation replay restart-state iterations require perturb_replay_relion_dir")
-        object.__setattr__(self, "perturb_replay_restart_state_iterations", iterations)
 
     @classmethod
     def from_frozen_boundary(cls, frozen_boundary, **fields) -> RelionReplay:
@@ -417,11 +395,6 @@ class RelionReplaySource(InputSource):
         self._sampling_meta = None
         # The STAR directory of the last iteration asked about: the one the final pass replays from.
         self._live_directory = replay.perturb_replay_relion_dir
-        if replay.perturb_replay_restart_state_iterations:
-            logger.info(
-                "Perturbation replay restart provenance: saved-state iterations=%s",
-                list(replay.perturb_replay_restart_state_iterations),
-            )
 
     @classmethod
     def for_run(cls, replay: RelionReplay | None, options) -> InputSource:
@@ -707,9 +680,6 @@ class RelionReplaySource(InputSource):
                 replay_dir=str(replay_dir),
                 replay_prefix=self.replay.perturb_replay_relion_prefix,
                 explicit_seed=parity.perturb_seed,
-                restart_state_iteration=_perturbation_restart_state_iteration(
-                    self.replay.perturb_replay_restart_state_iterations, replay_iteration,
-                ),
             )
             pixel_size = image_geometry.pixel_size_angstrom
             settings = FinalSamplingSettings(
@@ -813,9 +783,6 @@ class RelionReplaySource(InputSource):
             return perturbation
         parity = self.options.parity
         relion_iteration = self.options.schedule.init_relion_iteration + iteration + 1
-        restart_iteration = _perturbation_restart_state_iteration(
-            self.replay.perturb_replay_restart_state_iterations, relion_iteration,
-        )
         perturbation, source = resolve_replay_random_perturbation(
             star_value=float(sampling_meta["random_perturbation"]),
             perturbation_factor=float(sampling_meta["perturbation_factor"]),
@@ -823,7 +790,6 @@ class RelionReplaySource(InputSource):
             replay_dir=str(self._star_directory(iteration)),
             replay_prefix=self.replay.perturb_replay_relion_prefix,
             explicit_seed=parity.perturb_seed,
-            restart_state_iteration=restart_iteration,
         )
         logger.info(
             "Perturbation replay: iter=%d rp=%+.12g pf=%.3f relion_hp_order=%d source=%s",

@@ -1097,7 +1097,6 @@ def main(command=None):
             effective_tau2_fudge=effective_tau2_fudge,
             effective_perturb_seed=effective_perturb_seed,
         )
-    restart_provenance = oracle_admission.resolve_restart_provenance(args, log=logger)
     logger.info(
         "SamplingPerturbation seed: %s%s",
         "unseeded" if effective_perturb_seed is None else str(effective_perturb_seed),
@@ -1294,7 +1293,6 @@ def main(command=None):
                 relion_replay_source.RelionReplay.from_environ(
                     frozen_boundary,
                     perturb_replay_relion_dir=args.perturb_replay_relion_dir,
-                    perturb_replay_restart_state_iterations=restart_provenance.iterations,
                     replay_iteration_overrides=replay_iteration_overrides,
                     state_swap_probe=state_swap_probe,
                     follower_topology=follower_topology,
@@ -1336,7 +1334,6 @@ def main(command=None):
         adaptive_oversampling=args.adaptive_oversampling,
         max_significants=max_significants,
         max_significants_resolution=runtime_controls.max_significants_resolution,
-        restart=restart_provenance,
         max_iter=job.max_iter,
         random_seed=seed.value,
         random_seed_source=seed.source,
@@ -1370,7 +1367,6 @@ def main(command=None):
         particle_diameter_ang=particle_diameter_ang,
         particle_layout=particle_layout,
         replay_provenance=archive_provenance.replay_archive_metadata(
-            restart=restart_provenance,
             frozen_boundary=frozen_boundary,
             state_swap_probe=state_swap_probe,
             state_swap_probe_applied_relion_iterations=result.history.state_swap_probe_applied_relion_iterations,

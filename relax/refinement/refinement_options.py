@@ -14,7 +14,6 @@ import math
 import operator
 import os
 from dataclasses import dataclass, field, replace
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, NamedTuple
 
 from relax.reconstruction.accumulator_guard import HALF_ACCUMULATOR_GUARD_ENV, half_accumulator_guard_mode
@@ -398,15 +397,6 @@ class InitialSampling(NamedTuple):
     fine_order: int
     max_order: int | None
     max_order_source: str
-
-
-class RestartProvenance(NamedTuple):
-    """The numbered iterations whose sampling-perturbation state a replay restarts from (sorted, unique),
-    with the provenance file that justifies them and its SHA-256; empty and None without a restart."""
-
-    iterations: tuple[int, ...]
-    path: Path | None
-    sha256: str | None
 
 
 @dataclass(frozen=True)

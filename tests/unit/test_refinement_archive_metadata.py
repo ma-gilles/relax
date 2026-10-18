@@ -11,7 +11,7 @@ from helpers.refinement_results import refinement_result
 from relax.commands.refinement_arguments import resolve_initial_sampling
 from relax.parity.archive_provenance import replay_archive_metadata
 from relax.refinement.iteration_history import RefinementHistory
-from relax.refinement.refinement_options import RandomSeed, RestartProvenance
+from relax.refinement.refinement_options import RandomSeed
 from relax.refinement.result_files import _savez_deflate_fast, build_archive_metadata
 from relax.star.input_poses import PoseProvenance
 from relax.star.metadata import MaxSignificantsResolution
@@ -66,10 +66,6 @@ def metadata_inputs(*, n_classes, diagnostics, max_order):
         random_seed=RandomSeed(17, "explicit CLI"),
         max_iter=3,
         particle_diameter_ang=24.0 if diagnostics else None,
-        restart=(
-            RestartProvenance((2,), Path("restart.json"), "restart-hash") if diagnostics
-            else RestartProvenance((), None, None)
-        ),
         relion_dispatch_schedule=SimpleNamespace(
             oracle_id="dispatch-oracle", oracle_manifest_sha256="dispatch-manifest",
             particle_order_sha256="particle-order",
@@ -97,7 +93,7 @@ def test_archive_metadata_roundtrip_keeps_source_units_and_half_identity(
     ))
     replay = {
         name: inputs.pop(name)
-        for name in ("restart", "frozen_boundary", "state_swap_probe", "follower_replay", "relion_dispatch_schedule")
+        for name in ("frozen_boundary", "state_swap_probe", "follower_replay", "relion_dispatch_schedule")
     }
     metadata = build_archive_metadata(
         result,

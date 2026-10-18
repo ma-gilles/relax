@@ -126,7 +126,6 @@ def resolve_replay_random_perturbation(
     replay_dir: str,
     replay_prefix: str = "run",
     explicit_seed: int | None,
-    restart_state_iteration: int | None = None,
 ) -> tuple[float, str]:
     """Recover RELION's live perturbation without STAR decimal truncation (the STAR value without a seed)."""
     seed = _replay_perturbation_seed(
@@ -142,7 +141,6 @@ def resolve_replay_random_perturbation(
         float(perturbation_factor),
         int(seed),
         int(relion_iteration),
-        restart_state_iteration=restart_state_iteration,
     )
     # RELION writes this field with as few as five digits after the decimal.
     # Treat the STAR value as a provenance guard, not as the arithmetic input.
@@ -152,10 +150,7 @@ def resolve_replay_random_perturbation(
             f"iteration={relion_iteration} seed={seed} exact={exact:+.12g} "
             f"star={float(star_value):+.12g}"
         )
-    source = "seed-exact"
-    if restart_state_iteration is not None:
-        source = f"seed-exact-restart@{int(restart_state_iteration)}"
-    return float(exact), source
+    return float(exact), "seed-exact"
 
 
 def class_tau2_replay(*, iteration, n_classes, iter_replay_override, replay, logger):

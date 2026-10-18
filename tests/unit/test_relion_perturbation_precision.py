@@ -52,19 +52,3 @@ def test_seed_reconstruction_checks_star_consistency(tmp_path):
             replay_dir=str(tmp_path),
             explicit_seed=None,
             )
-
-
-def test_seed_exact_replay_supports_explicit_restart_boundary(tmp_path):
-    _write_optimizer(tmp_path / "run_it012_optimiser.star", 1778628798)
-
-    value, source = resolve_replay_random_perturbation(
-        star_value=-0.06873,
-        perturbation_factor=0.5,
-        relion_iteration=12,
-        replay_dir=str(tmp_path),
-        explicit_seed=None,
-        restart_state_iteration=11,
-    )
-
-    assert value == -0.06873074173927307
-    assert source == "seed-exact-restart@11"

@@ -255,10 +255,6 @@ class _ClassIteration:
             topology=source.follower_topology,
             relion_half_inputs=halves,
             experiment_datasets=experiment_datasets,
-            # The STAR replay's restart iterations (a strict Class3D replay restarts its follower scales with them).
-            restart_state_iterations=(
-                () if source.relion_replay is None else source.relion_replay.perturb_replay_restart_state_iterations
-            ),
         )
 
     def initial_reference_model(self, ctx, options, init_volume, init_mean_variance):

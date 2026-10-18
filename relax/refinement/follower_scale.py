@@ -395,7 +395,6 @@ def setup_relion_follower_scale_state(
     topology: PreparedFollowerTopology | None,
     relion_half_inputs,
     experiment_datasets,
-    restart_state_iterations=(),
 ) -> RelionFollowerScaleSetup:
     """Build (or return the inert default for) RELION's per-follower
     group-scale emulation state.
@@ -560,7 +559,7 @@ def setup_relion_follower_scale_state(
         # RNG state and every follower's leader-serialized group scales.  In a
         # strict K-class replay it is invalid to restart only one of them.
         validate_coupled_relion_restart_state(
-            restart_state_iterations,
+            (),
             follower_scale_replay_by_iteration,
             (
                 ()

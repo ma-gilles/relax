@@ -117,9 +117,6 @@ def test_the_intermediates_dump_reaches_the_refinement_loop_as_its_observer(monk
         ("class3d", ["--n_classes", "2", "--diagnostic_single_half", "--stop_after_local_search"], "K=1-only"),
         ("refine", ["--n_classes", "2"], "use relax class3d"),
         ("refine", ["--no-relion-half-sets-from-input"], "K=1 auto-refine uses RELION's half sets"),
-        ("refine", ["--perturb-replay-restart-state-iterations", "3"], "requires --perturb_replay_relion_dir"),
-        ("refine", ["--perturb-replay-restart-provenance", "<DATA>/particles.star"],
-         "requires --perturb-replay-restart-state-iterations"),
     ],
 )
 def test_the_command_refuses_unsupported_combinations(monkeypatch, tmp_path, command, arguments, message):
@@ -192,8 +189,9 @@ def test_the_command_writes_its_archive_maps_and_history(monkeypatch, tmp_path):
     """Main writes the archive (with the refinement and class history) and the final maps."""
     k1 = run_tiny_main(monkeypatch, tmp_path, "refine", "--max_iter", "1", output="k1")
     with np.load(k1 / "refinement_results.npz", allow_pickle=True) as archive:
-        assert {"fsc_iter_000", "perturb_replay_restart_state_iterations",
-                "perturb_replay_restart_provenance_path", "perturb_replay_restart_provenance_sha256"} <= set(archive)
+        assert "fsc_iter_000" in archive
+        assert not {"perturb_replay_restart_state_iterations", "perturb_replay_restart_provenance_path",
+                    "perturb_replay_restart_provenance_sha256"} & set(archive)
     assert {"final_half1.mrc", "final_half2.mrc", "final_merged.mrc"} <= {path.name for path in k1.iterdir()}
     data = write_tiny_data_dir(tmp_path / "data2", n_classes=2)
     k2 = run_tiny_main(monkeypatch, tmp_path, "class3d", "--max_iter", "1", "--n_classes", "2", data=data, output="k2")

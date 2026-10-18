@@ -148,7 +148,8 @@ Not yet through the ports, each still read where it was:
 ## Rule 10: the functions with ten or more parameters
 
 The target is the smallest coherent input, not a count. Grouped (2026-10-05): `score_tomo_half_in_loop` takes
-`HalfScoringData` (24 -> 14), `build_archive_metadata` and `RunReport` take `RestartProvenance`. The rest are
+`HalfScoringData` (24 -> 14), `build_archive_metadata` and `RunReport` took `RestartProvenance` (deleted with
+`--perturb-replay-restart-*`, 2026-10-18). The rest are
 accepted, with the reason:
 
 | Function | Params | Accepted because |
@@ -190,8 +191,8 @@ accepted, with the reason:
   that the resolution and the run files read: it is the prior's output, not a diagnostics structure, and
   is listed with the result types (rule 8).
 - **Rule 11: met, with exceptions.** Fixed: the controller no longer imports the command
-  (`configure_half_image_preprocessing` moved to `half_inputs`); `InitialSampling` and `RestartProvenance`
-  moved to `refinement_options`; `relax.parity.relion_replay` imports two now-public `half_inputs`
+  (`configure_half_image_preprocessing` moved to `half_inputs`); `InitialSampling` moved to
+  `refinement_options`; `relax.parity.relion_replay` imports two now-public `half_inputs`
   helpers. Accepted until those packages are refactored: `relax/sampling/tomo_particles.py` (numpy only)
   is imported by two engines and three other workflows, and its home moves with them; 62 imports of
   private names from `relax.helpers`, `relax.diagnostics` and `relax.relion` stay until those modules make
