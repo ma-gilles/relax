@@ -196,8 +196,6 @@ def validate_multi_shape_args(args, frozen_boundary, double_image_preprocessing)
         reasons.append("replayed or frozen RELION state is single-shape")
     if double_image_preprocessing:
         reasons.append("float64 image preprocessing is single-shape")
-    if args.relion_softmask_reduction != "control":
-        reasons.append("soft-mask reduction probes are single-shape")
     if getattr(args, "skip_align", False):
         reasons.append("--skip_align is single-shape")
     if reasons:
@@ -334,8 +332,6 @@ def validate_tomo_args(args, frozen_boundary, double_image_preprocessing):
         raise SystemExit("subtomogram particles start fresh from RELION's inputs (no frozen, replayed or loaded state)")
     if double_image_preprocessing:
         raise SystemExit("subtomogram particles have no float64 scoring diagnostic")
-    if args.relion_softmask_reduction != "control":
-        raise SystemExit("subtomogram particles have no soft-mask reduction probe")
 
 
 def require_command_n_classes(command: str, n_classes: int) -> None:

@@ -120,7 +120,7 @@ def _loading_args(root, **overrides):
     values = dict(
         data_dir=str(root), output=str(root), preread_images=False,
         scratch_dir="", keep_free_scratch_gb=0.0, particle_diameter_ang=24.0,
-        width_mask_edge_px=5.0, relion_softmask_reduction="control",
+        width_mask_edge_px=5.0,
         image_fourier_backend="host_numpy", n_classes=1,
         relion_init_dir=None, init_noise_from_npz=None, perturb_replay_relion_dir=None,
     )

@@ -354,16 +354,6 @@ def parse_refinement_args(argv=None):
             "Class3D on the compact engine."
         ),
     )
-    parser.add_argument(
-        "--relion-softmask-reduction",
-        choices=("control", "native_lane", "native_atomic"),
-        default="control",
-        help=(
-            "Diagnostic RELION-CUDA soft-mask background reduction. control keeps "
-            "the production deterministic reduction; native_lane and native_atomic "
-            "probe source-observer addition orders."
-        ),
-    )
     parser.add_argument("--image_batch_size", type=int, default=500, help="Images per GPU batch")
     parser.add_argument(
         "--rotation_block_size",

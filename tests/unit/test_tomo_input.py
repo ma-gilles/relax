@@ -61,7 +61,7 @@ def test_command_particle_loading_preserves_tilt_particle_identity(project, tmp_
     args = SimpleNamespace(
         data_dir=str(out), output=str(tmp_path), preread_images=False,
         scratch_dir="", keep_free_scratch_gb=0.0, particle_diameter_ang=120.0,
-        width_mask_edge_px=5.0, relion_softmask_reduction="control",
+        width_mask_edge_px=5.0,
         image_fourier_backend="host_numpy", relion_init_dir=None, init_noise_from_npz=None,
     )
     loaded = refinement_particles.load_particle_inputs(
@@ -103,7 +103,7 @@ def test_command_particle_loading_stages_subtomogram_stacks_to_scratch_dir(proje
         args = SimpleNamespace(
             data_dir=str(out), output=str(tmp_path / name), preread_images=False,
             scratch_dir=scratch, keep_free_scratch_gb=0.0, particle_diameter_ang=120.0,
-            width_mask_edge_px=5.0, relion_softmask_reduction="control",
+            width_mask_edge_px=5.0,
             image_fourier_backend="host_numpy", relion_init_dir=None, init_noise_from_npz=None,
         )
         return refinement_particles.load_particle_inputs(
@@ -317,13 +317,11 @@ def test_subtomogram_runs_take_the_first_iteration_cross_correlation():
     from relax.commands.refinement_arguments import validate_tomo_args
 
     args = SimpleNamespace(
-        relion_init_dir=None, init_noise_from_npz=None, relion_softmask_reduction="control", firstiter_cc=False
+        relion_init_dir=None, init_noise_from_npz=None, firstiter_cc=False
     )
     validate_tomo_args(args, None, False)
     for n_classes in (1, 2):
         validate_tomo_args(SimpleNamespace(**{**vars(args), "firstiter_cc": True, "n_classes": n_classes}), None, False)
-    with pytest.raises(SystemExit, match="soft-mask"):
-        validate_tomo_args(SimpleNamespace(**{**vars(args), "relion_softmask_reduction": "probe"}), None, False)
 
 
 @pytest.mark.unit

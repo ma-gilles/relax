@@ -412,22 +412,6 @@ def load_particle_inputs(
                 else fixed_diagnostic_source_paths["completed_optimiser"]
             ),
         )
-    if args.relion_softmask_reduction != "control":
-        if image_fourier_backend != "relion_cuda":
-            raise ValueError(
-                "--relion-softmask-reduction requires --image-fourier-backend relion_cuda"
-            )
-        backend = getattr(getattr(ds, "image_source", None), "backend", None)
-        if backend is None or not hasattr(backend, "set_relion_native_lane_reduction"):
-            raise ValueError("Dataset backend does not support RELION soft-mask reduction probes")
-        if args.relion_softmask_reduction == "native_lane":
-            backend.set_relion_native_lane_reduction(True)
-        else:
-            os.environ["RECOVAR_RELION_NATIVE_ATOMIC_SOFTMASK_REDUCTION"] = "1"
-        logger.warning(
-            "Diagnostic RELION soft-mask reduction enabled: %s",
-            args.relion_softmask_reduction,
-        )
     return LoadedParticles(
         dataset=ds,
         tomographic=tomo_run,

@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-import os
-
 import pytest
-from helpers.tiny_main import controller_inputs, write_tiny_data_dir
+from helpers.tiny_main import controller_inputs
 
-from relax.commands import refinement_parser, refinement_particles
+from relax.commands import refinement_parser
 
 BACKENDS = ("auto", "host_numpy", "jax_gpu", "relion_cuda")
 
@@ -29,40 +27,3 @@ def test_image_fourier_backend_cli_defaults_by_job_type_with_typed_choices():
 def test_image_fourier_backend_cli_is_forwarded_to_refinement(monkeypatch, tmp_path, backend):
     inputs = controller_inputs(monkeypatch, tmp_path, "refine", "--image-fourier-backend", backend)
     assert inputs["options"].parity.image_fourier_backend == backend
-
-
-def test_relion_softmask_reduction_cli_has_sealed_diagnostic_choices():
-    assert _parse().relion_softmask_reduction == "control"
-    for mode in ("control", "native_lane", "native_atomic"):
-        assert _parse("--relion-softmask-reduction", mode).relion_softmask_reduction == mode
-    with pytest.raises(SystemExit):
-        _parse("--relion-softmask-reduction", "lane")
-
-
-@pytest.mark.parametrize("mode", ["native_lane", "native_atomic"])
-def test_relion_softmask_reduction_routes_both_native_diagnostic_modes(monkeypatch, tmp_path, mode):
-    """native_lane switches the particle backend's reduction; native_atomic sets RECOVAR's switch; either needs
-    the RELION CUDA image backend."""
-    from recovar.data_io import image_backends
-
-    lanes = []
-    monkeypatch.setattr(image_backends.ParticleImageDataset, "set_relion_native_lane_reduction",
-                        lambda self, enabled: lanes.append(enabled))
-    monkeypatch.delenv("RECOVAR_RELION_NATIVE_ATOMIC_SOFTMASK_REDUCTION", raising=False)
-    data = write_tiny_data_dir(tmp_path / "data")
-    arguments = ["--data_dir", str(data), "--output", str(tmp_path / "out"), "--relion-softmask-reduction", mode]
-    os.makedirs(tmp_path / "out")
-    with pytest.raises(ValueError, match="requires --image-fourier-backend relion_cuda"):
-        refinement_particles.load_particle_inputs(
-            refinement_parser.parse_refinement_args([*arguments, "--image-fourier-backend", "host_numpy"]),
-            relion_half_sets_from_input=False,
-            image_fourier_backend="host_numpy",
-        )
-    refinement_particles.load_particle_inputs(
-        refinement_parser.parse_refinement_args([*arguments, "--image-fourier-backend", "relion_cuda"]),
-        relion_half_sets_from_input=False,
-        image_fourier_backend="relion_cuda",
-    )
-    assert lanes == ([True] if mode == "native_lane" else [])
-    atomic = os.environ.pop("RECOVAR_RELION_NATIVE_ATOMIC_SOFTMASK_REDUCTION", None)
-    assert atomic == ("1" if mode == "native_atomic" else None)
