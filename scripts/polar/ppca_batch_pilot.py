@@ -70,9 +70,11 @@ def main():
         or not template.balanced_stochastic_halves
     ):
         raise ValueError("Template is not the exact noise-1 HP3 SGD protocol")
-    manifest = fixture / "training/manifest.json"
-    data, fixture_meta, manifest_identity = load_training(manifest)
-    if data.n_images != 20000 or sha(manifest) != os.environ["PPCA_MANIFEST_SHA256"]:
+    # The fixture's RELION particle STAR (scripts/prepare_vdam_ppca_fixture.py); fixture.json holds its diameter.
+    star = fixture / "training/particles.star"
+    data, star_identity, _ = load_training(star)
+    fixture_meta = json.loads((fixture / "fixture.json").read_text())
+    if data.n_images != 20000 or sha(star) != os.environ["PPCA_STAR_SHA256"]:
         raise ValueError("Wrong timing-only fixture")
     results = []
     for batch in BATCHES:
@@ -80,7 +82,7 @@ def main():
             template, iterations=planned_updates(batch), stochastic_batch_size=batch, checkpoint_interval=1
         )
         output = run_root / f"batch{batch}"
-        identity = {**manifest_identity, "pilot": True, "batch": batch, "source_head": HEAD}
+        identity = {**star_identity, "pilot": True, "batch": batch, "source_head": HEAD}
         state = iteration_loop.run(data, config, output, identity, fixture_meta["particle_diameter_ang"], stop_after=0)
         theta = np.asarray(state.theta)
         initial_rel_l2 = float(np.linalg.norm(theta - template_theta) / np.linalg.norm(template_theta))
@@ -123,7 +125,7 @@ def main():
             {
                 "schema": "ppca_batch_pilot_v1",
                 "source_head": HEAD,
-                "fixture_manifest_sha256": sha(manifest),
+                "fixture_star_sha256": sha(star),
                 "template_cp0_sha256": sha(template_cp),
                 "results": results,
             },

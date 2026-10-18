@@ -17,10 +17,11 @@ def main():
     from relax.ppca_initial_model.iteration_loop import run
 
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--manifest", required=True)
+    parser.add_argument("--i", dest="particles", required=True, help="RELION particle STAR")
+    parser.add_argument("--particle-diameter", type=float, required=True, help="Particle diameter in Angstrom")
     parser.add_argument("--output", required=True)
     args = parser.parse_args()
-    data, manifest, identity = load_training(args.manifest)
+    data, identity, _ = load_training(args.particles)
     identity["source"] = source_identity()
     root = Path(args.output)
     cfg = Config(
@@ -31,14 +32,14 @@ def main():
         image_batch_size=4,
         rotation_block_size=128,
     )
-    full = run(data, cfg, root / "full", identity, manifest["particle_diameter_ang"])
-    run(data, cfg, root / "resumed", identity, manifest["particle_diameter_ang"], stop_after=1)
+    full = run(data, cfg, root / "full", identity, args.particle_diameter)
+    run(data, cfg, root / "resumed", identity, args.particle_diameter, stop_after=1)
     resumed = run(
         data,
         cfg,
         root / "resumed",
         identity,
-        manifest["particle_diameter_ang"],
+        args.particle_diameter,
         resume=root / "resumed/checkpoint_0001.npz",
     )
     maxima = {}

@@ -86,8 +86,8 @@ def verify_context():
         if not path.is_relative_to(Path("/scratch/network/mg6942/relax-polar")):
             raise ValueError("Polar job data must stay on network scratch")
     receipt = json.loads((fixture / "fixture_verified.json").read_text())
-    manifest = fixture / "training/manifest.json"
-    if receipt["n_images"] != 100000 or receipt["identity"]["manifest_sha256"] != sha(manifest):
+    star = fixture / "training/particles.star"
+    if receipt["n_images"] != 100000 or receipt["identity"]["particles_star_sha256"] != sha(star):
         raise ValueError("Wrong verified 100k fixture")
     return source, fixture, root, meta, receipt
 
@@ -178,8 +178,10 @@ def main():
     mode = os.environ["PPCA_SWEEP_MODE"]
     if mode not in ("init", "train"):
         raise ValueError("Mode must be init or train")
-    manifest = fixture / "training/manifest.json"
-    dataset, fixture_meta, _ = load_training(manifest)
+    # The fixture's RELION particle STAR (scripts/prepare_vdam_ppca_fixture.py); fixture.json holds its diameter.
+    star = fixture / "training/particles.star"
+    dataset, _, _ = load_training(star)
+    fixture_meta = json.loads((fixture / "fixture.json").read_text())
     if dataset.n_images != 100000:
         raise ValueError("Wrong training count")
     if mode == "init":
@@ -188,7 +190,7 @@ def main():
             template = Path(os.environ[f"PPCA_TEMPLATE_SEED{seed}"]).resolve()
             output = root / f"seed{seed}"
             identity = {
-                "fixture_manifest_sha256": sha(manifest),
+                "fixture_star_sha256": sha(star),
                 "source_id": source_meta["source_id"],
                 "seed": seed,
                 "canonical": True,
@@ -205,7 +207,7 @@ def main():
             json.dumps(
                 {
                     "schema": "ppca_batch_canonical_v1",
-                    "fixture_manifest_sha256": sha(manifest),
+                    "fixture_star_sha256": sha(star),
                     "source": source_meta,
                     "seeds": records,
                 },
@@ -222,13 +224,13 @@ def main():
     canonical_path = Path(os.environ["PPCA_CANONICAL_CP0"]).resolve()
     canonical_record = json.loads((canonical_path.parent.parent / "canonical.json").read_text())
     if (
-        canonical_record["fixture_manifest_sha256"] != sha(manifest)
+        canonical_record["fixture_star_sha256"] != sha(star)
         or canonical_record["source"]["source_id"] != source_meta["source_id"]
         or canonical_record["seeds"][str(seed)]["sha256"] != sha(canonical_path)
     ):
         raise ValueError("Canonical source/fixture/CP0 mismatch")
     identity = {
-        "fixture_manifest_sha256": sha(manifest),
+        "fixture_star_sha256": sha(star),
         "source_id": source_meta["source_id"],
         "seed": seed,
         "batch": batch,
@@ -257,7 +259,7 @@ def main():
         "seed": seed,
         "batch": batch,
         "source": source_meta,
-        "fixture_manifest_sha256": sha(manifest),
+        "fixture_star_sha256": sha(star),
         "canonical_cp0_sha256": sha(canonical_path),
         "cp0_sha256": sha(cp0),
         "cp0_envelope": envelope(state),
