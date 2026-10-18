@@ -409,7 +409,7 @@ def test_gpu_files_include_skipif_gated_resident_tests():
     assert {"tests/unit/test_resident_pass2_driver.py", "tests/unit/test_resident_local_pass2.py"} <= files
     selected = run_test_tier.touched_gpu_tests(REPO_ROOT, ["relax/fine_pass/resident_pass2.py"])
     assert "tests/unit/test_resident_pass2_driver.py" in selected
-    assert "tests/unit/initial_model/test_audit_vdam_repeat_panel.py" not in files
+    assert "tests/unit/initial_model/test_audit_vdam_fsc_trajectory.py" not in files
 
 
 # Test files whose CUDA tests are gated by a skipif, a runtime backend check or a GPU fixture

@@ -13,7 +13,6 @@ tests/unit/initial_model/test_projector_lifecycle.py
 tests/unit/initial_model/test_refactor_invariants.py
 tests/unit/initial_model/test_sgd_initial_model.py
 tests/unit/initial_model/test_vdam_abinitio_merge_guard.py
-tests/unit/initial_model/test_vdam_expected_accuracy_ab_panel.py
 tests/unit/initial_model/test_vdam_optics_groups.py
 tests/unit/ppca_initial_model/test_checkpoint.py
 tests/unit/ppca_initial_model/test_full_row_recompute.py
