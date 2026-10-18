@@ -103,6 +103,14 @@ def _relion_coarse_cut(log_weight, adaptive_fraction):
     return w >= order[min(idx, w.size - 1)]
 
 
+def _relion_coarse_count(log_weight, adaptive_fraction):
+    """RELION's rlnNrOfSignificantSamples of the same cut: ``filteredSize - thresholdIdx`` (acc :3236), the
+    samples from the cut's rank upwards, without the samples tied with the cut weight below that rank."""
+    w = np.exp((log_weight + (np.float32(50.0) - log_weight.max())).astype(np.float32)).astype(np.float32)
+    cumulative = np.cumsum(np.sort(w), dtype=np.float32)
+    return w.size - int(np.searchsorted(cumulative, np.float32((1.0 - adaptive_fraction) * cumulative[-1]), side="right"))
+
+
 def test_particle_significance_cuts_the_summed_diff2_with_its_3d_offset_prior():
     rng = np.random.default_rng(5)
     n_particles, n_rot, n_trans = 3, 40, 27
@@ -119,6 +127,31 @@ def test_particle_significance_cuts_the_summed_diff2_with_its_3d_offset_prior():
         expected = _relion_coarse_cut(log_weight.astype(np.float32).reshape(-1), 0.999)
         assert np.array_equal(np.asarray(got["mask"][p]), expected)
         assert int(got["n_significant"][p]) == int(expected.sum())
+
+
+def test_particle_significance_counts_a_tied_cut_as_relion_records_it():
+    """relax#89: with a sample tied with the cut weight below the cut's rank, the support keeps it (RELION's
+    arrayOverThreshold keeps every weight >= the cut) but RELION's count does not: the subtomogram pass records
+    ``cutoff_count``, not the support's size."""
+    rng = np.random.default_rng(89)
+    n_particles, n_rot, n_trans = 8, 20, 9
+    # Every diff2 value appears twice (the second half of the rotations repeats the first), so every cut weight
+    # is tied, and a cut whose rank falls on the second of a pair leaves its twin below the rank.
+    half = rng.uniform(1000.0, 1012.0, size=(n_particles, n_rot // 2, n_trans)).astype(np.float32)
+    particle = np.concatenate([half, half], axis=1)
+    got = tomo_coarse.particle_coarse_significance(
+        jnp.asarray(particle), None, np.zeros((n_particles, n_trans), np.float32), adaptive_fraction=0.999,
+        max_significants=None,
+    )
+    tied = 0
+    for p in range(n_particles):
+        log_weight = (particle[p].min() - particle[p]).astype(np.float32).reshape(-1)
+        expected = _relion_coarse_cut(log_weight, 0.999)
+        assert np.array_equal(np.asarray(got["mask"][p]), expected)
+        assert int(got["n_significant"][p]) == int(expected.sum())
+        assert int(got["cutoff_count"][p]) == _relion_coarse_count(log_weight, 0.999)
+        tied += int(got["n_significant"][p]) > int(got["cutoff_count"][p])
+    assert tied > 0
 
 
 def test_images_add_in_slot_order():
@@ -836,7 +869,7 @@ def test_k_class_particles_cut_their_weights_over_every_class_jointly(monkeypatc
 
     captured, layout = _fake_coarse_kernels(monkeypatch, rng, flushes)
     class_prior = np.log(rng.uniform(0.2, 1.0, size=(2, n_rot))).astype(np.float32)
-    supports, pmax = tomo_coarse.particle_coarse_supports(
+    supports, pmax, counts = tomo_coarse.particle_coarse_supports(
         None,
         unit_image_offsets=offsets,
         image_projections=np.tile(np.eye(3), (n_images, 1, 1)),
@@ -878,8 +911,10 @@ def test_k_class_particles_cut_their_weights_over_every_class_jointly(monkeypatc
         for k in range(2):
             np.testing.assert_array_equal(supports[k][p], np.flatnonzero(expected[k]))
             n_significant += supports[k][p].size
+        # One count per particle over both classes, as RELION records it (before ties).
+        assert counts[p] == _relion_coarse_count(log_weight.astype(np.float32).reshape(-1), 0.999)
     assert n_significant > 3  # the cut keeps more than each particle's winner
-    assert pmax.shape == (3,)
+    assert pmax.shape == (3,) and counts.shape == (3,) and counts.dtype == np.int32
 
 
 @pytest.mark.parametrize("flushes", ["one_flush", "flush_per_particle"])
@@ -895,7 +930,7 @@ def test_k_class_particles_with_their_own_rotations_are_cut_over_the_scored_clas
     captured, layout = _fake_coarse_kernels(monkeypatch, rng, flushes)
     unit_rotations = [np.array([0, 2, 3]), np.array([1, 5]), np.arange(n_rot)]
     unit_priors = [np.log(rng.uniform(0.2, 1.0, size=rows.size)).astype(np.float32) for rows in unit_rotations]
-    supports, pmax = tomo_coarse.particle_coarse_supports(
+    supports, pmax, counts = tomo_coarse.particle_coarse_supports(
         None,
         unit_image_offsets=offsets,
         image_projections=np.tile(np.eye(3), (n_images, 1, 1)),
@@ -952,6 +987,7 @@ def test_k_class_particles_with_their_own_rotations_are_cut_over_the_scored_clas
             local_rotation, translation = np.nonzero(expected[k])
             np.testing.assert_array_equal(supports[k][p], rows[local_rotation] * n_trans + translation)
             n_significant += supports[k][p].size
+        assert counts[p] == _relion_coarse_count(log_weight.astype(np.float32).reshape(-1), 0.999)
     assert all(supports[empty][p].size == 0 for p in range(3))
     assert n_significant > 3  # the cut keeps more than each particle's winner
     assert pmax.shape == (3,)
@@ -1206,7 +1242,7 @@ def test_capped_particles_are_cut_on_the_direct_squares_of_their_undecided_rotat
         # The undecided rotations scored again one call per rotation: the same exact cut.
         monkeypatch.setattr(tomo_coarse, "_rescore_rows_per_call", lambda *args: 1)
         tomo_coarse._exact_rows_diff2.clear_cache()  # a trace cached by "one_row" would bypass direct_calls
-    supports, _pmax = tomo_coarse.particle_coarse_supports(None, **kwargs)
+    supports, _pmax, counts = tomo_coarse.particle_coarse_supports(None, **kwargs)
     if variant == "flushes_of_three":
         # One particle per batch (the stand-in GEMM's rounding pattern follows the batch layout, so both passes
         # below share it): flushes of two particles need no padding; flushes of three end with one padded to three.
@@ -1214,17 +1250,18 @@ def test_capped_particles_are_cut_on_the_direct_squares_of_their_undecided_rotat
         monkeypatch.setattr(tomo_coarse, "_coarse_batches", lambda *a, **k: batches(*a, **{**k, "budget_bytes": 1}))
         monkeypatch.setattr(tomo_coarse, "_SIGNIFICANCE_BATCH_BYTES", 2 * n_classes * 256 * n_trans * 4)
         captured.clear()
-        unpadded, unpadded_pmax = tomo_coarse.particle_coarse_supports(None, **kwargs)
+        unpadded, unpadded_pmax, unpadded_counts = tomo_coarse.particle_coarse_supports(None, **kwargs)
         unpadded_gemm = np.concatenate(captured[0::2])  # each flush's GEMM diff2, then its exact one
         monkeypatch.setattr(tomo_coarse, "_SIGNIFICANCE_BATCH_BYTES", 3 * n_classes * 256 * n_trans * 4)
         captured.clear()
-        padded, padded_pmax = tomo_coarse.particle_coarse_supports(None, **kwargs)
+        padded, padded_pmax, padded_counts = tomo_coarse.particle_coarse_supports(None, **kwargs)
         # Two flushes (3 particles, then 1 padded to 3), each cut on GEMM scores and then on exact ones.
         assert [c.shape[0] for c in captured] == [3, 3, 3, 3]
         for k, (got, want) in enumerate(zip(*(([x] if n_classes == 1 else x) for x in (padded, unpadded)))):
             for unit in range(n_units):
                 np.testing.assert_array_equal(got[unit], want[unit], err_msg=f"class {k} particle {unit}")
         assert_matches(padded_pmax, unpadded_pmax)
+        np.testing.assert_array_equal(padded_counts, unpadded_counts)
         # The device share, not the diff2 bytes, bounds the flush to one particle: same supports, diff2 and Pmax.
         monkeypatch.setattr(tomo_coarse, "_SIGNIFICANCE_BATCH_BYTES", 512 << 20)
         plan = tomo_coarse._flush_plan
@@ -1236,13 +1273,14 @@ def test_capped_particles_are_cut_on_the_direct_squares_of_their_undecided_rotat
 
         monkeypatch.setattr(tomo_coarse, "_flush_plan", one_particle_budget)
         captured.clear()
-        bounded, bounded_pmax = tomo_coarse.particle_coarse_supports(None, **kwargs)
+        bounded, bounded_pmax, bounded_counts = tomo_coarse.particle_coarse_supports(None, **kwargs)
         assert [c.shape[0] for c in captured] == [1] * (2 * n_units)
         assert_matches(np.concatenate(captured[0::2]), unpadded_gemm)
         for k, (got, want) in enumerate(zip(*(([x] if n_classes == 1 else x) for x in (bounded, unpadded)))):
             for unit in range(n_units):
                 np.testing.assert_array_equal(got[unit], want[unit], err_msg=f"class {k} particle {unit}")
         assert_matches(bounded_pmax, unpadded_pmax)
+        np.testing.assert_array_equal(bounded_counts, unpadded_counts)
         return
     supports = [supports] if n_classes == 1 else supports
     wobbly = captured[0]
@@ -1258,7 +1296,7 @@ def test_capped_particles_are_cut_on_the_direct_squares_of_their_undecided_rotat
         lambda diff2, *a, **k: (jnp.ones(diff2.shape[:2], bool), jnp.int32(diff2.shape[1]), jnp.int32(0)),
     )
     captured.clear()
-    all_exact, _ = tomo_coarse.particle_coarse_supports(None, **kwargs)
+    all_exact, _, all_exact_counts = tomo_coarse.particle_coarse_supports(None, **kwargs)
     all_exact = [all_exact] if n_classes == 1 else all_exact
     exact = captured[-1]
     assert 0.0 < np.max(np.abs(exact - wobbly)) <= 3 * bound
@@ -1273,3 +1311,6 @@ def test_capped_particles_are_cut_on_the_direct_squares_of_their_undecided_rotat
             n_capped += 1
             np.testing.assert_array_equal(got, kept, err_msg=f"particle {unit}")
     assert n_capped >= 2
+    # RELION's count is the capped rank (maximum_significants), the same from the GEMM-and-exact cut as from exact scores.
+    np.testing.assert_array_equal(counts, all_exact_counts)
+    assert np.all(counts <= cap) and np.sum(counts == cap) >= 2

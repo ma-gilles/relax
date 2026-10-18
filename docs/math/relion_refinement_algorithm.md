@@ -990,6 +990,10 @@ class's candidates from that class's significant samples with the same priors
 to the directions' own grid indices, as RELION's do (`ml_optimiser.cpp:8710-8717`). The RELION 5
 subtomogram tutorial's Class3D command (`--sigma_tilt 10 --sigma_ang 1.66667`, K = 9 from one reference,
 HEALPix order 4) is this case with the tilt option ignored.
+The particle's recorded `rlnNrOfSignificantSamples` is RELION's `filteredSize - thresholdIdx`
+(`acc_ml_optimiser_impl.h:3236`), the samples from the cut's rank upwards over all classes, as the SPA pass
+records it; a sample tied with the cut weight below that rank is in the support but not in the count
+([`particle_coarse_supports`](../../relax/scoring/tomo_coarse.py), relax#89).
 
 [`expected_accuracy.py`](../../relax/steps/expected_accuracy.py)
 owns the RELION-style accuracy trial calculation. The approximate posterior

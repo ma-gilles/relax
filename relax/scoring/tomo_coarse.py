@@ -741,7 +741,8 @@ def particle_coarse_supports(
     unit_rotation_log_priors=None,
     empty_classes=(),
 ):
-    """Each particle's coarse significant samples, ``rot * T + t`` int32 ids per unit, and its coarse Pmax.
+    """Each particle's coarse significant samples, ``rot * T + t`` int32 ids per unit, its coarse Pmax and its
+    significant-sample count as RELION records it.
 
     RELION's GPU coarse pass for a subtomogram (acc_ml_optimiser_impl.h:1190-1402): every tilt image is
     scored with its own device matrices (``make_eulers_3D`` with the image's left matrix ``image_left``,
@@ -769,6 +770,8 @@ def particle_coarse_supports(
     and its orientation weight is then ``directions_prior * psi_prior`` alone, without ``pdf_class`` or
     ``pdf_direction`` (acc_ml_optimiser_impl.h:1960-1972). ``empty_classes`` are the classes it skips
     (``pdf_class == 0``): they keep no sample.
+    The count is RELION's ``filteredSize - thresholdIdx`` (acc_ml_optimiser_impl.h:3236): a sample tied with the
+    cut weight below the cut's rank is significant but not counted.
     """
 
     from relax.projection.projection import relion_projector_half_to_texture_full
@@ -878,7 +881,7 @@ def particle_coarse_supports(
     class_full = [None] * n_classes  # each class's full projector for the direct-square kernel, built on first use
     eulers_f32 = jnp.asarray(np.asarray(coarse_eulers_deg, dtype=np.float32))  # the exact cut's rotations, gathered on the device
     rescored, n_scored = [], 0
-    supports, pmax_by_unit = [{} for _ in range(n_classes)], {}
+    supports, pmax_by_unit, count_by_unit = [{} for _ in range(n_classes)], {}, {}
     last_total = None
     pending = []
     # The last flush's device results, read back by the next flush: by then the GPU holds the batches
@@ -1007,10 +1010,10 @@ def particle_coarse_supports(
         flat = (
             _significant_cells(mask, capacity=cells_capacity, row_length=n_coarse_trans) if cells_capacity else None
         )
-        for value in (counts, flat, stats["pmax"]):
+        for value in (counts, flat, stats["pmax"], stats["cutoff_count"]):
             if value is not None:
                 value.copy_to_host_async()
-        return mask, counts, flat, stats["pmax"]
+        return mask, counts, flat, stats["pmax"], stats["cutoff_count"]
 
     def dispatch():
         units_all = np.concatenate([u for u, *_ in pending])
@@ -1050,7 +1053,7 @@ def particle_coarse_supports(
             result = compacted(stats, n_real)
         if n_rows:
             rescored.append((n_rows, n_particles))
-        mask, counts, flat, pmax = result
+        mask, counts, flat, pmax, cutoff_count = result
         counts = np.asarray(counts, dtype=np.int64)
         n_significant = int(counts.sum())
         if flat is None or n_significant > int(flat.shape[0]):
@@ -1062,6 +1065,7 @@ def particle_coarse_supports(
         cells_capacity = pow2_ceil(2 * n_significant, minimum=2)
         flat = np.asarray(flat, dtype=np.int64)[:n_significant]
         particle_pmax = np.asarray(pmax, dtype=np.float64)
+        particle_count = np.asarray(cutoff_count, dtype=np.int64)
         cell_offsets = np.concatenate([[0], np.cumsum(counts)])
         n_cells = int(mask.shape[1])
         for i, unit in enumerate(units_all):
@@ -1075,6 +1079,7 @@ def particle_coarse_supports(
                     cells = unit_rotations[unit][cells // n_coarse_trans] * n_coarse_trans + cells % n_coarse_trans
                 supports[class_index][int(unit)] = cells.astype(np.int32)
             pmax_by_unit[int(unit)] = float(particle_pmax[i])
+            count_by_unit[int(unit)] = int(particle_count[i])
 
     def flush(*, last=False):
         """Dispatch the pending particles' significance, then read back the previous flush's."""
@@ -1195,4 +1200,4 @@ def particle_coarse_supports(
     class_supports = [[supports[k][u] for u in range(n_units)] for k in range(n_classes)]
     return class_supports[0] if n_classes == 1 else class_supports, np.asarray(
         [pmax_by_unit[u] for u in range(n_units)], dtype=np.float64
-    )
+    ), np.asarray([count_by_unit[u] for u in range(n_units)], dtype=np.int32)

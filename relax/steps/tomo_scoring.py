@@ -67,7 +67,7 @@ class TomoScoreResult:
     # K>1: ResidentKClassPass2Output of compute_k_class_pass2_stats_resident.
     pass2: object
     coarse_hard_assignment: np.ndarray  # int32 [P], coarse rotation * T_coarse + coarse translation
-    significant_counts: np.ndarray  # int32 [P], coarse significant samples
+    significant_counts: np.ndarray  # int32 [P], coarse significant samples as RELION counts them (before ties)
 
 
 def score_tomo_half(
@@ -271,8 +271,10 @@ def score_tomo_half(
                 scale_corrections=scale_corrections,
             )
         supports = [np.asarray([cell], dtype=np.int32) for cell in winners]
+        significant_counts = np.ones(len(supports), dtype=np.int32)
     else:
-        supports, _coarse_pmax = tomo_coarse.particle_coarse_supports(
+        # RELION's count is the cut's rank, before the samples tied with the cut weight (particle_coarse_supports).
+        supports, _coarse_pmax, significant_counts = tomo_coarse.particle_coarse_supports(
             half.images,
             unit_image_offsets=half.unit_image_offsets,
             image_projections=half.image_projections,
@@ -412,7 +414,6 @@ def score_tomo_half(
             **options,
         )
         hard = np.asarray(pass2.hard_assignment, dtype=np.int64)
-        significant_counts = np.asarray([s.size for s in supports], dtype=np.int32)
     else:
         pass2 = compute_k_class_pass2_stats_resident(
             half.images,
@@ -433,7 +434,6 @@ def score_tomo_half(
         winner = np.argmax(np.asarray(pass2.class_best_log_score_per_image, dtype=np.float64), axis=0)
         units = np.arange(half.n_units)
         hard = np.asarray(pass2.per_class_hard_assignments, dtype=np.int64)[winner, units]
-        significant_counts = np.sum([[s.size for s in class_supports] for class_supports in supports], axis=0)
     n_fine_trans = int(fine_px.shape[0])
     coarse_hard = rot_parent[hard // n_fine_trans] * int(coarse_px.shape[0]) + fine_parent[hard % n_fine_trans]
     return TomoScoreResult(
