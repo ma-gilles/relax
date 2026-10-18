@@ -401,6 +401,53 @@ def test_flat_rows_wavg_matches_sequential_reference(
 
 
 @pytest.mark.gpu
+@pytest.mark.parametrize("support", ["independent", "shared"])
+def test_one_image_tiled_wavg_matches_sequential_reference(monkeypatch, custom_cuda_lib, gpu_device, support):
+    """A launch whose rows all read one image, at least 64 of them, takes the tiled kernel (relax#98): a block stages
+    32 rows' weights and the shifted values of their translations with weight. Every row's triplet is still its own
+    float32 sum in translation order, with padding rows, an out-of-range id (NaN-filled), a logical prefix inside a
+    64-pixel tile and more translations than one staged chunk."""
+
+    cuda_backproject = _cuda_backproject(monkeypatch, custom_cuda_lib)
+    rng = np.random.default_rng(9110)
+    translation_count, pixel_capacity, logical = 75, 300, 270
+    row_image_ids = np.zeros(140, dtype=np.int32)
+    row_image_ids[[3, 70, 139]] = -1
+    row_image_ids[33] = 1  # past the one image
+    rows = row_image_ids.size
+    projections = _complex64(rng, (rows, pixel_capacity))
+    raw_ctf = rng.normal(0.0, 1.5, (1, pixel_capacity)).astype(np.float32)
+    scale = rng.uniform(0.4, 2.5, (1,)).astype(np.float32)
+    shifted_images = _complex64(rng, (1, translation_count, pixel_capacity))
+    posterior = rng.uniform(0.0, 1.0, (rows, translation_count)).astype(np.float32)
+    if support == "independent":
+        posterior[rng.uniform(size=posterior.shape) < 0.7] = 0.0
+    else:
+        posterior[:, rng.uniform(size=translation_count) < 0.7] = 0.0
+
+    with jax.default_device(gpu_device):
+        actual = cuda_backproject.relion_wavg_sequential_runtime_flat_rows_triplet_f32(
+            jnp.asarray(projections),
+            jnp.asarray(row_image_ids),
+            jnp.asarray(raw_ctf),
+            jnp.asarray(scale),
+            jnp.asarray(shifted_images),
+            jnp.asarray(posterior),
+            jnp.asarray(logical, dtype=jnp.int32),
+        )
+        actual = np.asarray(jax.block_until_ready(actual))
+
+    assert np.all(np.isnan(actual[33]))
+    valid = row_image_ids < 1
+    expected = _sequential_wavg_triplets(
+        projections[valid], row_image_ids[valid], raw_ctf, scale, shifted_images, posterior[valid], logical
+    )
+    assert_matches(actual[valid], expected)
+    assert np.all(actual[valid][:, logical:, :] == 0.0)
+    assert np.all(actual[row_image_ids < 0] == 0.0)
+
+
+@pytest.mark.gpu
 def test_flat_rows_wavg_out_of_range_row_fails_only_that_row(monkeypatch, custom_cuda_lib, gpu_device):
     """An out-of-range image id NaN-fills every physical pixel of its own row (split over blocks); other rows are unaffected."""
 

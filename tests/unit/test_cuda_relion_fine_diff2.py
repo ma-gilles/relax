@@ -446,6 +446,7 @@ def test_relion_coarse_prehalf_shared_body_is_built_packaged_and_stale_checked()
         "relion_posterior.cuh",
         "sparse_pass2_posterior.cuh",
         "relion_translate_sum.cuh",
+        "tiled_translations.cuh",
         "relion_capacity_texture.cuh",
         "ppca_moment_backproject.cuh",
         "ppca_stream.cuh",

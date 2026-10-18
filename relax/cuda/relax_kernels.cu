@@ -197,6 +197,8 @@ cudaError_t report_relion_vdam_driver_error(
 
 #include "recovar_cuda_common.cuh"
 
+#include "tiled_translations.cuh"
+
 
 /* Strict RELION x-half diagnostic: scatter the pre-reduced complex data and
  * real weight through the same neighbor loop. RELION updates model real,
@@ -1790,6 +1792,161 @@ cudaError_t launch_relion_wavg_sequential_runtime_triplet_f32(
     return cudaGetLastError();
 }
 
+/* The flat-row Wavg triplet of a one-image launch, tiled (relax#98): a lone particle's M-step block is hundreds of
+ * rows reading one image's shifted tile, which the row kernel reads once per row.  A block owns kTiledRows rows by
+ * kWavgTiledPixels pixels and stages, kWavgTiledTranslations of the row tile's active translations at a time
+ * (relax_tiled_translations), the rows' weights and the shifted values in shared memory.  Every output is the row
+ * kernel's statements in the same translation order: the zero weights it skips add nothing. */
+constexpr int kWavgTiledPixels = 64;
+constexpr int kWavgTiledTranslations = 32;
+constexpr int kWavgTiledPixelLanes = 16;
+constexpr int kWavgTiledRowLanes = kWavgThreads / kWavgTiledPixelLanes;  // 16
+constexpr int kWavgTiledRowsPerThread = relax_tiled_translations::kTiledRows / kWavgTiledRowLanes;  // 2
+constexpr int kWavgTiledPixelsPerThread = kWavgTiledPixels / kWavgTiledPixelLanes;  // 4
+
+__global__ void __launch_bounds__(kWavgThreads)
+relion_wavg_tiled_one_image_triplet_f32_kernel(
+    const float2* __restrict__ projections,          // [Q, P]
+    const float* __restrict__ raw_ctf,               // [1, P]
+    const float* __restrict__ scale,                 // [1]
+    const float2* __restrict__ shifted_images,       // [1, T, P]
+    const float* __restrict__ posterior,             // [Q, T]
+    const int32_t* __restrict__ active_lists,        // [row tiles, T]
+    const int32_t* __restrict__ active_counts,       // [row tiles]
+    float* __restrict__ output,                      // [Q, P, 3]
+    int64_t translation_count,
+    int64_t pixel_capacity,
+    const int32_t* __restrict__ runtime_logical_pixel_count,
+    const int32_t* __restrict__ row_image_ids,
+    int64_t row_count)
+{
+    constexpr int kRows = relax_tiled_translations::kTiledRows;
+    const int64_t row_base = static_cast<int64_t>(blockIdx.x) * kRows;
+    const int64_t pixel_base = static_cast<int64_t>(blockIdx.y) * kWavgTiledPixels;
+    const int64_t logical_pixel_count = runtime_logical_pixel_count == nullptr
+        ? pixel_capacity
+        : static_cast<int64_t>(runtime_logical_pixel_count[0]);
+    if (logical_pixel_count < 0 || logical_pixel_count > pixel_capacity) {
+        if (blockIdx.x == 0 && blockIdx.y == 0 && threadIdx.x == 0) output[0] = nanf("");
+        return;
+    }
+    __shared__ float shared_weight[kWavgTiledTranslations][kRows + 1];
+    __shared__ float2 shared_value[kWavgTiledTranslations][kWavgTiledPixels];
+    __shared__ int32_t shared_live[kRows];
+    __shared__ int32_t shared_active[kWavgTiledTranslations];
+    if (threadIdx.x < kRows) {
+        const int64_t row = row_base + threadIdx.x;
+        // 1: image 0; 0: past the rows or padding (zeros); -1: an id past the one image (fails closed).
+        shared_live[threadIdx.x] = row < row_count ? (row_image_ids[row] == 0 ? 1 : (row_image_ids[row] > 0 ? -1 : 0)) : 0;
+    }
+    __syncthreads();
+    const int pixel_lane = threadIdx.x % kWavgTiledPixelLanes;
+    const int row_lane = threadIdx.x / kWavgTiledPixelLanes;
+    const float batch_scale = scale[0];
+    float ref_real[kWavgTiledRowsPerThread][kWavgTiledPixelsPerThread];
+    float ref_imag[kWavgTiledRowsPerThread][kWavgTiledPixelsPerThread];
+    float ref_abs2[kWavgTiledRowsPerThread][kWavgTiledPixelsPerThread];
+    float xa_raw[kWavgTiledRowsPerThread][kWavgTiledPixelsPerThread];
+    float aa_raw[kWavgTiledRowsPerThread][kWavgTiledPixelsPerThread];
+    float diff2[kWavgTiledRowsPerThread][kWavgTiledPixelsPerThread];
+#pragma unroll
+    for (int i = 0; i < kWavgTiledRowsPerThread; ++i) {
+        const int local_row = row_lane + i * kWavgTiledRowLanes;
+#pragma unroll
+        for (int j = 0; j < kWavgTiledPixelsPerThread; ++j) {
+            const int64_t pixel = pixel_base + pixel_lane + j * kWavgTiledPixelLanes;
+            ref_real[i][j] = 0.0f;
+            ref_imag[i][j] = 0.0f;
+            ref_abs2[i][j] = 0.0f;
+            xa_raw[i][j] = 0.0f;
+            aa_raw[i][j] = 0.0f;
+            diff2[i][j] = 0.0f;
+            if (shared_live[local_row] == 1 && pixel < logical_pixel_count) {
+                const float ctf_with_scale = __fmul_rn(raw_ctf[pixel], batch_scale);
+                const float2 projection = projections[(row_base + local_row) * pixel_capacity + pixel];
+                ref_real[i][j] = __fmul_rn(projection.x, ctf_with_scale);
+                ref_imag[i][j] = __fmul_rn(projection.y, ctf_with_scale);
+                ref_abs2[i][j] = __fadd_rn(
+                    __fmul_rn(ref_real[i][j], ref_real[i][j]), __fmul_rn(ref_imag[i][j], ref_imag[i][j]));
+            }
+        }
+    }
+    const int64_t active_count = active_counts[blockIdx.x];
+    const int32_t* tile_active = active_lists + static_cast<int64_t>(blockIdx.x) * translation_count;
+    for (int64_t first = 0; first < active_count; first += kWavgTiledTranslations) {
+        const int count = active_count - first < kWavgTiledTranslations
+            ? static_cast<int>(active_count - first)
+            : kWavgTiledTranslations;
+        if (threadIdx.x < kWavgTiledTranslations)
+            shared_active[threadIdx.x] = threadIdx.x < count ? tile_active[first + threadIdx.x] : 0;
+        __syncthreads();
+        for (int index = threadIdx.x; index < kWavgTiledTranslations * kRows; index += kWavgThreads) {
+            const int t = index / kRows;
+            const int i = index - t * kRows;
+            shared_weight[t][i] = (t < count && shared_live[i] == 1)
+                ? posterior[(row_base + i) * translation_count + shared_active[t]]
+                : 0.0f;
+        }
+        for (int index = threadIdx.x; index < kWavgTiledTranslations * kWavgTiledPixels; index += kWavgThreads) {
+            const int t = index / kWavgTiledPixels;
+            const int j = index - t * kWavgTiledPixels;
+            const int64_t pixel = pixel_base + j;
+            shared_value[t][j] = (t < count && pixel < pixel_capacity)
+                ? shifted_images[static_cast<int64_t>(shared_active[t]) * pixel_capacity + pixel]
+                : make_float2(0.0f, 0.0f);
+        }
+        __syncthreads();
+        for (int t = 0; t < count; ++t) {
+#pragma unroll
+            for (int i = 0; i < kWavgTiledRowsPerThread; ++i) {
+                const float weight = shared_weight[t][row_lane + i * kWavgTiledRowLanes];
+                if (weight == 0.0f) continue;
+#pragma unroll
+                for (int j = 0; j < kWavgTiledPixelsPerThread; ++j) {
+                    const float2 translated = shared_value[t][pixel_lane + j * kWavgTiledPixelLanes];
+                    const float diff_real = __fsub_rn(ref_real[i][j], translated.x);
+                    const float diff_imag = __fsub_rn(ref_imag[i][j], translated.y);
+                    const float diff_abs2 = __fadd_rn(__fmul_rn(diff_real, diff_real), __fmul_rn(diff_imag, diff_imag));
+                    const float cross = __fadd_rn(
+                        __fmul_rn(ref_real[i][j], translated.x), __fmul_rn(ref_imag[i][j], translated.y));
+                    xa_raw[i][j] = __fadd_rn(xa_raw[i][j], __fmul_rn(weight, cross));
+                    aa_raw[i][j] = __fadd_rn(aa_raw[i][j], __fmul_rn(weight, ref_abs2[i][j]));
+                    diff2[i][j] = __fadd_rn(diff2[i][j], __fmul_rn(weight, diff_abs2));
+                }
+            }
+        }
+        __syncthreads();
+    }
+    const float safe_scale = fmaxf(batch_scale, 1.0e-30f);
+#pragma unroll
+    for (int i = 0; i < kWavgTiledRowsPerThread; ++i) {
+        const int local_row = row_lane + i * kWavgTiledRowLanes;
+        const int32_t live = shared_live[local_row];
+        if (live == 0) continue;
+        const int64_t row = row_base + local_row;
+#pragma unroll
+        for (int j = 0; j < kWavgTiledPixelsPerThread; ++j) {
+            const int64_t pixel = pixel_base + pixel_lane + j * kWavgTiledPixelLanes;
+            const int64_t output_base = (row * pixel_capacity + pixel) * 3;
+            if (live < 0) {
+                if (pixel < pixel_capacity) {
+                    output[output_base] = nanf("");
+                    output[output_base + 1] = nanf("");
+                    output[output_base + 2] = nanf("");
+                }
+                continue;
+            }
+            if (pixel >= logical_pixel_count) continue;
+            output[output_base] = __fmul_rn(xa_raw[i][j], __frcp_rn(safe_scale));
+            output[output_base + 1] = __fmul_rn(aa_raw[i][j], __frcp_rn(__fmul_rn(safe_scale, safe_scale)));
+            output[output_base + 2] = diff2[i][j];
+        }
+    }
+}
+
+// A one-image launch with at least this many rows takes the tiled kernel (as the translate-sum's shifted table).
+constexpr int64_t kWavgTiledMinRows = 64;
+
 cudaError_t launch_relion_wavg_sequential_runtime_flat_rows_triplet_f32(
     cudaStream_t stream,
     const float2* projections,
@@ -1815,6 +1972,22 @@ cudaError_t launch_relion_wavg_sequential_runtime_flat_rows_triplet_f32(
         static_cast<size_t>(output_count) * 3 * sizeof(float),
         stream);
     if (err != cudaSuccess) return err;
+    if (batch_size == 1 && row_count >= kWavgTiledMinRows) {
+        int32_t* active = nullptr;
+        err = relax_tiled_translations::list_row_tile_translations(
+            stream, row_image_ids, posterior, nullptr, row_count, translation_count, &active);
+        if (err != cudaSuccess) return err;
+        const int64_t tiles = (row_count + relax_tiled_translations::kTiledRows - 1) / relax_tiled_translations::kTiledRows;
+        const dim3 grid(
+            static_cast<unsigned>(tiles),
+            static_cast<unsigned>((pixel_capacity + kWavgTiledPixels - 1) / kWavgTiledPixels));
+        relion_wavg_tiled_one_image_triplet_f32_kernel<<<grid, kWavgThreads, 0, stream>>>(
+            projections, raw_ctf, scale, shifted_images, posterior, active, active + tiles * translation_count, output,
+            translation_count, pixel_capacity, runtime_logical_pixel_count, row_image_ids, row_count);
+        err = cudaGetLastError();
+        const cudaError_t free_err = cudaFreeAsync(active, stream);
+        return err != cudaSuccess ? err : free_err;
+    }
     const WavgTripletLaunch geometry =
         wavg_triplet_launch(row_count, pixel_capacity, translation_count);
     relion_wavg_sequential_runtime_triplet_f32_kernel<false, true><<<

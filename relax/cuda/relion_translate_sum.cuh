@@ -441,6 +441,173 @@ translate_shifted_table_f32_kernel(
         make_float4(recon.x, recon.y, noise.x, noise.y);
 }
 
+// Tiled table sum (relax#98).  When every row of a launch reads one image (a lone
+// particle's M-step block), a block owns kTiledRows rows by kTiledPixels pixels
+// and stages, kTiledTranslations translations at a time, the rows' posterior and
+// the image's table entries in shared memory, so each table load serves
+// kTiledRows rows instead of kShiftedTableRowsPerBlock.  Every output is the same
+// sequence of rounded operations as the row kernel's: a rounded multiply and a
+// rounded add per translation with a nonzero weight, in increasing translation
+// order, from a zero accumulator; the mass is the same sequential sum.
+constexpr int kTiledRows = relax_tiled_translations::kTiledRows;
+constexpr int kTiledPixels = 64;
+constexpr int kTiledTranslations = 32;
+constexpr int kTiledPixelLanes = 16;                       // threads along the pixels
+constexpr int kTiledRowLanes = kBlockThreads / kTiledPixelLanes;  // 16 along the rows
+constexpr int kTiledRowsPerThread = kTiledRows / kTiledRowLanes;  // 2
+constexpr int kTiledPixelsPerThread = kTiledPixels / kTiledPixelLanes;  // 4
+
+__global__ void __launch_bounds__(kBlockThreads)
+translate_sum_tiled_table_f32_kernel(
+    const float4* __restrict__ shifted_table,        // [1, T, P] (recon, noise)
+    const int32_t* __restrict__ active_lists,        // [row tiles, T]
+    const int32_t* __restrict__ active_counts,       // [row tiles]
+    const float* __restrict__ ctf2_over_nv,          // [1, P] or null
+    const int32_t* __restrict__ row_image_ids,       // [Q]: 0, or negative for padding
+    const float* __restrict__ posterior,             // [Q, T]
+    const int32_t* __restrict__ runtime_valid_rows,  // scalar or null
+    const int32_t* __restrict__ runtime_logical_pixels,  // scalar or null
+    float2* __restrict__ summed,                     // [Q, P]
+    float2* __restrict__ summed_masked,              // [Q, P]
+    float* __restrict__ probs_sum_t,                 // [Q]
+    float* __restrict__ ctf_probs,                   // [Q, P] or null
+    int64_t row_count,
+    int64_t translation_count,
+    int64_t pixel_capacity)
+{
+    const int64_t row_base = static_cast<int64_t>(blockIdx.x) * kTiledRows;
+    const int64_t pixel_base = static_cast<int64_t>(blockIdx.y) * kTiledPixels;
+    const int64_t valid_rows = runtime_valid_rows == nullptr
+        ? row_count
+        : static_cast<int64_t>(runtime_valid_rows[0]);
+    const int64_t logical_pixels = runtime_logical_pixels == nullptr
+        ? pixel_capacity
+        : static_cast<int64_t>(runtime_logical_pixels[0]);
+    if (valid_rows < 0 || valid_rows > row_count ||
+        logical_pixels < 0 || logical_pixels > pixel_capacity) {
+        if (blockIdx.x == 0 && blockIdx.y == 0 && threadIdx.x == 0) {
+            summed[0] = make_float2(nanf(""), nanf(""));
+            summed_masked[0] = make_float2(nanf(""), nanf(""));
+            probs_sum_t[0] = nanf("");
+        }
+        return;
+    }
+    if (row_base >= valid_rows) return;
+
+    __shared__ float shared_weight[kTiledTranslations][kTiledRows + 1];
+    __shared__ float4 shared_value[kTiledTranslations][kTiledPixels];
+    __shared__ int32_t shared_live[kTiledRows];
+    __shared__ float shared_mass[kTiledRows];
+    // The translations with a nonzero weight in any of the block's rows, in increasing order (dynamic): the others
+    // add nothing to any sum, as in the row kernel.
+    extern __shared__ int32_t tiled_active[];
+    __shared__ int32_t tiled_active_count;
+
+    // A row with image 0 is live; a negative id is padding (zeros); any other id is out of range for a one-image
+    // table and fails closed, as the row kernel does for an id past the batch.
+    if (threadIdx.x < kTiledRows) {
+        const int64_t row = row_base + threadIdx.x;
+        int32_t live = 0;
+        if (row < valid_rows) {
+            const int32_t id = row_image_ids[row];
+            live = id == 0 ? 1 : (id > 0 ? -1 : 0);
+        }
+        shared_live[threadIdx.x] = live;
+    }
+    __syncthreads();
+    // The row tile's active translations (relax_tiled_translations::row_tile_active_translations_kernel), staged in shared memory.
+    const int64_t tile_active_count = active_counts[blockIdx.x];
+    for (int64_t index = threadIdx.x; index < tile_active_count; index += kBlockThreads)
+        tiled_active[index] = active_lists[static_cast<int64_t>(blockIdx.x) * translation_count + index];
+    if (threadIdx.x == 0) tiled_active_count = static_cast<int32_t>(tile_active_count);
+    __syncthreads();
+    const int64_t active_count = tiled_active_count;
+
+    const int pixel_lane = threadIdx.x % kTiledPixelLanes;
+    const int row_lane = threadIdx.x / kTiledPixelLanes;
+    float4 acc[kTiledRowsPerThread][kTiledPixelsPerThread];
+#pragma unroll
+    for (int i = 0; i < kTiledRowsPerThread; ++i)
+#pragma unroll
+        for (int j = 0; j < kTiledPixelsPerThread; ++j) acc[i][j] = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
+    // The mass of a row: lanes 0..kTiledRows-1 of the first pixel tile sum their row sequentially.
+    float mass = 0.0f;
+
+    for (int64_t first = 0; first < active_count; first += kTiledTranslations) {
+        const int count = active_count - first < kTiledTranslations
+            ? static_cast<int>(active_count - first)
+            : kTiledTranslations;
+        for (int index = threadIdx.x; index < kTiledTranslations * kTiledRows; index += kBlockThreads) {
+            const int t = index / kTiledRows;
+            const int i = index - t * kTiledRows;
+            const int64_t row = row_base + i;
+            shared_weight[t][i] = (t < count && shared_live[i] == 1)
+                ? posterior[row * translation_count + tiled_active[first + t]]
+                : 0.0f;
+        }
+        for (int index = threadIdx.x; index < kTiledTranslations * kTiledPixels; index += kBlockThreads) {
+            const int t = index / kTiledPixels;
+            const int j = index - t * kTiledPixels;
+            const int64_t pixel = pixel_base + j;
+            shared_value[t][j] = (t < count && pixel < pixel_capacity)
+                ? shifted_table[static_cast<int64_t>(tiled_active[first + t]) * pixel_capacity + pixel]
+                : make_float4(0.0f, 0.0f, 0.0f, 0.0f);
+        }
+        __syncthreads();
+        if (threadIdx.x < kTiledRows && shared_live[threadIdx.x] == 1) {
+            for (int t = 0; t < count; ++t) mass = __fadd_rn(mass, shared_weight[t][threadIdx.x]);
+        }
+        for (int t = 0; t < count; ++t) {
+#pragma unroll
+            for (int i = 0; i < kTiledRowsPerThread; ++i) {
+                const float weight = shared_weight[t][row_lane + i * kTiledRowLanes];
+                if (weight == 0.0f) continue;
+#pragma unroll
+                for (int j = 0; j < kTiledPixelsPerThread; ++j) {
+                    const float4 value = shared_value[t][pixel_lane + j * kTiledPixelLanes];
+                    acc[i][j].x = __fadd_rn(acc[i][j].x, __fmul_rn(weight, value.x));
+                    acc[i][j].y = __fadd_rn(acc[i][j].y, __fmul_rn(weight, value.y));
+                    acc[i][j].z = __fadd_rn(acc[i][j].z, __fmul_rn(weight, value.z));
+                    acc[i][j].w = __fadd_rn(acc[i][j].w, __fmul_rn(weight, value.w));
+                }
+            }
+        }
+        __syncthreads();
+    }
+    if (threadIdx.x < kTiledRows) {
+        shared_mass[threadIdx.x] = mass;
+        if (blockIdx.y == 0 && shared_live[threadIdx.x] == 1) probs_sum_t[row_base + threadIdx.x] = mass;
+    }
+    __syncthreads();
+#pragma unroll
+    for (int i = 0; i < kTiledRowsPerThread; ++i) {
+        const int local_row = row_lane + i * kTiledRowLanes;
+        const int64_t row = row_base + local_row;
+        const int32_t live = shared_live[local_row];
+        if (live == 0) continue;
+#pragma unroll
+        for (int j = 0; j < kTiledPixelsPerThread; ++j) {
+            const int64_t pixel = pixel_base + pixel_lane + j * kTiledPixelLanes;
+            if (live < 0) {
+                if (pixel < pixel_capacity) {
+                    summed[row * pixel_capacity + pixel] = make_float2(nanf(""), nanf(""));
+                    summed_masked[row * pixel_capacity + pixel] = make_float2(nanf(""), nanf(""));
+                }
+                continue;
+            }
+            if (pixel >= logical_pixels) continue;
+            const int64_t base = row * pixel_capacity + pixel;
+            summed[base] = make_float2(acc[i][j].x, acc[i][j].y);
+            summed_masked[base] = make_float2(acc[i][j].z, acc[i][j].w);
+            if (ctf_probs != nullptr) {
+                const float row_mass = shared_mass[local_row];
+                ctf_probs[base] = row_mass != 0.0f ? __fmul_rn(row_mass, ctf2_over_nv[pixel]) : 0.0f;
+            }
+        }
+    }
+    if (blockIdx.y == 0 && threadIdx.x < kTiledRows && shared_live[threadIdx.x] < 0) probs_sum_t[row_base + threadIdx.x] = nanf("");
+}
+
 // The shifted table pays when many rows read each image's entries: one row
 // block of a lone particle is hundreds of rows of one image.  It is bounded by
 // kMaxShiftedTableBytes of stream-ordered scratch.
@@ -702,6 +869,29 @@ inline cudaError_t launch(
                 translation_count, pixel_capacity, image_h, image_half_width, angle_image_stride);
         err = cudaGetLastError();
         if (err != cudaSuccess) return err;
+        if (batch_size == 1) {
+            // One image: the tiled sum (translate_sum_tiled_table_f32_kernel) over each row tile's active
+            // translations (relax_tiled_translations::row_tile_active_translations_kernel).
+            const int64_t tiles = (row_count + kTiledRows - 1) / kTiledRows;
+            int32_t* active = nullptr;
+            err = relax_tiled_translations::list_row_tile_translations(
+                stream, row_image_ids, posterior, runtime_valid_rows, row_count, translation_count, &active);
+            if (err == cudaSuccess) {
+                const dim3 grid(
+                    static_cast<unsigned>(tiles),
+                    static_cast<unsigned>((pixel_capacity + kTiledPixels - 1) / kTiledPixels));
+                translate_sum_tiled_table_f32_kernel<<<
+                    grid, kBlockThreads, static_cast<size_t>(translation_count) * sizeof(int32_t), stream>>>(
+                    shifted_table, active, active + tiles * translation_count, ctf2_over_nv, row_image_ids,
+                    posterior, runtime_valid_rows, runtime_logical_pixels, summed, summed_masked, probs_sum_t,
+                    ctf_probs, row_count, translation_count, pixel_capacity);
+                err = cudaGetLastError();
+                const cudaError_t active_err = cudaFreeAsync(active, stream);
+                if (err == cudaSuccess) err = active_err;
+            }
+            const cudaError_t free_err = cudaFreeAsync(shifted_table, stream);
+            return err != cudaSuccess ? err : free_err;
+        }
         err = dispatch_sum<true>(
             stream, shifted_table, rows, recon_image, noise_image, recon_weight, ctf2_over_nv, row_image_ids,
             posterior, translation_angles, pixel_indices, runtime_valid_rows, runtime_logical_pixels, summed,

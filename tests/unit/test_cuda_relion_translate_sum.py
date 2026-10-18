@@ -987,3 +987,45 @@ def test_translate_sum_matches_a_float64_reduction_at_a_subtomogram_grid(
         ),
     ]
     print(f"T={n_trans} bpref={bpref}: max ulp of the summation scale {max(entry[0] for entry in worst)}")
+
+
+@pytest.mark.gpu
+@pytest.mark.parametrize("support", ["independent", "shared"])
+@pytest.mark.parametrize("bpref", [False, True], ids=["score", "bpref"])
+def test_one_image_table_launch_is_the_inline_launch(monkeypatch, custom_cuda_lib, gpu_device, support, bpref):
+    """A launch whose rows all read one image, at least 64 of them, takes the tiled table sum (relax#98).
+
+    A block stages 32 rows' weights and the table entries of their translations with weight, and adds every
+    nonzero term in increasing translation order, as the row kernel does: each row of a 150-row launch over one
+    image must get the result of the same rows run 40 at a time (no table), all four outputs, with padding rows,
+    rows past the valid count, a pixel tail inside a 64-pixel tile and sparse posteriors (each row its own
+    support, or one support shared by the rows).
+    """
+
+    cuda_backproject = _cuda_backproject(monkeypatch, custom_cuda_lib)
+    rng = np.random.default_rng(9899)
+    n_trans, rows, n_valid_rows = 70, 150, 147
+    operands = _operands(rng, rows=rows, image_capacity=1, n_trans=n_trans, n_pixels=600)
+    ids = np.zeros(rows, dtype=np.int32)
+    ids[[5, 90]] = -1
+    posterior = np.asarray(operands["posterior"]).copy()
+    if support == "independent":
+        posterior[rng.random(posterior.shape) < 0.7] = 0.0
+    else:
+        posterior[:, rng.random(n_trans) < 0.7] = 0.0
+    angles = (-2.0 * np.pi * rng.uniform(-4.0, 4.0, size=(1, n_trans, 2)) / float(IMAGE_SHAPE[0])).astype(np.float32)
+    operands = dict(operands, row_image_ids=ids, posterior=posterior, translation_angles=angles)
+    tiled = _kernel(
+        cuda_backproject, operands, n_valid_rows=n_valid_rows, logical_pixels=555, bpref=bpref, with_ctf=True
+    )
+    inline = [[] for _ in tiled]
+    for start in range(0, rows, 40):
+        part = dict(operands, row_image_ids=ids[start : start + 40], posterior=posterior[start : start + 40])
+        outputs = _kernel(
+            cuda_backproject, part, n_valid_rows=min(40, max(n_valid_rows - start, 0)), logical_pixels=555,
+            bpref=bpref, with_ctf=True,
+        )
+        for parts, output in zip(inline, outputs):
+            parts.append(np.asarray(output))
+    for got, want in zip(tiled, inline):
+        _assert_matches(np.asarray(got), np.concatenate(want))
