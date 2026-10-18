@@ -1,16 +1,16 @@
 """What a run replayed from RELION, as keys of its refinement archive (code rule 15).
 
 The command adds them to the archive metadata (``relax.refinement.result_files.build_archive_metadata``,
-``replay_provenance``): a frozen boundary, a state-swap probe and
-the follower-scale replay and dispatch capture of an MPI RELION run. A run that replays nothing writes the
-same keys with their empty values (the last two groups only when present).
+``replay_provenance``): a frozen boundary, a state-swap probe and the dispatch capture of an MPI RELION run.
+A run that replays nothing writes the same keys with their empty values (the dispatch capture only when
+present).
 """
 
 import numpy as np
 
 
 def replay_archive_metadata(
-    *, frozen_boundary, state_swap_probe, state_swap_probe_applied_relion_iterations, follower_replay,
+    *, frozen_boundary, state_swap_probe, state_swap_probe_applied_relion_iterations,
     relion_dispatch_schedule,
 ) -> dict:
     """The archive keys of a run's replay provenance, in their stored order."""
@@ -58,23 +58,6 @@ def replay_archive_metadata(
             dtype=np.str_,
         ),
     }
-    if follower_replay is not None:
-        save_dict["relion_follower_scale_replay_iterations"] = np.asarray(
-            follower_replay.relion_iterations,
-            dtype=np.int64,
-        )
-        save_dict["relion_follower_scale_replay_source"] = np.asarray(
-            follower_replay.source
-        )
-        save_dict["relion_follower_scale_replay_oracle_id"] = np.asarray(
-            follower_replay.oracle_id
-        )
-        save_dict["relion_follower_scale_replay_boundary"] = np.asarray(
-            follower_replay.boundary
-        )
-        save_dict["relion_follower_scale_replay_source_artifacts"] = np.asarray(
-            follower_replay.source_artifact_relative_paths
-        )
     if relion_dispatch_schedule is not None:
         save_dict["relion_dispatch_oracle_id"] = np.asarray(
             relion_dispatch_schedule.oracle_id

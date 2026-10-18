@@ -327,7 +327,6 @@
   "field-test-only:relax.fine_pass.bucket_io:UnshiftedBucketOperands.relion_cuda_preprocess",
   "field-test-only:relax.fine_pass.window:_Pass2WindowSetup.budget_window_spec",
   "field-test-only:relax.fourier.fourier_window:StableFourierWindowShapePlan.logical_reconstruction_current_size",
-  "field-test-only:relax.parity.frozen_boundary_cli:BoundaryInputs.source_paths",
   "field-test-only:relax.ppca_refinement.config:ScheduleConfig.local_image_shard_count",
   "field-test-only:relax.ppca_refinement.engine:DenseScoreAndMomentsStats.score_offset",
   "field-test-only:relax.ppca_refinement.state:PoseMarginalPPCAEMState.schedule_state",

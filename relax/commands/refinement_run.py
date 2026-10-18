@@ -390,7 +390,8 @@ def main(command=None):
             args.healpix_order,
         )
 
-    frozen_boundary, fixed_diagnostic_source_paths = frozen_boundary_cli.load_cli_boundary(args, job=job)
+    boundary_inputs = frozen_boundary_cli.load_cli_boundary(args, job=job)
+    frozen_boundary, fixed_diagnostic_source_paths = boundary_inputs.boundary, boundary_inputs.source_paths
 
     refinement_arguments.validate_skip_align_args(args)
     if args.continue_optimiser_star is not None:
@@ -1370,7 +1371,6 @@ def main(command=None):
             frozen_boundary=frozen_boundary,
             state_swap_probe=state_swap_probe,
             state_swap_probe_applied_relion_iterations=result.history.state_swap_probe_applied_relion_iterations,
-            follower_replay=follower_topology.replay,
             relion_dispatch_schedule=relion_dispatch_schedule,
         ),
         symmetry_provenance=symmetry_provenance,

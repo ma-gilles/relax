@@ -430,16 +430,6 @@ class _ClassIteration:
         return False
 
 
-def _follower_replay_telemetry(source, history) -> refinement_result.ReplayTelemetry:
-    """The follower-scale replay's requested and applied iterations (both None without a replay), validated
-    against the iterations the run applied; raises if the replay was not applied as requested."""
-
-    requested, applied = follower_scale.finalize_relion_follower_scale_replay_telemetry(
-        source, applied_iterations=history.relion_follower_scale_replay_applied_iterations, logger=logger,
-    )
-    return refinement_result.ReplayTelemetry(requested_iterations=requested, applied_iterations=applied)
-
-
 def refine_single_volume(
     experiment_datasets: list[cryoem_dataset.CryoEMDataset],
     startup: startup_references.StartupHandoff,
@@ -577,8 +567,6 @@ def refine_single_volume(
     )
 
     follower_setup = mode.follower_scale_setup(options, source, halves, experiment_datasets)
-    # The replayed run's follower-scale replay (None without one).
-    follower_scale_replay = None if source.follower_topology is None else source.follower_topology.replay
 
     if resume is None:
         # --- A fresh run starts from the caller's references, noise and replayed particle state ---
@@ -742,7 +730,7 @@ def refine_single_volume(
         if follower_setup.follower_scale_state is not None:
             follower_scale.dispatch_relion_follower_scale_for_numbered_iteration(
                 follower_setup, history, iteration=iteration, numbered_relion_iteration=numbered_relion_iteration,
-                relion_half_inputs=halves, relion_follower_scale_replay_source=follower_scale_replay,
+                relion_half_inputs=halves,
                 dtype=ctx.scoring_dtype, logger=logger,
             )
 
@@ -1312,13 +1300,12 @@ def refine_single_volume(
         # Local search is K=1 (Class3D was rejected above), so there are no class products.
         return refinement_result.RefinementResult(
             maps=finalization.numbered_k1_maps(reference_model.maps),
-            replay=_follower_replay_telemetry(follower_scale_replay, history), follower_scale=None,
+            follower_scale=None,
             convergence_state=carry.state, numbered=numbered, history=history, profile_stop=profile_stop,
         )
     if not mode.final_pass_due(carry.state, options, iteration):
         return refinement_result.RefinementResult(
             maps=mode.numbered_maps(reference_model, carry),
-            replay=_follower_replay_telemetry(follower_scale_replay, history),
             follower_scale=follower_setup.result_outputs(history), convergence_state=carry.state, numbered=numbered,
             history=history,
         )
@@ -1351,7 +1338,7 @@ def refine_single_volume(
         follower_setup=follower_setup, expected_accuracy_inputs=expected_accuracy_inputs,
         final_join_means=final_join_means, final_use_local=final_use_local, source=source, iteration=iteration,
     )
-    return replace(final_result, numbered=numbered, replay=_follower_replay_telemetry(follower_scale_replay, history))
+    return replace(final_result, numbered=numbered)
 
 ### THIS FILE SHOULD BE MUCH SHORTER - REMOVE UN-NECESSARY IF STATEMENTS/RELION THINGS THAT DONT MATTER/ WE DONT USE
 ## MOVE THINGS AWAY TO DIFFERNET FILE E.G. I/O PERHAPS. IT SHOULD BE EASY TO UDNERSTAND WHERE THE MAIN ENGINE OF ITER IS GOING, WHAT ARE THE MAIN STEPS (E-M ACCUMULATION) POSTPROCESSING, NOISE UPDATING, ETC

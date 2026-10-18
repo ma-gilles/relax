@@ -282,7 +282,7 @@ class RelionReplay:
     ``preserve_initial_direction_prior``: the run keeps its start-up direction priors (a frozen boundary's) instead
     of reloading them from the STAR replay's model files.
     ``follower_topology``: an MPI RELION run's followers, its captured dispatch schedule (which follower scored
-    which particle in each iteration, ``--relion-dispatch-schedule``) and follower-scale replay
+    which particle in each iteration, ``--relion-dispatch-schedule``)
     (``relax.refinement.follower_scale.PreparedFollowerTopology``; None or no followers: none).
     """
 
@@ -376,8 +376,7 @@ class RelionReplay:
         """Whether there is anything to replay: RELION state (``replays_relion_state``) or a follower topology
         (followers or a captured dispatch schedule), which emulates RELION's MPI layout on relax's own state."""
         return self.replays_relion_state or (
-            self.follower_topology is not None
-            and (int(self.follower_topology.n_followers or 0) > 0 or self.follower_topology.replay is not None)
+            self.follower_topology is not None and int(self.follower_topology.n_followers or 0) > 0
         )
 
 

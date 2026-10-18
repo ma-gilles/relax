@@ -18,7 +18,6 @@ from relax.refinement.refinement_result import (
     ModelMaps,
     ProfileStop,
     RefinementResult,
-    ReplayTelemetry,
 )
 
 pytestmark = pytest.mark.unit
@@ -40,7 +39,6 @@ def _records():
         class_weights=np.array([0.5, 0.5]), class_assignments=[np.zeros(2), np.ones(2)],
         unfiltered_means=[np.full(4, 2.0), np.full(4, 3.0)],
     )
-    replay = ReplayTelemetry(requested_iterations=np.array([2]), applied_iterations=np.array([2]))
     follower = FollowerScaleOutputs(
         follower_scales=np.ones(3), rank1_serialized=np.ones(2), follower_owners_half1=np.zeros(2, np.int64),
         follower_owners_half1_trajectory=np.zeros((1, 2), np.int64),
@@ -50,20 +48,13 @@ def _records():
     numbered = numbered_metadata(
         hard_assignments=[np.zeros(2), np.zeros(2)], setup_phase_seconds={"state_init": 0.5},
     )
-    return maps, replay, follower, numbered
+    return maps, follower, numbered
 
 
 def _model(maps):
     return {
         "mean": maps.mean, "means": maps.means, "class_means": maps.class_means,
         "class_weights": maps.class_weights, "class_assignments": maps.class_assignments,
-    }
-
-
-def _replay(replay):
-    return {
-        "relion_follower_scale_replay_requested_iterations": replay.requested_iterations,
-        "relion_follower_scale_replay_applied_iterations": replay.applied_iterations,
     }
 
 
@@ -103,14 +94,14 @@ def _assert_same_mapping(got, expected):
 
 
 def test_numbered_return_without_final_pass():
-    maps, replay, follower, numbered = _records()
+    maps, follower, numbered = _records()
     history, state = _history(), object()
     result = RefinementResult(
-        maps=maps, convergence_state=state, history=history, replay=replay, follower_scale=follower,
+        maps=maps, convergence_state=state, history=history, follower_scale=follower,
         numbered=numbered,
     )
     expected = {
-        **_model(maps), **_replay(replay), **_follower(follower), "convergence_state": state,
+        **_model(maps), **_follower(follower), "convergence_state": state,
         **_numbered(numbered), "final_all_data_ran": False, **history.to_dict(),
     }
     fields = result.archive_fields()
@@ -122,15 +113,15 @@ def test_numbered_return_without_final_pass():
 
 
 def test_profile_stop_reports_the_stopped_iteration_in_place():
-    maps, replay, _, numbered = _records()
+    maps, _, numbered = _records()
     history, state = _history(), object()
     counts = np.arange(6)
     result = RefinementResult(
-        maps=maps, convergence_state=state, history=history, replay=replay, follower_scale=None,
+        maps=maps, convergence_state=state, history=history, follower_scale=None,
         numbered=numbered, profile_stop=ProfileStop(score_only=True, wall_seconds=7.5, significant_count=counts),
     )
     expected = {
-        "profile_only": True, **_model(maps), **_replay(replay), "convergence_state": state,
+        "profile_only": True, **_model(maps), "convergence_state": state,
         **_numbered(numbered), "final_all_data_ran": False, "stop_after_local_search_score_only": True,
         **history.to_dict(), "wall_times": [7.5], "significant_counts": [counts],
     }
@@ -157,15 +148,15 @@ def _final_pass():
 
 @pytest.mark.parametrize("with_numbered", [False, True])
 def test_final_pass_return(with_numbered):
-    maps, replay, follower, numbered = _records()
+    maps, follower, numbered = _records()
     numbered = numbered if with_numbered else None
     history, state, final_pass = _history(), object(), _final_pass()
     result = RefinementResult(
-        maps=maps, convergence_state=state, history=history, replay=replay, follower_scale=follower,
+        maps=maps, convergence_state=state, history=history, follower_scale=follower,
         numbered=numbered, final_pass=final_pass,
     )
     expected = {
-        **_model(maps), "unfiltered_means": maps.unfiltered_means, **_replay(replay), **_follower(follower),
+        **_model(maps), "unfiltered_means": maps.unfiltered_means, **_follower(follower),
         "convergence_state": state, **history.to_dict(),
         "final_all_data_ran": True,
         "final_all_data_pass2_engines": final_pass.pass2_engines,

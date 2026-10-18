@@ -33,8 +33,6 @@ follower topology and dispatches these updates.
 
 from __future__ import annotations
 
-import os
-import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -252,42 +250,3 @@ def relion_rank1_serialized_scales(state: RelionFollowerScaleState) -> np.ndarra
     """Return a copy of the scale vector written by RELION MPI follower 1."""
 
     return np.asarray(state.scales[0], dtype=np.float64).copy()
-
-
-def validate_coupled_relion_restart_state(
-    perturb_restart_state_iterations,
-    follower_replay_by_iteration,
-    follower_replay_source_artifacts,
-) -> None:
-    """Fail closed when a strict Class3D continuation restores partial state."""
-    restart_numbered_iterations = {
-        int(saved_state_iteration) + 1
-        for saved_state_iteration in perturb_restart_state_iterations
-    }
-    follower_replay_numbered_iterations = {
-        int(relion_iteration) for relion_iteration in follower_replay_by_iteration
-    }
-    missing_follower_restarts = sorted(
-        restart_numbered_iterations - follower_replay_numbered_iterations
-    )
-    if missing_follower_restarts:
-        raise ValueError(
-            "RELION perturbation restart boundaries require matching follower-scale "
-            "replay at numbered_pre_score; missing numbered iterations "
-            f"{missing_follower_restarts}"
-        )
-
-    model_source_restart_iterations = set()
-    for source_path in follower_replay_source_artifacts:
-        match = re.fullmatch(r"run_it(\d+)_model\.star", os.path.basename(str(source_path)))
-        if match is not None:
-            model_source_restart_iterations.add(int(match.group(1)) + 1)
-    unmatched_model_restarts = sorted(
-        model_source_restart_iterations - restart_numbered_iterations
-    )
-    if unmatched_model_restarts:
-        raise ValueError(
-            "RELION follower-scale replay loaded from continuation model state requires "
-            "a matching perturbation restart boundary; unmatched numbered iterations "
-            f"{unmatched_model_restarts}"
-        )

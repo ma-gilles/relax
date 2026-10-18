@@ -633,7 +633,6 @@ def _validate_fixed_diagnostic_arm_cli(args) -> None:
 
     forbidden_options = {
         "relion_dispatch_schedule",
-        "relion_follower_scale_replay",
         "init_class_volumes",
         "init_volume",
         "init_noise_from_npz",

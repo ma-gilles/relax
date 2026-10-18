@@ -269,7 +269,6 @@ def test_runtime_controls_preserve_legacy_saved_cap_and_missing_gradient_failure
 def test_follower_routing_hands_the_admitted_capture_and_its_oracle_to_the_topology(dispatch_inputs, monkeypatch):
     args, particles, oracle = dispatch_inputs
     args.relion_scale_followers = None
-    args.relion_follower_scale_replay = None
     args.seed = 9
     args.init_relion_iteration = 0
     args.max_iter = 1

@@ -297,16 +297,6 @@ def parse_refinement_args(argv=None):
         ),
     )
     parser.add_argument(
-        "--relion-follower-scale-replay",
-        default=None,
-        help=(
-            "Diagnostic NPZ containing complete follower-scale matrices at selected "
-            "numbered RELION iterations. Requires strict K>1 follower topology and "
-            "a matching captured dispatch schedule. The first numbered iteration is "
-            "rejected because its resident image-normalization state does not yet exist."
-        ),
-    )
-    parser.add_argument(
         "--init_relion_iteration",
         type=int,
         default=0,

@@ -1,10 +1,10 @@
 """Strict RELION MPI-follower topology and the controller's follower-scale dispatch.
 
 ``prepare_follower_topology`` admits the follower topology at the command edge (MPI admission, the
-captured dispatch schedule, follower-scale replay, numbered particle ownership);
+captured dispatch schedule, numbered particle ownership);
 ``setup_relion_follower_scale_state`` and the ``dispatch_*`` functions give the iteration loop its setup,
 per-iteration and final dispatch and correction update. The scale state and its RELION reduction are
-``relax.refinement.follower_scale_state``; the dispatch-schedule and replay artifacts are
+``relax.refinement.follower_scale_state``; the dispatch-schedule artifacts are
 ``relax.refinement.follower_oracles``.
 """
 
@@ -17,13 +17,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from relax.refinement.follower_oracles import (
-    RelionDispatchSchedule,
-    RelionFollowerScaleReplay,
-    load_relion_follower_scale_replay,
-    validate_relion_follower_scale_replay,
-    validate_relion_follower_scale_replay_application,
-)
+from relax.refinement.follower_oracles import RelionDispatchSchedule
 from relax.refinement.follower_scale_state import (
     RELION_SCALE_REDUCTION_MODES,
     RelionFollowerScaleState,
@@ -33,7 +27,6 @@ from relax.refinement.follower_scale_state import (
     relion_worker_group_ids,
     select_relion_follower_scales,
     update_relion_follower_scales,
-    validate_coupled_relion_restart_state,
     validate_relion_follower_scale_start,
 )
 from relax.refinement.iteration_history import RefinementHistory
@@ -43,33 +36,6 @@ if TYPE_CHECKING:
     from relax.refinement.refinement_options import RefinementOptions
 
 logger = logging.getLogger(__name__)
-
-
-def finalize_relion_follower_scale_replay_telemetry(
-    replay: RelionFollowerScaleReplay | None,
-    *,
-    applied_iterations,
-    logger,
-) -> tuple[np.ndarray | None, np.ndarray | None]:
-    """Validate replay accounting before a result is returned, then log success.
-
-    Disabled replay yields two absent telemetry fields. Incomplete or repeated
-    applications raise before logging; successful arrays are independent copies.
-    The controller supplies its logger and the history of applied iterations.
-    """
-    if replay is None:
-        return None, None
-    requested, applied = validate_relion_follower_scale_replay_application(
-        replay,
-        applied_iterations=applied_iterations,
-    )
-    logger.info(
-        "Diagnostic RELION follower-scale replay complete: source=%s requested=%s applied=%s",
-        replay.source,
-        requested.tolist(),
-        applied.tolist(),
-    )
-    return requested, applied
 
 
 def relion_class3d_follower_owners_from_schedule(
@@ -108,10 +74,9 @@ def relion_class3d_follower_owners_from_schedule(
 
 @dataclass(frozen=True, eq=False)
 class PreparedFollowerTopology:
-    """Resolved MPI topology, replay and per-iteration particle ownership."""
+    """Resolved MPI topology and per-iteration particle ownership."""
 
     n_followers: int
-    replay: RelionFollowerScaleReplay | None
     reduction_mode: str | None
     owners_by_iteration: dict[int, list[np.ndarray]] | None
 
@@ -122,7 +87,6 @@ def prepare_follower_topology(
     group_layout,
     *,
     strict_replay,
-    replay_path,
     oracle_dir,
     random_seed,
     init_relion_iteration,
@@ -177,40 +141,6 @@ def prepare_follower_topology(
             "Strict RELION follower-scale emulation cannot cold-start after iteration 0 from "
             "a leader-serialized STAR; rerun from iteration 0 (full follower-scale checkpoint "
             "input is not implemented)"
-        )
-    relion_follower_scale_replay = None
-    if replay_path is not None:
-        if not strict_replay or relion_scale_followers < 1:
-            raise SystemExit(
-                "--relion-follower-scale-replay requires strict K>1 RELION follower topology"
-            )
-        try:
-            relion_follower_scale_replay = load_relion_follower_scale_replay(
-                replay_path
-            )
-            validate_relion_follower_scale_replay(
-                relion_follower_scale_replay,
-                n_followers=relion_scale_followers,
-                n_groups=group_layout.n_groups,
-                schedule_iterations=schedule.relion_iterations,
-                schedule_oracle_id=schedule.oracle_id,
-                schedule_artifact_paths=schedule.oracle_artifact_paths,
-                oracle_dir=oracle_dir,
-                numbered_iterations=range(
-                    int(init_relion_iteration) + 1,
-                    int(init_relion_iteration) + int(max_iter) + 1,
-                ),
-                first_numbered_iteration=int(init_relion_iteration) + 1,
-            )
-        except (OSError, ValueError) as exc:
-            raise SystemExit(f"Invalid --relion-follower-scale-replay: {exc}") from exc
-        logger.info(
-            "Diagnostic RELION follower-scale replay: source=%s oracle_id=%s "
-            "iterations=%s shape=%s",
-            relion_follower_scale_replay.source,
-            relion_follower_scale_replay.oracle_id,
-            relion_follower_scale_replay.relion_iterations.tolist(),
-            relion_follower_scale_replay.follower_scales.shape,
         )
     if group_layout is not None:
         logger.info(
@@ -290,7 +220,6 @@ def prepare_follower_topology(
             )
     return PreparedFollowerTopology(
         n_followers=relion_scale_followers,
-        replay=relion_follower_scale_replay,
         reduction_mode=relion_scale_reduction_mode,
         owners_by_iteration=relion_scale_follower_owners_by_iteration,
     )
@@ -312,7 +241,6 @@ class RelionFollowerScaleSetup:
     follower_scale_state: RelionFollowerScaleState | None
     follower_owners_per_half: list
     follower_owners_by_iteration: dict | None
-    follower_scale_replay_by_iteration: dict = field(default_factory=dict)
     scale_stats_group_ids_per_half: list = field(default_factory=list)
     scale_stats_group_count_per_half: list = field(default_factory=list)
     physical_group_count: int = 0
@@ -413,7 +341,6 @@ def setup_relion_follower_scale_state(
     follower_scale_state = None
     follower_owners_per_half = [None, None]
     follower_owners_by_iteration = None
-    follower_scale_replay_by_iteration = {}
     scale_stats_group_ids_per_half = [particle_half.group_ids for particle_half in relion_half_inputs]
     scale_stats_group_count_per_half = [particle_half.group_count for particle_half in relion_half_inputs]
     physical_group_count = 0
@@ -423,10 +350,6 @@ def setup_relion_follower_scale_state(
         n_followers=follower_count,
         init_relion_iteration=schedule.init_relion_iteration,
     )
-    if topology is not None and topology.replay is not None and follower_count < 1:
-        raise ValueError(
-            "RELION follower-scale replay requires active strict follower-scale topology"
-        )
     if follower_count > 0:
         if relion_half_inputs[0].group_ids is None:
             raise ValueError("RELION follower-local scale emulation requires physical group IDs")
@@ -532,41 +455,6 @@ def setup_relion_follower_scale_state(
             n_optics_groups=optics_group_count,
             initial_group_scales=initial_group_scales,
         )
-        if topology.replay is not None:
-            requested_numbered_iterations = range(
-                schedule.init_relion_iteration + 1,
-                schedule.init_relion_iteration + int(schedule.max_iter) + 1,
-            )
-            validate_relion_follower_scale_replay(
-                topology.replay,
-                n_followers=follower_count,
-                n_groups=physical_group_count,
-                schedule_iterations=list(follower_owners_by_iteration),
-                numbered_iterations=requested_numbered_iterations,
-                first_numbered_iteration=schedule.init_relion_iteration + 1,
-            )
-            follower_scale_replay_by_iteration = {
-                int(relion_iteration): np.asarray(scales, dtype=np.float64).copy()
-                for relion_iteration, scales in zip(
-                    topology.replay.relion_iterations,
-                    topology.replay.follower_scales,
-                    strict=True,
-                )
-            }
-
-        # A RELION continuation reconstructs two independent pieces of process
-        # state at the same numbered boundary: HealpixSampling's perturbation
-        # RNG state and every follower's leader-serialized group scales.  In a
-        # strict K-class replay it is invalid to restart only one of them.
-        validate_coupled_relion_restart_state(
-            (),
-            follower_scale_replay_by_iteration,
-            (
-                ()
-                if topology.replay is None
-                else topology.replay.source_artifact_relative_paths
-            ),
-        )
         first_relion_iteration = schedule.init_relion_iteration + 1
         follower_owners_per_half = [
             owners.copy()
@@ -609,7 +497,6 @@ def setup_relion_follower_scale_state(
         follower_scale_state=follower_scale_state,
         follower_owners_per_half=follower_owners_per_half,
         follower_owners_by_iteration=follower_owners_by_iteration,
-        follower_scale_replay_by_iteration=follower_scale_replay_by_iteration,
         scale_stats_group_ids_per_half=scale_stats_group_ids_per_half,
         scale_stats_group_count_per_half=scale_stats_group_count_per_half,
         physical_group_count=physical_group_count,
@@ -690,12 +577,10 @@ def dispatch_relion_follower_scale_for_numbered_iteration(
     iteration: int,
     numbered_relion_iteration: int,
     relion_half_inputs,
-    relion_follower_scale_replay_source,
     dtype,
     logger,
 ) -> None:
-    """Recompute this numbered iteration's follower dispatch, apply any
-    diagnostic replay override, remap group ids, and record pre-score
+    """Recompute this numbered iteration's follower dispatch, remap group ids, and record pre-score
     telemetry. Mutates ``setup.follower_owners_per_half``,
     ``setup.follower_scale_state``, and ``setup.scale_stats_group_ids_per_half``
     in place. Only called when ``setup.follower_scale_state is not None``.
@@ -708,26 +593,7 @@ def dispatch_relion_follower_scale_for_numbered_iteration(
             stage="numbered",
         )
     ]
-    replayed_follower_scale_state = False
-    if numbered_relion_iteration in setup.follower_scale_replay_by_iteration:
-        if numbered_relion_iteration in history.relion_follower_scale_replay_applied_iterations:
-            raise RuntimeError(
-                "RELION follower-scale replay iteration was reached more than once: "
-                f"{numbered_relion_iteration}"
-            )
-        setup.follower_scale_state = type(setup.follower_scale_state)(
-            scales=setup.follower_scale_replay_by_iteration[numbered_relion_iteration].copy(),
-            group_counts=np.asarray(setup.follower_scale_state.group_counts, dtype=np.float64).copy(),
-            n_optics_groups=int(setup.follower_scale_state.n_optics_groups),
-        )
-        history.relion_follower_scale_replay_applied_iterations.append(numbered_relion_iteration)
-        replayed_follower_scale_state = True
-        logger.info(
-            "Diagnostic RELION follower-scale replay: numbered_iter=%d source=%s",
-            numbered_relion_iteration,
-            relion_follower_scale_replay_source.source,
-        )
-    if iteration > 0 or replayed_follower_scale_state:
+    if iteration > 0:
         setup.scale_stats_group_ids_per_half = _remap_relion_follower_runtime_inputs(
             state=setup.follower_scale_state,
             relion_half_inputs=relion_half_inputs,

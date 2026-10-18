@@ -80,7 +80,6 @@ class RefinementHistory:
     relion_follower_owners_half1_trajectory: list = field(default_factory=list)
     relion_scale_follower_scales_numbered_pre_score_trajectory: list = field(default_factory=list)
     relion_scale_follower_scales_numbered_post_mstep_trajectory: list = field(default_factory=list)
-    relion_follower_scale_replay_applied_iterations: list = field(default_factory=list)
     # The rotation-posterior trajectory is a diagnostic record (2.6 GB per iteration at
     # EMPIAR-10202's fine orders): kept only for runs that write diagnostics.
     keep_rotation_posteriors: bool = False
@@ -93,7 +92,7 @@ class RefinementHistory:
         self.sigma_offset_used_trajectory.append(sigma_offset_used)
         self.sigma_offset_used_per_half_trajectory.append(sigma_offset_used_per_half)
 
-    # -- RELION follower-scale replay/dispatch bookkeeping -------------
+    # -- RELION follower-scale dispatch bookkeeping --------------------
 
     def record_follower_scale_pre_score(self, pre_score_scales, owners_half1) -> None:
         self.relion_scale_follower_scales_numbered_pre_score_trajectory.append(pre_score_scales)

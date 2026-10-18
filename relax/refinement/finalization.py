@@ -186,8 +186,8 @@ def run_final_all_data(
     """Score the converged halves at full size and reconstruct the final maps.
 
     Replay and final-pass admission are resolved by the numbered controller.
-    The returned result holds this phase's results with ``numbered`` and ``replay`` None; the caller adds
-    the set-up and numbered-iteration metadata and the follower-scale replay's accounting after execution.
+    The returned result holds this phase's results with ``numbered`` None; the caller adds the set-up and
+    numbered-iteration metadata after execution.
     Reads the run's context (``ctx``: optics, reconstruction settings, batch planner, perturbation RNG,
     profile switch, expectation probe) and the last numbered iteration's ``carry`` (state, noise model and
     sigma offset as the input source's final state left them, direction priors, grids, perturbation, class
@@ -864,7 +864,6 @@ def run_final_all_data(
 
     return RefinementResult(
         maps=final_model_maps,
-        replay=None,
         follower_scale=follower_setup.result_outputs(history),
         convergence_state=carry.state,
         history=history,

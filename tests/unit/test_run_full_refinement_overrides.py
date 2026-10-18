@@ -20,7 +20,7 @@ from helpers.em_fixtures import fixture_dir, fixture_root
 from helpers.float_compare import assert_matches, matches
 from recovar.utils.file_hash import sha256_file
 
-from relax.commands import refinement_arguments, refinement_parser
+from relax.commands import refinement_arguments
 from relax.commands import refinement_run as run_full_refinement
 from relax.commands.refinement_particles import _apply_relion_image_mask, prepare_relion_halfset_inputs
 from relax.commands.refinement_run import (
@@ -468,7 +468,6 @@ def _fixed_diagnostic_args():
         apply_initial_lowpass=False,
         image_fourier_backend="relion_cuda",
         relion_dispatch_schedule=None,
-        relion_follower_scale_replay=None,
         init_class_volumes=None,
         init_volume=None,
         init_noise_from_npz=None,
@@ -875,10 +874,9 @@ class _Stop(Exception):
     pass
 
 
-def test_runner_threads_fail_closed_sparse_follower_scale_replay(monkeypatch, tmp_path):
-    """The admitted follower replay reaches the controller and, with the dispatch capture, the archive.
-    (Loading and validating the replay: test_relion_worker_scale; its archive keys:
-    test_refinement_archive_metadata.)"""
+def test_runner_threads_the_follower_topology_and_dispatch_capture(monkeypatch, tmp_path):
+    """The admitted follower topology reaches the controller and the dispatch capture the archive (its archive
+    keys: test_refinement_archive_metadata)."""
     from helpers.refinement_results import refinement_result
     from helpers.tiny_main import _run_main, _stand_in_device, write_tiny_data_dir
 
@@ -886,19 +884,11 @@ def test_runner_threads_fail_closed_sparse_follower_scale_replay(monkeypatch, tm
     from relax.parity import archive_provenance, oracle_admission
     from relax.refinement import follower_scale, iteration_loop
 
-    # The controller's replay telemetry is archived as integers.
-    saved = _archive_metadata({
-        "relion_follower_scale_replay_requested_iterations": [1, 2],
-        "relion_follower_scale_replay_applied_iterations": [1],
-    })
-    assert saved["relion_follower_scale_replay_requested_iterations"].dtype == np.int64
-    assert saved["relion_follower_scale_replay_applied_iterations"].tolist() == [1]
-    replay, schedule = object(), object()
+    schedule = object()
     monkeypatch.setattr(oracle_admission, "load_verified_dispatch_schedule",
                         lambda *a, **k: oracle_admission.VerifiedDispatchSchedule(schedule, [tmp_path]))
-    monkeypatch.setattr(follower_scale, "prepare_follower_topology",
-                        lambda *a, **k: follower_scale.PreparedFollowerTopology(
-                            n_followers=0, replay=replay, reduction_mode=None, owners_by_iteration=None))
+    topology = follower_scale.PreparedFollowerTopology(n_followers=2, reduction_mode=None, owners_by_iteration=None)
+    monkeypatch.setattr(follower_scale, "prepare_follower_topology", lambda *a, **k: topology)
     controller = {}
     monkeypatch.setattr(iteration_loop, "refine_single_volume", lambda **kw: controller.update(kw) or refinement_result())
     archive = {}
@@ -911,11 +901,8 @@ def test_runner_threads_fail_closed_sparse_follower_scale_replay(monkeypatch, tm
     _stand_in_device(monkeypatch)
     with pytest.raises(_Stop):
         _run_main(monkeypatch, "refine", write_tiny_data_dir(tmp_path / "data"), tmp_path / "out", [])
-    assert controller["source"].follower_topology.replay is replay
-    assert archive["follower_replay"] is replay and archive["relion_dispatch_schedule"] is schedule
-    assert refinement_parser.parse_refinement_args(
-        ["--data_dir", "d", "--output", "o", "--relion-follower-scale-replay", "r.npz"]
-    ).relion_follower_scale_replay == "r.npz"
+    assert controller["source"].follower_topology is topology
+    assert archive["relion_dispatch_schedule"] is schedule
 
 
 @pytest.mark.parametrize("score_only", [False, True])

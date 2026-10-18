@@ -1,12 +1,11 @@
-"""RELION's captured follower dispatch schedule and follower-scale replay artifacts.
+"""RELION's captured follower dispatch schedule.
 
 Expectation ownership is *not* a static equal partition.  RELION's leader
 hands each next ``--pool`` chunk to whichever follower requests work next.
 Exact replay therefore requires a schedule captured from the same RELION run.
 
-``load_relion_dispatch_schedule``, ``verify_relion_dispatch_schedule_oracle`` and
-``load_relion_follower_scale_replay`` load and validate these artifacts (schema version, sha256 digests,
-artifact paths); ``make_relion_dispatch_schedule_from_chunks`` builds a
+``load_relion_dispatch_schedule`` and ``verify_relion_dispatch_schedule_oracle`` load and validate it
+(schema version, sha256 digests, artifact paths); ``make_relion_dispatch_schedule_from_chunks`` builds a
 schedule. The definitions moved verbatim from ``relax.refinement.follower_scale``, which reads them to
 prepare the follower topology.
 """
@@ -41,29 +40,10 @@ class RelionDispatchSchedule:
     source: str
 
 
-@dataclass(frozen=True)
-class RelionFollowerScaleReplay:
-    """Complete follower-scale matrices injected at selected numbered iterations."""
-
-    relion_iterations: np.ndarray
-    follower_scales: np.ndarray
-    oracle_id: str
-    schema_version: int
-    boundary: str
-    source_artifact_relative_paths: tuple[str, ...]
-    source: str
-
-
 _SHA256_RE = re.compile(r"[0-9a-f]{64}")
 
 
 _RELION_ORACLE_SCHEMA_VERSION = 3
-
-
-_RELION_FOLLOWER_REPLAY_SCHEMA_VERSION = 1
-
-
-_RELION_FOLLOWER_REPLAY_BOUNDARY = "numbered_pre_score"
 
 
 def relion_dispatch_metadata_relative_path(dispatch_log_relative_path: str) -> str:
@@ -113,89 +93,6 @@ def _relion_dispatch_chunk_columns(rows: np.ndarray, n_particles: int):
                 f"v2 dispatch original particle IDs are not a bijection at iteration {iteration}"
             )
     return iterations, ranks, sorted_positions, sorted_positions, original_ids
-
-
-def _load_relion_follower_scale_sources(
-    oracle_dir: str | Path,
-    artifact_paths,
-    *,
-    n_followers: int | None = None,
-) -> tuple[np.ndarray, np.ndarray]:
-    """Parse canonical follower dumps or a continuation model checkpoint."""
-
-    root = Path(oracle_dir).expanduser().resolve()
-    records: dict[tuple[int, int, int], float] = {}
-    for relative in _validate_oracle_artifact_paths(artifact_paths):
-        path = root / relative
-        model_match = re.search(r"run_it(\d+)_model\.star$", path.name)
-        if model_match is not None:
-            if n_followers is None or int(n_followers) < 1:
-                raise ValueError(
-                    "continuation model follower-scale replay requires n_followers"
-                )
-            try:
-                import starfile
-
-                blocks = starfile.read(path, always_dict=True)
-                groups = blocks["model_groups"]
-                group_numbers = np.asarray(groups["rlnGroupNumber"], dtype=np.int64)
-                group_scales = np.asarray(
-                    groups["rlnGroupScaleCorrection"], dtype=np.float64
-                )
-            except Exception as exc:
-                raise ValueError(
-                    f"cannot parse continuation model group scales {path}: {exc}"
-                ) from exc
-            order = np.argsort(group_numbers, kind="stable")
-            group_numbers = group_numbers[order]
-            group_scales = group_scales[order]
-            expected_numbers = np.arange(1, group_numbers.size + 1, dtype=np.int64)
-            if not np.array_equal(group_numbers, expected_numbers):
-                raise ValueError(
-                    f"continuation model {path} group numbers must be contiguous and 1-based"
-                )
-            iteration = int(model_match.group(1))
-            # RELION continuation reloads the one leader-serialized model on
-            # every follower before numbered iteration n+1. The STAR decimals
-            # are therefore the exact restart inputs, not rounded diagnostics.
-            for rank in range(1, int(n_followers) + 1):
-                for group_index, scale in enumerate(group_scales):
-                    records[(iteration, rank, group_index)] = float(scale)
-            continue
-        try:
-            table = np.genfromtxt(path, names=True, delimiter="\t", encoding="utf-8")
-        except (OSError, ValueError) as exc:
-            raise ValueError(f"cannot parse follower-scale source {path}: {exc}") from exc
-        required = {"iteration", "mpi_rank", "group_index", "scale_post"}
-        names = set(table.dtype.names or ())
-        if not required.issubset(names):
-            raise ValueError(
-                f"follower-scale source {path} is missing columns {sorted(required - names)}"
-            )
-        rows = np.atleast_1d(table)
-        for row in rows:
-            key = (int(row["iteration"]), int(row["mpi_rank"]), int(row["group_index"]))
-            if key in records:
-                raise ValueError(f"duplicate follower-scale source row {key}")
-            records[key] = float(row["scale_post"])
-    if not records:
-        raise ValueError("follower-scale source artifacts contain no rows")
-    iterations = np.asarray(sorted({key[0] for key in records}), dtype=np.int64)
-    ranks = sorted({key[1] for key in records})
-    groups = sorted({key[2] for key in records})
-    if ranks != list(range(1, len(ranks) + 1)):
-        raise ValueError("follower-scale source mpi_rank values must be contiguous and 1-based")
-    if groups != list(range(len(groups))):
-        raise ValueError("follower-scale source group_index values must be contiguous and 0-based")
-    scales = np.empty((iterations.size, len(ranks), len(groups)), dtype=np.float64)
-    for iteration_idx, iteration in enumerate(iterations):
-        for rank in ranks:
-            for group in groups:
-                key = (int(iteration), int(rank), int(group))
-                if key not in records:
-                    raise ValueError(f"follower-scale sources are missing row {key}")
-                scales[iteration_idx, rank - 1, group] = records[key]
-    return iterations, scales
 
 
 def _validate_sha256(value: str, *, name: str) -> str:
@@ -382,203 +279,6 @@ def verify_relion_dispatch_schedule_oracle(
         schedule.original_particle_id_by_sorted_position,
     ):
         raise ValueError("schedule particle identities were not derived from the bound dispatch log")
-
-
-def validate_relion_follower_scale_replay(
-    replay: RelionFollowerScaleReplay,
-    *,
-    n_followers: int | None = None,
-    n_groups: int | None = None,
-    schedule_iterations=None,
-    schedule_oracle_id: str | None = None,
-    schedule_artifact_paths=None,
-    numbered_iterations=None,
-    first_numbered_iteration: int | None = None,
-    oracle_dir: str | Path | None = None,
-) -> None:
-    """Validate replay contents and, optionally, the active strict topology."""
-
-    iterations_raw = np.asarray(replay.relion_iterations)
-    if not np.issubdtype(iterations_raw.dtype, np.integer):
-        raise ValueError("relion_iterations must have an integer dtype")
-    iterations = np.asarray(iterations_raw, dtype=np.int64).reshape(-1)
-    scales_raw = np.asarray(replay.follower_scales)
-    if not (
-        np.issubdtype(scales_raw.dtype, np.floating)
-        or np.issubdtype(scales_raw.dtype, np.integer)
-    ):
-        raise ValueError("follower_scales must have a real numeric dtype")
-    scales = np.asarray(scales_raw, dtype=np.float64)
-    _validate_sha256(replay.oracle_id, name="follower replay oracle_id")
-    if int(replay.schema_version) != _RELION_FOLLOWER_REPLAY_SCHEMA_VERSION:
-        raise ValueError(
-            "unsupported follower-scale replay schema_version "
-            f"{replay.schema_version}; expected {_RELION_FOLLOWER_REPLAY_SCHEMA_VERSION}"
-        )
-    if replay.boundary != _RELION_FOLLOWER_REPLAY_BOUNDARY:
-        raise ValueError(
-            "follower-scale replay boundary must be "
-            f"{_RELION_FOLLOWER_REPLAY_BOUNDARY!r}"
-        )
-    source_artifacts = _validate_oracle_artifact_paths(
-        replay.source_artifact_relative_paths
-    )
-    if iterations.size < 1 or np.unique(iterations).size != iterations.size:
-        raise ValueError("relion_iterations must be a non-empty unique vector")
-    if np.any(iterations < 1) or np.any(np.diff(iterations) <= 0):
-        raise ValueError("relion_iterations must be positive and strictly increasing")
-    if scales.ndim != 3 or scales.shape[0] != iterations.size:
-        raise ValueError(
-            "follower_scales must have shape (n_iterations, n_followers, n_groups)"
-        )
-    if scales.shape[1] < 1 or scales.shape[2] < 1:
-        raise ValueError("follower_scales follower and group dimensions must be positive")
-    if np.any(~np.isfinite(scales)) or np.any(scales <= 0.0):
-        raise ValueError("follower_scales must be finite and strictly positive")
-    if n_followers is not None and scales.shape[1] != int(n_followers):
-        raise ValueError(
-            "follower_scales follower dimension does not match the dispatch topology "
-            f"({scales.shape[1]} != {int(n_followers)})"
-        )
-    if n_groups is not None and scales.shape[2] != int(n_groups):
-        raise ValueError(
-            "follower_scales group dimension does not match the physical group axis "
-            f"({scales.shape[2]} != {int(n_groups)})"
-        )
-    if schedule_iterations is not None:
-        captured = set(np.asarray(schedule_iterations, dtype=np.int64).reshape(-1).tolist())
-        missing = sorted(set(iterations.tolist()) - captured)
-        if missing:
-            raise ValueError(
-                "follower-scale replay iterations are absent from the captured dispatch schedule: "
-                f"{missing}"
-            )
-    if schedule_oracle_id is not None and replay.oracle_id != str(schedule_oracle_id):
-        raise ValueError(
-            "follower-scale replay oracle_id does not match the dispatch schedule "
-            f"({replay.oracle_id} != {schedule_oracle_id})"
-        )
-    if schedule_artifact_paths is not None:
-        schedule_artifacts = set(_validate_oracle_artifact_paths(schedule_artifact_paths))
-        missing_artifacts = sorted(set(source_artifacts) - schedule_artifacts)
-        if missing_artifacts:
-            raise ValueError(
-                "follower-scale replay source artifacts are absent from the verified "
-                f"oracle manifest: {missing_artifacts}"
-            )
-    if oracle_dir is not None:
-        source_iterations, source_scales = _load_relion_follower_scale_sources(
-            oracle_dir,
-            source_artifacts,
-            n_followers=scales.shape[1],
-        )
-        # The raw dumps are written after M-step n; this replay boundary is
-        # the next numbered pre-score step n+1.
-        if not np.array_equal(source_iterations + 1, iterations):
-            raise ValueError(
-                "follower-scale replay iterations were not derived from the bound "
-                "source artifacts"
-            )
-        if not np.array_equal(source_scales, scales):
-            raise ValueError(
-                "follower-scale replay matrix was not derived from the bound source artifacts"
-            )
-    if numbered_iterations is not None:
-        numbered = set(np.asarray(numbered_iterations, dtype=np.int64).reshape(-1).tolist())
-        outside_numbered = sorted(set(iterations.tolist()) - numbered)
-        if outside_numbered:
-            raise ValueError(
-                "follower-scale replay iterations are outside the requested numbered "
-                f"refinement range: {outside_numbered}"
-            )
-    if first_numbered_iteration is not None and int(first_numbered_iteration) in iterations:
-        raise ValueError(
-            "follower-scale replay cannot target the first numbered RELION iteration "
-            f"{int(first_numbered_iteration)}: resident image-normalization state is not "
-            "initialized before its scoring boundary"
-        )
-
-
-def validate_relion_follower_scale_replay_application(
-    replay: RelionFollowerScaleReplay,
-    *,
-    applied_iterations,
-) -> tuple[np.ndarray, np.ndarray]:
-    """Require every requested replay row to have been applied exactly once and in order."""
-
-    requested = np.asarray(replay.relion_iterations, dtype=np.int64).reshape(-1)
-    applied_raw = np.asarray(applied_iterations)
-    if applied_raw.size and not np.issubdtype(applied_raw.dtype, np.integer):
-        raise RuntimeError("applied follower-scale replay iterations must have an integer dtype")
-    applied = np.asarray(applied_raw, dtype=np.int64).reshape(-1)
-    if np.array_equal(applied, requested):
-        return requested.copy(), applied.copy()
-
-    requested_set = set(requested.tolist())
-    applied_set = set(applied.tolist())
-    missing = sorted(requested_set - applied_set)
-    unexpected = sorted(applied_set - requested_set)
-    duplicate = sorted(
-        int(value)
-        for value, count in zip(*np.unique(applied, return_counts=True), strict=True)
-        if int(count) > 1
-    )
-    raise RuntimeError(
-        "RELION follower-scale replay was not applied exactly once at every requested "
-        "numbered iteration: "
-        f"requested={requested.tolist()} applied={applied.tolist()} missing={missing} "
-        f"unexpected={unexpected} duplicate={duplicate}"
-    )
-
-
-def load_relion_follower_scale_replay(path: str | Path) -> RelionFollowerScaleReplay:
-    """Load selected complete follower-scale states from a diagnostic NPZ."""
-
-    replay_path = Path(path).expanduser().resolve()
-    with np.load(replay_path, allow_pickle=False) as values:
-        required = {
-            "schema_version",
-            "boundary",
-            "source_artifact_relative_paths",
-            "relion_iterations",
-            "follower_scales",
-            "oracle_id",
-        }
-        missing = sorted(required - set(values.files))
-        if missing:
-            raise ValueError(
-                f"RELION follower-scale replay {replay_path} is missing keys: "
-                f"{', '.join(missing)}"
-            )
-        iterations_raw = np.asarray(values["relion_iterations"])
-        if not np.issubdtype(iterations_raw.dtype, np.integer):
-            raise ValueError("relion_iterations must have an integer dtype")
-        scales_raw = np.asarray(values["follower_scales"])
-        if not (
-            np.issubdtype(scales_raw.dtype, np.floating)
-            or np.issubdtype(scales_raw.dtype, np.integer)
-        ):
-            raise ValueError("follower_scales must have a real numeric dtype")
-        schema_raw = np.asarray(values["schema_version"])
-        if not np.issubdtype(schema_raw.dtype, np.integer) or schema_raw.size != 1:
-            raise ValueError("schema_version must be an integer scalar")
-        replay = RelionFollowerScaleReplay(
-            relion_iterations=np.asarray(iterations_raw, dtype=np.int64).reshape(-1),
-            follower_scales=np.asarray(scales_raw, dtype=np.float64),
-            oracle_id=str(np.asarray(values["oracle_id"]).reshape(())),
-            schema_version=int(schema_raw.reshape(())),
-            boundary=str(np.asarray(values["boundary"]).reshape(())),
-            source_artifact_relative_paths=_validate_oracle_artifact_paths(
-                values["source_artifact_relative_paths"]
-            ),
-            source=(
-                str(np.asarray(values["source"]).reshape(()))
-                if "source" in values.files
-                else str(replay_path)
-            ),
-        )
-    validate_relion_follower_scale_replay(replay)
-    return replay
 
 
 def load_relion_dispatch_schedule(path: str | Path) -> RelionDispatchSchedule:

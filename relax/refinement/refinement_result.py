@@ -79,20 +79,6 @@ class NumberedMetadata:
 
 
 @dataclass(frozen=True, kw_only=True)
-class ReplayTelemetry:
-    """The RELION follower-scale replay's validated iterations; both None when the replay is off."""
-
-    requested_iterations: Any
-    applied_iterations: Any
-
-    def archive_fields(self) -> dict:
-        return {
-            "relion_follower_scale_replay_requested_iterations": self.requested_iterations,
-            "relion_follower_scale_replay_applied_iterations": self.applied_iterations,
-        }
-
-
-@dataclass(frozen=True, kw_only=True)
 class FinalPassResult:
     """The final all-data pass's outputs and diagnostics (``final_all_data_*`` in the archive).
 
@@ -189,7 +175,6 @@ class RefinementResult:
     maps: ModelMaps
     convergence_state: RefinementState
     history: RefinementHistory
-    replay: ReplayTelemetry
     follower_scale: FollowerScaleOutputs | None
     numbered: NumberedMetadata | None
     final_pass: FinalPassResult | None = None
@@ -210,7 +195,6 @@ class RefinementResult:
         as a dict; a key a path did not return is absent, a key returned as None is present with None.
         """
         model = self.maps.archive_fields()
-        replay = self.replay.archive_fields()
         history = self.history.to_dict()
         numbered = {} if self.numbered is None else self.numbered.archive_fields()
         if self.profile_stop is not None:
@@ -220,7 +204,6 @@ class RefinementResult:
             return {
                 "profile_only": True,
                 **model,
-                **replay,
                 "convergence_state": self.convergence_state,
                 **numbered,
                 "final_all_data_ran": False,
@@ -231,7 +214,6 @@ class RefinementResult:
         if self.final_pass is None:
             return {
                 **model,
-                **replay,
                 **follower_scale,
                 "convergence_state": self.convergence_state,
                 **numbered,
@@ -241,7 +223,6 @@ class RefinementResult:
         return {
             **model,
             "unfiltered_means": self.maps.unfiltered_means,
-            **replay,
             **follower_scale,
             "convergence_state": self.convergence_state,
             **history,

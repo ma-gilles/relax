@@ -144,7 +144,7 @@ def test_one_field_list_decides_what_replays_relion_state():
         assert replay.replays and replay.replays_relion_state, field
         source = RelionReplaySource.for_run(replay, options)
         assert isinstance(source, RelionReplaySource) and source.replays_relion_state() is True, field
-    followers = RelionReplay(follower_topology=SimpleNamespace(n_followers=2, replay=None))
+    followers = RelionReplay(follower_topology=SimpleNamespace(n_followers=2))
     assert followers.replays and not followers.replays_relion_state
     assert RelionReplaySource.for_run(followers, options).replays_relion_state() is False
     assert not RelionReplay().replays and not RelionReplay().replays_relion_state

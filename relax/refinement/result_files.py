@@ -293,8 +293,6 @@ def write_refinement_archive(
         if fields.get(key) is not None:
             save_dict[key] = np.asarray(json.dumps(fields[key]))
     for key, dtype in (
-        ("relion_follower_scale_replay_requested_iterations", np.int64),
-        ("relion_follower_scale_replay_applied_iterations", np.int64),
         ("relion_scale_follower_scales", np.float64),
         ("relion_scale_rank1_serialized", np.float64),
         ("relion_scale_follower_owners_half1", np.int64),

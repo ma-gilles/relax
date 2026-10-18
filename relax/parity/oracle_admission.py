@@ -133,7 +133,6 @@ def admit_follower_routing(
         dispatch.schedule,
         particle_groups,
         strict_replay=strict_replay,
-        replay_path=args.relion_follower_scale_replay,
         oracle_dir=dispatch.oracle_dirs[0] if dispatch.schedule is not None else None,
         random_seed=random_seed,
         init_relion_iteration=args.init_relion_iteration,

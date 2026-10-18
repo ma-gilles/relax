@@ -9,27 +9,21 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
-import relax.refinement.follower_scale as relion_worker_scale
 import relax.refinement.numbered_transitions as convergence_policy
 from relax.parity.final_replay import apply_replay_correction_overrides
 from relax.refinement.follower_oracles import (
     RelionDispatchSchedule,
-    RelionFollowerScaleReplay,
     load_relion_dispatch_schedule,
-    load_relion_follower_scale_replay,
     make_relion_dispatch_schedule_from_chunks,
     relion_oracle_id,
     relion_oracle_manifest_sha256,
     relion_ordered_particle_sha256,
-    validate_relion_follower_scale_replay,
-    validate_relion_follower_scale_replay_application,
     verify_relion_dispatch_schedule_oracle,
 )
 from relax.refinement.follower_scale import (
     RelionFollowerScaleSetup,
     _remap_relion_follower_runtime_inputs,
     _require_relion_follower_owners,
-    finalize_relion_follower_scale_replay_telemetry,
     prepare_follower_topology,
     relion_class3d_follower_owners_from_schedule,
 )
@@ -43,7 +37,6 @@ from relax.refinement.follower_scale_state import (
     relion_worker_group_ids,
     select_relion_follower_scales,
     update_relion_follower_scales,
-    validate_coupled_relion_restart_state,
     validate_relion_follower_scale_start,
 )
 from relax.relion.normalization import (
@@ -70,14 +63,6 @@ _ORACLE_KWARGS = {
     "particle_star_relative_path": "run_it000_data.star",
     "dispatch_log_relative_path": "dispatch.tsv",
 }
-_REPLAY_KWARGS = {
-    "oracle_id": _ORACLE_ID,
-    "schema_version": 1,
-    "boundary": "numbered_pre_score",
-    "source_artifact_relative_paths": ("rank1_post.tsv", "rank2_post.tsv"),
-}
-
-
 def test_prepared_topology_keeps_captured_particle_identity_and_iteration_coverage(tmp_path):
     schedule = RelionDispatchSchedule(
         relion_iterations=np.asarray([1, 2], dtype=np.int64),
@@ -99,11 +84,10 @@ def test_prepared_topology_keeps_captured_particle_identity_and_iteration_covera
     (tmp_path / "run_it000_optimiser.star").write_text(
         "# --o run --gpu --dont_combine_weights_via_disc\ndata_optimiser_general\n"
     )
-    kwargs = dict(strict_replay=True, replay_path=None, oracle_dir=tmp_path,
+    kwargs = dict(strict_replay=True, oracle_dir=tmp_path,
                   random_seed=9, init_relion_iteration=0, max_iter=2)
     topology = prepare_follower_topology(None, schedule, groups, **kwargs)
     assert topology.n_followers == 2
-    assert topology.replay is None
     assert topology.reduction_mode == RELION_SCALE_REDUCTION_OPTICS_PREFIX
     assert list(topology.owners_by_iteration) == [1, 2]
     np.testing.assert_array_equal(topology.owners_by_iteration[1][0], [1, 0, 0])
@@ -120,30 +104,29 @@ def test_prepared_topology_keeps_captured_particle_identity_and_iteration_covera
 def test_prepared_topology_without_mpi_needs_no_oracle(requested_followers):
     topology = prepare_follower_topology(
         requested_followers, None, None, strict_replay=False,
-        replay_path=None, oracle_dir=None, random_seed=9,
+        oracle_dir=None, random_seed=9,
         init_relion_iteration=0, max_iter=2,
     )
     assert topology.n_followers == 0
-    assert topology.replay is topology.reduction_mode is topology.owners_by_iteration is None
+    assert topology.reduction_mode is topology.owners_by_iteration is None
 
 
 @pytest.mark.parametrize(
-    "requested_followers, strict_replay, replay_path, message",
+    "requested_followers, strict_replay, message",
     [
-        (-1, False, None, "non-negative"),
-        (2, False, None, "strict K>1"),
-        (2, True, None, "requires --relion-dispatch-schedule"),
-        (None, True, None, "dynamic MPI work queue"),
-        (0, True, "replay.npz", "requires strict K>1 RELION follower topology"),
+        (-1, False, "non-negative"),
+        (2, False, "strict K>1"),
+        (2, True, "requires --relion-dispatch-schedule"),
+        (None, True, "dynamic MPI work queue"),
     ],
 )
 def test_prepared_topology_rejects_unsupported_or_incomplete_mpi_state(
-    requested_followers, strict_replay, replay_path, message,
+    requested_followers, strict_replay, message,
 ):
     with pytest.raises(SystemExit, match=message):
         prepare_follower_topology(
             requested_followers, None, None, strict_replay=strict_replay,
-            replay_path=replay_path, oracle_dir=None, random_seed=9,
+            oracle_dir=None, random_seed=9,
             init_relion_iteration=0, max_iter=2,
         )
 
@@ -730,225 +713,6 @@ def test_dispatch_schedule_allows_idle_followers_but_rejects_invalid_owners(tmp_
         load_relion_dispatch_schedule(path)
 
 
-def test_follower_scale_replay_loads_sparse_complete_states_and_validates_topology(tmp_path):
-    path = tmp_path / "follower_scale_replay.npz"
-    scales = np.asarray(
-        [
-            [[1.0, 1.1, 0.9], [1.0, 0.8, 1.2]],
-            [[1.0, 1.2, 0.8], [1.0, 0.7, 1.3]],
-        ],
-        dtype=np.float64,
-    )
-    header = "iteration\tmpi_rank\tgroup_index\tscale_post\n"
-    for rank, source_name in enumerate(("rank1_post.tsv", "rank2_post.tsv"), start=1):
-        rows = [header]
-        for iteration_idx, iteration in enumerate((1, 3)):
-            for group in range(3):
-                rows.append(
-                    f"{iteration}\t{rank}\t{group}\t{scales[iteration_idx, rank - 1, group]:.17g}\n"
-                )
-        (tmp_path / source_name).write_text("".join(rows))
-    np.savez(
-        path,
-        schema_version=np.int64(1),
-        boundary=np.asarray("numbered_pre_score"),
-        source_artifact_relative_paths=np.asarray(["rank1_post.tsv", "rank2_post.tsv"]),
-        relion_iterations=np.asarray([2, 4], dtype=np.int64),
-        follower_scales=scales,
-        oracle_id=np.asarray(_ORACLE_ID),
-        source=np.asarray("causal unit replay"),
-    )
-
-    replay = load_relion_follower_scale_replay(path)
-
-    assert_matches(replay.relion_iterations, [2, 4])
-    assert_matches(replay.follower_scales, scales)
-    assert replay.source == "causal unit replay"
-    validate_relion_follower_scale_replay(
-        replay,
-        n_followers=2,
-        n_groups=3,
-        schedule_iterations=[1, 2, 3, 4],
-        schedule_oracle_id=_ORACLE_ID,
-        schedule_artifact_paths=["rank1_post.tsv", "rank2_post.tsv"],
-        oracle_dir=tmp_path,
-    )
-    stale_replay = RelionFollowerScaleReplay(
-        relion_iterations=replay.relion_iterations,
-        follower_scales=replay.follower_scales + 0.01,
-        oracle_id=replay.oracle_id,
-        schema_version=replay.schema_version,
-        boundary=replay.boundary,
-        source_artifact_relative_paths=replay.source_artifact_relative_paths,
-        source="stale payload",
-    )
-    with np.testing.assert_raises_regex(ValueError, "not derived from the bound source"):
-        validate_relion_follower_scale_replay(stale_replay, oracle_dir=tmp_path)
-    with np.testing.assert_raises_regex(ValueError, "follower dimension"):
-        validate_relion_follower_scale_replay(replay, n_followers=3, n_groups=3)
-    with np.testing.assert_raises_regex(ValueError, "absent from the captured dispatch"):
-        validate_relion_follower_scale_replay(
-            replay,
-            n_followers=2,
-            n_groups=3,
-            schedule_iterations=[1, 2, 3],
-        )
-    with np.testing.assert_raises_regex(ValueError, "oracle_id does not match"):
-        validate_relion_follower_scale_replay(
-            replay,
-            n_followers=2,
-            n_groups=3,
-            schedule_iterations=[1, 2, 3, 4],
-            schedule_oracle_id="f" * 64,
-        )
-    with np.testing.assert_raises_regex(ValueError, "absent from the verified oracle manifest"):
-        validate_relion_follower_scale_replay(
-            replay,
-            n_followers=2,
-            n_groups=3,
-            schedule_iterations=[1, 2, 3, 4],
-            schedule_oracle_id=_ORACLE_ID,
-            schedule_artifact_paths=["rank1_post.tsv"],
-        )
-
-
-def test_follower_scale_replay_reloads_continuation_model_on_every_follower(tmp_path):
-    model = tmp_path / "run_it011_model.star"
-    model.write_text(
-        """data_model_groups
-
-loop_
-_rlnGroupNumber #1
-_rlnGroupName #2
-_rlnGroupNrParticles #3
-_rlnGroupScaleCorrection #4
-1 group1 4 0.916122
-2 group2 5 1.194794
-"""
-    )
-    scales = np.asarray(
-        [[[0.916122, 1.194794], [0.916122, 1.194794]]],
-        dtype=np.float64,
-    )
-    replay = RelionFollowerScaleReplay(
-        relion_iterations=np.asarray([12], dtype=np.int64),
-        follower_scales=scales,
-        oracle_id=_ORACLE_ID,
-        schema_version=1,
-        boundary="numbered_pre_score",
-        source_artifact_relative_paths=(model.name,),
-        source="RELION continuation model reload",
-    )
-
-    validate_relion_follower_scale_replay(
-        replay,
-        n_followers=2,
-        n_groups=2,
-        schedule_iterations=[12],
-        schedule_oracle_id=_ORACLE_ID,
-        schedule_artifact_paths=[model.name],
-        numbered_iterations=[12],
-        first_numbered_iteration=1,
-        oracle_dir=tmp_path,
-    )
-
-
-def test_follower_scale_replay_rejects_first_and_outside_numbered_iterations():
-    first = RelionFollowerScaleReplay(
-        relion_iterations=np.asarray([1], dtype=np.int64),
-        follower_scales=np.ones((1, 2, 3), dtype=np.float64),
-        **_REPLAY_KWARGS,
-        source="first boundary",
-    )
-    with np.testing.assert_raises_regex(ValueError, "cannot target the first numbered"):
-        validate_relion_follower_scale_replay(
-            first,
-            n_followers=2,
-            n_groups=3,
-            schedule_iterations=[1, 2, 3, 4, 5],
-            numbered_iterations=[1, 2, 3, 4],
-            first_numbered_iteration=1,
-        )
-
-    post_numbered = RelionFollowerScaleReplay(
-        relion_iterations=np.asarray([5], dtype=np.int64),
-        follower_scales=np.ones((1, 2, 3), dtype=np.float64),
-        **_REPLAY_KWARGS,
-        source="post-numbered boundary",
-    )
-    with np.testing.assert_raises_regex(ValueError, "outside the requested numbered"):
-        validate_relion_follower_scale_replay(
-            post_numbered,
-            n_followers=2,
-            n_groups=3,
-            schedule_iterations=[1, 2, 3, 4, 5],
-            numbered_iterations=[1, 2, 3, 4],
-            first_numbered_iteration=1,
-        )
-
-
-def test_follower_scale_replay_application_requires_every_row_exactly_once():
-    replay = RelionFollowerScaleReplay(
-        relion_iterations=np.asarray([2, 4], dtype=np.int64),
-        follower_scales=np.ones((2, 2, 3), dtype=np.float64),
-        **_REPLAY_KWARGS,
-        source="application accounting",
-    )
-
-    requested, applied = validate_relion_follower_scale_replay_application(
-        replay,
-        applied_iterations=[2, 4],
-    )
-    assert_matches(requested, [2, 4])
-    assert_matches(applied, [2, 4])
-
-    for observed in ([], [2], [2, 2, 4], [2, 3, 4]):
-        with np.testing.assert_raises_regex(RuntimeError, "not applied exactly once"):
-            validate_relion_follower_scale_replay_application(
-                replay,
-                applied_iterations=observed,
-            )
-
-
-def test_follower_scale_replay_rejects_duplicate_iterations_and_nonpositive_scales(tmp_path):
-    path = tmp_path / "bad_follower_scale_replay.npz"
-    np.savez(
-        path,
-        schema_version=np.int64(1),
-        boundary=np.asarray("numbered_pre_score"),
-        source_artifact_relative_paths=np.asarray(["rank1_post.tsv", "rank2_post.tsv"]),
-        relion_iterations=np.asarray([3, 3], dtype=np.int64),
-        follower_scales=np.ones((2, 2, 3), dtype=np.float64),
-        oracle_id=np.asarray(_ORACLE_ID),
-    )
-    with np.testing.assert_raises_regex(ValueError, "unique"):
-        load_relion_follower_scale_replay(path)
-
-    np.savez(
-        path,
-        schema_version=np.int64(1),
-        boundary=np.asarray("numbered_pre_score"),
-        source_artifact_relative_paths=np.asarray(["rank1_post.tsv", "rank2_post.tsv"]),
-        relion_iterations=np.asarray([3], dtype=np.int64),
-        follower_scales=np.asarray([[[1.0, 0.0], [1.0, 1.0]]]),
-        oracle_id=np.asarray(_ORACLE_ID),
-    )
-    with np.testing.assert_raises_regex(ValueError, "strictly positive"):
-        load_relion_follower_scale_replay(path)
-
-    np.savez(
-        path,
-        schema_version=np.int64(1),
-        boundary=np.asarray("numbered_pre_score"),
-        source_artifact_relative_paths=np.asarray(["rank1_post.tsv", "rank2_post.tsv"]),
-        relion_iterations=np.asarray([3], dtype=np.int64),
-        follower_scales=np.ones((1, 2, 2), dtype=np.complex128),
-        oracle_id=np.asarray(_ORACLE_ID),
-    )
-    with np.testing.assert_raises_regex(ValueError, "real numeric dtype"):
-        load_relion_follower_scale_replay(path)
-
-
 def test_worker_group_axis_and_owner_change_select_runtime_scale():
     state = make_relion_follower_scale_state(
         n_followers=2,
@@ -1048,23 +812,14 @@ def _follower_statistics(n_images):
     )
 
 
-def _follower_run(monkeypatch, *, final, follower_replay=None):
+def _follower_run(monkeypatch, *, final):
     """A two-iteration Class3D run under the strict follower-scale emulation; ``final`` converges it so the
     final all-data pass runs (RELION iteration 3)."""
     from helpers.tiny_refinement import follower_scale_replay, run_tiny_refinement
 
     return run_tiny_refinement(
         monkeypatch, n_classes=2, final_after_max_iter=False, converge_after=2 if final else None,
-        engine_noise_fields=_follower_statistics, **follower_scale_replay(3, replay=follower_replay),
-    )
-
-
-def _follower_scale_replay(iteration=2):
-    return RelionFollowerScaleReplay(
-        relion_iterations=np.asarray([iteration], dtype=np.int64),
-        follower_scales=np.full((1, 2, 2), 1.5, dtype=np.float64),
-        **_REPLAY_KWARGS,
-        source="tiny follower replay",
+        engine_noise_fields=_follower_statistics, **follower_scale_replay(3),
     )
 
 
@@ -1163,133 +918,6 @@ def test_relion_norm_scale_updates_are_not_disabled_for_k_class(monkeypatch, cap
         for half in range(2):
             assert format_relion_correction_range(update.image_corrections_per_half[half]) in message
             assert format_relion_correction_range(update.scale_corrections_per_half[half]) in message
-
-
-def test_sparse_follower_scale_replay_replaces_state_before_remap_and_telemetry(monkeypatch):
-    from helpers.tiny_refinement import CallTrace
-
-    from relax.refinement import follower_scale as relion_worker_scale
-    from relax.refinement.iteration_history import RefinementHistory
-
-    replay = _follower_scale_replay(2)
-    seen = {}
-
-    def dispatch_starts(call):
-        seen["setup"] = call.args[0]
-
-    def remapped_state(call):
-        seen.setdefault("remapped", []).append(np.array(call.kwargs["state"].scales, copy=True))
-
-    trace = CallTrace(monkeypatch)
-    trace.wrap(relion_worker_scale, "dispatch_relion_follower_scale_for_numbered_iteration", "dispatch",
-               before=dispatch_starts)
-    trace.wrap(relion_worker_scale, "_require_relion_follower_owners", "owners")
-    trace.wrap(relion_worker_scale, "_remap_relion_follower_runtime_inputs", "remap", before=remapped_state)
-    trace.wrap(RefinementHistory, "record_follower_scale_pre_score", "telemetry")
-    _follower_run(monkeypatch, final=False, follower_replay=replay)
-    in_dispatch = [call.label for call in trace.calls_seen if call.inside == ("dispatch",)]
-    # Iteration 1 has nothing to remap; iteration 2 replays the state, remaps, then records it.
-    assert in_dispatch == ["owners", "telemetry", "owners", "remap", "telemetry"]
-    np.testing.assert_array_equal(seen["remapped"][0], replay.follower_scales[0])
-    np.testing.assert_array_equal(trace.calls("telemetry")[1].args[1], replay.follower_scales[0])
-
-
-def test_strict_restart_requires_coupled_perturbation_and_model_scale_state():
-    validate_coupled_relion_restart_state(
-        perturb_restart_state_iterations=(11,),
-        follower_replay_by_iteration={12: np.ones((2, 4))},
-        follower_replay_source_artifacts=("run_it011_model.star",),
-    )
-
-    with np.testing.assert_raises_regex(ValueError, "missing numbered iterations.*12"):
-        validate_coupled_relion_restart_state(
-            perturb_restart_state_iterations=(11,),
-            follower_replay_by_iteration={},
-            follower_replay_source_artifacts=(),
-        )
-
-    with np.testing.assert_raises_regex(ValueError, "unmatched numbered iterations.*12"):
-        validate_coupled_relion_restart_state(
-            perturb_restart_state_iterations=(),
-            follower_replay_by_iteration={12: np.ones((2, 4))},
-            follower_replay_source_artifacts=("run_it011_model.star",),
-        )
-
-
-@pytest.mark.parametrize("final", [False, True])
-def test_sparse_follower_scale_replay_accounting_guards_every_result_return(monkeypatch, final):
-    """Each return path (no final pass, final all-data) validates the replay accounting once, against the
-    iterations the controller applied, and reports what that validation returned.
-
-    The local-search diagnostic return has no CPU run.
-    """
-    from helpers.tiny_refinement import CallTrace
-
-
-    replay = _follower_scale_replay(2)
-    seen = {}
-    trace = CallTrace(monkeypatch)
-    trace.wrap(relion_worker_scale, "dispatch_relion_follower_scale_for_numbered_iteration", "dispatch",
-               before=lambda call: seen.setdefault("history", call.args[1]))
-    trace.wrap(relion_worker_scale, "finalize_relion_follower_scale_replay_telemetry", "accounting")
-    result = _follower_run(monkeypatch, final=final, follower_replay=replay)
-    (accounting,) = trace.calls("accounting")
-    assert accounting.args[0] is replay
-    assert accounting.kwargs["applied_iterations"] is seen["history"].relion_follower_scale_replay_applied_iterations
-    requested, applied = accounting.result
-    assert result.replay.requested_iterations is requested
-    assert result.replay.applied_iterations is applied
-    np.testing.assert_array_equal(applied, [2])
-
-
-def test_disabled_follower_replay_completion_does_not_consume_history_or_log():
-    assert finalize_relion_follower_scale_replay_telemetry(
-        None, applied_iterations=object(), logger=None,
-    ) == (None, None)
-
-
-def test_follower_replay_completion_returns_copies_and_logs_after_validation(caplog):
-    replay = RelionFollowerScaleReplay(
-        relion_iterations=np.asarray([2, 4], dtype=np.int64),
-        follower_scales=np.ones((2, 2, 3), dtype=np.float64),
-        **_REPLAY_KWARGS,
-        source="completion accounting",
-    )
-    observed = np.asarray([2, 4], dtype=np.int64)
-    completion_logger = logging.getLogger("relax.test.follower_completion")
-    caplog.set_level(logging.INFO, logger=completion_logger.name)
-
-    requested, applied = finalize_relion_follower_scale_replay_telemetry(
-        replay, applied_iterations=observed, logger=completion_logger,
-    )
-
-    assert_matches(requested, [2, 4])
-    assert_matches(applied, [2, 4])
-    assert requested.dtype == applied.dtype == np.dtype(np.int64)
-    assert not np.shares_memory(requested, replay.relion_iterations)
-    assert not np.shares_memory(applied, observed)
-    assert caplog.messages == [
-        "Diagnostic RELION follower-scale replay complete: "
-        "source=completion accounting requested=[2, 4] applied=[2, 4]"
-    ]
-
-
-def test_follower_replay_completion_never_logs_success_for_invalid_accounting(caplog):
-    replay = RelionFollowerScaleReplay(
-        relion_iterations=np.asarray([2, 4], dtype=np.int64),
-        follower_scales=np.ones((2, 2, 3), dtype=np.float64),
-        **_REPLAY_KWARGS,
-        source="incomplete accounting",
-    )
-    completion_logger = logging.getLogger("relax.test.follower_completion")
-    caplog.set_level(logging.INFO, logger=completion_logger.name)
-
-    for observed in ([], [2], [4, 2], [2, 2, 4], [2, 3, 4], [2.0, 4.0]):
-        with np.testing.assert_raises(RuntimeError):
-            finalize_relion_follower_scale_replay_telemetry(
-                replay, applied_iterations=observed, logger=completion_logger,
-            )
-    assert caplog.messages == []
 
 
 def test_only_optics_prefix_scale_stats_are_combined_between_followers():

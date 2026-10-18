@@ -39,10 +39,6 @@ def metadata_inputs(*, n_classes, diagnostics, max_order):
         ),
         effective_tau2_fudge=1.0 if n_classes == 1 else 4.0,
         tau2_fudge_source="RELION auto-refine default" if n_classes == 1 else "RELION Class3D default",
-        follower_replay=SimpleNamespace(
-            relion_iterations=(1, 3), source="follower", oracle_id="follower-oracle",
-            boundary="pre-score", source_artifact_relative_paths=("half1.star", "half2.star"),
-        ) if diagnostics else None,
         frozen_boundary=SimpleNamespace(
             source_dir=Path("frozen"), source_manifest_sha256="manifest-hash",
             boundary_sha256="boundary-hash", completed_relion_iteration=2,
@@ -93,7 +89,7 @@ def test_archive_metadata_roundtrip_keeps_source_units_and_half_identity(
     ))
     replay = {
         name: inputs.pop(name)
-        for name in ("frozen_boundary", "state_swap_probe", "follower_replay", "relion_dispatch_schedule")
+        for name in ("frozen_boundary", "state_swap_probe", "relion_dispatch_schedule")
     }
     metadata = build_archive_metadata(
         result,
@@ -143,7 +139,6 @@ def test_archive_metadata_roundtrip_keeps_source_units_and_half_identity(
             assert saved["initial_pose_source_sha256"].item() == "poses-hash"
             assert saved["max_significants_argument"].item() == 211
             assert_matches(saved["particle_diameter_ang"], 24.0, rtol=1e-13)
-            np.testing.assert_array_equal(saved["relion_follower_scale_replay_iterations"], [1, 3])
             assert saved["relion_dispatch_oracle_id"].item() == "dispatch-oracle"
             np.testing.assert_array_equal(saved["state_swap_probe_replay_override_keys"], ["noise_variance"])
         else:
@@ -153,6 +148,5 @@ def test_archive_metadata_roundtrip_keeps_source_units_and_half_identity(
             assert saved["initial_pose_source_sha256"].item() == ""
             assert np.isnan(saved["max_significants_argument"])
             assert np.isnan(saved["particle_diameter_ang"])
-            assert "relion_follower_scale_replay_iterations" not in saved.files
             assert "relion_dispatch_oracle_id" not in saved.files
             assert saved["state_swap_probe_replay_override_keys"].size == 0

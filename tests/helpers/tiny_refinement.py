@@ -221,11 +221,10 @@ def write_replay_dir(root, *, max_iter, n_classes=1, prior_order=2):
     return str(root)
 
 
-def follower_scale_replay(n_iterations, n_followers=2, replay=None):
+def follower_scale_replay(n_iterations, n_followers=2):
     """``run_tiny_refinement`` arguments for Class3D's strict RELION follower-scale emulation on the tiny half
     sets: two physical groups and one optics group (``StartState``), and the input source's follower topology
-    with a captured dispatch schedule for RELION iterations 1 to ``n_iterations`` and the follower-scale
-    ``replay`` (None: none)."""
+    with a captured dispatch schedule for RELION iterations 1 to ``n_iterations``."""
 
     from relax.parity.relion_replay_source import RelionReplay
     from relax.refinement.follower_scale import PreparedFollowerTopology
@@ -241,7 +240,7 @@ def follower_scale_replay(n_iterations, n_followers=2, replay=None):
             init_relion_optics_group_count=1,
         ),
         relion_replay=RelionReplay(follower_topology=PreparedFollowerTopology(
-            n_followers=n_followers, replay=replay, reduction_mode=RELION_SCALE_REDUCTION_MODES[0],
+            n_followers=n_followers, reduction_mode=RELION_SCALE_REDUCTION_MODES[0],
             owners_by_iteration={it: owners for it in range(1, n_iterations + 1)},
         )),
     )
