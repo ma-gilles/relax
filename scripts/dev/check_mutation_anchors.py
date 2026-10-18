@@ -21,9 +21,11 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from scripts.dev import fingerprint, pass1_fingerprint, vdam_fingerprint  # noqa: E402
+from scripts.dev import fingerprint, pass1_fingerprint, ppca_fingerprint, vdam_fingerprint  # noqa: E402
 
-MUTATIONS = (*fingerprint.MUTATIONS, *vdam_fingerprint.MUTATIONS, *pass1_fingerprint.MUTATIONS)
+MUTATIONS = (
+    *fingerprint.MUTATIONS, *vdam_fingerprint.MUTATIONS, *pass1_fingerprint.MUTATIONS, *ppca_fingerprint.MUTATIONS
+)
 
 
 def stale_mutations(root: Path = REPO_ROOT) -> list[tuple[str, int, int]]:

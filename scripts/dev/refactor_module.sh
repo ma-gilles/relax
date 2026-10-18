@@ -1,6 +1,6 @@
 # The module under refactor, for refactor_verify.sh and refactor_gate.sh (sourced by both; not run alone).
 # This is the one place that says which harness, structure test and test directories belong to a module.
-#   REFACTOR_MODULE            refinement (default), vdam or scoring: selects the three defaults below
+#   REFACTOR_MODULE            refinement (default), vdam, ppca or scoring: selects the three defaults below
 #   REFACTOR_FINGERPRINT       the module's fingerprint harness (fp, selftest and the per-commit check)
 #   REFACTOR_STRUCTURE_TESTS   pytest arguments of the module's ceiling tests; verify runs them on every commit
 #   REFACTOR_MODULE_TESTS      the module's test directories; the gate's "tests" step runs every test_*.py
@@ -16,6 +16,10 @@ vdam)
   _fp=scripts/dev/vdam_fingerprint.py
   _structure=tests/unit/initial_model/test_refactor_invariants.py::test_responsibility_loc_budget
   _tests="tests/unit/initial_model tests/unit/ppca_initial_model";;
+ppca)  # relax ppca_initial_model, run whole on the CPU (deterministic there; not on the GPU)
+  _fp=scripts/dev/ppca_fingerprint.py
+  _structure=tests/unit/ppca_initial_model/test_coupled_direction.py  # no PPCA ceiling test yet: a fast unit file
+  _tests="tests/unit/ppca_initial_model";;
 scoring)  # pass 1 (relax/scoring/significance.py): its own fingerprint, the real function on the CPU stand-in
   _fp=scripts/dev/pass1_fingerprint.py
   _structure=tests/unit/test_scoring_structure_metrics.py
