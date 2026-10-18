@@ -433,7 +433,9 @@ def _top_pose_posterior(top_centered_score: np.ndarray, centered_logZ: np.ndarra
 
 
 @full_float32
-def accumulate_full_row_tiles(stream: FullRowStream, tiles, *, enforce_x0: bool = True) -> list[AugmentedPPCAStats]:
+def accumulate_full_row_tiles(
+    stream: FullRowStream, tiles, *, enforce_x0: bool = True, consume=None
+) -> list[AugmentedPPCAStats]:
     """Accumulate unregularized PPCA statistics for each ``(image_indices, significant_rows)`` in ``tiles``.
 
     ``significant_rows`` holds the packed coarse significant pose ids (or ``None``) of each tile image.
@@ -451,6 +453,10 @@ def accumulate_full_row_tiles(stream: FullRowStream, tiles, *, enforce_x0: bool 
     array at the eleven-state HEALPix 4 stage) no longer found a contiguous block on an 80 GB card.
     While the device runs a tile's passes, the host finishes the tile before it (its statistics are
     complete) and reads and preprocesses the next one.
+
+    ``consume(position, stats)``, when given, receives each tile's statistics as soon as they are complete
+    (positions in completion order, largest tile first) and the returned list holds ``None`` in their place, so a
+    caller that sums them keeps one running sum instead of a volume per tile.
     """
     order = sorted(range(len(tiles)), key=lambda k: -np.asarray(tiles[k][0]).size)  # stable: ties keep their order
     with jax.default_device(stream.device):
@@ -463,15 +469,27 @@ def accumulate_full_row_tiles(stream: FullRowStream, tiles, *, enforce_x0: bool 
             pending, kept = _enqueue_full_row_tile(stream, *loaded, kept)
             loaded = None
             if previous is not None:
-                results[previous[0]] = finish_full_row_tile(stream, *previous[1:], enforce_x0=enforce_x0)
+                results[previous[0]] = _deliver(
+                    previous[0], finish_full_row_tile(stream, *previous[1:], enforce_x0=enforce_x0), consume
+                )
             # Only this tile's operands stay live while the next one is read (tile_bytes counts that).
             previous = None
             if position + 1 < len(order):
                 loaded = read_tile(stream, *tiles[order[position + 1]], collect_observation=True)
             previous = (index, tiles[index][0], *pending)
         if previous is not None:
-            results[previous[0]] = finish_full_row_tile(stream, *previous[1:], enforce_x0=enforce_x0)
+            results[previous[0]] = _deliver(
+                previous[0], finish_full_row_tile(stream, *previous[1:], enforce_x0=enforce_x0), consume
+            )
         return results
+
+
+def _deliver(position, stats, consume):
+    """``stats`` for the returned list, or ``None`` once ``consume`` has taken them."""
+    if consume is None:
+        return stats
+    consume(position, stats)
+    return None
 
 
 # Compiled tile sizes per stage: a padding reader rounds a tile up to one of these many sizes.

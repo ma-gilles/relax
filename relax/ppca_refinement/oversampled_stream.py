@@ -707,9 +707,18 @@ def _oversampled_tile(ostream: OversampledStream, image_indices, significant_row
 
 
 @full_float32
-def accumulate_oversampled_tiles(ostream: OversampledStream, tiles, *, enforce_x0=True):
-    """:func:`accumulate_oversampled_tile` for each ``(image_indices, significant_rows)`` in ``tiles``."""
-    return [accumulate_oversampled_tile(ostream, ids, rows, enforce_x0=enforce_x0) for ids, rows in tiles]
+def accumulate_oversampled_tiles(ostream: OversampledStream, tiles, *, enforce_x0=True, consume=None):
+    """:func:`accumulate_oversampled_tile` for each ``(image_indices, significant_rows)`` in ``tiles``; with
+    ``consume``, each tile's statistics go to ``consume(position, stats)`` as they complete, as in
+    :func:`relax.ppca_refinement.full_row_stream.accumulate_full_row_tiles`."""
+    results = []
+    for position, (ids, rows) in enumerate(tiles):
+        stats = accumulate_oversampled_tile(ostream, ids, rows, enforce_x0=enforce_x0)
+        if consume is not None:
+            consume(position, stats)
+            stats = None
+        results.append(stats)
+    return results
 
 
 @full_float32

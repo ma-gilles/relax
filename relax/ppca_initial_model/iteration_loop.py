@@ -83,13 +83,59 @@ def _direction_ids(hp):
     return direction_ids
 
 
-def _merge_statistics(parts):
+# The statistics over the half volume, one array per tile: a group's sum is kept running (TileSums).
+VOLUME_FIELDS = ("rhs", "lhs_tri", "residual_gradient", "metric_trace")
+
+
+class TileSums:
+    """Running sums of one id group's volume statistics, added in tile order as the tiles complete.
+
+    The tiles come in completion order (largest first, noise group by noise group); a tile waits until every
+    earlier tile of its group has been added, so each sum is ``sum(...)`` over the group's tiles in their
+    order, bitwise, while only the running sums and the tiles that wait hold a volume. ``add`` returns the
+    tile's statistics without their volumes, for :func:`_merge_statistics` with ``totals``.
+    """
+
+    def __init__(self, order):
+        self.order = list(order)  # this group's tile indices, in tile order
+        self.next = 0
+        self.waiting = {}
+        self.totals = {}
+        self.stripped = {}
+
+    def add(self, index, part):
+        self.waiting[index] = part
+        while self.next < len(self.order) and self.order[self.next] in self.waiting:
+            k = self.order[self.next]
+            part = self.waiting.pop(k)
+            volumes = {name: getattr(part, name, None) for name in VOLUME_FIELDS}
+            for name, value in volumes.items():
+                if value is not None:
+                    self.totals[name] = self.totals.get(name, 0) + value
+            self.stripped[k] = dataclasses.replace(part, **{
+                name: None for name, value in volumes.items() if value is not None
+            })
+            self.next += 1
+
+    def parts(self):
+        if self.next != len(self.order):
+            raise ValueError("A tile of the group never completed")
+        return [self.stripped[k] for k in self.order]
+
+
+def _merge_statistics(parts, totals=None):
+    """One group's statistics from its tiles' (``parts``, in tile order). ``totals`` holds the volume sums
+    (:class:`TileSums`) when the parts no longer carry their volumes."""
     trace_only = all(isinstance(s, TracePPCAStats) for s in parts)
+
+    def volume(name):
+        return totals.get(name) if totals is not None else sum(getattr(s, name) for s in parts)
+
     fields = dict(
         # The streamed engine produces no RHS volume (only lhs_tri and the residual gradient are read).
-        rhs=None if any(s.rhs is None for s in parts) else sum(s.rhs for s in parts),
-        lhs_tri=None if trace_only else sum(s.lhs_tri for s in parts),
-        residual_gradient=sum(s.residual_gradient for s in parts),
+        rhs=None if (totals is None and any(s.rhs is None for s in parts)) else volume("rhs"),
+        lhs_tri=None if trace_only else volume("lhs_tri"),
+        residual_gradient=volume("residual_gradient"),
         residual_num=sum(s.residual_num for s in parts),
         residual_den=sum(s.residual_den for s in parts),
         embeddings=jnp.concatenate([s.embeddings for s in parts]),
@@ -105,7 +151,7 @@ def _merge_statistics(parts):
         },
     )
     if trace_only:
-        return TracePPCAStats(metric_trace=sum(s.metric_trace for s in parts), **fields)
+        return TracePPCAStats(metric_trace=volume("metric_trace"), **fields)
     return AugmentedPPCAStats(**fields)
 
 
@@ -340,20 +386,30 @@ def _expectation(dataset, state, config, ids, iteration, *, embeddings_only=Fals
             accumulate, embed = accumulate_full_row_tiles, full_row_tile_embeddings
         tiles = cut(tile_size)
         parts = [None] * len(tiles)
+        # Each id group's volume statistics are summed as its tiles complete (device memory does not grow
+        # with the tile count, which RELION's full-set iteration takes to thousands).
+        sums = [TileSums(k for k, (owner, _, _) in enumerate(tiles) if owner == group) for group in range(len(ids))]
         for noise_group, stream in enumerate(streams):
             members = [k for k, (_, owner, _) in enumerate(tiles) if owner == noise_group]
             items = [(tiles[k][2], [None] * len(tiles[k][2])) for k in members]
             if embeddings_only:
-                done = [embed(stream, *item) for item in items]
-            else:
-                done = accumulate(stream, items) if items else []
-            for k, part in zip(members, done):
-                parts[k] = part
+                for k, part in zip(members, [embed(stream, *item) for item in items]):
+                    parts[k] = part
+            elif items:
+
+                def consume(position, part, members=members):
+                    sums[tiles[members[position]][0]].add(members[position], part)
+
+                accumulate(stream, items, consume=consume)
         noise_owner = [owner for _, owner, _ in tiles]
         tiles = [(group, tile_ids) for group, _, tile_ids in tiles]
         results = []
         for group in range(len(ids)):
-            group_parts = [part for (owner, _), part in zip(tiles, parts) if owner == group]
+            group_parts = (
+                [part for (owner, _), part in zip(tiles, parts) if owner == group]
+                if embeddings_only
+                else sums[group].parts()
+            )
             if embeddings_only:
                 results.append(
                     DensePPCAEmbeddings(
@@ -367,7 +423,7 @@ def _expectation(dataset, state, config, ids, iteration, *, embeddings_only=Fals
                     )
                 )
                 continue
-            stats = _merge_statistics(group_parts)
+            stats = _merge_statistics(group_parts, sums[group].totals)
             if tilts:
                 # Noise sums per noise group, (G, S); a group without images in this id group adds zeros.
                 owners = [owner for (half, _), owner in zip(tiles, noise_owner) if half == group]

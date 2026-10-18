@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import jax.numpy as jnp
 import numpy as np
 import pytest
+from recovar.ppca.pose_accumulators import AugmentedPPCAStats
 
 from relax.commands.ppca_initial_model import add_args
 from relax.ppca_initial_model import iteration_loop
@@ -134,12 +135,17 @@ def test_coarse_route_uses_one_parent_and_keeps_default_dense(monkeypatch):
         captured.append(kwargs)
         return sentinel
 
-    def tiles(_stream, items):
-        return [part(_stream, ids, support) for ids, support in items]
+    def tiles(_stream, items, consume=None):
+        results = [part(_stream, ids, support) for ids, support in items]
+        if consume is None:
+            return results
+        for position, stats in enumerate(results):
+            consume(position, stats)
+        return [None] * len(results)
 
     def part(_stream, ids, support):
         assert _stream is sentinel and support == [None] * len(ids)
-        return SimpleNamespace(
+        return AugmentedPPCAStats(
             rhs=jnp.zeros((n_freq, 3), jnp.complex64),
             lhs_tri=jnp.zeros((n_freq, 6), jnp.float32),
             residual_gradient=jnp.zeros((n_freq, 3), jnp.complex64),
@@ -384,3 +390,45 @@ def test_resume_under_another_gemm_precision_is_logged(tmp_path, monkeypatch, ca
     assert [r["iteration"] for r in records] == [2, 3]
     assert all(r["resumed_from_gemm_precision"] == "fp32" and r["gemm_precision"] == resolved for r in records)
     assert checkpoint.saved_gemm_precision(tmp_path / "run" / "checkpoint_0003.npz") == "auto"
+
+
+def test_tile_sums_keep_one_running_volume_and_add_in_tile_order():
+    """A group's volume statistics are summed as its tiles complete: in completion order (largest tile first), a
+    tile waits only for the earlier tiles of its group, the sum is the tile-order ``sum`` bitwise, and no
+    completed tile keeps its volume, however many tiles the group has (RELION's full-set iteration has thousands)."""
+    rng = np.random.default_rng(0)
+    n_tiles, n_freq = 40, 64
+
+    def stats(k):
+        return AugmentedPPCAStats(
+            rhs=None,
+            lhs_tri=jnp.asarray(rng.standard_normal((n_freq, 6)), jnp.float32),
+            residual_gradient=jnp.asarray(rng.standard_normal((n_freq, 3)) + 1j, jnp.complex64),
+            residual_num=jnp.ones(5, jnp.float32),
+            residual_den=jnp.ones(5, jnp.float32),
+            embeddings=jnp.zeros((k + 1, 2), jnp.float32),
+            original_image_ids=np.arange(k + 1),
+            n_images=k + 1,
+            diagnostics={"offset_second_sum_px2": 0.0, "latent_covariance_trace_mean": 1.0,
+                         "pose_entropy_mean": 0.0, "pmax_mean": 0.5},
+        )
+
+    parts = [stats(k) for k in range(n_tiles)]
+    group = [k for k in range(n_tiles) if k % 2 == 0]  # this group's tiles; the others belong to the other group
+    sums = iteration_loop.TileSums(group)
+    # Completion order: the full tiles in order, the group's short last tile last of all.
+    completion = group[:-1] + [group[-1]]
+    completion = completion[:5] + [completion[6], completion[5]] + completion[7:]  # one tile finishes early
+    waiting = 0
+    for k in completion:
+        sums.add(k, parts[k])
+        waiting = max(waiting, len(sums.waiting))
+    assert waiting <= 1
+    for name in ("lhs_tri", "residual_gradient"):
+        expected = sum(getattr(parts[k], name) for k in group)
+        assert np.asarray(sums.totals[name]).tobytes() == np.asarray(expected).tobytes()
+    kept = sums.parts()
+    assert [part.n_images for part in kept] == [k + 1 for k in group]
+    assert all(part.lhs_tri is None and part.residual_gradient is None for part in kept)
+    merged = iteration_loop._merge_statistics(kept, sums.totals)
+    assert merged.rhs is None and merged.n_images == sum(k + 1 for k in group)
