@@ -1,7 +1,9 @@
 """Display the learned PPCA mean, signed loadings and particle coordinates.
 
 No spatial or latent alignment is applied. See
-docs/development/vdam_ppca_visual_comparison.md. Labels are evaluation-only.
+docs/development/vdam_ppca_visual_comparison.md. Labels are evaluation-only. The fields are written through
+relax.io.map_io.write_map (RELION's convention) and displayed in RELION's sign: the internal fields of a run on a
+RELION-sign particle STAR, negated, so protein is positive.
 """
 
 import argparse
@@ -16,9 +18,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.backends.backend_pdf import PdfPages
 from recovar.core import fourier_transform_utils as ftu
-from recovar.utils.helpers import write_mrc
 
+from relax.io.map_io import write_map
 from relax.ppca_initial_model.checkpoint import file_hash
+from scripts.lib.ppca_training_star import require_trained_on, training_star_geometry
 
 
 def particle_labels(ids, coordinates, labels):
@@ -45,8 +48,9 @@ def save_model_diagnostics(theta, ids, coordinates, labels, *, n, voxel, radius,
         raise ValueError("Checkpoint geometry/latent dimension mismatch")
     fields = np.asarray(ftu.get_idft3_real(theta.T.reshape(q + 1, n, n, n // 2 + 1), (n, n, n)))
     # The checkpoint already carries the controller's final support/mask.
-    # Show its actual fields: no extra fit, sign change, SVD or normalization.
-    views = [[v.sum(axis=a) for a in range(3)] + [np.take(v, n // 2, axis=a) for a in range(3)] for v in fields]
+    # Show its actual fields: no extra fit, SVD or normalization. Displayed in RELION's sign: the internal fields
+    # negated (mean and loadings together, so a positive latent coordinate still adds the displayed PC).
+    views = [[-v.sum(axis=a) for a in range(3)] + [-np.take(v, n // 2, axis=a) for a in range(3)] for v in fields]
     fig = plt.figure(figsize=(17.5, 2.7 * (q + 1)))
     # Reserve a tick-label gutter after each colorbar so labels cannot cover a map.
     grid = fig.add_gridspec(q + 1, 10, width_ratios=[1, 1, 1, 0.055, 0.5, 1, 1, 1, 0.055, 0.5],
@@ -71,9 +75,9 @@ def save_model_diagnostics(theta, ids, coordinates, labels, *, n, voxel, radius,
     for row in range(q + 1):
         label = "Mean" if row == 0 else f"PC{row - 1}\nlearned loading"
         axes[row, 0].set_ylabel(label, rotation=0, ha="right", va="center", labelpad=14)
-        write_mrc(str(output / ("mean_unaligned.mrc" if row == 0 else f"pc{row - 1}_unaligned.mrc")), fields[row], voxel)
+        write_map(output / ("mean_unaligned.mrc" if row == 0 else f"pc{row - 1}_unaligned.mrc"), fields[row], voxel)
     fig.suptitle("Learned PPCA mean and signed PCs | original spatial frame and latent basis", fontsize=14)
-    fig.text(0.5, 0.025, f"Box {n}, pixel {voxel:g} Å; final radius {radius} ({n * voxel / radius:.0f} Å). No alignment, sign changes or amplitude normalization.\n"
+    fig.text(0.5, 0.025, f"Box {n}, pixel {voxel:g} Å; final radius {radius} ({n * voxel / radius:.0f} Å). RELION sign; no alignment or amplitude normalization.\n"
              "Red = positive, blue = negative loading; a positive latent coordinate adds the displayed PC. All PCs share scales within projections / slices.", ha="center", fontsize=9)
     fig.savefig(output / "model_components_six_views.png", dpi=150)
     if pdf is not None:
@@ -130,7 +134,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("checkpoint")
     parser.add_argument("embeddings")
-    parser.add_argument("training_manifest")
+    parser.add_argument("training_star", help="The particle STAR the PPCA run trained on (--i)")
     parser.add_argument("evaluation_dir")
     parser.add_argument("fixture_verification")
     parser.add_argument("--comparison-report", required=True)
@@ -138,7 +142,7 @@ def main():
     args = parser.parse_args()
     report = json.loads(Path(args.comparison_report).read_text())
     checks = {"checkpoint_sha256": args.checkpoint, "embeddings_sha256": args.embeddings,
-              "training_manifest_sha256": args.training_manifest, "fixture_verification_sha256": args.fixture_verification}
+              "training_star_sha256": args.training_star, "fixture_verification_sha256": args.fixture_verification}
     for key, path in checks.items():
         if file_hash(path) != report["input_sha256"][key]:
             raise ValueError(f"Comparison input mismatch: {key}")
@@ -148,13 +152,14 @@ def main():
         raise ValueError("Evaluation truth identity mismatch")
     with np.load(args.checkpoint, allow_pickle=False) as saved:
         theta, metadata = saved["theta"].copy(), json.loads(str(saved["metadata"]))
-    if metadata["iteration"] != metadata["config"]["iterations"] or metadata["identity"]["manifest_sha256"] != file_hash(args.training_manifest):
-        raise ValueError("Expected a final checkpoint for this training manifest")
+    if metadata["iteration"] != metadata["config"]["iterations"]:
+        raise ValueError("Expected a final checkpoint")
+    require_trained_on(metadata, args.training_star)
     with np.load(args.embeddings, allow_pickle=False) as saved:
         ids, coordinates = saved["particle_ids"].copy(), saved["z"].copy()
     with np.load(truth, allow_pickle=False) as saved:
         labels = saved["labels"].copy()
-    training = json.loads(Path(args.training_manifest).read_text())
+    training = training_star_geometry(args.training_star)
     output = Path(args.output)
     output.mkdir(parents=True, exist_ok=False)
     with PdfPages(output / "model_and_latents.pdf") as pdf:

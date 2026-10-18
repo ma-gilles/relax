@@ -1,6 +1,8 @@
 """Export the three training-only PPCA initial fields for a K3 VDAM override.
 
-See docs/math/vdam_ppca_algorithm.md, section 14, for the shared-seed boundary.
+See docs/math/vdam_ppca_algorithm.md, section 14, for the shared-seed boundary. The maps are written through
+relax.io.map_io.write_map: the model is in relax's internal frame, and the files are in RELION's convention (a
+STAR-path PPCA mean is positive), as every relax map.
 """
 
 import argparse
@@ -9,24 +11,24 @@ from pathlib import Path
 
 import numpy as np
 from recovar.core import fourier_transform_utils as ftu
-from recovar.utils.helpers import load_relion_volume, write_relion_mrc
 
+from relax.io.map_io import load_relax_map, write_map
 from relax.ppca_initial_model.checkpoint import file_hash
+from scripts.lib.ppca_training_star import require_trained_on, training_star_geometry
 
 
-def export(checkpoint, training_manifest, output):
+def export(checkpoint, training_star, output):
     checkpoint = Path(checkpoint).resolve()
-    training_manifest = Path(training_manifest).resolve()
+    training_star = Path(training_star).resolve()
     output = Path(output).resolve()
-    manifest = json.loads(training_manifest.read_text())
-    if manifest["schema"] != "recovar-ppca-training-v1":
-        raise ValueError("Expected a training-only PPCA manifest")
+    geometry = training_star_geometry(training_star)
     with np.load(checkpoint, allow_pickle=False) as saved:
         meta = json.loads(str(saved["metadata"]))
         theta = saved["theta"].copy()
-    if meta["iteration"] != 0 or meta["identity"]["manifest_sha256"] != file_hash(training_manifest):
-        raise ValueError("Seed export requires checkpoint 0000 for this training manifest")
-    n = int(manifest["box"])
+    require_trained_on(meta, training_star)
+    if meta["iteration"] != 0:
+        raise ValueError("Seed export requires checkpoint 0000")
+    n = geometry["box"]
     if theta.shape != (n * n * (n // 2 + 1), 3) or theta.dtype != np.complex64:
         raise ValueError("Expected a q2 complex64 half-Fourier model")
     mu, w1, w2 = np.asarray(
@@ -41,13 +43,13 @@ def export(checkpoint, training_manifest, output):
     paths = []
     for index, field in enumerate(fields, 1):
         path = output / f"seed{index}.mrc"
-        write_relion_mrc(str(path), field, voxel_size=float(manifest["voxel_size"]))
-        restored = load_relion_volume(str(path))
+        write_map(path, field, voxel_size=geometry["voxel_size"])
+        restored = load_relax_map(path)
         np.testing.assert_allclose(restored, field, rtol=0, atol=0)
         paths.append(path)
     receipt = {
         "checkpoint_sha256": file_hash(checkpoint),
-        "training_manifest_sha256": file_hash(training_manifest),
+        "training_star_sha256": file_hash(training_star),
         "source_precision": "complex64/float32",
         "seed_maps": {path.name: file_hash(path) for path in paths},
         "vdam_override": ",".join(map(str, paths)),
@@ -59,10 +61,10 @@ def export(checkpoint, training_manifest, output):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("checkpoint")
-    parser.add_argument("training_manifest")
+    parser.add_argument("training_star", help="The particle STAR the PPCA run trained on (--i)")
     parser.add_argument("-o", "--output", required=True)
     args = parser.parse_args()
-    print(json.dumps(export(args.checkpoint, args.training_manifest, args.output), sort_keys=True))
+    print(json.dumps(export(args.checkpoint, args.training_star, args.output), sort_keys=True))
 
 
 if __name__ == "__main__":

@@ -15,11 +15,12 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.backends.backend_pdf import PdfPages
-from recovar.utils.helpers import load_mrc, load_relion_volume, write_mrc
+from recovar.utils.helpers import load_mrc, load_relion_volume
 from scipy.optimize import linear_sum_assignment
 
 from relax.diagnostics.gt_metrics import relion_alignment_rotations
 from relax.diagnostics.gt_registration import RigidVolumeTransform
+from relax.io.map_io import write_map
 from relax.ppca_initial_model.checkpoint import file_hash
 from scripts.evaluate_vdam_ppca_pilot import (
     _bandlimit,
@@ -29,6 +30,7 @@ from scripts.evaluate_vdam_ppca_pilot import (
     _states_from_model,
 )
 from scripts.fsc_metrics import shell_fsc
+from scripts.lib.ppca_training_star import simulator_sign_theta, training_star_geometry
 from scripts.plot_vdam_ppca_model import save_model_diagnostics
 
 
@@ -104,7 +106,7 @@ def compare(args):
     if output.exists():
         raise ValueError("Use a new output directory; earlier evaluations are immutable")
     prior = json.loads(Path(args.prior_report).read_text())
-    train = json.loads(Path(args.training_manifest).read_text())
+    train = training_star_geometry(args.training_star)
     verification = json.loads(Path(args.fixture_verification).read_text())
     radius = int(prior["active_radius"])
     n, voxel = int(train["box"]), float(train["voxel_size"])
@@ -112,7 +114,7 @@ def compare(args):
         raise ValueError("An explicit valid active radius is required")
     evaluation = Path(args.evaluation_dir)
     checks = {
-        "training_manifest_sha256": args.training_manifest,
+        "training_star_sha256": args.training_star,
         "fixture_verification_sha256": args.fixture_verification,
         "evaluation_manifest_sha256": evaluation / "manifest.json",
         "checkpoint_sha256": args.checkpoint,
@@ -121,7 +123,7 @@ def compare(args):
     for key, path in checks.items():
         if file_hash(path) != prior[key]:
             raise ValueError(f"Prior evaluation input mismatch: {key}")
-    if verification["identity"]["manifest_sha256"] != prior["training_manifest_sha256"]:
+    if verification["identity"]["particles_star_sha256"] != prior["training_star_sha256"]:
         raise ValueError("Fixture identity mismatch")
     for name in ("truth.npz", "manifest.json", "state0.mrc", "state1.mrc", "state2.mrc"):
         if file_hash(evaluation / name) != verification["files"][f"evaluation/{name}"]:
@@ -138,16 +140,18 @@ def compare(args):
         metadata = json.loads(str(saved["metadata"]))
     if metadata["iteration"] != metadata["config"]["iterations"]:
         raise ValueError("Expected final checkpoint")
-    if metadata["identity"]["manifest_sha256"] != prior["training_manifest_sha256"]:
+    if metadata["identity"]["particles_star_sha256"] != prior["training_star_sha256"]:
         raise ValueError("Checkpoint training identity mismatch")
     with np.load(args.embeddings, allow_pickle=False) as saved:
         ids, coords = saved["particle_ids"].copy(), saved["z"].copy()
     with np.load(evaluation / "truth.npz", allow_pickle=False) as saved:
         labels = saved["labels"].copy()
     means = _class_mean_coordinates(ids, coords, labels)
-    ppca = _states_from_model(theta, means, n)
+    # Internal frame of a RELION-sign run, negated to the simulator sign of the GT maps.
+    ppca = _states_from_model(simulator_sign_theta(theta), means, n)
     gt = np.stack([load_mrc(str(evaluation / f"state{k}.mrc")) for k in range(3)])
-    k3 = np.stack([load_relion_volume(path) for path in args.vdam_maps])
+    # The K3 run trained on the same RELION-sign STAR: negated to the simulator sign as well.
+    k3 = -np.stack([load_relion_volume(path) for path in args.vdam_maps])
     if ppca.shape != gt.shape or k3.shape != gt.shape:
         raise ValueError("Volume geometry mismatch")
     mask_path = Path(args.prior_report).parent / "common_mask.mrc"
@@ -243,7 +247,9 @@ def compare(args):
                 ("k3_unaligned", k3[cls]),
                 ("k3_aligned", k3_aligned[cls, k]),
             ):
-                write_mrc(str(output / f"state_{k}_{name}.mrc"), volume, voxel)
+                # Simulator-frame maps, written through map_io from the internal frame (their negative): the same
+                # voxels as write_mrc, the GT maps' file convention.
+                write_map(output / f"state_{k}_{name}.mrc", -volume, voxel)
             states.append(
                 {
                     "true_state": k,
@@ -332,7 +338,7 @@ def compare(args):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    for name in ("checkpoint", "embeddings", "training_manifest", "evaluation_dir", "fixture_verification"):
+    for name in ("checkpoint", "embeddings", "training_star", "evaluation_dir", "fixture_verification"):
         parser.add_argument(name)
     parser.add_argument("--prior-report", required=True)
     parser.add_argument("--postcheck", required=True)

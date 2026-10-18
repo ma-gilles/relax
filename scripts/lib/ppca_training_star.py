@@ -92,3 +92,37 @@ def write_training_star(star_path, stack_name, ctf_params, *, voxel_size, box, h
     star_path = Path(star_path)
     star_path.write_text("\n".join(lines) + "\n")
     return star_path
+
+
+def training_star_geometry(star_path):
+    """``{"n_images", "box", "voxel_size"}`` of a single-optics-group particle STAR (its optics table)."""
+    from recovar.data_io.starfile import read_star, star_column
+
+    particles, optics = read_star(str(star_path))
+    if optics is None or len(optics) != 1:
+        raise ValueError(f"{star_path}: expected one optics group")
+    return {
+        "n_images": int(len(particles)),
+        "box": int(star_column(optics, "rlnImageSize", required=True)[0]),
+        "voxel_size": float(star_column(optics, "rlnImagePixelSize", required=True)[0]),
+    }
+
+
+def require_trained_on(metadata, star_path):
+    """Refuse a PPCA checkpoint (its ``metadata``) not trained on this particle STAR (``particles_star_sha256``)."""
+    from relax.ppca_initial_model.checkpoint import file_hash
+
+    if metadata["identity"].get("particles_star_sha256") != file_hash(star_path):
+        raise ValueError(f"The checkpoint was not trained on {star_path}")
+
+
+def simulator_sign_theta(theta):
+    """A STAR-path PPCA model in the RECOVAR-simulator sign of ``truth.npz`` and the fixture's state maps.
+
+    Trained on RELION-sign images (the simulator images negated), relax's internal frame holds the
+    negated simulator volumes (``relax/io/map_io.py``: internal = negated (2,1,0) transpose of RELION;
+    the simulator's frame is the internal axes with protein positive). The whole model is negated: a
+    state ``mu + W z`` with the run's own latents ``z`` is then the simulator-sign state. A scorer
+    that infers its own latents may negate the mean alone (the latents absorb the loadings' sign).
+    """
+    return np.negative(np.asarray(theta))

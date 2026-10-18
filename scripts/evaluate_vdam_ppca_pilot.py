@@ -1,6 +1,8 @@
 """Evaluation-only per-state FSC report for the three-state VDAM/PPCA pilot.
 
-See docs/math/vdam_ppca_algorithm.md, section 14, for the state reconstruction.
+See docs/math/vdam_ppca_algorithm.md, section 14, for the state reconstruction. The PPCA run trained on the
+fixture's RELION-sign particle STAR, so its model is compared with the simulator's ground truth after
+scripts.lib.ppca_training_star.simulator_sign_theta.
 """
 
 import argparse
@@ -16,8 +18,10 @@ from scipy.optimize import linear_sum_assignment
 
 from relax.diagnostics.gt_metrics import relion_alignment_rotations
 from relax.diagnostics.gt_registration import RigidVolumeTransform, align_volume_rigid_to_reference
+from relax.io.map_io import write_map
 from relax.ppca_initial_model.checkpoint import file_hash
 from scripts.fsc_metrics import first_shell_below, normalized_fsc_auc, shell_fsc
+from scripts.lib.ppca_training_star import require_trained_on, simulator_sign_theta, training_star_geometry
 
 
 def _bandlimit(volume, radius):
@@ -110,28 +114,30 @@ def _check_effective_gt_maps(gt_fourier, gt):
         raise ValueError("Corrected GT maps differ from the simulated Fourier target")
 
 
-def evaluate(checkpoint, embeddings, training_manifest, evaluation_dir, fixture_verification, vdam_maps, output, *, active_radius=None):
+def evaluate(checkpoint, embeddings, training_star, evaluation_dir, fixture_verification, vdam_maps, output, *, active_radius=None):
     checkpoint = Path(checkpoint).resolve()
     embeddings = Path(embeddings).resolve()
-    training_manifest = Path(training_manifest).resolve()
+    training_star = Path(training_star).resolve()
     evaluation_dir = Path(evaluation_dir).resolve()
     fixture_verification = Path(fixture_verification).resolve()
     output = Path(output).resolve()
-    training = json.loads(training_manifest.read_text())
-    n = int(training["box"])
-    voxel_size = float(training["voxel_size"])
+    geometry = training_star_geometry(training_star)
+    n = geometry["box"]
+    voxel_size = geometry["voxel_size"]
+    # The diameter the run trained with (relax ppca_initial_model --particle-diameter) sets the common mask.
+    diameter = json.loads((checkpoint.parent / "run.json").read_text())["input"]["particle_diameter_ang"]
     with np.load(checkpoint, allow_pickle=False) as saved:
         metadata = json.loads(str(saved["metadata"]))
-        theta = saved["theta"].copy()
+        # Internal frame of a RELION-sign run, negated to the simulator sign of truth.npz and state*.mrc.
+        theta = simulator_sign_theta(saved["theta"])
     if metadata["iteration"] != metadata["config"]["iterations"]:
         raise ValueError("Evaluation requires a final PPCA checkpoint")
-    if metadata["identity"]["manifest_sha256"] != file_hash(training_manifest):
-        raise ValueError("PPCA checkpoint training identity mismatch")
+    require_trained_on(metadata, training_star)
     with np.load(embeddings, allow_pickle=False) as values:
         ids = values["particle_ids"].copy()
         z = values["z"].copy()
     verification = json.loads(fixture_verification.read_text())
-    if verification["identity"]["manifest_sha256"] != file_hash(training_manifest):
+    if verification["identity"]["particles_star_sha256"] != file_hash(training_star):
         raise ValueError("Fixture verification training identity mismatch")
     for name in ("truth.npz", "manifest.json", "state0.mrc", "state1.mrc", "state2.mrc"):
         if file_hash(evaluation_dir / name) != verification["files"][f"evaluation/{name}"]:
@@ -163,14 +169,15 @@ def evaluate(checkpoint, embeddings, training_manifest, evaluation_dir, fixture_
     vdam_paths = [Path(path).resolve() for path in vdam_maps]
     if len(vdam_paths) != 3:
         raise ValueError("Exactly three VDAM class maps are required")
-    vdam = np.stack([load_relion_volume(str(path)) for path in vdam_paths]).astype(np.float32)
+    # The K3 run trained on the same RELION-sign STAR: its internal-frame maps are negated to the simulator sign too.
+    vdam = -np.stack([load_relion_volume(str(path)) for path in vdam_paths]).astype(np.float32)
     if gt.shape != ppca.shape or vdam.shape != ppca.shape:
         raise ValueError("All maps must share the training box")
     if active_radius is not None and not 1 <= active_radius < n // 2 - 1:
         raise ValueError("Active radius is outside reported FSC shells")
     coords = np.arange(n, dtype=np.float32) - n // 2
     radius = np.sqrt(sum(axis * axis for axis in np.meshgrid(coords, coords, coords, indexing="ij")))
-    edge = np.clip((radius - training["particle_diameter_ang"] / (2 * voxel_size)) / 5, 0, 1)
+    edge = np.clip((radius - diameter / (2 * voxel_size)) / 5, 0, 1)
     mask = ((1 + np.cos(np.pi * edge)) / 2).astype(np.float32)
     rotations = relion_alignment_rotations(2)
     gt_mean = gt.mean(axis=0)
@@ -201,7 +208,8 @@ def evaluate(checkpoint, embeddings, training_manifest, evaluation_dir, fixture_
         vdam_local, vdam_local_receipt = _fit(fit_filter(vdam[j]), fit_filter(gt[k]), rotations, voxel_size, gt_hash)
         ppca_individual = ppca_local.apply(ppca[k], voxel_size=voxel_size, gt_sha256=gt_hash)
         vdam_individual = vdam_local.apply(vdam[j], voxel_size=voxel_size, gt_sha256=gt_hash)
-        write_mrc(str(output / f"ppca_state{k}_shared.mrc"), ppca_shared[k], voxel_size=voxel_size)
+        # Back to the internal frame for map_io; the file is the GT maps' (write_mrc of the simulator-sign state).
+        write_map(output / f"ppca_state{k}_shared.mrc", -ppca_shared[k], voxel_size=voxel_size)
         states.append({
             "true_state": k,
             "particle_count": int(np.count_nonzero(labels == k)),
@@ -220,7 +228,7 @@ def evaluate(checkpoint, embeddings, training_manifest, evaluation_dir, fixture_
     report = {
         "schema": "recovar-vdam-ppca-pilot-evaluation-v1",
         "scientific_acceptance": "not threshold-qualified",
-        "training_manifest_sha256": file_hash(training_manifest),
+        "training_star_sha256": file_hash(training_star),
         "fixture_verification_sha256": file_hash(fixture_verification),
         "evaluation_manifest_sha256": file_hash(evaluation_dir / "manifest.json"),
         "checkpoint_sha256": file_hash(checkpoint),
@@ -243,7 +251,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("checkpoint")
     parser.add_argument("embeddings")
-    parser.add_argument("training_manifest")
+    parser.add_argument("training_star", help="The fixture's particle STAR the PPCA run trained on (--i)")
     parser.add_argument("evaluation_dir")
     parser.add_argument("fixture_verification")
     parser.add_argument("--vdam-maps", nargs=3, required=True)
@@ -253,7 +261,7 @@ def main():
     report = evaluate(
         args.checkpoint,
         args.embeddings,
-        args.training_manifest,
+        args.training_star,
         args.evaluation_dir,
         args.fixture_verification,
         args.vdam_maps,
