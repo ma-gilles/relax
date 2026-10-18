@@ -270,17 +270,6 @@ def parse_refinement_args(argv=None):
         "--perturb_seed for same-seed autonomous refinement.",
     )
     parser.add_argument(
-        "--replay-noise-semantics",
-        choices=("continuation", "uninterrupted"),
-        default="continuation",
-        help=(
-            "Diagnostic replay after --init_relion_iteration > 0: 'continuation' "
-            "reproduces a RELION --continue restart, which scores both halves with "
-            "the half-1 sigma2_noise at its first expectation; 'uninterrupted' keeps "
-            "each half's own model-STAR spectrum, as an uninterrupted RELION run does."
-        ),
-    )
-    parser.add_argument(
         "--final-replay-relion-dir",
         default=None,
         help=(

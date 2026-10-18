@@ -219,29 +219,6 @@ def _resolve_replay_normcorr(perturb_replay_relion_dir, replay_relion_normcorr):
     return perturb_replay_relion_dir is not None
 
 
-def _replay_process_start_noise_broadcast(
-    replay_noise_semantics,
-    init_relion_iteration,
-    perturb_replay_relion_dir,
-):
-    """Whether replay slot 0 scores both halves with the half-1 noise spectrum.
-
-    RELION MPI initialisation broadcasts follower rank 1's sigma2_noise, so a
-    fresh start and a ``--continue`` restart both score their first expectation
-    with the half-1 spectrum.  An uninterrupted trajectory scores every later
-    iteration with each half's own model-STAR spectrum, which is the state a
-    fixed-state replay against an uninterrupted RELION run must reproduce.
-    """
-    if replay_noise_semantics == "continuation":
-        return True
-    if perturb_replay_relion_dir is None or int(init_relion_iteration) <= 0:
-        raise ValueError(
-            "--replay-noise-semantics uninterrupted requires --perturb_replay_relion_dir "
-            "and --init_relion_iteration > 0"
-        )
-    return False
-
-
 def _validate_replay_saved_healpix_order(
     perturb_replay_relion_dir,
     init_relion_iteration,
@@ -411,11 +388,6 @@ def main(command=None):
         replay_relion_references=args.state_swap_replay_relion_references,
         init_relion_iteration=args.init_relion_iteration,
         max_iter=job.max_iter,
-    )
-    replay_process_start_noise_broadcast = _replay_process_start_noise_broadcast(
-        args.replay_noise_semantics,
-        args.init_relion_iteration,
-        args.perturb_replay_relion_dir,
     )
     if args.frozen_boundary_dir is None:
         # A sealed frozen boundary owns its sampling state, including coarse size.
@@ -1053,12 +1025,6 @@ def main(command=None):
                 init_relion_iteration=args.init_relion_iteration,
                 include_normcorr=_resolve_replay_normcorr(args.perturb_replay_relion_dir, args.replay_relion_normcorr),
                 include_k1_state_swap=args.state_swap_target_relion_iteration is not None,
-                process_start_noise_broadcast=replay_process_start_noise_broadcast,
-            )
-            logger.info(
-                "Replay noise semantics: %s (slot-0 process-start broadcast=%s)",
-                args.replay_noise_semantics,
-                replay_process_start_noise_broadcast,
             )
 
     final_replay = replay_inputs.FinalReplay()

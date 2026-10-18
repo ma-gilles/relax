@@ -123,7 +123,6 @@ def _build_replay_iteration_overrides(
     include_k1_mean_variance=False,
     include_k1_scoring_scale=False,
     strict=False,
-    process_start_noise_broadcast=True,
     noise_dtype=np.float32,
 ):
     """Build per-iter replay overrides keyed on recovar iteration index.
@@ -422,11 +421,7 @@ def _build_replay_iteration_overrides(
                 # RELION performs this broadcast once in MPI initialise().
                 # Later uninterrupted iterations update each follower's noise
                 # independently, so only replay slot 0 is process-start state.
-                split_random_halves=(
-                    bool(process_start_noise_broadcast)
-                    and recovar_iter == 0
-                    and model_paths[0] != model_paths[1]
-                ),
+                split_random_halves=(recovar_iter == 0 and model_paths[0] != model_paths[1]),
             )
         if direction_prior_h1 is not None and direction_prior_h2 is not None:
             override_k["direction_prior"] = [direction_prior_h1, direction_prior_h2]
@@ -574,7 +569,6 @@ def numbered_star_replay(
     init_relion_iteration: int,
     include_normcorr: bool,
     include_k1_state_swap: bool,
-    process_start_noise_broadcast,
 ) -> list:
     """RELION's per-iteration replay overrides from its run files: slot k is the state numbered iteration k+1
     consumes."""
@@ -596,7 +590,6 @@ def numbered_star_replay(
         include_k1_mean_variance=include_k1_state_swap,
         include_k1_scoring_scale=include_k1_state_swap,
         strict=True,
-        process_start_noise_broadcast=process_start_noise_broadcast,
         noise_dtype=target.noise_dtype,
     )
 
