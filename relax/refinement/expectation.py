@@ -203,13 +203,15 @@ class NumberedHalfRecording:
 class LogLikelihoodInputs:
     """The iteration's terms of RELION's per-particle dLL (relax.relion.log_likelihood): the E-step's noise shells
     per half (relax's frame, RELION's times ``box_size**4``), the model box, the fine pass's current size, whether
-    the iteration scores by cross-correlation, and the optics groups' grids when the halves hold several image
-    shapes (``{group: (box, scale, remap)}``, else None)."""
+    the iteration scores by cross-correlation, whether the halves hold subtomograms (a particle counts its tilt
+    images), and the optics groups' grids when the halves hold several image shapes (``{group: (box, scale, remap)}``,
+    else None)."""
 
     noise_shells: list
     box_size: int
     current_size: int
     cross_correlation: bool
+    tomo: bool
     group_grids: dict | None = None
     # Per half: log of RELION's uniform pdf_direction, -log(n_directions), where the half scores a global search
     # without a learned direction prior (relax leaves that constant out of its log evidence); else 0.
@@ -260,8 +262,9 @@ def log_likelihood_contributions(particle_half, score_result: HalfScoreResult, i
     )
 
     n_units = particle_half.dataset.n_units
-    offsets = getattr(particle_half.dataset, "unit_image_offsets", None)
-    n_images = np.ones(n_units) if offsets is None else np.diff(np.asarray(offsets, dtype=np.int64))
+    n_images = (
+        np.diff(np.asarray(particle_half.dataset.unit_image_offsets, dtype=np.int64)) if inputs.tomo else np.ones(n_units)
+    )
     if inputs.cross_correlation:
         return relion_firstiter_cc_log_likelihood_contributions(score_result.em_stats.best_log_score_per_image, n_images)
     box = float(inputs.box_size)
@@ -458,6 +461,7 @@ def run_numbered_expectation(
                     box_size=ctx.image_geometry.box_size,
                     current_size=plan.sampling_plan.windows.image_current_size,
                     cross_correlation=phase.variant.score_mode == "normalized_cc",
+                    tomo=bool(ctx.tomo_halves),
                     group_grids=optics_group_grids(ctx.optics) if ctx.multi_shape_halves else None,
                     uniform_direction_log_prior=uniform_direction_log_priors(
                         plan, use_local=use_local, symmetry=options.symmetry.point_group
