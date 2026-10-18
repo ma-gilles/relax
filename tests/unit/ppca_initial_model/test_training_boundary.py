@@ -186,8 +186,12 @@ def test_final_embedding_pass_reports_each_images_scores(tmp_path, stream):
 def test_negated_images_seed_the_negated_model(tmp_path):
     """The seed's blob fields take the bootstrap's magnitude and its sign: a stack and its negation (a simulator
     stack and its RELION-sign STAR copy) start from exactly negated models, with the same noise."""
+    import jax
+
     from relax.ppca_initial_model.initialization import initialize
 
+    if jax.default_backend() == "gpu":
+        pytest.skip("the GPU bootstrap backprojects with atomic adds: two runs differ in the last bits; the CPU checks it")
     count, n = 64, 16
     z, y = np.indices((n, n)) - n // 2
     projection = (3.0 * np.exp(-(z**2 + y**2) / 6.0)).astype(np.float32)
