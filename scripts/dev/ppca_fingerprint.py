@@ -9,8 +9,8 @@
 
 The PPCA counterpart of ``scripts/dev/vdam_fingerprint.py``, with the same commands, output format and comparison
 rules (``scripts/dev/fingerprint_cli.py``). ``run`` calls the command entry, ``relax ppca_initial_model``
-(``relax.commands.ppca_initial_model.main``), on a written training manifest of 120 images of 64 pixels (a bare
-.mrcs with a pickled CTF) for three short stages, and records per case: every checkpoint array and its metadata,
+(``relax.commands.ppca_initial_model.main``), on a written RELION particle STAR of 120 images of 64 pixels (RELION's
+sign, protein white; the CTF in the STAR, one optics group) for three short stages, and records per case: every checkpoint array and its metadata,
 every file the run wrote, and one ordered trace of log records. Nothing is replaced: the bootstrap
 initialization, the start-up noise, the E-step (streamed full pose grid, host-mask dense reference or adaptive
 oversampling), the VDAM and momentum-SGD updates and the final embeddings all run as in production, on the CPU.
@@ -62,7 +62,7 @@ HOST_WORDS = ("time", "wall", "seconds", "elapsed", "memory")
 
 
 def _cases() -> dict[str, tuple[str, dict]]:
-    """``{name: (description, run_case keywords)}``; every case runs the command entry on the tiny manifest."""
+    """``{name: (description, run_case keywords)}``; every case runs the command entry on the tiny particle STAR."""
     cases: dict[str, tuple[str, dict]] = {}
 
     def add(name, description, arguments=()):
@@ -109,7 +109,6 @@ MUTATIONS = (
 def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None:
     """Run the cases against ``source`` in this process; the caller has set the CPU-only environment."""
     import logging
-    import pickle
     import threading
     import traceback
 
@@ -125,7 +124,6 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
 
     import relax
     from relax.commands import ppca_initial_model as command
-    from relax.ppca_initial_model.checkpoint import file_hash
 
     assert relax.__file__.startswith(source), relax.__file__
 
@@ -163,43 +161,36 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
             if threading.current_thread() is threading.main_thread():
                 trace.append(log_row(log_record.name, log_record.levelname, template, text, scrub=scrub))
 
-    def write_tiny_manifest(root, *, n_images=120, box=64, voxel=6.0, seed=5):
-        """A bare-.mrcs training manifest: a stack of a soft blob's noisy images (dark, the manifest's sign), a cryoDRGN
-        CTF pickle, neutral poses."""
+    def write_tiny_star(root, *, n_images=120, box=64, voxel=6.0, seed=5):
+        """A RELION particle STAR of a stack of a soft blob's noisy images, in RELION's sign (protein white), one
+        optics group, no angles; the CTF in the STAR."""
         root = Path(root)
         root.mkdir(parents=True, exist_ok=True)
         rng = np.random.default_rng(seed)
         x = np.arange(box) - box / 2
         yy, xx = np.meshgrid(x, x, indexing="ij")
         blob = np.exp(-(xx**2 + yy**2) / 60.0)
-        # The manifest's sign (RECOVAR's CTF is negative at low frequency): a positive density images dark, so the
-        # bootstrap passes its sign test (initialization.warn_if_inverted stays silent).
-        images = -blob[None] * (1.0 + 0.3 * rng.standard_normal((n_images, 1, 1))) + rng.standard_normal(
-            (n_images, box, box)
+        # The negation of the simulator-sign stack the harness wrote before PPCA read STARs (da2a70f9..01261097), so
+        # the rebaselined runs are those runs' exact negations.
+        images = -(
+            -blob[None] * (1.0 + 0.3 * rng.standard_normal((n_images, 1, 1))) + rng.standard_normal((n_images, box, box))
         )
         with mrcfile.new(root / "particles.mrcs") as stack:
             stack.set_data(images.astype(np.float32))
             stack.voxel_size = voxel
-            # mrcfile labels a new file with its creation time; without it the stack (and the manifest's
-            # recorded hash) is the same in every run.
+            # mrcfile labels a new file with its creation time; without it the stack (and the run's input
+            # identity, its sha256) is the same in every run.
             stack.header.nlabl = 0
             stack.header.label[:] = b""
         defocus = 12000.0 + 100.0 * np.arange(n_images)
-        ctf = np.stack([np.full(n_images, box), np.full(n_images, voxel), defocus, defocus + 150.0,
-                        np.full(n_images, 20.0), np.full(n_images, 300.0), np.full(n_images, 2.7),
-                        np.full(n_images, 0.07), np.zeros(n_images)], axis=1).astype(np.float32)
-        poses = (np.broadcast_to(np.eye(3), (n_images, 3, 3)).copy(), np.zeros((n_images, 2)))
-        for name, value in (("ctf.pkl", ctf), ("neutral_poses.pkl", poses)):
-            with open(root / name, "wb") as stream:
-                pickle.dump(value, stream)
-        np.save(root / "particle_ids.npy", np.arange(n_images))
-        names_ = ["particles.mrcs", "ctf.pkl", "neutral_poses.pkl", "particle_ids.npy"]
-        manifest = dict(schema="recovar-ppca-training-v1", n_images=n_images, box=box, voxel_size=voxel,
-                        particle_diameter_ang=240.0, shift_range_px=6, particles=names_[0], ctf=names_[1],
-                        neutral_poses=names_[2], particle_ids=names_[3], contrast=1, image_multiplier=1,
-                        files={name: file_hash(root / name) for name in names_})
-        path = root / "manifest.json"
-        path.write_text(json.dumps(manifest))
+        lines = ["data_optics", "loop_", "_rlnOpticsGroup", "_rlnOpticsGroupName", "_rlnVoltage",
+                 "_rlnSphericalAberration", "_rlnAmplitudeContrast", "_rlnImagePixelSize", "_rlnImageSize",
+                 "_rlnImageDimensionality", f"1 opticsGroup1 300.0 2.7 0.07 {voxel!r} {box} 2", "",
+                 "data_particles", "loop_", "_rlnImageName", "_rlnOpticsGroup", "_rlnDefocusU", "_rlnDefocusV",
+                 "_rlnDefocusAngle"]
+        lines += [f"{i + 1}@particles.mrcs 1 {d!r} {d + 150.0!r} 20.0" for i, d in enumerate(defocus.tolist())]
+        path = root / "particles.star"
+        path.write_text("\n".join(lines) + "\n")
         return path
 
     def drop_host(value):
@@ -234,9 +225,9 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
 
     def run_case(arguments):
         case_root = Path(tempfile.mkdtemp(dir=tmp_root, prefix="case"))
-        manifest = write_tiny_manifest(case_root / "data")
+        particles = write_tiny_star(case_root / "data")
         outdir = case_root / "out"
-        argv = [str(manifest), "-o", str(outdir), "--q", "2", "--seed", "11", "--iterations", "3",
+        argv = ["--i", str(particles), "--particle-diameter", "240", "-o", str(outdir), "--q", "2", "--seed", "11", "--iterations", "3",
                 "--stages", "[[1,6,1],[2,9,1],[3,12,2]]", "--stochastic-batch-size", "60",
                 "--stochastic-all-iterations", "--image-batch-size", "20", "--rotation-block-size", "64",
                 "--ppca-preread-images", "on", *arguments]
@@ -260,8 +251,6 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
             root_logger.removeHandler(handler)
             root_logger.setLevel(old_level)
             command.source_identity = original_identity
-        if any("RELION-sign" in " ".join(map(str, row)) for row in trace):
-            raise AssertionError("the harness stack breaks the manifest's sign contract (the bootstrap warned)")
         files = hash_output_files(outdir, {}) if outdir.exists() else {}
         checkpoints = {key: value for key, value in files.items() if key.startswith("checkpoint_")}
         files = {key: value for key, value in files.items() if not key.startswith("checkpoint_")}
