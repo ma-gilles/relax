@@ -11,7 +11,6 @@ import logging
 import math
 import os
 import time
-from collections.abc import MutableMapping
 from pathlib import Path
 from typing import TYPE_CHECKING, NamedTuple
 
@@ -34,40 +33,6 @@ if TYPE_CHECKING:
     from relax.star.metadata import MaxSignificantsResolution
 
 logger = logging.getLogger(__name__)
-
-_INITIAL_PROJECTOR_USE_REAL_REFERENCE_ENV = "RELAX_INITIAL_PROJECTOR_USE_REAL_REFERENCE"
-
-
-def resolve_initial_projector_real_reference(
-    *,
-    firstiter_cc: bool,
-    n_classes: int,
-    environ: MutableMapping[str, str] | None = None,
-) -> bool:
-    """Whether the initial projector takes the real reference (``RELAX_INITIAL_PROJECTOR_USE_REAL_REFERENCE``).
-
-    On by default for K=1 with --firstiter_cc (the narrow K=1 first-iteration CC parity default), off
-    otherwise; the environment variable overrides either way.
-    """
-
-    environment = os.environ if environ is None else environ
-    use_k1_defaults = bool(firstiter_cc) and int(n_classes) == 1
-    initial_projector_default = "1" if use_k1_defaults else "0"
-    initial_projector_token = environment.get(
-        _INITIAL_PROJECTOR_USE_REAL_REFERENCE_ENV,
-        initial_projector_default,
-    ).strip().lower()
-    if initial_projector_token in {"1", "true", "yes", "on"}:
-        use_initial_projector_real = True
-    elif initial_projector_token in {"0", "false", "no", "off", ""}:
-        use_initial_projector_real = False
-    else:
-        raise SystemExit(
-            f"{_INITIAL_PROJECTOR_USE_REAL_REFERENCE_ENV} must be a boolean token, "
-            f"got {initial_projector_token!r}"
-        )
-    return use_initial_projector_real
-
 
 def resolve_firstiter_cc_tree_rescore_margin(
     *,

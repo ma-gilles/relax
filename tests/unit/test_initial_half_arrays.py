@@ -63,7 +63,7 @@ def test_real_reference_handoff_rejects_resumed_run():
     # A mid-trajectory replay (--init_relion_iteration 10 --firstiter_cc) used to take the
     # handoff and score its first iteration against the low-passed start-up map.
     value = HalfPair.shared(np.ones(SHAPE, dtype=np.float64))
-    with pytest.raises(ValueError, match="--firstiter_cc"):
+    with pytest.raises(ValueError, match="resumes after RELION iteration"):
         prepare_initial_real_references(value, volume_shape=SHAPE, n_classes=1, init_relion_iteration=10, log=LOG)
 
 

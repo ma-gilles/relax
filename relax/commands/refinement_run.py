@@ -690,9 +690,10 @@ def main(command=None):
                 "for the post-iter1 low-pass",
                 relion_firstiter_ini_high_angstrom,
             )
-    _use_initial_projector_real = refinement_arguments.resolve_initial_projector_real_reference(
-        firstiter_cc=bool(args.firstiter_cc), n_classes=int(args.n_classes)
-    )
+    # RELION builds its first projector from the float64 low-passed Iref (computeFourierTransformMap); a fresh start
+    # hands the loop that real map rather than its complex64 DFT, whose round trip moved the projector by about
+    # 5 float32 units (relax#89). A run resuming after RELION iteration N scores against the replayed references.
+    _use_initial_projector_real = int(args.init_relion_iteration) == 0
     firstiter_cc_tree_rescore_max_margin = refinement_arguments.resolve_firstiter_cc_tree_rescore_margin(
         firstiter_cc=bool(args.firstiter_cc),
         n_classes=int(args.n_classes),
@@ -702,11 +703,6 @@ def main(command=None):
         logger.info(
             "RELION firstiter_cc: coarse-tree top-2 rescore max_margin=%g",
             firstiter_cc_tree_rescore_max_margin,
-        )
-    if _use_initial_projector_real:
-        logger.info(
-            "RELION initial projector: direct real-reference handoff enabled "
-            "(K=1 firstiter_cc default or explicit environment override)",
         )
     if frozen_boundary is not None:
         if frozen_boundary.volume_shape != tuple(int(value) for value in ds.volume_shape):

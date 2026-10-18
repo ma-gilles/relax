@@ -235,6 +235,13 @@ phases (`relion_translation_angle_scale`); the subtomogram passes build their
 Angstrom grid with the model pixel
 ([`local_tomo_sampling`](../../relax/steps/tomo_half.py), relax#89).
 
+RELION's first projector is `computeFourierTransformMap` of the low-passed
+`Iref`, a double-precision real map. A fresh relax start builds it from the same
+float64 low-passed real map
+([`prepare_initial_real_references`](../../relax/steps/projector_preparation.py)),
+for every class count; the former route through the complex64 DFT of a float32
+copy moved `Projector::data` by about 5 float32 units (relax#89).
+
 For 2D refinement and oversampling order `k`:
 
 - there are `2^k` x-children

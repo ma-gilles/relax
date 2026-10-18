@@ -160,7 +160,6 @@
   "RECOVAR_INITIAL_MODEL_RELION_F32_COARSE_TIE_ULPS": "RELAX_INITIAL_MODEL_RELION_F32_COARSE_TIE_ULPS",
   "RECOVAR_INITIAL_MODEL_STABLE_FLAT_ROW_CAPACITY": "RELAX_INITIAL_MODEL_STABLE_FLAT_ROW_CAPACITY",
   "RECOVAR_INITIAL_MODEL_UNIFY_LOCAL_BUCKET_SIZES": "RELAX_INITIAL_MODEL_UNIFY_LOCAL_BUCKET_SIZES",
-  "RECOVAR_INITIAL_PROJECTOR_USE_REAL_REFERENCE": "RELAX_INITIAL_PROJECTOR_USE_REAL_REFERENCE",
   "RECOVAR_INTERMEDIATES": "RELAX_INTERMEDIATES",
   "RECOVAR_INTERMEDIATES_DIR": "RELAX_INTERMEDIATES_DIR",
   "RECOVAR_ITERATION_RE": "RELAX_ITERATION_RE",
@@ -513,6 +512,8 @@
   ]
  },
  "retired": {
+  "RECOVAR_INITIAL_PROJECTOR_USE_REAL_REFERENCE": "a fresh start's first projector is always built from the float64 low-passed real reference, as RELION's computeFourierTransformMap input is (relax#89, 2026-10-18)",
+  "RELAX_INITIAL_PROJECTOR_USE_REAL_REFERENCE": "a fresh start's first projector is always built from the float64 low-passed real reference, as RELION's computeFourierTransformMap input is (relax#89, 2026-10-18)",
   "RECOVAR_VDAM_MSTEP_COPY_UNTOUCHED": "the VDAM M-step always publishes new state without copying the slots it replaces (2026-09-26)",
   "RELAX_VDAM_MSTEP_COPY_UNTOUCHED": "the VDAM M-step always publishes new state without copying the slots it replaces (2026-09-26)",
   "RECOVAR_FINAL_ALL_DATA_GRID_CORRECT": "final all-data maps are always gridding-corrected, as in RELION",

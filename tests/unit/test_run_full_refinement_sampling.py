@@ -9,7 +9,6 @@ from helpers.float_compare import assert_matches
 from relax.commands import refinement_arguments
 from relax.commands.refinement_arguments import (
     resolve_firstiter_cc_tree_rescore_margin,
-    resolve_initial_projector_real_reference,
     resolve_initial_sampling,
 )
 from relax.commands.refinement_run import (
@@ -27,95 +26,40 @@ from relax.sampling.perturbation import (
 )
 
 
-def _firstiter_controls(*, firstiter_cc, n_classes, tree_rescore_max_margin="auto", environ):
-    return (
-        resolve_initial_projector_real_reference(firstiter_cc=firstiter_cc, n_classes=n_classes, environ=environ),
-        resolve_firstiter_cc_tree_rescore_margin(
-            firstiter_cc=firstiter_cc, n_classes=n_classes, tree_rescore_max_margin=tree_rescore_max_margin
-        ),
+def _tree_margin(*, firstiter_cc, n_classes, tree_rescore_max_margin="auto"):
+    return resolve_firstiter_cc_tree_rescore_margin(
+        firstiter_cc=firstiter_cc, n_classes=n_classes, tree_rescore_max_margin=tree_rescore_max_margin
     )
 
 
-def test_k1_firstiter_cc_defaults_to_relion_reference_and_tree_controls():
-    environment = {}
-
-    use_real_reference, tree_margin = _firstiter_controls(
-        firstiter_cc=True,
-        n_classes=1,
-        environ=environment,
-    )
-
-    assert use_real_reference is True
-    assert tree_margin == 4e-6
-    assert environment == {}
+def test_k1_firstiter_cc_defaults_to_relion_tree_controls():
+    assert _tree_margin(firstiter_cc=True, n_classes=1) == 4e-6
 
 
-@pytest.mark.parametrize(
-    "firstiter_cc,n_classes",
-    [
-        (False, 1),
-        (True, 4),
-        (False, 4),
-    ],
-)
+@pytest.mark.parametrize("firstiter_cc,n_classes", [(False, 1), (True, 4), (False, 4)])
 def test_relion_firstiter_controls_do_not_change_other_modes(firstiter_cc, n_classes):
-    environment = {}
-
-    use_real_reference, tree_margin = _firstiter_controls(
-        firstiter_cc=firstiter_cc,
-        n_classes=n_classes,
-        environ=environment,
-    )
-
-    assert use_real_reference is False
-    assert tree_margin is None
-    assert environment == {}
+    assert _tree_margin(firstiter_cc=firstiter_cc, n_classes=n_classes) is None
 
 
-def test_k1_firstiter_cc_explicit_opt_outs_override_defaults():
-    environment = {"RELAX_INITIAL_PROJECTOR_USE_REAL_REFERENCE": "0"}
-    use_real_reference, tree_margin = _firstiter_controls(
-        firstiter_cc=True,
-        n_classes=1,
-        tree_rescore_max_margin="off",
-        environ=environment,
-    )
-
-    assert use_real_reference is False
-    assert tree_margin is None
+def test_k1_firstiter_cc_tree_rescore_opt_out():
+    assert _tree_margin(firstiter_cc=True, n_classes=1, tree_rescore_max_margin="off") is None
 
 
 def test_tree_rescore_margin_option_takes_an_explicit_margin_and_rejects_bad_values():
-    _, tree_margin = _firstiter_controls(
-        firstiter_cc=True, n_classes=1, tree_rescore_max_margin="1e-5", environ={}
-    )
-    assert tree_margin == 1e-5
+    assert _tree_margin(firstiter_cc=True, n_classes=1, tree_rescore_max_margin="1e-5") == 1e-5
     for bad in ("-1", "nan", "sometimes"):
         with pytest.raises(SystemExit, match="firstiter_cc_tree_rescore_max_margin"):
             resolve_firstiter_cc_tree_rescore_margin(firstiter_cc=True, n_classes=1, tree_rescore_max_margin=bad)
 
 
-def test_explicit_projector_override_still_applies_outside_default_scope():
-    environment = {"RELAX_INITIAL_PROJECTOR_USE_REAL_REFERENCE": "1"}
+def test_the_retired_initial_projector_switch_refuses_to_start():
+    """relax#89: a fresh start's first projector is always the float64 real reference's; the former switch is
+    retired, so a harness that still sets it fails at import instead of being ignored."""
+    from relax import _reject_renamed_environment
 
-    use_real_reference, tree_margin = _firstiter_controls(
-        firstiter_cc=False,
-        n_classes=4,
-        environ=environment,
-    )
-
-    assert use_real_reference is True
-    assert tree_margin is None
-    assert environment == {"RELAX_INITIAL_PROJECTOR_USE_REAL_REFERENCE": "1"}
-
-
-def test_initial_projector_override_rejects_invalid_boolean():
-    with pytest.raises(SystemExit, match="must be a boolean token"):
-        resolve_initial_projector_real_reference(
-            firstiter_cc=True,
-            n_classes=1,
-            environ={"RELAX_INITIAL_PROJECTOR_USE_REAL_REFERENCE": "sometimes"},
-        )
+    for name in ("RELAX_INITIAL_PROJECTOR_USE_REAL_REFERENCE", "RECOVAR_INITIAL_PROJECTOR_USE_REAL_REFERENCE"):
+        with pytest.raises(RuntimeError, match=name):
+            _reject_renamed_environment(environ={name: "0"})
 
 
 def test_relion_healpix_order_is_coarse_pass1_order():

@@ -63,11 +63,8 @@ def prepare_initial_real_references(init_reference_real, *, volume_shape, n_clas
     initial_real_references_by_half = [None, None]
     if init_reference_real is not None and int(init_relion_iteration) != 0:
         raise ValueError(
-            "direct initial real-reference handoff (the K=1 --firstiter_cc default or "
-            "RELAX_INITIAL_PROJECTOR_USE_REAL_REFERENCE=1) would score the first loop "
-            "iteration against the start-up reference, but this run resumes after RELION "
-            f"iteration {int(init_relion_iteration)}; drop --firstiter_cc (and the "
-            "environment override) for --init_relion_iteration > 0"
+            "the initial real-reference handoff would score the first loop iteration against the "
+            f"start-up reference, but this run resumes after RELION iteration {int(init_relion_iteration)}"
         )
     if init_reference_real is not None:
         expected_volume_shape = tuple(int(value) for value in volume_shape)
