@@ -563,7 +563,6 @@ class RelionReplaySource(InputSource):
         sigma_offset, noise_model = inputs.sigma_offset, inputs.noise_model
         disabled = self.replay.final_all_data_disable_replay_last_numbered_state
         has_overrides = self.replay.replay_iteration_overrides is not None and len(self.replay.replay_iteration_overrides) > 0
-        join_means = inputs.join_means
         replay_last_numbered_state = final_replay_override is not None or (
             not disabled
             and (
@@ -599,7 +598,7 @@ class RelionReplaySource(InputSource):
                 "Diagnostic %s=1: final all-data skips automatic last-numbered RELION state replay",
                 FINAL_ALL_DATA_DISABLE_REPLAY_LAST_NUMBERED_STATE_ENV,
             )
-        return FinalState(join_means, sigma_offset, noise_model)
+        return FinalState(inputs.join_means, sigma_offset, noise_model)
 
     def final_sampling_settings(self, state, image_geometry, *, grid_order, relion_iteration, native):
         """RELION's final (or last numbered) sampling STAR of the live STAR replay; without a replay, the run's
