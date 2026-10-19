@@ -1,6 +1,7 @@
 """CPU checks of the test-tier runner, receipts and pinned-output comparison; nothing is submitted."""
 
 import json
+import os
 import subprocess
 import sys
 import threading
@@ -45,6 +46,23 @@ def test_smoke_plan_covers_local_search_and_global_k1():
     nodes = [a.split("::")[1] for a in items["replays"].argv if "::" in a]
     assert nodes == [run_test_tier.FAST_CASES[c] for c in run_test_tier.SMOKE_REPLAYS]
     assert {"k1_local_replay", "k1_adaptive_replay", "kclass_replay"} == set(run_test_tier.SMOKE_REPLAYS)
+
+
+def test_smoke_runs_the_cli_dispatcher_and_one_real_cli_run():
+    """Smoke's cli_modes item names tests of the CLI-modes file; the medium sweep runs the whole file."""
+    items = {i.name: i for i in run_test_tier.plan("smoke", REPO_ROOT, "HEAD")}
+    item = items["cli_modes"]
+    nodes = [a.split("::")[1] for a in item.argv if a.startswith(f"{run_test_tier.CLI_MODES}::")]
+    assert nodes == list(run_test_tier.SMOKE_CLI_MODES) and item.gpu and item.required
+    collected = subprocess.run(
+        [sys.executable, "-m", "pytest", "-p", "no:cacheprovider", "--collect-only", "-q", *run_test_tier.PARITY_FLAGS,
+         run_test_tier.CLI_MODES],
+        cwd=REPO_ROOT, capture_output=True, text=True, env={**os.environ, "CUDA_VISIBLE_DEVICES": "", "JAX_PLATFORMS": "cpu"},
+    )
+    assert set(nodes) <= {line.split("::", 1)[1] for line in collected.stdout.splitlines() if "::" in line}
+    assert item.seconds == sum(run_test_tier.SMOKE_CLI_MODES.values())
+    swept = {a for i in run_test_tier.plan("medium", REPO_ROOT, "HEAD") if i.name.startswith("unit_") for a in i.argv}
+    assert run_test_tier.CLI_MODES in swept
 
 
 def test_selected_coarse_engine_reaches_gpu_items_only():

@@ -85,6 +85,7 @@ FAST = "tests/integration/test_em_parity_fast.py"
 LONG = "tests/long_test/test_em_parity_long.py"
 LONG_MSHAPE = "tests/long_test/test_vdam_multishape_long.py"
 E2E = "tests/integration/test_em_tier_e2e.py"
+CLI_MODES = "tests/integration/test_cli_modes_gpu.py"
 PARITY_FLAGS = ["--run-slow", "--run-integration", "--run-gpu"]
 FAST_CASES = {  # item name: pytest node id
     "k1_replay": "test_em_parity_fast_k1_replay",
@@ -136,6 +137,12 @@ FAST_CASE_SECONDS = {  # H100 walls of the last full fast tier (Q 14320189) and 
     "kclass_local_dead_class": 60,  # two runs; H100 item wall 39 s (Slurm 15316598)
     "kclass_nonadaptive_replay": 90,
     "kclass_strict_oversample_coldstart": 110,
+}
+# Production CLI modes through the installed ``relax`` dispatcher (CLI_MODES): smoke runs the dispatcher checks and
+# its cheapest real run; the medium sweep runs every mode in the file (tests/tiers/gpu_file_seconds.json).
+SMOKE_CLI_MODES = {  # pytest node: H100 wall in its own process, cold JAX cache (Slurm 15810706)
+    "test_dispatcher_lists_commands_and_dispatches_help": 12,
+    "test_initial_model_two_classes": 28,
 }
 SWEEP_DIRS = ("tests/unit", "tests/integration", "tests/ppca_abinitio")
 CPU_MERGE_UNITS = (
@@ -420,9 +427,17 @@ def plan(tier: str, src: Path, base: str, run_root: Path | None = None) -> list[
             True,
             sum(FAST_CASE_SECONDS[c] for c in SMOKE_REPLAYS),
         )
-        items = [guard, merge_units, replays]
+        cli_modes = Item(
+            "cli_modes",
+            _pytest(py, *[f"{CLI_MODES}::{node}" for node in SMOKE_CLI_MODES]),
+            True,
+            sum(SMOKE_CLI_MODES.values()),
+        )
+        items = [guard, merge_units, replays, cli_modes]
         changed = changed_paths(src, base)
-        touched, deferred = smoke_touched_split(touched_gpu_tests(src, changed), replays.seconds, changed)
+        touched, deferred = smoke_touched_split(
+            touched_gpu_tests(src, changed), replays.seconds + cli_modes.seconds, changed
+        )
         if deferred:
             print(f"smoke budget: {len(deferred)} touched GPU file(s) deferred to the medium tier: {', '.join(deferred)}")
         if touched:
