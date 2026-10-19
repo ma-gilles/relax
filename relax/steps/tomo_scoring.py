@@ -247,7 +247,8 @@ def score_tomo_half(
     if noise_half.ndim == 2 and noise_half.shape[0] == 1:
         noise_half = noise_half[0]
     layout = tomo_coarse.coarse_score_layout(
-        (size, size), sampling.coarse_size, half_spectrum_scoring=True, square_window=False
+        (size, size), sampling.coarse_size, half_spectrum_scoring=True, square_window=False,
+        image_current_size=sampling.fine_size,
     )
     image_scale = None if scale_corrections is None else np.repeat(
         np.asarray(scale_corrections, dtype=np.float32), np.diff(half.unit_image_offsets)

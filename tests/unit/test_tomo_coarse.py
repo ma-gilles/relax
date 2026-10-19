@@ -1408,3 +1408,33 @@ def test_capped_particles_are_cut_on_the_direct_squares_of_their_undecided_rotat
     # RELION's count is the capped rank (maximum_significants), the same from the GEMM-and-exact cut as from exact scores.
     np.testing.assert_array_equal(counts, all_exact_counts)
     assert np.all(counts <= cap) and np.sum(counts == cap) >= 2
+
+
+def test_coarse_diff2_constant_is_the_power_beyond_the_iterations_current_size():
+    """relax#114: the coarse diff2 constant is half of RELION's powerClass Xi2 beyond ``image_current_size`` (the
+    iteration's size, taken once per particle for both passes), not beyond the coarse size, and 0 at the full box."""
+
+    from relax.fine_pass.scoring import relion_cuda_powerclass_highres_xi2_half
+
+    box, coarse = 32, 12
+    rng = np.random.default_rng(114)
+    n_half = box * (box // 2 + 1)
+    processed = jnp.asarray((rng.normal(size=(3, n_half)) + 1j * rng.normal(size=(3, n_half))).astype(np.complex64))
+
+    def layout(image_current_size):
+        return tomo_coarse.CoarseScoreLayout(
+            (box, box), coarse, np.arange(4), jnp.ones(4, bool), jnp.zeros(1, jnp.int32), jnp.ones(n_half),
+            image_current_size=image_current_size,
+        )
+
+    def beyond(size):
+        return np.asarray(relion_cuda_powerclass_highres_xi2_half(processed, image_shape=(box, box), current_size=size))
+
+    at_iteration = np.asarray(tomo_coarse.highres_xi2_half(processed, layout(24)))
+    assert_matches(at_iteration, beyond(24))
+    assert np.all(at_iteration < beyond(coarse))
+    assert np.all(np.asarray(tomo_coarse.highres_xi2_half(processed, layout(box))) == 0)
+    assert_matches(np.asarray(tomo_coarse.highres_xi2_half(processed, layout(None))), beyond(coarse))
+    assert tomo_coarse.coarse_score_layout(
+        (box, box), coarse, half_spectrum_scoring=True, square_window=False, image_current_size=24
+    ).image_current_size == 24

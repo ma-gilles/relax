@@ -50,7 +50,11 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class CoarseScoreLayout:
-    """The coarse score window and its fused-projector lookup, shared by every image of a pass."""
+    """The coarse score window and its fused-projector lookup, shared by every image of a pass.
+
+    ``image_current_size`` is the iteration's current size (RELION's ``image_current_size``, the pass-2 size): the
+    diff2 constant counts the image power beyond it, not beyond the coarse ``current_size``. None when the two agree.
+    """
 
     image_shape: tuple
     current_size: int
@@ -58,12 +62,14 @@ class CoarseScoreLayout:
     score_active_mask: jnp.ndarray
     full_to_compact: jnp.ndarray
     half_weights: jnp.ndarray
+    image_current_size: int | None = None
 
 
 def coarse_score_layout(
-    image_shape, current_size, *, half_spectrum_scoring: bool, square_window: bool
+    image_shape, current_size, *, half_spectrum_scoring: bool, square_window: bool, image_current_size=None
 ) -> CoarseScoreLayout:
-    """The SPA coarse pass's score window (significance.py:1105-1123, 1680-1726) for one current size."""
+    """The SPA coarse pass's score window (significance.py:1105-1123, 1680-1726) for one current size;
+    ``image_current_size`` is the iteration's (:class:`CoarseScoreLayout`)."""
 
     from relax.fourier.fourier_window import make_fourier_window_spec
     from relax.fourier.half_spectrum import make_scoring_half_image_weights
@@ -93,6 +99,7 @@ def coarse_score_layout(
         half_weights=make_scoring_half_image_weights(
             image_shape, relion_half_sum=half_spectrum_scoring, exclude_relion_redundant_x0=True
         ),
+        image_current_size=None if image_current_size is None else int(image_current_size),
     )
 
 
@@ -117,7 +124,6 @@ def tilt_image_coarse_operands(
     (:func:`relax.io.batch_fetch.fetch_indexed_batch`) when it was made ahead.
     """
 
-    from relax.fine_pass.scoring import relion_cuda_powerclass_highres_xi2_half
     from relax.io.batch_fetch import fetch_indexed_batch
     from relax.relion.ctf import relion_exact_ctf_half_from_source_star
     from relax.relion.image_preprocessing import prepare_batch_preprocess_operands
@@ -162,10 +168,23 @@ def tilt_image_coarse_operands(
         use_float64_scoring=False,
         scale_corrections_enabled=scale_corrections is not None,
     )
-    initial = relion_cuda_powerclass_highres_xi2_half(
-        processed, image_shape=layout.image_shape, current_size=layout.current_size
+    return unshifted, pixel_weight, jnp.asarray(highres_xi2_half(processed, layout), dtype=jnp.float32)
+
+
+def highres_xi2_half(processed, layout: CoarseScoreLayout):
+    """Each image's coarse diff2 constant: half of RELION's powerClass Xi2, the image power at and beyond
+    ``image_current_size / 2 + 1``, the iteration's size (``layout.image_current_size``, else its ``current_size``).
+
+    RELION takes it once per particle for both passes (acc_ml_optimiser_impl.h:1200-1265), so the coarse size does
+    not enter; it is 0 when that size is the full box. One program per box, the size a runtime scalar.
+    """
+
+    from relax.fine_pass.scoring import relion_cuda_powerclass_highres_xi2_half
+
+    size = layout.current_size if layout.image_current_size is None else layout.image_current_size
+    return relion_cuda_powerclass_highres_xi2_half(
+        processed, image_shape=layout.image_shape, current_size=int(layout.image_shape[0]), runtime_current_size=jnp.int32(size)
     )
-    return unshifted, pixel_weight, jnp.asarray(initial, dtype=jnp.float32)
 
 
 # Bytes of per-image projections ([images, R, P]) and coarse diff2 ([images, R, T] float32) one call holds, at most

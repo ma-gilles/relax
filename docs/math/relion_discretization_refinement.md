@@ -468,6 +468,14 @@ Instead it:
 This keeps the likelihood normalized correctly while only the low-frequency
 window participates in orientation discrimination.
 
+RELION computes the term once per particle, before its passes, at the
+iteration's `image_current_size` (the pass-2 size). The coarse pass adds the
+same constant, so the pixels between the coarse size and the current size are
+in neither the coarse diff2 nor the constant. When `image_current_size` equals
+the full image size, the term is 0. relax's coarse operands follow this rule:
+`relax.scoring.tomo_coarse.highres_xi2_half` for subtomograms, and the
+`image_current_size` field of `Pass1Request` for SPA (relax#114).
+
 That term is one reason RELION can restrict search to low frequencies without
 changing the total log-likelihood inconsistently.
 

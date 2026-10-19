@@ -22,6 +22,10 @@ class Pass1Request:
     current size; ``nyquist_column_counting="once"`` drops the redundant members of the full-size Nyquist column from the
     Gaussian weights and from the image power (docs/math/relion_consistency_options.md).
 
+    ``image_current_size`` is the iteration's current size (RELION's ``image_current_size``, the pass-2 size): the
+    Gaussian coarse diff2 constant counts the image power beyond it, not beyond the coarse ``current_size`` (relax#114);
+    None when the two agree.
+
     ``probe`` observes the pass for its diagnostics (:class:`relax.scoring.probes.Pass1Probe`: the score dumps, the
     support audit); the default :class:`~relax.scoring.probes.NoProbe` observes nothing, and no result depends on it.
 
@@ -44,6 +48,7 @@ class Pass1Request:
     image_batch_size: int
     rotation_block_size: int
     current_size: int | None
+    image_current_size: int | None = None
     score_with_masked_images: bool = False
     rotation_log_prior: Any = None
     translation_log_prior: Any = None

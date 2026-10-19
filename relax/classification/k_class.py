@@ -634,6 +634,7 @@ def run_dense_k_class_em_adaptive(
             image_batch_size=sig_ibs,
             rotation_block_size=sig_rbs,
             current_size=(coarse_current_size if coarse_current_size is not None else fine_current_size),
+            image_current_size=fine_current_size,
             score_with_masked_images=engine_kwargs.get("score_with_masked_images", True),
             rotation_log_prior=significance_rotation_prior,
             translation_log_prior=coarse_translation_log_prior,

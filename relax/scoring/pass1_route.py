@@ -86,6 +86,7 @@ def plan_gaussian_route(
             stable_fourier_window_shapes=request.stable_fourier_window_shapes,
             score_size=shape.score_size,
             current_size=request.current_size,
+            image_current_size=request.image_current_size,
             coarse_kernel_window=kernel_window,
             coarse_kernel_r_max=None if kernel_window is None else int(request.relion_projector_r_max),
         ),
