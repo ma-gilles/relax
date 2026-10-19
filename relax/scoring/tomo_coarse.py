@@ -618,25 +618,35 @@ def _all_image_coarse_operands(
     padding), so the block is held once, not once in parts and once concatenated.
     """
 
+    from relax.io.batch_fetch import fetch_indexed_batch, prefetched_batches
+
     n_images = int(image_stop) - int(image_start)
     n_rows = -(-n_images // _OPERAND_IMAGE_BATCH) * _OPERAND_IMAGE_BATCH
-    buffers = None
-    for offset in range(0, n_images, _OPERAND_IMAGE_BATCH):
+    starts = range(0, n_images, _OPERAND_IMAGE_BATCH)
+    batches = []
+    for offset in starts:
         indices = np.arange(
             int(image_start) + offset, min(int(image_start) + offset + _OPERAND_IMAGE_BATCH, int(image_stop))
         )
-        padded = np.concatenate([indices, np.full(_OPERAND_IMAGE_BATCH - indices.size, indices[-1])])
-        values = tilt_image_coarse_operands(
-            experiment_dataset,
-            padded,
-            layout,
-            noise_variance_half=noise_variance_half,
-            optics_group_ids=optics_group_ids,
-            scale_corrections=scale_corrections,
-        )
-        if buffers is None:
-            buffers = [jnp.zeros((n_rows,) + v.shape[1:], dtype=v.dtype) for v in values]
-        buffers = [_put_rows(b, v, jnp.int32(offset)) for b, v in zip(buffers, values)]
+        batches.append(np.concatenate([indices, np.full(_OPERAND_IMAGE_BATCH - indices.size, indices[-1])]))
+    buffers = None
+    # The host image reads run one batch ahead, on a worker thread (a local pass read its blocks on the main
+    # thread, with the device idle: 22 s of a healpix-8 local iteration of the real tilt-series case, py-spy).
+    reads = (fetch_indexed_batch(experiment_dataset, padded) for padded in batches)
+    with prefetched_batches(reads, depth=1) as fetched_batches:
+        for offset, padded, fetched in zip(starts, batches, fetched_batches, strict=True):
+            values = tilt_image_coarse_operands(
+                experiment_dataset,
+                padded,
+                layout,
+                noise_variance_half=noise_variance_half,
+                optics_group_ids=optics_group_ids,
+                scale_corrections=scale_corrections,
+                fetched=fetched,
+            )
+            if buffers is None:
+                buffers = [jnp.zeros((n_rows,) + v.shape[1:], dtype=v.dtype) for v in values]
+            buffers = [_put_rows(b, v, jnp.int32(offset)) for b, v in zip(buffers, values)]
     return tuple(buffers)
 
 
