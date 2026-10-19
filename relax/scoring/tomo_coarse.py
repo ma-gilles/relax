@@ -1341,7 +1341,7 @@ def particle_coarse_supports(
             max_significants=max_significants,
         )
 
-    def exact_cut(units_all, diff2, error, n_images, operands, n_real, *, capacity, full_sort=None):
+    def exact_cut(units_all, diff2, error, n_images, operands, n_real, *, capacity, full_sort=None, groups=()):
         """The flushed particles' cut on exact scores: the rotations the GEMM rounding leaves undecided at a
         particle's cut (max_significants or the adaptive fraction) and at its smallest diff2 are scored again by
         the direct-square kernel, and the cut is taken on those values (:mod:`relax.scoring.exact_cut`).
@@ -1350,7 +1350,9 @@ def particle_coarse_supports(
         their scorer matrices built there (:func:`_undecided_scorer_rotations`). Returns the cut and the device
         scalars ``(most, unresolved, rows, particles)``; the caller reads them later and takes the cut again
         (``exact_cut_again``) when a particle held more than ``capacity`` undecided rotations or the fraction
-        rule needs every rotation of a particle sorted (``full_sort``).
+        rule needs every rotation of a particle sorted (``full_sort``). ``groups`` are ``(positions, size)``: those
+        flush particles' undecided rotations are scored again at that size (each particle's own, a group of
+        particles at a time), so a particle with many does not size every particle's rescore.
         """
 
         stats = significance(units_all, diff2)
@@ -1370,9 +1372,14 @@ def particle_coarse_supports(
         for first in range(0, capacity, per_call):
             chunk = slice(first, first + per_call)
             exact = rescore(units_all, exact, ids[:, chunk], use[:, chunk], operands)
-        real = (jnp.arange(units_all.size) < n_real)[:, None] & use  # a padded flush's copies are not counted
+        scored = jnp.sum(use, axis=1, dtype=jnp.int32)  # each particle's rotations scored again
+        for positions, group_capacity in groups:
+            exact, group_use = rescore_group(units_all, exact, rows, operands, positions, group_capacity)
+            group_scored = jnp.sum(group_use, axis=1, dtype=jnp.int32)[: positions.size]
+            scored = scored.at[jnp.asarray(positions)].set(group_scored)
+        real = jnp.where(jnp.arange(units_all.size) < n_real, scored, 0)  # a padded flush's copies are not counted
         n_unresolved = jnp.sum(unresolved & (jnp.arange(units_all.size) < n_real), dtype=jnp.int32)
-        check = (most, n_unresolved, jnp.sum(real, dtype=jnp.int32), jnp.sum(jnp.any(real, axis=1), dtype=jnp.int32))
+        check = (most, n_unresolved, jnp.sum(real, dtype=jnp.int32), jnp.sum(real > 0, dtype=jnp.int32))
         return significance(units_all, exact), check
 
     def rescore(units_all, diff2, ids, use, operands):
@@ -1410,6 +1417,28 @@ def particle_coarse_supports(
             padding_factor=int(padding_factor),
         )
 
+    def rescore_group(units_all, exact, rows, operands, positions, group_capacity):
+        """``exact`` with the undecided rotations of the flush particles ``positions`` scored again, up to
+        ``group_capacity`` each, and which rotations those were (``[n_pad, group_capacity]``). The group is
+        padded to a power of two of particles (the padding scores nothing and writes nothing back)."""
+
+        n = int(positions.size)
+        n_pad = pow2_ceil(n)
+        take = np.concatenate([positions, np.full(n_pad - n, positions[-1])]).astype(np.int64)
+        take_device = jnp.asarray(take)
+        group_ids, group_use = first_rows(rows[take_device], capacity=group_capacity)
+        group_use = group_use & (jnp.arange(n_pad) < n)[:, None]
+        group_operands = tuple(value[take_device] for value in operands)
+        group_exact = exact[take_device]
+        per_call = _rescore_rows_per_call(n_pad, slots, n_coarse_trans, rescore_bytes, group_capacity)
+        for first in range(0, group_capacity, per_call):
+            chunk = slice(first, first + per_call)
+            group_exact = rescore(
+                units_all[take], group_exact, group_ids[:, chunk], group_use[:, chunk], group_operands
+            )
+        back = jnp.where(jnp.arange(n_pad) < n, take_device, units_all.size)  # the padding writes past the end
+        return exact.at[back].set(group_exact, mode="drop"), group_use
+
     def exact_cut_again(cut_operands, unresolved):
         """The flush's exact cut at the size its undecided rotations need (read from the device): every rotation
         sorted for the particles whose fraction rule needed it (when ``unresolved`` counts any), and room for the
@@ -1419,9 +1448,17 @@ def particle_coarse_supports(
         stats = significance(units_all, diff2)
         cut_inputs = (diff2, stats["log_weights"], stats["mask"], stats["cutoff_count"], error, n_images)
         full_sort = _particle_near_cut_rows(cut_inputs, None, **cut_static)[2] if unresolved else None
-        rows, most, _ = _particle_near_cut_rows(cut_inputs, full_sort, **cut_static)
-        capacity = row_capacity(int(most), rows.shape[1], least=_UNDECIDED_ROTATIONS)
-        return exact_cut(*cut_operands, capacity=capacity, full_sort=full_sort)
+        rows, _most, _ = _particle_near_cut_rows(cut_inputs, full_sort, **cut_static)
+        # Every particle is scored again at the first cut's size (on its rows with the full sort where it needs
+        # it); a real particle with more undecided rotations again with its group, the particles whose counts
+        # round up to the same power of two.
+        counts = np.asarray(jnp.sum(rows, axis=1, dtype=jnp.int32))[:_n_real]
+        again = counts > _UNDECIDED_ROTATIONS
+        sizes = np.array([row_capacity(int(c), rows.shape[1], least=_UNDECIDED_ROTATIONS) for c in counts])
+        groups = tuple(
+            (np.flatnonzero(again & (sizes == size)), int(size)) for size in np.unique(sizes[again])
+        )
+        return exact_cut(*cut_operands, capacity=_UNDECIDED_ROTATIONS, full_sort=full_sort, groups=groups)
 
     def compacted(stats, n_real):
         # The significant cells are compacted on the device; only their ids come back (the dense mask is
