@@ -40,7 +40,7 @@ def metric_floor(image_size):
 
 # Blocks per batched eigh call: cuSolver's syevjBatched rejects batches between 2.0M and 3.6M 3x3 blocks
 # (jaxlib 0.9.0.1, "gpusolverDnSsyevjBatched_bufferSize ... invalid value"); each block is solved on its own,
-# so the chunking does not change a value.
+# so the chunking does not change a value. Remove it once the pinned jaxlib's syevjBatched takes a 3.6M-block batch.
 EIGH_BATCH_BLOCKS = 1 << 20
 
 
