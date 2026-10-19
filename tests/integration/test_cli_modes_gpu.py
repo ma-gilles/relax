@@ -4,14 +4,15 @@ Every run goes through the console entry point (``[project.scripts] relax =
 relax.command_line:main_commands``), as users start relax, instead of ``python -m
 relax.commands.<cmd>``: ``relax refine --preread_images``, ``relax refine --continue``,
 ``relax class3d --init_class_volumes``, ``relax initial_model --K 2`` and ``relax
-ppca_initial_model --i``. The data are the first few hundred particles of the K1 and K2 5k/128
-fixtures, a few iterations each. These are execution checks: each run must complete and
+ppca_initial_model --i`` (with and without ``--oversampling 1``). The data are the first few
+hundred particles of the K1 and K2 5k/128 fixtures, a few iterations each. These are execution checks: each run must complete and
 write sane outputs (files present, maps finite and nonzero, STAR and npz files readable,
 the iteration counts asked for); quality is measured by the parity and benchmark items.
 """
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import subprocess
@@ -176,13 +177,21 @@ def test_initial_model_two_classes(tmp_path):
     assert not (out / f"run_it{n_iter + 1:03d}_data.star").exists()
 
 
-def test_ppca_initial_model_single_particles(tmp_path):
-    """``relax ppca_initial_model --i particles.star``: three short updates, checkpoints and the final embeddings."""
+@pytest.mark.parametrize("oversampling", [0, 1], ids=["full_grid", "oversampling_1"])
+def test_ppca_initial_model_single_particles(tmp_path, oversampling):
+    """``relax ppca_initial_model --i particles.star``: three short updates, checkpoints and the final embeddings;
+    with ``--oversampling 1`` every update runs RELION's two passes (the GPU stream pads its shift phases to the
+    GEMM window)."""
     project = _project(tmp_path, "k1_5k128_data")
     out = tmp_path / "ppca"
     n_iter, q = 3, 2
     _run("ppca_initial_model", "--i", str(project / "particles.star"), "--particle-diameter", "400", "-o", str(out),
-         "--q", str(q), "--iterations", str(n_iter), "--stages", "[[1, 4, 1]]", "--image-batch-size", "100")
+         "--q", str(q), "--iterations", str(n_iter), "--stages", "[[1, 4, 1]]", "--image-batch-size", "100",
+         "--oversampling", str(oversampling))
+    with open(out / "iterations.jsonl") as stream:
+        updates = [json.loads(line) for line in stream]
+    assert len(updates) == n_iter
+    assert all(("oversampling" in update) == bool(oversampling) for update in updates)
     checkpoints = sorted(out.glob("checkpoint_*.npz"))
     assert [p.name for p in checkpoints] == [f"checkpoint_{i:04d}.npz" for i in range(n_iter + 1)]
     with np.load(checkpoints[-1], allow_pickle=False) as arrays:
