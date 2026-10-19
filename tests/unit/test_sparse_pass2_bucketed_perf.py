@@ -2017,6 +2017,23 @@ def test_fine_rotation_override_preserves_fine_grid_order_and_parent_map():
     assert_matches(per_image["oversampled_rots"][0], fine_rotations[[0, 2, 3, 5]])
 
 
+def test_fine_rotation_override_children_by_parent_runs_match_the_parent_mask():
+    # A selection of a few parents takes their children from runs sorted by parent; it must be the mask's
+    # ascending list, for sparse and dense selections (the dense one takes the mask itself).
+    from relax.fine_pass.bucket_arrays import _children_of
+
+    rng = np.random.default_rng(7)
+    n_coarse = 500
+    parent = rng.integers(0, n_coarse, 20_000).astype(np.int64)
+    by_parent = np.argsort(parent, kind="stable")
+    offsets = np.concatenate(([0], np.cumsum(np.bincount(parent, minlength=n_coarse))))
+    for n_parents in (1, 3, 20, 400):
+        parents = np.unique(rng.integers(0, n_coarse, n_parents)).astype(np.int32)
+        selected = np.zeros(n_coarse, dtype=bool)
+        selected[parents] = True
+        assert_matches(_children_of(parent, by_parent, offsets, parents), np.flatnonzero(selected[parent]))
+
+
 def test_fine_rotation_override_can_follow_relion_parent_execution_order():
     fine_rotations = np.arange(6 * 9, dtype=np.float32).reshape(6, 3, 3)
     # Order-1 RECOVAR parent ids are psi-slow/direction-fast. Parent 48 is

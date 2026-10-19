@@ -26,6 +26,25 @@ def _rotation_table_key(table) -> tuple:
     return (table.shape, str(table.dtype), hashlib.sha1(table.view(np.uint8)).hexdigest())
 
 
+def _children_of(parent, by_parent, offsets, parents) -> np.ndarray:
+    """The fine rotations whose parent is in ``parents`` (unique ids), in ascending order. ``by_parent`` lists
+    the fine rotations sorted by parent and ``offsets`` (``[n_coarse_rot + 1]``) where each parent's run
+    starts; ``parent`` is each fine rotation's parent, for a selection that holds a large part of them."""
+
+    parents = np.asarray(parents, dtype=np.int64)
+    starts = offsets[parents]
+    counts = offsets[parents + 1] - starts
+    n_children = int(counts.sum())
+    if 16 * n_children > parent.size:  # most of the grid: one pass over it beats sorting the runs
+        selected = np.zeros(offsets.size - 1, dtype=bool)
+        selected[parents] = True
+        return np.flatnonzero(selected[parent]).astype(np.int64)
+    # Position j of parent p's run is starts[p] + j: each run's start, repeated, plus the position in the run.
+    run_first = np.cumsum(counts) - counts
+    positions = np.repeat(starts - run_first, counts) + np.arange(n_children, dtype=np.int64)
+    return np.sort(by_parent[positions])
+
+
 def relion_parent_execution_key(parent_ids, *, n_coarse_rot: int, nside_level: int) -> np.ndarray:
     """RELION's execution key for coarse rotation ids.
 
@@ -167,6 +186,10 @@ def prepare_per_image_pass2_inputs(
             )
         if int(fine_parent_np.min(initial=0)) < 0 or int(fine_parent_np.max(initial=-1)) >= int(n_coarse_rot):
             raise ValueError("fine_rotation_parent_override values must be in [0, n_coarse_rot)")
+        # The fine rotations by parent, once: an image takes its parents' children from here instead of testing
+        # every fine rotation (74 s of a local pass 2 of the real tilt-series case went to that mask, py-spy).
+        fine_by_parent = np.argsort(fine_parent_np, kind="stable")
+        fine_parent_offsets = np.concatenate(([0], np.cumsum(np.bincount(fine_parent_np, minlength=n_coarse_rot))))
     else:
         raise ValueError("fine_rotations_override and fine_rotation_parent_override must be provided together")
 
@@ -308,10 +331,7 @@ def prepare_per_image_pass2_inputs(
                 unique_rot[parent_map],
             )
         else:  # Paired overrides were validated before entering the image loop.
-            selected_parent = np.zeros(n_coarse_rot, dtype=bool)
-            selected_parent[unique_rot] = True
-            child_mask = selected_parent[fine_parent_np]
-            oversampled_rot_indices = np.flatnonzero(child_mask).astype(np.int64)
+            oversampled_rot_indices = _children_of(fine_parent_np, fine_by_parent, fine_parent_offsets, unique_rot)
             oversampled_rots = fine_rotations_np[oversampled_rot_indices]
             parent_map = np.searchsorted(unique_rot, fine_parent_np[oversampled_rot_indices]).astype(np.int32)
             oversampled_rots, parent_map, oversampled_rot_indices, source_eulers = _reorder_children(
