@@ -387,6 +387,24 @@ def test_one_image_particles_reproduce_the_spa_k_class_vdam_pass(monkeypatch):
     _assert_noise_stats_match(spa.noise_stats, tomo.noise_stats)
 
 
+def test_slot_blocks_split_the_slots_evenly_whatever_the_free_bytes():
+    """The slot block is set by the number of blocks the fitting count needs, so nearby budgets give the same
+    blocks (and the same M-step programs), each at most the count that fits."""
+
+    from relax.fine_pass.resident_tilts import tilt_projection_slot_block
+
+    def block(fit):
+        return tilt_projection_slot_block(10, slot_capacity=41, slot_row_bytes=1, budget_bytes=2 * 10 * fit)
+
+    assert block(41) == block(100) == 41
+    assert {block(fit) for fit in (21, 25, 30, 31, 32, 40)} == {21}
+    assert {block(fit) for fit in (14, 17, 20)} == {14}
+    assert block(1) == 1
+    for fit in range(1, 42):
+        assert block(fit) <= fit
+    assert tilt_projection_slot_block(10, slot_capacity=41, slot_row_bytes=1, budget_bytes=None) == 41
+
+
 @requires_resident_gpu
 def test_slot_blocked_tilt_projections_are_the_one_block_pass(monkeypatch):
     """A chunk projected one image slot at a time (its projections do not fit at once) is the one-block pass.

@@ -81,14 +81,18 @@ def tilt_projection_slot_block(max_rows: int, *, slot_capacity: int, slot_row_by
     """Image slots whose projections of the largest particle's rows fit half the chunk budget at once.
 
     ``slot_row_bytes`` is one row's projection bytes for one slot. Every slot (one block, the chunk's
-    projections made once) when they fit or the budget is unknown; else the largest count that fits,
-    at least one.
+    projections made once) when they fit or the budget is unknown; else the slots split evenly into as few
+    blocks as hold at most the count that fits (at least one slot each). The block count, not the free bytes,
+    sets the block size, so the passes of a run keep the same slot blocks and their programs (the largest
+    count that fits gave the M-step program a new slot axis in nearly every pass: 30 + 11, 31 + 10, 32 + 9).
     """
 
     need = int(max_rows) * int(slot_row_bytes)
     if budget_bytes is None or need <= 0 or need * slot_capacity <= int(budget_bytes) // 2:
         return slot_capacity
-    return int(min(slot_capacity, max(1, (int(budget_bytes) // 2) // need)))
+    fit = int(min(slot_capacity, max(1, (int(budget_bytes) // 2) // need)))
+    n_blocks = -(-int(slot_capacity) // fit)
+    return -(-int(slot_capacity) // n_blocks)
 
 
 def tilt_lone_row_bytes(n_fine_trans: int, *, slot_capacity: int, n_accumulators: int = 1) -> int:
