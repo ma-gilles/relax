@@ -436,6 +436,100 @@ def test_slot_blocked_tilt_projections_are_the_one_block_pass(monkeypatch):
     _assert_noise_stats_match(whole.noise_stats, blocked.noise_stats)
 
 
+@requires_resident_gpu
+def test_only_the_overflow_tilt_chunks_take_the_largest_particles_slot_block(monkeypatch):
+    """A particle past the row classes splits its own chunk into slot blocks, not every chunk of the pass (relax#115).
+
+    The row class sits between the fixture's smallest and largest particle and a chunk past it fits one slot at a
+    time: the row-class chunks keep both slots, the overflow chunks take one, and the pass is the one-block pass
+    (exact discrete state, maps and sums inside the repeat band).
+    """
+
+    from test_resident_k_class_pass2 import _k_class_args, _resident
+
+    from relax.fine_pass import resident_tilts
+    from relax.runtime.shape_buckets import pow2_floor
+
+    args, volumes, supports, priors = _k_class_args(2)
+    args = dict(args, score_with_masked_images=True)
+    tilt, n_units = _two_image_particles(args)
+    supports = [class_supports[:n_units] for class_supports in supports]
+    vdam = dict(args, translation_log_prior=None, tilt=tilt, **_vdam_options(n_units))
+    real_chunk, particle_rows, chunk_blocks = resident_tilts.run_tilt_chunk, [], []
+
+    def chunk(tilt_chunk, *a, **k):
+        particle_rows.extend(np.diff(np.asarray(k["tables"].row_offsets)).tolist())
+        chunk_blocks.append((int(tilt_chunk.row_capacity), int(k["slot_block"])))
+        return real_chunk(tilt_chunk, *a, **k)
+
+    monkeypatch.setattr(resident_tilts, "run_tilt_chunk", chunk)
+    whole = _resident(vdam, volumes, supports, priors)
+    row_class = pow2_floor(max(particle_rows) - 1)
+    assert min(particle_rows) <= row_class < max(particle_rows), sorted(set(particle_rows))
+    chunk_blocks.clear()
+
+    monkeypatch.setattr(
+        resident_tilts, "tilt_capacity_ladders", lambda rows, images, **k: ((row_class,), tuple(sorted(set(images))))
+    )
+    monkeypatch.setattr(
+        resident_tilts,
+        "tilt_projection_slot_block",
+        lambda rows, *, slot_capacity, slot_row_bytes, budget_bytes: 1 if int(rows) > row_class else int(slot_capacity),
+    )
+    blocked = _resident(vdam, volumes, supports, priors)
+
+    assert {block for rows, block in chunk_blocks if rows <= row_class} == {2}
+    assert {block for rows, block in chunk_blocks if rows > row_class} == {1}
+    assert_matches(whole.per_class_hard_assignments, blocked.per_class_hard_assignments)
+    for field in ("class_log_evidence_per_image", "class_best_log_score_per_image", "class_rotation_posterior_sums"):
+        assert_matches(np.asarray(getattr(whole, field)), np.asarray(getattr(blocked, field)), err_msg=field)
+    for k in range(2):
+        _assert_accumulators_match(whole.Ft_y[k], whole.Ft_ctf[k], blocked.Ft_y[k], blocked.Ft_ctf[k])
+    _assert_noise_stats_match(whole.noise_stats, blocked.noise_stats)
+
+
+def test_an_overflow_chunk_is_planned_at_its_own_projection_bytes():
+    """The plan counts a particle past the row classes at ``overflow_row_bytes`` and the row classes at ``row_bytes``.
+
+    At hn_k2_s0150 iteration 30 a 37k-row particle fits two of its 41 image slots at a time while a 512-row chunk
+    fits all 41 (relax#115): planned at one row size, either the overflow chunk is refused or every chunk is.
+    """
+
+    from relax.fine_pass import resident_chunk_memory
+    from relax.fine_pass.policy import ResidentConfigurationUnsupported
+
+    gib = 1024**3
+    slot_bytes = int(126.4 * 1024)
+    kwargs = dict(
+        row_capacity_ladder=(256, 512),
+        image_capacity_ladder=(32, 128),
+        mstep_block_rows=256,
+        row_bytes=41 * slot_bytes,
+        n_fine_trans=41,
+        n_recon_pixels=6427,
+        budget_bytes=int(40.88 * gib),
+        rows_live_during_prepare=True,
+        max_image_rows=37344,
+    )
+    overflow_rows = resident_chunk_memory.overflow_row_capacity(37344, (256, 512))
+    assert overflow_rows * 41 * slot_bytes > kwargs["budget_bytes"]
+    with pytest.raises(ResidentConfigurationUnsupported, match="37344 rows, run alone"):
+        resident_chunk_memory.plan_resident_chunk_memory(**kwargs)
+    plan = resident_chunk_memory.plan_resident_chunk_memory(**kwargs, overflow_row_bytes=2 * slot_bytes)
+    assert plan.row_capacity_ladder == (256, 512)
+    assert plan.peak_bytes >= max(512 * 41, overflow_rows * 2) * slot_bytes
+    alone = resident_chunk_memory.resident_chunk_bytes(
+        row_capacity=overflow_rows,
+        image_capacity=32,
+        mstep_block_rows=plan.mstep_block_rows,
+        row_bytes=2 * slot_bytes,
+        n_fine_trans=41,
+        n_recon_pixels=6427,
+        rows_live_during_prepare=True,
+    )
+    assert plan.peak_bytes >= alone
+
+
 def _lone_tilt_runs(monkeypatch, args, tilt):
     """One pass with the particles' overflow chunks held whole, and one where they do not fit the budget.
 

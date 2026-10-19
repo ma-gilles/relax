@@ -300,6 +300,7 @@ def plan_resident_chunk_memory(
     fixed_bytes: int = 0,
     max_image_rows: int = 0,
     lone_row_bytes: int | None = None,
+    overflow_row_bytes: int | None = None,
     float32_posterior_buckets: bool = False,
 ) -> ResidentChunkMemoryPlan:
     """Shrink the three per-chunk classes until their sum fits one budget.
@@ -330,7 +331,9 @@ def plan_resident_chunk_memory(
     ``lone_row_bytes`` is set where that chunk runs in blocks of the largest row
     class (the global pass, :func:`~relax.fine_pass.resident_chunk_run.run_lone_resident_chunk`): it is then a
     largest-class chunk of the smallest image class plus ``lone_row_bytes`` for
-    each of its rows (the posterior cells every row keeps).
+    each of its rows (the posterior cells every row keeps). ``overflow_row_bytes`` (default ``row_bytes``) is
+    that chunk's ``row_bytes`` when it differs from the row classes': a subtomogram particle past them projects
+    its rows a smaller block of image slots at a time (resident_pass2, ``tilt_overflow_slot_block``).
     """
 
     rows = tuple(int(v) for v in row_capacity_ladder)
@@ -356,6 +359,10 @@ def plan_resident_chunk_memory(
             row_capacity=max(rows), image_capacity=max(images), mstep_block_rows=block, **kwargs
         )
 
+    overflow_kwargs = {**kwargs, "pipelined": False}
+    if overflow_row_bytes is not None:
+        overflow_kwargs["row_bytes"] = int(overflow_row_bytes)
+
     def overflow_peak():
         overflow_rows = overflow_row_capacity(max_image_rows, rows)
         if not overflow_rows:
@@ -365,13 +372,13 @@ def plan_resident_chunk_memory(
                 row_capacity=max(rows),
                 image_capacity=min(images),
                 mstep_block_rows=block,
-                **{**kwargs, "pipelined": False},
+                **overflow_kwargs,
             ) + overflow_rows * int(lone_row_bytes)
         return resident_chunk_bytes(
             row_capacity=overflow_rows,
             image_capacity=min(images),
             mstep_block_rows=block,
-            **{**kwargs, "pipelined": False},
+            **overflow_kwargs,
         )
 
     def peak():
