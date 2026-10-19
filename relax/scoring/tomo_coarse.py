@@ -24,6 +24,7 @@ The GEMM block is ``tomo_coarse_gemm``'s; the ``--firstiter_cc`` winner pass, a 
 
 from __future__ import annotations
 
+import heapq
 import logging
 from dataclasses import dataclass
 from functools import partial
@@ -253,7 +254,7 @@ def _significant_cells(mask, *, capacity: int, row_length: int):
     rows = mask.reshape(-1, row_length)
     hit = jnp.any(rows, axis=1)
     # At most every row holds a cell: a larger capacity only pads ``held``, whose nonzero scans all its cells.
-    row_capacity = min(int(capacity), int(rows.shape[0]))
+    row_capacity = min(capacity, rows.shape[0])
     row_ids = jnp.nonzero(hit, size=row_capacity, fill_value=0)[0]
     held = rows[row_ids] & (jnp.arange(row_capacity) < jnp.sum(hit))[:, None]
     cell = jnp.nonzero(held.reshape(-1), size=capacity, fill_value=-1)[0]
@@ -661,7 +662,7 @@ def shared_frames(image_left, unit_image_offsets) -> SharedFrames | None:
     offsets = np.asarray(unit_image_offsets, dtype=np.int64)
     # The matrices' bits: -0.0 and 0.0 are different frames.
     left = np.ascontiguousarray(np.asarray(image_left, dtype=np.float64).reshape(-1, 9)).view(np.uint64)
-    n_images, n_units = int(left.shape[0]), int(offsets.size - 1)
+    n_images, n_units = left.shape[0], offsets.size - 1
     if n_images == 0:
         return None
     _rows, key_image, image_key = np.unique(left, axis=0, return_index=True, return_inverse=True)
@@ -677,7 +678,6 @@ def shared_frames(image_left, unit_image_offsets) -> SharedFrames | None:
     edges = np.unique(np.stack([image_key[:-1][same], image_key[1:][same]], axis=1), axis=0)
     indegree = np.bincount(edges[:, 1], minlength=n_keys)
     successors = np.split(edges[:, 1], np.cumsum(np.bincount(edges[:, 0], minlength=n_keys))[:-1])
-    import heapq
 
     ready = [(int(key_image[k]), k) for k in np.flatnonzero(indegree == 0)]
     heapq.heapify(ready)
@@ -1012,9 +1012,9 @@ def _frame_group_plan(
         return None
     per_image = n_trans * r_pad * 4 * 3 + n_trans * n_score_pixels * 8 * 2
     per_frame = r_pad * n_score_pixels * projection_bytes * 3 // 2
-    images_per_call = int(min(flush_size, max(1, (int(batch_bytes) - per_frame) // per_image)))
-    n_units = int(tilt.offsets.size - 1)
-    n_frames = pow2_ceil(min(int(frames.key_rank.size), slots * flush_size))
+    images_per_call = min(flush_size, max(1, (batch_bytes - per_frame) // per_image))
+    n_units = tilt.offsets.size - 1
+    n_frames = pow2_ceil(min(frames.key_rank.size, slots * flush_size))
     logger.info(
         "Coarse pass shares each tilt frame's projections: %d images in %d frames; particles in groups of %d, up to "
         "%d images per frame call", int(frames.image_key.size), int(frames.key_rank.size), flush_size, images_per_call,
