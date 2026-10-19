@@ -331,8 +331,8 @@ def _mstep_block_operand_dtypes(
     * ``XA`` promotes the noise variance against the real part of
       ``proj * conj(summed_masked)``.
 
-    :func:`_check_mstep_carry_avals` checks this against ``jax.eval_shape`` of
-    the real block stages (tests/unit/test_resident_driver_glue.py).
+    tests/unit/test_resident_driver_glue.py checks this against ``jax.eval_shape`` of
+    the real block stages.
     """
 
     if projection_dtypes is None:
@@ -383,82 +383,6 @@ def _mstep_block_operand_dtypes(
         # operands promote to.
         "noise_shells": jnp.dtype(jnp.float64),
     }
-
-
-def _probe_mstep_block_output_avals(
-    tables: resident_chunk_records.ChunkStageTables,
-    *,
-    spec: resident_chunk_records.ChunkProgramSpec,
-    dtypes: dict,
-):
-    """``jax.eval_shape`` of the block's noise/norm stage, for the aval check.
-
-    This is the probe the chunk loop used to run once per chunk. It is kept as
-    a diagnostic only: :func:`_mstep_block_operand_dtypes` is what the driver
-    uses, and this function exists so that arithmetic can be proved equal to
-    the traced answer.
-    """
-
-    block_rows = int(spec.mstep_block_rows)
-    n_pixels = int(spec.n_recon_pixels)
-
-    def probe(summed_masked, ctf_probs, proj, proj_abs2, noise, shells, row_image, row_groups):
-        return resident_block_programs.resident_block_noise_and_norm(
-            proj,
-            proj_abs2,
-            summed_masked,
-            ctf_probs,
-            noise,
-            shells,
-            row_image,
-            row_groups,
-            n_shells=int(spec.stats_config.n_shells),
-            image_capacity=spec.image_capacity,
-            float32_bucketed_image_sums=spec.stats_config.float32_bucketed_image_sums,
-        )
-
-    return jax.eval_shape(
-        probe,
-        jax.ShapeDtypeStruct((block_rows, n_pixels), dtypes["summed_masked"]),
-        jax.ShapeDtypeStruct((block_rows, n_pixels), dtypes["ctf_probs"]),
-        jax.ShapeDtypeStruct((block_rows, n_pixels), dtypes["proj"]),
-        jax.ShapeDtypeStruct((block_rows, n_pixels), dtypes["proj_abs2"]),
-        tables.noise_variance_for_noise,
-        tables.shell_indices_noise,
-        jax.ShapeDtypeStruct((block_rows,), jnp.int32),
-        (
-            jax.ShapeDtypeStruct((block_rows,), jnp.int32)
-            if int(spec.stats_config.n_optics_groups) > 1
-            else None
-        ),
-    )
-
-
-def _check_mstep_carry_avals(
-    tables: resident_chunk_records.ChunkStageTables,
-    *,
-    spec: resident_chunk_records.ChunkProgramSpec,
-    dtypes: dict,
-) -> None:
-    """Raise when the static dtypes disagree with the traced block stages."""
-
-    shells_aval, a2_aval, xa_aval = _probe_mstep_block_output_avals(
-        tables, spec=spec, dtypes=dtypes
-    )
-    expected = (
-        (_noise_shell_shape(spec.stats_config), dtypes["noise_shells"]),
-        ((int(spec.image_capacity),), dtypes["a2"]),
-        ((int(spec.image_capacity),), dtypes["xa"]),
-    )
-    probed = tuple(
-        (tuple(int(size) for size in aval.shape), jnp.dtype(aval.dtype))
-        for aval in (shells_aval, a2_aval, xa_aval)
-    )
-    if probed != expected:
-        raise AssertionError(
-            "resident M-step carry avals disagree with the traced block stages: "
-            f"static={expected} probed={probed}"
-        )
 
 
 @lru_cache(maxsize=None)

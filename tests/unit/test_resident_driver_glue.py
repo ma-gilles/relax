@@ -30,7 +30,7 @@ pytest.importorskip("jax")
 import jax
 import jax.numpy as jnp
 
-from relax.fine_pass import resident_chunk_records, resident_mstep_blocks
+from relax.fine_pass import resident_block_programs, resident_chunk_records, resident_mstep_blocks
 from relax.fine_pass import resident_pass2 as rp
 
 pytestmark = pytest.mark.unit
@@ -100,6 +100,81 @@ def _tables(spec, *, noise_dtype=jnp.float32):
     return resident_chunk_records.ChunkStageTables(**fields)
 
 
+def _probe_mstep_block_output_avals(
+    tables: resident_chunk_records.ChunkStageTables,
+    *,
+    spec: resident_chunk_records.ChunkProgramSpec,
+    dtypes: dict,
+):
+    """``jax.eval_shape`` of the block's noise/norm stage, for the aval check.
+
+    This is the probe the chunk loop used to run once per chunk. The driver uses
+    :func:`resident_mstep_blocks._mstep_block_operand_dtypes`; this probe proves
+    that arithmetic equal to the traced answer.
+    """
+
+    block_rows = int(spec.mstep_block_rows)
+    n_pixels = int(spec.n_recon_pixels)
+
+    def probe(summed_masked, ctf_probs, proj, proj_abs2, noise, shells, row_image, row_groups):
+        return resident_block_programs.resident_block_noise_and_norm(
+            proj,
+            proj_abs2,
+            summed_masked,
+            ctf_probs,
+            noise,
+            shells,
+            row_image,
+            row_groups,
+            n_shells=int(spec.stats_config.n_shells),
+            image_capacity=spec.image_capacity,
+            float32_bucketed_image_sums=spec.stats_config.float32_bucketed_image_sums,
+        )
+
+    return jax.eval_shape(
+        probe,
+        jax.ShapeDtypeStruct((block_rows, n_pixels), dtypes["summed_masked"]),
+        jax.ShapeDtypeStruct((block_rows, n_pixels), dtypes["ctf_probs"]),
+        jax.ShapeDtypeStruct((block_rows, n_pixels), dtypes["proj"]),
+        jax.ShapeDtypeStruct((block_rows, n_pixels), dtypes["proj_abs2"]),
+        tables.noise_variance_for_noise,
+        tables.shell_indices_noise,
+        jax.ShapeDtypeStruct((block_rows,), jnp.int32),
+        (
+            jax.ShapeDtypeStruct((block_rows,), jnp.int32)
+            if int(spec.stats_config.n_optics_groups) > 1
+            else None
+        ),
+    )
+
+
+def _check_mstep_carry_avals(
+    tables: resident_chunk_records.ChunkStageTables,
+    *,
+    spec: resident_chunk_records.ChunkProgramSpec,
+    dtypes: dict,
+) -> None:
+    """Raise when the static dtypes disagree with the traced block stages."""
+
+    shells_aval, a2_aval, xa_aval = _probe_mstep_block_output_avals(
+        tables, spec=spec, dtypes=dtypes
+    )
+    expected = (
+        (resident_mstep_blocks._noise_shell_shape(spec.stats_config), dtypes["noise_shells"]),
+        ((int(spec.image_capacity),), dtypes["a2"]),
+        ((int(spec.image_capacity),), dtypes["xa"]),
+    )
+    probed = tuple(
+        (tuple(int(size) for size in aval.shape), jnp.dtype(aval.dtype))
+        for aval in (shells_aval, a2_aval, xa_aval)
+    )
+    if probed != expected:
+        raise AssertionError(
+            "resident M-step carry avals disagree with the traced block stages: "
+            f"static={expected} probed={probed}"
+        )
+
+
 @pytest.mark.parametrize("proj_dtype", [jnp.complex64, jnp.complex128])
 @pytest.mark.parametrize("noise_dtype", [jnp.float32, jnp.float64])
 @pytest.mark.parametrize("use_kernel", [False, True])
@@ -119,9 +194,9 @@ def test_static_carry_dtypes_match_the_traced_block_stages(
         projection_dtypes=(proj_dtype, proj_abs2_dtype),
     )
     # Raises if the arithmetic and the probe disagree.
-    resident_mstep_blocks._check_mstep_carry_avals(tables, spec=spec, dtypes=dtypes)
+    _check_mstep_carry_avals(tables, spec=spec, dtypes=dtypes)
 
-    shells, a2, xa = resident_mstep_blocks._probe_mstep_block_output_avals(
+    shells, a2, xa = _probe_mstep_block_output_avals(
         tables, spec=spec, dtypes=dtypes
     )
     assert shells.shape == (spec.stats_config.n_shells,)
@@ -135,12 +210,8 @@ def test_initial_mstep_carry_has_the_probed_shapes_without_a_probe(monkeypatch):
     """The carry the loop starts from, built without tracing anything."""
 
     calls = []
-    original = resident_mstep_blocks._probe_mstep_block_output_avals
-    monkeypatch.setattr(
-        resident_mstep_blocks,
-        "_probe_mstep_block_output_avals",
-        lambda *a, **k: (calls.append(1), original(*a, **k))[1],
-    )
+    original = jax.eval_shape
+    monkeypatch.setattr(jax, "eval_shape", lambda *a, **k: (calls.append(1), original(*a, **k))[1])
 
     spec = _spec()
     operands = _operands(spec)
@@ -178,7 +249,7 @@ def test_the_carry_aval_check_rejects_a_wrong_dtype():
     wrong = dict(dtypes)
     wrong["a2"] = jnp.dtype(jnp.float64)
     with pytest.raises(AssertionError, match="disagree with the traced block stages"):
-        resident_mstep_blocks._check_mstep_carry_avals(tables, spec=spec, dtypes=wrong)
+        _check_mstep_carry_avals(tables, spec=spec, dtypes=wrong)
 
 
 @pytest.mark.parametrize("row_capacity", rp._DEFAULT_ROW_CAPACITY_LADDER)
