@@ -237,15 +237,16 @@ def uniform_direction_log_priors(plan, *, use_local: bool, symmetry: str) -> tup
     )
 
 
-def optics_group_grids(optics) -> dict:
-    """Each optics group's ``(box, scale, remap)`` against the model grid (``RunOptics``), by
-    :func:`relax.relion.optics_groups.optics_group_grid`."""
+def run_optics_group_grids(optics) -> dict:
+    """Each optics group's ``(box, scale, remap)`` from the run's optics table (``RunOptics``, one row per group),
+    by :func:`relax.relion.optics_groups.optics_group_grid`; VDAM's ``particle_update.optics_group_grids`` takes them
+    from its images' own boxes and pixel sizes."""
 
     from relax.relion.optics_groups import optics_group_grid
 
     model_box, model_pixel = optics.image_geometry.box_size, optics.model_pixel_size
     return {
-        g: optics_group_grid(box, pixel, model_box, model_pixel)
+        g: optics_group_grid(int(box), float(pixel), model_box, model_pixel)
         for g, (box, pixel) in enumerate(zip(optics.optics_image_sizes, optics.optics_pixel_sizes))
     }
 
@@ -463,7 +464,7 @@ def run_numbered_expectation(
                     current_size=plan.sampling_plan.windows.image_current_size,
                     cross_correlation=phase.variant.score_mode == "normalized_cc",
                     tomo=bool(ctx.tomo_halves),
-                    group_grids=optics_group_grids(ctx.optics) if ctx.multi_shape_halves else None,
+                    group_grids=run_optics_group_grids(ctx.optics) if ctx.multi_shape_halves else None,
                     uniform_direction_log_prior=uniform_direction_log_priors(
                         plan, use_local=use_local, symmetry=options.symmetry.point_group
                     ),

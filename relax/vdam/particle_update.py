@@ -101,7 +101,7 @@ def add_log_likelihood_contributions(meta: dict, state, optics_state, optics_gro
         n_images=np.ones(ids.size) if tilt_images is None else np.diff(tilt_images.image_offsets)[ids],
         box_size=int(state.box_size),
         current_size=int(state.effective_current_size),
-        group_grids=optics_group_grids(optics_state, optics_group_ids, state.box_size),
+        group_grids=optics_group_grids(optics_state, optics_group_ids, int(state.box_size)),
     )
 
 
@@ -117,7 +117,7 @@ def optics_group_grids(optics_state, optics_group_ids, model_box):
     grids = {}
     for group in np.unique(groups):
         rows = groups == group
-        box = np.unique(np.asarray(optics_state.image_box)[rows]).item()
-        pixel = np.unique(np.asarray(optics_state.image_pixel_size)[rows]).item()
-        grids[int(group)] = optics_group_grid(box, pixel, model_box, optics_state.pixel_size)
+        box = int(np.unique(np.asarray(optics_state.image_box)[rows]).item())
+        pixel = float(np.unique(np.asarray(optics_state.image_pixel_size)[rows]).item())
+        grids[int(group)] = optics_group_grid(box, pixel, model_box, float(optics_state.pixel_size))
     return grids
