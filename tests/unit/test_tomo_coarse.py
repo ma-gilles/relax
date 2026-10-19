@@ -14,7 +14,7 @@ import jax.numpy as jnp
 
 from relax.cuda import coarse as cuda_coarse
 from relax.cuda import translate as cuda_translate
-from relax.scoring import exact_cut, tomo_coarse, tomo_coarse_gemm
+from relax.scoring import tomo_coarse, tomo_coarse_gemm
 
 
 # Moved from relax/scoring/tomo_coarse.py (PLAN e1): no relax module uses them, only this test file.
@@ -268,13 +268,13 @@ def test_flush_plan_keeps_whole_batches_and_names_an_impossible_particle():
 
 
 def test_rescore_groups_fit_their_bytes():
-    """The undecided pairs scored again per call: a power of two within the rescore bytes, at most the capacity,
-    at least one."""
+    """The undecided rotations scored again per call: a power of two within the rescore bytes, at most the
+    capacity, at least one."""
 
-    per_pair = 41 * (36 + 2 * 27 * 4 + 300 * 12 + 27 * 8 + 4) + 2 * 27 * 4
-    assert tomo_coarse._rescore_pairs_per_call(41, 27, 300, 100 * per_pair, 4096) == 64
-    assert tomo_coarse._rescore_pairs_per_call(41, 27, 300, 100 * per_pair, 32) == 32
-    assert tomo_coarse._rescore_pairs_per_call(41, 27, 300, 1, 32) == 1
+    per_row = 30 * (41 * (36 + 2 * 27 * 4) + 2 * 27 * 4)
+    assert tomo_coarse._rescore_rows_per_call(30, 41, 27, 100 * per_row, 4096) == 64
+    assert tomo_coarse._rescore_rows_per_call(30, 41, 27, 100 * per_row, 32) == 32
+    assert tomo_coarse._rescore_rows_per_call(30, 41, 27, 1, 32) == 1
 
 
 @pytest.mark.parametrize("capacity", [1, 4, 16, 64, 256])
@@ -1138,11 +1138,11 @@ def test_near_cut_rows_are_the_cut_and_minimum_neighbourhoods_of_capped_particle
     assert rows[2].all()  # every sample of particle 2 ties at the cut
     assert int(most) == n_rot
 
-    ids, use = exact_cut.first_rows(jnp.asarray(rows), capacity=4)
+    ids, use = tomo_coarse.first_rows(jnp.asarray(rows), capacity=4)
     np.testing.assert_array_equal(np.asarray(ids)[0], [0, 2, 4, 5])
     np.testing.assert_array_equal(np.asarray(use), [[True] * 4, [False] * 4, [True] * 4])
     exact = jnp.asarray(np.arange(3 * 4 * n_trans, dtype=np.float32).reshape(3, 4, n_trans))
-    put = np.asarray(exact_cut.put_rows(jnp.asarray(diff2), ids, use, exact))
+    put = np.asarray(tomo_coarse.put_rows(jnp.asarray(diff2), ids, use, exact))
     assert_matches(put[0][[0, 2, 4, 5]], np.asarray(exact)[0])
     assert_matches(put[0][[1, 3]], diff2[0][[1, 3]])
     assert_matches(put[1], diff2[1])
@@ -1232,7 +1232,7 @@ def test_capped_particles_are_cut_on_the_direct_squares_of_their_undecided_rotat
     (_GEMM_ERROR_MARGIN_SHARE): where max_significants cuts, the
     supports are the cut of the exact diff2, and only the undecided rotations were scored exactly.
 
-    ``one_row`` leaves room for one undecided pair per flush, so the flush learns from the device that
+    ``one_row`` leaves room for one undecided rotation per particle, so the flush learns from the device that
     its cut must be taken again, at its size. ``flushes_of_three``: one particle per batch and three per flush, so
     the last flush holds one particle and is padded to three; every flush's programs see three particles and the
     supports are the one-flush pass's."""
@@ -1331,10 +1331,10 @@ def test_capped_particles_are_cut_on_the_direct_squares_of_their_undecided_rotat
         box_size=8,
     )
     if variant == "one_row":
-        monkeypatch.setattr(tomo_coarse, "_UNDECIDED_PAIRS", 1)
+        monkeypatch.setattr(tomo_coarse, "_UNDECIDED_ROTATIONS", 1)
     if variant == "rescored_one_by_one":
-        # The undecided pairs scored again one call per pair: the same exact cut.
-        monkeypatch.setattr(tomo_coarse, "_rescore_pairs_per_call", lambda *args: 1)
+        # The undecided rotations scored again one call per rotation: the same exact cut.
+        monkeypatch.setattr(tomo_coarse, "_rescore_rows_per_call", lambda *args: 1)
         tomo_coarse._exact_rows_diff2.clear_cache()  # a trace cached by "one_row" would bypass direct_calls
     supports, _pmax, counts = tomo_coarse.particle_coarse_supports(None, **kwargs)
     if variant == "flushes_of_three":
@@ -1379,7 +1379,7 @@ def test_capped_particles_are_cut_on_the_direct_squares_of_their_undecided_rotat
     supports = [supports] if n_classes == 1 else supports
     wobbly = captured[0]
     # One batch: its GEMM cut, then the exact cut; a squeezed flush takes both again at the size it needs.
-    assert len(captured) == (4 if variant == "one_row" else 2) and captured[-1].shape == wobbly.shape
+    assert len(captured) == (5 if variant == "one_row" else 2) and captured[-1].shape == wobbly.shape
     r_pad = wobbly.shape[1] // n_classes
     assert direct_calls and max(direct_calls) < n_rot  # a few rotations per particle, not the grid
 
@@ -1387,16 +1387,10 @@ def test_capped_particles_are_cut_on_the_direct_squares_of_their_undecided_rotat
     monkeypatch.setattr(
         tomo_coarse,
         "_near_cut_rows",
-        lambda diff2, *a, **k: (
-            jnp.ones(diff2.shape[:2], bool), jnp.int32(diff2.shape[1]), jnp.zeros(diff2.shape[0], bool)
-        ),
+        lambda diff2, *a, **k: (jnp.ones(diff2.shape[:2], bool), jnp.int32(diff2.shape[1]), jnp.int32(0)),
     )
-    tomo_coarse._particle_near_cut_rows.clear_cache()  # its trace holds the real near-cut search
     captured.clear()
-    try:
-        all_exact, _, all_exact_counts = tomo_coarse.particle_coarse_supports(None, **kwargs)
-    finally:
-        tomo_coarse._particle_near_cut_rows.clear_cache()  # nor may a later test reuse the stand-in's trace
+    all_exact, _, all_exact_counts = tomo_coarse.particle_coarse_supports(None, **kwargs)
     all_exact = [all_exact] if n_classes == 1 else all_exact
     exact = captured[-1]
     assert 0.0 < np.max(np.abs(exact - wobbly)) <= 3 * bound
