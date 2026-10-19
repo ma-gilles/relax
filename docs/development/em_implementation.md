@@ -497,10 +497,6 @@ Common transport and command mechanics have narrow owners:
   8 MiB hashing contract to standalone diagnostics without importing RECOVAR or
   JAX. Keep the runtime helper in the installed package and this script helper
   usable through both direct entry points and package imports.
-- [`scorecard_cli`](../../scripts/scorecard_cli.py) supplies print/write/check
-  handling for compatible historical scorecards. Each renderer retains its own
-  fixed case inventory, validator and Markdown format. These CLIs remain usable
-  without importing the scientific environment.
 
 Use `python -m scripts.<name>` from the checkout for diagnostics that import
 other script modules. Some older direct-file entry points still fail their
