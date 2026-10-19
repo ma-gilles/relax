@@ -1225,6 +1225,41 @@ def _check_undecided_scorer_rotations(pass1_rotations, local, random_perturbatio
     assert_matches(np.asarray(got), want)
 
 
+@pytest.mark.parametrize("local", [False, True], ids=["global", "local"])
+def test_batch_scoring_rotations_are_the_per_particle_builds(local):
+    """A coarse batch's scorer matrices are one rotation-kernel call per particle with its own images and rows:
+    the global layout (images whose frames are not shared, one call for the batch) as the local one. Padded
+    rotations repeat the particle's last one; padded slots and particles are zero."""
+
+    from relax.sampling import tomo_particles
+
+    def pass1_rotations(eulers_deg, random_perturbation, angular_sampling_deg, *, left_matrices):
+        e = jnp.asarray(eulers_deg, dtype=jnp.float32)
+        base = jnp.sin(e[:, :, None] * jnp.float32(0.01) + jnp.arange(3, dtype=jnp.float32)[None, None, :])
+        return jnp.asarray(left_matrices, dtype=jnp.float32)[:, None, :, :] * base[None, :, :, :]
+
+    rng = np.random.default_rng(19)
+    n_rot, slots, r_pad, p_pad = 7, 4, 8, 4
+    offsets = np.array([0, 3, 5, 9, 10])
+    image_left = rng.normal(size=(int(offsets[-1]), 3, 3))
+    eulers = rng.uniform(-180.0, 180.0, size=(n_rot, 3))
+    units = np.array([0, 2, 3])
+    rows = [np.sort(rng.choice(n_rot, size=size, replace=False)) for size in (5, 7, 3)] if local else None
+
+    want = np.zeros((p_pad, slots, r_pad, 3, 3), dtype=np.float32)
+    for p, unit in enumerate(units):
+        unit_rows = np.arange(n_rot) if rows is None else rows[p]
+        left, _applies = tomo_particles.relion_left_matrices(image_left[offsets[unit] : offsets[unit + 1]])
+        built = np.asarray(pass1_rotations(eulers[unit_rows], 0.0, 15.0, left_matrices=left))
+        want[p, : built.shape[0]] = built[:, np.minimum(np.arange(r_pad), unit_rows.size - 1)]
+
+    got = tomo_coarse._batch_scoring_rotations(
+        units, offsets, image_left, eulers, rows, 0.0, 15.0,
+        p_pad=p_pad, slots=slots, r_pad=r_pad, pass1_rotations=pass1_rotations,
+    )
+    assert_matches(np.asarray(got), want)
+
+
 @pytest.mark.parametrize("variant", ["one_flush", "one_row", "flushes_of_three", "rescored_one_by_one"])
 @pytest.mark.parametrize("n_classes", [1, 2])
 def test_capped_particles_are_cut_on_the_direct_squares_of_their_undecided_rotations(monkeypatch, n_classes, variant):
