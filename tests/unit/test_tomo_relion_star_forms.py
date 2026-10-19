@@ -250,3 +250,9 @@ def test_the_model_pixel_size_scales_every_tilt_left_matrix_as_relions_apply_sca
     assert half.model_pixel_size == header_pixel
     assert np.array_equal(half.image_left, scaled.image_left[: half.n_images])
     assert dataset.subset(np.arange(1)).model_pixel_size == dataset.voxel_size  # no model grid: s = 1
+    # The factor is applied once, and only a positive finite model pixel size is taken.
+    with pytest.raises(ValueError, match="already on the model grid"):
+        scaled.with_model_pixel_size(header_pixel)
+    for bad in (0.0, -header_pixel, float("nan"), float("inf")):
+        with pytest.raises(ValueError, match="positive finite"):
+            dataset.with_model_pixel_size(bad)

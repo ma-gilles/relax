@@ -94,10 +94,22 @@ class TomoDataset:
         (ml_optimiser.cpp:9527, 9590). The model pixel is the reference header's float32 (2.7 reads 2.700000048 A),
         so ``s`` is not 1 even on the reference grid: 1 - 1.8e-8 on the RELION 5 tutorial's bin-2 data, which moves
         about half of the float32 scorer-matrix entries by one ulp (relax#89).
+
+        The factor is applied once: a dataset already on a model grid, or a model pixel size that is not a positive
+        finite number, is refused (a second call would multiply the left matrices by ``s`` again).
         """
 
         from relax.relion import optics_groups
 
+        if self.model_pixel_size is not None:
+            raise ValueError(
+                f"the tilt images are already on the model grid of pixel {self.model_pixel_size!r} A; applying "
+                f"{model_pixel_size!r} A would scale their left matrices twice"
+            )
+        if not (np.isfinite(model_pixel_size) and model_pixel_size > 0):
+            raise ValueError(
+                f"the model pixel size must be a positive finite number of Angstrom, got {model_pixel_size!r}"
+            )
         out = copy.copy(self)
         out.model_pixel_size = float(model_pixel_size)
         scale = optics_groups.scale_difference(self.grid_size, self.voxel_size, self.volume_shape[0], model_pixel_size)
