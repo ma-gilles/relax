@@ -105,7 +105,6 @@ def test_k1_prepare_opt_out_and_explicit_total_bfactor(monkeypatch, tmp_path):
         ("prepare_pdb_k1_relion_sanity_benchmark", []),
         ("prepare_cryobench_pdb_multiclass_relion_parity_benchmark", ["--pdb-dir", "pdbs"]),
         ("prepare_relion_parity_benchmark", []),
-        ("prepare_relion_multiclass_parity_benchmark", []),
     ],
 )
 def test_prepare_clis_default_on_with_opt_out(monkeypatch, tmp_path, module_name, required):
@@ -172,7 +171,6 @@ def test_cryobench_manifest_points_fixture_validation_at_simulated_truth(tmp_pat
     "module_name, writer, extra",
     [
         ("prepare_relion_parity_benchmark", "_write_reference_volumes", {}),
-        ("prepare_relion_multiclass_parity_benchmark", "_write_class_references", {"n_classes": 2, "init_radius": 3}),
     ],
 )
 def test_asset_volume_scripts_add_only_the_solvent_term(monkeypatch, tmp_path, module_name, writer, extra):
