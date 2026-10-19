@@ -37,10 +37,7 @@ from relax.runtime import memory_budget
 from relax.runtime.shape_buckets import pow2_ceil, pow2_floor
 from relax.scoring.exact_cut import (
     direct_rows_diff2,
-    first_rows,
     float32_unit,
-    put_rows,
-    row_capacity,
     undecided_rotations,
 )
 from relax.scoring.tomo_coarse_gemm import coarse_gemm_frame, coarse_gemm_slot_block, slot_block_error
@@ -244,8 +241,11 @@ def _significant_cells(mask, *, capacity: int, row_length: int):
 # Rotations per particle whose samples the adaptive-fraction rule sorts (exact_cut.undecided_rotations).
 _SORTED_ROTATIONS = 256
 
-# Undecided rotations per particle scored again in one go; a flush with a particle holding more takes a larger size.
-_UNDECIDED_ROTATIONS = 8
+# Undecided (particle, rotation) pairs a flush's first exact cut scores again, at least: the size follows the
+# previous flush's count (2x margin), and a flush with more takes its cut again at its own size. The pairs of the
+# flush are scored together, not a capacity per particle: most particles leave a few rotations undecided while
+# one may leave thousands (5 per particle and 449 at the median flush's most on the RELION tutorial row).
+_UNDECIDED_PAIRS = 64
 
 
 # The share of the GEMM error bound (relax.scoring.exact_cut.gemm_error_bound) the cut's margin takes. The bound is
@@ -286,19 +286,35 @@ def _near_cut_rows(
     )
 
 
-def _particle_near_cut_rows(cut_inputs, full_sort, *, max_significants: int, adaptive_fraction: float):
-    """Each particle's undecided rotations (:func:`_near_cut_rows` of ``cut_inputs``), their largest count and the
-    particles the sort of the leading ``_SORTED_ROTATIONS`` rotations leaves unresolved. The particles marked in
-    ``full_sort`` (``[P]``, or None) take their rows from every rotation sorted: a particle's rows depend on its own
-    values alone, not on the flush it is cut in."""
+@partial(jax.jit, static_argnames=("max_significants", "adaptive_fraction"))
+def _particle_near_cut_rows(
+    diff2, values, mask, cutoff_count, error, n_slots, *, max_significants: int, adaptive_fraction: float
+):
+    """Each particle's undecided rotations ``[P, K * R]`` (:func:`_near_cut_rows`) and the particles the sort of
+    the leading ``_SORTED_ROTATIONS`` rotations leaves unresolved, which take their rows from every rotation
+    sorted. The full sort runs only when a particle needs it (a device-side branch, no read-back), and a
+    particle's rows depend on its own values alone, not on the flush it is cut in."""
 
+    cut_inputs = (diff2, values, mask, cutoff_count, error, n_slots)
     static = dict(max_significants=max_significants, adaptive_fraction=adaptive_fraction)
     rows, _most, unresolved = _near_cut_rows(*cut_inputs, **static, sorted_rotations=_SORTED_ROTATIONS)
-    if full_sort is not None:
-        every, _most, _unresolved = _near_cut_rows(*cut_inputs, **static, sorted_rotations=None)
-        rows = jnp.where(full_sort[:, None], every, rows)
-        unresolved = unresolved & ~full_sort
-    return rows, jnp.max(jnp.sum(rows, axis=1)), unresolved
+    rows = jax.lax.cond(
+        jnp.any(unresolved),
+        lambda: jnp.where(unresolved[:, None], _near_cut_rows(*cut_inputs, **static, sorted_rotations=None)[0], rows),
+        lambda: rows,
+    )
+    return rows, unresolved
+
+
+@partial(jax.jit, static_argnames=("capacity",))
+def _undecided_pairs(rows, *, capacity: int):
+    """The true cells of ``rows`` ``[P, N]`` in row-major order, at most ``capacity`` of them: each pair's particle
+    and row (int32), which of the ``capacity`` slots hold one, and the number of true cells."""
+
+    flat = rows.reshape(-1)
+    cell = jnp.nonzero(flat, size=capacity, fill_value=0)[0].astype(jnp.int32)
+    n_pairs = jnp.sum(flat, dtype=jnp.int32)
+    return cell // rows.shape[1], cell % rows.shape[1], jnp.arange(capacity) < n_pairs, n_pairs
 
 
 # Scorer matrices built per call of the exact cut's rotation kernel: the call builds every pairing of its
@@ -319,9 +335,11 @@ def _undecided_scorer_rotations(
     r_pad: int,
     slots: int,
     pass1_rotations,
+    particle=None,
 ):
     """The scorer matrices ``[P, S, M, 3, 3]`` float32 of the particles' undecided rotations ``ids`` ``[P, M]``
-    (device arrays, where ``use``), built on the device without reading ``ids`` back.
+    (device arrays, where ``use``), built on the device without reading ``ids`` back. With ``particle`` ``[B]``
+    the rows ``ids`` ``[B, M]`` are those of the particles ``particle`` (the flush's undecided pairs).
 
     A rotation's matrix for a tilt image is ``pass1_rotations`` of its coarse Euler row with the image's left
     matrix (``particle_left[p]`` ``[S_p, 3, 3]``), the kernel :func:`_batch_scoring_rotations` uses, so the
@@ -331,7 +349,8 @@ def _undecided_scorer_rotations(
     Padded slots and particles without an undecided rotation are zero.
     """
 
-    n_particles, capacity = (int(n) for n in ids.shape)
+    capacity = int(ids.shape[1])
+    n_particles = len(particle_left)
     table = None
     if unit_rotation_rows is not None:
         table = np.zeros((n_particles, max(int(np.max(rotation_counts)), 1)), dtype=np.int32)
@@ -351,6 +370,7 @@ def _undecided_scorer_rotations(
         eulers_f32,
         jnp.asarray(left),
         jnp.asarray(n_images),
+        jnp.arange(int(ids.shape[0]), dtype=jnp.int32) if particle is None else particle,
         r_pad=int(r_pad),
         group=max(1, int(np.sqrt(_UNDECIDED_ROTATION_CALL_BYTES / (36.0 * slots * capacity)))),
         random_perturbation=float(random_perturbation),
@@ -364,12 +384,15 @@ def _undecided_scorer_rotations(
     static_argnames=("r_pad", "group", "random_perturbation", "angular_sampling_deg", "pass1_rotations"),
 )
 def _lay_out_undecided_rotations(
-    ids, use, counts, table, eulers_f32, left, n_images,
+    ids, use, counts, table, eulers_f32, left, n_images, particle,
     *, r_pad: int, group: int, random_perturbation: float, angular_sampling_deg: float, pass1_rotations,
 ):
     """:func:`_undecided_scorer_rotations` as one program: ``left`` ``[P, S, 3, 3]`` float32 per slot, ``table``
-    ``[P, R_max]`` a local search's own rotations (``None``: the grid's)."""
+    ``[P, R_max]`` a local search's own rotations (``None``: the grid's), each taken at the rows' ``particle``."""
 
+    counts, left, n_images = counts[particle], left[particle], n_images[particle]
+    if table is not None:
+        table = table[particle]
     n_particles, capacity = ids.shape
     slots = left.shape[1]
     grid_rows = jnp.minimum(jnp.where(use, ids % r_pad, 0), counts[:, None] - 1)
@@ -398,16 +421,20 @@ def _lay_out_undecided_rotations(
 
 @partial(jax.jit, static_argnames=("r_pad", "current_size", "physical_image_size", "model_max_r", "padding_factor"))
 def _exact_rows_diff2(
-    diff2, ids, use, row_rotations, projectors_full, unshifted, pixel_weight, initial_diff2, translation_angles,
-    full_to_compact, *, r_pad: int, current_size: int, physical_image_size: int, model_max_r: int, padding_factor: int,
+    diff2, particle, ids, use, row_rotations, projectors_full, unshifted, pixel_weight, initial_diff2,
+    translation_angles, full_to_compact,
+    *, r_pad: int, current_size: int, physical_image_size: int, model_max_r: int, padding_factor: int,
 ):
-    """Particles' diff2 ``[P, K * R_pad, T]`` with their undecided rotations ``ids`` ``[P, M]`` (where ``use``)
-    scored by the direct square against their class's projector, as one program.
+    """Particles' diff2 ``[P, K * R_pad, T]`` with the undecided pairs' rotations ``ids`` ``[B]`` of the particles
+    ``particle`` ``[B]`` (where ``use``) scored by the direct square against their class's projector, as one program.
 
-    ``row_rotations`` ``[P, S, M, 3, 3]`` are those rotations' scorer matrices for each tilt image; the other
-    operands are the particles' (``[P, S, pixels]``, ``[P, S]``, ``[P, S, T, 2]``).
+    ``row_rotations`` ``[B, S, 1, 3, 3]`` are those rotations' scorer matrices for each tilt image; the other
+    operands are the particles' (``[P, S, pixels]``, ``[P, S]``, ``[P, S, T, 2]``), taken at ``particle``. A
+    rotation's direct square does not depend on the other pairs of the call.
     """
 
+    unshifted, pixel_weight = unshifted[particle], pixel_weight[particle]
+    initial_diff2, translation_angles = initial_diff2[particle], translation_angles[particle]
     for class_index, projector_full in enumerate(projectors_full):
         own = use & (ids // r_pad == class_index)
         exact = direct_rows_diff2(
@@ -423,7 +450,8 @@ def _exact_rows_diff2(
             model_max_r=model_max_r,
             padding_factor=padding_factor,
         )
-        diff2 = put_rows(diff2, ids, own, exact)
+        # A pair that is not written points past the end, which the scatter drops.
+        diff2 = diff2.at[jnp.where(own, particle, diff2.shape[0]), ids].set(exact[:, 0], mode="drop")
     return diff2
 
 
@@ -504,7 +532,7 @@ def _coarse_pass_budget(resident_bytes: int) -> CoarsePassBudget:
 _CUT_DIFF2_COPIES = 7
 
 # The share of a flush's budget left for scoring its undecided rotations again (their scorer matrices and
-# per-image direct squares scale with the rotations, not with the diff2): _rescore_rows_per_call.
+# per-image direct squares scale with the rotations, not with the diff2): _rescore_pairs_per_call.
 _RESCORE_SHARE = 0.125
 
 
@@ -540,18 +568,19 @@ def _flush_plan(
     return min(by_diff2, max(batch, power // batch * batch)), rescore_bytes, by_diff2, int(by_device)
 
 
-def _rescore_rows_per_call(particles: int, slots: int, n_trans: int, rescore_bytes: int, capacity: int) -> int:
-    """Undecided rotations per particle scored again in one call, a power of two within ``rescore_bytes``.
+def _rescore_pairs_per_call(slots: int, n_trans: int, n_pixels: int, rescore_bytes: int, capacity: int) -> int:
+    """Undecided (particle, rotation) pairs scored again in one call, a power of two within ``rescore_bytes``.
 
-    Per particle and rotation a call holds its slots' scorer matrices (36 B each), their direct squares and the
-    translation blocks' concatenation (twice ``n_trans`` float32 per slot), and the particle's sum and the
-    flush's updated rows (twice ``n_trans`` float32). A flat K > 1 posterior leaves thousands of rotations
-    undecided, whose matrices alone were gigabytes in one call.
+    Per pair a call holds its slots' scorer matrices (36 B each), their direct squares and the translation blocks'
+    concatenation (twice ``n_trans`` float32 per slot), its particle's operands (``n_pixels`` complex64 and float32
+    weights, the phases and Xi2 per slot), and the pair's sum and updated row (twice ``n_trans`` float32). A flat
+    K > 1 posterior leaves thousands of rotations undecided, whose matrices alone were gigabytes in one call.
     """
 
-    per_row = int(particles) * (int(slots) * (36 + 2 * int(n_trans) * 4) + 2 * int(n_trans) * 4)
-    rows = max(1, int(rescore_bytes) // max(per_row, 1))
-    return min(int(capacity), pow2_floor(rows))
+    per_slot = 36 + 2 * int(n_trans) * 4 + int(n_pixels) * (8 + 4) + int(n_trans) * 2 * 4 + 4
+    per_pair = int(slots) * per_slot + 2 * int(n_trans) * 4
+    pairs = max(1, int(rescore_bytes) // max(per_pair, 1))
+    return min(int(capacity), pow2_floor(pairs))
 
 
 def _coarse_projection_bytes_per_pixel(
@@ -1283,6 +1312,9 @@ def particle_coarse_supports(
     # The flush's compaction size, a guess from the previous flush's significant cells (2x margin); a
     # flush whose cells overflow it is compacted again at its exact size.
     cells_capacity = 0
+    # The flush's undecided pairs, a guess from the previous flush's (2x margin); a flush with more is cut again at
+    # its size. Any size that holds a flush's pairs cuts it alike.
+    pairs_capacity = _UNDECIDED_PAIRS
 
     def rotation_prior_of(batch_units):
         if local:
@@ -1315,46 +1347,50 @@ def particle_coarse_supports(
             max_significants=max_significants,
         )
 
-    def exact_cut(units_all, diff2, error, n_images, operands, n_real, *, capacity, full_sort=None):
+    def exact_cut(units_all, diff2, error, n_images, operands, n_real, *, capacity):
         """The flushed particles' cut on exact scores: the rotations the GEMM rounding leaves undecided at a
         particle's cut (max_significants or the adaptive fraction) and at its smallest diff2 are scored again by
         the direct-square kernel, and the cut is taken on those values (:mod:`relax.scoring.exact_cut`).
 
-        Everything stays on the device: the undecided rotations are compacted to ``capacity`` per particle and
-        their scorer matrices built there (:func:`_undecided_scorer_rotations`). Returns the cut and the device
-        scalars ``(most, unresolved, rows, particles)``; the caller reads them later and takes the cut again
-        (``exact_cut_again``) when a particle held more than ``capacity`` undecided rotations or the fraction
-        rule needs every rotation of a particle sorted (``full_sort``).
+        Everything stays on the device: the flush's undecided (particle, rotation) pairs are compacted to
+        ``capacity`` and their scorer matrices built there (:func:`_undecided_scorer_rotations`). Returns the cut
+        and the device scalars ``(pairs, unresolved, rows, particles)``; the caller reads them later and takes the
+        cut again at its size when the flush held more than ``capacity`` pairs.
         """
 
         stats = significance(units_all, diff2)
-        cut_inputs = (diff2, stats["log_weights"], stats["mask"], stats["cutoff_count"], error, n_images)
-        rows, most, unresolved = _particle_near_cut_rows(cut_inputs, full_sort, **cut_static)
-        ids, use = first_rows(rows, capacity=capacity)
+        rows, unresolved = _particle_near_cut_rows(
+            diff2, stats["log_weights"], stats["mask"], stats["cutoff_count"], error, n_images, **cut_static
+        )
+        pair_particle, pair_row, use, n_pairs = _undecided_pairs(rows, capacity=capacity)
         for class_index, class_projector in enumerate(class_projectors):
             if class_full[class_index] is None:
                 # Cast first (the embedding only moves values): one complex64 cube, not a complex128 one and its cast.
                 class_full[class_index] = relion_projector_half_to_texture_full(
                     jnp.asarray(class_projector).astype(jnp.complex64)
                 )
-        # The undecided rotations go in groups that fit the flush's rescore bytes; a rotation's direct square does
-        # not depend on the others of its call.
-        per_call = _rescore_rows_per_call(units_all.size, slots, n_coarse_trans, rescore_bytes, capacity)
+        # The pairs go in groups that fit the flush's rescore bytes; a rotation's direct square does not depend on
+        # the others of its call.
+        per_call = _rescore_pairs_per_call(
+            slots, n_coarse_trans, int(layout.score_indices_np.size), rescore_bytes, capacity
+        )
         exact = diff2
         for first in range(0, capacity, per_call):
             chunk = slice(first, first + per_call)
-            exact = rescore(units_all, exact, ids[:, chunk], use[:, chunk], operands)
-        real = (jnp.arange(units_all.size) < n_real)[:, None] & use  # a padded flush's copies are not counted
-        n_unresolved = jnp.sum(unresolved & (jnp.arange(units_all.size) < n_real), dtype=jnp.int32)
-        check = (most, n_unresolved, jnp.sum(real, dtype=jnp.int32), jnp.sum(jnp.any(real, axis=1), dtype=jnp.int32))
+            exact = rescore(units_all, exact, pair_particle[chunk], pair_row[chunk], use[chunk], operands)
+        real_particle = jnp.arange(units_all.size) < n_real  # a padded flush's copies are not counted
+        real = rows & real_particle[:, None]
+        n_unresolved = jnp.sum(unresolved & real_particle, dtype=jnp.int32)
+        check = (n_pairs, n_unresolved, jnp.sum(real, dtype=jnp.int32), jnp.sum(jnp.any(real, axis=1), dtype=jnp.int32))
         return significance(units_all, exact), check
 
-    def rescore(units_all, diff2, ids, use, operands):
-        """``diff2`` with the rotations ``ids`` (where ``use``) scored again by the direct square."""
+    def rescore(units_all, diff2, particle, ids, use, operands):
+        """``diff2`` with the pairs' rotations ``ids`` of the particles ``particle`` (where ``use``) scored again
+        by the direct square."""
 
         row_rotations = _undecided_scorer_rotations(
-            ids,
-            use,
+            ids[:, None],
+            use[:, None],
             np.asarray(rotation_counts, dtype=np.int64)[units_all],
             None if not local else [unit_rotations[unit] for unit in units_all],
             eulers_f32,
@@ -1364,10 +1400,12 @@ def particle_coarse_supports(
             r_pad=int(r_pad_all),
             slots=slots,
             pass1_rotations=relion_adaptive_pass1_rotations,
+            particle=particle,
         )
         unshifted, weight, initial, angles = operands
         return _exact_rows_diff2(
             diff2,
+            particle,
             ids,
             use,
             row_rotations,
@@ -1383,19 +1421,6 @@ def particle_coarse_supports(
             model_max_r=int(model_max_r),
             padding_factor=int(padding_factor),
         )
-
-    def exact_cut_again(cut_operands, unresolved):
-        """The flush's exact cut at the size its undecided rotations need (read from the device): every rotation
-        sorted for the particles whose fraction rule needed it (when ``unresolved`` counts any), and room for the
-        particle with the most."""
-
-        units_all, diff2, error, n_images, operands, _n_real = cut_operands
-        stats = significance(units_all, diff2)
-        cut_inputs = (diff2, stats["log_weights"], stats["mask"], stats["cutoff_count"], error, n_images)
-        full_sort = _particle_near_cut_rows(cut_inputs, None, **cut_static)[2] if unresolved else None
-        rows, most, _ = _particle_near_cut_rows(cut_inputs, full_sort, **cut_static)
-        capacity = row_capacity(int(most), rows.shape[1], least=_UNDECIDED_ROTATIONS)
-        return exact_cut(*cut_operands, capacity=capacity, full_sort=full_sort)
 
     def compacted(stats, n_real):
         # The significant cells are compacted on the device; only their ids come back (the dense mask is
@@ -1431,22 +1456,24 @@ def particle_coarse_supports(
         # One copy of the flush's operands, held until it is collected; the batches' slices are freed with the list.
         operands = tuple(jnp.concatenate(parts, axis=0) for parts in zip(*operands))
         cut_operands = (units_all, diff2, error, n_images, operands, n_real)
-        stats, check = exact_cut(*cut_operands, capacity=_UNDECIDED_ROTATIONS)
+        stats, check = exact_cut(*cut_operands, capacity=pairs_capacity)
         for value in check:
             value.copy_to_host_async()
         # The flush's GEMM scores and operands stay until it is collected, in case its cut is taken again.
-        return cut_operands, check, compacted(stats, n_real)
+        return cut_operands, check, compacted(stats, n_real), pairs_capacity
 
-    def collect(cut_operands, check, result):
-        nonlocal cells_capacity
+    def collect(cut_operands, check, result, capacity):
+        nonlocal cells_capacity, pairs_capacity
         n_real = cut_operands[5]
         units_all = cut_operands[0][:n_real]
-        most, unresolved, n_rows, n_particles = (int(value) for value in check)
+        n_pairs, unresolved, n_rows, n_particles = (int(value) for value in check)
         if unresolved:
             full_sorted.append(unresolved)
-        if unresolved or most > _UNDECIDED_ROTATIONS:
-            stats, check = exact_cut_again(cut_operands, unresolved)
-            most, unresolved, n_rows, n_particles = (int(value) for value in check)
+        all_pairs = int(cut_operands[1].shape[0]) * int(cut_operands[1].shape[1])
+        pairs_capacity = min(pow2_ceil(2 * n_pairs, minimum=_UNDECIDED_PAIRS), all_pairs)
+        if n_pairs > capacity:
+            stats, check = exact_cut(*cut_operands, capacity=min(pow2_ceil(n_pairs), all_pairs))
+            n_pairs, unresolved, n_rows, n_particles = (int(value) for value in check)
             result = compacted(stats, n_real)
         if n_rows:
             rescored.append((n_rows, n_particles))
