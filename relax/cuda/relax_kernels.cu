@@ -1767,11 +1767,12 @@ relion_wavg_tiled_one_image_triplet_f32_kernel(
         const int chunk_count = active_count - chunk_first < kWavgTiledTranslations
             ? static_cast<int>(active_count - chunk_first)
             : kWavgTiledTranslations;
+        // Consecutive threads read one row's consecutive active translations (the posterior is row-major).
 #pragma unroll
         for (int k = 0; k < kLoadsW; ++k) {
             const int index = threadIdx.x + k * kWavgThreads;
-            const int t = index / kRows;
-            const int i = index - t * kRows;
+            const int i = index / kWavgTiledTranslations;
+            const int t = index - i * kWavgTiledTranslations;
             next_weight[k] = (t < chunk_count && shared_live[i] == 1)
                 ? posterior[(row_base + i) * translation_count + tile_active[chunk_first + t]]
                 : 0.0f;
@@ -1795,7 +1796,7 @@ relion_wavg_tiled_one_image_triplet_f32_kernel(
 #pragma unroll
         for (int k = 0; k < kLoadsW; ++k) {
             const int index = threadIdx.x + k * kWavgThreads;
-            shared_weight[index / kRows][index % kRows] = next_weight[k];
+            shared_weight[index % kWavgTiledTranslations][index / kWavgTiledTranslations] = next_weight[k];
         }
 #pragma unroll
         for (int k = 0; k < kLoadsV; ++k) {
@@ -1805,13 +1806,17 @@ relion_wavg_tiled_one_image_triplet_f32_kernel(
         __syncthreads();
         if (first + kWavgTiledTranslations < active_count) load_chunk(first + kWavgTiledTranslations);
         for (int t = 0; t < count; ++t) {
+            // The translation's values, read from shared memory once for all of the thread's rows.
+            float2 values[kWavgTiledPixelsPerThread];
+#pragma unroll
+            for (int j = 0; j < kWavgTiledPixelsPerThread; ++j) values[j] = shared_value[t][pixel_lane + j * kWavgTiledPixelLanes];
 #pragma unroll
             for (int i = 0; i < kWavgTiledRowsPerThread; ++i) {
                 const float weight = shared_weight[t][row_lane + i * kWavgTiledRowLanes];
                 if (weight == 0.0f) continue;
 #pragma unroll
                 for (int j = 0; j < kWavgTiledPixelsPerThread; ++j) {
-                    const float2 translated = shared_value[t][pixel_lane + j * kWavgTiledPixelLanes];
+                    const float2 translated = values[j];
                     const float diff_real = __fsub_rn(ref_real[i][j], translated.x);
                     const float diff_imag = __fsub_rn(ref_imag[i][j], translated.y);
                     const float diff_abs2 = __fadd_rn(__fmul_rn(diff_real, diff_real), __fmul_rn(diff_imag, diff_imag));

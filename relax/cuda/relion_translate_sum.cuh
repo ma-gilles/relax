@@ -543,11 +543,12 @@ translate_sum_tiled_table_f32_kernel(
         const int chunk_count = active_count - chunk_first < kTiledTranslations
             ? static_cast<int>(active_count - chunk_first)
             : kTiledTranslations;
+        // Consecutive threads read one row's consecutive active translations (the posterior is row-major).
 #pragma unroll
         for (int k = 0; k < kTiledLoadsW; ++k) {
             const int index = threadIdx.x + k * kBlockThreads;
-            const int t = index / kTiledRows;
-            const int i = index - t * kTiledRows;
+            const int i = index / kTiledTranslations;
+            const int t = index - i * kTiledTranslations;
             next_weight[k] = (t < chunk_count && shared_live[i] == 1)
                 ? posterior[(row_base + i) * translation_count + tiled_active[chunk_first + t]]
                 : 0.0f;
@@ -571,7 +572,7 @@ translate_sum_tiled_table_f32_kernel(
 #pragma unroll
         for (int k = 0; k < kTiledLoadsW; ++k) {
             const int index = threadIdx.x + k * kBlockThreads;
-            shared_weight[index / kTiledRows][index % kTiledRows] = next_weight[k];
+            shared_weight[index % kTiledTranslations][index / kTiledTranslations] = next_weight[k];
         }
 #pragma unroll
         for (int k = 0; k < kTiledLoadsV; ++k) {
@@ -584,13 +585,26 @@ translate_sum_tiled_table_f32_kernel(
             for (int t = 0; t < count; ++t) mass = __fadd_rn(mass, shared_weight[t][threadIdx.x]);
         }
         for (int t = 0; t < count; ++t) {
+            // The thread's row weights, then (when any is nonzero) the translation's values, read from shared
+            // memory once for all of the thread's rows: a sparse posterior skips most loads.
+            float weights[kTiledRowsPerThread];
+            bool any_weight = false;
 #pragma unroll
             for (int i = 0; i < kTiledRowsPerThread; ++i) {
-                const float weight = shared_weight[t][row_lane + i * kTiledRowLanes];
+                weights[i] = shared_weight[t][row_lane + i * kTiledRowLanes];
+                any_weight |= weights[i] != 0.0f;
+            }
+            if (!any_weight) continue;
+            float4 values[kTiledPixelsPerThread];
+#pragma unroll
+            for (int j = 0; j < kTiledPixelsPerThread; ++j) values[j] = shared_value[t][pixel_lane + j * kTiledPixelLanes];
+#pragma unroll
+            for (int i = 0; i < kTiledRowsPerThread; ++i) {
+                const float weight = weights[i];
                 if (weight == 0.0f) continue;
 #pragma unroll
                 for (int j = 0; j < kTiledPixelsPerThread; ++j) {
-                    const float4 value = shared_value[t][pixel_lane + j * kTiledPixelLanes];
+                    const float4 value = values[j];
                     acc[i][j].x = __fadd_rn(acc[i][j].x, __fmul_rn(weight, value.x));
                     acc[i][j].y = __fadd_rn(acc[i][j].y, __fmul_rn(weight, value.y));
                     acc[i][j].z = __fadd_rn(acc[i][j].z, __fmul_rn(weight, value.z));
