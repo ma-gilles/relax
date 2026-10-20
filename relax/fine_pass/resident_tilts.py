@@ -144,6 +144,48 @@ class TiltMstepCensus:
         )
 
 
+class TiltChunkHost(NamedTuple):
+    """A tilt chunk's host-only preparation (:func:`prepare_tilt_chunk_host`): its materialized rows, its image layout
+    and every (image slot, row) matrix ``inv(L_i A_r)`` (``[S * C_R, 3, 3]``)."""
+
+    host: dict
+    layout: ChunkTiltLayout
+    slot_matrices: np.ndarray
+
+
+def prepare_tilt_chunk_host(chunk, *, tables, tilt: TiltPassInputs) -> TiltChunkHost:
+    """The host NumPy part of :func:`run_tilt_chunk` that depends on the plan alone, not on the device.
+
+    The chunk loop runs it for the next chunk on a host thread while the current chunk's programs run
+    (resident_pass2): the slot matrices are float64 host arithmetic per (image, row), 1.5 s of host time per
+    hn_k2_s0150 VDAM iteration (relax#115).
+    """
+
+    from relax.fine_pass import resident_chunk_programs
+
+    _block_tables, host, _local_chunk = resident_chunk_programs.chunk_host_rows(tables, chunk)
+    n_slots = int(tilt.slot_capacity)
+    layout = chunk_tilt_layout(
+        tilt.unit_image_offsets,
+        unit_start=int(chunk.image_start),
+        n_valid_units=int(chunk.n_valid_images),
+        row_unit_local=np.asarray(host["row_image_local"]),
+        n_valid_rows=chunk.n_valid_rows,
+        image_capacity=tilt_chunk_image_capacity(int(chunk.image_capacity), n_slots),
+        slot_capacity=n_slots,
+    )
+    row_fine_rot = np.asarray(host["row_fine_rot"], dtype=np.int64)
+    row_eulers = (
+        np.zeros((row_fine_rot.size, 3))
+        if tilt.fine_source_eulers is None
+        else np.asarray(tilt.fine_source_eulers, dtype=np.float64)[row_fine_rot]
+    )
+    slot_matrices = tilt_slot_rotations(
+        layout, row_eulers, tilt.image_left, row_spa_matrices=np.asarray(tilt.fine_rotations)[row_fine_rot]
+    )
+    return TiltChunkHost(host=host, layout=layout, slot_matrices=slot_matrices)
+
+
 def run_tilt_chunk(
     chunk,
     *,
@@ -168,8 +210,11 @@ def run_tilt_chunk(
     mstep_census: TiltMstepCensus | None = None,
     row_partial=None,
     lone_block_rows: int | None = None,
+    prepared: TiltChunkHost | None = None,
 ):
     """Score, weight and backproject one chunk of particles; return ``(Ft_y_total, Ft_ctf_total, stats)``.
+
+    ``prepared`` is the chunk's :func:`prepare_tilt_chunk_host`, built ahead by the chunk loop, or None (built here).
 
     ``row_partial`` is the pass's partial accumulator pair (``half_volume_mstep.RowPartial``), into which
     the M-step program scatters its rows when the pass has one.
@@ -242,31 +287,15 @@ def run_tilt_chunk(
     if n_accumulators != int(tables.n_slots):
         raise ValueError(f"{n_accumulators} BPref pairs for the tables' {int(tables.n_slots)} accumulator slots")
     rows = resident_chunk_programs.make_chunk_row_arrays(tables, chunk, n_fine_trans, place=resident_chunk_records.PLACE_ON_DEVICE, n_fine_rot=n_fine_rot)
-    _block_tables, host, _local_chunk = resident_chunk_programs.chunk_host_rows(tables, chunk)
-    layout = chunk_tilt_layout(
-        tilt.unit_image_offsets,
-        unit_start=int(chunk.image_start),
-        n_valid_units=int(chunk.n_valid_images),
-        row_unit_local=np.asarray(host["row_image_local"]),
-        n_valid_rows=chunk.n_valid_rows,
-        image_capacity=image_capacity,
-        slot_capacity=n_slots,
-    )
+    if prepared is None:
+        prepared = prepare_tilt_chunk_host(chunk, tables=tables, tilt=tilt)
+    host, layout, slot_matrices = prepared
     valid_images = layout.image_ids >= 0
     image_slots = np.where(valid_images, layout.image_ids, -1).astype(np.int32)
     operand_slots = np.where(valid_images, layout.image_ids - int(operand_image_start), -1).astype(np.int32)
     safe_images = np.where(valid_images, layout.image_ids, 0)
 
-    # --- projections of every (slot, row): RELION's host inv(L_i A_r) ------
-    row_fine_rot = np.asarray(host["row_fine_rot"], dtype=np.int64)
-    row_eulers = (
-        np.zeros((row_fine_rot.size, 3))
-        if tilt.fine_source_eulers is None
-        else np.asarray(tilt.fine_source_eulers, dtype=np.float64)[row_fine_rot]
-    )
-    slot_matrices = tilt_slot_rotations(
-        layout, row_eulers, tilt.image_left, row_spa_matrices=np.asarray(tilt.fine_rotations)[row_fine_rot]
-    )
+    # --- projections of every (slot, row): RELION's host inv(L_i A_r) (prepared.slot_matrices) ------
     row_class = np.zeros(chunk.row_capacity, dtype=np.int64)
     if tables.n_classes > 1:
         row_class[:chunk.n_valid_rows] = np.asarray(host["row_class"], dtype=np.int64)[:chunk.n_valid_rows]
