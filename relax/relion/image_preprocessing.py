@@ -76,6 +76,40 @@ def _norm_inputs(processed_half, noise_variance_half=None, half_weights=None, *,
     return processed_half, noise_variance_half, half_weights
 
 
+# (batch, height, width, device kind) -> whether the batched centered rFFT is bitwise the per-image one.
+_BATCHED_FFT_IS_PER_IMAGE: dict[tuple, bool] = {}
+
+
+def batched_fft_is_per_image(shape) -> bool:
+    """Whether one batched cuFFT of ``shape`` ``[n, H, W]`` gives every image bitwise its per-image transform.
+
+    RELION transforms each image with its own plan, so the exact paths ask the image backend for one plan per
+    image (``relion_fft_per_image``): a ``lax.map`` of one transform per image, millions of small launches per
+    pass (a tutorial bin-6 pass-2 half, ~2.2M of its 3.9M). cuFFT's batched plan is bitwise the per-image one
+    for some sizes and not for others (on H100 and A100: boxes 64, 96 and 192 match at batches 1 to 1024, boxes
+    128 and 256 differ at batches of 32 and more, ~2.6e-7 relative). The answer is probed once per shape and
+    device, on a random float32 batch through the backend's two transforms, and the batched plan is used only
+    on a bitwise match. Without a GPU the answer is no.
+    """
+
+    import jax
+
+    if jax.default_backend() != "gpu":
+        return False
+    n, height, width = (int(v) for v in shape)
+    key = (n, height, width, jax.devices()[0].device_kind)
+    if key not in _BATCHED_FFT_IS_PER_IMAGE:
+        from recovar.data_io.image_backends import _centered_rfft2_jax_batched, _centered_rfft2_jax_per_image
+
+        probe = jnp.asarray(np.random.default_rng(0).standard_normal((n, height, width)), dtype=jnp.float32)
+        batched = np.asarray(_centered_rfft2_jax_batched(probe))
+        per_image = np.asarray(_centered_rfft2_jax_per_image(probe))
+        _BATCHED_FFT_IS_PER_IMAGE[key] = batched.dtype == per_image.dtype and np.array_equal(
+            batched.view(np.uint32), per_image.view(np.uint32)
+        )
+    return _BATCHED_FFT_IS_PER_IMAGE[key]
+
+
 def process_half_image(
     experiment_dataset,
     batch,
@@ -98,6 +132,8 @@ def process_half_image(
     if process_half_fn is None:
         raise ValueError("Dense EM requires experiment_dataset.process_images_half")
     kwargs = {} if relion_preprocess_kwargs is None else dict(relion_preprocess_kwargs)
+    if kwargs.get("relion_fft_per_image") and np.ndim(batch) == 3 and batched_fft_is_per_image(np.shape(batch)):
+        kwargs["relion_fft_per_image"] = False  # the batched plan is bitwise the per-image one at this shape
     processed = process_half_fn(batch, apply_image_mask=apply_image_mask, **kwargs)
     return demodulate_odd_aberrations(experiment_dataset, processed, image_indices)
 
