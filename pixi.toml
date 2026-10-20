@@ -88,7 +88,7 @@ scipy = ">=1.15.0"
 pytorch = { version = ">=2.3.1", channel = "pytorch" }
 
 # Immutable RECOVAR pin: recovar.__file__ then identifies the exact commit (direct_url.json).
-# PIN: recovar dev2 c60e3c26f (R 162dc9477, which removes the EM code from recovar, plus absent_angles_zero,
+# PIN: recovar dev2 2e0ed5f63 (R 162dc9477, which removes the EM code from recovar, plus absent_angles_zero,
 # the atomic-volume solvent/B-factor transform, a loader that never rebuilds a pinned library, strict
 # stack staging, the RELION 5 tomo simulator and converter that keep each particle's optics group, the
 # RELION SPA simulator with several optics groups, explicit volume padding for indexed backprojection of
@@ -96,10 +96,11 @@ pytorch = { version = ">=2.3.1", channel = "pytorch" }
 # origin-shifted and slope-scaled depth defocus, post_process_from_filter_v2's traced logical current size,
 # indexed backprojection with a traced radius, given particle Euler angles and one optics group per tomogram
 # in the tomo simulator, its RELION optics-group aberrations (beam tilt, odd/even Zernike, magnification),
-# premultiplied tilt images with RELION's CTF sign, CPU batch sizing within the job's memory limit, and a CUDA
-# preflight that reads fat-binary targets without cuobjdump).
+# premultiplied tilt images with RELION's CTF sign, CPU batch sizing within the job's memory limit, a CUDA
+# preflight that reads fat-binary targets without cuobjdump, and one float2 vector atomic per voxel in the
+# complex backprojection on sm_90).
 [feature.pinned.pypi-dependencies]
-recovar = { git = "https://github.com/ma-gilles/recovar", rev = "c60e3c26f893b6aa88e0f78db4f50c76352afedc" }
+recovar = { git = "https://github.com/ma-gilles/recovar", rev = "2e0ed5f63838054dc312c56c504c9a2676fe4005" }
 
 # The pinned environment's pypi packages are held at the builds in recovar's pixi.lock at the pinned commit, so
 # the relax default environment holds the same shared packages as recovar's (scripts/check_lock_parity.py, P3).
