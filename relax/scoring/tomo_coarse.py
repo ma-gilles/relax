@@ -344,12 +344,17 @@ def _undecided_scorer_rotations(
     (device arrays, where ``use``), built on the device without reading ``ids`` back.
 
     A rotation's matrix for a tilt image is ``pass1_rotations`` of its coarse Euler row with the image's left
-    matrix (``particle_left[p]`` ``[S_p, 3, 3]``), the kernel :func:`_batch_scoring_rotations` uses, so the
-    values are those the GEMM pass scored; a padded rotation repeats the particle's last one and a local
+    matrix (``particle_left[p]`` ``[S_p, 3, 3]``) and the pass's perturbation matrix
+    (:func:`relax.sampling.device_rotations.pass1_rotations_left_f32`, the kernel :func:`_batch_scoring_rotations`
+    uses), so the values are those the GEMM pass scored; a padded rotation repeats the particle's last one and a local
     search's rows index its own rotations (``unit_rotation_rows[p]``). The kernel builds every pairing of its
     Euler rows and left matrices, so the particles go in groups, each particle keeping its own pairings.
-    Padded slots and particles without an undecided rotation are zero.
+    Padded slots and particles without an undecided rotation are zero. The perturbation enters the program as its
+    float32 matrix, not as a static float: every VDAM iteration draws a new one, which compiled the program again
+    for every shape in every iteration (relax#115).
     """
+
+    from relax.sampling.device_rotations import pass1_right_matrix
 
     n_particles, capacity = (int(n) for n in ids.shape)
     table = None
@@ -363,6 +368,7 @@ def _undecided_scorer_rotations(
     for p, images in enumerate(particle_left):
         left[p, : len(images)] = np.asarray(images, dtype=np.float32)
         n_images[p] = len(images)
+    right = pass1_right_matrix(random_perturbation, angular_sampling_deg)
     return _lay_out_undecided_rotations(
         ids,
         use,
@@ -371,24 +377,23 @@ def _undecided_scorer_rotations(
         eulers_f32,
         jnp.asarray(left),
         jnp.asarray(n_images),
+        None if right is None else jnp.asarray(np.asarray(right, dtype=np.float32)),
         r_pad=int(r_pad),
         group=max(1, int(np.sqrt(_UNDECIDED_ROTATION_CALL_BYTES / (36.0 * slots * capacity)))),
-        random_perturbation=float(random_perturbation),
-        angular_sampling_deg=float(angular_sampling_deg),
         pass1_rotations=pass1_rotations,
     )
 
 
 @partial(
     jax.jit,
-    static_argnames=("r_pad", "group", "random_perturbation", "angular_sampling_deg", "pass1_rotations"),
+    static_argnames=("r_pad", "group", "pass1_rotations"),
 )
 def _lay_out_undecided_rotations(
-    ids, use, counts, table, eulers_f32, left, n_images,
-    *, r_pad: int, group: int, random_perturbation: float, angular_sampling_deg: float, pass1_rotations,
+    ids, use, counts, table, eulers_f32, left, n_images, right_f32, *, r_pad: int, group: int, pass1_rotations,
 ):
     """:func:`_undecided_scorer_rotations` as one program: ``left`` ``[P, S, 3, 3]`` float32 per slot, ``table``
-    ``[P, R_max]`` a local search's own rotations (``None``: the grid's)."""
+    ``[P, R_max]`` a local search's own rotations (``None``: the grid's), ``right_f32`` the float32 perturbation
+    matrix (``None``: none)."""
 
     n_particles, capacity = ids.shape
     slots = left.shape[1]
@@ -401,12 +406,7 @@ def _lay_out_undecided_rotations(
         stop = min(start + group, n_particles)
         g = stop - start
         built = jnp.asarray(
-            pass1_rotations(
-                particle_eulers[start:stop].reshape(-1, 3),
-                random_perturbation,
-                angular_sampling_deg,
-                left_matrices=left[start:stop].reshape(-1, 3, 3),
-            ),
+            pass1_rotations(particle_eulers[start:stop].reshape(-1, 3), right_f32, left[start:stop].reshape(-1, 3, 3)),
             dtype=jnp.float32,
         ).reshape(g, slots, g, capacity, 3, 3)
         own = jnp.arange(g)
@@ -445,6 +445,39 @@ def _exact_rows_diff2(
         )
         diff2 = put_rows(diff2, ids, own, exact)
     return diff2
+
+
+@partial(jax.jit, static_argnames=("capacity",))
+def _take_rescore_group(rows, exact, operands, take, n, *, capacity: int):
+    """The rows, operands and diff2 of a rescore group's flush particles ``take`` (``[n_pad]``, the first ``n``
+    real), its undecided rotations (``first_rows`` at ``capacity``) and which of them it scores (none on padding).
+    One program in place of the group's eager gathers, each compiled for every new group shape (relax#115)."""
+
+    ids, use = first_rows(rows[take], capacity=capacity)
+    use = use & (jnp.arange(take.shape[0]) < n)[:, None]
+    return ids, use, tuple(value[take] for value in operands), exact[take]
+
+
+@jax.jit
+def _put_rescore_group(exact, scored, group_exact, group_use, take, n):
+    """``exact`` with a rescore group's diff2 written back to its real particles, and ``scored`` with their counts
+    of rotations scored again; the padding writes past the end, which the scatters drop."""
+
+    back = jnp.where(jnp.arange(take.shape[0]) < n, take, exact.shape[0])
+    group_scored = jnp.sum(group_use, axis=1, dtype=jnp.int32)
+    return exact.at[back].set(group_exact, mode="drop"), scored.at[back].set(group_scored, mode="drop")
+
+
+@jax.jit
+def _exact_cut_check(scored, unresolved, most, n_real):
+    """A flush's exact-cut scalars ``(most, unresolved, rows, particles)``: the largest count of undecided rotations,
+    the real particles the leading sort left unresolved, and the rotations scored again and the particles that had
+    any (a padded flush's copies are not counted)."""
+
+    real_particle = jnp.arange(scored.shape[0]) < n_real
+    real = jnp.where(real_particle, scored, 0)
+    n_unresolved = jnp.sum(unresolved & real_particle, dtype=jnp.int32)
+    return most, n_unresolved, jnp.sum(real, dtype=jnp.int32), jnp.sum(real > 0, dtype=jnp.int32)
 
 
 def _coarse_batches(
@@ -1205,7 +1238,7 @@ def particle_coarse_supports(
     from relax.io.batch_fetch import prefetched_batches
     from relax.projection.projection import relion_projector_half_to_texture_full
     from relax.sampling import tomo_particles
-    from relax.sampling.device_rotations import relion_adaptive_pass1_rotations
+    from relax.sampling.device_rotations import pass1_rotations_left_f32
 
     class_projectors = tuple(projector_half) if isinstance(projector_half, (tuple, list)) else (projector_half,)
     n_classes = len(class_projectors)
@@ -1384,12 +1417,8 @@ def particle_coarse_supports(
             exact = rescore(units_all, exact, ids[:, chunk], use[:, chunk], operands)
         scored = jnp.sum(use, axis=1, dtype=jnp.int32)  # each particle's rotations scored again
         for positions, group_capacity in groups:
-            exact, group_use = rescore_group(units_all, exact, rows, operands, positions, group_capacity)
-            group_scored = jnp.sum(group_use, axis=1, dtype=jnp.int32)[: positions.size]
-            scored = scored.at[jnp.asarray(positions)].set(group_scored)
-        real = jnp.where(jnp.arange(units_all.size) < n_real, scored, 0)  # a padded flush's copies are not counted
-        n_unresolved = jnp.sum(unresolved & (jnp.arange(units_all.size) < n_real), dtype=jnp.int32)
-        check = (most, n_unresolved, jnp.sum(real, dtype=jnp.int32), jnp.sum(real > 0, dtype=jnp.int32))
+            exact, scored = rescore_group(units_all, exact, scored, rows, operands, positions, group_capacity)
+        check = _exact_cut_check(scored, unresolved, most, jnp.int32(n_real))
         return significance(units_all, exact), check
 
     def rescore(units_all, diff2, ids, use, operands):
@@ -1406,7 +1435,7 @@ def particle_coarse_supports(
             angular_sampling_deg,
             r_pad=int(r_pad_all),
             slots=slots,
-            pass1_rotations=relion_adaptive_pass1_rotations,
+            pass1_rotations=pass1_rotations_left_f32,
         )
         unshifted, weight, initial, angles = operands
         return _exact_rows_diff2(
@@ -1427,27 +1456,25 @@ def particle_coarse_supports(
             padding_factor=int(padding_factor),
         )
 
-    def rescore_group(units_all, exact, rows, operands, positions, group_capacity):
+    def rescore_group(units_all, exact, scored, rows, operands, positions, group_capacity):
         """``exact`` with the undecided rotations of the flush particles ``positions`` scored again, up to
-        ``group_capacity`` each, and which rotations those were (``[n_pad, group_capacity]``). The group is
-        padded to a power of two of particles (the padding scores nothing and writes nothing back)."""
+        ``group_capacity`` each, and ``scored`` with their counts of rotations scored again. The group is padded to
+        a power of two of particles (the padding scores nothing and writes nothing back)."""
 
         n = int(positions.size)
         n_pad = pow2_ceil(n)
         take = np.concatenate([positions, np.full(n_pad - n, positions[-1])]).astype(np.int64)
-        take_device = jnp.asarray(take)
-        group_ids, group_use = first_rows(rows[take_device], capacity=group_capacity)
-        group_use = group_use & (jnp.arange(n_pad) < n)[:, None]
-        group_operands = tuple(value[take_device] for value in operands)
-        group_exact = exact[take_device]
+        take_device, n_device = jnp.asarray(take, dtype=jnp.int32), jnp.int32(n)
+        group_ids, group_use, group_operands, group_exact = _take_rescore_group(
+            rows, exact, operands, take_device, n_device, capacity=group_capacity
+        )
         per_call = _rescore_rows_per_call(n_pad, slots, n_coarse_trans, rescore_bytes, group_capacity)
         for first in range(0, group_capacity, per_call):
             chunk = slice(first, first + per_call)
             group_exact = rescore(
                 units_all[take], group_exact, group_ids[:, chunk], group_use[:, chunk], group_operands
             )
-        back = jnp.where(jnp.arange(n_pad) < n, take_device, units_all.size)  # the padding writes past the end
-        return exact.at[back].set(group_exact, mode="drop"), group_use
+        return _put_rescore_group(exact, scored, group_exact, group_use, take_device, n_device)
 
     def exact_cut_again(cut_operands, unresolved):
         """The flush's exact cut at the size its undecided rotations need (read from the device): every rotation

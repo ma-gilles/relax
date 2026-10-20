@@ -933,6 +933,11 @@ def _fake_coarse_kernels(monkeypatch, rng, flushes):
     from relax.sampling import device_rotations
 
     monkeypatch.setattr(device_rotations, "relion_adaptive_pass1_rotations", pass1_rotations)
+    monkeypatch.setattr(
+        device_rotations,
+        "pass1_rotations_left_f32",
+        lambda eulers, right_f32, left_matrices: pass1_rotations(eulers, 0.0, 0.0, left_matrices=left_matrices),
+    )
     from relax.projection import projection
 
     monkeypatch.setattr(projection, "relion_projector_half_to_texture_full", lambda value: jnp.asarray(value))
@@ -1154,39 +1159,45 @@ def test_undecided_scorer_rotations_are_the_per_particle_builds(monkeypatch, loc
     """The exact cut's scorer matrices built on the device from its undecided rotations are those of
     one rotation-kernel call per particle with its own images (the earlier host loop)."""
 
-    def pass1_rotations(eulers_deg, random_perturbation, angular_sampling_deg, *, left_matrices):
+    def pass1_rotations(eulers_deg, right_f32, left_matrices):
         # Traceable and elementwise, so a program and the eager reference round alike.
         e = jnp.asarray(eulers_deg, dtype=jnp.float32)
         base = jnp.sin(e[:, :, None] * jnp.float32(0.01) + jnp.arange(3, dtype=jnp.float32)[None, None, :])
         left = jnp.asarray(left_matrices, dtype=jnp.float32)
         return left[:, None, :, :] * base[None, :, :, :]
 
+    def reference(eulers_deg, random_perturbation, angular_sampling_deg, *, left_matrices):
+        return pass1_rotations(eulers_deg, None, left_matrices)
+
     monkeypatch.setattr(tomo_coarse, "_UNDECIDED_ROTATION_CALL_BYTES", call_bytes)
-    _check_undecided_scorer_rotations(pass1_rotations, local, 0.0)
+    _check_undecided_scorer_rotations(pass1_rotations, local, 0.0, reference=reference)
 
 
 @pytest.mark.gpu
 @pytest.mark.parametrize("local", [False, True], ids=["global", "local"])
 def test_undecided_scorer_rotations_are_the_rotation_kernels_per_particle(gpu_device, monkeypatch, local):
-    """The same with RELION's rotation kernel (perturbed, left matrices): the per-particle calls' matrices."""
+    """The same with RELION's rotation kernel (perturbed, left matrices): the per-particle calls' matrices.
+
+    The program takes the perturbation as its float32 matrix (``pass1_rotations_left_f32``); the reference builds
+    each particle's rows from the perturbation itself (``relion_adaptive_pass1_rotations``)."""
 
     import jax
     from recovar.cuda_backproject import custom_cuda_requested
 
-    from relax.sampling.device_rotations import relion_adaptive_pass1_rotations
+    from relax.sampling.device_rotations import pass1_rotations_left_f32, relion_adaptive_pass1_rotations
 
     if jax.default_backend() != "gpu" or not custom_cuda_requested():
         pytest.skip("needs the custom CUDA rotation kernel")
 
-    def pass1_rotations(*args, **kwargs):
+    def reference(*args, **kwargs):
         return np.asarray(relion_adaptive_pass1_rotations(*args, **kwargs))
 
     monkeypatch.setattr(tomo_coarse, "_UNDECIDED_ROTATION_CALL_BYTES", 2000)
-    _check_undecided_scorer_rotations(relion_adaptive_pass1_rotations, local, 0.37, reference=pass1_rotations)
+    for random_perturbation in (0.37, -0.21, 0.0):
+        _check_undecided_scorer_rotations(pass1_rotations_left_f32, local, random_perturbation, reference=reference)
 
 
-def _check_undecided_scorer_rotations(pass1_rotations, local, random_perturbation, reference=None):
-    reference = pass1_rotations if reference is None else reference
+def _check_undecided_scorer_rotations(pass1_rotations, local, random_perturbation, reference):
     rng = np.random.default_rng(7)
     n_particles, slots, capacity, n_rot, r_pad = 5, 4, 3, 11, 16
     n_images = np.array([4, 2, 3, 1, 4])
@@ -1334,6 +1345,11 @@ def test_capped_particles_are_cut_on_the_direct_squares_of_their_undecided_rotat
     from relax.sampling import device_rotations
 
     monkeypatch.setattr(device_rotations, "relion_adaptive_pass1_rotations", pass1_rotations)
+    monkeypatch.setattr(
+        device_rotations,
+        "pass1_rotations_left_f32",
+        lambda eulers, right_f32, left_matrices: pass1_rotations(eulers, 0.0, 0.0, left_matrices=left_matrices),
+    )
     monkeypatch.setattr(projection, "relion_projector_half_to_texture_full", lambda value: jnp.asarray(value))
     monkeypatch.setattr(tomo_coarse, "coarse_gemm_slot_block", fake_block)
     monkeypatch.setattr(tomo_coarse, "direct_rows_diff2", fake_direct)

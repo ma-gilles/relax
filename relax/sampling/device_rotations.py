@@ -116,17 +116,41 @@ def relion_adaptive_pass1_rotations(
     an equivalent NumPy fallback only for CPU callers.
     """
 
-    right_matrix = None
-    if abs(float(random_perturbation)) >= 1e-12:
-        perturbation_deg = float(random_perturbation) * float(angular_sampling_deg)
-        right_matrix = healpix.euler_angles_to_matrix(
-            np.asarray([[perturbation_deg, perturbation_deg, perturbation_deg]], dtype=np.float64)
-        )[0]
+    right_matrix = pass1_right_matrix(random_perturbation, angular_sampling_deg)
     if left_matrices is not None:
         return _relion_device_scoring_rotations_left_f32(source_eulers_deg, right_matrix, left_matrices)
     if use_float64:
         return _relion_device_scoring_rotations_f64(source_eulers_deg, right_matrix)
     return _relion_device_scoring_rotations_f32(source_eulers_deg, right_matrix)
+
+
+def pass1_right_matrix(random_perturbation: float, angular_sampling_deg: float) -> np.ndarray | None:
+    """RELION's host perturbation matrix of the pass-1 rows (float64 ``[3, 3]``), or None when it is not applied."""
+
+    if abs(float(random_perturbation)) < 1e-12:
+        return None
+    perturbation_deg = float(random_perturbation) * float(angular_sampling_deg)
+    return healpix.euler_angles_to_matrix(
+        np.asarray([[perturbation_deg, perturbation_deg, perturbation_deg]], dtype=np.float64)
+    )[0]
+
+
+def pass1_rotations_left_f32(eulers_f32, right_f32, left_matrices) -> jax.Array:
+    """:func:`relion_adaptive_pass1_rotations` with left matrices, traceable: the float32 Euler rows ``[N, 3]``, the
+    float32 right matrix (``pass1_right_matrix`` cast to float32, or None) and the left matrices ``[B, 3, 3]``.
+
+    A program that builds rows of every iteration's perturbation takes it as this array, not as a static float
+    (one compile per value, relax#115). The kernel sees the same float32 values either way. CUDA only.
+    """
+
+    from relax.cuda import rotations as cuda_rotations
+
+    return cuda_rotations.relion_make_scoring_rotations_left_f32(
+        jnp.asarray(eulers_f32, dtype=jnp.float32).reshape(-1, 3),
+        jnp.eye(3, dtype=jnp.float32) if right_f32 is None else jnp.asarray(right_f32, dtype=jnp.float32),
+        jnp.asarray(left_matrices, dtype=jnp.float32).reshape(-1, 3, 3),
+        do_right=right_f32 is not None,
+    )
 
 
 class DevicePass1Source(NamedTuple):
