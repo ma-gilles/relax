@@ -125,6 +125,17 @@ class IterationSnapshot:
         restored = {name: value for name, value in self.state_fields.items() if name not in RUN_LIMIT_FIELDS}
         return dataclasses.replace(base, **restored)
 
+    def take_means(self) -> list:
+        """The reference volumes, for the loop that installs them; the snapshot then holds no volume.
+
+        A continued run reads this snapshot once and keeps it to its end: held here, the run files' half means
+        and unfiltered half maps (which no reader of a resumed snapshot uses) stayed in host memory through the
+        whole run, four complex64 box^3 volumes, 15.3 GiB at box 800 (relax#117).
+        """
+
+        means, self.means, self.unfiltered_means = self.means, None, None
+        return means
+
 
 def direction_priors_from_snapshot(
     snapshot: IterationSnapshot,

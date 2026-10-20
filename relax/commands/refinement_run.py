@@ -314,6 +314,13 @@ def _require_relion_convention_reference(path, option: str) -> None:
         raise SystemExit(str(exc)) from None
 
 
+def _classes_are_one_reference(class_maps) -> bool:
+    """Whether a Class3D snapshot's classes are still copies of one reference. A helper, so the run's main frame
+    keeps no reference to the snapshot's volumes, which the loop takes and frees (relax#117)."""
+    class_maps = np.asarray(class_maps)
+    return all(np.array_equal(class_maps[0], other) for other in class_maps[1:])
+
+
 @xla_memory_reserve.explains_pool_region_failure
 def main(command=None):
     """Run a refinement from ``sys.argv``; ``command`` (``refine``/``class3d``) checks ``--n_classes``."""
@@ -504,11 +511,10 @@ def main(command=None):
             resume_snapshot.relion_iteration,
             args.continue_optimiser_star,
         )
-        class_maps = np.asarray(resume_snapshot.means[0])
         if (
             int(resume_snapshot.n_classes) > 1
             and int(resume_snapshot.relion_iteration) == 1
-            and all(np.array_equal(class_maps[0], other) for other in class_maps[1:])
+            and _classes_are_one_reference(resume_snapshot.means[0])
         ):
             # A Class3D start from one reference with --firstiter_cc scores class 1 alone in iteration 1 and
             # gives each particle its random class in iteration 2; RELION's --continue reads its optimiser with

@@ -62,20 +62,20 @@ def initialize_class_reference_model(half_maps, initial_mean_variance, *, use_pe
 
 
 def reference_model_from_snapshot(snapshot, volume_shape, *, dtype):
-    """K=1: restore the checkpoint's half maps and the continuation's shared tau2 layout."""
+    """K=1: restore the checkpoint's half maps (taken from ``snapshot``) and the continuation's shared tau2 layout."""
     from relax.refinement.iteration_snapshot import tau2_mean_variance
 
-    maps = [jnp.asarray(mean) for mean in snapshot.means]
+    maps = [jnp.asarray(mean) for mean in snapshot.take_means()]
     tau2 = tau2_mean_variance(snapshot, volume_shape, dtype=dtype)
     return ReferenceModel(maps=maps, tau2=tau2, tau2_per_half=None)
 
 
 def class_reference_model_from_snapshot(snapshot, volume_shape, *, dtype):
-    """Class3D: restore the checkpoint's class stack, one array both halves score against, and the shared
-    tau2."""
+    """Class3D: restore the checkpoint's class stack (taken from ``snapshot``), one array both halves score
+    against, and the shared tau2."""
     from relax.refinement.iteration_snapshot import tau2_mean_variance
 
-    maps = [jnp.asarray(mean) for mean in snapshot.means]
+    maps = [jnp.asarray(mean) for mean in snapshot.take_means()]
     maps[1] = maps[0]
     tau2 = tau2_mean_variance(snapshot, volume_shape, dtype=dtype)
     return ReferenceModel(maps=maps, tau2=tau2, tau2_per_half=None)
