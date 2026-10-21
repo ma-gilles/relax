@@ -1699,8 +1699,11 @@ void relion_fine_diff2_fused_translate_rows_f32_kernel(
     int current_size,
     const int32_t* runtime_current_size,
     const uint8_t* translation_chunk_live,
-    int64_t translation_image_stride)
+    int64_t translation_image_stride,
+    const int32_t* launch_image)
 {
+    // A one-image launch is scored by relion_fine_diff2_table_rows_f32_kernel.
+    if (launch_image != nullptr && launch_image[0] >= 0) return;
     constexpr int R = kRelionFineDiff2RowsPerBlock;
     const int64_t translation_chunks =
         (translation_count + kRelionFineDiff2Ref3dJobChunk - 1) /
@@ -1827,6 +1830,261 @@ void relion_fine_diff2_fused_translate_rows_f32_kernel(
             }
         }
     }
+
+    __syncthreads();
+    // Each row's 256-lane tree, as one row per block reduced it.
+    for (int width = kRelionFineDiff2BlockSize / 2; width > 0; width /= 2) {
+        if (threadIdx.x < width) {
+#pragma unroll
+            for (int i = 0; i < R; ++i) {
+                if (batch[i] < 0) continue;
+                for (int translation_offset = 0;
+                     translation_offset < translation_in_chunk;
+                     ++translation_offset) {
+                    const int lane_index = i * kRelionFineDiff2RowLanes +
+                        translation_offset * kRelionFineDiff2BlockSize + threadIdx.x;
+                    lane_sums[lane_index] = __fadd_rn(
+                        lane_sums[lane_index], lane_sums[lane_index + width]);
+                }
+            }
+        }
+        __syncthreads();
+    }
+#pragma unroll
+    for (int i = 0; i < R; ++i) {
+        if (batch[i] < 0 || threadIdx.x >= translation_in_chunk) continue;
+        const int64_t translation = translation_start + threadIdx.x;
+        output[(row_base + i) * translation_count + translation] = __fadd_rn(
+            lane_sums[i * kRelionFineDiff2RowLanes + threadIdx.x * kRelionFineDiff2BlockSize],
+            initial_diff2[batch[i]]);
+    }
+}
+
+// The largest translated-pixel table a one-image fine diff2 launch takes: half
+// the cap of the one-image translate-sum's float4 table (kMaxShiftedTableBytes,
+// relion_translate_sum.cuh), whose float2 half this table is.
+constexpr int64_t kRelionFineDiff2MaxTableBytes = int64_t(1) << 29;
+
+// The launch's image when every row with an image in [0, batch_size) has the
+// same one, else -1: a flat-posterior tilt particle fills whole launches with
+// one image's rows (thousands of rotations, one tilt image per launch).
+__device__ __forceinline__ int32_t relion_fine_diff2_launch_image(
+    const int32_t* row_image_ids, int64_t row_count, int64_t batch_size)
+{
+    __shared__ int32_t first;
+    __shared__ int mixed;
+    if (threadIdx.x == 0) { first = -1; mixed = 0; }
+    __syncthreads();
+    for (int64_t row = threadIdx.x; row < row_count; row += blockDim.x) {
+        const int32_t id = row_image_ids[row];
+        if (id >= 0 && id < batch_size) atomicCAS(&first, -1, id);
+    }
+    __syncthreads();
+    const int32_t image_id = first;
+    for (int64_t row = threadIdx.x; row < row_count; row += blockDim.x) {
+        const int32_t id = row_image_ids[row];
+        if (id >= 0 && id < batch_size && id != image_id) mixed = 1;
+    }
+    __syncthreads();
+    return mixed ? -1 : image_id;
+}
+
+// For a one-image launch, that image's translated pixels at every translation,
+// ``shifted_table[t][c]``, from the same relion_score_translate_f32 the diff2
+// kernel otherwise evaluates inline once per 4-row block; ``launch_image[0]``
+// gets the image (or -1, and no table).
+__global__ __launch_bounds__(kRelionFineDiff2BlockSize)
+void relion_fine_diff2_shift_table_f32_kernel(
+    const float2* image,
+    const float* translation_angles,
+    const int32_t* row_image_ids,
+    const int32_t* full_to_compact,
+    int32_t* launch_image,
+    float2* shifted_table,
+    int64_t batch_size,
+    int64_t row_count,
+    int64_t translation_count,
+    int64_t compact_pixel_count,
+    int64_t full_pixel_capacity,
+    int current_size,
+    const int32_t* runtime_current_size,
+    int64_t translation_image_stride)
+{
+    const int32_t b = relion_fine_diff2_launch_image(row_image_ids, row_count, batch_size);
+    if (blockIdx.x == 0 && blockIdx.y == 0 && threadIdx.x == 0) launch_image[0] = b;
+    if (b < 0) return;
+    const int logical_current_size = runtime_current_size == nullptr
+        ? current_size
+        : runtime_current_size[0];
+    const int current_half_width = logical_current_size / 2 + 1;
+    const int64_t logical_full_pixel_count =
+        static_cast<int64_t>(logical_current_size) * current_half_width;
+    if (logical_current_size <= 0 || (logical_current_size & 1) != 0 ||
+        logical_full_pixel_count > full_pixel_capacity)
+        return;
+    const int64_t full_pixel = static_cast<int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+    if (full_pixel >= logical_full_pixel_count) return;
+    const int32_t compact_pixel = full_to_compact[full_pixel];
+    if (compact_pixel < 0 || compact_pixel >= compact_pixel_count) return;
+    const int x = static_cast<int>(full_pixel % current_half_width);
+    int y = static_cast<int>(full_pixel / current_half_width);
+    if (y > logical_current_size / 2) y -= logical_current_size;
+    const float2 value = image[static_cast<int64_t>(b) * compact_pixel_count + compact_pixel];
+    const float* angles = translation_angles + static_cast<int64_t>(b) * translation_image_stride;
+    for (int64_t translation = blockIdx.y; translation < translation_count; translation += gridDim.y)
+        shifted_table[translation * compact_pixel_count + compact_pixel] = relion_score_translate_f32(
+            value, x, y, angles[2 * translation], angles[2 * translation + 1]);
+}
+
+// The fused-translate diff2 of a one-image launch (``launch_image[0] >= 0``,
+// else nothing): relion_fine_diff2_fused_translate_rows_f32_kernel with the
+// translated pixels read from ``shifted_table``.  Each (row, translation) sum
+// takes the same pixels per lane in the same order, the same update and the
+// same 256-lane tree.  The blocks go translation chunk by translation chunk,
+// so the blocks running together read one chunk of the table and every row
+// block's reference stays in L2.
+__global__ __launch_bounds__(kRelionFineDiff2BlockSize)
+void relion_fine_diff2_table_rows_f32_kernel(
+    const float2* reference,
+    const float* weight,
+    const float* initial_diff2,
+    const int32_t* row_image_ids,
+    const int32_t* full_to_compact,
+    float* output,
+    int64_t batch_size,
+    int64_t row_count,
+    int64_t translation_count,
+    int64_t compact_pixel_count,
+    int64_t full_pixel_capacity,
+    int current_size,
+    const int32_t* runtime_current_size,
+    const uint8_t* translation_chunk_live,
+    const int32_t* launch_image,
+    const float2* shifted_table)
+{
+    constexpr int R = kRelionFineDiff2RowsPerBlock;
+    const int64_t translation_chunks =
+        (translation_count + kRelionFineDiff2Ref3dJobChunk - 1) /
+        kRelionFineDiff2Ref3dJobChunk;
+    const int32_t table_image = launch_image[0];
+    if (table_image < 0) return;
+    const int64_t flat_block = static_cast<int64_t>(blockIdx.x);
+    const int64_t row_blocks = (row_count + R - 1) / R;
+    const int64_t row_base = (flat_block % row_blocks) * R;
+    const int64_t translation_chunk = flat_block / row_blocks;
+    if (row_base >= row_count) return;
+    const int64_t translation_start =
+        translation_chunk * kRelionFineDiff2Ref3dJobChunk;
+    const int translation_in_chunk = static_cast<int>(min(
+        static_cast<int64_t>(kRelionFineDiff2Ref3dJobChunk),
+        translation_count - translation_start));
+    const int logical_current_size = runtime_current_size == nullptr
+        ? current_size
+        : runtime_current_size[0];
+    const int64_t logical_full_pixel_count =
+        static_cast<int64_t>(logical_current_size) *
+        (logical_current_size / 2 + 1);
+    const bool size_invalid =
+        logical_current_size <= 0 || (logical_current_size & 1) != 0 ||
+        logical_full_pixel_count > full_pixel_capacity;
+
+    // Each row's image, or -1 when the row is not scored here.  A translation
+    // chunk without a candidate cell is written as +inf, the value an invalid
+    // row gets: the caller masks non-candidate cells to +inf anyway, and a
+    // row that is traversed computes every one of its translations exactly as
+    // before, so candidate scores are unchanged.
+    int64_t batch[R];
+    bool any_scored = false;
+#pragma unroll
+    for (int i = 0; i < R; ++i) {
+        const int64_t row = row_base + i;
+        batch[i] = -1;
+        if (row >= row_count) continue;
+        const int64_t id = static_cast<int64_t>(row_image_ids[row]);
+        const bool chunk_skipped = translation_chunk_live != nullptr &&
+            translation_chunk_live[row * translation_chunks + translation_chunk] == 0;
+        if (id < 0 || id >= batch_size || chunk_skipped) {
+            if (threadIdx.x < translation_in_chunk)
+                output[row * translation_count + translation_start + threadIdx.x] =
+                    __int_as_float(0x7f800000);
+            continue;
+        }
+        if (size_invalid) {
+            if (threadIdx.x < translation_in_chunk)
+                output[row * translation_count + translation_start + threadIdx.x] = nanf("");
+            continue;
+        }
+        batch[i] = id;
+        any_scored = true;
+    }
+    if (!any_scored) return;
+
+    // Each lane's partial sum per (row, translation of the chunk): row i's
+    // lanes start at i * kRelionFineDiff2RowLanes.
+    constexpr int kRelionFineDiff2RowLanes =
+        kRelionFineDiff2BlockSize * kRelionFineDiff2Ref3dJobChunk;
+    __shared__ float lane_sums[R * kRelionFineDiff2RowLanes];
+#pragma unroll
+    for (int i = 0; i < R; ++i)
+        for (int translation_offset = 0;
+             translation_offset < translation_in_chunk;
+             ++translation_offset)
+            lane_sums[i * kRelionFineDiff2RowLanes +
+                      translation_offset * kRelionFineDiff2BlockSize + threadIdx.x] = 0.0f;
+
+    const int pass_count = static_cast<int>(
+        (logical_full_pixel_count + kRelionFineDiff2BlockSize - 1) /
+        kRelionFineDiff2BlockSize);
+    // Every scored row has the launch image: its weight and translated
+    // pixels are read once per pixel, and a chunk all of whose rows score
+    // every translation runs without the per-row tests.
+    bool full_chunk = translation_in_chunk == kRelionFineDiff2Ref3dJobChunk;
+#pragma unroll
+    for (int i = 0; i < R; ++i) full_chunk = full_chunk && batch[i] >= 0;
+    const float2* table = shifted_table + translation_start * compact_pixel_count;
+    auto accumulate = [&](auto tested) {
+        constexpr bool kTested = decltype(tested)::value;
+        for (int pass = 0; pass < pass_count; ++pass) {
+            const int64_t full_pixel =
+                static_cast<int64_t>(pass) * kRelionFineDiff2BlockSize + threadIdx.x;
+            if (full_pixel >= logical_full_pixel_count) continue;
+            const int32_t compact_pixel = full_to_compact[full_pixel];
+            if (compact_pixel < 0 || compact_pixel >= compact_pixel_count) continue;
+            // The weight row is indexed through launch_image[0] here: hoisting it
+            // (or indexing by table_image) made this loop 1.45x slower on H100
+            // (bench/diff2_table, flat 512-row launch 4.0 -> 5.9 ms).
+            const float pixel_weight =
+                weight[static_cast<int64_t>(launch_image[0]) * compact_pixel_count + compact_pixel];
+            float2 shifted[kRelionFineDiff2Ref3dJobChunk];
+#pragma unroll
+            for (int k = 0; k < kRelionFineDiff2Ref3dJobChunk; ++k) {
+                shifted[k] = make_float2(0.0f, 0.0f);
+                if (kTested && k >= translation_in_chunk) continue;
+                shifted[k] = table[k * compact_pixel_count + compact_pixel];
+            }
+#pragma unroll
+            for (int i = 0; i < R; ++i) {
+                if (kTested && batch[i] < 0) continue;
+                const float2 reference_value =
+                    reference[(row_base + i) * compact_pixel_count + compact_pixel];
+#pragma unroll
+                for (int translation_offset = 0;
+                     translation_offset < kRelionFineDiff2Ref3dJobChunk;
+                     ++translation_offset) {
+                    if (kTested && translation_offset >= translation_in_chunk) break;
+                    const int lane_index = i * kRelionFineDiff2RowLanes +
+                        translation_offset * kRelionFineDiff2BlockSize + threadIdx.x;
+                    lane_sums[lane_index] = relion_fine_diff2_update_f32(
+                        reference_value,
+                        shifted[translation_offset],
+                        pixel_weight,
+                        lane_sums[lane_index]);
+                }
+            }
+        }
+    };
+    if (full_chunk) accumulate(std::false_type{});
+    else accumulate(std::true_type{});
 
     __syncthreads();
     // Each row's 256-lane tree, as one row per block reduced it.
@@ -2588,6 +2846,72 @@ cudaError_t launch_relion_fine_diff2_fused_translate_flat_rows_f32(
         (row_count + kRelionFineDiff2RowsPerBlock - 1) /
         kRelionFineDiff2RowsPerBlock * translation_chunks;
     if (total_blocks == 0) return cudaSuccess;
+    // The launch image and, when there is one, its translated-pixel table
+    // ([launch image int32, padding to 16 bytes][translations x compact pixels
+    // float2]): a one-image launch is scored from the table, any other by the
+    // inline kernel.  The scratch is stream-ordered outside the XLA pool, as
+    // the one-image translate-sum's float4 table of the same translations and
+    // pixels (translate_shifted_table_f32_kernel); it is taken only up to
+    // kRelionFineDiff2MaxTableBytes, and when it is not taken or cannot be
+    // allocated every launch is scored inline, with the same result.
+    constexpr size_t kTableOffset = 16;
+    char* scratch = nullptr;
+    const size_t table_bytes = static_cast<size_t>(translation_count * compact_pixel_count) * sizeof(float2);
+    if (table_bytes <= static_cast<size_t>(kRelionFineDiff2MaxTableBytes) &&
+        cudaMallocAsync(reinterpret_cast<void**>(&scratch), kTableOffset + table_bytes, stream) != cudaSuccess) {
+        (void)cudaGetLastError();
+        scratch = nullptr;
+    }
+    int32_t* launch_image = reinterpret_cast<int32_t*>(scratch);
+    float2* shifted_table = scratch == nullptr ? nullptr : reinterpret_cast<float2*>(scratch + kTableOffset);
+    if (scratch != nullptr) {
+        // Blocks over the full pixels times up to 64 translation strides: each
+        // block finds the launch image itself, so an empty launch costs one pass
+        // over the row images per block.
+        const dim3 table_grid(
+            static_cast<unsigned>((full_pixel_count + kRelionFineDiff2BlockSize - 1) / kRelionFineDiff2BlockSize),
+            static_cast<unsigned>(std::min<int64_t>(translation_count, 64)));
+        relion_fine_diff2_shift_table_f32_kernel<<<table_grid, kRelionFineDiff2BlockSize, 0, stream>>>(
+                image,
+                translation_angles,
+                row_image_ids,
+                full_to_compact,
+                launch_image,
+                shifted_table,
+                batch_size,
+                row_count,
+                translation_count,
+                compact_pixel_count,
+                full_pixel_count,
+                current_size,
+                runtime_current_size,
+                translation_image_stride);
+        cudaError_t err = cudaGetLastError();
+        if (err != cudaSuccess) return err;
+    }
+    if (scratch != nullptr) {
+        relion_fine_diff2_table_rows_f32_kernel<<<
+            static_cast<unsigned int>(total_blocks),
+            kRelionFineDiff2BlockSize,
+            0,
+            stream>>>(
+                reference,
+                weight,
+                initial_diff2,
+                row_image_ids,
+                full_to_compact,
+                output,
+                batch_size,
+                row_count,
+                translation_count,
+                compact_pixel_count,
+                full_pixel_count,
+                current_size,
+                runtime_current_size,
+                translation_chunk_live,
+                launch_image,
+                shifted_table);
+    }
     relion_fine_diff2_fused_translate_rows_f32_kernel<true><<<
         static_cast<unsigned int>(total_blocks),
         kRelionFineDiff2BlockSize,
@@ -2610,8 +2934,14 @@ cudaError_t launch_relion_fine_diff2_fused_translate_flat_rows_f32(
             current_size,
             runtime_current_size,
             translation_chunk_live,
-            translation_image_stride);
-    return cudaGetLastError();
+            translation_image_stride,
+            launch_image);
+    cudaError_t err = cudaGetLastError();
+    if (scratch != nullptr) {
+        const cudaError_t free_err = cudaFreeAsync(scratch, stream);
+        if (err == cudaSuccess) err = free_err;
+    }
+    return err;
 }
 
 cudaError_t launch_relion_fine_diff2_fused_translate_pairs_f32(

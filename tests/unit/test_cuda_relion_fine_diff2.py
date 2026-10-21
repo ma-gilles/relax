@@ -1620,3 +1620,67 @@ def test_relion_runtime_flat_rows_blocks_of_rows_score_each_row_alone(
     assert np.isfinite(together).any() and np.isposinf(together).any()
     assert_matches(together, alone)
 
+
+
+@pytest.mark.gpu
+@pytest.mark.parametrize("per_image_tables", [False, True], ids=["shared_table", "per_image_tables"])
+def test_relion_runtime_flat_rows_one_image_launch_matches_mixed_launch(
+    monkeypatch,
+    custom_cuda_lib,
+    gpu_device,
+    per_image_tables,
+):
+    """A launch whose rows all have one image (a flat-posterior tilt particle) reads its translated pixels from a
+    table built once per launch; it must score every row bitwise as a launch with another image's row does.
+
+    Padding rows, skipped translation chunks, a row count and a translation count that are not multiples of the
+    block's 4 rows and 4 translations, and a runtime current size below the lookup capacity are all covered.
+    """
+
+    import recovar.cuda_backproject as cuda_backproject
+
+    from relax.cuda import fine as cuda_fine
+
+    monkeypatch.setenv("RECOVAR_CUDA_LIB", str(custom_cuda_lib))
+    monkeypatch.delenv("RECOVAR_DISABLE_CUDA", raising=False)
+    monkeypatch.setattr(cuda_backproject, "_cuda_ok", None)
+    rng = np.random.default_rng(2610)
+    capacity, size = 40, 32
+    pixels = capacity * (capacity // 2 + 1)
+    n_images, n_translations, n_rows = 2, 23, 37
+    row_image_ids = np.full(n_rows, 1, dtype=np.int32)
+    row_image_ids[[5, 18, 36]] = -1
+    reference = (rng.normal(0, 0.02, (n_rows + 1, pixels)) + 1j * rng.normal(0, 0.02, (n_rows + 1, pixels))).astype(
+        np.complex64
+    )
+    image = (rng.normal(0, 0.02, (n_images, pixels)) + 1j * rng.normal(0, 0.02, (n_images, pixels))).astype(np.complex64)
+    weight = rng.uniform(0, 150_000, (n_images, pixels)).astype(np.float32)
+    angle_shape = (n_images, n_translations, 2) if per_image_tables else (n_translations, 2)
+    translation_angles = rng.normal(0, 0.2, angle_shape).astype(np.float32)
+    lookup = np.arange(pixels, dtype=np.int32)
+    initial_diff2 = rng.uniform(0.0, 0.05, n_images).astype(np.float32)
+    candidate = rng.random((n_rows + 1, n_translations)) < 0.5
+    candidate[7] = False
+    live = np.asarray(cuda_fine.relion_fine_diff2_translation_chunk_live(jnp.asarray(candidate)))
+
+    def score(ids, rows):
+        out = cuda_fine.relion_fine_diff2_fused_translate_runtime_flat_rows_f32(
+            jnp.asarray(reference[rows]),
+            jnp.asarray(ids),
+            jnp.asarray(image),
+            jnp.asarray(translation_angles),
+            jnp.asarray(weight),
+            jnp.asarray(lookup),
+            jnp.asarray(size, dtype=jnp.int32),
+            jnp.asarray(initial_diff2),
+            translation_chunk_live=jnp.asarray(live[rows]),
+        )
+        return np.asarray(jax.block_until_ready(out))
+
+    with jax.default_device(gpu_device):
+        one_image = score(row_image_ids, np.arange(n_rows))
+        mixed = score(np.append(row_image_ids, 0).astype(np.int32), np.arange(n_rows + 1))
+
+    assert np.isfinite(one_image).any() and np.isposinf(one_image).any()
+    assert np.all(np.isposinf(one_image[row_image_ids < 0]))
+    assert_matches(one_image, mixed[:n_rows])
