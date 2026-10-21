@@ -5,7 +5,7 @@
  * and exposes subfunctions to Python for exact parity testing against recovar.
  *
  * Build: cmake -B build -S . && cmake --build build
- * Usage: from recovar.relion_bind._relion_bind_core import ...
+ * Usage: from relax.relion_bind._relion_bind_core import ...
  */
 
 #include <pybind11/pybind11.h>

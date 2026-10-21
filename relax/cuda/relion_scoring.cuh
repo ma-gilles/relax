@@ -2142,7 +2142,7 @@ void relion_fine_diff2_fused_translate_pairs_f32_kernel(
 {
     // RELION's makeJobsForDiff2Fine groups a short source-ordered translation
     // run into one block.  The compact pair ABI already stores candidates in
-    // that source order, so consume four adjacent pairs per block without
+    // that source order, so consume kRelionFineDiff2PairsPerBlock adjacent pairs per block without
     // materializing another job layout.  A chunk may cross a rotation run;
     // each lane keeps its own reference id, which preserves arbitrary compact
     // masks while still sharing the image/weight fetch and launch overhead.

@@ -18,7 +18,7 @@
  *     `tests/unit/test_relion_bind/test_initialmodel_bind.py`.
  *
  * Usage:
- *   from recovar.relion_bind._relion_bind_core import (
+ *   from relax.relion_bind._relion_bind_core import (
  *       vdam_reweight_grad, vdam_first_moment, vdam_second_moment,
  *       vdam_apply_momenta, vdam_reconstruct_grad,
  *       vdam_compute_subset_size, vdam_compute_stepsize,
@@ -1586,8 +1586,8 @@ static py::dict vdam_expected_angular_errors(
 
 
 /**
- * Replicates Experiment::randomiseParticlesOrder's non-halves Fisher-Yates
- * path, using RELION's own Mersenne-Twister + ran1 pair (via `rnd_unif`).
+ * Replicates Experiment::randomiseParticlesOrder's non-halves path:
+ * std::shuffle with std::mt19937(seed), as RELION's exp_model.cpp does.
  *
  * Returns the shuffled particle ids.
  */
@@ -1943,7 +1943,7 @@ Returns -1 when subset should span all particles.
 
     m.def("vdam_randomise_particles_order", &vdam_randomise_particles_order,
           py::arg("nr_particles"), py::arg("seed"),
-          "Experiment::randomiseParticlesOrder (non-halves) via RELION rnd_unif.");
+          "Experiment::randomiseParticlesOrder (non-halves) via std::shuffle with std::mt19937(seed).");
 
     m.def("auto_refine_randomise_half_orders_mt19937", &auto_refine_randomise_half_orders_mt19937,
           py::arg("nr_particles_half1"), py::arg("nr_particles_half2"), py::arg("seed"),

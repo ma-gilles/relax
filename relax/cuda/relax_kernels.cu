@@ -8395,8 +8395,8 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(
 
 /* The flat-row Wavg atomics on the rectangle's exact-radius pixels only:
  * ``terms`` [Q, P_exact, 3] adds into positions ``exact_positions`` of the
- * [B, P_rect, 3] accumulator.  The embedding of the exact terms in a zeroed
- * rectangle is gone; positions outside the exact radius received zeros. */
+ * [B, P_rect, 3] accumulator.  Positions outside the exact radius keep their
+ * accumulator values. */
 ffi::Error RelionWavgExactAtomicFlatRowsTripletAddF32Impl(
     cudaStream_t stream,
     ffi::AnyBuffer terms,
