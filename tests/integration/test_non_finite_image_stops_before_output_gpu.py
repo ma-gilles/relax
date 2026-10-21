@@ -259,3 +259,6 @@ def test_subtomogram_refine_stops_on_a_nan_inside_the_mask(tmp_path, particle_ro
         output,
     )
     assert f"particle {name} " in stderr or "dataset image " in stderr
+    if particle_row == 900:
+        # The coarse pass reads the preprocess check at its end (deferred), naming the pass and the image.
+        assert "deferred check, tilt coarse pass" in stderr and "dataset image " in stderr, stderr[-4000:]

@@ -1235,6 +1235,7 @@ def particle_coarse_supports(
     cut weight below the cut's rank is significant but not counted.
     """
 
+    from relax.cuda.preprocess import deferred_relion_preprocess_checks
     from relax.io.batch_fetch import prefetched_batches
     from relax.projection.projection import relion_projector_half_to_texture_full
     from relax.sampling import tomo_particles
@@ -1617,26 +1618,33 @@ def particle_coarse_supports(
         _indexed_image_coarse_operands, experiment_dataset, layout=layout, noise_variance_half=noise_variance_half,
         optics_group_ids=optics_group_ids, scale_corrections=scale_corrections,
     )
-    # The groups' host image reads run one group ahead, on a worker thread.
-    with prefetched_batches(_group_image_reads(experiment_dataset, plan, offsets), depth=1) as reads:
-        for units, fetched in zip([] if plan is None else plan.groups, reads):
-            diff2, error, n_valid, operands, last_total = _score_frame_group(
-                units, plan, tilt, partial(operands_of, fetched=fetched), scorer, r_pad=r_pad_all, slots=slots
+    # The image preprocess kernel's finite check is read at the end of the pass, as pass 1 reads it (run_pass1):
+    # read at each operand batch, it waited for the device's queued work inside every operand block's
+    # preparation (22 read-backs per block, the device idle meanwhile). An invalid image still stops the pass,
+    # with the same failure naming the image, before its supports are used.
+    with deferred_relion_preprocess_checks("tilt coarse pass") as preprocess_checks:
+        # The groups' host image reads run one group ahead, on a worker thread.
+        with prefetched_batches(_group_image_reads(experiment_dataset, plan, offsets), depth=1) as reads:
+            for units, fetched in zip([] if plan is None else plan.groups, reads):
+                preprocess_checks.at(f"particle group {int(units[0])}-{int(units[-1])}")
+                diff2, error, n_valid, operands, last_total = _score_frame_group(
+                    units, plan, tilt, partial(operands_of, fetched=fetched), scorer, r_pad=r_pad_all, slots=slots
+                )
+                n_scored += int(units.size) * n_classes * r_pad_all * n_coarse_trans
+                pending.append((units, diff2, error, n_valid, operands))
+                flush()
+        for units, r_pad, p_pad, slot_block in batches if plan is None else ():
+            preprocess_checks.at(f"particles {int(units[0])}-{int(units[-1])}")
+            diff2, error, n_valid, operands, last_total = _score_slot_batch(
+                units, tilt, operands_for, scorer, r_pad=r_pad, p_pad=p_pad, slots=slots, slot_block=slot_block,
+                slot_offsets=slot_offsets, unit_rotations=None if not local else [unit_rotations[unit] for unit in units],
             )
-            n_scored += int(units.size) * n_classes * r_pad_all * n_coarse_trans
+            n_scored += int(units.size) * n_classes * r_pad * n_coarse_trans
+            # The flush cuts these particles, and scores their undecided rotations again from these operands.
             pending.append((units, diff2, error, n_valid, operands))
-            flush()
-    for units, r_pad, p_pad, slot_block in batches if plan is None else ():
-        diff2, error, n_valid, operands, last_total = _score_slot_batch(
-            units, tilt, operands_for, scorer, r_pad=r_pad, p_pad=p_pad, slots=slots, slot_block=slot_block,
-            slot_offsets=slot_offsets, unit_rotations=None if not local else [unit_rotations[unit] for unit in units],
-        )
-        n_scored += int(units.size) * n_classes * r_pad * n_coarse_trans
-        # The flush cuts these particles, and scores their undecided rotations again from these operands.
-        pending.append((units, diff2, error, n_valid, operands))
-        if sum(int(u.size) for u, *_ in pending) >= significance_batch:
-            flush()
-    flush(last=True)
+            if sum(int(u.size) for u, *_ in pending) >= significance_batch:
+                flush()
+        flush(last=True)
     if rescored:
         n_rows, n_particles = (int(sum(int(v) for v in column)) for column in zip(*rescored))
         logger.info(
