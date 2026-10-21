@@ -1248,7 +1248,8 @@ def main(command=None):
 
     total_time = time.time() - t_start
     logger.info("=" * 70)
-    logger.info("Refinement complete in %.1fs (%d iterations)", total_time, job.max_iter)
+    # The iterations this invocation ran (the final pass included), not the --iter cap.
+    logger.info("Refinement complete in %.1fs (%d iterations)", total_time, len(result.history.wall_times))
     logger.info("=" * 70)
 
     # The stage timings the timing observer wrote during the run, for the reports.
