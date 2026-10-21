@@ -357,8 +357,9 @@ def make_parser() -> argparse.ArgumentParser:
         "--gpu",
         dest="gpu_ids",
         default=DEFAULTS.gpu_ids,
-        help="Accepted for RELION command lines; the device comes from CUDA_VISIBLE_DEVICES. "
-        "A non-empty value sets CUDA_LAUNCH_BLOCKING from --deterministic-cuda",
+        help="Accepted for RELION command lines; the device comes from CUDA_VISIBLE_DEVICES and the value is not "
+        "recorded. A non-empty value (the default) sets CUDA_LAUNCH_BLOCKING from --deterministic-cuda; an empty "
+        "one leaves it as the environment has it",
     )
     parser.add_argument("--j", dest="nr_threads", type=_positive_int, default=1, help="Compatibility thread count")
     parser.add_argument("--nr-mpi", "--nr_mpi", dest="nr_mpi", type=_positive_int, default=1)
@@ -377,14 +378,12 @@ def make_parser() -> argparse.ArgumentParser:
         default=DEFAULTS.require_custom_cuda,
         help="Fail before execution unless the custom CUDA FFI path is ready",
     )
-    cuda_mode = parser.add_mutually_exclusive_group()
-    cuda_mode.add_argument(
+    parser.add_argument(
         "--deterministic-cuda",
         action="store_true",
         default=DEFAULTS.deterministic_cuda,
         help="Serialize CUDA launches for diagnostics",
     )
-    cuda_mode.add_argument("--allow-async-cuda", action="store_true", help="Explicitly select normal asynchronous CUDA")
     parser.add_argument(
         "--jax-compilation-cache",
         action=argparse.BooleanOptionalAction,
