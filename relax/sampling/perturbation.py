@@ -229,7 +229,8 @@ def exact_local_fine_grid(*, healpix_order, angular_sampling_deg, random_perturb
     from the canonical RFLOAT angles with the same perturbation.  ``None`` keeps
     the unperturbed grid matrices for a pass that drew no perturbation.  A
     point group ``symmetry`` materializes its reduced grid and source angles.
-    Returns ``(rotations, rotation_eulers, mstep_rotations)``.
+    Returns ``(rotations, rotation_eulers, mstep_rotations)``: the scoring rotations and angles in ``dtype``,
+    perturbed or not, and the M-step matrices in float32.
     """
 
     symmetry = canonicalize_rotational_symmetry(symmetry)
@@ -242,6 +243,7 @@ def exact_local_fine_grid(*, healpix_order, angular_sampling_deg, random_perturb
             rotation_eulers,
             float(random_perturbation),
             angular_sampling_deg,
+            dtype=dtype,
         )
     mstep_rotations, _ = apply_relion_rotation_perturbation_to_eulers(
         grids.get_relion_rotation_grid_eulers_float64(healpix_order, symmetry=symmetry),

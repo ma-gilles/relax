@@ -50,20 +50,23 @@ def _fake_canonical_grid(monkeypatch):
     monkeypatch.setattr(grids_module, "relion_scoring_rotation_grid", _fake_grid)
 
 
+@pytest.mark.parametrize("dtype", [np.float32, np.float64])
 @pytest.mark.parametrize("random_perturbation", [0.3, -0.125, 0.0])
-def test_fine_grid_is_perturbed_with_exact_mstep_rotations(random_perturbation):
+def test_fine_grid_is_perturbed_with_exact_mstep_rotations(random_perturbation, dtype):
     rotations, eulers, mstep = perturbation_module.exact_local_fine_grid(
-        healpix_order=ORDER, angular_sampling_deg=ANGULAR_SAMPLING, random_perturbation=random_perturbation
+        healpix_order=ORDER, angular_sampling_deg=ANGULAR_SAMPLING, random_perturbation=random_perturbation, dtype=dtype
     )
-    _rotation_grid_ = _fake_grid(ORDER)
+    _rotation_grid_ = _fake_grid(ORDER, dtype=dtype)
     _ = _rotation_grid_.rotations
     grid_eulers = _rotation_grid_.rotation_eulers
-    exp_rot, exp_eulers = apply_relion_rotation_perturbation_to_eulers(grid_eulers, random_perturbation, ANGULAR_SAMPLING)
+    exp_rot, exp_eulers = apply_relion_rotation_perturbation_to_eulers(
+        grid_eulers, random_perturbation, ANGULAR_SAMPLING, dtype=dtype
+    )
     exp_mstep, _ = apply_relion_rotation_perturbation_to_eulers(
         _canonical_eulers(ORDER), random_perturbation, ANGULAR_SAMPLING,
     )
     assert _same(rotations, exp_rot) and _same(eulers, exp_eulers) and _same(mstep, exp_mstep)
-    assert rotations.dtype == np.float32 and rotations.shape == (N_ROT, 3, 3)
+    assert rotations.dtype == dtype and rotations.shape == (N_ROT, 3, 3)
 
 
 @pytest.mark.parametrize("dtype", [np.float32, np.float64])
