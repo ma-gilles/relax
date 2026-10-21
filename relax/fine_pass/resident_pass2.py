@@ -2443,83 +2443,91 @@ def _resident_pass2(
         )
         # The next chunk's host preparation (prepare_tilt_chunk_host: plan-only NumPy) runs on a host thread while
         # this chunk's programs run; the chunks still run one after another, in order.
+        from relax.cuda.preprocess import deferred_relion_preprocess_checks
+
         host_prep = ThreadPoolExecutor(max_workers=1, thread_name_prefix="relax-tilt-host-prep")
         prepare_next = partial(prepare_tilt_chunk_host, tables=tables, tilt=tilt)
-        try:
-            next_prepared = host_prep.submit(prepare_next, chunks[0]) if chunks else None
-            for chunk_index, chunk in enumerate(chunks):
-                prepared = next_prepared.result()
-                next_prepared = (
-                    host_prep.submit(prepare_next, chunks[chunk_index + 1]) if chunk_index + 1 < len(chunks) else None
-                )
-                # An over-budget particle of a row-blocked plan (plan_chunks) runs in blocks of a row class.
-                runs_alone = resident_chunk_memory.chunk_runs_alone(chunk, row_ladder)
-                chunk_lone_block_rows = (
-                    (
-                        resident_chunk_memory.lone_block_rows(chunk.row_capacity, row_ladder)
-                        if tilt_lean_lone_rows is None
-                        else int(tilt_lean_lone_rows)
+        # The image preprocess kernel's finite check is read at the end of the pass, as the coarse pass reads it
+        # (particle_coarse_supports): read at each preparation batch, it waited for the device's queued work inside
+        # every chunk's operand preparation. A label names the images the chunk prepares, so a preparation made
+        # ahead of its chunk is named by its own images.
+        with deferred_relion_preprocess_checks("tilt pass 2") as preprocess_checks:
+            try:
+                next_prepared = host_prep.submit(prepare_next, chunks[0]) if chunks else None
+                for chunk_index, chunk in enumerate(chunks):
+                    prepared = next_prepared.result()
+                    next_prepared = (
+                        host_prep.submit(prepare_next, chunks[chunk_index + 1]) if chunk_index + 1 < len(chunks) else None
                     )
-                    if tilt_lone_row_blocks and runs_alone
-                    else None
-                )
-                n_lone_chunks += int(chunk_lone_block_rows is not None)
-                chunk_slot_block = tilt_slot_block
-                if runs_alone and not tilt_lone_row_blocks:
-                    # A particle past the row classes: as many slots as keep its projections within the largest one's.
-                    chunk_slot_block = tilt_projection_slot_block(
-                        int(chunk.row_capacity),
-                        slot_capacity=int(tilt.slot_capacity),
-                        slot_row_bytes=tilt_slot_row_bytes,
-                        budget_bytes=2 * overflow_projection_bytes,
+                    # An over-budget particle of a row-blocked plan (plan_chunks) runs in blocks of a row class.
+                    runs_alone = resident_chunk_memory.chunk_runs_alone(chunk, row_ladder)
+                    chunk_lone_block_rows = (
+                        (
+                            resident_chunk_memory.lone_block_rows(chunk.row_capacity, row_ladder)
+                            if tilt_lean_lone_rows is None
+                            else int(tilt_lean_lone_rows)
+                        )
+                        if tilt_lone_row_blocks and runs_alone
+                        else None
                     )
-                chunk_operands, operand_image_start = resident_operands, 0
-                if chunk_operands is None:
-                    operand_image_start = int(unit_image_offsets[int(chunk.image_start)])
-                    operand_image_stop = int(unit_image_offsets[int(chunk.image_start) + int(chunk.n_valid_images)])
-                    chunk_operands = prepare_resident_half_operands(
-                        experiment_dataset,
-                        np.arange(operand_image_start, operand_image_stop, dtype=np.int64),
-                        image_batch_size=engine_tuning.prepare_image_batch,
-                        prefetch_depth=engine_tuning.prefetch_depth,
-                        **resident_operand_kwargs,
+                    n_lone_chunks += int(chunk_lone_block_rows is not None)
+                    chunk_slot_block = tilt_slot_block
+                    if runs_alone and not tilt_lone_row_blocks:
+                        # A particle past the row classes: as many slots as keep its projections within the largest one's.
+                        chunk_slot_block = tilt_projection_slot_block(
+                            int(chunk.row_capacity),
+                            slot_capacity=int(tilt.slot_capacity),
+                            slot_row_bytes=tilt_slot_row_bytes,
+                            budget_bytes=2 * overflow_projection_bytes,
+                        )
+                    chunk_operands, operand_image_start = resident_operands, 0
+                    if chunk_operands is None:
+                        operand_image_start = int(unit_image_offsets[int(chunk.image_start)])
+                        operand_image_stop = int(unit_image_offsets[int(chunk.image_start) + int(chunk.n_valid_images)])
+                        preprocess_checks.at(f"dataset images {operand_image_start}-{operand_image_stop - 1}")
+                        chunk_operands = prepare_resident_half_operands(
+                            experiment_dataset,
+                            np.arange(operand_image_start, operand_image_stop, dtype=np.int64),
+                            image_batch_size=engine_tuning.prepare_image_batch,
+                            prefetch_depth=engine_tuning.prefetch_depth,
+                            **resident_operand_kwargs,
+                        )
+                    tilt_spec_kwargs.update(
+                        use_rfloat_ctf_wavg=chunk_operands.direct_ctf_rfloat_recon is not None,
+                        bpref_recon_operand=chunk_operands.recon_weight is not None,
                     )
-                tilt_spec_kwargs.update(
-                    use_rfloat_ctf_wavg=chunk_operands.direct_ctf_rfloat_recon is not None,
-                    bpref_recon_operand=chunk_operands.recon_weight is not None,
-                )
-                Ft_y_chunk, Ft_ctf_chunk, stats = run_tilt_chunk(
-                    chunk,
-                    tables=tables,
-                    tilt=tilt,
-                    resident_operands=chunk_operands,
-                    operand_image_start=operand_image_start,
-                    project_rotations=project_fine_rotations,
-                    base_tables=tilt_base_tables,
-                    n_fine_trans=n_fine_trans,
-                    spec_kwargs=tilt_spec_kwargs,
-                    stats=stats,
-                    Ft_y_total=Ft_y_total,
-                    Ft_ctf_total=Ft_ctf_total,
-                    n_fine_rot=n_fine_rot,
-                    image_shape=image_shape,
-                    rect_indices_device=rect_indices_device,
-                    exact_positions_device=exact_positions_device,
-                    tile_budget_bytes=max_translation_tile_bytes_for_pass(
-                        device_memory_bytes, override=engine_tuning.translation_tile_max_bytes,
-                        has_external_normalization=False,
-                    ),
-                    slot_block=chunk_slot_block,
-                    mstep_census=mstep_census,
-                    row_partial=row_partial,
-                    lone_block_rows=chunk_lone_block_rows,
-                    lean_lone=chunk_lone_block_rows is not None and tilt_lean_lone_rows is not None,
-                    score_pixel_indices=None if window_indices is None else jnp.asarray(window_indices, dtype=jnp.int32),
-                    prepared=prepared,
-                )
-                Ft_y_total, Ft_ctf_total = Ft_y_chunk, Ft_ctf_chunk
-        finally:
-            host_prep.shutdown(wait=True)
+                    Ft_y_chunk, Ft_ctf_chunk, stats = run_tilt_chunk(
+                        chunk,
+                        tables=tables,
+                        tilt=tilt,
+                        resident_operands=chunk_operands,
+                        operand_image_start=operand_image_start,
+                        project_rotations=project_fine_rotations,
+                        base_tables=tilt_base_tables,
+                        n_fine_trans=n_fine_trans,
+                        spec_kwargs=tilt_spec_kwargs,
+                        stats=stats,
+                        Ft_y_total=Ft_y_total,
+                        Ft_ctf_total=Ft_ctf_total,
+                        n_fine_rot=n_fine_rot,
+                        image_shape=image_shape,
+                        rect_indices_device=rect_indices_device,
+                        exact_positions_device=exact_positions_device,
+                        tile_budget_bytes=max_translation_tile_bytes_for_pass(
+                            device_memory_bytes, override=engine_tuning.translation_tile_max_bytes,
+                            has_external_normalization=False,
+                        ),
+                        slot_block=chunk_slot_block,
+                        mstep_census=mstep_census,
+                        row_partial=row_partial,
+                        lone_block_rows=chunk_lone_block_rows,
+                        lean_lone=chunk_lone_block_rows is not None and tilt_lean_lone_rows is not None,
+                        score_pixel_indices=None if window_indices is None else jnp.asarray(window_indices, dtype=jnp.int32),
+                        prepared=prepared,
+                    )
+                    Ft_y_total, Ft_ctf_total = Ft_y_chunk, Ft_ctf_chunk
+            finally:
+                host_prep.shutdown(wait=True)
         mstep_census.log()
         if n_lone_chunks:
             logger.info("Resident pass-2 ran %d lone overflow particle(s) in row blocks", n_lone_chunks)
