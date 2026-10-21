@@ -26,12 +26,8 @@ TARGET_RELION_FUSED_X_HALF_BP = "cuda_relion_fused_x_half_bp"
 TARGET_RELION_FUSED_X_HALF_BP_PARTICLE_GRID = (
     "cuda_relion_fused_x_half_bp_particle_grid"
 )
-TARGET_RELION_FUSED_X_HALF_BP_SIGNATURE = "cuda_relion_fused_x_half_bp_signature"
 TARGET_RELION_POINT_GROUP_SYMMETRISE_BPREF_COMPLEX_RANGE = (
     "cuda_relion_point_group_symmetrise_bpref_complex_range"
-)
-TARGET_RELION_POINT_GROUP_SYMMETRISE_BPREF_SPLIT_RANGE = (
-    "cuda_relion_point_group_symmetrise_bpref_split_range"
 )
 TARGET_RELION_POINT_GROUP_SYMMETRISE_BPREF = (
     "cuda_relion_point_group_symmetrise_bpref"
@@ -50,12 +46,6 @@ TARGET_RELION_TRANSLATE_SCORE_F32 = "cuda_relion_translate_score_f32"
 TARGET_RELION_TRANSLATE_SCORE_F64 = "cuda_relion_translate_score_f64"
 TARGET_RELION_TRANSLATE_BPREF_F32 = "cuda_relion_translate_bpref_f32"
 TARGET_RELION_TRANSLATE_BPREF_F64 = "cuda_relion_translate_bpref_f64"
-TARGET_BPREF_PARTICLE_PACK = "cuda_bpref_particle_pack"
-TARGET_DEFERRED_VDAM_HOST_PACK = "cuda_deferred_vdam_host_pack"
-TARGET_NOISE_PIXEL_PACK = "cuda_noise_pixel_pack"
-TARGET_NOISE_RESIDUAL_STATISTICS = "recovar_noise_residual_statistics"
-TARGET_SPARSE_PASS2_LOG_Z_F64 = "recovar_sparse_pass2_log_z_f64"
-TARGET_SPARSE_PASS2_POSTERIOR_F32 = "recovar_sparse_pass2_posterior_f32"
 TARGET_SPARSE_PASS2_SEGMENTED_LOG_Z_F64 = (
     "cuda_sparse_pass2_segmented_log_z_f64"
 )
@@ -65,11 +55,6 @@ TARGET_SPARSE_PASS2_SEGMENTED_POSTERIOR_F32 = (
 TARGET_SPARSE_PASS2_SEGMENTED_RECONSTRUCTION_F32 = (
     "cuda_sparse_pass2_segmented_reconstruction_f32"
 )
-TARGET_RELION_VDAM_MSTEP_SUMS_F32 = "cuda_relion_vdam_mstep_sums_f32"
-TARGET_RELION_VDAM_MSTEP_DENOMINATOR_F32 = (
-    "cuda_relion_vdam_mstep_denominator_f32"
-)
-TARGET_RELION_VDAM_MSTEP_FUSED_X_HALF = "cuda_relion_vdam_mstep_fused_x_half"
 TARGET_RELION_VDAM_MSTEP_FUSED_PROJECTOR_X_HALF = (
     "cuda_relion_vdam_mstep_fused_projector_x_half"
 )
@@ -95,34 +80,13 @@ TARGET_RELION_FINE_DIFF2_RECTANGULAR_F32 = (
 TARGET_RELION_FINE_DIFF2_RECTANGULAR_MASKED_F32 = (
     "cuda_relion_fine_diff2_rectangular_masked_f32"
 )
-TARGET_RELION_FINE_DIFF2_FUSED_TRANSLATE_FLAT_ROWS_F32 = (
-    "cuda_relion_fine_diff2_fused_translate_flat_rows_f32"
-)
 TARGET_RELION_FINE_DIFF2_FUSED_TRANSLATE_RUNTIME_FLAT_ROWS_F32 = (
     "cuda_relion_fine_diff2_fused_translate_runtime_flat_rows_f32"
 )
 TARGET_RELION_FINE_DIFF2_FUSED_TRANSLATE_RUNTIME_MASKED_FLAT_ROWS_F32 = (
     "cuda_relion_fine_diff2_fused_translate_runtime_masked_flat_rows_f32"
 )
-TARGET_RELION_FINE_DIFF2_FUSED_TRANSLATE_PAIRS_F32 = (
-    "cuda_relion_fine_diff2_fused_translate_pairs_f32"
-)
-TARGET_RELION_FINE_DIFF2_FUSED_TRANSLATE_RUNTIME_PAIRS_F32 = (
-    "cuda_relion_fine_diff2_fused_translate_runtime_pairs_f32"
-)
-TARGET_RELION_FINE_DIFF2_FUSED_TRANSLATE_JOBS_F32 = (
-    "cuda_relion_fine_diff2_fused_translate_jobs_f32"
-)
-TARGET_RELION_FINE_DIFF2_FUSED_TRANSLATE_RUNTIME_JOBS_F32 = (
-    "cuda_relion_fine_diff2_fused_translate_runtime_jobs_f32"
-)
 TARGET_RELION_FINE_DIFF2_PAIRS_F32 = "cuda_relion_fine_diff2_pairs_f32"
-TARGET_RELION_POWERCLASS_SPECTRUM_HIGHRES_F32 = (
-    "cuda_relion_powerclass_spectrum_highres_f32"
-)
-TARGET_RELION_POWERCLASS_SPECTRUM_HIGHRES_RUNTIME_F32 = (
-    "cuda_relion_powerclass_spectrum_highres_runtime_f32"
-)
 TARGET_RELION_EXPONENTIATE_F32 = "cuda_relion_exponentiate_f32"
 TARGET_RELION_EXPONENTIATE_BATCHED_F32 = "cuda_relion_exponentiate_batched_f32"
 TARGET_RELION_DIVIDE_F32 = "cuda_relion_divide_f32"
@@ -134,17 +98,8 @@ TARGET_RELION_DIVIDE_BATCHED_F32 = "cuda_relion_divide_batched_f32"
 TARGET_RELION_CUB_SORT_SCAN_F32 = "cuda_relion_cub_sort_scan_f32"
 TARGET_RELION_CUB_SORT_SCAN_BATCHED_F32 = "cuda_relion_cub_sort_scan_batched_f32"
 TARGET_RELION_COARSE_CUT_F32 = "cuda_relion_coarse_cut_f32"
-TARGET_RELION_WAVG_ROTATION_ATOMIC_TRIPLET_ADD_F32 = (
-    "cuda_relion_wavg_rotation_atomic_triplet_add_f32"
-)
 TARGET_RELION_WAVG_ROTATION_ATOMIC_RUNTIME_TRIPLET_ADD_F32 = (
     "cuda_relion_wavg_rotation_atomic_runtime_triplet_add_f32"
-)
-TARGET_RELION_WAVG_SEQUENTIAL_TRIPLET_F32 = (
-    "cuda_relion_wavg_sequential_triplet_f32"
-)
-TARGET_RELION_WAVG_SEQUENTIAL_RUNTIME_TRIPLET_F32 = (
-    "cuda_relion_wavg_sequential_runtime_triplet_f32"
 )
 TARGET_RELION_WAVG_SEQUENTIAL_RUNTIME_FLAT_ROWS_TRIPLET_F32 = (
     "cuda_relion_wavg_sequential_runtime_flat_rows_triplet_f32"
@@ -162,11 +117,6 @@ TARGET_PPCA_MOMENT_SCATTER_F32 = "relax_ppca_moment_scatter_f32"
 TARGET_PPCA_WINDOW_PROJECT_F32 = "relax_ppca_window_project_f32"
 TARGET_PPCA_LATENT_EPILOGUE_F32 = "relax_ppca_latent_epilogue_f32"
 TARGET_PPCA_POSTERIOR_PREP_F32 = "relax_ppca_posterior_prep_f32"
-TARGET_DUAL_WEIGHTED_SUMS_PAIRS_F32 = "cuda_dual_weighted_sums_pairs_f32"
-TARGET_DUAL_WEIGHTED_SUMS_PAIRS_ROWS_F32 = "cuda_dual_weighted_sums_pairs_rows_f32"
-TARGET_RELION_VDAM_MSTEP_FUSED_PROJECTOR_CAPACITY_X_HALF = (
-    "cuda_relion_vdam_mstep_fused_projector_capacity_x_half"
-)
 
 
 _RELAX_CUDA_LIB_ENV = "RELAX_CUDA_LIB"
@@ -174,7 +124,6 @@ _RELAX_CUDA_LIB_ENV = "RELAX_CUDA_LIB"
 
 _RELAX_CUDA_BUILD_SOURCE_NAMES = (
     "relax_kernels.cu",
-    "noise_residual.cuh",
     "vdam_trace.cuh",
     "relion_preprocess.cuh",
     "relion_vdam_mstep.cuh",
@@ -203,16 +152,8 @@ FFI_REGISTRATIONS: tuple[tuple[str, str], ...] = (
         "RelionFusedXHalfBackprojectParticleGrid",
     ),
     (
-        TARGET_RELION_FUSED_X_HALF_BP_SIGNATURE,
-        "RelionFusedXHalfBackprojectSignature",
-    ),
-    (
         TARGET_RELION_POINT_GROUP_SYMMETRISE_BPREF,
         "RelionPointGroupSymmetriseBpref",
-    ),
-    (
-        TARGET_RELION_POINT_GROUP_SYMMETRISE_BPREF_SPLIT_RANGE,
-        "RelionPointGroupSymmetriseBprefSplitRange",
     ),
     (
         TARGET_RELION_POINT_GROUP_SYMMETRISE_BPREF_COMPLEX_RANGE,
@@ -243,12 +184,6 @@ FFI_REGISTRATIONS: tuple[tuple[str, str], ...] = (
     (TARGET_RELION_TRANSLATE_SCORE_F64, "RelionTranslateScoreF64"),
     (TARGET_RELION_TRANSLATE_BPREF_F32, "RelionTranslateBprefF32"),
     (TARGET_RELION_TRANSLATE_BPREF_F64, "RelionTranslateBprefF64"),
-    (TARGET_RELION_VDAM_MSTEP_SUMS_F32, "RelionVdamMstepSumsF32"),
-    (
-        TARGET_RELION_VDAM_MSTEP_DENOMINATOR_F32,
-        "RelionVdamMstepDenominatorF32",
-    ),
-    (TARGET_RELION_VDAM_MSTEP_FUSED_X_HALF, "RelionVdamMstepFusedXHalf"),
     (
         TARGET_RELION_VDAM_MSTEP_FUSED_PROJECTOR_X_HALF,
         "RelionVdamMstepFusedProjectorXHalf",
@@ -282,38 +217,10 @@ FFI_REGISTRATIONS: tuple[tuple[str, str], ...] = (
         "RelionFineDiff2RectangularF32",
     ),
     (
-        TARGET_RELION_FINE_DIFF2_FUSED_TRANSLATE_FLAT_ROWS_F32,
-        "RelionFineDiff2FusedTranslateFlatRowsF32",
-    ),
-    (
         TARGET_RELION_FINE_DIFF2_FUSED_TRANSLATE_RUNTIME_FLAT_ROWS_F32,
         "RelionFineDiff2FusedTranslateRuntimeFlatRowsF32",
     ),
-    (
-        TARGET_RELION_FINE_DIFF2_FUSED_TRANSLATE_PAIRS_F32,
-        "RelionFineDiff2FusedTranslatePairsF32",
-    ),
-    (
-        TARGET_RELION_FINE_DIFF2_FUSED_TRANSLATE_RUNTIME_PAIRS_F32,
-        "RelionFineDiff2FusedTranslateRuntimePairsF32",
-    ),
-    (
-        TARGET_RELION_FINE_DIFF2_FUSED_TRANSLATE_JOBS_F32,
-        "RelionFineDiff2FusedTranslateJobsF32",
-    ),
-    (
-        TARGET_RELION_FINE_DIFF2_FUSED_TRANSLATE_RUNTIME_JOBS_F32,
-        "RelionFineDiff2FusedTranslateRuntimeJobsF32",
-    ),
     (TARGET_RELION_FINE_DIFF2_PAIRS_F32, "RelionFineDiff2PairsF32"),
-    (
-        TARGET_RELION_POWERCLASS_SPECTRUM_HIGHRES_F32,
-        "RelionPowerClassSpectrumHighresF32",
-    ),
-    (
-        TARGET_RELION_POWERCLASS_SPECTRUM_HIGHRES_RUNTIME_F32,
-        "RelionPowerClassSpectrumHighresRuntimeF32",
-    ),
     (TARGET_RELION_EXPONENTIATE_F32, "RelionExponentiateF32"),
     (TARGET_RELION_EXPONENTIATE_BATCHED_F32, "RelionExponentiateBatchedF32"),
     (TARGET_RELION_DIVIDE_F32, "RelionDivideF32"),
@@ -327,35 +234,17 @@ FFI_REGISTRATIONS: tuple[tuple[str, str], ...] = (
     (TARGET_RELION_CUB_SORT_SCAN_BATCHED_F32, "RelionCubSortScanBatchedF32"),
     (TARGET_RELION_COARSE_CUT_F32, "RelionCoarseCutF32"),
     (
-        TARGET_RELION_WAVG_ROTATION_ATOMIC_TRIPLET_ADD_F32,
-        "RelionWavgRotationAtomicTripletAddF32",
-    ),
-    (
         TARGET_RELION_WAVG_ROTATION_ATOMIC_RUNTIME_TRIPLET_ADD_F32,
         "RelionWavgRotationAtomicRuntimeTripletAddF32",
-    ),
-    (
-        TARGET_RELION_WAVG_SEQUENTIAL_TRIPLET_F32,
-        "RelionWavgSequentialTripletF32",
-    ),
-    (
-        TARGET_RELION_WAVG_SEQUENTIAL_RUNTIME_TRIPLET_F32,
-        "RelionWavgSequentialRuntimeTripletF32",
     ),
     (TARGET_PPCA_MOMENT_SCATTER_F32, "PpcaMomentScatterF32"),
     (TARGET_PPCA_WINDOW_PROJECT_F32, "PpcaWindowProjectF32"),
     (TARGET_PPCA_LATENT_EPILOGUE_F32, "PpcaLatentEpilogueF32"),
     (TARGET_PPCA_POSTERIOR_PREP_F32, "PpcaPosteriorPrepF32"),
-    (TARGET_DUAL_WEIGHTED_SUMS_PAIRS_F32, "DualWeightedSumsPairsF32"),
-    (TARGET_DUAL_WEIGHTED_SUMS_PAIRS_ROWS_F32, "DualWeightedSumsPairsRowsF32"),
 )
 
 
 OPTIONAL_FFI_REGISTRATIONS = {
-    TARGET_NOISE_RESIDUAL_STATISTICS: (
-        "NoiseResidualStatistics",
-        "Explicit CUDA build with NoiseResidualStatistics required",
-    ),
     TARGET_PROJECT_RELION_HALF_RUNTIME: (
         "ProjectRelionHalfRuntime",
         "Projector capacity was requested but the loaded CUDA library lacks ProjectRelionHalfRuntime; explicitly rebuild the custom CUDA library",
@@ -372,33 +261,9 @@ OPTIONAL_FFI_REGISTRATIONS = {
         "ProjectRelionHalfCapacityTextureCompactPacked",
         "Packed coarse GEMM rows require ProjectRelionHalfCapacityTextureCompactPacked; explicitly rebuild the custom CUDA library",
     ),
-    TARGET_RELION_VDAM_MSTEP_FUSED_PROJECTOR_CAPACITY_X_HALF: (
-        "RelionVdamMstepFusedProjectorCapacityXHalf",
-        "BPref projector capacity requires RelionVdamMstepFusedProjectorCapacityXHalf; explicitly rebuild the custom CUDA library",
-    ),
-    TARGET_NOISE_PIXEL_PACK: (
-        "NoisePixelPack",
-        "CUDA noise pixel packing requires an explicit build with NoisePixelPack",
-    ),
-    TARGET_DEFERRED_VDAM_HOST_PACK: (
-        "DeferredVdamHostPack",
-        "CUDA host-plan packing requires an explicit build with DeferredVdamHostPack",
-    ),
-    TARGET_BPREF_PARTICLE_PACK: (
-        "BprefParticlePack",
-        "CUDA BPref packing requires an explicit build with BprefParticlePack",
-    ),
     TARGET_RELION_FINE_DIFF2_RECTANGULAR_MASKED_F32: (
         "RelionFineDiff2RectangularMaskedF32",
         "Masked rectangular fine diff2 requires an explicit CUDA build with RelionFineDiff2RectangularMaskedF32",
-    ),
-    TARGET_SPARSE_PASS2_LOG_Z_F64: (
-        "SparsePass2LogZF64",
-        "The fused sparse pass-2 log-Z requires an explicit CUDA build with SparsePass2LogZF64",
-    ),
-    TARGET_SPARSE_PASS2_POSTERIOR_F32: (
-        "SparsePass2PosteriorF32",
-        "The fused sparse pass-2 posterior requires an explicit CUDA build with SparsePass2PosteriorF32",
     ),
     TARGET_SPARSE_PASS2_SEGMENTED_LOG_Z_F64: (
         "SparsePass2SegmentedLogZF64",

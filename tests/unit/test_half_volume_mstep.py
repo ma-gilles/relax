@@ -566,8 +566,7 @@ def test_relion_x_half_cuda_pins_physical_radius_accumulation_order():
     assert "__fmul_rn(rk1, rk1)" in helper
     assert "__fmaf_rn(rk2, rk2, y2)" in helper
     assert "__fmaf_rn(rk0, rk0, xy2)" in helper
-    assert "relion_vdam_mstep_fused_x_half_kernel" in text
-    assert text.count("relion_radius_squared(rk0, rk1, rk2)") == 5
+    assert text.count("relion_radius_squared(rk0, rk1, rk2)") == 4
 
 
 def test_relion_x_half_bp_block_topology_env_is_off_by_default(monkeypatch):
@@ -1027,28 +1026,6 @@ def test_ordinary_indexed_signature_ffi_smoke(monkeypatch, custom_cuda_lib, gpu_
     assert_matches(np.asarray(outputs[2]), np.asarray([[1]]))
     assert int(np.asarray(outputs[3])[0, 0]) & 64
     assert np.count_nonzero(np.asarray(outputs[0])) > 0
-
-
-def test_relion_fused_x_half_signature_cuda_source_copies_before_read_only_kernel():
-    text = read_all_cuda_source()
-    start = text.index("cudaError_t launch_relion_fused_x_half_backproject_with_signature(")
-    launch = text[start : text.index("template <typename T>", start)]
-
-    ordinary = launch.index("launch_relion_fused_x_half_backproject(")
-    shadow = launch.index("cudaMemcpyAsync(accumulator_shadow_data")
-    signature = launch.index("relion_fused_x_half_backproject_kernel<float, float2, true, false>")
-    assert ordinary < shadow < signature
-    assert "relion_fused_x_half_backproject_kernel<float, float2, true, true>" not in launch
-    for name in (
-        "accumulator_shadow_weight",
-        "operand_shadow_data_rows",
-        "operand_shadow_weight_rows",
-        "operand_shadow_pixel_indices",
-        "operand_shadow_rot",
-        "operand_shadow_canonical_rotation_keys",
-        "operand_shadow_signature_row_indices",
-    ):
-        assert f"cudaMemcpyAsync({name}" in launch
 
 
 @pytest.mark.gpu

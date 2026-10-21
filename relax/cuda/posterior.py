@@ -116,7 +116,7 @@ def _require_sparse_pass2_cuda_backend(label: str) -> None:
         raise RuntimeError(f"{label} was requested but custom CUDA is disabled")
 
 
-# Byte size of the device-side per-row state record of SparsePass2PosteriorF32.
+# Byte size of the device-side per-row state record (RowState) of the sparse pass-2 posterior.
 _SPARSE_PASS2_ROW_STATE_BYTES = 40
 
 

@@ -1,29 +1,21 @@
 // Fused sparse pass-2 posterior for RECOVAR's RELION-parity K=1 path.
 //
-// Two runtime-shaped XLA FFI handlers replace the per-shape XLA glue of
-// relax/fine_pass/posterior.py:
+// Runtime-shaped XLA FFI handlers for the device-resident pass-2 data model,
+// in which image i owns a contiguous run (a segment) of a flat cell array:
 //
-//   SparsePass2LogZF64      <-> _logsumexp_pass2_bucket_score_only
-//   SparsePass2PosteriorF32 <-> _normalize_pass2_bucket_with_log_z (now in
-//                               scripts/lib/bucketed_pass2.py) followed by
-//                               relion_f32_fine_probabilities
+//   SparsePass2SegmentedLogZF64      <-> _logsumexp_pass2_bucket_score_only per segment
+//   SparsePass2SegmentedPosteriorF32 <-> _normalize_pass2_bucket_with_log_z (now in
+//                                        scripts/lib/bucketed_pass2.py) followed by
+//                                        relion_f32_fine_probabilities, per segment
 //
 // Every per-element formula is copied from the XLA path.  Order-independent
 // reductions (max, argmax with smallest index, mask counts) are exact.  The
 // RELION significance boundary is relion_coarse_cut_f32's definition (RELION's
 // cut with float64 cumulative sums, by radix select; block_radix_cut), one block
-// per row or segment, with no sort, scan or host round trip.  The float64 bin
+// per segment, with no sort, scan or host round trip.  The float64 bin
 // masses and the log-sum-exp of the log-Z handler are the order-dependent sums.
-//
-// The same two handlers also exist in a segmented form for the device-resident
-// pass-2 data model, in which image i owns a contiguous run of a flat cell
-// array instead of a padded rectangular row:
-//
-//   SparsePass2SegmentedLogZF64      <-> SparsePass2LogZF64 per segment
-//   SparsePass2SegmentedPosteriorF32 <-> SparsePass2PosteriorF32 per segment
-//
-// Both call the shared bodies below on the segment's slice, so flattening a
-// rectangular row into a segment reproduces the rectangular outputs.
+// The per-row bodies below (RowState and the *_body helpers) are shared by these
+// handlers; the rectangular-row handlers that used them as well were removed.
 //
 //   SparsePass2SegmentedReconstructionF32 <-> SparsePass2SegmentedPosteriorF32
 //                                             without probs, normalized and mask
@@ -128,54 +120,6 @@ __device__ __forceinline__ void log_z_body(
     }
 }
 
-__global__ void log_z_kernel(const float* scores, int64_t n, double* log_z)
-{
-    __shared__ float shared_values[kRowThreads];
-    __shared__ int64_t shared_indices[kRowThreads];
-    __shared__ double shared_sums[kRowThreads];
-    log_z_body(scores + static_cast<int64_t>(blockIdx.x) * n, n, log_z + blockIdx.x,
-               shared_values, shared_indices, shared_sums);
-}
-
-inline bool row_geometry(const ffi::Span<const int64_t> dims, int64_t& rows, int64_t& n)
-{
-    if (dims.size() < 2) return false;
-    rows = dims[0];
-    n = 1;
-    for (size_t i = 1; i < dims.size(); ++i) n *= dims[i];
-    return rows >= 1 && n >= 1;
-}
-
-inline bool same_dims(const ffi::Span<const int64_t> a, const ffi::Span<const int64_t> b)
-{
-    if (a.size() != b.size()) return false;
-    for (size_t i = 0; i < a.size(); ++i)
-        if (a[i] != b[i]) return false;
-    return true;
-}
-
-ffi::Error log_z_impl(
-    cudaStream_t stream,
-    ffi::AnyBuffer scores,
-    ffi::Result<ffi::AnyBuffer> log_z)
-{
-    if (scores.element_type() != ffi::DataType::F32 || log_z->element_type() != ffi::DataType::F64)
-        return ffi::Error::InvalidArgument("SparsePass2LogZF64: scores must be F32 and log_z F64");
-    int64_t rows = 0, n = 0;
-    if (!row_geometry(scores.dimensions(), rows, n))
-        return ffi::Error::InvalidArgument("SparsePass2LogZF64: scores must be a nonempty (B, ...) array");
-    if (log_z->dimensions().size() != 1 || log_z->dimensions()[0] != rows)
-        return ffi::Error::InvalidArgument("SparsePass2LogZF64: log_z must have shape (B,)");
-    if (rows > static_cast<int64_t>(std::numeric_limits<int>::max()))
-        return ffi::Error::InvalidArgument("SparsePass2LogZF64: too many rows for one launch grid");
-    log_z_kernel<<<static_cast<int>(rows), kRowThreads, 0, stream>>>(
-        static_cast<const float*>(scores.untyped_data()), n,
-        static_cast<double*>(log_z->untyped_data()));
-    const cudaError_t error = cudaGetLastError();
-    if (error != cudaSuccess)
-        return ffi::Error::Internal(std::string("SparsePass2LogZF64: ") + cudaGetErrorString(error));
-    return ffi::Error::Success();
-}
 
 // ---------------------------------------------------------------------------
 // SparsePass2PosteriorF32: fused normalization + RELION float32 fine posterior.
@@ -224,17 +168,6 @@ __device__ __forceinline__ void row_max_body(
     *best_argmax_slot = has_finite_norm ? best_index : 0;
 }
 
-__global__ void row_max_kernel(
-    const float* scores, const double* log_z, int64_t n, RowState* state,
-    double* log_z_out, float* best_log_score, int64_t* best_argmax)
-{
-    __shared__ float shared_values[kRowThreads];
-    __shared__ int64_t shared_indices[kRowThreads];
-    const int64_t row_index = blockIdx.x;
-    row_max_body(scores + row_index * n, n, log_z[row_index], shared_values, shared_indices,
-                 state + row_index, log_z_out + row_index, best_log_score + row_index,
-                 best_argmax + row_index);
-}
 
 // Shared per-cell exponentiation of one candidate score.  kProb = false skips
 // the float64 probability (the reconstruction-only handler has none).
@@ -259,14 +192,6 @@ __device__ __forceinline__ void exponentiate_cell(
     *prob_slot = p;
 }
 
-__global__ void exponentiate_kernel(
-    const float* scores, const RowState* state, int64_t n, int64_t count,
-    float* raw_weights, double* probs)
-{
-    const int64_t index = static_cast<int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
-    if (index >= count) return;
-    exponentiate_cell(state[index / n], scores[index], raw_weights + index, probs + index);
-}
 
 // RELION's significance cut of one row or segment's raw weights, by radix select over the
 // positive weights' float bits (relion_coarse_cut_f32_launch's definition, one block per row):
@@ -381,17 +306,6 @@ __device__ __forceinline__ void cut_body(
 
 constexpr int kCutThreads = 256;
 
-__global__ void row_cut_kernel(
-    const float* raw_weights, const float* external_sum_weight, int64_t n, float adaptive_fraction,
-    int keep_all, int use_external_sum_weight, RowState* state, float* sum_weight_out, float* threshold_out)
-{
-    __shared__ BlockCut c;
-    const int64_t row = blockIdx.x;
-    block_radix_cut(raw_weights + row * n, n, adaptive_fraction, c);
-    if (threadIdx.x != 0) return;
-    cut_body(c, n, external_sum_weight[row], keep_all, use_external_sum_weight, state[row],
-             sum_weight_out + row, threshold_out + row);
-}
 
 // Shared normalization / pruning body.  All pointers are already offset to the
 // start of the row or segment; every thread of the block must call it.
@@ -441,115 +355,6 @@ __device__ __forceinline__ void normalize_body(
         *n_significant_slot = shared_counts[0];
         *max_posterior_slot = shared_max[0];
     }
-}
-
-__global__ void normalize_kernel(
-    const float* scores, const float* raw_weights, const RowState* state, int64_t n,
-    float* normalized, float* reconstruction, bool* mask,
-    int32_t* n_significant, float* max_posterior)
-{
-    __shared__ int shared_counts[kRowThreads];
-    __shared__ float shared_max[kRowThreads];
-    const int64_t row_index = blockIdx.x;
-    const int64_t base = row_index * n;
-    normalize_body(scores + base, raw_weights + base, state[row_index], n,
-                   normalized + base, reconstruction + base, mask + base,
-                   n_significant + row_index, max_posterior + row_index,
-                   shared_counts, shared_max);
-}
-
-ffi::Error posterior_impl(
-    cudaStream_t stream,
-    float adaptive_fraction,
-    int64_t keep_all,
-    int64_t use_external_sum_weight,
-    ffi::AnyBuffer scores,
-    ffi::AnyBuffer log_z,
-    ffi::AnyBuffer external_sum_weight,
-    ffi::Result<ffi::AnyBuffer> log_z_out,
-    ffi::Result<ffi::AnyBuffer> best_log_score,
-    ffi::Result<ffi::AnyBuffer> best_argmax,
-    ffi::Result<ffi::AnyBuffer> max_posterior,
-    ffi::Result<ffi::AnyBuffer> probs,
-    ffi::Result<ffi::AnyBuffer> normalized,
-    ffi::Result<ffi::AnyBuffer> reconstruction,
-    ffi::Result<ffi::AnyBuffer> mask,
-    ffi::Result<ffi::AnyBuffer> n_significant,
-    ffi::Result<ffi::AnyBuffer> sum_weight,
-    ffi::Result<ffi::AnyBuffer> threshold,
-    ffi::Result<ffi::AnyBuffer> raw_weights,
-    ffi::Result<ffi::AnyBuffer> row_state)
-{
-    int64_t rows = 0, n = 0;
-    if (scores.element_type() != ffi::DataType::F32 || !row_geometry(scores.dimensions(), rows, n))
-        return ffi::Error::InvalidArgument("SparsePass2PosteriorF32: scores must be a nonempty F32 (B, ...) array");
-    if (rows > static_cast<int64_t>(std::numeric_limits<int>::max()) ||
-        n > static_cast<int64_t>(std::numeric_limits<int>::max()))
-        return ffi::Error::InvalidArgument("SparsePass2PosteriorF32: rows or row length exceed INT_MAX");
-    const int64_t count = rows * n;
-    const auto vector_ok = [&](const ffi::AnyBuffer& b, ffi::DataType type) {
-        return b.element_type() == type && b.dimensions().size() == 1 && b.dimensions()[0] == rows;
-    };
-    const auto full_ok = [&](const ffi::AnyBuffer& b, ffi::DataType type) {
-        return b.element_type() == type && same_dims(b.dimensions(), scores.dimensions());
-    };
-    if (!vector_ok(log_z, ffi::DataType::F64) || !vector_ok(external_sum_weight, ffi::DataType::F32))
-        return ffi::Error::InvalidArgument("SparsePass2PosteriorF32: log_z must be F64 (B,) and external_sum_weight F32 (B,)");
-    if (!vector_ok(*log_z_out, ffi::DataType::F64) || !vector_ok(*best_log_score, ffi::DataType::F32) ||
-        !vector_ok(*best_argmax, ffi::DataType::S64) || !vector_ok(*max_posterior, ffi::DataType::F32) ||
-        !vector_ok(*n_significant, ffi::DataType::S32) || !vector_ok(*sum_weight, ffi::DataType::F32) ||
-        !vector_ok(*threshold, ffi::DataType::F32))
-        return ffi::Error::InvalidArgument("SparsePass2PosteriorF32: per-row outputs must have shape (B,) with the documented dtypes");
-    if (!full_ok(*probs, ffi::DataType::F64) || !full_ok(*normalized, ffi::DataType::F32) ||
-        !full_ok(*reconstruction, ffi::DataType::F32) || !full_ok(*mask, ffi::DataType::PRED) ||
-        !full_ok(*raw_weights, ffi::DataType::F32))
-        return ffi::Error::InvalidArgument("SparsePass2PosteriorF32: full outputs must match the scores shape with the documented dtypes");
-    if (row_state->element_type() != ffi::DataType::U8 || row_state->dimensions().size() != 2 ||
-        row_state->dimensions()[0] != rows || row_state->dimensions()[1] != static_cast<int64_t>(sizeof(RowState)))
-        return ffi::Error::InvalidArgument("SparsePass2PosteriorF32: row_state scratch must be U8 (B, sizeof(RowState))");
-
-    const float* scores_ptr = static_cast<const float*>(scores.untyped_data());
-    RowState* state_ptr = static_cast<RowState*>(row_state->untyped_data());
-    float* raw_ptr = static_cast<float*>(raw_weights->untyped_data());
-
-    row_max_kernel<<<static_cast<int>(rows), kRowThreads, 0, stream>>>(
-        scores_ptr, static_cast<const double*>(log_z.untyped_data()), n, state_ptr,
-        static_cast<double*>(log_z_out->untyped_data()),
-        static_cast<float*>(best_log_score->untyped_data()),
-        static_cast<int64_t*>(best_argmax->untyped_data()));
-    cudaError_t error = cudaGetLastError();
-    if (error != cudaSuccess)
-        return ffi::Error::Internal(std::string("SparsePass2PosteriorF32 row max: ") + cudaGetErrorString(error));
-
-    constexpr int threads = 256;
-    const int64_t block_count = (count + threads - 1) / threads;
-    if (block_count > static_cast<int64_t>(std::numeric_limits<int>::max()))
-        return ffi::Error::InvalidArgument("SparsePass2PosteriorF32: launch grid exceeds CUDA limit");
-    exponentiate_kernel<<<static_cast<int>(block_count), threads, 0, stream>>>(
-        scores_ptr, state_ptr, n, count, raw_ptr, static_cast<double*>(probs->untyped_data()));
-    error = cudaGetLastError();
-    if (error != cudaSuccess)
-        return ffi::Error::Internal(std::string("SparsePass2PosteriorF32 exponentiate: ") + cudaGetErrorString(error));
-
-    row_cut_kernel<<<static_cast<int>(rows), kCutThreads, 0, stream>>>(
-        raw_ptr, static_cast<const float*>(external_sum_weight.untyped_data()), n, adaptive_fraction,
-        static_cast<int>(keep_all != 0), static_cast<int>(use_external_sum_weight != 0),
-        state_ptr, static_cast<float*>(sum_weight->untyped_data()), static_cast<float*>(threshold->untyped_data()));
-    error = cudaGetLastError();
-    if (error != cudaSuccess)
-        return ffi::Error::Internal(std::string("SparsePass2PosteriorF32 cut: ") + cudaGetErrorString(error));
-
-    normalize_kernel<<<static_cast<int>(rows), kRowThreads, 0, stream>>>(
-        scores_ptr, raw_ptr, state_ptr, n,
-        static_cast<float*>(normalized->untyped_data()),
-        static_cast<float*>(reconstruction->untyped_data()),
-        static_cast<bool*>(mask->untyped_data()),
-        static_cast<int32_t*>(n_significant->untyped_data()),
-        static_cast<float*>(max_posterior->untyped_data()));
-    error = cudaGetLastError();
-    if (error != cudaSuccess)
-        return ffi::Error::Internal(std::string("SparsePass2PosteriorF32 normalize: ") + cudaGetErrorString(error));
-    return ffi::Error::Success();
 }
 
 
@@ -1104,38 +909,6 @@ ffi::Error segmented_reconstruction_impl(
 
 }  // namespace recovar_sparse_pass2_posterior
 
-XLA_FFI_DEFINE_HANDLER_SYMBOL(
-    SparsePass2LogZF64, recovar_sparse_pass2_posterior::log_z_impl,
-    ffi::Ffi::Bind()
-        .Ctx<ffi::PlatformStream<cudaStream_t>>()
-        .Arg<ffi::AnyBuffer>()
-        .Ret<ffi::AnyBuffer>()
-);
-
-XLA_FFI_DEFINE_HANDLER_SYMBOL(
-    SparsePass2PosteriorF32, recovar_sparse_pass2_posterior::posterior_impl,
-    ffi::Ffi::Bind()
-        .Ctx<ffi::PlatformStream<cudaStream_t>>()
-        .Attr<float>("adaptive_fraction")
-        .Attr<int64_t>("keep_all")
-        .Attr<int64_t>("use_external_sum_weight")
-        .Arg<ffi::AnyBuffer>()
-        .Arg<ffi::AnyBuffer>()
-        .Arg<ffi::AnyBuffer>()
-        .Ret<ffi::AnyBuffer>()
-        .Ret<ffi::AnyBuffer>()
-        .Ret<ffi::AnyBuffer>()
-        .Ret<ffi::AnyBuffer>()
-        .Ret<ffi::AnyBuffer>()
-        .Ret<ffi::AnyBuffer>()
-        .Ret<ffi::AnyBuffer>()
-        .Ret<ffi::AnyBuffer>()
-        .Ret<ffi::AnyBuffer>()
-        .Ret<ffi::AnyBuffer>()
-        .Ret<ffi::AnyBuffer>()
-        .Ret<ffi::AnyBuffer>()
-        .Ret<ffi::AnyBuffer>()
-);
 
 XLA_FFI_DEFINE_HANDLER_SYMBOL(
     SparsePass2SegmentedLogZF64, recovar_sparse_pass2_posterior::segmented_log_z_impl,

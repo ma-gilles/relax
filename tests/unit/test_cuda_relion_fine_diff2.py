@@ -248,59 +248,6 @@ def test_relion_fused_translate_cuda_source_pins_native_block_topology():
     assert "logical_full_pixel_count" in source
     assert "RelionFineDiff2FusedTranslateRuntimeFlatRowsF32" in source
 
-    pair_start = source.index(
-        "relion_fine_diff2_fused_translate_pairs_f32_kernel"
-    )
-    pair_kernel = source[pair_start : source.index("cudaError_t", pair_start)]
-    assert "constexpr int kRelionFineDiff2PairsPerBlock = 16;" in source
-    assert "pair_count + kRelionFineDiff2PairsPerBlock - 1" in pair_kernel
-    assert "pair_chunk * kRelionFineDiff2PairsPerBlock" in pair_kernel
-    assert (
-        "kRelionFineDiff2BlockSize * kRelionFineDiff2PairsPerBlock"
-        in pair_kernel
-    )
-    assert "image_value = image[image_index]" in pair_kernel
-    assert "pixel_weight = weight[image_index]" in pair_kernel
-
-    launch_start = source.index(
-        "cudaError_t launch_relion_fine_diff2_fused_translate_pairs_f32"
-    )
-    launch = source[launch_start : source.index("__global__", launch_start)]
-    assert "const int64_t total_blocks = batch_size * pair_chunks;" in launch
-    assert "static_cast<unsigned int>(total_blocks)" in launch
-
-    jobs_start = source.index(
-        "relion_fine_diff2_fused_translate_jobs_f32_kernel"
-    )
-    jobs_kernel = source[jobs_start : source.index("cudaError_t", jobs_start)]
-    assert "4 * (job_start + offset)" in jobs_kernel
-    assert "job_plan[plan_offset + 1]" in jobs_kernel
-    assert "job_plan[plan_offset + 3]" in jobs_kernel
-    assert "kRelionFineDiff2BlockSize * kJobsPerBlock" in jobs_kernel
-    assert "relion_fine_diff2_update_f32(" in jobs_kernel
-    assert "initial_diff2[image_rows[offset]]" in jobs_kernel
-
-    jobs_launch_start = source.index(
-        "cudaError_t launch_relion_fine_diff2_fused_translate_jobs_f32"
-    )
-    jobs_launch = source[
-        jobs_launch_start : source.index("__global__", jobs_launch_start)
-    ]
-    assert "job_count + kRelionFineDiff2Ref3dJobChunk - 1" in jobs_launch
-    assert "static_cast<unsigned int>(total_blocks)" in jobs_launch
-
-
-def test_relion_powerclass_cuda_source_pins_native_atomic_topology():
-    source = read_em_cuda_source()
-
-    start = source.index("relion_powerclass_spectrum_highres_f32_kernel")
-    block = source[start : source.index("cudaError_t", start)]
-    assert "kRelionPowerClassBlockSize = 128" in source
-    assert "__float2int_rn(sqrtf(" in block
-    assert "atomicAdd(&spectrum[shell], value)" in block
-    assert "highres_lanes[tid] += highres_lanes[tid + width]" in block
-    assert "atomicAdd(highres_xi2, highres_lanes[0])" in block
-
 
 def test_relion_coarse_diff2_cuda_source_pins_production_topology():
     source = read_em_cuda_source()
@@ -439,7 +386,6 @@ def test_relion_coarse_prehalf_shared_body_is_built_packaged_and_stale_checked()
     local_inputs = (
         "relax_kernels.cu",
         include_name,
-        "noise_residual.cuh",
         "vdam_trace.cuh",
         "relion_preprocess.cuh",
         "relion_vdam_mstep.cuh",

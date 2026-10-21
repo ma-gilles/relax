@@ -717,37 +717,9 @@ def test_crop_relion_x_half_accumulator_rejects_unsupported_topology(
         )
 
 
-def test_runtime_cuda_kernels_are_separate_from_default_primitives():
+def test_runtime_wavg_kernel_issues_the_logical_pixels_at_capacity_stride():
     source = read_em_cuda_source()
 
-    powerclass_start = source.index("void relion_powerclass_spectrum_highres_f32_kernel(")
-    powerclass = source[
-        powerclass_start : source.index(
-            "cudaError_t launch_relion_powerclass_spectrum_highres_f32(",
-            powerclass_start,
-        )
-    ]
-    assert "runtime_resolution_limit" not in powerclass
-    assert "shell >= resolution_limit" in powerclass
-    runtime_powerclass_start = source.index(
-        "void relion_powerclass_spectrum_highres_runtime_f32_kernel("
-    )
-    runtime_powerclass = source[
-        runtime_powerclass_start : source.index(
-            "cudaError_t launch_relion_powerclass_spectrum_highres_runtime_f32(",
-            runtime_powerclass_start,
-        )
-    ]
-    assert "runtime_resolution_limit[0]" in runtime_powerclass
-
-    wavg_start = source.index("relion_wavg_rotation_atomic_triplet_f32_kernel(")
-    wavg = source[
-        wavg_start : source.index(
-            "cudaError_t launch_relion_wavg_rotation_atomic_triplet_add_f32(",
-            wavg_start,
-        )
-    ]
-    assert "runtime_logical_pixel_count" not in wavg
     runtime_wavg_start = source.index(
         "relion_wavg_rotation_atomic_runtime_triplet_f32_kernel("
     )
