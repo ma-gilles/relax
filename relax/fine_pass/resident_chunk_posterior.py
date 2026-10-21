@@ -104,7 +104,11 @@ def chunk_posterior_from_scores(
 
     from relax.cuda import posterior as cuda_posterior
 
-    scores_flat = jnp.asarray(scored.scores, dtype=jnp.float32).reshape(-1)
+    scores_flat = jnp.asarray(scored.scores, dtype=jnp.float32)
+    if not reconstruction_only:
+        scores_flat = scores_flat.reshape(-1)
+    # The handlers read any shape's cells in row-major order: the reconstruction-only path passes the
+    # [rows, T] scores as they are, so no flat copy of them (and none of its [rows, T] output) is made.
 
     reuse = bool(spec.reuse_coarse_normalization)
     if reuse:
