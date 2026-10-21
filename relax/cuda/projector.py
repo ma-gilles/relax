@@ -252,12 +252,18 @@ class RelionCapacityHalfTextureF32:
         leaves = jax.tree_util.tree_leaves(completion)
         if not leaves or any(isinstance(leaf, jax.core.Tracer) for leaf in leaves):
             raise ValueError("texture completion must be a concrete result, not a tracer")
-        jax.block_until_ready(completion)
+        readiness_error = None
+        try:
+            jax.block_until_ready(completion)
+        except Exception as exc:  # still destroy after a failed launch, as RelionPersistentHalfTextureF32.close
+            readiness_error = exc
         handle = self._handle
-        _destroy_capacity_half_texture(handle, raise_on_error=True)
         self._handle = 0
         self._last_output = None
         self._finalizer.detach()
+        _destroy_capacity_half_texture(handle, raise_on_error=True)
+        if readiness_error is not None:
+            raise readiness_error
 
     def refresh_after(self, projector_half: jax.Array, completion, *, logical_r_max: int | None = None) -> float:
         """Refill the same texture at an iteration boundary and return elapsed seconds.
