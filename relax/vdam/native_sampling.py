@@ -305,11 +305,9 @@ def prepare_native_sampling_for_iteration(
 def _best_eulers_from_particle_state(
     particle_state: NativeParticleState,
     particle_ids: np.ndarray,
-    *,
-    rotation_grid_order: int,
 ) -> np.ndarray | None:
     """Each particle's Euler angles: the exact source triple where valid, else from its best rotation
-    matrix, else from its best rotation id on the RELION grid; None when a particle has none of them."""
+    matrix; None when a particle has neither."""
     ids = np.asarray(particle_ids, dtype=np.int64).reshape(-1)
     n_particles = len(particle_state.translation_offsets)
     source = particle_state.best_pose_eulers_deg
@@ -343,12 +341,6 @@ def _best_eulers_from_particle_state(
         if np.any(matrix_rows):
             result[matrix_rows] = np.asarray(R_to_relion(selected[matrix_rows].astype(np.float64), degrees=True))
             resolved[matrix_rows] = True
-    if not np.all(resolved) and particle_state.best_pose_rotation_ids is not None:
-        best_ids = np.asarray(particle_state.best_pose_rotation_ids, dtype=np.int64)[ids]
-        eulers = grids.get_relion_rotation_grid_eulers(int(rotation_grid_order), rotation_index_order="relion")
-        grid_rows = ~resolved & (best_ids >= 0) & (best_ids < len(eulers))
-        result[grid_rows] = eulers[best_ids[grid_rows]]
-        resolved[grid_rows] = True
     return result if np.all(resolved) else None
 
 
@@ -433,11 +425,7 @@ def estimate_native_sampling_accuracy(
     if n_trials <= 0:
         return None
     trial_particle_ids = np.asarray(particle_order[:n_trials], dtype=np.int64)
-    eulers = _best_eulers_from_particle_state(
-        particle_state,
-        trial_particle_ids,
-        rotation_grid_order=int(sampling_state.healpix_order) + int(sampling_state.adaptive_oversampling),
-    )
+    eulers = _best_eulers_from_particle_state(particle_state, trial_particle_ids)
     if eulers is None:
         return None
     class_ids = np.asarray(particle_state.class_assignments, dtype=np.int32)[trial_particle_ids]

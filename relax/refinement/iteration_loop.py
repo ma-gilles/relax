@@ -167,7 +167,7 @@ class _K1Iteration:
     def learned_direction_priors(self, ctx, options, per_half, plan, use_local):
         return maximization.k1_learned_direction_priors(
             per_half.rotation_posterior, direction_prior_order=plan.direction_prior_healpix_order,
-            symmetry=options.symmetry.point_group, dtype=ctx.scoring_dtype, log=logger,
+            symmetry=options.symmetry.point_group, dtype=ctx.scoring_dtype,
         )
 
     def unfiltered_maps(self, ctx, options, reference_model, mstep, accumulator_shape, needed):

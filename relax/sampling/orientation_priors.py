@@ -758,40 +758,28 @@ def learn_k1_direction_priors(
     direction_prior_order,
     expected_rotation_count,
     dtype,
-    log,
     symmetry="C1",
 ) -> tuple[DirectionPrior | None, DirectionPrior | None]:
-    """Collapse each K=1 half's rotation posterior into its next direction prior; rejected halves return None."""
+    """Collapse each K=1 half's rotation posterior into its next direction prior; (None, None) when the
+    posteriors are not on the expected rotation grid."""
 
     if not all(
         np.asarray(rot_sum).shape[0] == expected_rotation_count
         for rot_sum in rotation_posterior_per_half
     ):
         return None, None
-    learned = [None, None]
-    for k in range(2):
-        direction_prior_k = collapse_rotation_posterior_to_direction_prior(
-            np.asarray(rotation_posterior_per_half[k], dtype=np.float64),
-            direction_prior_order,
-            dtype=dtype,
-            symmetry=symmetry,
-        )
-        try:
-            make_relion_direction_log_prior(
-                direction_prior_k,
+    return tuple(
+        DirectionPrior(
+            collapse_rotation_posterior_to_direction_prior(
+                np.asarray(rotation_posterior_per_half[k], dtype=np.float64),
                 direction_prior_order,
+                dtype=dtype,
                 symmetry=symmetry,
-            )
-        except ValueError as exc:
-            log.warning(
-                "Skipping K=1 direction prior update for half-%d at healpix_order=%d: %s",
-                k + 1,
-                direction_prior_order,
-                exc,
-            )
-            continue
-        learned[k] = DirectionPrior(direction_prior_k, direction_prior_order)
-    return tuple(learned)
+            ),
+            direction_prior_order,
+        )
+        for k in range(2)
+    )
 
 
 def learn_class_direction_priors(

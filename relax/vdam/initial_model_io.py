@@ -9,7 +9,6 @@ import numpy as np
 from recovar.data_io.starfile import star_column, write_star_blocks
 from recovar.utils.helpers import R_from_relion, R_to_relion
 
-from relax.sampling import grids as sampling_grids
 from relax.vdam.state import InitialModelState, NativeOpticsState, NativeParticleState, ParticleOptics
 
 
@@ -433,11 +432,7 @@ def write_data_star(path: str, main_star, optics_star, dataset, particle_state: 
     if particle_state.log_likelihood_contribution is not None:
         _set_star_column(table, "_rlnLogLikeliContribution", _format_float_column(particle_state.log_likelihood_contribution))
 
-    has_rotations = (
-        particle_state.best_pose_rotation_ids is not None
-        or particle_state.best_pose_rotations is not None
-        or particle_state.best_pose_eulers_deg is not None
-    )
+    has_rotations = particle_state.best_pose_rotations is not None or particle_state.best_pose_eulers_deg is not None
     if has_rotations:
 
         def _angle(col):
@@ -460,33 +455,6 @@ def write_data_star(path: str, main_star, optics_star, dataset, particle_state: 
                 angle_psi[valid_matrix] = eulers[:, 2]
                 remaining_rot[valid_matrix] = False
 
-        if particle_state.best_pose_rotation_ids is not None:
-            rotation_ids = np.asarray(particle_state.best_pose_rotation_ids, dtype=np.int64).reshape(-1)
-            valid_rot = remaining_rot & (rotation_ids >= 0)
-            if np.any(valid_rot):
-                rotation_orders = (
-                    np.asarray(particle_state.best_pose_rotation_orders, dtype=np.int32).reshape(-1)
-                    if particle_state.best_pose_rotation_orders is not None
-                    else None
-                )
-                if rotation_orders is None:
-                    max_rotations = int(np.max(rotation_ids[valid_rot])) + 1
-                    inferred_order = next(
-                        (o for o in range(16) if sampling_grids.rotation_grid_size(o) >= max_rotations), None
-                    )
-                    if inferred_order is None:
-                        raise ValueError(
-                            f"cannot infer HEALPix order for max rotation id {int(np.max(rotation_ids[valid_rot]))}"
-                        )
-                    rotation_orders = np.full(n_images, inferred_order, dtype=np.int32)
-                for order in np.unique(rotation_orders[valid_rot]).tolist():
-                    if order < 0:
-                        continue
-                    order_mask = valid_rot & (rotation_orders == order)
-                    eulers = sampling_grids.get_relion_rotation_grid_eulers(order, rotation_index_order="relion")
-                    angle_rot[order_mask] = eulers[rotation_ids[order_mask], 0]
-                    angle_tilt[order_mask] = eulers[rotation_ids[order_mask], 1]
-                    angle_psi[order_mask] = eulers[rotation_ids[order_mask], 2]
         _set_star_column(table, "_rlnAngleRot", _format_float_column(angle_rot))
         _set_star_column(table, "_rlnAngleTilt", _format_float_column(angle_tilt))
         _set_star_column(table, "_rlnAnglePsi", _format_float_column(angle_psi))

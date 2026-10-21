@@ -34,6 +34,7 @@ def _dense_owners(**values):
     """Build the seven explicit dense-scoring owners from concise test values."""
 
     sampling_state = values.pop("state")
+    del values["image_batch_size"]  # the requested batch, which the dense owners do not take
     owners = (
         half_inputs.HalfScoringData(
             particles=HalfSet(
@@ -66,7 +67,6 @@ def _dense_owners(**values):
             class_log_priors=values.pop("class_log_priors"),
         ),
         refinement_specs.dense_batch_policy(
-            image_batch_size=values.pop("image_batch_size"),
             safe_batch_sizes=values.pop("safe_batch_sizes"),
             max_significants=values.pop("max_significants"),
             significance_safe_batch_sizes=values.pop("significance_safe_batch_sizes", None),

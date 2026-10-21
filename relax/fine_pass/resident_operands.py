@@ -75,7 +75,6 @@ from relax.relion.optics_groups import pixel_rows
 
 logger = logging.getLogger(__name__)
 
-RESIDENT_OPERANDS_ENV = "RELAX_SPARSE_PASS2_RESIDENT_OPERANDS"
 # Cap on the resident per-image operands of one half. The operands scale with the
 # half's image count, so a large particle count at a large box can outgrow the
 # budget; the driver then keeps the per-chunk preparation and says so, instead
@@ -95,7 +94,6 @@ _PREPARE_BYTES_PER_HALF_PIXEL = 192
 _MIN_PREPARE_IMAGE_BATCH = 16
 
 __all__ = [
-    "RESIDENT_OPERANDS_ENV",
     "ResidentHalfOperands",
     "ResidentOperandsUnsupported",
     "gather_resident_chunk_operands",

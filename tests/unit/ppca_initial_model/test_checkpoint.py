@@ -83,7 +83,9 @@ def test_checkpoint_with_retired_settings_resumes_only_at_their_default(tmp_path
         np.savez(out, **arrays)
         return out
 
-    retired = {"contrast_estimate": False, "contrast_prior_sd": 0.3, "contrast_range": [0.5, 2.0]}
+    retired = {
+        "contrast_estimate": False, "contrast_prior_sd": 0.3, "contrast_range": [0.5, 2.0], "fine_image_tile_size": 1,
+    }
     assert load(with_settings("off.npz", **retired), config, {"input": "abc"}).iteration == 3
     with pytest.raises(ValueError, match="identity mismatch"):
         load(with_settings("on.npz", **{**retired, "contrast_estimate": True}), config, {"input": "abc"})

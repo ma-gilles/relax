@@ -180,7 +180,6 @@ def plan_cc_route(
         operand_plan=CcOperandPlan(
             experiment_dataset=request.experiment_dataset,
             image_shape=shape.image_shape,
-            image_pre_shifts=request.image_pre_shifts,
             window_indices=window.window_indices,
             score_indices=score_indices,
             score_half_weights=window.score_half_weights,

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 from functools import partial
 
 import numpy as np
@@ -21,7 +20,6 @@ learn_k1 = partial(
     direction_prior_order=ORDER,
     expected_rotation_count=N_ROT,
     dtype=np.float32,
-    log=logging.getLogger(__name__),
 )
 
 
@@ -42,24 +40,6 @@ def test_k1_learns_one_prior_per_half_at_the_scoring_order(dtype):
 def test_k1_size_mismatch_rejects_the_update():
     posteriors = [np.ones(N_ROT, dtype=np.float32), np.ones(N_ROT + 1, dtype=np.float32)]
     assert learn_k1(posteriors) == (None, None)
-
-
-def test_k1_skips_a_half_whose_prior_cannot_form_a_log_prior(monkeypatch, caplog):
-    calls = []
-
-    def failing_log_prior(direction_prior, healpix_order, *, symmetry="C1"):
-        calls.append(int(healpix_order))
-        if len(calls) == 1:
-            raise ValueError("bad support")
-
-    monkeypatch.setattr(op, "make_relion_direction_log_prior", failing_log_prior)
-    posteriors = [np.ones(N_ROT, dtype=np.float32), np.ones(N_ROT, dtype=np.float32)]
-    with caplog.at_level(logging.WARNING, logger=__name__):
-        learned = learn_k1(posteriors)
-    assert calls == [ORDER, ORDER]
-    assert learned[0] is None
-    assert learned[1].healpix_order == ORDER
-    assert "Skipping K=1 direction prior update for half-1 at healpix_order=1: bad support" in caplog.text
 
 
 def test_kclass_combines_halves_with_independent_copies():

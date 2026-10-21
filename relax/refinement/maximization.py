@@ -478,17 +478,17 @@ def k1_maximization(
 
 
 def k1_learned_direction_priors(
-    rotation_posterior_per_half, *, direction_prior_order: int, symmetry: str, dtype, log,
+    rotation_posterior_per_half, *, direction_prior_order: int, symmetry: str, dtype,
 ) -> tuple[DirectionPrior | None, DirectionPrior | None]:
     """Each K=1 half's next direction prior, collapsed from its rotation posterior sums at
-    ``direction_prior_order``; None for a half that keeps its prior (a rejected half, or no half when either
-    half has no posterior sums)."""
+    ``direction_prior_order``; (None, None), both halves keeping their priors, when either half has no
+    posterior sums or the sums are not on that grid."""
     if any(rot_sum is None for rot_sum in rotation_posterior_per_half):
         return None, None
     return learn_k1_direction_priors(
         rotation_posterior_per_half, direction_prior_order=direction_prior_order,
         expected_rotation_count=rotation_grid_size(direction_prior_order, symmetry=symmetry),
-        dtype=dtype, log=log, symmetry=symmetry,
+        dtype=dtype, symmetry=symmetry,
     )
 
 

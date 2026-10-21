@@ -14,7 +14,7 @@ import jax
 import jax.numpy as jnp
 
 from relax.fourier.fourier_window import make_fourier_window_spec
-from relax.fourier.image_shifts import half_image_phase_factors, tiled_half_image_phase_factors
+from relax.fourier.image_shifts import half_image_phase_factors
 
 pytestmark = pytest.mark.unit
 
@@ -40,14 +40,12 @@ def test_fourier_window_spec_gathers_last_axis_for_batched_values():
     )
 
 
-def test_half_image_pre_shift_phase_helpers_match_explicit_tiling():
+def test_half_image_pre_shift_phase_has_one_row_per_image():
     image_shape = (8, 8)
     shifts = jnp.asarray([[0.5, -1.25], [2.0, 0.0]], dtype=jnp.float32)
     phase = half_image_phase_factors(image_shape, shifts)
-    tiled = tiled_half_image_phase_factors(image_shape, shifts, n_trans=3)
 
     assert phase.shape == (2, image_shape[0] * (image_shape[1] // 2 + 1))
-    assert_matches(np.asarray(tiled), np.asarray(jnp.repeat(phase, 3, axis=0)))
 
 
 def test_half_image_pre_shift_phase_requests_highest_precision():

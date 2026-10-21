@@ -87,7 +87,6 @@ class DensePriorSpec:
 class DenseBatchPolicy:
     """Existing batch planners and route-specific overrides."""
 
-    image_batch_size: int
     safe_batch_sizes: object
     max_significants: int | None
     significance_safe_batch_sizes: object | None

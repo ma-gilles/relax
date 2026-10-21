@@ -1,7 +1,7 @@
 """BPref diagnostic capture, scoped execution checks and artifact writing.
 
-This module owns the capture counters used by sparse and exact-local EM and the
-switches a numbered half's BPref diagnostics read (``BpRefDiagnosticsObserver``).
+This module owns the switches a numbered half's BPref diagnostics read
+(``BpRefDiagnosticsObserver``).
 Diagnostic output preserves the existing schemas, array precision and capture order. Execution-policy flags here select explicit
 diagnostic overrides; callers still own the production scoring and M-step.
 """
@@ -9,10 +9,6 @@ diagnostic overrides; callers still own the production scoring and M-step.
 from __future__ import annotations
 
 import os
-from pathlib import Path
-
-import jax
-import numpy as np
 
 from relax.runtime.env_flags import parse_env_flag
 
@@ -41,100 +37,6 @@ BPREF_DIAGNOSTIC_ENVS = (
     "RELAX_PASS2_DUMP_DIR",
     "RELAX_SPARSE_PASS2_NATIVE_DUMP_DIR",
 )
-
-
-_bpref_image_identity_cache: dict[str, np.ndarray] = {}
-
-
-_BPrefPanelKey = tuple[int, int, str, int]
-
-
-_bpref_device_panel_accumulators: dict[_BPrefPanelKey, tuple[jax.Array, jax.Array]] = {}
-
-
-_bpref_device_panel_launch_counters: dict[_BPrefPanelKey, int] = {}
-
-
-_bpref_device_panel_metadata: dict[_BPrefPanelKey, dict[str, object]] = {}
-
-
-def flush_selected_bpref_device_panel(*, iteration_index: int, half_index: int) -> None:
-    """Flush the requested numbered capture, given zero-based loop indices."""
-
-    _device_signature_target_iteration = os.environ.get(
-        "RELAX_BPREF_CONTRIBUTION_DUMP_ITERATION"
-    )
-    _device_signature_target_half = os.environ.get(
-        "RELAX_BPREF_CONTRIBUTION_DUMP_HALF"
-    )
-    if _device_signature_target_half and int(_device_signature_target_half) not in {1, 2}:
-        raise ValueError("RELAX_BPREF_CONTRIBUTION_DUMP_HALF must be 1 or 2")
-    if (
-        os.environ.get("RECOVAR_BPREF_DEVICE_SIGNATURE_DUMP_DIR")
-        and (
-            not _device_signature_target_iteration
-            or int(_device_signature_target_iteration) == iteration_index + 1
-        )
-        and (
-            not _device_signature_target_half
-            or int(_device_signature_target_half) == half_index + 1
-        )
-    ):
-        flush_bpref_device_panel_accumulator(
-            iteration=iteration_index + 1,
-            half=half_index + 1,
-        )
-
-
-def flush_bpref_device_panel_accumulator(*, iteration: int, half: int) -> None:
-    """Write and release every exact native class panel for one half."""
-
-    dump_dir = os.environ.get("RECOVAR_BPREF_DEVICE_SIGNATURE_DUMP_DIR", "").strip()
-    if not dump_dir:
-        return
-    run_id = os.environ.get("RELAX_BPREF_CONTRIBUTION_DUMP_RUN_ID", "unset")
-    prefix = (int(iteration), int(half), run_id)
-    keys = sorted(key for key in _bpref_device_panel_metadata if key[:3] == prefix)
-    if not keys:
-        raise RuntimeError(f"No RECOVAR device panel metadata exists for {prefix}")
-    output = Path(dump_dir)
-    output.mkdir(parents=True, exist_ok=True)
-    for key in keys:
-        accumulators = _bpref_device_panel_accumulators.pop(key, None)
-        launch_count = _bpref_device_panel_launch_counters.pop(key, 0)
-        metadata = _bpref_device_panel_metadata.pop(key)
-        if accumulators is None:
-            raise RuntimeError(f"No RECOVAR device panel accumulator exists for {key}")
-        data_accumulator, weight_accumulator = accumulators
-        class_index = int(metadata["class_index"])
-        np.savez(
-            output
-            / (
-                f"recovar_device_panel_native_it{int(iteration):03d}_h{int(half)}"
-                f"_class{class_index + 1:03d}_rank{int(metadata['rank']):03d}.npz"
-            ),
-            magic=np.asarray("RECOVAR_DEVICE_PANEL_NATIVE"),
-            schema=np.asarray("recovar-device-panel-native-v1"),
-            schema_version=np.int32(1),
-            run_id=np.asarray(run_id),
-            iteration=np.int32(iteration),
-            half=np.int32(half),
-            class_index=np.int32(class_index),
-            rank=np.int32(metadata["rank"]),
-            launch_count=np.int64(launch_count),
-            current_size=np.int32(metadata["current_size"]),
-            max_r=np.float32(metadata["max_r"]),
-            image_shape=np.asarray(metadata["image_shape"], dtype=np.int32),
-            volume_shape=np.asarray(metadata["volume_shape"], dtype=np.int32),
-            reconstruction_padding_factor=np.int32(metadata["reconstruction_padding_factor"]),
-            source_stack_sha256=np.asarray(metadata["source_stack_sha256"]),
-            causal_arm=np.asarray(metadata["causal_arm"]),
-            winner_take_all=np.bool_(metadata["winner_take_all"]),
-            topology_claim=np.asarray("causal-arm-not-relion-hypothesis-arithmetic-closure"),
-            accumulator_field_legend=np.asarray("data=complex64 x-half;weight=float32 x-half;flat C order"),
-            data_accumulator=np.asarray(data_accumulator),
-            weight_accumulator=np.asarray(weight_accumulator),
-        )
 
 
 def relion_x_half_bp_per_particle_launch_enabled() -> bool:

@@ -360,7 +360,6 @@ def run_final_all_data(
             symmetry=options.symmetry.point_group,
         )
         final_dense_batching = DenseBatchPolicy(
-            image_batch_size=options.execution.image_batch_size,
             safe_batch_sizes=ctx.batch_planner.for_expectation(diagnostic_float64_pass2=diagnostic_float64_pass2),
             max_significants=options.adaptive.max_significants,
             significance_safe_batch_sizes=None,

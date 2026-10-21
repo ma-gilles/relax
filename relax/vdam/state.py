@@ -121,9 +121,6 @@ class NativeParticleState:
     max_posterior: np.ndarray
     pose_assignments: np.ndarray | None = None
     best_pose_rotations: np.ndarray | None = None
-    best_pose_translations: np.ndarray | None = None
-    best_pose_rotation_ids: np.ndarray | None = None
-    best_pose_rotation_orders: np.ndarray | None = None
     visited: np.ndarray | None = None
     best_pose_eulers_deg: np.ndarray | None = None
     best_pose_eulers_valid: np.ndarray | None = None

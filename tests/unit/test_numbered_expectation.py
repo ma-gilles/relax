@@ -272,18 +272,11 @@ def test_recording_uses_published_half_identity_and_preserves_capture_order(
         history.append(metadata)
         events.append('profile')
 
-    def panel(**metadata):
-        assert metadata == dict(iteration_index=4, half_index=1)
-        assert significance.per_half[1].dtype == np.int32
-        np.testing.assert_array_equal(significance.per_half[1], [3, 6])
-        events.append('panel')
-
     def capture(**payload):
         captures.append(payload)
         events.append('capture')
 
     monkeypatch.setattr(expectation, 'record_score_profile', profile)
-    monkeypatch.setattr(observers.bpref_diagnostics, 'flush_selected_bpref_device_panel', panel)
     monkeypatch.setattr(observers.parity_dump, 'collect_e_step', capture)
     monkeypatch.setattr(observers.parity_dump, 'is_active', lambda: True)
     # The captures are the observers' (in the order the environment builds them), told through the probe.
@@ -292,7 +285,7 @@ def test_recording_uses_published_half_identity_and_preserves_capture_order(
         outputs, significance, profile_history=profile_history, iteration=4, image_window_size=None,
         healpix_order=2, k_class_enabled=n_classes > 1, probe=ObserverExpectationProbe(captures_observer),
     ))
-    assert events == (['capture'] if n_units == 0 else ['profile', 'panel', 'capture'])
+    assert events == (['capture'] if n_units == 0 else ['profile', 'capture'])
     assert len(captures) == 1
     payload = captures[0]
     assert payload['half'] == 1

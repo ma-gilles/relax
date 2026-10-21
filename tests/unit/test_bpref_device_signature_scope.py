@@ -1,10 +1,8 @@
 from __future__ import annotations
 
 import inspect
-from pathlib import Path
 from types import SimpleNamespace
 
-import numpy as np
 import pytest
 from recovar import cuda_backproject
 
@@ -82,43 +80,6 @@ def test_scoped_capture_ignores_all_process_flags_off_target(monkeypatch):
     assert all(value for name, value in active.items() if name != "device_signature_configured")
     with cuda_backprojection.bpref_device_signature_scope(True):
         assert cuda_backproject.relion_x_half_bp_block_topology_enabled()
-
-
-def test_device_panel_flush_writes_separate_class_artifacts(tmp_path, monkeypatch):
-    monkeypatch.setenv("RECOVAR_BPREF_DEVICE_SIGNATURE_DUMP_DIR", str(tmp_path))
-    monkeypatch.setenv("RELAX_BPREF_CONTRIBUTION_DUMP_RUN_ID", "class-aware")
-    prefix = (1, 2, "class-aware")
-    common = {
-        "current_size": 4,
-        "max_r": 2.0,
-        "image_shape": (4, 4),
-        "volume_shape": (5, 5, 5),
-        "reconstruction_padding_factor": 2,
-        "source_stack_sha256": "a" * 64,
-        "rank": 0,
-        "causal_arm": "winner-take-all-per-particle-fused-xhalf",
-        "winner_take_all": True,
-    }
-    for class_index in (0, 3):
-        key = (*prefix, class_index)
-        bpref_diagnostics._bpref_device_panel_accumulators[key] = (
-            np.zeros(75, dtype=np.complex64),
-            np.zeros(75, dtype=np.float32),
-        )
-        bpref_diagnostics._bpref_device_panel_launch_counters[key] = class_index + 1
-        bpref_diagnostics._bpref_device_panel_metadata[key] = {
-            **common,
-            "class_index": class_index,
-        }
-
-    bpref_diagnostics.flush_bpref_device_panel_accumulator(iteration=1, half=2)
-
-    outputs = sorted(Path(tmp_path).glob("recovar_device_panel_native_*.npz"))
-    assert [path.name for path in outputs] == [
-        "recovar_device_panel_native_it001_h2_class001_rank000.npz",
-        "recovar_device_panel_native_it001_h2_class004_rank000.npz",
-    ]
-    assert [int(np.load(path)["class_index"]) for path in outputs] == [0, 3]
 
 
 def test_target_dense_half_keeps_block_topology_inactive_for_live_work(monkeypatch):

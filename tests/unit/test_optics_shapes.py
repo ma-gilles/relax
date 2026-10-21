@@ -172,7 +172,6 @@ def _dense_owners(half, optics, *, class_batch_overrides=None):
             class_log_priors=None,
         ),
         refinement_specs.dense_batch_policy(
-            image_batch_size=1,
             safe_batch_sizes=lambda *_args, **_kwargs: (1, 1),
             max_significants=-1,
             class_batch_overrides=class_batch_overrides,

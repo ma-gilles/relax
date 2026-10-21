@@ -865,6 +865,7 @@ def _symmetric_dense_owners(dense_half, values):
 
     values = dict(values)
     sampling_state = values.pop("state")
+    del values["image_batch_size"]  # the requested batch, which the dense owners do not take
     owners = (
         HalfScoringData(
             particles=HalfSet(
@@ -897,7 +898,6 @@ def _symmetric_dense_owners(dense_half, values):
             class_log_priors=values.pop("class_log_priors"),
         ),
         refinement_specs.dense_batch_policy(
-            image_batch_size=values.pop("image_batch_size"),
             safe_batch_sizes=values.pop("safe_batch_sizes"),
             max_significants=values.pop("max_significants"),
         ),

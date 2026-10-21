@@ -118,10 +118,6 @@ class DensePrecisionPolicy:
     def score_real_dtype(self):
         return jnp.float64 if self.use_float64_scoring else jnp.float32
 
-    @property
-    def projection_complex_dtype(self):
-        return jnp.complex128 if self.use_float64_projections else None
-
     def cast_local_noise_projection_scores(self, proj_for_noise, proj_abs2_for_noise):
         if not self.use_float64_scoring:
             return proj_for_noise, proj_abs2_for_noise

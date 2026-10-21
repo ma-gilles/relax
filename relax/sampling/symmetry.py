@@ -235,7 +235,7 @@ def _symlist_matrices(generators):
     """
 
     identity = [[1.0 if i == j else 0.0 for j in range(4)] for i in range(4)]
-    left, right, chain = [], [], []
+    left, right = [], []
     for fold, axis in generators:
         increment = 360.0 / fold
         angle = increment
@@ -243,7 +243,6 @@ def _symlist_matrices(generators):
             rotation = _set_small_values_to_zero(_rotation_about_axis(angle, axis))
             left.append(identity)
             right.append(_transpose4(rotation))
-            chain.append(1)
             angle += increment
     tried = [[0] * len(left) for _ in range(len(left))]
     while (pair := _found_not_tried(tried, len(tried))) is not None:
@@ -257,7 +256,6 @@ def _symlist_matrices(generators):
             continue
         left.append(_set_small_values_to_zero(new_left))
         right.append(_set_small_values_to_zero(new_right))
-        chain.append(chain[i] + chain[j])
         for row in tried:
             row.append(0)
         tried.append([0] * (len(tried) + 1))

@@ -5422,7 +5422,8 @@ class TestRelionModeSmokeTest:
         assert len(collapse_calls) == 2
         assert [call[0] for call in collapse_calls] == [(N_ROTATIONS,), (N_ROTATIONS,)]
         assert [call[1] for call in collapse_calls] == [2, 2]
-        assert len(make_prior_calls) == 4
+        # Only the scoring expansion: learning collapses the posterior and builds no log prior.
+        assert len(make_prior_calls) == 2
         assert_matches(make_prior_calls[-2][0], learned_direction_priors[0])
         assert_matches(make_prior_calls[-1][0], learned_direction_priors[1])
 

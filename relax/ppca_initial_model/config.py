@@ -32,7 +32,6 @@ class Config:
     shift_step: float = 2
     image_batch_size: int = 150
     rotation_block_size: int = 512
-    fine_image_tile_size: int = 1
     stream_full_fine_rows: bool = False
     # The default engine: the GPU stream over the full pose grid of each stage. False selects the
     # host-mask dense engine (q <= 2 only), the float32 reference of the stream's tests.
@@ -77,14 +76,12 @@ class Config:
             )
         if self.max_significant <= 0:
             raise ValueError("max_significant must be positive")
-        if min(self.image_batch_size, self.rotation_block_size, self.fine_image_tile_size, self.checkpoint_interval) <= 0:
+        if min(self.image_batch_size, self.rotation_block_size, self.checkpoint_interval) <= 0:
             raise ValueError("Batch/checkpoint sizes must be positive")
-        if self.fine_devices < 1 or (self.fine_devices > 1 and not self.stream_full_fine_rows):
-            raise ValueError("Multiple fine devices require the streamed fine engine")
+        if self.fine_devices < 1:
+            raise ValueError("fine_devices must be positive")
         if self.oversampling and not self.stream_coarse_recompute:
             raise ValueError("Adaptive oversampling runs on the streamed engine (stream_coarse_recompute)")
-        if self.stream_coarse_recompute and (self.fine_devices != 1 or self.stream_full_fine_rows):
-            raise ValueError("Coarse recomputation requires one device")
         if self.q > 2 and not self.stream_coarse_recompute:
             raise ValueError("Higher-rank InitialModel requires the streamed coarse recompute engine")
         if self.stochastic_batch_size is not None and self.stochastic_batch_size <= 0:
@@ -120,7 +117,7 @@ class Config:
             raise ValueError("Momentum SGD learning rate must be finite and positive")
         if self.gemm_precision not in ("auto", "fp32", "tf32"):
             raise ValueError("GEMM precision must be auto, fp32 or tf32")
-        if self.gemm_precision == "tf32" and not (self.stream_coarse_recompute or self.stream_full_fine_rows):
+        if self.gemm_precision == "tf32" and not self.stream_coarse_recompute:
             raise ValueError("TF32 GEMMs apply to the streamed engines only")
         if self.preread_images not in ("auto", "on", "off"):
             raise ValueError("Image preread must be auto, on or off")

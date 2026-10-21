@@ -910,7 +910,6 @@ def score_numbered_half(
             class_log_priors=class_log_priors,
         )
         dense_batching = DenseBatchPolicy(
-            image_batch_size=options.execution.image_batch_size,
             max_significants=options.adaptive.max_significants,
             safe_batch_sizes=half_batching.safe_batch_sizes,
             significance_safe_batch_sizes=half_batching.significance_safe_batch_sizes,

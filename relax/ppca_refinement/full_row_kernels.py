@@ -95,7 +95,6 @@ class StreamStatic(NamedTuple):
     projection_max_r: float | None
     backprojection_max_r: float | None
     relion_texture_interp: bool
-    use_recon_window: bool
     basis_size: int
     metric_trace_only: bool  # backproject sum_p LHS_pp instead of every packed LHS channel
     # GPU streams run relax's fused CUDA stages (windowed projection, latent epilogue, posterior
@@ -118,7 +117,6 @@ class StreamArrays(NamedTuple):
     # CUDA path: the score window (every pixel without one) padded with -1 to a multiple of
     # _GEMM_ALIGN pixels, so the GEMM operands' rows are 16-byte aligned. None off GPU.
     gemm_window: jax.Array | None
-    recon_indices: jax.Array | None  # reconstruction window
     coefficient_noise: jax.Array  # (n_half,) noise variance per half-image pixel
     shift_squared: jax.Array  # (T,) squared fine shift length in px^2
 

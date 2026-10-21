@@ -16,7 +16,6 @@ from relax.fine_pass.policy import ResidentConfigurationUnsupported
 
 # The diagnostic dumps and arms the resident drivers refuse (EngineTuning.resident_diagnostics).
 DIAGNOSTIC_DIR_ENVS = relax.runtime.engine_tuning.RESIDENT_DIAGNOSTIC_DIR_ENVS
-DIAGNOSTIC_FLAG_ENVS = relax.runtime.engine_tuning.RESIDENT_DIAGNOSTIC_FLAG_ENVS
 
 
 def require(condition: bool, message: str) -> None:

@@ -179,11 +179,3 @@ def test_a_bpref_device_panel_variable_builds_its_observer_ahead_of_the_parity_c
     assert [type(o) for o in observers.observers_from_environment(timing_dir=None)][:2] == [
         observers.BpRefDiagnosticsObserver, observers.ParityDumpObserver,
     ]
-    flushed = []
-    monkeypatch.setattr(observers.bpref_diagnostics, "flush_selected_bpref_device_panel", lambda **kw: flushed.append(kw))
-    # A scored half's panel is flushed; an empty half has none.
-    for n_units in (2, 0):
-        observers.BpRefDiagnosticsObserver().numbered_half_recorded(SimpleNamespace(
-            iteration=3, half_index=1, particles=SimpleNamespace(dataset=SimpleNamespace(n_units=n_units)),
-        ))
-    assert flushed == [dict(iteration_index=3, half_index=1)]

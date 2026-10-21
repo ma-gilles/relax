@@ -154,7 +154,6 @@ class _Particles:
         self.best_pose_eulers_deg = np.zeros((n, 3))
         self.best_pose_eulers_valid = np.ones(n, dtype=bool)
         self.best_pose_rotations = None
-        self.best_pose_rotation_ids = None
 
 
 def test_expected_accuracy_runs_once_per_group_with_its_noise_and_optics(monkeypatch):

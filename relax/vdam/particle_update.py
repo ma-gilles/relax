@@ -68,10 +68,6 @@ def update_particle_state_from_estep_meta(
             raise ValueError("source Euler validity must be boolean [selected_particles]")
         particle_state.best_pose_eulers_valid[ids] = valid
 
-    if (bt := meta.get("best_pose_translations")) is not None:
-        particle_state.best_pose_translations = _ensure_field(particle_state.best_pose_translations, (N, 2), np.float32)
-        particle_state.best_pose_translations[ids] = np.asarray(bt, dtype=np.float32)
-
     if (cls := meta.get("class_assignments")) is not None:
         particle_state.class_assignments[ids] = np.asarray(cls, dtype=np.int32).reshape(-1)
 

@@ -53,8 +53,6 @@ def add_args(parser):
     parser.add_argument("--shift-step", type=float, default=2)
     parser.add_argument("--image-batch-size", type=int, default=150)
     parser.add_argument("--rotation-block-size", type=int, default=512)
-    parser.add_argument("--fine-image-tile-size", type=int, default=1,
-                        help="Batch identical full-support fine rows; 1 keeps the reference path")
     parser.add_argument("--stream-full-fine-rows", action="store_true",
                         help="Stream rows of the shared fine grid with exact per-image support masks on the device")
     parser.add_argument(
@@ -363,7 +361,6 @@ def main(args=None):
         shift_step=args.shift_step,
         image_batch_size=args.image_batch_size,
         rotation_block_size=args.rotation_block_size,
-        fine_image_tile_size=args.fine_image_tile_size,
         stream_full_fine_rows=args.stream_full_fine_rows,
         stream_coarse_recompute=args.stream_coarse_recompute,
         fine_devices=args.fine_devices,

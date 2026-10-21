@@ -10,7 +10,6 @@ from typing import Any, NamedTuple
 import jax.numpy as jnp
 import numpy as np
 
-from relax.fourier.image_shifts import tiled_half_image_phase_factors
 from relax.scoring.coarse_operands import (
     assemble_relion_cc_coarse_operands,
     assemble_relion_exact_coarse_gaussian_operands,
@@ -147,7 +146,6 @@ class CcOperandPlan:
 
     experiment_dataset: Any
     image_shape: Any
-    image_pre_shifts: Any
     window_indices: Any
     score_indices: Any
     score_half_weights: Any
@@ -170,14 +168,6 @@ class CcOperandPlan:
             relion_preprocess_kwargs=batch.relion_preprocess_kwargs,
             image_indices=batch.batch_image_indices,
         )
-        phase_factors = None
-        if self.image_pre_shifts is not None and not batch.real_space_pre_shift_applied:
-            shifts = np.asarray(self.image_pre_shifts)[np.asarray(indices)]
-            phase_factors = tiled_half_image_phase_factors(
-                self.image_shape,
-                jnp.asarray(repeat_pad_batch_axis(shifts, batch.batch_size)),
-                1,
-            )
         # The padded rows of a short last batch repeat its first image's CTF row.
         operands = assemble_relion_cc_coarse_operands(
             processed,
@@ -192,7 +182,6 @@ class CcOperandPlan:
                 self.support_power_weights,
             ),
             jnp.asarray(batch.batch_scale_np, dtype=jnp.float32),
-            phase_factors=phase_factors,
             window_indices=self.window_indices,
             scale_corrections_enabled=self.scale_corrections_enabled,
         )

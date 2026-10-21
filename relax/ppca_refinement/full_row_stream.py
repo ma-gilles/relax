@@ -283,7 +283,6 @@ def _prepare_full_row_stream(
         rotation_parent=jnp.asarray(np.append(rotation_parent, np.int32(n_coarse_rotations))),
         translation_parent=jnp.asarray(translation_parent),
         score_indices=resolved.score_indices,
-        recon_indices=resolved.recon_indices,
         coefficient_noise=noise_variance_half,
         shift_squared=jnp.sum(jnp.asarray(translations, jnp.float32) ** 2, axis=-1),
     )
@@ -294,7 +293,6 @@ def _prepare_full_row_stream(
         projection_max_r=resolved.projection_max_r,
         backprojection_max_r=resolved.backprojection_max_r,
         relion_texture_interp=bool(scoring.relion_texture_interp),
-        use_recon_window=bool(resolved.use_window),
         basis_size=int(resolved.q) + 1,
         metric_trace_only=bool(metric_trace_only),
         cuda_kernels=cuda_kernels,

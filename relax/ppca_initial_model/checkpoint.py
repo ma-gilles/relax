@@ -32,7 +32,9 @@ RUNTIME_CONFIG_FIELDS = ("gemm_precision", "preread_images", "pass2_mass_floor")
 
 # Retired model settings and their only supported value: a checkpoint that recorded that value
 # resumes; one written with the setting changed holds a different model and does not.
-_RETIRED_CONFIG_DEFAULTS = {"contrast_estimate": False, "contrast_prior_sd": 0.3, "contrast_range": [0.5, 2.0]}
+_RETIRED_CONFIG_DEFAULTS = {
+    "contrast_estimate": False, "contrast_prior_sd": 0.3, "contrast_range": [0.5, 2.0], "fine_image_tile_size": 1,
+}
 
 # Model settings added later and their defaults: a checkpoint written before a setting existed holds the model its
 # default gives, so the setting at that default is no part of the identity.

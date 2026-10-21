@@ -720,7 +720,6 @@ def test_particle_state_from_star_seeds_input_euler_orientations_for_all_particl
     assert native_sampling._best_eulers_from_particle_state(
         state,
         np.asarray([2, 0, 1], dtype=np.int64),
-        rotation_grid_order=1,
     ) is not None
 
 
@@ -1912,10 +1911,6 @@ def test_update_particle_state_preserves_best_pose_metadata():
 
     assert_matches(particle_state.pose_assignments, [0, -1, 1])
     np.testing.assert_allclose(particle_state.best_pose_rotations[[2, 0]], rotations)
-    np.testing.assert_allclose(
-        particle_state.best_pose_translations,
-        np.asarray([[0.0, 2.0], [0.0, 0.0], [3.0, -1.0]], dtype=np.float32),
-    )
     assert_matches(particle_state.visited, [True, False, True])
 
     particle_update.update_particle_state_from_estep_meta(
@@ -1943,13 +1938,11 @@ def test_best_eulers_from_particle_state_prefers_stored_rotation_matrices():
         class_assignments=np.zeros(2, dtype=np.int32),
         max_posterior=np.ones(2, dtype=np.float32),
         best_pose_rotations=np.stack([perturbed_rotation, grid_rotations[7]], axis=0),
-        best_pose_rotation_ids=np.asarray([5, 7], dtype=np.int32),
     )
 
     eulers = native_sampling._best_eulers_from_particle_state(
         particle_state,
         np.asarray([0, 1], dtype=np.int64),
-        rotation_grid_order=1,
     )
 
     assert eulers is not None
@@ -2651,12 +2644,13 @@ def test_data_star_zeros_unvisited_rows_and_writes_best_pose_eulers(tmp_path, mo
             "_rlnMaxValueProbDistribution": ["0.5", "0.0", "0.0"],
         }
     )
+    expected_eulers = grids.get_relion_rotation_grid_eulers(1, rotation_index_order="relion")
     particle_state = NativeParticleState(
         translation_offsets=np.zeros((3, 2), dtype=np.float32),
         class_assignments=np.asarray([0, 0, 0], dtype=np.int32),
         max_posterior=np.asarray([0.75, 0.0, 0.625], dtype=np.float32),
-        best_pose_rotation_ids=np.asarray([5, -1, 9], dtype=np.int32),
-        best_pose_rotation_orders=np.asarray([1, -1, 1], dtype=np.int32),
+        best_pose_eulers_deg=np.stack([expected_eulers[5], np.zeros(3), expected_eulers[9]]).astype(np.float64),
+        best_pose_eulers_valid=np.asarray([True, False, True]),
         visited=np.asarray([True, False, True]),
     )
     out = tmp_path / "run_it010_data.star"
@@ -2670,7 +2664,6 @@ def test_data_star_zeros_unvisited_rows_and_writes_best_pose_eulers(tmp_path, mo
     )
 
     data, _ = read_star(str(out))
-    expected_eulers = grids.get_relion_rotation_grid_eulers(1, rotation_index_order="relion")
     assert data["_rlnImageName"].tolist() == ["1@stack.mrcs", "2@stack.mrcs", "3@stack.mrcs"]
     assert_matches(data["_rlnClassNumber"].astype(int).to_numpy(), [0, 1, 1])
     assert_matches(data["_rlnRandomSubset"].astype(int).to_numpy(), [1, 2, 1])

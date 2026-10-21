@@ -100,13 +100,3 @@ def half_image_phase_factors(image_shape, shifts, *, dtype: np.dtype = jnp.float
         precision=jax.lax.Precision.HIGHEST,
     )
     return jnp.exp(-2j * jnp.pi * phase_arg).T
-
-
-def tiled_half_image_phase_factors(image_shape, shifts, n_trans: int, *, dtype: np.dtype = jnp.float32):
-    """Return phase factors expanded across translation-tiled image rows."""
-
-    return jnp.repeat(
-        half_image_phase_factors(image_shape, shifts, dtype=dtype),
-        int(n_trans),
-        axis=0,
-    )

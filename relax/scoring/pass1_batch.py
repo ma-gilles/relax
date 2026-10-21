@@ -6,7 +6,6 @@ from typing import Any, NamedTuple
 import jax.numpy as jnp
 import numpy as np
 
-from relax.fourier.image_shifts import apply_relion_integer_pre_shifts
 from relax.relion.image_preprocessing import prepare_batch_preprocess_operands
 from relax.scoring.coarse_operands import repeat_pad_batch_axis
 
@@ -114,8 +113,7 @@ class BatchInputs(NamedTuple):
     of RELION's CUDA preprocessing, ``batch_image_indices`` the dataset index of every row (repeat-padded as the images
     are), ``batch_noise_half`` the noise spectrum of every row (or the one shared spectrum), and
     ``translation_log_prior`` ``None`` or the batch's ``[T]`` / ``[batch_size, T]`` prior on the device.
-    ``real_space_pre_shift_applied`` says that the integral pre-shifts were applied to the images (the others are
-    applied to the Fourier rows by the coarse operands).
+    RELION's CUDA preprocessing applies the integral pre-shifts to the images (``relion_preprocess_kwargs``).
     """
 
     batch_data: Any
@@ -124,7 +122,6 @@ class BatchInputs(NamedTuple):
     relion_preprocess_kwargs: Any
     batch_image_indices: Any
     batch_noise_half: Any
-    real_space_pre_shift_applied: bool
     translation_log_prior: Any
 
 
@@ -150,6 +147,8 @@ def prepare_batch_inputs(plan: BatchInputPlan, batch_data, indices, *, start_idx
         image_pre_shifts=plan.image_pre_shifts,
         dtype=plan.score_real_dtype,
     )
+    if not relion_cuda_preprocess or relion_preprocess_kwargs is None:
+        raise ValueError("pass 1 scores RELION's exact coarse operands and needs RELION's CUDA image preprocessing")
     if plan.pad_final_image_batch and actual_batch_size < int(plan.image_batch_size):
         (
             batch_data,
@@ -171,9 +170,6 @@ def prepare_batch_inputs(plan: BatchInputPlan, batch_data, indices, *, start_idx
     if plan.noise.noise_table_host is not None:
         batch_groups = plan.noise.image_groups_host[np.asarray(indices, dtype=np.int64)]
         batch_noise_half = jnp.asarray(repeat_pad_batch_axis(plan.noise.noise_table_host[batch_groups], batch_size))
-    real_space_pre_shift_applied = integer_pre_shifts is not None
-    if real_space_pre_shift_applied and not relion_cuda_preprocess:
-        batch_data = apply_relion_integer_pre_shifts(batch_data, integer_pre_shifts)
     batch_data = jnp.asarray(batch_data)
     if plan.translation_log_prior is None:
         batch_translation_log_prior = None
@@ -188,8 +184,6 @@ def prepare_batch_inputs(plan: BatchInputPlan, batch_data, indices, *, start_idx
             )
         batch_translation_log_prior = jnp.asarray(batch_translation_log_prior_np)
 
-    if not relion_cuda_preprocess or relion_preprocess_kwargs is None:
-        raise ValueError("pass 1 scores RELION's exact coarse operands and needs RELION's CUDA image preprocessing")
     return BatchInputs(
         batch_data=batch_data,
         batch_size=batch_size,
@@ -197,6 +191,5 @@ def prepare_batch_inputs(plan: BatchInputPlan, batch_data, indices, *, start_idx
         relion_preprocess_kwargs=relion_preprocess_kwargs,
         batch_image_indices=batch_image_indices,
         batch_noise_half=batch_noise_half,
-        real_space_pre_shift_applied=real_space_pre_shift_applied,
         translation_log_prior=batch_translation_log_prior,
     )
