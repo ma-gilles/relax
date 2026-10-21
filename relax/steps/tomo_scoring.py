@@ -165,6 +165,15 @@ def score_tomo_half(
     relion_projector_half = np.asarray(relion_projector_half, dtype=np.complex64)
     n_classes = int(relion_projector_half.shape[0]) if relion_projector_half.ndim == 4 else 1
     if normalized_cc and n_classes > 1:
+        if (
+            local_rotations is not None or len(empty_classes) or reconstruction_group_ids is not None
+            or reconstruction_group_count is not None or mstep_subtract_ctf_projection or coarse_cc_winners is not None
+        ):
+            # Neither K>1 route below takes these; refuse them instead of dropping them.
+            raise NotImplementedError(
+                "the K-class subtomogram --firstiter_cc iteration is a global search without empty classes, "
+                "reconstruction groups, residual backprojection or given coarse winners"
+            )
         if unit_seed_classes is None:
             # One reference per class: RELION restricts the CC iteration to the first reference only when it
             # generates seeds (do_generate_seeds, acc_ml_optimiser_impl.h:3696-3707; ml_model.cpp:1008-1010).
