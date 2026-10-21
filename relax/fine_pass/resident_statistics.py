@@ -186,6 +186,9 @@ class ResidentStatisticsConfig:
     # Leading extent of the per-image accumulators, resident_image_capacity of
     # the pass's image count; finalize_statistics crops it back.
     image_capacity: int
+    # Length of the rotation-mass accumulator: the coarse grid's (class, rotation) slots, or the capacity class
+    # above them for a grid whose size changes between iterations (resolve_statistics_config); finalize_statistics
+    # crops it back.
     n_coarse_rot: int
     n_scale_groups: int
     # RELION powerClass split: shells strictly above the cutoff are unweighted.
@@ -243,8 +246,15 @@ def resolve_statistics_config(
     n_optics_groups: int = 1,
     n_classes: int = 1,
     float32_bucketed_image_sums: bool = True,
+    rotation_capacity: bool = False,
 ) -> ResidentStatisticsConfig:
     """Build a config (the CUDA switch, ``process_platform.custom_cuda_disabled``, selects the CPU shell binning).
+
+    ``rotation_capacity`` sizes the rotation-mass accumulator at the capacity class of ``n_coarse_rot``
+    (:func:`resident_image_capacity`'s classes) instead of at ``n_coarse_rot``: a subtomogram local search's coarse
+    grid is the union of its particles' local rotations, a different size every iteration, and the accumulator's
+    length is a shape of every program that folds a chunk into the statistics. The slots past ``n_coarse_rot``
+    receive no mass (the padded rows' sentinel is the capacity) and finalize_statistics crops them.
 
     ``source_faithful_spectrum_norm`` mirrors
     ``sparse_pass2_wavg._weighted_image_power_shells_and_per_image``: it selects
@@ -257,7 +267,7 @@ def resolve_statistics_config(
         n_shells=n_shells,
         n_fine_trans=n_fine_trans,
         image_capacity=resident_image_capacity(n_images),
-        n_coarse_rot=n_coarse_rot,
+        n_coarse_rot=resident_image_capacity(n_coarse_rot) if rotation_capacity else n_coarse_rot,
         n_scale_groups=n_scale_groups,
         norm_unweighted_shell_cutoff=cutoff,
         include_unweighted_high_shell=include_unweighted_high_shell,
@@ -437,11 +447,14 @@ def finalize_statistics(
     config: ResidentStatisticsConfig,
     n_images: int,
     require_all_images: bool = True,
+    n_coarse_rot: int | None = None,
 ) -> FinalizedStatistics:
     """Pull the accumulators once and decode the pose fields.
 
     The per-image accumulators are ``config.image_capacity`` long; the rows
-    past ``n_images`` are padding no chunk wrote, and are cropped here.
+    past ``n_images`` are padding no chunk wrote, and are cropped here. The
+    rotation masses are cropped to ``n_coarse_rot`` (class, rotation) slots when
+    the accumulator is a capacity class above them (``rotation_capacity``).
 
     Raises the padding-sanity error the host tail raises inline (a winner that
     points outside its image's candidate rows), and, unless
@@ -498,6 +511,8 @@ def finalize_statistics(
     ).astype(np.int32)
 
     rotation_posterior_sums = np.asarray(rotation_posterior_sums, dtype=np.float64)
+    if n_coarse_rot is not None:
+        rotation_posterior_sums = rotation_posterior_sums[: int(n_coarse_rot)]
     finalized_classes = None
     if config.n_classes > 1:
         rotation_posterior_sums = rotation_posterior_sums.reshape(config.n_classes, -1)

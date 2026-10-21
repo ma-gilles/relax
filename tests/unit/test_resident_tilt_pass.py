@@ -1092,3 +1092,49 @@ def test_compiled_tilt_fold_is_the_eager_fold(monkeypatch):
     compiled = real_fold(grouped, **grouped_kwargs)
     assert compiled.wsum_sigma2_noise.shape == (n_groups, n_shells)
     assert_same(compiled, real_fold.__wrapped__(grouped, **grouped_kwargs))
+
+
+@requires_resident_gpu
+def test_a_compact_grid_at_its_rotation_capacity_is_the_exact_length_pass(monkeypatch):
+    """A local search's compact coarse grid sizes its rotation-mass accumulator at the capacity class
+    (resolve_statistics_config rotation_capacity), so one chunk fold serves every iteration's grid size. The padded
+    slots take no mass: the pass equals the one whose accumulator is the grid's exact length, with the discrete
+    state, scores and rotation masses exact and the maps and sums in the repeat band."""
+
+    from relax.fine_pass import resident_pass2 as rp
+    from relax.fine_pass import resident_statistics
+
+    args = dict(_driver_fixture_args(), score_with_masked_images=True, return_stats=True)
+    tilt, n_units = _two_image_particles(args)
+    support = args.pop("significant_sample_indices")[:n_units]
+    n_coarse_rot = int(np.asarray(args.pop("rotation_log_prior")).size)
+    args["translation_log_prior"] = None
+    resolve = resident_statistics.resolve_statistics_config
+    lengths = []
+
+    def run(rotation_capacity):
+        def resolved(**kwargs):
+            config = resolve(**dict(kwargs, rotation_capacity=rotation_capacity))
+            lengths.append(int(config.n_coarse_rot))
+            return config
+
+        monkeypatch.setattr(resident_statistics, "resolve_statistics_config", resolved)
+        return rp.compute_tilt_pass2_stats_resident(
+            tilt=tilt, coarse_rotation_ids=np.arange(n_coarse_rot), significant_sample_indices=support,
+            rotation_log_prior=None, **args, engine_tuning=RESIDENT_PRODUCTION_ENGINE,
+            scoring_overrides=ScoringOverrides(),
+        )
+
+    capacity, exact = run(True), run(False)
+    assert lengths == [resident_statistics.resident_image_capacity(n_coarse_rot), n_coarse_rot]
+    assert lengths[0] > n_coarse_rot
+    np.testing.assert_array_equal(capacity.best_rotation_indices, exact.best_rotation_indices)
+    np.testing.assert_array_equal(capacity.hard_assignment, exact.hard_assignment)
+    for field in ("log_evidence_per_image", "best_log_score_per_image", "max_posterior_per_image"):
+        np.testing.assert_array_equal(getattr(capacity.relion_stats, field), getattr(exact.relion_stats, field))
+    rotation_sums = np.asarray(capacity.relion_stats.rotation_posterior_sums)
+    assert rotation_sums.shape == (n_coarse_rot,)
+    assert_matches(rotation_sums, np.asarray(exact.relion_stats.rotation_posterior_sums))
+    assert _rel_l2(exact.Ft_y, capacity.Ft_y) < _BPREF_ATOMIC_BAND
+    assert _rel_l2(exact.Ft_ctf, capacity.Ft_ctf) < _BPREF_ATOMIC_BAND
+    _assert_noise_stats_match(exact.noise_stats, capacity.noise_stats)

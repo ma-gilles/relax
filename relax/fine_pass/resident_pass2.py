@@ -2057,6 +2057,8 @@ def _resident_pass2(
         n_optics_groups=n_optics_groups,
         n_classes=n_classes,
         float32_bucketed_image_sums=_FLOAT32_BUCKETED_IMAGE_SUMS,
+        # A local search's compact grid changes size every iteration (resolve_statistics_config).
+        rotation_capacity=coarse_rotation_ids is not None,
     )
     stats = resident_statistics.make_resident_statistics(
         stats_config, max_posterior_dtype=precision_policy.score_real_dtype
@@ -2684,7 +2686,9 @@ def _resident_pass2(
         Ft_y_out.append(class_Ft_y)
         Ft_ctf_out.append(class_Ft_ctf)
 
-    finalized = resident_statistics.finalize_statistics(stats, config=stats_config, n_images=n_units)
+    finalized = resident_statistics.finalize_statistics(
+        stats, config=stats_config, n_images=n_units, n_coarse_rot=n_classes * n_coarse_rot
+    )
     noise_stats = finalized.noise_stats()
     logger.info(
         "Resident pass-2: %d images, %d classes, %d chunks, %.2fs chunk loop, %.2fs total",

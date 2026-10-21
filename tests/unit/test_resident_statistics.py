@@ -230,3 +230,54 @@ def test_finalize_reports_images_no_chunk_covered():
     )
     with pytest.raises(RuntimeError, match="never written by a chunk"):
         finalize_statistics(stats, config=config, n_images=N_IMAGES)
+
+
+def test_a_compact_rotation_grid_keys_one_statistics_program_per_capacity_class():
+    """A local search's coarse grid is the union of its particles' rotations, a new size every iteration (131,222
+    and 135,297 rotations at Ryan it10/it11, explain job 15956274): sized at its capacity class, the
+    rotation-mass accumulator and the config (a static argument of every chunk fold) are the same for both."""
+
+    def config(n_coarse_rot, rotation_capacity):
+        return resolve_statistics_config(
+            n_shells=N_SHELLS,
+            n_fine_trans=N_FINE_TRANS,
+            n_images=N_IMAGES,
+            n_coarse_rot=n_coarse_rot,
+            n_scale_groups=N_GROUPS,
+            current_size=CURRENT_SIZE,
+            rotation_capacity=rotation_capacity,
+        )
+
+    assert config(131222, True) == config(135297, True)
+    assert config(131222, True).n_coarse_rot == resident_image_capacity(131222) == 163840
+    assert config(131222, False).n_coarse_rot == 131222
+
+
+@pytest.mark.parametrize("n_classes", [1, 2])
+def test_finalize_crops_the_rotation_capacity_to_the_grid(n_classes):
+    """The slots past the grid's (class, rotation) slots are cropped; a K-class grid is split after the crop."""
+
+    n_slots = n_classes * N_COARSE_ROT
+    config = resolve_statistics_config(
+        n_shells=N_SHELLS,
+        n_fine_trans=N_FINE_TRANS,
+        n_images=N_IMAGES,
+        n_coarse_rot=n_slots,
+        n_scale_groups=N_GROUPS,
+        current_size=CURRENT_SIZE,
+        n_classes=n_classes,
+        rotation_capacity=True,
+    )
+    assert config.n_coarse_rot > n_slots
+    stats = make_resident_statistics(config, max_posterior_dtype=jnp.float32)
+    mass = _rng().uniform(size=n_slots)
+    stats = stats._replace(
+        rotation_posterior_sums=stats.rotation_posterior_sums.at[:n_slots].set(mass),
+        best_cell=jnp.zeros_like(stats.best_cell),
+        best_local_rot=jnp.zeros_like(stats.best_local_rot),
+    )
+    if n_classes > 1:
+        stats = stats._replace(classes=stats.classes._replace(best_cell=jnp.zeros_like(stats.classes.best_cell)))
+    finalized = finalize_statistics(stats, config=config, n_images=N_IMAGES, n_coarse_rot=n_slots)
+    want = mass if n_classes == 1 else mass.reshape(n_classes, N_COARSE_ROT)
+    np.testing.assert_array_equal(finalized.rotation_posterior_sums, want)
