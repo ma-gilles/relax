@@ -52,16 +52,16 @@ row_tile_active_translations_kernel(
     }
 }
 
-// The lists of a launch's row tiles in one stream-ordered scratch allocation ([tiles, T] lists then [tiles]
-// counts); the caller frees ``*scratch`` with cudaFreeAsync after the kernels that read it.
+// The lists of a launch's row tiles in one allocation from the call's FFI scratch ([tiles, T] lists then [tiles]
+// counts, relax_ffi_scratch), released when the handler returns.
 inline cudaError_t list_row_tile_translations(
-    cudaStream_t stream, const int32_t* row_image_ids, const float* posterior, const int32_t* runtime_valid_rows,
-    int64_t row_count, int64_t translation_count, int32_t** scratch)
+    cudaStream_t stream, ffi::ScratchAllocator& allocator, const int32_t* row_image_ids, const float* posterior,
+    const int32_t* runtime_valid_rows, int64_t row_count, int64_t translation_count, int32_t** scratch)
 {
     const int64_t tiles = (row_count + kTiledRows - 1) / kTiledRows;
-    cudaError_t err = cudaMallocAsync(
-        reinterpret_cast<void**>(scratch), static_cast<size_t>(tiles * (translation_count + 1)) * sizeof(int32_t),
-        stream);
+    cudaError_t err = relax_ffi_scratch::allocate(
+        allocator, reinterpret_cast<void**>(scratch),
+        static_cast<size_t>(tiles * (translation_count + 1)) * sizeof(int32_t));
     if (err != cudaSuccess) return err;
     row_tile_active_translations_kernel<<<
         static_cast<unsigned>(tiles), kActiveThreads, static_cast<size_t>((translation_count + 31) / 32) * sizeof(uint32_t),

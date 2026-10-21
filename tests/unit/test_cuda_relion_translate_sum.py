@@ -29,6 +29,7 @@ test requires bitwise equality.
 
 import numpy as np
 import pytest
+from helpers.ffi_scratch import clean_and_poisoned
 from helpers.float_compare import assert_matches, matches
 
 pytest.importorskip("jax")
@@ -1029,3 +1030,33 @@ def test_one_image_table_launch_is_the_inline_launch(monkeypatch, custom_cuda_li
             parts.append(np.asarray(output))
     for got, want in zip(tiled, inline):
         _assert_matches(np.asarray(got), np.concatenate(want))
+
+
+@pytest.mark.gpu
+def test_shifted_tables_and_tile_lists_come_from_the_jax_pool(monkeypatch, custom_cuda_lib, gpu_device):
+    """The shifted table and the tiled sum's translation lists are FFI scratch (relax#120).
+
+    The driver's default memory pool hands out nothing, and a pool written with NaN first gives the
+    same four outputs, for a one-image tiled launch and a two-image table launch.
+    """
+
+    cuda_backproject = _cuda_backproject(monkeypatch, custom_cuda_lib)
+    rng = np.random.default_rng(120)
+    n_trans = 70
+    one_image = _operands(rng, rows=150, image_capacity=1, n_trans=n_trans, n_pixels=600)
+    one_image["row_image_ids"] = np.zeros(150, dtype=np.int32)
+    one_image["translation_angles"] = one_image["translation_angles"][None]
+    two_images = _operands(rng, rows=200, image_capacity=2, n_trans=n_trans, n_pixels=600)
+
+    def call():
+        with jax.default_device(gpu_device):
+            return [
+                _kernel(cuda_backproject, operands, n_valid_rows=rows, logical_pixels=555, bpref=True, with_ctf=True)
+                for operands, rows in ((one_image, 147), (two_images, 200))
+            ]
+
+    clean, poisoned, outside_pool_bytes = clean_and_poisoned(call, gpu_device)
+    assert outside_pool_bytes == 0
+    for got_launch, want_launch in zip(poisoned, clean):
+        for got, want in zip(got_launch, want_launch):
+            _assert_matches(got, want)

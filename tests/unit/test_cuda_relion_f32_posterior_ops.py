@@ -71,8 +71,9 @@ def test_relion_f32_posterior_cuda_source_pins_deployed_arithmetic():
     assert "for (int64_t row = 0; row < row_count" in batched_sort
     assert "relion_ampere_inclusive_sum_f32(" in batched_sort
     assert "cumulative_ptr + offset, count, stream)" in batched_sort
-    assert "cudaMallocAsync(&temporary, aligned_cub_bytes + index_bytes, stream)" in batched_sort
-    assert "cudaFreeAsync(temporary, stream)" in batched_sort
+    # CUB's temporary storage and the row offsets are the call's FFI scratch (relax#120), released by XLA.
+    assert "relax_ffi_scratch::allocate(scratch, &temporary, aligned_cub_bytes + index_bytes)" in batched_sort
+    assert "cudaMallocAsync" not in batched_sort and "cudaFreeAsync" not in batched_sort
     assert "cudaStreamSynchronize" not in batched_sort
 
 

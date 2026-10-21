@@ -6,7 +6,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 from helpers.cuda_source import read_em_cuda_source
-from helpers.float_compare import assert_matches
+from helpers.ffi_scratch import clean_and_poisoned
+from helpers.float_compare import assert_matches, assert_trees_match
 
 pytest.importorskip("jax")
 import jax
@@ -447,6 +448,7 @@ def test_relion_coarse_prehalf_shared_body_is_built_packaged_and_stale_checked()
         "sparse_pass2_posterior.cuh",
         "relion_translate_sum.cuh",
         "tiled_translations.cuh",
+        "ffi_scratch.cuh",
         "relion_capacity_texture.cuh",
         "ppca_moment_backproject.cuh",
         "ppca_stream.cuh",
@@ -1684,3 +1686,54 @@ def test_relion_runtime_flat_rows_one_image_launch_matches_mixed_launch(
     assert np.isfinite(one_image).any() and np.isposinf(one_image).any()
     assert np.all(np.isposinf(one_image[row_image_ids < 0]))
     assert_matches(one_image, mixed[:n_rows])
+
+
+@pytest.mark.gpu
+def test_relion_runtime_flat_rows_one_image_table_comes_from_the_jax_pool(monkeypatch, custom_cuda_lib, gpu_device):
+    """A one-image launch's translated-pixel table is FFI scratch (relax#120): the driver's default memory pool
+    hands out nothing, and a pool written with NaN first gives the same scores, with and without skipped
+    translation chunks."""
+
+    import recovar.cuda_backproject as cuda_backproject
+
+    from relax.cuda import fine as cuda_fine
+
+    monkeypatch.setenv("RECOVAR_CUDA_LIB", str(custom_cuda_lib))
+    monkeypatch.delenv("RECOVAR_DISABLE_CUDA", raising=False)
+    monkeypatch.setattr(cuda_backproject, "_cuda_ok", None)
+    rng = np.random.default_rng(120)
+    capacity, size = 40, 32
+    pixels = capacity * (capacity // 2 + 1)
+    n_translations, n_rows = 23, 37
+    row_image_ids = np.zeros(n_rows, dtype=np.int32)
+    row_image_ids[[5, 18]] = -1
+    reference = (rng.normal(0, 0.02, (n_rows, pixels)) + 1j * rng.normal(0, 0.02, (n_rows, pixels))).astype(np.complex64)
+    image = (rng.normal(0, 0.02, (1, pixels)) + 1j * rng.normal(0, 0.02, (1, pixels))).astype(np.complex64)
+    weight = rng.uniform(0, 150_000, (1, pixels)).astype(np.float32)
+    translation_angles = rng.normal(0, 0.2, (n_translations, 2)).astype(np.float32)
+    initial_diff2 = rng.uniform(0.0, 0.05, 1).astype(np.float32)
+    live = np.asarray(cuda_fine.relion_fine_diff2_translation_chunk_live(jnp.asarray(rng.random((n_rows, n_translations)) < 0.5)))
+
+    def call():
+        with jax.default_device(gpu_device):
+            args = (
+                jnp.asarray(reference),
+                jnp.asarray(row_image_ids),
+                jnp.asarray(image),
+                jnp.asarray(translation_angles),
+                jnp.asarray(weight),
+                jnp.asarray(np.arange(pixels, dtype=np.int32)),
+                jnp.asarray(size, dtype=jnp.int32),
+                jnp.asarray(initial_diff2),
+            )
+            return (
+                cuda_fine.relion_fine_diff2_fused_translate_runtime_flat_rows_f32(*args),
+                cuda_fine.relion_fine_diff2_fused_translate_runtime_flat_rows_f32(
+                    *args, translation_chunk_live=jnp.asarray(live)
+                ),
+            )
+
+    clean, poisoned, outside_pool_bytes = clean_and_poisoned(call, gpu_device)
+    assert outside_pool_bytes == 0
+    assert np.isfinite(clean[0][row_image_ids >= 0]).all()
+    assert_trees_match(poisoned, clean)

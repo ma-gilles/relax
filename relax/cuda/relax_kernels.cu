@@ -197,6 +197,7 @@ cudaError_t report_relion_vdam_driver_error(
 
 #include "recovar_cuda_common.cuh"
 
+#include "ffi_scratch.cuh"
 #include "tiled_translations.cuh"
 
 
@@ -1862,6 +1863,7 @@ constexpr int64_t kWavgTiledMinRows = 64;
 
 cudaError_t launch_relion_wavg_sequential_runtime_flat_rows_triplet_f32(
     cudaStream_t stream,
+    ffi::ScratchAllocator& scratch,
     const float2* projections,
     const int32_t* row_image_ids,
     const float* raw_ctf,
@@ -1888,7 +1890,7 @@ cudaError_t launch_relion_wavg_sequential_runtime_flat_rows_triplet_f32(
     if (batch_size == 1 && row_count >= kWavgTiledMinRows) {
         int32_t* active = nullptr;
         err = relax_tiled_translations::list_row_tile_translations(
-            stream, row_image_ids, posterior, nullptr, row_count, translation_count, &active);
+            stream, scratch, row_image_ids, posterior, nullptr, row_count, translation_count, &active);
         if (err != cudaSuccess) return err;
         const int64_t tiles = (row_count + relax_tiled_translations::kTiledRows - 1) / relax_tiled_translations::kTiledRows;
         const dim3 grid(
@@ -1897,9 +1899,7 @@ cudaError_t launch_relion_wavg_sequential_runtime_flat_rows_triplet_f32(
         relion_wavg_tiled_one_image_triplet_f32_kernel<<<grid, kWavgThreads, 0, stream>>>(
             projections, raw_ctf, scale, shifted_images, posterior, active, active + tiles * translation_count, output,
             translation_count, pixel_capacity, runtime_logical_pixel_count, row_image_ids, row_count);
-        err = cudaGetLastError();
-        const cudaError_t free_err = cudaFreeAsync(active, stream);
-        return err != cudaSuccess ? err : free_err;
+        return cudaGetLastError();
     }
     const WavgTripletLaunch geometry =
         wavg_triplet_launch(row_count, pixel_capacity, translation_count);
@@ -4848,6 +4848,7 @@ ffi::Error ValidateRelionCoarseDiff2ProjectorF32Operands(
 
 ffi::Error RelionCoarseDiff2ProjectorF32Impl(
     cudaStream_t stream,
+    ffi::ScratchAllocator scratch,
     int64_t current_size,
     int64_t physical_image_size,
     int64_t model_max_r,
@@ -4893,6 +4894,7 @@ ffi::Error RelionCoarseDiff2ProjectorF32Impl(
     if (prehalf_weight) {
         err = launch_relion_coarse_diff2_projector_prehalf_f32(
             stream,
+            scratch,
             static_cast<const float2*>(projector_full.untyped_data()),
             static_cast<const float*>(rotations.untyped_data()),
             static_cast<const float2*>(images.untyped_data()),
@@ -4916,6 +4918,7 @@ ffi::Error RelionCoarseDiff2ProjectorF32Impl(
     } else if (single_lane_canonical) {
         err = launch_relion_coarse_diff2_projector_f32<false, true, true>(
             stream,
+            scratch,
             static_cast<const float2*>(projector_full.untyped_data()),
             static_cast<const float*>(rotations.untyped_data()),
             static_cast<const float2*>(images.untyped_data()),
@@ -4939,6 +4942,7 @@ ffi::Error RelionCoarseDiff2ProjectorF32Impl(
     } else if (canonical_reduction) {
         err = launch_relion_coarse_diff2_projector_f32<false, true>(
             stream,
+            scratch,
             static_cast<const float2*>(projector_full.untyped_data()),
             static_cast<const float*>(rotations.untyped_data()),
             static_cast<const float2*>(images.untyped_data()),
@@ -4962,6 +4966,7 @@ ffi::Error RelionCoarseDiff2ProjectorF32Impl(
     } else {
         err = launch_relion_coarse_diff2_projector_f32(
             stream,
+            scratch,
             static_cast<const float2*>(projector_full.untyped_data()),
             static_cast<const float*>(rotations.untyped_data()),
             static_cast<const float2*>(images.untyped_data()),
@@ -4993,6 +4998,7 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(
     RelionCoarseDiff2ProjectorF32, RelionCoarseDiff2ProjectorF32Impl,
     ffi::Ffi::Bind()
         .Ctx<ffi::PlatformStream<cudaStream_t>>()
+        .Ctx<ffi::ScratchAllocator>()
         .Attr<int64_t>("current_size")
         .Attr<int64_t>("physical_image_size")
         .Attr<int64_t>("model_max_r")
@@ -5016,6 +5022,7 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(
 // batch; the per-image arithmetic and the canonical lane reduction are the shared kernel's.
 ffi::Error RelionCoarseDiff2ProjectorPerImageF32Impl(
     cudaStream_t stream,
+    ffi::ScratchAllocator scratch,
     int64_t current_size,
     int64_t physical_image_size,
     int64_t model_max_r,
@@ -5070,6 +5077,7 @@ ffi::Error RelionCoarseDiff2ProjectorPerImageF32Impl(
 
     const cudaError_t err = launch_relion_coarse_diff2_projector_f32_impl<false, true, false, false, true>(
         stream,
+        scratch,
         static_cast<const float2*>(projector_full.untyped_data()),
         static_cast<const float*>(rotations.untyped_data()),
         static_cast<const float2*>(images.untyped_data()),
@@ -5100,6 +5108,7 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(
     RelionCoarseDiff2ProjectorPerImageF32, RelionCoarseDiff2ProjectorPerImageF32Impl,
     ffi::Ffi::Bind()
         .Ctx<ffi::PlatformStream<cudaStream_t>>()
+        .Ctx<ffi::ScratchAllocator>()
         .Attr<int64_t>("current_size")
         .Attr<int64_t>("physical_image_size")
         .Attr<int64_t>("model_max_r")
@@ -5194,6 +5203,7 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(
 
 ffi::Error RelionCoarseNormalizedCcNativeTexturePairsF32Impl(
     cudaStream_t stream,
+    ffi::ScratchAllocator scratch,
     int64_t current_size,
     int64_t padding_factor,
     int64_t projector_max_r,
@@ -5264,6 +5274,7 @@ ffi::Error RelionCoarseNormalizedCcNativeTexturePairsF32Impl(
     cudaError_t err =
         launch_relion_coarse_normalized_cc_native_texture_pairs_f32(
             stream,
+            scratch,
             reinterpret_cast<const float2*>(projector_full.untyped_data()),
             static_cast<const float*>(eulers.untyped_data()),
             reinterpret_cast<const float2*>(unshifted_image.untyped_data()),
@@ -5291,6 +5302,7 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(
     RelionCoarseNormalizedCcNativeTexturePairsF32Impl,
     ffi::Ffi::Bind()
         .Ctx<ffi::PlatformStream<cudaStream_t>>()
+        .Ctx<ffi::ScratchAllocator>()
         .Attr<int64_t>("current_size")
         .Attr<int64_t>("padding_factor")
         .Attr<int64_t>("projector_max_r")
@@ -5587,6 +5599,7 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(
 
 ffi::Error RelionFineDiff2FusedTranslateFlatRowsF32Common(
     cudaStream_t stream,
+    ffi::ScratchAllocator& scratch,
     int64_t current_size,
     const ffi::AnyBuffer* runtime_current_size,
     ffi::AnyBuffer reference,
@@ -5678,6 +5691,7 @@ ffi::Error RelionFineDiff2FusedTranslateFlatRowsF32Common(
     }
     cudaError_t err = launch_relion_fine_diff2_fused_translate_flat_rows_f32(
         stream,
+        scratch,
         reinterpret_cast<const float2*>(reference.untyped_data()),
         reinterpret_cast<const float2*>(image.untyped_data()),
         static_cast<const float*>(translation_angles.untyped_data()),
@@ -5707,6 +5721,7 @@ ffi::Error RelionFineDiff2FusedTranslateFlatRowsF32Common(
 
 ffi::Error RelionFineDiff2FusedTranslateFlatRowsF32Impl(
     cudaStream_t stream,
+    ffi::ScratchAllocator scratch,
     int64_t current_size,
     ffi::AnyBuffer reference,
     ffi::AnyBuffer row_image_ids,
@@ -5718,7 +5733,7 @@ ffi::Error RelionFineDiff2FusedTranslateFlatRowsF32Impl(
     ffi::Result<ffi::AnyBuffer> output)
 {
     return RelionFineDiff2FusedTranslateFlatRowsF32Common(
-        stream, current_size, nullptr, reference, row_image_ids, image,
+        stream, scratch, current_size, nullptr, reference, row_image_ids, image,
         translation_angles, weight, initial_diff2, full_to_compact, output);
 }
 
@@ -5727,6 +5742,7 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(
     RelionFineDiff2FusedTranslateFlatRowsF32Impl,
     ffi::Ffi::Bind()
         .Ctx<ffi::PlatformStream<cudaStream_t>>()
+        .Ctx<ffi::ScratchAllocator>()
         .Attr<int64_t>("current_size")
         .Arg<ffi::AnyBuffer>()
         .Arg<ffi::AnyBuffer>()
@@ -5740,6 +5756,7 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(
 
 ffi::Error RelionFineDiff2FusedTranslateRuntimeFlatRowsF32Impl(
     cudaStream_t stream,
+    ffi::ScratchAllocator scratch,
     ffi::AnyBuffer reference,
     ffi::AnyBuffer row_image_ids,
     ffi::AnyBuffer image,
@@ -5751,7 +5768,7 @@ ffi::Error RelionFineDiff2FusedTranslateRuntimeFlatRowsF32Impl(
     ffi::Result<ffi::AnyBuffer> output)
 {
     return RelionFineDiff2FusedTranslateFlatRowsF32Common(
-        stream, 0, &logical_current_size, reference, row_image_ids, image,
+        stream, scratch, 0, &logical_current_size, reference, row_image_ids, image,
         translation_angles, weight, initial_diff2, full_to_compact, output);
 }
 
@@ -5760,6 +5777,7 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(
     RelionFineDiff2FusedTranslateRuntimeFlatRowsF32Impl,
     ffi::Ffi::Bind()
         .Ctx<ffi::PlatformStream<cudaStream_t>>()
+        .Ctx<ffi::ScratchAllocator>()
         .Arg<ffi::AnyBuffer>()
         .Arg<ffi::AnyBuffer>()
         .Arg<ffi::AnyBuffer>()
@@ -5775,6 +5793,7 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(
 // candidate cell (translation_chunk_live, U8 [rows, ceil(translations / 4)]).
 ffi::Error RelionFineDiff2FusedTranslateRuntimeMaskedFlatRowsF32Impl(
     cudaStream_t stream,
+    ffi::ScratchAllocator scratch,
     ffi::AnyBuffer reference,
     ffi::AnyBuffer row_image_ids,
     ffi::AnyBuffer image,
@@ -5787,7 +5806,7 @@ ffi::Error RelionFineDiff2FusedTranslateRuntimeMaskedFlatRowsF32Impl(
     ffi::Result<ffi::AnyBuffer> output)
 {
     return RelionFineDiff2FusedTranslateFlatRowsF32Common(
-        stream, 0, &logical_current_size, reference, row_image_ids, image,
+        stream, scratch, 0, &logical_current_size, reference, row_image_ids, image,
         translation_angles, weight, initial_diff2, full_to_compact, output,
         &translation_chunk_live);
 }
@@ -5797,6 +5816,7 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(
     RelionFineDiff2FusedTranslateRuntimeMaskedFlatRowsF32Impl,
     ffi::Ffi::Bind()
         .Ctx<ffi::PlatformStream<cudaStream_t>>()
+        .Ctx<ffi::ScratchAllocator>()
         .Arg<ffi::AnyBuffer>()
         .Arg<ffi::AnyBuffer>()
         .Arg<ffi::AnyBuffer>()
@@ -8231,6 +8251,7 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(
 // row_image_ids[Q] carries each row's image, and negative ids mark padding.
 ffi::Error RelionWavgSequentialRuntimeFlatRowsTripletF32Impl(
     cudaStream_t stream,
+    ffi::ScratchAllocator scratch,
     ffi::AnyBuffer projections,
     ffi::AnyBuffer row_image_ids,
     ffi::AnyBuffer raw_ctf,
@@ -8280,6 +8301,7 @@ ffi::Error RelionWavgSequentialRuntimeFlatRowsTripletF32Impl(
             "RelionWavgSequentialRuntimeFlatRowsTripletF32: inconsistent topology");
     cudaError_t err = launch_relion_wavg_sequential_runtime_flat_rows_triplet_f32(
         stream,
+        scratch,
         reinterpret_cast<const float2*>(projections.untyped_data()),
         static_cast<const int32_t*>(row_image_ids.untyped_data()),
         static_cast<const float*>(raw_ctf.untyped_data()),
@@ -8302,6 +8324,7 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(
     RelionWavgSequentialRuntimeFlatRowsTripletF32Impl,
     ffi::Ffi::Bind()
         .Ctx<ffi::PlatformStream<cudaStream_t>>()
+        .Ctx<ffi::ScratchAllocator>()
         .Arg<ffi::AnyBuffer>()
         .Arg<ffi::AnyBuffer>()
         .Arg<ffi::AnyBuffer>()

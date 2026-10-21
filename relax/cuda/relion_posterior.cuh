@@ -4,6 +4,7 @@
 
 ffi::Error RelionCubSortScanF32Impl(
     cudaStream_t stream,
+    ffi::ScratchAllocator scratch,
     ffi::AnyBuffer values,
     ffi::Result<ffi::AnyBuffer> sorted,
     ffi::Result<ffi::AnyBuffer> cumulative)
@@ -47,10 +48,10 @@ ffi::Error RelionCubSortScanF32Impl(
 
     void* temporary = nullptr;
     const size_t temporary_bytes = std::max<size_t>(1, std::max(sort_bytes, scan_bytes));
-    err = recovar::scratch_alloc(&temporary, temporary_bytes, stream);
+    err = relax_ffi_scratch::allocate(scratch, &temporary, temporary_bytes);
     if (err != cudaSuccess)
         return ffi::Error::Internal(
-            std::string("RelionCubSortScanF32 cudaMalloc: ") + cudaGetErrorString(err));
+            std::string("RelionCubSortScanF32 scratch: ") + cudaGetErrorString(err));
 
     err = cub::DeviceRadixSort::SortKeys(
         temporary, sort_bytes, input_ptr, sorted_ptr, static_cast<int>(count),
@@ -58,13 +59,9 @@ ffi::Error RelionCubSortScanF32Impl(
     if (err == cudaSuccess)
         err = relion_ampere_inclusive_sum_f32(
             temporary, scan_bytes, sorted_ptr, cumulative_ptr, static_cast<int>(count), stream);
-    cudaError_t free_error = recovar::scratch_free(temporary, stream);
     if (err != cudaSuccess)
         return ffi::Error::Internal(
             std::string("RelionCubSortScanF32 execute: ") + cudaGetErrorString(err));
-    if (free_error != cudaSuccess)
-        return ffi::Error::Internal(
-            std::string("RelionCubSortScanF32 cudaFree: ") + cudaGetErrorString(free_error));
     return ffi::Error::Success();
 }
 
@@ -120,6 +117,7 @@ __global__ void relion_zero_fill_right_align_kernel(
 
 ffi::Error RelionCubSortScanBatchedF32Impl(
     cudaStream_t stream,
+    ffi::ScratchAllocator scratch,
     ffi::AnyBuffer values,
     ffi::Result<ffi::AnyBuffer> sorted,
     ffi::Result<ffi::AnyBuffer> cumulative)
@@ -199,10 +197,10 @@ ffi::Error RelionCubSortScanBatchedF32Impl(
     // offsets (group_rows + 1), counts (group_rows) and the selected count.
     const size_t index_bytes = (2 * static_cast<size_t>(group_rows) + 2) * sizeof(int32_t);
     void* temporary = nullptr;
-    error = cudaMallocAsync(&temporary, aligned_cub_bytes + index_bytes, stream);
+    error = relax_ffi_scratch::allocate(scratch, &temporary, aligned_cub_bytes + index_bytes);
     if (error != cudaSuccess)
         return ffi::Error::Internal(
-            std::string("RelionCubSortScanBatchedF32 cudaMallocAsync: ") +
+            std::string("RelionCubSortScanBatchedF32 scratch: ") +
             cudaGetErrorString(error));
     int32_t* offsets = reinterpret_cast<int32_t*>(
         static_cast<char*>(temporary) + aligned_cub_bytes);
@@ -266,15 +264,10 @@ ffi::Error RelionCubSortScanBatchedF32Impl(
             temporary, scan_bytes, sorted_ptr + offset,
             cumulative_ptr + offset, count, stream);
     }
-    const cudaError_t free_error = cudaFreeAsync(temporary, stream);
     if (error != cudaSuccess)
         return ffi::Error::Internal(
             std::string("RelionCubSortScanBatchedF32 execute: ") +
             cudaGetErrorString(error));
-    if (free_error != cudaSuccess)
-        return ffi::Error::Internal(
-            std::string("RelionCubSortScanBatchedF32 cudaFreeAsync: ") +
-            cudaGetErrorString(free_error));
     return ffi::Error::Success();
 }
 
@@ -438,14 +431,14 @@ __global__ void relion_coarse_cut_rank_decide_kernel(
 // Writes each row's float32 positive-weight sum, cut weight and pre-tie rank (RELION's
 // cutoff count, with the maximum_significants floor when maxsig > 0) on ``stream``.
 cudaError_t relion_coarse_cut_f32_launch(
-    cudaStream_t stream, const float* input, int rows, int count, float fraction, int64_t maxsig,
+    cudaStream_t stream, ffi::ScratchAllocator& scratch, const float* input, int rows, int count, float fraction, int64_t maxsig,
     float* sums, float* cuts, int32_t* counts_out)
 {
     const size_t bins = static_cast<size_t>(rows) * kRelionCutBins;
     const size_t bytes = bins * (sizeof(double) + sizeof(uint32_t)) +
                          static_cast<size_t>(rows) * (2 * sizeof(double) + 3 * sizeof(int32_t));
     void* storage = nullptr;
-    cudaError_t error = cudaMallocAsync(&storage, bytes, stream);
+    cudaError_t error = relax_ffi_scratch::allocate(scratch, &storage, bytes);
     if (error != cudaSuccess) return error;
     double* bin_mass = static_cast<double*>(storage);
     double* low = bin_mass + bins;
@@ -491,8 +484,7 @@ cudaError_t relion_coarse_cut_f32_launch(
             }
         }
     }
-    const cudaError_t free_error = cudaFreeAsync(storage, stream);
-    return error == cudaSuccess ? free_error : error;
+    return error;
 }
 
 __global__ void relion_exponentiate_f32_kernel(
@@ -740,6 +732,7 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(
     RelionCubSortScanF32, RelionCubSortScanF32Impl,
     ffi::Ffi::Bind()
         .Ctx<ffi::PlatformStream<cudaStream_t>>()
+        .Ctx<ffi::ScratchAllocator>()
         .Arg<ffi::AnyBuffer>()
         .Ret<ffi::AnyBuffer>()
         .Ret<ffi::AnyBuffer>()
@@ -749,6 +742,7 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(
     RelionCubSortScanBatchedF32, RelionCubSortScanBatchedF32Impl,
     ffi::Ffi::Bind()
         .Ctx<ffi::PlatformStream<cudaStream_t>>()
+        .Ctx<ffi::ScratchAllocator>()
         .Arg<ffi::AnyBuffer>()
         .Ret<ffi::AnyBuffer>()
         .Ret<ffi::AnyBuffer>()
@@ -757,7 +751,7 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(
 
 
 ffi::Error RelionCoarseCutF32Impl(
-    cudaStream_t stream, ffi::AnyBuffer weights, float fraction, int64_t maxsig,
+    cudaStream_t stream, ffi::ScratchAllocator scratch, ffi::AnyBuffer weights, float fraction, int64_t maxsig,
     ffi::Result<ffi::AnyBuffer> sum_weight, ffi::Result<ffi::AnyBuffer> threshold,
     ffi::Result<ffi::AnyBuffer> cutoff)
 {
@@ -779,7 +773,7 @@ ffi::Error RelionCoarseCutF32Impl(
         cutoff->element_type() != ffi::DataType::S32)
         return ffi::Error::InvalidArgument("RelionCoarseCutF32: outputs are F32, F32, S32");
     const cudaError_t error = relion_coarse_cut_f32_launch(
-        stream, static_cast<const float*>(weights.untyped_data()), rows, count, fraction, maxsig,
+        stream, scratch, static_cast<const float*>(weights.untyped_data()), rows, count, fraction, maxsig,
         static_cast<float*>(sum_weight->untyped_data()), static_cast<float*>(threshold->untyped_data()),
         static_cast<int32_t*>(cutoff->untyped_data()));
     return error == cudaSuccess ? ffi::Error::Success()
@@ -790,6 +784,7 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(
     RelionCoarseCutF32, RelionCoarseCutF32Impl,
     ffi::Ffi::Bind()
         .Ctx<ffi::PlatformStream<cudaStream_t>>()
+        .Ctx<ffi::ScratchAllocator>()
         .Arg<ffi::AnyBuffer>()
         .Attr<float>("fraction")
         .Attr<int64_t>("maxsig")

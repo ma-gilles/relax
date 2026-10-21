@@ -905,6 +905,7 @@ template <
     bool PER_IMAGE_POSES = false>
 cudaError_t launch_relion_coarse_diff2_projector_f32_impl(
     cudaStream_t stream,
+    ffi::ScratchAllocator& scratch_allocator,
     const float2* projector_full,
     const float* rotations,
     const float2* images,
@@ -974,9 +975,9 @@ cudaError_t launch_relion_coarse_diff2_projector_f32_impl(
     cudaTextureObject_t launch_texture_imag = 0;
     std::unique_lock<std::mutex> texture_cache_lock;
 
-    err = recovar::scratch_alloc(reinterpret_cast<void**>(&real), voxel_count * sizeof(float), stream);
+    err = relax_ffi_scratch::allocate(scratch_allocator, reinterpret_cast<void**>(&real), voxel_count * sizeof(float));
     if (err != cudaSuccess) goto cleanup;
-    err = recovar::scratch_alloc(reinterpret_cast<void**>(&imag), voxel_count * sizeof(float), stream);
+    err = relax_ffi_scratch::allocate(scratch_allocator, reinterpret_cast<void**>(&imag), voxel_count * sizeof(float));
     if (err != cudaSuccess) goto cleanup;
     fill_relion_texture_compact_kernel<float><<<
         (voxel_count + BLOCK_SIZE - 1) / BLOCK_SIZE,
@@ -1134,8 +1135,6 @@ cleanup:
     if (texture_imag) cudaDestroyTextureObject(texture_imag);
     if (array_real) cudaFreeArray(array_real);
     if (array_imag) cudaFreeArray(array_imag);
-    if (real) recovar::scratch_free(real, stream);
-    if (imag) recovar::scratch_free(imag, stream);
     return err;
 }
 
@@ -1145,6 +1144,7 @@ template <
     bool SINGLE_LANE_CANONICAL = false>
 cudaError_t launch_relion_coarse_diff2_projector_f32(
     cudaStream_t stream,
+    ffi::ScratchAllocator& scratch_allocator,
     const float2* projector_full,
     const float* rotations,
     const float2* images,
@@ -1172,6 +1172,7 @@ cudaError_t launch_relion_coarse_diff2_projector_f32(
         SINGLE_LANE_CANONICAL,
         false>(
             stream,
+            scratch_allocator,
             projector_full,
             rotations,
             images,
@@ -1197,6 +1198,7 @@ cudaError_t launch_relion_coarse_diff2_projector_f32(
 template <bool CAPTURE_LANES = false>
 cudaError_t launch_relion_coarse_diff2_projector_prehalf_f32(
     cudaStream_t stream,
+    ffi::ScratchAllocator& scratch_allocator,
     const float2* projector_full,
     const float* rotations,
     const float2* images,
@@ -1224,6 +1226,7 @@ cudaError_t launch_relion_coarse_diff2_projector_prehalf_f32(
         false,
         true>(
             stream,
+            scratch_allocator,
             projector_full,
             rotations,
             images,
@@ -1391,6 +1394,7 @@ cudaError_t launch_relion_coarse_diff2_shared_pretranslated_f32(
 
 cudaError_t launch_relion_coarse_normalized_cc_native_texture_pairs_f32(
     cudaStream_t stream,
+    ffi::ScratchAllocator& scratch_allocator,
     const float2* projector_full,
     const float* eulers,
     const float2* unshifted_image,
@@ -1425,13 +1429,13 @@ cudaError_t launch_relion_coarse_normalized_cc_native_texture_pairs_f32(
     cudaArray_t array_imag = nullptr;
     cudaTextureObject_t texture_real = 0;
     cudaTextureObject_t texture_imag = 0;
-    cudaError_t err = recovar::scratch_alloc(
-        reinterpret_cast<void**>(&real),
-        static_cast<size_t>(texture_voxels) * sizeof(float), stream);
+    cudaError_t err = relax_ffi_scratch::allocate(
+        scratch_allocator, reinterpret_cast<void**>(&real),
+        static_cast<size_t>(texture_voxels) * sizeof(float));
     if (err != cudaSuccess) goto cleanup;
-    err = recovar::scratch_alloc(
-        reinterpret_cast<void**>(&imag),
-        static_cast<size_t>(texture_voxels) * sizeof(float), stream);
+    err = relax_ffi_scratch::allocate(
+        scratch_allocator, reinterpret_cast<void**>(&imag),
+        static_cast<size_t>(texture_voxels) * sizeof(float));
     if (err != cudaSuccess) goto cleanup;
 
     {
@@ -1544,8 +1548,6 @@ cleanup:
     if (texture_imag) cudaDestroyTextureObject(texture_imag);
     if (array_real) cudaFreeArray(array_real);
     if (array_imag) cudaFreeArray(array_imag);
-    if (real) recovar::scratch_free(real, stream);
-    if (imag) recovar::scratch_free(imag, stream);
     return err;
 }
 
@@ -2821,6 +2823,7 @@ cudaError_t launch_relion_fine_diff2_pairs(
 
 cudaError_t launch_relion_fine_diff2_fused_translate_flat_rows_f32(
     cudaStream_t stream,
+    ffi::ScratchAllocator& scratch_allocator,
     const float2* reference,
     const float2* image,
     const float* translation_angles,
@@ -2849,17 +2852,17 @@ cudaError_t launch_relion_fine_diff2_fused_translate_flat_rows_f32(
     // The launch image and, when there is one, its translated-pixel table
     // ([launch image int32, padding to 16 bytes][translations x compact pixels
     // float2]): a one-image launch is scored from the table, any other by the
-    // inline kernel.  The scratch is stream-ordered outside the XLA pool, as
-    // the one-image translate-sum's float4 table of the same translations and
-    // pixels (translate_shifted_table_f32_kernel); it is taken only up to
+    // inline kernel.  The scratch is the call's FFI scratch from the XLA pool
+    // (relax_ffi_scratch, relax#120), as the one-image translate-sum's float4
+    // table of the same translations and pixels; it is taken only up to
     // kRelionFineDiff2MaxTableBytes, and when it is not taken or cannot be
     // allocated every launch is scored inline, with the same result.
     constexpr size_t kTableOffset = 16;
     char* scratch = nullptr;
     const size_t table_bytes = static_cast<size_t>(translation_count * compact_pixel_count) * sizeof(float2);
     if (table_bytes <= static_cast<size_t>(kRelionFineDiff2MaxTableBytes) &&
-        cudaMallocAsync(reinterpret_cast<void**>(&scratch), kTableOffset + table_bytes, stream) != cudaSuccess) {
-        (void)cudaGetLastError();
+        relax_ffi_scratch::allocate(
+            scratch_allocator, reinterpret_cast<void**>(&scratch), kTableOffset + table_bytes, 16) != cudaSuccess) {
         scratch = nullptr;
     }
     int32_t* launch_image = reinterpret_cast<int32_t*>(scratch);
@@ -2936,12 +2939,7 @@ cudaError_t launch_relion_fine_diff2_fused_translate_flat_rows_f32(
             translation_chunk_live,
             translation_image_stride,
             launch_image);
-    cudaError_t err = cudaGetLastError();
-    if (scratch != nullptr) {
-        const cudaError_t free_err = cudaFreeAsync(scratch, stream);
-        if (err == cudaSuccess) err = free_err;
-    }
-    return err;
+    return cudaGetLastError();
 }
 
 cudaError_t launch_relion_fine_diff2_fused_translate_pairs_f32(

@@ -826,6 +826,7 @@ cudaError_t dispatch_sum(
 
 inline cudaError_t launch(
     cudaStream_t stream,
+    ffi::ScratchAllocator& scratch,
     const float2* recon_image,
     const float2* noise_image,
     const float* recon_weight,
@@ -890,10 +891,9 @@ inline cudaError_t launch(
 
     if (table) {
         float4* shifted_table = nullptr;
-        err = cudaMallocAsync(
-            reinterpret_cast<void**>(&shifted_table),
-            static_cast<size_t>(batch_size * translation_count * pixel_capacity) * sizeof(float4),
-            stream);
+        err = relax_ffi_scratch::allocate(
+            scratch, reinterpret_cast<void**>(&shifted_table),
+            static_cast<size_t>(batch_size * translation_count * pixel_capacity) * sizeof(float4), alignof(float4));
         if (err != cudaSuccess) return err;
         const dim3 table_grid(
             static_cast<unsigned>((pixel_capacity + kBlockThreads - 1) / kBlockThreads),
@@ -915,7 +915,7 @@ inline cudaError_t launch(
             const int64_t tiles = (row_count + kTiledRows - 1) / kTiledRows;
             int32_t* active = nullptr;
             err = relax_tiled_translations::list_row_tile_translations(
-                stream, row_image_ids, posterior, runtime_valid_rows, row_count, translation_count, &active);
+                stream, scratch, row_image_ids, posterior, runtime_valid_rows, row_count, translation_count, &active);
             if (err == cudaSuccess) {
                 const dim3 grid(
                     static_cast<unsigned>(tiles),
@@ -926,19 +926,15 @@ inline cudaError_t launch(
                     posterior, runtime_valid_rows, runtime_logical_pixels, summed, summed_masked, probs_sum_t,
                     ctf_probs, row_count, translation_count, pixel_capacity);
                 err = cudaGetLastError();
-                const cudaError_t active_err = cudaFreeAsync(active, stream);
-                if (err == cudaSuccess) err = active_err;
             }
-            const cudaError_t free_err = cudaFreeAsync(shifted_table, stream);
-            return err != cudaSuccess ? err : free_err;
+            return err;
         }
         err = dispatch_sum<true>(
             stream, shifted_table, rows, recon_image, noise_image, recon_weight, ctf2_over_nv, row_image_ids,
             posterior, translation_angles, pixel_indices, runtime_valid_rows, runtime_logical_pixels, summed,
             summed_masked, probs_sum_t, ctf_probs, batch_size, row_count, translation_count, pixel_capacity,
             image_h, image_half_width, angle_image_stride);
-        const cudaError_t free_err = cudaFreeAsync(shifted_table, stream);
-        return err != cudaSuccess ? err : free_err;
+        return err;
     }
     return dispatch_sum<false>(
         stream, nullptr, rows, recon_image, noise_image, recon_weight, ctf2_over_nv, row_image_ids,
@@ -949,6 +945,7 @@ inline cudaError_t launch(
 
 ffi::Error impl(
     cudaStream_t stream,
+    ffi::ScratchAllocator scratch,
     int64_t image_h,
     int64_t image_half_width,
     int64_t rows_per_block,
@@ -1057,6 +1054,7 @@ ffi::Error impl(
 
     cudaError_t err = launch(
         stream,
+        scratch,
         reinterpret_cast<const float2*>(recon_image.untyped_data()),
         reinterpret_cast<const float2*>(noise_image.untyped_data()),
         bpref_recon
@@ -1095,6 +1093,7 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(
     recovar_relion_translate_sum::impl,
     ffi::Ffi::Bind()
         .Ctx<ffi::PlatformStream<cudaStream_t>>()
+        .Ctx<ffi::ScratchAllocator>()
         .Attr<int64_t>("image_h")
         .Attr<int64_t>("image_half_width")
         .Attr<int64_t>("rows_per_block")

@@ -11,7 +11,8 @@ results (default float32 band).
 import numpy as np
 import pytest
 from helpers import cuda_targets
-from helpers.float_compare import assert_matches
+from helpers.ffi_scratch import clean_and_poisoned
+from helpers.float_compare import assert_matches, assert_trees_match
 from oracles import cuda_wavg
 
 pytest.importorskip("jax")
@@ -550,3 +551,36 @@ def test_flat_rows_wavg_atomics_reject_inconsistent_operands(mutate, message):
             .__wrapped__
         )
         wrapped(*args)
+
+
+@pytest.mark.gpu
+def test_one_image_tiled_wavg_lists_come_from_the_jax_pool(monkeypatch, custom_cuda_lib, gpu_device):
+    """The tiled launch's per-tile translation lists are FFI scratch (relax#120): the driver's default memory
+    pool hands out nothing, and a pool written with NaN first gives the same triplets."""
+
+    cuda_backproject = _cuda_backproject(monkeypatch, custom_cuda_lib)
+    rng = np.random.default_rng(120)
+    translation_count, pixel_capacity, rows = 75, 300, 140
+    row_image_ids = np.zeros(rows, dtype=np.int32)
+    row_image_ids[[3, 70]] = -1
+    posterior = rng.uniform(0.0, 1.0, (rows, translation_count)).astype(np.float32)
+    posterior[rng.uniform(size=posterior.shape) < 0.7] = 0.0
+    operands = (
+        _complex64(rng, (rows, pixel_capacity)),
+        row_image_ids,
+        rng.normal(0.0, 1.5, (1, pixel_capacity)).astype(np.float32),
+        rng.uniform(0.4, 2.5, (1,)).astype(np.float32),
+        _complex64(rng, (1, translation_count, pixel_capacity)),
+        posterior,
+        np.int32(270),
+    )
+
+    def call():
+        with jax.default_device(gpu_device):
+            return cuda_backproject.relion_wavg_sequential_runtime_flat_rows_triplet_f32(
+                *(jnp.asarray(operand) for operand in operands)
+            )
+
+    clean, poisoned, outside_pool_bytes = clean_and_poisoned(call, gpu_device)
+    assert outside_pool_bytes == 0
+    assert_trees_match(poisoned, clean)

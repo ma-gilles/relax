@@ -183,6 +183,7 @@ _RELAX_CUDA_BUILD_SOURCE_NAMES = (
     "sparse_pass2_posterior.cuh",
     "relion_translate_sum.cuh",
     "tiled_translations.cuh",
+    "ffi_scratch.cuh",
     "relion_capacity_texture.cuh",
     "ppca_moment_backproject.cuh",
     "ppca_stream.cuh",

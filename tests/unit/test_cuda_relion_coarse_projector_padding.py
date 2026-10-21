@@ -12,7 +12,8 @@ contract (default argument).
 
 import numpy as np
 import pytest
-from helpers.float_compare import assert_matches
+from helpers.ffi_scratch import clean_and_poisoned
+from helpers.float_compare import assert_matches, assert_trees_match
 
 jax = pytest.importorskip("jax")
 jnp = jax.numpy
@@ -103,3 +104,46 @@ def test_padding_factor_default_is_one(monkeypatch, custom_cuda_lib, gpu_device)
     assert_matches(default, explicit)
 
 
+@pytest.mark.gpu
+def test_texture_staging_comes_from_the_jax_pool(monkeypatch, custom_cuda_lib, gpu_device):
+    """The coarse projector's and the normalized-CC rescore's texture staging volumes are FFI scratch (relax#120):
+    the driver's default memory pool hands out nothing, and a pool written with NaN first gives the same scores
+    (shared poses, per-image poses and CC components)."""
+
+    import recovar.cuda_backproject as cuda_backproject
+
+    from relax.cuda import coarse as cuda_coarse
+
+    monkeypatch.setenv("RECOVAR_CUDA_LIB", str(custom_cuda_lib))
+    monkeypatch.delenv("RECOVAR_DISABLE_CUDA", raising=False)
+    monkeypatch.setattr(cuda_backproject, "_cuda_ok", None)
+    rng = np.random.default_rng(120)
+    current_size, model_max_r = 16, 3
+    projector, rotations, images, angles, weight, initial, lookup = _inputs(
+        rng, current_size=current_size, model_max_r=model_max_r, padding_factor=2,
+        rotation_count=40, translation_count=21, batch=3,
+    )
+    per_image_rotations = np.stack([rotations, rotations[::-1], np.roll(rotations, 1, axis=0)])
+    per_image_angles = rng.uniform(-0.2, 0.2, (3, 21, 2)).astype(np.float32)
+    geometry = dict(current_size=current_size, physical_image_size=current_size, model_max_r=model_max_r, padding_factor=2)
+
+    def call():
+        with jax.default_device(gpu_device):
+            shared = cuda_coarse.relion_coarse_diff2_projector_f32(
+                *(jnp.asarray(x) for x in (projector, rotations, images, angles, weight, initial, lookup)), **geometry
+            )
+            per_image = cuda_coarse.relion_coarse_diff2_projector_per_image_f32(
+                *(jnp.asarray(x) for x in (projector, per_image_rotations, images, per_image_angles, weight, initial, lookup)),
+                **geometry,
+            )
+            cc = cuda_coarse.relion_coarse_normalized_cc_native_texture_pairs_f32(
+                jnp.asarray(projector), jnp.asarray(rotations[:3]), jnp.asarray(images), jnp.asarray(weight),
+                jnp.ones((images.shape[1],), jnp.float32), jnp.asarray(lookup), current_size, 2, model_max_r, True,
+                translation_angles=jnp.asarray(angles[:3]),
+            )
+            return shared, per_image, cc
+
+    clean, poisoned, outside_pool_bytes = clean_and_poisoned(call, gpu_device)
+    assert outside_pool_bytes == 0
+    assert np.isfinite(clean[0]).all() and np.isfinite(clean[1]).all() and np.isfinite(clean[2]).all()
+    assert_trees_match(poisoned, clean)

@@ -7,7 +7,8 @@ maximum_significants floor on the threshold index.
 
 import numpy as np
 import pytest
-from helpers.float_compare import assert_matches
+from helpers.ffi_scratch import clean_and_poisoned
+from helpers.float_compare import assert_matches, assert_trees_match
 from oracles import cuda_posterior as cuda_oracle
 
 pytest.importorskip("jax")
@@ -123,3 +124,30 @@ def test_coarse_cut_keeps_relions_cub_sort_and_scan_cut(monkeypatch, custom_cuda
     assert_matches(total, np.asarray(cub_total), rtol=1e-6)
     assert np.all(np.abs(cutoff.astype(np.int64) - np.asarray(cub_cutoff, np.int64)) <= 1)
 
+
+@pytest.mark.gpu
+def test_coarse_cut_and_cub_sort_scan_scratch_comes_from_the_jax_pool(monkeypatch, custom_cuda_lib, gpu_device):
+    """The cut's histograms and CUB's temporary storage are FFI scratch (relax#120): the driver's
+    default memory pool hands out nothing, and a pool written with NaN first gives the same results."""
+
+    import recovar.cuda_backproject as cuda_backproject
+
+    from relax.cuda import posterior as cuda_posterior
+
+    monkeypatch.setenv("RECOVAR_CUDA_LIB", str(custom_cuda_lib))
+    monkeypatch.delenv("RECOVAR_DISABLE_CUDA", raising=False)
+    monkeypatch.setattr(cuda_backproject, "_cuda_ok", None)
+    weights = _rows(np.random.default_rng(120), 37, 24192)
+
+    def call():
+        with jax.default_device(gpu_device):
+            matrix = jnp.asarray(weights)
+            return (
+                cuda_posterior.relion_coarse_cut_f32(matrix, adaptive_fraction=0.999, max_significants=25),
+                cuda_oracle.relion_cub_sort_scan_batched_f32(matrix),
+                cuda_oracle.relion_cub_sort_scan_f32(matrix[0]),
+            )
+
+    clean, poisoned, outside_pool_bytes = clean_and_poisoned(call, gpu_device)
+    assert outside_pool_bytes == 0
+    assert_trees_match(poisoned, clean)
