@@ -216,8 +216,9 @@ def rescore_ambiguous_images(
     ``unshifted`` and ``corr_img`` ``[B, P]`` are the batch's CC operands (the image Fourier rows and their weights, from
     the normalized-CC operand assembly). For each ambiguous row the two candidate poses are scored again by the direct
     texture projection and the better one replaces the row's best (and the other its runner-up) in the returned state;
-    the rows that are not ambiguous, and every array when none is, are untouched. ``experiment_dataset``, ``indices``
-    and ``debug_iteration`` only name the candidates for ``probe`` (:meth:`Pass1Probe.tree_rescore_scored`).
+    the rows that are not ambiguous, and every array when none is, are untouched. ``indices`` are the batch's dataset
+    images (its real rows); with ``experiment_dataset`` and ``debug_iteration`` they name the candidates for
+    ``probe`` (:meth:`Pass1Probe.tree_rescore_scored`).
     """
 
     from relax.scoring.coarse_kernels import relion_coarse_normalized_cc_rescore
@@ -226,7 +227,9 @@ def rescore_ambiguous_images(
     best_scores_np = np.asarray(state.class_best_score, dtype=tree_score_dtype)
     second_scores_np = np.asarray(state.class_second_score, dtype=tree_score_dtype)
     score_margins = best_scores_np - second_scores_np
-    ambiguous_rows = np.flatnonzero(np.isfinite(score_margins) & (score_margins <= plan.max_margin)).astype(np.int32)
+    ambiguous = np.isfinite(score_margins) & (score_margins <= plan.max_margin)
+    # Rows past ``indices`` repeat-pad a short last batch; they are neither rescored nor counted.
+    ambiguous_rows = np.flatnonzero(ambiguous[: len(indices)]).astype(np.int32)
     if not ambiguous_rows.size:
         return TreeRescoreBatch(state, ambiguous_images=0, exact_ties=0, winner_changes=0)
     best_pose_np = np.asarray(state.class_best_argmax, dtype=np.int32)[ambiguous_rows]

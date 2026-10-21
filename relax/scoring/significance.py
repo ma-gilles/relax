@@ -63,7 +63,7 @@ def run_pass1(plan: Pass1Plan) -> Pass1Result:
             )
             scored = score_batch(plan, batch, defer_publish=defer_publish)
             if scored.rescored is not None:
-                tree_rescore_totals = tree_rescore_totals.after_batch(batch.inputs.batch_size, scored.rescored)
+                tree_rescore_totals = tree_rescore_totals.after_batch(len(indices), scored.rescored)
             if defer_publish:
                 pending_batch = scored.outputs
             else:
