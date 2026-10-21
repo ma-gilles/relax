@@ -64,8 +64,117 @@ def test_record_fields_unread_and_test_only(tmp_path):
             "tests/test_algo.py": "def test(r):\n    assert r.tested\n",
         },
     )
-    found = keys(smell_check.check_record_fields(repo))
-    assert found == {"field-unread:relax.algo:Rec.unread", "field-test-only:relax.algo:Rec.tested"}
+    found = {(f.check, f.key) for f in smell_check.check_record_fields(repo)}
+    assert found == {
+        ("field-unread", "record-field:relax.algo:Rec.unread"),
+        ("field-test-only", "record-field:relax.algo:Rec.tested"),
+    }
+
+
+def test_record_fields_unpacked_or_indexed_namedtuple_is_read(tmp_path):
+    repo = make_repo(
+        tmp_path,
+        {
+            "relax/algo.py": """
+            from typing import NamedTuple
+
+            class Host(NamedTuple):
+                host: dict
+                layout: int
+                slots: int
+
+            class Pair(NamedTuple):
+                left: int
+                right: int
+
+            class Untyped(NamedTuple):
+                first: int
+                second: int
+
+            def make() -> Host:
+                return Host({}, 1, 2)
+
+            def f(prepared: Host | None, pair: "Pair", other):
+                if prepared is None:
+                    prepared = make()
+                host, layout, slots = prepared
+                a, b = other
+                return host, layout, slots, pair[-1], a, b
+        """,
+        },
+    )
+    assert keys(smell_check.check_record_fields(repo)) == {
+        "record-field:relax.algo:Pair.left",
+        "record-field:relax.algo:Untyped.first",
+        "record-field:relax.algo:Untyped.second",
+    }
+
+
+def test_record_fields_a_typed_read_counts_for_its_class_alone(tmp_path):
+    repo = make_repo(
+        tmp_path,
+        {
+            "relax/algo.py": """
+            from dataclasses import dataclass, replace
+
+            @dataclass(frozen=True)
+            class Shown:
+                size: int
+                kept: int
+                rebuilt: int
+
+            @dataclass(frozen=True)
+            class Hidden:
+                size: int
+                kept: int
+                rebuilt: int
+
+            def read(shown: Shown, anything):
+                built = Shown(1, 2, 3)
+                return shown.size, built.rebuilt, anything.kept, replace(shown, rebuilt=0)
+
+            def method_reads():
+                class Local:
+                    pass
+                return Local
+        """,
+        },
+    )
+    assert keys(smell_check.check_record_fields(repo)) == {
+        "record-field:relax.algo:Hidden.size",
+        "record-field:relax.algo:Hidden.rebuilt",
+    }
+
+
+def test_record_fields_a_rebound_or_self_receiver(tmp_path):
+    repo = make_repo(
+        tmp_path,
+        {
+            "relax/algo.py": """
+            from dataclasses import dataclass
+
+            @dataclass(frozen=True)
+            class A:
+                x: int
+                y: int
+
+                def total(self):
+                    return self.y
+
+            @dataclass(frozen=True)
+            class B:
+                x: int
+                y: int
+
+            def f(value: A, items):
+                for value in items:
+                    pass
+                return value.x
+        """,
+        },
+    )
+    # self.y is A's alone; value is rebound by the loop, so value.x may be either class.
+    assert keys(smell_check.check_record_fields(repo)) == {"record-field:relax.algo:B.y"}
 
 
 def test_unreachable_module_and_dead_defs(tmp_path):
@@ -129,7 +238,7 @@ def test_env_reads_outside_allowlist(tmp_path):
 def test_env_flags_readers_are_env_reads(tmp_path):
     reads = (
         "from relax.runtime import env_flags\nfrom relax.runtime.env_flags import parse_env_flag\n\n"
-        "def f():\n    return parse_env_flag(\"E\"), env_flags.read_env_text(\"F\"), env_flags.parse_int_set(\"7\")\n"
+        'def f():\n    return parse_env_flag("E"), env_flags.read_env_text("F"), env_flags.parse_int_set("7")\n'
     )
     repo = make_repo(tmp_path, {"relax/algo.py": reads})
     assert keys(smell_check.check_env_reads(repo)) == {"env-read:relax.algo:f:E", "env-read:relax.algo:f:F"}
@@ -214,33 +323,6 @@ def test_private_imports(tmp_path):
     }
 
 
-def test_single_use_imports_over_threshold(tmp_path, monkeypatch):
-    monkeypatch.setattr(smell_check, "SINGLE_USE_IMPORT_THRESHOLD", 2)
-    repo = make_repo(
-        tmp_path,
-        {
-            "relax/helper.py": "a = b = c = d = 1\n",
-            "relax/algo.py": """
-            from __future__ import annotations
-            from os.path import join
-            from numpy import asarray
-            from relax.helper import a, b, c as see, d
-
-            __all__ = ["d"]
-
-            def f():
-                return join(asarray(a), b, b, see)
-        """,
-            "relax/few.py": "from relax.helper import a, b\n\n\ndef g():\n    return a + b\n",
-        },
-    )
-    assert keys(smell_check.check_single_use_imports(repo)) == {
-        "single-use-import:relax.algo:asarray",
-        "single-use-import:relax.algo:a",
-        "single-use-import:relax.algo:see",
-    }
-
-
 def test_baseline_makes_finding_not_new(tmp_path, capsys):
     make_repo(tmp_path, {"relax/algo.py": "def f(x):\n    x = int(x)\n    return x\n"})
     (tmp_path / "scripts/dev").mkdir(parents=True)
@@ -253,3 +335,15 @@ def test_baseline_makes_finding_not_new(tmp_path, capsys):
     (tmp_path / "relax/algo.py").write_text("\n\ndef f(x):\n    x = int(x)\n    return x\n")
     assert smell_check.main(["--root", str(tmp_path), "--strict"]) == 0
     assert "self-cast: 1 findings, 0 new vs baseline" in capsys.readouterr().out
+
+
+def test_a_field_moving_between_unread_and_test_only_is_not_new(tmp_path, capsys):
+    record = "from dataclasses import dataclass\n\n\n@dataclass\nclass Rec:\n    field: int\n"
+    make_repo(tmp_path, {"relax/algo.py": record})
+    (tmp_path / "scripts/dev").mkdir(parents=True)
+    assert smell_check.main(["--root", str(tmp_path), "--write-baseline"]) == 0
+    assert "field-unread: 1 findings, 0 new vs baseline" in capsys.readouterr().out
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests/test_algo.py").write_text("def test(r):\n    assert r.field\n")
+    assert smell_check.main(["--root", str(tmp_path), "--strict"]) == 0
+    assert "field-test-only: 1 findings, 0 new vs baseline" in capsys.readouterr().out

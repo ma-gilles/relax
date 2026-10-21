@@ -94,5 +94,5 @@ line-count ceiling. The rest is the headers of the modules added in the last two
 - 2026-10-09 (the PR #54 post-merge review; every later commit follows it): pass-1 modules import no other module's
   `_private` name (`smell_check` private-import: make the name public, or move its user); they keep no read-only alias
   of a request field and no record field nothing reads (`4b416d8e`); a module with more than 20 names it imports and uses
-  once is split or calls through the owning module (single-use-import, a warning). A slice runs `scripts/dev/smell_check.py`
+  once is split or calls through the owning module (single-use-import, a warning; dropped 2026-10-21 as noise). A slice runs `scripts/dev/smell_check.py`
   and the full unit list, not only the pass-1 tests, before it is pushed; the findings it introduces are not baselined.

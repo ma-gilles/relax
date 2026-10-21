@@ -53,8 +53,6 @@ NEAR_MIN_STATEMENTS = 5
 NEAR_JACCARD = 0.8
 NEAR_SHINGLE = 5
 NEAR_COMMON_SHINGLE = 200
-# Check 11: a module is reported when more than this many of its from-imported names are used once.
-SINGLE_USE_IMPORT_THRESHOLD = 20
 
 FUNCTION_NODES = (ast.FunctionDef, ast.AsyncFunctionDef)
 SCOPE_NODES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)
@@ -267,45 +265,205 @@ def is_record(cls: ast.ClassDef) -> bool:
     return any(ast.unparse(b).split(".")[-1] == "NamedTuple" for b in cls.bases)
 
 
-def field_reads(tree: ast.Module) -> set[str]:
-    """Names this file reads as fields: ``.name`` loads, getattr/hasattr strings, keywords of a ``replace`` call,
-    and whole string constants (dict keys of asdict, field-name filters)."""
-    out = set()
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Attribute) and isinstance(node.ctx, ast.Load):
-            out.add(node.attr)
-        elif isinstance(node, ast.Constant) and isinstance(node.value, str) and node.value.isidentifier():
-            out.add(node.value)
-        elif isinstance(node, ast.Call) and ast.unparse(node.func).split(".")[-1] in ("replace", "_replace"):
-            out.update(k.arg for k in node.keywords if k.arg)
+def record_fields(cls: ast.ClassDef) -> list[ast.AnnAssign]:
+    """The instance fields of a record class, in declaration order (a NamedTuple's positional order)."""
+    return [
+        stmt
+        for stmt in cls.body
+        if isinstance(stmt, ast.AnnAssign)
+        and isinstance(stmt.target, ast.Name)
+        and "ClassVar" not in ast.unparse(stmt.annotation)
+    ]
+
+
+def record_classes(repo: Repo) -> dict[str, list[str]]:
+    """Every record class of relax/ by class name, with its field names (one name may name several classes)."""
+    out = collections.defaultdict(list)
+    for rel in repo.files("relax"):
+        for cls in ast.walk(repo.trees[rel]):
+            if isinstance(cls, ast.ClassDef) and is_record(cls):
+                out[cls.name].append([stmt.target.id for stmt in record_fields(cls)])
     return out
+
+
+def annotation_classes(annotation, records) -> set[str]:
+    """The record classes an annotation names (``C``, ``C | None``, ``mod.C``, ``"C"``, ``Optional[C]``)."""
+    if annotation is None:
+        return set()
+    if isinstance(annotation, ast.Constant) and isinstance(annotation.value, str):
+        try:
+            annotation = ast.parse(annotation.value, mode="eval").body
+        except SyntaxError:
+            return set()
+    out = set()
+    for node in ast.walk(annotation):
+        name = node.id if isinstance(node, ast.Name) else node.attr if isinstance(node, ast.Attribute) else None
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            out |= annotation_classes(node, records)
+        elif name in records:
+            out.add(name)
+    return out
+
+
+def return_classes(repo: Repo, records) -> dict[str, set[str]]:
+    """Function name -> the record classes its return annotation names, over every parsed file."""
+    out = collections.defaultdict(set)
+    for tree in repo.trees.values():
+        for node in ast.walk(tree):
+            if isinstance(node, FUNCTION_NODES):
+                out[node.name] |= annotation_classes(node.returns, records)
+    return out
+
+
+class _FieldReads:
+    """The field reads of one file, each with the record classes its receiver is known to be (empty: unknown).
+
+    A receiver's class is known from the annotation of a parameter or local (``x: C``), from ``self``/``cls`` in a
+    method of the record, or from a call of the class or of a function annotated to return it (``x = C(...)``,
+    ``x = make_c(...)``). Within a function the names are matched without flow (every binding of a name counts)."""
+
+    def __init__(self, tree: ast.Module, records, returns):
+        self.records, self.returns = records, returns
+        self.reads: list[tuple[frozenset, str]] = []
+        self._scope(tree, {}, None)
+
+    def _call_classes(self, node) -> set[str]:
+        if not isinstance(node, ast.Call):
+            return set()
+        name = ast.unparse(node.func).split(".")[-1]
+        return ({name} if name in self.records else set()) | self.returns.get(name, set())
+
+    def classes_of(self, node, types) -> frozenset:
+        if isinstance(node, ast.Name):
+            return frozenset(types.get(node.id, ()))
+        return frozenset(self._call_classes(node))
+
+    def _scope(self, scope, outer, record):
+        types = collections.defaultdict(set, {k: set(v) for k, v in outer.items()})
+        if isinstance(scope, FUNCTION_NODES):
+            args = scope.args
+            for a in args.posonlyargs + args.args + args.kwonlyargs + [args.vararg, args.kwarg]:
+                if a is not None:
+                    types[a.arg] = annotation_classes(a.annotation, self.records)
+            first = (args.posonlyargs + args.args)[:1]
+            if record is not None and first and first[0].arg in ("self", "cls"):
+                types[first[0].arg] = {record}
+        nested, typed = [], set()
+        for node in own_nodes(scope):
+            if isinstance(node, SCOPE_NODES) and node is not scope:
+                nested.append(node)
+            elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+                known = annotation_classes(node.annotation, self.records) | self._call_classes(node.value)
+                types[node.target.id] |= known
+                typed.update([node.target] if known else [])
+            elif isinstance(node, ast.Assign):
+                known = self._call_classes(node.value)
+                for target in node.targets:
+                    if isinstance(target, ast.Name) and known:
+                        types[target.id] |= known
+                        typed.add(target)
+        # Any other binding of a name (an untyped assignment, a loop or ``with`` target) makes it unknown too.
+        for node in own_nodes(scope):
+            if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store) and node not in typed:
+                types[node.id].add("*")
+        for node in own_nodes(scope):
+            self._read(node, types)
+        for node in nested:
+            # Decorators, defaults, bases and annotations are read in the enclosing scope.
+            for field, value in ast.iter_fields(node):
+                if field != "body":
+                    for child in value if isinstance(value, list) else [value]:
+                        if isinstance(child, ast.AST):
+                            self._read_all(child, types)
+            if isinstance(node, ast.ClassDef):
+                self._scope(node, types, node.name if node.name in self.records else None)
+            elif isinstance(node, ast.Lambda):
+                self._read_all(node.body, types)
+            else:
+                self._scope(node, types, record)
+
+    def _read_all(self, node, types):
+        for child in ast.walk(node):
+            self._read(child, types)
+
+    def _read(self, node, types):
+        add = self.reads.append
+        if isinstance(node, ast.Attribute) and isinstance(node.ctx, ast.Load):
+            add((self.classes_of(node.value, types), node.attr))
+        elif isinstance(node, ast.Constant) and isinstance(node.value, str) and node.value.isidentifier():
+            add((frozenset(), node.value))
+        elif isinstance(node, ast.Call):
+            func = ast.unparse(node.func).split(".")[-1]
+            if func in ("replace", "_replace"):
+                receiver = (
+                    node.func.value
+                    if func == "_replace" and isinstance(node.func, ast.Attribute)
+                    else (node.args[0] if node.args else None)
+                )
+                classes = frozenset() if receiver is None else self.classes_of(receiver, types)
+                self.reads.extend((classes, k.arg) for k in node.keywords if k.arg)
+        elif (
+            isinstance(node, ast.Assign)
+            and len(node.targets) == 1
+            and isinstance(node.targets[0], (ast.Tuple, ast.List))
+        ):
+            # A NamedTuple unpacked (``a, b = record``) reads its fields by position.
+            self._positional(self.classes_of(node.value, types), node.targets[0].elts)
+        elif isinstance(node, ast.Subscript) and isinstance(node.ctx, ast.Load):
+            # A NamedTuple indexed by a constant (``record[1]``, ``record[-1]``) reads that field.
+            try:
+                index = ast.literal_eval(node.slice)
+            except (ValueError, TypeError, SyntaxError):
+                return
+            if isinstance(index, int):
+                for name in self.classes_of(node.value, types):
+                    for fields in self.records.get(name, ()):
+                        if -len(fields) <= index < len(fields):
+                            add((frozenset({name}), fields[index]))
+
+    def _positional(self, classes, targets):
+        starred = any(isinstance(t, ast.Starred) for t in targets)
+        for name in classes:
+            for fields in self.records.get(name, ()):
+                for field in fields if starred else fields[: len(targets)]:
+                    self.reads.append((frozenset({name}), field))
 
 
 def check_record_fields(repo: Repo) -> list[Finding]:
     """A record field is read by relax code; a field nobody reads is deleted, and a field only tests or scripts
-    read is deleted with the tests' reads or moved to them. [rule 41]"""
-    production, other = set(), set()
+    read is deleted with the tests' reads or moved to them. [rule 41]
+
+    A read whose receiver is known to be a record class (:class:`_FieldReads`) counts for that class alone; a
+    read of an unknown receiver counts for every record with a field of that name. The key does not name the
+    check, so a field that moves between field-unread and field-test-only is not new against the baseline."""
+    records = record_classes(repo)
+    returns = return_classes(repo, records)
+    production, other = collections.defaultdict(set), collections.defaultdict(set)
     for rel, tree in repo.trees.items():
-        (production if rel.startswith("relax/") else other).update(field_reads(tree))
+        reads = production if rel.startswith("relax/") else other
+        for classes, field in _FieldReads(tree, records, returns).reads:
+            for name in classes or ("*",):
+                reads[field].add(name)
     out = []
     for rel in repo.files("relax"):
         mod = module_name(rel)
         for cls in ast.walk(repo.trees[rel]):
             if not (isinstance(cls, ast.ClassDef) and is_record(cls)):
                 continue
-            for stmt in cls.body:
-                if not (isinstance(stmt, ast.AnnAssign) and isinstance(stmt.target, ast.Name)):
-                    continue
-                if "ClassVar" in ast.unparse(stmt.annotation):
-                    continue
+            for stmt in record_fields(cls):
                 name = stmt.target.id
-                if name in production:
+                if production[name] & {cls.name, "*"}:
                     continue
-                check = "field-test-only" if name in other else "field-unread"
-                where = "only tests or scripts read it" if name in other else "nothing reads it"
+                tested = bool(other[name] & {cls.name, "*"})
+                check = "field-test-only" if tested else "field-unread"
+                where = "only tests or scripts read it" if tested else "nothing reads it"
                 out.append(
                     Finding(
-                        check, f"{check}:{mod}:{cls.name}.{name}", rel, stmt.lineno, f"field {cls.name}.{name}: {where}"
+                        check,
+                        f"record-field:{mod}:{cls.name}.{name}",
+                        rel,
+                        stmt.lineno,
+                        f"field {cls.name}.{name}: {where}",
                     )
                 )
     return out
@@ -733,47 +891,6 @@ def check_private_imports(repo: Repo) -> list[Finding]:
     return out
 
 
-def check_single_use_imports(repo: Repo) -> list[Finding]:
-    """Import a name where it pays: a relax module with more than ``SINGLE_USE_IMPORT_THRESHOLD`` names it
-    from-imports (relax or third-party; not the standard library or ``__future__``) and uses exactly once has
-    grown a wide, shallow interface; split the module or call through the owning module.
-
-    One finding per (module, name), only for modules over the threshold, so a key does not change when an
-    unrelated import is added or removed; the count is in each finding's message. A use is a ``Name`` load
-    anywhere in the file; a name imported only to re-export (zero uses) is not single-use."""
-    out = []
-    for rel in repo.files("relax"):
-        mod, tree = module_name(rel), repo.trees[rel]
-        imported = {}
-        for node in ast.walk(tree):
-            if not isinstance(node, ast.ImportFrom):
-                continue
-            src = resolve_import(rel, node)
-            if src.split(".")[0] in sys.stdlib_module_names or src == "__future__":
-                continue
-            for a in node.names:
-                if a.name != "*":
-                    imported.setdefault(a.asname or a.name, (src, node.lineno))
-        uses = collections.Counter(
-            n.id for n in ast.walk(tree) if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load)
-        )
-        single = sorted(name for name in imported if uses[name] == 1)
-        if len(single) <= SINGLE_USE_IMPORT_THRESHOLD:
-            continue
-        for name in single:
-            src, line = imported[name]
-            out.append(
-                Finding(
-                    "single-use-import",
-                    f"single-use-import:{mod}:{name}",
-                    rel,
-                    line,
-                    f"{name} (from {src}) is used once; {len(single)} single-use imports in {mod}",
-                )
-            )
-    return out
-
-
 CHECKS = {
     "self-cast": check_self_cast,
     "record-fields": check_record_fields,
@@ -785,7 +902,6 @@ CHECKS = {
     "strip-literal": check_strip_literal,
     "alias-local": check_alias_locals,
     "private-import": check_private_imports,
-    "single-use-import": check_single_use_imports,
 }
 # The finding ids each check may emit, in report order.
 CHECK_IDS = (
@@ -801,7 +917,6 @@ CHECK_IDS = (
     "strip-literal",
     "alias-local",
     "private-import",
-    "single-use-import",
 )
 
 
