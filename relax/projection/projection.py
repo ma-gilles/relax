@@ -1187,12 +1187,10 @@ def compute_projections_block(
     return proj_half, proj_abs2_half
 
 
-def relion_scale_correction_pixel_mask(data_vs_prior, shell_indices, *, n_shells=None):
-    """Return RELION's ``data_vs_prior > 3`` scale-statistic pixel mask."""
+def relion_scale_correction_pixel_mask(data_vs_prior, shell_indices, *, n_shells: int):
+    """Return RELION's ``data_vs_prior > 3`` scale-statistic pixel mask over the shells below ``n_shells``."""
 
     indices = jnp.asarray(shell_indices)
-    if n_shells is None:
-        n_shells = int(np.asarray(data_vs_prior).size) if data_vs_prior is not None else int(np.max(indices))
     dvp = None if data_vs_prior is None else jnp.asarray(data_vs_prior)
     if dvp is not None and dvp.size == 0:
         return jnp.zeros((int(indices.size),), dtype=bool)
