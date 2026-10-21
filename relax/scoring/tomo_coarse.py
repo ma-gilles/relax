@@ -901,18 +901,37 @@ def _batch_scoring_rotations(
         full_valid[: len(units)] = slot < counts[:, None]
         return _lay_out_rotations(built, jnp.asarray(rows), jnp.asarray(rot), jnp.asarray(full_valid))
     else:
-        per_unit = []
-        for unit, unit_rows in zip(units, unit_rotation_rows):
-            images = np.arange(offsets[unit], offsets[unit + 1])
-            left, _applies = tomo_particles.relion_left_matrices(image_left[images])
-            built = jnp.asarray(
-                pass1_rotations(coarse_eulers_deg[unit_rows], random_perturbation, angular_sampling_deg, left_matrices=left),
-                dtype=jnp.float32,
+        # Each particle's rotations at the pass's shape: its rows padded to R_pad with its last one, its images'
+        # left matrices padded to S slots with the identity, so the rotation kernel takes one shape for the pass
+        # (it builds each (image, row) matrix on its own; padded entries are zeroed below). Particles' own counts
+        # of tilts and rotations compiled a call and its eager layout per pair (~8 dispatches per particle).
+        eulers = np.asarray(coarse_eulers_deg)
+        left = np.tile(np.eye(3), (len(units), slots, 1, 1))
+        built = []
+        for p, (unit, unit_rows) in enumerate(zip(units, unit_rotation_rows)):
+            unit_rows = np.asarray(unit_rows)
+            left[p, : counts[p]] = tomo_particles.relion_left_matrices(image_left[offsets[unit] : offsets[unit + 1]])[0]
+            built.append(
+                pass1_rotations(
+                    eulers[unit_rows[np.minimum(np.arange(r_pad), unit_rows.size - 1)]],
+                    random_perturbation,
+                    angular_sampling_deg,
+                    left_matrices=left[p],
+                )
             )
-            rot = jnp.asarray(np.minimum(np.arange(r_pad), int(built.shape[1]) - 1))
-            per_unit.append(jnp.pad(built[:, rot], ((0, slots - images.size), (0, 0), (0, 0), (0, 0))))
-        # jnp.pad zero-fills the padded slots; padded particles are zeros.
-        return jnp.stack(per_unit + [jnp.zeros_like(per_unit[0])] * (p_pad - len(units)))
+        valid = np.zeros((p_pad, slots), dtype=bool)
+        valid[: len(units)] = slot < counts[:, None]
+        return _stack_particle_rotations(tuple(built), jnp.asarray(valid))
+
+
+@jax.jit
+def _stack_particle_rotations(built, valid):
+    """The particles' ``[S, R_pad, 3, 3]`` matrices as one ``[P_pad, S, R_pad, 3, 3]`` float32 array, zero in invalid
+    slots and padded particles (``valid`` ``[P_pad, S]``), as one device program."""
+
+    built = tuple(jnp.asarray(b, dtype=jnp.float32) for b in built)
+    stacked = jnp.stack(built + (built[0],) * (valid.shape[0] - len(built)))
+    return jnp.where(valid[:, :, None, None, None], stacked, jnp.zeros((), jnp.float32))
 
 
 @jax.jit
@@ -970,9 +989,11 @@ def _fill_tilt_slots(units, tilt: TiltCoarseInputs, starts, *, n_pad, slots, n_t
     return angles, image_index, image_valid
 
 
+@jax.jit
 def _gather_slot_operands(unshifted, weight, initial, index, image_valid, angles):
     """The batch's padded device operands ``(unshifted, weight, initial, angles)`` ``[n_pad, S, ...]``: the operand
-    rows at ``index``, zero in invalid slots."""
+    rows at ``index``, zero in invalid slots, as one device program (eagerly, four dispatches and a transfer per
+    batch: ~10 ms a particle of a local pass's host time, one particle per batch)."""
 
     valid = jnp.asarray(image_valid)
     batch_unshifted = jnp.where(valid[..., None], unshifted[index], jnp.zeros((), unshifted.dtype))
