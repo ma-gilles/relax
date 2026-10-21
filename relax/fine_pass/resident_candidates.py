@@ -971,7 +971,8 @@ class CandidateTableBlocks:
                     f"expected {stop - start} and {expected_rows}"
                 )
             self._built[block] = tables
-            for old in sorted(self._built)[: -int(self.blocks_kept)]:
+            # The blocks built last are kept (insertion order), so the block just built is never the one evicted.
+            for old in list(self._built)[: -int(self.blocks_kept)]:
                 del self._built[old]
             # The block's per-class builders ran on a thread pool; their freed temporaries stay in its arenas.
             return_freed_heap(f"candidate table block {block}", level=logging.DEBUG)

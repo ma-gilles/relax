@@ -143,3 +143,6 @@ def test_blocked_chunk_rows_are_the_whole_table_rows(n_classes, execution_order,
                 np.testing.assert_array_equal(got[key], want[key], err_msg=key)
     # The loop keeps only the blocks it still needs.
     assert len(blocked._built) <= blocked.blocks_kept
+    # A block requested out of order (below the cached ones) is built and returned, not evicted at once.
+    assert blocked.block_tables(0).n_images == int(blocked.block_starts[1] - blocked.block_starts[0])
+    assert 0 in blocked._built and len(blocked._built) <= blocked.blocks_kept
