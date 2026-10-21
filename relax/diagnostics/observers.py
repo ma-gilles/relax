@@ -124,9 +124,9 @@ def _significance_dump_half_indices(
             int(token) for token in raw_targets.replace(",", " ").split()
         }
     except ValueError as exc:
-        raise ValueError("significance dump iteration and original indices must be integers") from exc
+        raise ValueError(f"{prefix}_ITERATION and {prefix}_ORIGINAL_INDICES must be integers") from exc
     if target_iteration <= 0 or not target_indices:
-        raise ValueError("significance dump iteration and original-index target set must be nonempty")
+        raise ValueError(f"{prefix}_ITERATION must be positive and {prefix}_ORIGINAL_INDICES nonempty")
     if int(numbered_iteration) != target_iteration:
         return (0, 1)
 
@@ -136,7 +136,7 @@ def _significance_dump_half_indices(
     missing = sorted(target_indices - selected_half_indices)
     if missing:
         raise RuntimeError(
-            "significance dump targets are not all present in the selected half: "
+            f"{prefix}_ORIGINAL_INDICES targets are not all present in the selected half: "
             f"half={target_half} missing={missing}"
         )
     logger.info(

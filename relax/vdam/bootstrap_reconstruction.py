@@ -349,7 +349,7 @@ def bootstrap_references(
         raise ValueError("particle_positions must give every bootstrap particle a position")
     seeds = positions if particle_seed_ids is None else np.asarray(particle_seed_ids, dtype=np.int64)
     if seeds.size < todo:
-        raise ValueError("particle_seed_ids must contain at least minimum_nr_particles entries")
+        raise ValueError(f"particle_seed_ids must contain one entry per bootstrap particle ({todo}), got {seeds.size}")
     radius_px = float(particle_diameter_ang) / (2.0 * float(pixel_size))
     generator = None
     eulers = np.empty((todo, 3))

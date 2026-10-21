@@ -733,7 +733,9 @@ static py::array_t<double> vdam_bootstrap_iref(
             throw std::runtime_error("particle_seed_ids must be a 1D integer array");
         }
         if (seed_buf.shape[0] < todo) {
-            throw std::runtime_error("particle_seed_ids must contain at least minimum_nr_particles entries");
+            throw std::runtime_error(
+                "particle_seed_ids must contain at least min(max(minimum_nr_particles, 5 * nr_classes), "
+                "n_particles) entries");
         }
         const long* seed_ptr = (const long*)seed_buf.ptr;
         particle_seed_ids.assign(seed_ptr, seed_ptr + seed_buf.shape[0]);

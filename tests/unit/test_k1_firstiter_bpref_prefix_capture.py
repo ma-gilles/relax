@@ -24,7 +24,7 @@ def test_deferred_firstiter_bpref_gate_uses_texture_peak():
     common = dict(
         relion_firstiter_fused_bpref=True,
         use_relion_projector=True,
-        projector_device_owned=True,
+        projector_host_owned=True,
         projector_shape=(10, 10, 6),
         projector_dtype=np.complex64,
         recon_volume_size=100,
@@ -59,7 +59,7 @@ def test_deferred_firstiter_bpref_gate_uses_texture_peak():
     )
     # Not supported (a device-owned projector, an armed diagnostic): never host-staged.
     assert not sparse._relion_firstiter_deferred_bpref_enabled(
-        **(common | {"projector_device_owned": False}),
+        **(common | {"projector_host_owned": False}),
         device_memory_bytes=20_000,
     )
     assert not sparse._relion_firstiter_deferred_bpref_enabled(
@@ -133,7 +133,7 @@ def test_deferred_firstiter_preserves_requested_capture_route(monkeypatch, name)
     assert active
     common = dict(
         relion_firstiter_fused_bpref=True, use_relion_projector=True,
-        projector_device_owned=True, projector_shape=(1603, 1603, 802),
+        projector_host_owned=True, projector_shape=(1603, 1603, 802),
         projector_dtype=np.complex64, recon_volume_size=2_060_826_418,
         recon_y_dtype=np.complex64, recon_ctf_dtype=np.float32,
         device_memory_bytes=80 * 1024**3, diagnostics_active=active,

@@ -86,7 +86,7 @@ def _relion_firstiter_deferred_bpref_enabled(
     *,
     relion_firstiter_fused_bpref: bool,
     use_relion_projector: bool,
-    projector_device_owned: bool,
+    projector_host_owned: bool,
     projector_shape,
     projector_dtype,
     recon_volume_size: int,
@@ -102,7 +102,7 @@ def _relion_firstiter_deferred_bpref_enabled(
     supported = bool(
         relion_firstiter_fused_bpref
         and use_relion_projector
-        and projector_device_owned
+        and projector_host_owned
         and not diagnostics_active
     )
     if not supported or device_memory_bytes is None or int(device_memory_bytes) <= 0:
@@ -227,7 +227,7 @@ def relion_firstiter_compact_batch_planning_decision(
     deferred_firstiter_bpref = _relion_firstiter_deferred_bpref_enabled(
         relion_firstiter_fused_bpref=relion_firstiter_fused_bpref,
         use_relion_projector=True,
-        projector_device_owned=projector_host_owned,
+        projector_host_owned=projector_host_owned,
         projector_shape=projector_shape,
         projector_dtype=projector_dtype,
         recon_volume_size=recon_volume_size,

@@ -354,7 +354,11 @@ def make_parser() -> argparse.ArgumentParser:
         default=DEFAULTS.image_fourier_backend,
     )
     parser.add_argument(
-        "--gpu", dest="gpu_ids", default=DEFAULTS.gpu_ids, help="GPU IDs for provenance and backend selection"
+        "--gpu",
+        dest="gpu_ids",
+        default=DEFAULTS.gpu_ids,
+        help="Accepted for RELION command lines; the device comes from CUDA_VISIBLE_DEVICES. "
+        "A non-empty value sets CUDA_LAUNCH_BLOCKING from --deterministic-cuda",
     )
     parser.add_argument("--j", dest="nr_threads", type=_positive_int, default=1, help="Compatibility thread count")
     parser.add_argument("--nr-mpi", "--nr_mpi", dest="nr_mpi", type=_positive_int, default=1)

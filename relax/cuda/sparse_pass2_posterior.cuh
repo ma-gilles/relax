@@ -485,7 +485,7 @@ ffi::Error posterior_impl(
         return ffi::Error::InvalidArgument("SparsePass2PosteriorF32: scores must be a nonempty F32 (B, ...) array");
     if (rows > static_cast<int64_t>(std::numeric_limits<int>::max()) ||
         n > static_cast<int64_t>(std::numeric_limits<int>::max()))
-        return ffi::Error::InvalidArgument("SparsePass2PosteriorF32: rows or row length exceed CUDA/CUB limits");
+        return ffi::Error::InvalidArgument("SparsePass2PosteriorF32: rows or row length exceed INT_MAX");
     const int64_t count = rows * n;
     const auto vector_ok = [&](const ffi::AnyBuffer& b, ffi::DataType type) {
         return b.element_type() == type && b.dimensions().size() == 1 && b.dimensions()[0] == rows;

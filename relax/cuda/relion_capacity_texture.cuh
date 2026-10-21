@@ -451,7 +451,8 @@ ffi::Error ProjectRelionHalfCapacityTextureImpl(
         owner = found->second;
     }
     if (!owner->acquire_call())
-        return ffi::Error::InvalidArgument("ProjectRelionHalfCapacityTexture: owner is closing");
+        return ffi::Error::InvalidArgument(
+            "ProjectRelionHalfCapacityTexture: owner is closing, refreshing or failed its last refresh");
     struct Release { CapacityRelionHalfTextureF32* owner; ~Release() { owner->release_call(); } } release{owner.get()};
 
     const float max_r2 = (float)((owner->half_z / 2 - 1) * (owner->half_z / 2 - 1));
@@ -575,7 +576,8 @@ ffi::Error ProjectRelionHalfCapacityTextureCompactPackedImpl(
         owner = found->second;
     }
     if (!owner->acquire_call())
-        return ffi::Error::InvalidArgument("ProjectRelionHalfCapacityTextureCompactPacked: owner is closing");
+        return ffi::Error::InvalidArgument(
+            "ProjectRelionHalfCapacityTextureCompactPacked: owner is closing, refreshing or failed its last refresh");
     struct Release { CapacityRelionHalfTextureF32* owner; ~Release() { owner->release_call(); } } release{owner.get()};
 
     // The geometry of ProjectRelionHalfCapacityTextureImpl.

@@ -4282,12 +4282,12 @@ ffi::Error RelionVdamMstepFusedProjectorXHalfCommon(
         weight_volume_out->element_type() != ffi::DataType::F32 ||
         denominator_sum->element_type() != ffi::DataType::F32)
         return ffi::Error::InvalidArgument(
-            "RelionVdamMstepFusedProjectorXHalf: invalid dtypes");
+            "RelionVdamMstepFusedProjector{,Runtime,Capacity}XHalf: invalid dtypes");
     if (runtime_current_size != nullptr &&
         (runtime_current_size->element_type() != ffi::DataType::S32 ||
          runtime_current_size->dimensions().size() != 0))
         return ffi::Error::InvalidArgument(
-            "RelionVdamMstepFusedProjectorRuntimeXHalf: "
+            "RelionVdamMstepFusedProjector{Runtime,Capacity}XHalf: "
             "logical_current_size must be an S32 scalar");
     const bool capacity_projector = runtime_projector_radius != nullptr;
     if (capacity_projector &&
@@ -4328,7 +4328,7 @@ ffi::Error RelionVdamMstepFusedProjectorXHalfCommon(
         (rotation_replay_stride > 0 && serial_rotation_replay == 0) ||
         (rotation_replay_stride > 0 && reverse_rotation_replay != 0))
         return ffi::Error::InvalidArgument(
-            "RelionVdamMstepFusedProjectorXHalf: invalid geometry");
+            "RelionVdamMstepFusedProjector{,Runtime,Capacity}XHalf: invalid geometry");
 
     const auto projector_dims = projector_full.dimensions();
     const auto image_dims = images.dimensions();
@@ -4407,7 +4407,7 @@ ffi::Error RelionVdamMstepFusedProjectorXHalfCommon(
           denominator_dims[1] != posterior_dims[1] ||
           denominator_dims[2] != pixel_capacity)))
         return ffi::Error::InvalidArgument(
-            "RelionVdamMstepFusedProjectorXHalf: inconsistent topology");
+            "RelionVdamMstepFusedProjector{,Runtime,Capacity}XHalf: inconsistent topology");
 
     const int64_t volume_size = N0 * N1 * (N2 / 2 + 1);
     const auto data_real_in_dims = data_real_volume_in.dimensions();
@@ -4431,7 +4431,7 @@ ffi::Error RelionVdamMstepFusedProjectorXHalfCommon(
         !valid_accumulator_dims(data_imag_out_dims) ||
         !valid_accumulator_dims(weight_out_dims))
         return ffi::Error::InvalidArgument(
-            "RelionVdamMstepFusedProjectorXHalf: accumulator sizes do not match");
+            "RelionVdamMstepFusedProjector{,Runtime,Capacity}XHalf: accumulator sizes do not match");
 
     cudaError_t err = launch_relion_vdam_mstep_fused_projector_x_half(
         stream,
@@ -5615,27 +5615,28 @@ ffi::Error RelionFineDiff2FusedTranslateFlatRowsF32Common(
     if (reference.element_type() != ffi::DataType::C64 ||
         image.element_type() != ffi::DataType::C64)
         return ffi::Error::InvalidArgument(
-            "RelionFineDiff2FusedTranslateFlatRowsF32: reference/image must be C64");
+            "RelionFineDiff2FusedTranslate{,Runtime,RuntimeMasked}FlatRowsF32: reference/image must be C64");
     if (row_image_ids.element_type() != ffi::DataType::S32 ||
         full_to_compact.element_type() != ffi::DataType::S32)
         return ffi::Error::InvalidArgument(
-            "RelionFineDiff2FusedTranslateFlatRowsF32: row ids/lookup must be S32");
+            "RelionFineDiff2FusedTranslate{,Runtime,RuntimeMasked}FlatRowsF32: row ids/lookup must be S32");
     if (translation_angles.element_type() != ffi::DataType::F32 ||
         weight.element_type() != ffi::DataType::F32 ||
         initial_diff2.element_type() != ffi::DataType::F32 ||
         output->element_type() != ffi::DataType::F32)
         return ffi::Error::InvalidArgument(
-            "RelionFineDiff2FusedTranslateFlatRowsF32: angles/weight/initial/output must be F32");
+            "RelionFineDiff2FusedTranslate{,Runtime,RuntimeMasked}FlatRowsF32: "
+            "angles/weight/initial/output must be F32");
     if (runtime_current_size != nullptr &&
         (runtime_current_size->element_type() != ffi::DataType::S32 ||
          runtime_current_size->dimensions().size() != 0))
         return ffi::Error::InvalidArgument(
-            "RelionFineDiff2FusedTranslateRuntimeFlatRowsF32: "
+            "RelionFineDiff2FusedTranslateRuntime{,Masked}FlatRowsF32: "
             "logical_current_size must be an S32 scalar");
     if (runtime_current_size == nullptr &&
         (current_size <= 0 || current_size > std::numeric_limits<int>::max()))
         return ffi::Error::InvalidArgument(
-            "RelionFineDiff2FusedTranslateFlatRowsF32: invalid current_size");
+            "RelionFineDiff2FusedTranslate{,Runtime,RuntimeMasked}FlatRowsF32: invalid current_size");
 
     const auto reference_dims = reference.dimensions();
     const auto row_image_dims = row_image_ids.dimensions();
@@ -5671,7 +5672,7 @@ ffi::Error RelionFineDiff2FusedTranslateFlatRowsF32Common(
         output_dims[0] != reference_dims[0] ||
         output_dims[1] != translation_count)
         return ffi::Error::InvalidArgument(
-            "RelionFineDiff2FusedTranslateFlatRowsF32: inconsistent operand shapes");
+            "RelionFineDiff2FusedTranslate{,Runtime,RuntimeMasked}FlatRowsF32: inconsistent operand shapes");
 
     const int64_t translation_chunks =
         (translation_count + kRelionFineDiff2Ref3dJobChunk - 1) /
@@ -5679,7 +5680,7 @@ ffi::Error RelionFineDiff2FusedTranslateFlatRowsF32Common(
     const int64_t total_blocks = reference_dims[0] * translation_chunks;
     if (total_blocks > static_cast<int64_t>(std::numeric_limits<int>::max()))
         return ffi::Error::InvalidArgument(
-            "RelionFineDiff2FusedTranslateFlatRowsF32: block count exceeds CUDA grid");
+            "RelionFineDiff2FusedTranslate{,Runtime,RuntimeMasked}FlatRowsF32: block count exceeds CUDA grid");
     if (translation_chunk_live != nullptr) {
         const auto live_dims = translation_chunk_live->dimensions();
         if (translation_chunk_live->element_type() != ffi::DataType::U8 ||
@@ -5846,18 +5847,18 @@ ffi::Error RelionFineDiff2FusedTranslatePairsF32Common(
     if (reference.element_type() != ffi::DataType::C64 ||
         image.element_type() != ffi::DataType::C64)
         return ffi::Error::InvalidArgument(
-            "RelionFineDiff2FusedTranslatePairsF32: reference/image must be C64");
+            "RelionFineDiff2FusedTranslate{,Runtime}PairsF32: reference/image must be C64");
     if (translation_angles.element_type() != ffi::DataType::F32 ||
         weight.element_type() != ffi::DataType::F32 ||
         initial_diff2.element_type() != ffi::DataType::F32 ||
         output->element_type() != ffi::DataType::F32)
         return ffi::Error::InvalidArgument(
-            "RelionFineDiff2FusedTranslatePairsF32: angles/weight/initial/output must be F32");
+            "RelionFineDiff2FusedTranslate{,Runtime}PairsF32: angles/weight/initial/output must be F32");
     if (pair_reference_rows.element_type() != ffi::DataType::S32 ||
         pair_translation_ids.element_type() != ffi::DataType::S32 ||
         full_to_compact.element_type() != ffi::DataType::S32)
         return ffi::Error::InvalidArgument(
-            "RelionFineDiff2FusedTranslatePairsF32: pair ids/lookup must be S32");
+            "RelionFineDiff2FusedTranslate{,Runtime}PairsF32: pair ids/lookup must be S32");
     if (runtime_current_size != nullptr &&
         (runtime_current_size->element_type() != ffi::DataType::S32 ||
          runtime_current_size->dimensions().size() != 0))
@@ -5867,7 +5868,7 @@ ffi::Error RelionFineDiff2FusedTranslatePairsF32Common(
     if (runtime_current_size == nullptr &&
         (current_size <= 0 || current_size > std::numeric_limits<int>::max()))
         return ffi::Error::InvalidArgument(
-            "RelionFineDiff2FusedTranslatePairsF32: invalid current_size");
+            "RelionFineDiff2FusedTranslate{,Runtime}PairsF32: invalid current_size");
 
     const auto reference_dims = reference.dimensions();
     const auto image_dims = image.dimensions();
@@ -5900,13 +5901,13 @@ ffi::Error RelionFineDiff2FusedTranslatePairsF32Common(
         output_dims[0] != pair_reference_dims[0] ||
         output_dims[1] != pair_reference_dims[1])
         return ffi::Error::InvalidArgument(
-            "RelionFineDiff2FusedTranslatePairsF32: inconsistent operand shapes");
+            "RelionFineDiff2FusedTranslate{,Runtime}PairsF32: inconsistent operand shapes");
 
     const int64_t total_hypotheses =
         pair_reference_dims[0] * pair_reference_dims[1];
     if (total_hypotheses > static_cast<int64_t>(std::numeric_limits<int>::max()))
         return ffi::Error::InvalidArgument(
-            "RelionFineDiff2FusedTranslatePairsF32: hypothesis count exceeds CUDA grid");
+            "RelionFineDiff2FusedTranslate{,Runtime}PairsF32: hypothesis count exceeds CUDA grid");
     cudaError_t err = launch_relion_fine_diff2_fused_translate_pairs_f32(
         stream,
         reinterpret_cast<const float2*>(reference.untyped_data()),
@@ -6022,17 +6023,17 @@ ffi::Error RelionFineDiff2FusedTranslateJobsF32Common(
     if (reference.element_type() != ffi::DataType::C64 ||
         image.element_type() != ffi::DataType::C64)
         return ffi::Error::InvalidArgument(
-            "RelionFineDiff2FusedTranslateJobsF32: reference/image must be C64");
+            "RelionFineDiff2FusedTranslate{,Runtime}JobsF32: reference/image must be C64");
     if (translation_angles.element_type() != ffi::DataType::F32 ||
         weight.element_type() != ffi::DataType::F32 ||
         initial_diff2.element_type() != ffi::DataType::F32 ||
         output->element_type() != ffi::DataType::F32)
         return ffi::Error::InvalidArgument(
-            "RelionFineDiff2FusedTranslateJobsF32: angles/weight/initial/output must be F32");
+            "RelionFineDiff2FusedTranslate{,Runtime}JobsF32: angles/weight/initial/output must be F32");
     if (job_plan.element_type() != ffi::DataType::S32 ||
         full_to_compact.element_type() != ffi::DataType::S32)
         return ffi::Error::InvalidArgument(
-            "RelionFineDiff2FusedTranslateJobsF32: job plan/lookup must be S32");
+            "RelionFineDiff2FusedTranslate{,Runtime}JobsF32: job plan/lookup must be S32");
     if (runtime_current_size != nullptr &&
         (runtime_current_size->element_type() != ffi::DataType::S32 ||
          runtime_current_size->dimensions().size() != 0))
@@ -6042,7 +6043,7 @@ ffi::Error RelionFineDiff2FusedTranslateJobsF32Common(
     if (runtime_current_size == nullptr &&
         (current_size <= 0 || current_size > std::numeric_limits<int>::max()))
         return ffi::Error::InvalidArgument(
-            "RelionFineDiff2FusedTranslateJobsF32: invalid current_size");
+            "RelionFineDiff2FusedTranslate{,Runtime}JobsF32: invalid current_size");
 
     const auto reference_dims = reference.dimensions();
     const auto image_dims = image.dimensions();
@@ -6068,14 +6069,14 @@ ffi::Error RelionFineDiff2FusedTranslateJobsF32Common(
         initial_dims[0] != image_dims[0] ||
         lookup_dims[0] != expected_full_pixels || output_dims[0] != job_dims[0])
         return ffi::Error::InvalidArgument(
-            "RelionFineDiff2FusedTranslateJobsF32: inconsistent operand shapes");
+            "RelionFineDiff2FusedTranslate{,Runtime}JobsF32: inconsistent operand shapes");
 
     const int64_t total_blocks =
         (job_dims[0] + kRelionFineDiff2Ref3dJobChunk - 1) /
         kRelionFineDiff2Ref3dJobChunk;
     if (total_blocks > static_cast<int64_t>(std::numeric_limits<int>::max()))
         return ffi::Error::InvalidArgument(
-            "RelionFineDiff2FusedTranslateJobsF32: block count exceeds CUDA grid");
+            "RelionFineDiff2FusedTranslate{,Runtime}JobsF32: block count exceeds CUDA grid");
     cudaError_t err = launch_relion_fine_diff2_fused_translate_jobs_f32(
         stream,
         reinterpret_cast<const float2*>(reference.untyped_data()),

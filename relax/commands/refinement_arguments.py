@@ -687,9 +687,12 @@ def resolve_class_reference_paths(args, *, log: logging.Logger) -> tuple[list[st
         ]
     if len(class_paths) != args.n_classes:
         raise SystemExit(f"--init_class_volumes count {len(class_paths)} != --n_classes {args.n_classes}")
-    class_option = (
-        "--ref_star" if args.ref_star is not None else "--init_class_volumes" if args.init_class_volumes else "data_dir"
-    )
+    if args.init_volume is not None:
+        class_option = "--init_volume"
+    elif args.ref_star is not None:
+        class_option = "--ref_star"
+    else:
+        class_option = "--init_class_volumes" if args.init_class_volumes else "data_dir"
     return class_paths, class_option
 
 

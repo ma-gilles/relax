@@ -157,7 +157,8 @@ def make_shape_classes(datasets_and_indices, *, model_box_size, ref_pixel, model
         if scale >= math.sqrt(2.0):
             raise NotImplementedError(
                 f"an optics group of {box_size} px at {pixel} A spans {scale:.3f} times the reference field of view "
-                f"({model_box_size} px at {ref_pixel} A). From sqrt(2) on, RELION's fine and weighted-sum kernels "
+                f"({model_box_size} px at {ref_pixel if model_pixel is None else model_pixel} A). From sqrt(2) on, "
+                "RELION's fine and weighted-sum kernels "
                 "project the pixel (maxR, i) for every image row i beyond the model radius, and shift the image at that "
                 "pixel too (acc/cuda/cuda_kernels/diff2.cuh:494-530, wavg.cuh:81-86), a RELION defect relax does not "
                 "reproduce. List the optics group with the largest box x pixel size first."

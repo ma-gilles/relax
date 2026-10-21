@@ -458,7 +458,8 @@ def plan_resident_chunk_memory(
             if terms[largest] < 0:
                 raise ResidentConfigurationUnsupported(
                     "The device-resident pass 2 cannot fit this configuration: its smallest chunk "
-                    f"(rows {min(rows)}, images 1, M-step block 1) needs {peak() / float(1024 ** 3):.2f} GiB "
+                    f"(rows {max(rows)}, images {max(images)}, M-step block {block}) needs "
+                    f"{peak() / float(1024 ** 3):.2f} GiB "
                     f"against a {int(budget_bytes) / float(1024 ** 3):.2f} GiB budget. There is no other "
                     "pass-2 engine; run on a GPU with more memory."
                 )
