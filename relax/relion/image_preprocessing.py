@@ -110,6 +110,60 @@ def batched_fft_is_per_image(shape) -> bool:
     return _BATCHED_FFT_IS_PER_IMAGE[key]
 
 
+# (height, width, device kind) -> how many images one cuFFT plan may transform at the per-image arithmetic.
+_PER_IMAGE_FFT_SUB_BATCH: dict[tuple, int] = {}
+# The largest sub-batch probed. On H100 and A100 the batched plan is bitwise the per-image one up to 15 images at
+# 256x256 and 31 at 128x128 (relax tomoglobal2 probes 15916651/15916652); 16 per plan is about 13x faster than one.
+_MAX_PER_IMAGE_FFT_SUB_BATCH = 16
+
+
+def per_image_fft_sub_batch(height: int, width: int) -> int:
+    """How many images one cuFFT plan may transform with every image bitwise its per-image transform.
+
+    Where one batched plan of the whole batch is not bitwise (:func:`batched_fft_is_per_image`), the backend still
+    need not run one plan per image: cuFFT's batched plan is bitwise the per-image one for small batches, and the
+    backend can map over sub-batches of ``s`` images and transform the ``n % s`` rest as one batch
+    (``relion_fft_sub_batch``). The probe runs once per image shape and device, on a random float32 batch: every
+    batch size 1 to :data:`_MAX_PER_IMAGE_FFT_SUB_BATCH` through the batched plan against the per-image one, then
+    the sub-batch path itself for the largest power of two ``s`` whose sizes all matched, on ``3s - 1`` images
+    (full sub-batches and the largest rest). The answer is that ``s``, or 1 (one plan per image) without a GPU or
+    a match.
+    """
+
+    import jax
+
+    if jax.default_backend() != "gpu":
+        return 1
+    key = (int(height), int(width), jax.devices()[0].device_kind)
+    if key not in _PER_IMAGE_FFT_SUB_BATCH:
+        from recovar.data_io.image_backends import (
+            _centered_rfft2_jax_batched,
+            _centered_rfft2_jax_per_image,
+            _centered_rfft2_jax_sub_batches,
+        )
+
+        def bits(values):
+            return np.asarray(values).view(np.uint32)
+
+        rng = np.random.default_rng(0)
+        probe = jnp.asarray(rng.standard_normal((_MAX_PER_IMAGE_FFT_SUB_BATCH, *key[:2])), dtype=jnp.float32)
+        per_image = bits(_centered_rfft2_jax_per_image(probe))
+        matched = 0
+        for size in range(1, _MAX_PER_IMAGE_FFT_SUB_BATCH + 1):
+            if not np.array_equal(bits(_centered_rfft2_jax_batched(probe[:size])), per_image[:size]):
+                break
+            matched = size
+        sub_batch = 1 << (matched.bit_length() - 1) if matched >= 2 else 1
+        if sub_batch > 1:
+            images = jnp.asarray(rng.standard_normal((3 * sub_batch - 1, *key[:2])), dtype=jnp.float32)
+            if not np.array_equal(
+                bits(_centered_rfft2_jax_sub_batches(images, sub_batch)), bits(_centered_rfft2_jax_per_image(images))
+            ):
+                sub_batch = 1
+        _PER_IMAGE_FFT_SUB_BATCH[key] = sub_batch
+    return _PER_IMAGE_FFT_SUB_BATCH[key]
+
+
 def process_half_image(
     experiment_dataset,
     batch,
@@ -132,8 +186,13 @@ def process_half_image(
     if process_half_fn is None:
         raise ValueError("Dense EM requires experiment_dataset.process_images_half")
     kwargs = {} if relion_preprocess_kwargs is None else dict(relion_preprocess_kwargs)
-    if kwargs.get("relion_fft_per_image") and np.ndim(batch) == 3 and batched_fft_is_per_image(np.shape(batch)):
-        kwargs["relion_fft_per_image"] = False  # the batched plan is bitwise the per-image one at this shape
+    if kwargs.get("relion_fft_per_image") and np.ndim(batch) == 3:
+        if batched_fft_is_per_image(np.shape(batch)):
+            kwargs["relion_fft_per_image"] = False  # the batched plan is bitwise the per-image one at this shape
+        else:
+            sub_batch = per_image_fft_sub_batch(*np.shape(batch)[1:])
+            if sub_batch > 1:
+                kwargs["relion_fft_sub_batch"] = sub_batch  # plans of up to this many images are bitwise per image
     processed = process_half_fn(batch, apply_image_mask=apply_image_mask, **kwargs)
     return demodulate_odd_aberrations(experiment_dataset, processed, image_indices)
 

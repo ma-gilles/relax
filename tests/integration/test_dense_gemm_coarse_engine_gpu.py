@@ -30,7 +30,7 @@ def _install_native_preprocessing(dataset):
 
     def process_half(
         batch, apply_image_mask=False, *, relion_normalization_factors,
-        relion_integer_shifts, relion_fft_per_image=False,
+        relion_integer_shifts, relion_fft_per_image=False, relion_fft_sub_batch=1,
     ):
         _, processed = image_backends.relion_cuda_preprocessor()(
             jnp.asarray(batch, jnp.float32),
@@ -39,9 +39,12 @@ def _install_native_preprocessing(dataset):
             3.5, 1.0, bool(apply_image_mask),
             native_lane_reduction=False, native_atomic_reduction=False,
         )
-        fft = (image_backends._centered_rfft2_jax_per_image if relion_fft_per_image
-               else image_backends._centered_rfft2_jax)
-        transformed = fft(processed)
+        if not relion_fft_per_image:
+            transformed = image_backends._centered_rfft2_jax(processed)
+        elif relion_fft_sub_batch > 1:
+            transformed = image_backends._centered_rfft2_jax_sub_batches(processed, relion_fft_sub_batch)
+        else:
+            transformed = image_backends._centered_rfft2_jax_per_image(processed)
         return transformed.reshape((transformed.shape[0], -1)).astype(jnp.complex64)
 
     dataset.process_images_half = process_half
