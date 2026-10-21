@@ -397,7 +397,7 @@ def test_statistics_carry_keeps_float64_noise_norm_partials():
             n_shells=2, n_fine_trans=3, image_capacity=4, n_coarse_rot=2,
             n_scale_groups=0, norm_unweighted_shell_cutoff=None,
             include_unweighted_high_shell=True, disable_cuda_binning=False,
-            deterministic_norm_reduction=False, use_exact_relion_gaussian=True,
+            deterministic_norm_reduction=False,
             relion_wavg_atomic_scale_aa=True,
             direct_noise_exclusive_shell_stop=2, accumulate_scale=False,
         )

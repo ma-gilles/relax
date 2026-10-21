@@ -895,7 +895,6 @@ def compute_local_search_resident(
             # A stable-window pass's programs take the physical class; the cutoff is a runtime value below.
             current_size=wsum_current_size if stable_window_plan is None else program_current_size,
             include_unweighted_high_shell=True,
-            use_exact_relion_gaussian=True,
             relion_wavg_atomic_scale_aa=relion_wavg_atomic_scale_aa,
             accumulate_scale=accumulate_scale,
             source_faithful_spectrum_norm=resolved_spectrum_norm,

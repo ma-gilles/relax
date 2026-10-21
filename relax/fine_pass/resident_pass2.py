@@ -2051,7 +2051,6 @@ def _resident_pass2(
         # The norm's unweighted cutoff is the weighted sums' size (no stable windows when it differs).
         current_size=program_current_size if wsum_current_size == current_size else wsum_current_size,
         include_unweighted_high_shell=include_unweighted_norm_high_shell,
-        use_exact_relion_gaussian=use_exact_relion_gaussian,
         relion_wavg_atomic_scale_aa=relion_wavg_atomic_scale_aa,
         accumulate_scale=accumulate_scale,
         source_faithful_spectrum_norm=resolved_spectrum_norm,

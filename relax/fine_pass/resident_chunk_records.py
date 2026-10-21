@@ -115,7 +115,6 @@ class ChunkProgramSpec:
     mstep_block_rows: int
     adaptive_fraction: float
     current_size: int
-    mstep_current_size: int
     image_shape: tuple
     # The M-step adjoint's max_r: mstep_current_size // 2 on one grid, a ReferenceSphereClip
     # for images on another grid (relax.projection.adjoint).

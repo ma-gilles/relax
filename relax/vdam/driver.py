@@ -79,7 +79,6 @@ class NativeInitialModelResult:
     state: InitialModelState
     final_model_star: str
     final_mrc: str
-    class_mrcs: tuple[str, ...]
 
 
 def _native_expectation_step(
@@ -738,7 +737,6 @@ def run_native_initial_model(
         state=final_state,
         final_model_star=final_model_star,
         final_mrc=outputs.final_mrc,
-        class_mrcs=outputs.class_mrcs,
     )
 
 

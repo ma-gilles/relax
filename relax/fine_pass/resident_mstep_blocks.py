@@ -678,7 +678,6 @@ def run_resident_mstep_blocks(
         mstep_block_rows=int(mstep_block_rows),
         adaptive_fraction=0.0,
         current_size=0,
-        mstep_current_size=int(mstep_current_size),
         mstep_max_r=float(int(mstep_current_size) // 2) if mstep_max_r is None else mstep_max_r,
         image_shape=tuple(int(v) for v in image_shape),
         recon_volume_shape=tuple(int(v) for v in recon_volume_shape),

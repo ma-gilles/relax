@@ -364,7 +364,6 @@ def make_chunk_program_spec(
         mstep_block_rows=int(mstep_block_rows),
         adaptive_fraction=float(adaptive_fraction),
         current_size=int(current_size),
-        mstep_current_size=int(mstep_current_size),
         image_shape=tuple(int(v) for v in image_shape),
         recon_volume_shape=tuple(int(v) for v in recon_volume_shape),
         max_adjoint_block_bytes=int(max_adjoint_block_bytes),

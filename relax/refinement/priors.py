@@ -608,15 +608,6 @@ def solvent_corrected_fsc(numerators, denominators, settings, *, current_size, a
     return jnp.asarray(fsc, dtype=like.dtype)
 
 
-@dataclass(frozen=True)
-class K1ReportingPrior:
-    """Tapered K1 shared/half volumes and their per-half reporting details."""
-
-    variance: object
-    variance_per_half: list
-    details_per_half: list[dict]
-
-
 def taper_first_cc_k1_prior(
     variance_per_half,
     details_per_half,
@@ -624,8 +615,8 @@ def taper_first_cc_k1_prior(
     *,
     pixel_size_angstrom,
     scoring_dtype,
-) -> K1ReportingPrior:
-    """Taper K1 reporting priors after the untapered regularized reconstruction.
+):
+    """Taper K1 reporting priors after the untapered regularized reconstruction; returns the tapered shared volume.
 
     Updates ``variance_per_half`` and ``details_per_half`` in place, preserving their identity and the
     half -> prior/SSNR update order. The expanded taper and radial grid are temporary implementation
@@ -659,8 +650,7 @@ def taper_first_cc_k1_prior(
                 tau2_taper,
                 dtype=field_values.dtype,
             )
-    variance = 0.5 * (variance_per_half[0] + variance_per_half[1])
-    return K1ReportingPrior(variance, variance_per_half, details_per_half)
+    return 0.5 * (variance_per_half[0] + variance_per_half[1])
 
 
 @dataclass(frozen=True)

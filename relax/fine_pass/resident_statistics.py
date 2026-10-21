@@ -194,7 +194,6 @@ class ResidentStatisticsConfig:
     # Resolved on the host so the environment is part of the jit cache key.
     disable_cuda_binning: bool
     deterministic_norm_reduction: bool
-    use_exact_relion_gaussian: bool
     relion_wavg_atomic_scale_aa: bool
     # ``current_size // 2 + 1`` in shell coordinates: the end of RELION's direct
     # low-shell noise residual.
@@ -238,7 +237,6 @@ def resolve_statistics_config(
     n_scale_groups: int,
     current_size: int | None,
     include_unweighted_high_shell: bool = True,
-    use_exact_relion_gaussian: bool = True,
     relion_wavg_atomic_scale_aa: bool = True,
     accumulate_scale: bool = True,
     source_faithful_spectrum_norm: bool = False,
@@ -265,7 +263,6 @@ def resolve_statistics_config(
         include_unweighted_high_shell=include_unweighted_high_shell,
         disable_cuda_binning=process_platform.custom_cuda_disabled(),
         deterministic_norm_reduction=source_faithful_spectrum_norm,
-        use_exact_relion_gaussian=use_exact_relion_gaussian,
         relion_wavg_atomic_scale_aa=relion_wavg_atomic_scale_aa,
         direct_noise_exclusive_shell_stop=n_shells if cutoff is None else cutoff + 1,
         accumulate_scale=accumulate_scale,

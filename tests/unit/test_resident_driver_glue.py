@@ -47,7 +47,6 @@ def _spec(**overrides):
         mstep_block_rows=4096,
         adaptive_fraction=0.999,
         current_size=16,
-        mstep_current_size=16,
         mstep_max_r=8.0,
         image_shape=(16, 16),
         recon_volume_shape=(16, 16, 16),

@@ -447,7 +447,7 @@ def k1_maximization(
             ctx.reconstruction_settings,
             pixel_size_angstrom=ctx.source_pixel_size_angstrom,
             scoring_dtype=ctx.scoring_dtype,
-        ).variance
+        )
         reference_model.tau2_per_half = _updated_mean_variance_per_half(
             split_prior.variance_per_half, use_per_half_mean_variance=parity.use_per_half_mean_variance,
         )

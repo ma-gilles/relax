@@ -49,7 +49,6 @@ def _config():
         n_scale_groups=N_GROUPS,
         current_size=CURRENT_SIZE,
         include_unweighted_high_shell=True,
-        use_exact_relion_gaussian=True,
         relion_wavg_atomic_scale_aa=True,
         accumulate_scale=True,
         source_faithful_spectrum_norm=True,
