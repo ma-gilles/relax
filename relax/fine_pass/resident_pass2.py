@@ -175,6 +175,8 @@ _FLOAT32_BUCKETED_IMAGE_SUMS = False
 # memory plan drop it wherever a chunk that size does not fit.
 _DEFAULT_ROW_CAPACITY_LADDER = (8192, 32768, 131072, 524288)
 _DEFAULT_IMAGE_CAPACITY_LADDER = (32, 128, 512)
+# The smallest row block a lean lone tilt particle is planned in (resident_tilt_lone): halving stops here.
+_MIN_LEAN_LONE_BLOCK_ROWS = 16
 
 __all__ = [
     "ResidentClassInputs",
@@ -1728,9 +1730,12 @@ def _resident_pass2(
         else gathered_row_pixels * np.dtype(precision_policy.score_complex_dtype).itemsize
     )
     tilt_slot_block = None
-    # Set by plan_chunks: whether a tilt pass runs its over-budget particles in row blocks.
+    # Set by plan_chunks: whether a tilt pass runs its over-budget particles in row blocks, and the block rows of
+    # their lean form (resident_tilt_lone) when the full form does not fit either.
     tilt_lone_row_blocks = False
+    tilt_lean_lone_rows = None
     if tilt is not None:
+        from relax.fine_pass.resident_tilt_lone import lean_lone_row_bytes
         from relax.fine_pass.resident_tilts import (
             tilt_capacity_ladders,
             tilt_lone_row_bytes,
@@ -1768,7 +1773,7 @@ def _resident_pass2(
     )
 
     def plan_chunks(unshifted_operands: bool):
-        nonlocal tilt_slot_block, tilt_lone_row_blocks
+        nonlocal tilt_slot_block, tilt_lone_row_blocks, tilt_lean_lone_rows
         chunk_budget_bytes = resident_chunk_memory.resident_chunk_budget_bytes(reserved_bytes=reserved_operand_bytes)
         image_ladder = engine_tuning.resident_image_capacities or _DEFAULT_IMAGE_CAPACITY_LADDER
         if tilt is not None or not (unshifted_operands and chunk_budget_bytes is not None):
@@ -1794,7 +1799,7 @@ def _resident_pass2(
             row_capacity_ladder=row_ladder_start,
             override=engine_tuning.mstep_block_rows,
         )
-        def plan_memory(lone_row_bytes, projection_factor, overflow_projection_factor=None):
+        def plan_memory(lone_row_bytes, projection_factor, overflow_projection_factor=None, lone_block_rows=None):
             return resident_chunk_memory.plan_resident_chunk_memory(
                 row_capacity_ladder=row_ladder_start,
                 image_capacity_ladder=image_ladder,
@@ -1816,6 +1821,7 @@ def _resident_pass2(
                 fixed_bytes=accumulator_bytes,
                 max_image_rows=resident_chunk_memory.max_image_rows(tables.row_offsets),
                 lone_row_bytes=lone_row_bytes,
+                lone_block_rows=lone_block_rows,
                 **resident_chunk_memory.chunk_translated_tile_pixels(
                     unshifted_operands=unshifted_operands,
                     n_score_pixels=n_windowed if windowed_prepare else n_half_pixels,
@@ -1827,10 +1833,34 @@ def _resident_pass2(
                 ),
             )
 
+        def plan_lean_lone():
+            # The lean lone plan (resident_tilt_lone) at the largest block of rows that fits, halving from the
+            # largest row class; each block's slots are sized for its rows. Returns (plan, slot block, rows).
+            lean_row_bytes = lean_lone_row_bytes(
+                int(n_fine_trans), slot_capacity=int(tilt.slot_capacity), n_accumulators=int(tables.n_slots)
+            )
+            block_rows = max(int(v) for v in row_ladder_start)
+            while True:
+                slot_block = tilt_projection_slot_block(
+                    block_rows,
+                    slot_capacity=int(tilt.slot_capacity),
+                    slot_row_bytes=tilt_slot_row_bytes,
+                    budget_bytes=chunk_budget_bytes,
+                )
+                try:
+                    plan = plan_memory(
+                        lean_row_bytes, int(slot_block) * gathered_row_copies, lone_block_rows=block_rows
+                    )
+                    return plan, int(slot_block), block_rows
+                except ResidentConfigurationUnsupported:
+                    if block_rows // 2 < _MIN_LEAN_LONE_BLOCK_ROWS:
+                        raise
+                    block_rows //= 2
+
         if tilt is None:
             memory_plan = plan_memory(resident_chunk_memory.lone_chunk_row_bytes(int(plan_translations)), row_projection_factor)
         else:
-            tilt_slot_block, tilt_lone_row_blocks = class_slot_block, False
+            tilt_slot_block, tilt_lone_row_blocks, tilt_lean_lone_rows = class_slot_block, False, None
             try:
                 # A particle past the largest row class is one chunk holding all of its rows, when that fits.
                 memory_plan = plan_memory(
@@ -1849,19 +1879,29 @@ def _resident_pass2(
                     slot_row_bytes=tilt_slot_row_bytes,
                     budget_bytes=chunk_budget_bytes,
                 )
-                memory_plan = plan_memory(
-                    tilt_lone_row_bytes(
-                        int(n_fine_trans), slot_capacity=int(tilt.slot_capacity), n_accumulators=int(tables.n_slots)
-                    ),
-                    int(lone_slot_block) * gathered_row_copies,
-                )
+                try:
+                    memory_plan = plan_memory(
+                        tilt_lone_row_bytes(
+                            int(n_fine_trans), slot_capacity=int(tilt.slot_capacity), n_accumulators=int(tables.n_slots)
+                        ),
+                        int(lone_slot_block) * gathered_row_copies,
+                    )
+                except ResidentConfigurationUnsupported:
+                    # Nor does that (relax#118: 294,912 rows x 1,176 translations, 11 GiB of posterior arrays
+                    # against a 16 GB card's 6.7 GiB): the particle takes its lean form, at the largest block of
+                    # rows down from the largest row class that fits.
+                    memory_plan, lone_slot_block, tilt_lean_lone_rows = plan_lean_lone()
                 tilt_slot_block, tilt_lone_row_blocks = int(lone_slot_block), True
                 logger.info(
                     "Resident pass-2 tilt particles past the largest row class run in row blocks: the largest "
-                    "(%d rows) does not fit one chunk; image slot block %d of %d",
+                    "(%d rows) does not fit one chunk; image slot block %d of %d%s",
                     resident_chunk_memory.max_image_rows(tables.row_offsets),
                     tilt_slot_block,
                     int(tilt.slot_capacity),
+                    ""
+                    if tilt_lean_lone_rows is None
+                    else f"; lean form (scores in place, reconstruction-only posterior) in blocks of "
+                    f"{tilt_lean_lone_rows} rows",
                 )
         row_ladder = memory_plan.row_capacity_ladder
         image_ladder = memory_plan.image_capacity_ladder
@@ -2415,7 +2455,11 @@ def _resident_pass2(
                 # An over-budget particle of a row-blocked plan (plan_chunks) runs in blocks of a row class.
                 runs_alone = resident_chunk_memory.chunk_runs_alone(chunk, row_ladder)
                 chunk_lone_block_rows = (
-                    resident_chunk_memory.lone_block_rows(chunk.row_capacity, row_ladder)
+                    (
+                        resident_chunk_memory.lone_block_rows(chunk.row_capacity, row_ladder)
+                        if tilt_lean_lone_rows is None
+                        else int(tilt_lean_lone_rows)
+                    )
                     if tilt_lone_row_blocks and runs_alone
                     else None
                 )
@@ -2469,6 +2513,7 @@ def _resident_pass2(
                     mstep_census=mstep_census,
                     row_partial=row_partial,
                     lone_block_rows=chunk_lone_block_rows,
+                    lean_lone=chunk_lone_block_rows is not None and tilt_lean_lone_rows is not None,
                     score_pixel_indices=None if window_indices is None else jnp.asarray(window_indices, dtype=jnp.int32),
                     prepared=prepared,
                 )

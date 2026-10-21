@@ -210,6 +210,7 @@ def run_tilt_chunk(
     mstep_census: TiltMstepCensus | None = None,
     row_partial=None,
     lone_block_rows: int | None = None,
+    lean_lone: bool = False,
     prepared: TiltChunkHost | None = None,
 ):
     """Score, weight and backproject one chunk of particles; return ``(Ft_y_total, Ft_ctf_total, stats)``.
@@ -255,6 +256,10 @@ def run_tilt_chunk(
       slot order and the posterior is the one-call chunk's; only the grouping of the projector calls and of
       the M-step blocks changes. Its M-step tables and translated tiles hold its one unit; any other chunk's
       hold its valid units, rounded up to a power of two (:func:`tilt_mstep_units`).
+    - ``lean_lone`` (resident_pass2's plan where the particle's full posterior arrays do not fit,
+      :func:`~relax.fine_pass.resident_tilt_lone.lean_lone_row_bytes`): such a particle's scores are built in
+      place a block of rows at a time and its posterior comes from the reconstruction-only handler, the same
+      values in 13 instead of 33 bytes per cell (:mod:`relax.fine_pass.resident_tilt_lone`, relax#118).
     The per-stage (non-jitted) path.
     """
 
@@ -264,6 +269,7 @@ def run_tilt_chunk(
         resident_chunk_records,
         resident_chunk_stages,
         resident_mstep_blocks,
+        resident_tilt_lone,
     )
     from relax.fine_pass.policy import ResidentConfigurationUnsupported
     from relax.fine_pass.resident_candidates import expand_chunk_mask_jnp
@@ -271,6 +277,8 @@ def run_tilt_chunk(
     from relax.fine_pass.resident_scoring import tilt_image_rows_raw_diff2, tilt_rows_scores_from_raw
 
     lone = lone_block_rows is not None
+    if lean_lone and not lone:
+        raise ValueError("the lean form is a lone particle's: lean_lone needs lone_block_rows")
     if lone and int(chunk.n_valid_images) != 1:
         raise ValueError(f"a chunk run in row blocks holds one particle, not {int(chunk.n_valid_images)}")
     if lone and (bool(spec_kwargs.get("firstiter_cc")) or int(chunk.row_capacity) % int(lone_block_rows)):
@@ -439,7 +447,26 @@ def run_tilt_chunk(
                 del block_score_cache
             return running
 
-        if not lone:
+        if lean_lone:
+            scored = resident_tilt_lone.lean_lone_scores(
+                lambda row_start: raw_diff2_of_rows(
+                    slice(row_start, row_start + int(lone_block_rows)),
+                    lambda start, stop, row_ids=np.arange(row_start, row_start + int(lone_block_rows)): project_rows(
+                        start, stop, row_ids
+                    ),
+                ),
+                row_capacity=chunk.row_capacity,
+                block_rows=int(lone_block_rows),
+                n_valid_rows=chunk.n_valid_rows,
+                n_fine_trans=n_fine_trans,
+                row_unit_local=rows.row_image_local,
+                row_log_prior=rows.row_log_prior,
+                unit_translation_prior=jnp.asarray(unit_prior),
+                candidate_mask=candidate_mask,
+                row_is_valid=row_is_valid,
+                unit_capacity=unit_capacity,
+            )
+        elif not lone:
             raw_sum = raw_diff2_of_rows(slice(None), project_block)
         else:
             raw_blocks = []
@@ -457,15 +484,16 @@ def run_tilt_chunk(
                 )
             raw_sum = jnp.concatenate(raw_blocks, axis=0)
             del raw_blocks
-        scored = tilt_rows_scores_from_raw(
-            raw_sum,
-            rows.row_image_local,
-            rows.row_log_prior,
-            jnp.asarray(unit_prior),
-            candidate_mask,
-            row_is_valid,
-            unit_capacity=unit_capacity,
-        )
+        if not lean_lone:
+            scored = tilt_rows_scores_from_raw(
+                raw_sum,
+                rows.row_image_local,
+                rows.row_log_prior,
+                jnp.asarray(unit_prior),
+                candidate_mask,
+                row_is_valid,
+                unit_capacity=unit_capacity,
+            )
         # The particle's segment spans every class: RELION's joint minimum, normalization and
         # significance (ml_optimiser.cpp:8411, :9225); with K>1 also each (particle, class) sub-segment.
         posterior = resident_chunk_posterior.chunk_posterior_from_scores(
@@ -477,7 +505,10 @@ def run_tilt_chunk(
             ),
             row_is_valid=row_is_valid,
             kernel_row_image_ids=kernel_row_image_ids,
+            reconstruction_only=lean_lone,
         )
+        if lean_lone:
+            del scored  # the particle's scores: the posterior is all the M-step reads
     row_posterior = posterior.row_posterior
 
     # --- M-step, one pass per image slot ------------------------------------
@@ -497,7 +528,8 @@ def run_tilt_chunk(
     # has thousands, a particle a handful of significant samples, and the Wavg rectangle is
     # [images, T, P_rect] (gathered per row, [rows, T, P_rect]). Dropped translations carry exactly
     # zero posterior.
-    block_rows = int(spec.mstep_block_rows)
+    # A lone particle's M-step block is at most its row block (a lean particle's can be below the row classes).
+    block_rows = min(int(spec.mstep_block_rows), int(lone_block_rows)) if lone else int(spec.mstep_block_rows)
     host_posterior = np.asarray(row_posterior)[:chunk.n_valid_rows]  # sliced on the host: no program per row count
     # Rows without posterior mass (RELION's non-significant samples) add exact zeros; the M-step
     # blocks visit only the rows with mass (row_has_mass), gathered to the front of each slot's order.
@@ -550,7 +582,7 @@ def run_tilt_chunk(
         image_capacity=mstep_units,
         n_fine_trans=int(translation_blocks[0].index.size),
         presum_adjoint=merge_row_partials,
-        **spec_kwargs,
+        **dict(spec_kwargs, mstep_block_rows=block_rows),
     )
     unit_slot_images = _unit_slot_images(layout, unit_capacity=unit_capacity, slot_capacity=n_slots)[:, :mstep_units]
     kept_index = jnp.asarray(np.stack([kept.index for kept in translation_blocks]), dtype=jnp.int32)

@@ -522,6 +522,19 @@ def _flat_rows_scores(
 ):
     """RELION's per-segment common minimum and diff2-to-log-weight conversion of flat rows."""
 
+    raw_diff2, valid = _flat_rows_candidates(raw_from_kernel, candidate_mask, row_is_valid)
+    min_diff2 = flat_rows_segment_min_diff2(
+        _flat_rows_row_min(raw_diff2, valid), row_image_local, segment_capacity=segment_capacity
+    )
+    scores = _flat_rows_scores_at_min(
+        raw_diff2, valid, min_diff2, row_image_local, row_log_prior, chunk_translation_prior
+    )
+    return ResidentChunkScores(raw_diff2=raw_diff2, scores=scores, min_diff2=min_diff2)
+
+
+def _flat_rows_candidates(raw_from_kernel, candidate_mask, row_is_valid):
+    """The rows' diff2 at their candidates (+inf elsewhere) and the finite candidate cells."""
+
     if candidate_mask is None:
         candidate_mask = jnp.broadcast_to(row_is_valid[:, None], raw_from_kernel.shape)
     else:
@@ -531,27 +544,42 @@ def _flat_rows_scores(
         raw_from_kernel,
         jnp.asarray(jnp.inf, dtype=raw_from_kernel.dtype),
     )
+    return raw_diff2, candidate_mask & jnp.isfinite(raw_diff2)
 
-    # --- per-segment common minimum over the chunk's rows ------------------
-    valid = candidate_mask & jnp.isfinite(raw_diff2)
-    per_row_min = jnp.min(
-        jnp.where(valid, raw_diff2, jnp.asarray(jnp.inf, dtype=raw_diff2.dtype)), axis=1
-    )
+
+def _flat_rows_row_min(raw_diff2, valid):
+    """Each row's minimum diff2 over its finite candidates (+inf without one)."""
+
+    return jnp.min(jnp.where(valid, raw_diff2, jnp.asarray(jnp.inf, dtype=raw_diff2.dtype)), axis=1)
+
+
+def flat_rows_segment_min_diff2(per_row_min, row_image_local, *, segment_capacity: int):
+    """RELION's per-segment common minimum diff2 from its rows' minima (0 for a segment without a candidate).
+
+    A minimum is exact in any grouping, so rows scored a block at a time give their minima here unchanged
+    (:func:`tilt_row_block_scores`).
+    """
+
     segment_min = jax.ops.segment_min(
         per_row_min,
-        row_image_local,
+        jnp.asarray(row_image_local, dtype=jnp.int32),
         num_segments=segment_capacity,
         indices_are_sorted=True,
     )
-    min_diff2 = jnp.where(
-        jnp.isfinite(segment_min), segment_min, jnp.asarray(0.0, dtype=segment_min.dtype)
-    )
+    return jnp.where(jnp.isfinite(segment_min), segment_min, jnp.asarray(0.0, dtype=segment_min.dtype))
 
-    # --- RELION diff2 -> log weight, in the flat-row layout ----------------
-    # Same operation order as ``scripts/lib/bucketed_pass2_scoring._relion_cuda_fine_diff2_to_scores``: the two
-    # optimization barriers keep ``(prior + min) - diff2`` from being
-    # re-associated, which changes float32 tie-breaking at diff2 ~ 1e3.
+
+def _flat_rows_scores_at_min(raw_diff2, valid, min_diff2, row_image_local, row_log_prior, chunk_translation_prior):
+    """RELION's diff2 -> log weight of flat rows, given their segments' common minimum.
+
+    Same operation order as ``scripts/lib/bucketed_pass2_scoring._relion_cuda_fine_diff2_to_scores``: the two
+    optimization barriers keep ``(prior + min) - diff2`` from being re-associated, which changes float32
+    tie-breaking at diff2 ~ 1e3. Every cell is its own row's and segment's, so a block of rows gives its
+    cells of the whole chunk's scores.
+    """
+
     real_dtype = raw_diff2.dtype
+    row_image_local = jnp.asarray(row_image_local, dtype=jnp.int32)
     row_min = min_diff2[row_image_local].astype(real_dtype)
     valid = valid & (raw_diff2 >= row_min[:, None])
     scores = jnp.asarray(row_log_prior, dtype=real_dtype)[:, None] + jnp.asarray(
@@ -561,9 +589,29 @@ def _flat_rows_scores(
     scores = scores + row_min[:, None]
     scores = jax.lax.optimization_barrier(scores)
     scores = scores - raw_diff2
-    scores = jnp.where(valid & jnp.isfinite(scores), scores, -jnp.inf)
+    return jnp.where(valid & jnp.isfinite(scores), scores, -jnp.inf)
 
-    return ResidentChunkScores(raw_diff2=raw_diff2, scores=scores, min_diff2=min_diff2)
+
+def tilt_row_block_min_diff2(raw_block, candidate_mask_block, row_is_valid_block):
+    """The minimum diff2 of each row of a block of a particle's rows (:func:`tilt_row_block_scores`)."""
+
+    return _flat_rows_row_min(*_flat_rows_candidates(raw_block, candidate_mask_block, row_is_valid_block))
+
+
+def tilt_row_block_scores(
+    raw_block, min_diff2, row_unit_local_block, row_log_prior_block, unit_translation_prior,
+    candidate_mask_block, row_is_valid_block,
+):
+    """A block of a particle's rows' scores, given every row's segment minimum (:func:`flat_rows_segment_min_diff2`).
+
+    The cells are :func:`tilt_rows_scores_from_raw`'s of the same rows (relax#118: a particle whose rows' full
+    scoring arrays do not fit is scored a block of rows at a time).
+    """
+
+    raw_diff2, valid = _flat_rows_candidates(raw_block, candidate_mask_block, row_is_valid_block)
+    return _flat_rows_scores_at_min(
+        raw_diff2, valid, min_diff2, row_unit_local_block, row_log_prior_block, unit_translation_prior
+    )
 
 
 def _normalized_cc_row_scores(

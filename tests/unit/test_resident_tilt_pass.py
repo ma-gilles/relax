@@ -615,6 +615,114 @@ def test_lone_tilt_particle_in_row_blocks_is_the_one_chunk_pass(monkeypatch):
     _assert_tilt_pass_matches_spa(whole, blocked)
 
 
+def _lean_lone_run(monkeypatch, args, tilt, *, block_rows=None):
+    """The blocked pass again with its row-blocked particles in their lean form (relax#118).
+
+    Called after :func:`_lone_tilt_runs`, whose budget stays patched: the full lone form's per-row bytes are made
+    too large, so the planner takes the lean form (resident_tilt_lone). ``block_rows`` replaces the lean blocks'
+    rows at the chunk call. Returns ``(pass, lean_lone flags and block rows of the row-blocked chunks)``.
+    """
+
+    from relax.fine_pass import resident_pass2 as rp
+    from relax.fine_pass import resident_tilts
+
+    monkeypatch.setattr(resident_tilts, "tilt_lone_row_bytes", lambda *a, **k: 1 << 50)
+    real_chunk, calls = resident_tilts.run_tilt_chunk, []
+
+    def chunk(tilt_chunk, *a, **k):
+        if k.get("lone_block_rows"):
+            if block_rows is not None:
+                k = dict(k, lone_block_rows=int(block_rows))
+            calls.append((bool(k.get("lean_lone")), int(k["lone_block_rows"])))
+        return real_chunk(tilt_chunk, *a, **k)
+
+    monkeypatch.setattr(resident_tilts, "run_tilt_chunk", chunk)
+    engine_tuning = replace(RESIDENT_PRODUCTION_ENGINE, mstep_block_rows=16)
+    lean = rp._resident_pass2(
+        **dict(args, translation_log_prior=None), tilt=tilt, engine_tuning=engine_tuning, scoring_overrides=ScoringOverrides()
+    )
+    return lean, calls
+
+
+@requires_resident_gpu
+def test_lean_lone_tilt_particle_is_the_full_lone_pass(monkeypatch):
+    """A row-blocked particle whose full posterior arrays do not fit takes the lean form (relax#118): its scores
+    built in place a block of rows at a time and the reconstruction-only posterior handler.
+
+    At the same row blocks every value is the full lone form's: each cell is computed by the same operations and
+    the particle's minimum, normalization and significance cut are taken over all of its cells. At smaller row
+    blocks (a 16 GB card) only the grouping of the projector calls and the M-step blocks changes, as between the
+    full lone form and the one-chunk pass.
+    """
+
+    args = dict(_driver_fixture_args(), score_with_masked_images=True)
+    tilt, n_units = _two_image_particles(args)
+    args = dict(
+        args,
+        significant_sample_indices=args["significant_sample_indices"][:n_units],
+        normalization_other_score_log_z=args["normalization_other_score_log_z"][:n_units],
+    )
+    whole, blocked, lone_rows = _lone_tilt_runs(monkeypatch, args, tilt)
+    lean, calls = _lean_lone_run(monkeypatch, args, tilt)
+    assert calls and all(lean_form and rows == 16 for lean_form, rows in calls), calls
+    # The full lone form's values (one float32 operation sequence per cell; assert_matches' float32 default).
+    for field in ("hard_assignment", "best_fine_rotation_indices"):
+        assert_matches(getattr(blocked.finalized, field), getattr(lean.finalized, field), err_msg=field)
+    for field in ("log_evidence_per_image", "best_log_score_per_image", "max_posterior_per_image", "rotation_posterior_sums"):
+        assert_matches(np.asarray(getattr(blocked.finalized, field)), np.asarray(getattr(lean.finalized, field)), err_msg=field)
+    _assert_tilt_pass_matches_spa(blocked, lean)
+    _assert_tilt_pass_matches_spa(whole, lean)
+
+    smaller, smaller_calls = _lean_lone_run(monkeypatch, args, tilt, block_rows=4)
+    assert smaller_calls and all(lean_form and rows == 4 for lean_form, rows in smaller_calls), smaller_calls
+    _assert_tilt_pass_matches_spa(whole, smaller)
+
+
+def test_lean_lone_plan_fits_the_16gb_refusal():
+    """The budget arithmetic of the 16 GB refusal (relax#118, job 15929725): 294,912 rows, 41 image slots of
+    300,808 bytes per projected row, 1,176 translations, a 6.71 GiB chunk budget.
+
+    The full lone form needs 14.24 GiB (its rows' posterior arrays alone 11.1 GiB); the lean form keeps 13 bytes
+    per cell and fits in blocks of 128 rows, not of 256.
+    """
+
+    from relax.fine_pass import resident_chunk_memory
+    from relax.fine_pass.policy import ResidentConfigurationUnsupported
+    from relax.fine_pass.resident_tilt_lone import lean_lone_row_bytes
+    from relax.fine_pass.resident_tilts import tilt_lone_row_bytes
+
+    gib = 1024**3
+    kwargs = dict(
+        row_capacity_ladder=(256,),
+        image_capacity_ladder=(32,),
+        mstep_block_rows=128,
+        row_bytes=41 * 300808,
+        n_fine_trans=41,
+        n_recon_pixels=7475,
+        budget_bytes=7206227933,
+        rows_live_during_prepare=True,
+        fixed_bytes=130772880,
+        max_image_rows=294912,
+        held_tile_pixels=17135,
+        prepare_tile_pixels=17135,
+        mstep_tile_pixels=0,
+    )
+    full = tilt_lone_row_bytes(1176, slot_capacity=41)
+    assert full == 40512
+    with pytest.raises(ResidentConfigurationUnsupported, match="needs 14.24 GiB"):
+        resident_chunk_memory.plan_resident_chunk_memory(**kwargs, lone_row_bytes=full)
+    lean = lean_lone_row_bytes(1176, slot_capacity=41)
+    assert lean == 1176 * 13 + 64 + 41 * 40
+    with pytest.raises(ResidentConfigurationUnsupported):
+        resident_chunk_memory.plan_resident_chunk_memory(**kwargs, lone_row_bytes=lean)
+    plan = resident_chunk_memory.plan_resident_chunk_memory(
+        **dict(kwargs, row_bytes=41 * 300808), lone_row_bytes=lean, lone_block_rows=128
+    )
+    assert plan.peak_bytes <= kwargs["budget_bytes"]
+    assert 128 * 41 * 300808 + 294912 * lean <= plan.peak_bytes
+    print(f"lean lone plan at 128-row blocks: {plan.peak_bytes / gib:.2f} GiB of {kwargs['budget_bytes'] / gib:.2f}")
+
+
 def test_lone_tilt_plan_fits_the_refused_real_configuration():
     """The budget arithmetic of the refused pass: 294,912 rows, 41 image slots, 37 translations, 146.9 KiB per
     projected row and two live copies of it, 7475 reconstruction pixels, a 42.14 GiB chunk budget.

@@ -300,6 +300,7 @@ def plan_resident_chunk_memory(
     fixed_bytes: int = 0,
     max_image_rows: int = 0,
     lone_row_bytes: int | None = None,
+    lone_block_rows: int | None = None,
     overflow_row_bytes: int | None = None,
     float32_posterior_buckets: bool = False,
 ) -> ResidentChunkMemoryPlan:
@@ -331,7 +332,9 @@ def plan_resident_chunk_memory(
     ``lone_row_bytes`` is set where that chunk runs in blocks of the largest row
     class (the global pass, :func:`~relax.fine_pass.resident_chunk_run.run_lone_resident_chunk`): it is then a
     largest-class chunk of the smallest image class plus ``lone_row_bytes`` for
-    each of its rows (the posterior cells every row keeps). ``overflow_row_bytes`` (default ``row_bytes``) is
+    each of its rows (the posterior cells every row keeps); ``lone_block_rows`` is that block when it is smaller
+    than the largest row class (a lean lone tilt particle, :mod:`~relax.fine_pass.resident_tilt_lone`).
+    ``overflow_row_bytes`` (default ``row_bytes``) is
     that chunk's ``row_bytes`` when it differs from the row classes': a subtomogram particle past them projects
     its rows a smaller block of image slots at a time (resident_pass2, ``tilt_overflow_slot_block``).
     """
@@ -369,7 +372,7 @@ def plan_resident_chunk_memory(
             return 0
         if lone_row_bytes is not None:
             return resident_chunk_bytes(
-                row_capacity=max(rows),
+                row_capacity=max(rows) if lone_block_rows is None else int(lone_block_rows),
                 image_capacity=min(images),
                 mstep_block_rows=block,
                 **overflow_kwargs,
