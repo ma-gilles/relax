@@ -258,10 +258,10 @@ class RelionCapacityHalfTextureF32:
         except Exception as exc:  # still destroy after a failed launch, as RelionPersistentHalfTextureF32.close
             readiness_error = exc
         handle = self._handle
+        _destroy_capacity_half_texture(handle, raise_on_error=True)
         self._handle = 0
         self._last_output = None
         self._finalizer.detach()
-        _destroy_capacity_half_texture(handle, raise_on_error=True)
         if readiness_error is not None:
             raise readiness_error
 

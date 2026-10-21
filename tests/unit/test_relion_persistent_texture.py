@@ -115,9 +115,23 @@ def test_capacity_texture_close_after_concrete_completion(monkeypatch):
     texture.close_after(completion)
     assert events == ["ready", ("destroy", 97), "detach"]
     assert texture.closed
+
     texture.close_after(completion)
     texture.close()
     assert events == ["ready", ("destroy", 97), "detach"]
+
+    # A failed last launch still destroys the texture, then raises.
+    events.clear()
+    texture._handle, texture._finalizer = 98, Finalizer()
+
+    def failed(value):
+        events.append("ready")
+        raise RuntimeError("launch failed")
+
+    monkeypatch.setattr(cuda_projector.jax, "block_until_ready", failed)
+    with pytest.raises(RuntimeError, match="launch failed"):
+        texture.close_after(completion)
+    assert events == ["ready", ("destroy", 98), "detach"] and texture.closed
 
 
 def test_capacity_texture_rejects_traced_completion_without_destroy(monkeypatch):
