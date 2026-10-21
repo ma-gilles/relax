@@ -212,6 +212,7 @@ def vdam_command_observer(environ=None) -> VdamObserver:
         noise_update_dir=env.get(NOISE_UPDATE_DUMP_DIR_ENV) or None,
         noise_update_iterations=_iterations(env.get(NOISE_UPDATE_DUMP_ITERATION_ENV) or ""),
         noise_failure_dir=env.get(NOISE_FAILURE_DUMP_DIR_ENV) or None,
-        profile=bool(env.get(PROFILE_ENV)),
+        # Off when unset, blank or a false token (0/false/no/off), as env_flags.parse_env_flag.
+        profile=env.get(PROFILE_ENV, "").strip().lower() not in {"", "0", "false", "no", "off"},
     )
     return dumps

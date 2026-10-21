@@ -65,3 +65,11 @@ def test_the_initial_model_command_hands_its_e_step_the_k_class_diagnostics():
     K-class engine's switches; the port's own observer keeps the no-op probe."""
     assert isinstance(vdam_command_observer({}).expectation_probe(), KClassEstepDiagnostics)
     assert isinstance(VdamObserver().expectation_probe(), NoProbe)
+
+
+@pytest.mark.parametrize(("raw", "on"), [("", False), ("0", False), (" False ", False), ("off", False), ("1", True)])
+def test_vdam_profile_switch_takes_false_tokens_as_off(raw, on):
+    from relax.diagnostics.vdam_observers import PROFILE_ENV, StageProfile
+
+    observer = vdam_command_observer({PROFILE_ENV: raw})
+    assert isinstance(observer.stage_profile(), StageProfile) is on
