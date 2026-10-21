@@ -1417,7 +1417,6 @@ def test_dispatcher_sends_every_pass_to_the_resident_engine(monkeypatch):
     calls = []
     monkeypatch.setattr(rp, "compute_pass2_stats_resident", lambda *a, **k: calls.append(k) or "resident")
     args = _driver_fixture_args()
-    args.setdefault("mean_variance", None)
     take_pass_engines()
     assert sparse_dispatch.compute_pass2_stats_sparse(**args, engine_tuning=EngineTuning(), scoring_overrides=ScoringOverrides()) == "resident"
     assert len(calls) == 1

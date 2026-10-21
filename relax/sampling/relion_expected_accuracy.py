@@ -367,7 +367,7 @@ def _schedule(mode: int) -> tuple[np.ndarray, np.ndarray, int]:
             return np.asarray(angles), np.asarray(shifts), len(angles) - 1
 
 
-def _snr_terms(current_image_size, box_size, sigma2_noise, sigma2_fudge, remap_image_sizes):
+def _snr_terms(current_image_size, sigma2_noise, sigma2_fudge, remap_image_sizes):
     """Per-pixel ``1 / (2 fudge sigma2)`` of the pixels the SNR sums, zero elsewhere."""
 
     half = current_image_size // 2 + 1
@@ -535,7 +535,7 @@ def expected_angular_errors(
                 draws[row] = float(relion_random.rnd_unif(generator))
 
     valid, denominator = _snr_terms(
-        int(current_image_size), box_size, sigma2_noise, float(sigma2_fudge), remap_image_sizes
+        int(current_image_size), sigma2_noise, float(sigma2_fudge), remap_image_sizes
     )
     # Device shapes: the stable window class of the image and of the projector radius.
     capacity = _capacity_size(int(current_image_size), box_size, stable_window_quantum)

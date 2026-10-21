@@ -18,7 +18,6 @@ import numpy as np
 
 from relax.classification.k_class_inputs import (
     dataset_image_count,
-    select_class_value,
     select_projector_half_for_class,
     select_required_class_value,
     translation_angle_scale_kwargs,
@@ -35,7 +34,7 @@ def apply_bpref_particle_order_policy(
     engine_kwargs: dict,
     *,
     n_classes: int,
-) -> bool:
+) -> None:
     """Forward the guarded fresh-K=1 BPref order into a sparse pass."""
 
     preserve = bool(engine_kwargs.get("preserve_bpref_particle_order", False))
@@ -43,7 +42,6 @@ def apply_bpref_particle_order_policy(
         raise ValueError("RELION BPref particle-order preservation is K=1-only")
     if preserve:
         common["preserve_bpref_particle_order"] = True
-    return preserve
 
 
 def infer_healpix_order_from_rotation_count(
@@ -173,7 +171,6 @@ def run_sparse_k_class_adaptive_pass2(
         do_gridding_correction=bool(base_engine_kwargs.get("do_gridding_correction", False)),
         square_window=bool(base_engine_kwargs.get("square_window", False)),
         window_at_box=bool(base_engine_kwargs.get("window_at_box", False)),
-        relion_half_volume_mstep=bool(base_engine_kwargs.get("relion_half_volume_mstep", False)),
         relion_x_half_mstep=bool(base_engine_kwargs.get("mstep_relion_x_half", False)),
         mstep_subtract_ctf_projection=bool(
             base_engine_kwargs.get("mstep_subtract_ctf_projection", False)
@@ -207,9 +204,6 @@ def run_sparse_k_class_adaptive_pass2(
         fine_rotation_parent_override=rot_parent_map_np,
         fine_translations_override=fine_translations_np,
         fine_translation_parent_override=trans_parent_map_np,
-        bpref_device_signature_active=bool(
-            base_engine_kwargs.get("bpref_device_signature_active", False)
-        ),
         source_faithful_spectrum_norm=source_faithful_spectrum_norm,
         nyquist_column_counting=base_engine_kwargs.get("nyquist_column_counting", "relion"),
         firstiter_cc_support=base_engine_kwargs.get("firstiter_cc_support", "relion"),
@@ -234,7 +228,7 @@ def run_sparse_k_class_adaptive_pass2(
         common["relion_coarse_max_posterior"] = base_engine_kwargs.get("relion_coarse_max_posterior")
         if n_classes > 1:
             common["relion_coarse_class_assignment"] = base_engine_kwargs["relion_coarse_class_assignment"]
-    preserve_bpref_particle_order = apply_bpref_particle_order_policy(
+    apply_bpref_particle_order_policy(
         common,
         base_engine_kwargs,
         n_classes=n_classes,
@@ -279,12 +273,10 @@ def run_sparse_k_class_adaptive_pass2(
     # K=1: one resident pass. RELION's shared unweighted power_img high-shell term
     # belongs to this only class.
     common["include_unweighted_norm_high_shell"] = True
-    del preserve_bpref_particle_order
     mstep_t0 = time.time()
     result = compute_pass2_stats_sparse(
         experiment_dataset,
         means_array[0],
-        select_class_value(mean_variance, 0, n_classes),
         noise_variance,
         coarse_translations_np,
         sig_sample_indices_by_class[0],
@@ -338,7 +330,6 @@ def single_class_pass2_em_result(
 
     return assemble_result(
         class_log_evidence=np.asarray(result.relion_stats.log_evidence_per_image, dtype=np.float64)[None],
-        new_means=None,
         Ft_y=[as_host_accumulator(result.Ft_y)],
         Ft_ctf=[as_host_accumulator(result.Ft_ctf)],
         per_class_hard_assignments=sparse_pose_ids_to_fine_grid(
@@ -459,8 +450,6 @@ def _run_resident_k_class_pass2(
     return class_segmented_em_result(
         output,
         n_classes=n_classes,
-        class_posterior_sums_from_noise=True,
-        return_profile=False,
         host_accumulators=True,
         mstep_full_half_axis=0 if common["relion_x_half_mstep"] else None,
         mstep_accumulator_shape=mstep_accumulator_shape,
@@ -473,8 +462,6 @@ def class_segmented_em_result(
     output,
     *,
     n_classes: int,
-    class_posterior_sums_from_noise: bool,
-    return_profile: bool,
     **accumulator_layout,
 ) -> KClassEMResult:
     """The K-class result of one engine call that scored every class jointly.
@@ -527,18 +514,13 @@ def class_segmented_em_result(
         # One engine call scored every class jointly, so its joint max posterior is
         # authoritative; see assemble_result for why it is not rebuilt downstream.
         joint_max_posterior_per_image=np.asarray(output.stats.max_posterior_per_image),
-        new_means=None,
         Ft_y=[output.Ft_y[class_index] for class_index in range(n_classes)],
         Ft_ctf=[output.Ft_ctf[class_index] for class_index in range(n_classes)],
         per_class_hard_assignments=np.asarray(output.per_class_hard_assignments, dtype=np.int64),
         per_class_stats=per_class_stats,
         noise_stats=None,
         aggregate_noise_stats_override=output.noise_stats,
-        class_posterior_sums_override=(
-            np.asarray(output.class_reconstruction_posterior_sums, dtype=np.float64)
-            if class_posterior_sums_from_noise
-            else None
-        ),
+        class_posterior_sums_override=np.asarray(output.class_reconstruction_posterior_sums, dtype=np.float64),
         per_class_best_pose_rotations=(
             None if output.per_class_best_pose_rotations is None else list(output.per_class_best_pose_rotations)
         ),
@@ -560,7 +542,6 @@ def class_segmented_em_result(
             if output.per_class_best_pose_eulers_deg is None
             else list(output.per_class_best_pose_eulers_deg)
         ),
-        profile_summary=output.profile if return_profile else None,
         uncast_log_evidence_per_image=output.uncast_log_evidence_per_image,
         **accumulator_layout,
     )

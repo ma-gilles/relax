@@ -65,7 +65,7 @@ def test_command_particle_loading_preserves_tilt_particle_identity(project, tmp_
         image_fourier_backend="host_numpy", relion_init_dir=None, init_noise_from_npz=None,
     )
     loaded = refinement_particles.load_particle_inputs(
-        args, relion_half_sets_from_input=False, image_fourier_backend="host_numpy"
+        args, relion_half_sets_from_input=False
     )
     original_rows, _ = read_star(str(flat))
     original_index = tomo_input.tomo_particle_index(original_rows)
@@ -107,7 +107,7 @@ def test_command_particle_loading_stages_subtomogram_stacks_to_scratch_dir(proje
             image_fourier_backend="host_numpy", relion_init_dir=None, init_noise_from_npz=None,
         )
         return refinement_particles.load_particle_inputs(
-            args, relion_half_sets_from_input=False, image_fourier_backend="host_numpy"
+            args, relion_half_sets_from_input=False
         ).dataset
 
     streamed = load("streamed", "")

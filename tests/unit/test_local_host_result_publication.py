@@ -99,7 +99,6 @@ def test_complete_result_publication_matches_device_result(host):
     noise = _noise(values, host=host)._replace(sumw=2.0)
     kwargs = dict(
         class_log_evidence=np.asarray([[4.0, 5.0, 6.0]]),
-        new_means=None,
         Ft_y=[np.asarray([1 + 2j, 3 - 4j], dtype=np.complex64)],
         Ft_ctf=[np.asarray([5.0, 6.0], dtype=np.float32)],
         per_class_hard_assignments=np.asarray([[3, 1, 7]], dtype=np.int32),

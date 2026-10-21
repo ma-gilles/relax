@@ -1783,7 +1783,6 @@ def main() -> None:
                 class_output = compute_pass2_stats_sparse(
                     ds,
                     means[class_index],
-                    mean_variance_prev[class_index],
                     noise_variance,
                     translations.astype(np.float32),
                     significant_sample_indices[class_index],

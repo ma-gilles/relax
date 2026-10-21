@@ -340,7 +340,6 @@ def _finish_large_relion_postprocess_from_unpadded_real_impl(
     return_real_space=False,
     return_half_volume=False,
     gridding_padding_factor=None,
-    gridding_order=None,
 ):
     """Finish large-grid post-processing from an unpadded real volume."""
 
@@ -354,7 +353,7 @@ def _finish_large_relion_postprocess_from_unpadded_real_impl(
     vol = vol.astype(jnp.complex64 if np.issubdtype(vol.dtype, np.complexfloating) else jnp.float32)
 
     if grid_correct:
-        order = gridding_order if gridding_order is not None else (1 if kernel == "triangular" else 0)
+        order = 1 if kernel == "triangular" else 0
         grid_fn = griddingCorrect_square if gridding_correct == "square" else griddingCorrect
         gc_pf = gridding_padding_factor if gridding_padding_factor is not None else volume_upsampling_factor
         vol, _ = grid_fn(vol, og_volume_shape[0], gc_pf / kernel_width, order=order)
@@ -384,7 +383,6 @@ def finish_large_relion_postprocess_from_unpadded_real(
     return_real_space=False,
     return_half_volume=False,
     gridding_padding_factor=None,
-    gridding_order=None,
 ):
     """Finish a host-iFFT reconstruction after its real-space center crop."""
 
@@ -401,7 +399,6 @@ def finish_large_relion_postprocess_from_unpadded_real(
         return_real_space=return_real_space,
         return_half_volume=return_half_volume,
         gridding_padding_factor=gridding_padding_factor,
-        gridding_order=gridding_order,
     )
 
 
@@ -419,7 +416,6 @@ def finish_large_relion_postprocess_from_fftw_half(
     return_real_space=False,
     return_half_volume=False,
     gridding_padding_factor=None,
-    gridding_order=None,
 ):
     """Finish a large c64/f32 reconstruction from a raw-FFTW half-volume.
 
@@ -448,5 +444,4 @@ def finish_large_relion_postprocess_from_fftw_half(
         return_real_space=return_real_space,
         return_half_volume=return_half_volume,
         gridding_padding_factor=gridding_padding_factor,
-        gridding_order=gridding_order,
     )

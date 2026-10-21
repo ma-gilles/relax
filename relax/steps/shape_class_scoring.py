@@ -725,8 +725,6 @@ def merge_k_class_engine_results(results, classes, n_half, model_box_size):
 
     first = results[0]
     _require_one_backprojector_layout(results)
-    if any(result.new_means is not None for result in results):
-        raise NotImplementedError("closed-form class means are not merged across shape classes")
 
     def per_image(name, axis=0):
         return _per_image_axis([getattr(r, name) for r in results], classes, n_half, axis)

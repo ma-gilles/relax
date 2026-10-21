@@ -188,7 +188,6 @@ __all__ = [
 
 def _resident_wavg_arithmetic(
     *,
-    preserve_bpref_particle_order,
     source_faithful_spectrum_norm,
 ):
     """Resolve the pass's Wavg arithmetic: RELION's powerClass spectrum and its exact BPref operands.
@@ -197,10 +196,8 @@ def _resident_wavg_arithmetic(
     ``resident_pass_tables.resident_scale_and_triplet``'s. The resident statistics stage implements
     RELION's atomic Wavg triplet only, for fresh passes and subset or focused replays alike (user
     decision 2026-09-26: the replays' earlier unordered, non-atomic arithmetic was the compact engine's).
-    ``preserve_bpref_particle_order`` no longer changes it.
     """
 
-    del preserve_bpref_particle_order
     # A pass that preserves RELION's BPref order (every fresh K=1 pass) runs RELION's
     # powerClass spectrum with its exact BPref operands; there is no other variant.
     spectrum_norm = exact_bpref_operands = bool(source_faithful_spectrum_norm)
@@ -440,7 +437,6 @@ def _resident_pass2(
     normalization_score_mode=None,
     return_score_log_z=False,
     return_score_log_z_only=False,
-    rotation_block_size_for_quantization=5000,
     fine_source_eulers_override=None,
     return_source_eulers=False,
     fine_rotations_override=None,
@@ -448,7 +444,6 @@ def _resident_pass2(
     fine_rotation_parent_override=None,
     fine_translations_override=None,
     fine_translation_parent_override=None,
-    relion_half_volume_mstep=False,
     relion_x_half_mstep=False,
     mstep_subtract_ctf_projection=False,
     relion_fine_mstep_prune=False,
@@ -461,8 +456,6 @@ def _resident_pass2(
     relion_projector_texture=None,
     relion_projector_r_max=None,
     adaptive_fraction=0.999,
-    bpref_device_signature_active: bool = False,
-    bpref_class_index: int = 0,
     include_unweighted_norm_high_shell: bool = True,
     preserve_bpref_particle_order: bool = False,
     source_faithful_spectrum_norm: bool = False,
@@ -679,7 +672,6 @@ def _resident_pass2(
         group_ids=group_ids, accumulate_noise=accumulate_noise
     )
     resolved_spectrum_norm, relion_exact_bpref_operands = _resident_wavg_arithmetic(
-        preserve_bpref_particle_order=preserve_bpref_particle_order,
         source_faithful_spectrum_norm=source_faithful_spectrum_norm,
     )
     if not relion_exact_bpref_operands and dataset_needs_exact_ctf(experiment_dataset):
@@ -2831,7 +2823,6 @@ def compute_pass2_stats_resident(
     normalization_score_mode=None,
     return_score_log_z=False,
     return_score_log_z_only=False,
-    rotation_block_size_for_quantization=5000,
     fine_source_eulers_override=None,
     return_source_eulers=False,
     fine_rotations_override=None,
@@ -2839,7 +2830,6 @@ def compute_pass2_stats_resident(
     fine_rotation_parent_override=None,
     fine_translations_override=None,
     fine_translation_parent_override=None,
-    relion_half_volume_mstep=False,
     relion_x_half_mstep=False,
     mstep_subtract_ctf_projection=False,
     relion_fine_mstep_prune=False,
@@ -2852,8 +2842,6 @@ def compute_pass2_stats_resident(
     relion_projector_texture=None,
     relion_projector_r_max=None,
     adaptive_fraction=0.999,
-    bpref_device_signature_active: bool = False,
-    bpref_class_index: int = 0,
     include_unweighted_norm_high_shell: bool = True,
     preserve_bpref_particle_order: bool = False,
     source_faithful_spectrum_norm: bool = False,

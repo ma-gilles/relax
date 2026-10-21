@@ -199,8 +199,6 @@ def plan_adaptive_image_size(
     windows: ExpectationWindows,
     optics: RunOptics,
     options: RefinementOptions,
-    *,
-    log: logging.Logger,
 ) -> CoarseImageSize:
     """Size pass 1 from incoming sampling (a sealed sampling state's exact width is the input source's,
     ``InputSource.adaptive_coarse_size``).

@@ -207,10 +207,8 @@ def initial_model_estep_config(
 
     engine_kwargs: dict = {
         "score_with_masked_images": True,
-        "reconstruct_with_masked_images": False,
         # VDAM --grad subtracts Frefctf (ml_optimiser.cpp:10092-10105); lifts BPref CC +0.91→+0.996.
         "reconstruction_subtract_projected_reference": True,
-        "relion_firstiter_score_mode": "gaussian",
         "image_pre_shifts": image_pre_shifts,
         "translation_prior_centers": relion_sigma_offset_prior_center(translation_offsets),
     }
@@ -272,15 +270,9 @@ def initial_model_estep_config(
 def _engine_kwargs(state: InitialModelState, config: InitialModelEstepConfig) -> dict[str, Any]:
     engine_kwargs = {
         "current_size": None if state.current_size <= 0 else state.current_size,
-        # RELION's radial window at the full box too (ml_optimiser.cpp:5784-5793, :6841-6880).
-        "window_at_box": True,
         "projection_padding_factor": config.padding_factor,
         "reconstruction_padding_factor": config.padding_factor,
         "half_spectrum_scoring": True,
-        # RELION InitialModel BPref uses the rounded radial reconstruction support
-        # encoded by Minvsigma2, not the full square Fourier crop.
-        "recon_square_window": False,
-        "recon_exact_radius": False,
         # RELION InitialModel scores the full rounded Fourier crop emitted by its
         # CUDA projector, including the few crop-corner pixels outside r_max.
         "projection_mask_current_image_disk": False,

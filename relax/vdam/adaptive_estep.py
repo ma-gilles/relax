@@ -308,7 +308,6 @@ def run_adaptive_initial_model_estep(
     class_rotation_log_prior = recovar_order_prior(
         engine_kwargs.get("class_rotation_log_prior"), route.relion_of_recovar
     )
-    rotation_log_prior = recovar_order_prior(engine_kwargs.get("rotation_log_prior"), route.relion_of_recovar)
     class_log_priors = dead_classes_out_of_the_coarse_pass(class_log_priors, class_rotation_log_prior)
     significance_image_batch_size = _safe_coarse_significance_image_batch_size(
         config.image_batch_size,
@@ -376,7 +375,6 @@ def run_adaptive_initial_model_estep(
         # RELION reuses the coarse pdf_offset for every oversampled child.
         translation_log_prior=coarse_translation_log_prior,
         class_rotation_log_prior=class_rotation_log_prior,
-        rotation_log_prior=rotation_log_prior,
         relion_firstiter_score_mode="gaussian",
         relion_exact_fine_gaussian=True,
         fine_source_eulers_override=route.fine_source_eulers,

@@ -321,7 +321,6 @@ def load_particle_inputs(
     args,
     *,
     relion_half_sets_from_input: bool,
-    image_fourier_backend: str,
     frozen_boundary=None,
     fixed_diagnostic_source_paths=None,
 ) -> LoadedParticles:

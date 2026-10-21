@@ -22,8 +22,8 @@ The pass-1 parent probe
 ``score_only`` with ``return_reconstruction_sample_indices`` runs RELION's local
 pass 1 on the same stages (:func:`~relax.local_search.resident_parent_probe.run_resident_parent_probe`): score-only
 operands, rows projected into the score window alone, the segmented float32
-posterior with the adaptive fraction and RELION's ``maximum_significants`` cap
-(``resident_parent_probe._cap_significant_samples``), and per-image significant samples in the
+posterior with the adaptive fraction (admission refuses a ``maximum_significants`` cap),
+and per-image significant samples in the
 exact engine's convention; no M-step and no accumulators.
 
 Semantics that differ from the exact local engine, deliberately and measurably
@@ -694,11 +694,7 @@ def compute_local_search_resident(
                 image_shape=image_shape,
                 current_size=current_size,
                 source_faithful_spectrum_norm=resolved_spectrum_norm,
-                return_profile=support.return_profile,
                 overall_t0=overall_t0,
-                max_significants=(
-                    -1 if support.applied_max_significants is None else int(support.applied_max_significants)
-                ),
                 firstiter_cc=bool(kernel.firstiter_cc),
                 engine_tuning=support.engine_tuning,
                 window_union=(

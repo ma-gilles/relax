@@ -889,7 +889,7 @@ def refine_single_volume(
         coarse_image_plan = (
             source.adaptive_coarse_size(
                 image_size_plans.plan_adaptive_image_size(
-                    coarse_size_healpix_order, plan.sampling_plan.windows, ctx.optics, options, log=logger,
+                    coarse_size_healpix_order, plan.sampling_plan.windows, ctx.optics, options,
                 ),
                 model_size=plan.sampling_plan.windows.model_size,
             )

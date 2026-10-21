@@ -277,14 +277,14 @@ def test_sparse_pass2_execution_order_can_stay_stable_within_size_buckets():
 
 def test_sparse_pass_order_policy_is_k1_only_and_dormant_by_default():
     common = {"sentinel": object()}
-    assert not apply_bpref_particle_order_policy(
+    apply_bpref_particle_order_policy(
         common,
         {},
         n_classes=4,
     )
     assert "preserve_bpref_particle_order" not in common
 
-    assert apply_bpref_particle_order_policy(
+    apply_bpref_particle_order_policy(
         common,
         {"preserve_bpref_particle_order": True},
         n_classes=1,

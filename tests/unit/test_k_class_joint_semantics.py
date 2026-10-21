@@ -111,7 +111,7 @@ def test_adaptive_coarse_state_activation_is_zero_soft_k1_only(
                                  relion_f32_sum_weight=coarse_sum, relion_f32_max_posterior=coarse_pmax))
 
     result = assemble_result(
-        class_log_evidence=np.zeros((n_classes, 1)), new_means=None,
+        class_log_evidence=np.zeros((n_classes, 1)),
         Ft_y=[jnp.ones(4, dtype=jnp.complex64)] * n_classes,
         Ft_ctf=[jnp.ones(4, dtype=jnp.float32)] * n_classes,
         per_class_hard_assignments=np.zeros((n_classes, 1), dtype=np.int32),
@@ -195,7 +195,6 @@ def _adaptive_run_with_fake_coarse(monkeypatch, engine_tuning=EngineTuning()):
 
     sparse_result = assemble_result(
         class_log_evidence=np.zeros((1, 1), dtype=np.float64),
-        new_means=None,
         Ft_y=[jnp.asarray([1, 2, 3, 4], dtype=jnp.complex64)],
         Ft_ctf=[jnp.asarray([5, 6, 7, 8], dtype=jnp.float32)],
         per_class_hard_assignments=np.zeros((1, 1), dtype=np.int32),
@@ -291,7 +290,6 @@ def test_k_class_result_publishes_the_winning_class_fine_pose():
 
     result = assemble_result(
         class_log_evidence=np.zeros((2, 2), dtype=np.float64),
-        new_means=None,
         Ft_y=[jnp.zeros(4, dtype=jnp.complex64)] * 2,
         Ft_ctf=[jnp.zeros(4, dtype=jnp.float32)] * 2,
         per_class_hard_assignments=np.stack(hard),
@@ -312,7 +310,6 @@ def test_k_class_result_publishes_the_winning_class_fine_pose():
 def test_k_class_hard_assignment_uses_joint_best_pose_not_marginal_class():
     result = assemble_result(
         class_log_evidence=np.asarray([[0.0], [-0.2]], dtype=np.float64),
-        new_means=[jnp.zeros(2), jnp.zeros(2)],
         Ft_y=[jnp.zeros(2), jnp.zeros(2)],
         Ft_ctf=[jnp.zeros(2), jnp.zeros(2)],
         per_class_hard_assignments=np.asarray([[3], [7]], dtype=np.int32),
@@ -336,7 +333,6 @@ def test_k_class_hard_assignment_uses_joint_best_pose_not_marginal_class():
 def test_k_class_assemble_result_reports_joint_pmax_not_per_class_pmax():
     result = assemble_result(
         class_log_evidence=np.asarray([[0.0], [0.0]], dtype=np.float64),
-        new_means=[jnp.zeros(2), jnp.zeros(2)],
         Ft_y=[jnp.zeros(2), jnp.zeros(2)],
         Ft_ctf=[jnp.zeros(2), jnp.zeros(2)],
         per_class_hard_assignments=np.asarray([[3], [7]], dtype=np.int32),
@@ -360,7 +356,6 @@ def test_single_class_assemble_result_preserves_authoritative_kernel_pmax():
     kernel_pmax = np.float32(0.97628003)
     result = assemble_result(
         class_log_evidence=np.asarray([[-100000.0]], dtype=np.float64),
-        new_means=[jnp.zeros(2)],
         Ft_y=[jnp.zeros(2)],
         Ft_ctf=[jnp.zeros(2)],
         per_class_hard_assignments=np.asarray([[3]], dtype=np.int32),
@@ -382,7 +377,6 @@ def test_k_class_assemble_result_clips_inconsistent_pmax_before_exp_overflow():
     with np.errstate(over="raise"):
         result = assemble_result(
             class_log_evidence=np.asarray([[-1000.0]], dtype=np.float64),
-            new_means=[jnp.zeros(2)],
             Ft_y=[jnp.zeros(2)],
             Ft_ctf=[jnp.zeros(2)],
             per_class_hard_assignments=np.asarray([[3]], dtype=np.int32),
@@ -401,7 +395,6 @@ def test_k_class_assemble_result_clips_inconsistent_pmax_before_exp_overflow():
 def test_k_class_assemble_result_can_keep_full_accumulators_on_host():
     result = assemble_result(
         class_log_evidence=np.asarray([[0.0], [-0.2]], dtype=np.float64),
-        new_means=None,
         Ft_y=[jnp.asarray([1.0, 2.0]), jnp.asarray([3.0, 4.0])],
         Ft_ctf=[jnp.asarray([5.0, 6.0]), jnp.asarray([7.0, 8.0])],
         per_class_hard_assignments=np.asarray([[3], [7]], dtype=np.int32),
@@ -475,7 +468,6 @@ def test_k_class_assemble_result_publishes_singleton_host_accumulators_without_c
     Ft_ctf = np.asarray([5.0, 6.0], dtype=np.float32)
     result = assemble_result(
         class_log_evidence=np.asarray([[0.0]], dtype=np.float64),
-        new_means=None,
         Ft_y=[Ft_y],
         Ft_ctf=[Ft_ctf],
         per_class_hard_assignments=np.asarray([[3]], dtype=np.int32),
@@ -541,7 +533,6 @@ def test_k_class_noise_aggregate_uses_joint_relion_sum_weight():
             ],
             dtype=np.float64,
         ),
-        new_means=[jnp.zeros(1), jnp.zeros(1)],
         Ft_y=[jnp.zeros(1), jnp.zeros(1)],
         Ft_ctf=[jnp.zeros(1), jnp.zeros(1)],
         per_class_hard_assignments=np.zeros((2, 2), dtype=np.int32),
@@ -592,7 +583,6 @@ def test_k_class_noise_aggregate_keeps_exact_mass_image_power():
             ],
             dtype=np.float64,
         ),
-        new_means=[jnp.zeros(1), jnp.zeros(1)],
         Ft_y=[jnp.zeros(1), jnp.zeros(1)],
         Ft_ctf=[jnp.zeros(1), jnp.zeros(1)],
         per_class_hard_assignments=np.zeros((2, 2), dtype=np.int32),
@@ -822,7 +812,6 @@ def test_adaptive_k_class_firstiter_uses_coarse_current_size_for_probe(monkeypat
         n_images = TinyDataset.n_images
         return assemble_result(
             class_log_evidence=np.zeros((2, n_images), dtype=np.float64),
-            new_means=None,
             Ft_y=[jnp.zeros(4, dtype=jnp.complex64) for _ in range(2)],
             Ft_ctf=[jnp.zeros(4, dtype=jnp.float32) for _ in range(2)],
             per_class_hard_assignments=np.zeros((2, n_images), dtype=np.int32),
@@ -897,7 +886,6 @@ def test_adaptive_k_class_firstiter_sparse_fine_pass_uses_global_winner_subsets(
     def fake_compute_pass2_stats_sparse(
         dataset,
         volume,
-        _mean_variance,
         _noise_variance,
         _translations,
         significant_sample_indices,
@@ -1020,7 +1008,6 @@ def test_sparse_firstiter_k1_adapter_forwards_exact_cc_and_spectrum_norm(monkeyp
     def fake_compute_pass2_stats_sparse(
         dataset,
         volume,
-        _mean_variance,
         _noise_variance,
         _translations,
         _significant_sample_indices,
@@ -1104,7 +1091,6 @@ def test_sparse_k1_adapter_forwards_source_faithful_spectrum_norm(monkeypatch, d
     def fake_compute_pass2_stats_sparse(
         _dataset,
         volume,
-        _mean_variance,
         _noise_variance,
         _translations,
         _significant_sample_indices,
@@ -1474,7 +1460,6 @@ def _k4_assembly_inputs():
     )
     return {
         "class_log_evidence": class_log_evidence,
-        "new_means": None,
         "Ft_y": [np.full(2, class_index + 1j, dtype=np.complex64) for class_index in range(n_classes)],
         "Ft_ctf": [np.full(2, class_index + 1, dtype=np.float32) for class_index in range(n_classes)],
         "per_class_hard_assignments": per_class_hard,

@@ -810,7 +810,6 @@ def run_dense_k_class_em_adaptive(
             raise RuntimeError(
                 "active BPref device signature scope requires supported sparse RELION x-half topology"
             )
-        pass2_kwargs["bpref_device_signature_active"] = True
 
     if firstiter_cc_pass2_only_best_coarse:
         if not hasattr(experiment_dataset, "subset"):

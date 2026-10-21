@@ -775,7 +775,6 @@ def _fake_engine_result(images, box, factor):
         wsum_norm_correction=images.astype(float),
     )
     return KClassEMResult(
-        new_means=None,
         Ft_y=np.ones((2, 4)),
         Ft_ctf=np.ones((2, 4)),
         per_class_hard_assignments=np.stack([images, images + 100]),

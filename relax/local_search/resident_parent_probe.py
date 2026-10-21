@@ -2,8 +2,8 @@
 
 ``run_resident_parent_probe`` runs RELION's local pass 1 on the resident stages: score-only operands, rows
 projected into the score window alone (``resident_local_chunk.project_class_rows``), the segmented float32
-posterior with the adaptive fraction (or the first-iteration CC winner), RELION's ``maximum_significants``
-cap (``_cap_significant_samples``) and per-image significant samples; no M-step and no accumulators. Its chunks
+posterior with the adaptive fraction (or the first-iteration CC winner) and per-image significant samples; no
+M-step and no accumulators (admission refuses a ``maximum_significants`` cap). Its chunks
 carry no reconstruction operands, so it plans them with its own image ladder and cell bytes. Read by the driver
 (``resident_pass2``); imports nothing from it.
 """
@@ -132,35 +132,6 @@ def _prepare_chunk_score_operands(
     return operands
 
 
-def _cap_significant_samples(mask, weights, row_bounds, max_significants: int):
-    """RELION's ``maximum_significants`` cap on one chunk's pass-1 support.
-
-    ``mask`` and ``weights`` are ``[rows, T]`` for the chunk's valid rows, and
-    image ``i`` owns rows ``row_bounds[i]:row_bounds[i + 1]``. Where an image
-    keeps more than ``max_significants`` samples, RELION lowers its count to the
-    cap and takes the weight at that position of the ascending sort as the
-    significant weight (acc_ml_optimiser_impl.h:3256-3263); every sample at or
-    above it stays significant. The weights are the posterior's, whose order is
-    RELION's sort key.
-    """
-
-    cap = int(max_significants)
-    if cap <= 0:
-        return mask
-    mask = np.array(mask, dtype=bool, copy=True)
-    weights = np.asarray(weights)
-    for i in range(len(row_bounds) - 1):
-        rs, re = int(row_bounds[i]), int(row_bounds[i + 1])
-        image_mask = mask[rs:re]
-        if int(np.count_nonzero(image_mask)) <= cap:
-            continue
-        image_weights = weights[rs:re]
-        kept = image_weights[image_mask]
-        significant_weight = np.partition(kept, kept.size - cap)[kept.size - cap]
-        mask[rs:re] = image_mask & (image_weights >= significant_weight)
-    return mask
-
-
 def _probe_chunk_bytes(*, row_capacity: int, image_capacity: int, n_score_pixels: int, n_fine_trans: int,
                        complex_bytes: int, projection_transient_bytes: int) -> int:
     """Device bytes one probe chunk holds at its peak, with the previous chunk's outputs.
@@ -206,9 +177,7 @@ def run_resident_parent_probe(
     image_shape,
     current_size,
     source_faithful_spectrum_norm,
-    return_profile,
     overall_t0,
-    max_significants=-1,
     firstiter_cc=False,
     window_union=None,
     class_projectors=None,
@@ -217,8 +186,7 @@ def run_resident_parent_probe(
     """RELION's local pass 1 (the adaptive parent probe) on the resident stages.
 
     Scores every parent candidate with the pass-2 scorer, forms the segmented
-    float32 posterior with RELION's adaptive-fraction significance and its
-    ``maximum_significants`` cap, and returns, per image, the significant
+    float32 posterior with RELION's adaptive-fraction significance, and returns, per image, the significant
     samples as ``posterior_id * n_trans + t`` in the layout's row order: the
     ``reconstruction_sample_indices_by_image`` contract from which the local
     search builds pass 2's support.
@@ -447,24 +415,18 @@ def run_resident_parent_probe(
                 keep_all=False,
                 use_external_sum_weight=False,
             )
-        device = (mask, best_cell, log_z_out, best_log, max_post, n_significant, weights, scored.min_diff2)
+        device = (mask, best_cell, log_z_out, best_log, max_post, scored.min_diff2)
         return chunk, host_chunk, segment_offsets_np, device
 
     def finish(chunk, host_chunk, segment_offsets_np, device):
         """Read one chunk's support back and record it per image."""
 
-        mask, best_cell, log_z_out, best_log, max_post, n_significant, weights, min_diff2 = device
-        mask_np, best_cell_np, log_z_np, best_log_np, max_post_np, n_sig_np, min_diff2_np = jax.device_get(
-            (mask, best_cell, log_z_out, best_log, max_post, n_significant, min_diff2)
+        mask, best_cell, log_z_out, best_log, max_post, min_diff2 = device
+        mask_np, best_cell_np, log_z_np, best_log_np, max_post_np, min_diff2_np = jax.device_get(
+            (mask, best_cell, log_z_out, best_log, max_post, min_diff2)
         )
         mask_np = np.asarray(mask_np, dtype=bool).reshape(chunk.row_capacity, t)[:chunk.n_valid_rows]
         image_row_start = segment_offsets_np.astype(np.int64)[:chunk.n_valid_images] // t
-        image_n_sig = np.asarray(n_sig_np)[: chunk.n_valid_images]
-        if max_significants > 0 and int(np.max(image_n_sig, initial=0)) > max_significants:
-            weights_np = np.asarray(jax.device_get(weights), dtype=np.float32).reshape(chunk.row_capacity, t)
-            weights_np = weights_np[: chunk.n_valid_rows]
-            row_bounds = np.append(image_row_start, chunk.n_valid_rows)
-            mask_np = _cap_significant_samples(mask_np, weights_np, row_bounds, max_significants)
         rows, cols = np.nonzero(mask_np)
         posterior_ids = host_chunk["row_posterior_id"][:chunk.n_valid_rows].astype(np.int64)
         sample_ids = posterior_ids[rows] * np.int64(t) + cols.astype(np.int64)

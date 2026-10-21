@@ -126,7 +126,6 @@ def test_inactive_class_without_metadata_does_not_erase_winner():
     eulers = np.array([[1.0 + 2**-40, 2.0, 3.0], [4.0, 5.0, 6.0]])
     result = k_class_results.assemble_result(
         class_log_evidence=np.array([[0.0, -20.0], [-20.0, 0.0], [-np.inf, -np.inf], [-np.inf, -np.inf]]),
-        new_means=None,
         Ft_y=[np.zeros(1, np.complex64)] * 4,
         Ft_ctf=[np.ones(1, np.float32)] * 4,
         per_class_hard_assignments=np.zeros((4, 2), np.int32),

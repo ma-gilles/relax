@@ -458,7 +458,6 @@
   "self-cast:relax.local_search.resident_layout:tables_from_local_layout:row_mask_bits",
   "self-cast:relax.local_search.resident_layout:tables_from_local_layout:source_eulers",
   "self-cast:relax.local_search.resident_layout:tables_from_local_layout:translation_grid",
-  "self-cast:relax.local_search.resident_parent_probe:_cap_significant_samples:weights",
   "self-cast:relax.local_search.resident_parent_probe:_prepare_chunk_score_operands:image_indices",
   "self-cast:relax.local_search.resident_pass2:_finalize_class_local_pass:rotation_posterior_sums",
   "self-cast:relax.local_search.resident_pass2:_finalize_class_local_pass:rotations",

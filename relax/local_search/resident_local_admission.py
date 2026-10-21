@@ -108,7 +108,7 @@ def _require_parent_probe_configuration(**kwargs) -> None:
     )
     # The probe keeps RELION's adaptive-fraction support; the segmented float32
     # posterior has no maximum_significants cap, and RELION's default (--maxsig
-    # -1, ml_optimiser.cpp:1109) applies none. A cap stays on the exact engine.
+    # -1, ml_optimiser.cpp:1109) applies none.
     require_local_support(
         kwargs["max_significants"] is None or int(kwargs["max_significants"]) <= 0,
         "a maximum_significants cap on the pass-1 support is not in the segmented "

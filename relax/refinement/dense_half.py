@@ -613,7 +613,6 @@ def _score_half_dense_one_shape(
         "relion_projector_half": None if half.projector is None else half.projector.data,
         "relion_projector_r_max": None if half.projector is None else half.projector.r_max,
         "mstep_relion_x_half": execution.relion_x_half_mstep,
-        "relion_half_volume_mstep": False,
     }
     logger.info(
         "Dense half-set projector handoff: supplied_ppref=%s state_oversampling=%d",

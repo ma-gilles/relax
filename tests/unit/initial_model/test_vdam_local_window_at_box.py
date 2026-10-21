@@ -30,10 +30,3 @@ def test_adaptive_vdam_route_passes_window_at_box():
 
     route = [call for call in _calls(adaptive_estep, "dict") if any(kw.arg == "sparse_pass2" for kw in call.keywords)]
     assert len(route) == 1 and _passes_true(route[0])
-
-
-def test_dense_vdam_engine_kwargs_keep_window_at_box():
-    from relax.vdam import estep_setup
-
-    source = inspect.getsource(estep_setup._engine_kwargs)
-    assert '"window_at_box": True' in source

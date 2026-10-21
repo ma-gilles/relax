@@ -463,7 +463,7 @@ def test_final_all_data_after_max_iter_defaults_to_disabled():
 
     def should_run(*, has_converged=False, iteration=5, after_max_iter=False, force=False, **kwargs):
         return finalization._should_run_final_all_data_iteration(
-            logger=iteration_loop_module.logger, has_converged=has_converged, iteration=iteration, max_iter=5,
+            has_converged=has_converged, iteration=iteration, max_iter=5,
             force_max_iter_after_convergence=force, after_max_iter=after_max_iter, **kwargs,
         )
 
@@ -5972,7 +5972,6 @@ class TestRelionModeSmokeTest:
                 sumw=float(n_images),
             )
             return KClassEMResult(
-                new_means=None,
                 Ft_y=jnp.zeros((n_classes, recon_vol_size), dtype=jnp.complex64),
                 Ft_ctf=jnp.ones((n_classes, recon_vol_size), dtype=jnp.complex64),
                 per_class_hard_assignments=jnp.zeros((n_classes, n_images), dtype=jnp.int32),
@@ -7505,7 +7504,6 @@ class TestRelionModeSmokeTest:
             counts = counts_by_half[half_idx]
             assert counts.shape == (n_images,)
             return KClassEMResult(
-                new_means=None,
                 Ft_y=jnp.zeros((1, recon_vol_size), dtype=jnp.complex64),
                 Ft_ctf=jnp.ones((1, recon_vol_size), dtype=jnp.complex64),
                 per_class_hard_assignments=jnp.zeros((1, n_images), dtype=jnp.int32),
@@ -7707,7 +7705,6 @@ class TestRelionModeSmokeTest:
                 for _ in range(n_classes)
             )
             return KClassEMResult(
-                new_means=None,
                 Ft_y=jnp.zeros((n_classes, recon_vol_size), dtype=jnp.complex64),
                 Ft_ctf=jnp.ones((n_classes, recon_vol_size), dtype=jnp.complex64),
                 per_class_hard_assignments=jnp.zeros((n_classes, n_images), dtype=jnp.int32),
@@ -8867,7 +8864,6 @@ def test_kclass_recomputes_mstep_tau2_from_iref_power_spectrum(
             sumw=float(n_images),
         )
         return KClassEMResult(
-            new_means=jnp.zeros((n_classes, recon_vol_size), dtype=jnp.complex64),
             Ft_y=jnp.zeros((n_classes, recon_vol_size), dtype=jnp.complex64),
             Ft_ctf=jnp.ones((n_classes, recon_vol_size), dtype=jnp.complex64),
             per_class_hard_assignments=jnp.zeros((n_classes, n_images), dtype=jnp.int32),
@@ -9073,7 +9069,6 @@ def test_relion_mode_k_class_writes_absolute_translations_from_previous_offset(
             sumw=float(n_images),
         )
         return KClassEMResult(
-            new_means=jnp.zeros((n_classes, recon_vol_size), dtype=jnp.complex64),
             Ft_y=jnp.zeros((n_classes, recon_vol_size), dtype=jnp.complex64),
             Ft_ctf=jnp.ones((n_classes, recon_vol_size), dtype=jnp.complex64),
             per_class_hard_assignments=jnp.zeros((n_classes, n_images), dtype=jnp.int32),
@@ -9140,7 +9135,6 @@ def test_relion_mode_k_class_writes_absolute_translations_from_previous_offset(
         rtol=1e-6,
         atol=1e-6,
     )
-    assert all(call["relion_half_volume_mstep"] is False for call in dense_calls)
     best_hist = result.history.best_translations_history
     assert len(best_hist) == 1
     np.testing.assert_allclose(best_hist[0][0], expected_h1, rtol=1e-6, atol=1e-6)
@@ -9457,7 +9451,7 @@ def test_production_k4_firstiter_has_one_joint_winner_and_exact_mstep_mass(rng, 
     )
     sparse_calls = []
 
-    def fake_sparse_pass2(subset, volume, _mean_variance, _noise_variance, translations_arg, samples, **kwargs):
+    def fake_sparse_pass2(subset, volume, _noise_variance, translations_arg, samples, **kwargs):
         sparse_calls.append(kwargs)
         n_subset = int(subset.n_units)
         n_trans = int(np.asarray(translations_arg).shape[0])

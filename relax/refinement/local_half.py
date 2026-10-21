@@ -914,8 +914,6 @@ def _class_local_half_result(
     k_class_result = class_segmented_em_result(
         outputs.class_pass,
         n_classes=n_classes,
-        class_posterior_sums_from_noise=True,
-        return_profile=False,
         host_accumulators=True,
         mstep_full_half_axis=0,
         mstep_accumulator_shape=mstep_accumulator_shape,

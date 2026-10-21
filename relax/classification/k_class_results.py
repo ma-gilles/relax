@@ -20,7 +20,6 @@ from relax.types import NoiseStats, RelionStats, make_noise_stats, make_relion_s
 class KClassEMResult(NamedTuple):
     """K-class EM sufficient statistics normalized over class and pose axes."""
 
-    new_means: jax.Array | None
     Ft_y: jax.Array
     Ft_ctf: jax.Array
     per_class_hard_assignments: jax.Array
@@ -240,7 +239,6 @@ def _resolve_class_mstep_posterior_sums(
 def assemble_result(
     *,
     class_log_evidence: np.ndarray,
-    new_means,
     Ft_y,
     Ft_ctf,
     per_class_hard_assignments,
@@ -280,8 +278,6 @@ def assemble_result(
     _require_class_count(Ft_y, "Ft_y")
     _require_class_count(Ft_ctf, "Ft_ctf")
     _require_class_count(per_class_stats, "per_class_stats")
-    if new_means is not None:
-        _require_class_count(new_means, "new_means")
     if noise_stats is not None:
         _require_class_count(noise_stats, "noise_stats")
 
@@ -439,13 +435,6 @@ def assemble_result(
             for k in active_classes:
                 rows = selected_classes == k
                 best_pose_eulers_deg[rows] = np.asarray(per_class_best_pose_eulers_deg[int(k)])[rows]
-    if new_means is None or all(mean is None for mean in new_means):
-        stacked_new_means = None
-    elif any(mean is None for mean in new_means):
-        raise ValueError("Cannot stack mixed missing/present per-class new_means")
-    else:
-        stacked_new_means = jnp.stack([jnp.asarray(mean) for mean in new_means], axis=0)
-
     if aggregate_noise_stats_override is not None:
         if noise_stats is not None:
             raise ValueError("aggregate noise statistics replace per-class noise statistics")
@@ -487,7 +476,6 @@ def assemble_result(
 
     result_array = np.asarray if host_stats_publication else jnp.asarray
     return KClassEMResult(
-        new_means=stacked_new_means,
         Ft_y=_stack_accumulators(Ft_y, host=host_accumulators),
         Ft_ctf=_stack_accumulators(Ft_ctf, host=host_accumulators),
         per_class_hard_assignments=result_array(per_class_hard_assignments, dtype=jnp.int32),

@@ -105,7 +105,6 @@ def adaptive_result(
         else jnp.asarray(pose_assignments, dtype=jnp.int32)
     )
     return KClassEMResult(
-        new_means=None,
         Ft_y=accumulators(Ft_y, jnp.zeros((n_classes, size), dtype=jnp.complex64)),
         Ft_ctf=accumulators(Ft_ctf, jnp.ones((n_classes, size), dtype=jnp.complex64)),
         per_class_hard_assignments=jnp.broadcast_to(poses, (n_classes, n_images)),

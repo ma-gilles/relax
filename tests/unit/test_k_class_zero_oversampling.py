@@ -129,7 +129,7 @@ def test_adaptive_engine_hands_the_coarse_state_to_pass_2_for_classes_on_request
         max_posterior_per_image=np.ones(1, dtype=np.float32), rotation_posterior_sums=np.zeros(1, dtype=np.float32),
     )
     result = assemble_result(
-        class_log_evidence=np.zeros((n_classes, 1)), new_means=None,
+        class_log_evidence=np.zeros((n_classes, 1)),
         Ft_y=[jnp.ones(4, dtype=jnp.complex64)] * n_classes, Ft_ctf=[jnp.ones(4, dtype=jnp.float32)] * n_classes,
         per_class_hard_assignments=np.zeros((n_classes, 1), dtype=np.int32),
         per_class_stats=tuple(stats for _ in range(n_classes)), noise_stats=None,

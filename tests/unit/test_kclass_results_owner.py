@@ -33,8 +33,6 @@ def test_empty_class_fills_zero_results_in_class_order():
         mean=mean,
         class_log_evidence=np.asarray([1.0, 2.0, 3.0]),
         noise_variance=None,
-        class_index=0,
-        n_classes=1,
         n_rot=5,
         host_accumulators=True,
     )
@@ -52,8 +50,6 @@ def test_empty_class_fills_zero_results_in_class_order():
         mean=mean,
         class_log_evidence=np.zeros(3),
         noise_variance=None,
-        class_index=0,
-        n_classes=1,
         n_rot=2,
         host_accumulators=False,
     )

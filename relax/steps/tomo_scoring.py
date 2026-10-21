@@ -878,8 +878,6 @@ def score_tomo_half_in_loop(
         k_class_result = class_segmented_em_result(
             pass2,
             n_classes=n_classes,
-            class_posterior_sums_from_noise=True,
-            return_profile=False,
             host_accumulators=True,
             mstep_full_half_axis=0,
             mstep_accumulator_shape=mstep_accumulator_shape,

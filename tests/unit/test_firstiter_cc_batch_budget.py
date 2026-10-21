@@ -293,7 +293,6 @@ def test_firstiter_winner_take_all_assembly_reports_unit_pmax_across_score_norma
 
     result = k_class_results.assemble_result(
         class_log_evidence=np.array([[1_000.0]], dtype=np.float64),
-        new_means=None,
         Ft_y=[jnp.zeros(1, dtype=jnp.complex64)],
         Ft_ctf=[jnp.zeros(1, dtype=jnp.float32)],
         per_class_hard_assignments=np.zeros((1, 1), dtype=np.int32),
@@ -500,7 +499,6 @@ def test_firstiter_cc_dispatch_uses_coarse_batch_for_significance(monkeypatch, c
             sumw=float(n_images),
         )
         return KClassEMResult(
-            new_means=jnp.zeros((n_classes, 4), dtype=jnp.complex64),
             Ft_y=jnp.zeros((n_classes, 4), dtype=jnp.complex64),
             Ft_ctf=jnp.ones((n_classes, 4), dtype=jnp.float32),
             per_class_hard_assignments=jnp.zeros((n_classes, n_images), dtype=jnp.int32),
@@ -639,7 +637,6 @@ def test_kclass_nonfirstiter_adaptive_dispatch_sizes_actual_fine_grid(monkeypatc
             sumw=float(n_images),
         )
         return KClassEMResult(
-            new_means=jnp.zeros((n_classes, 4), dtype=jnp.complex64),
             Ft_y=jnp.zeros((n_classes, 4), dtype=jnp.complex64),
             Ft_ctf=jnp.ones((n_classes, 4), dtype=jnp.float32),
             per_class_hard_assignments=jnp.zeros((n_classes, n_images), dtype=jnp.int32),
@@ -878,8 +875,8 @@ def test_firstiter_cc_global_winner_pass2_keeps_the_optics_group_noise_table_wit
     class _Stop(Exception):
         pass
 
-    def fake_pass2(dataset, mean, mean_variance, noise_variance, *args, **kwargs):
-        captured.update(kwargs, noise_variance=np.asarray(noise_variance), mean_variance=np.asarray(mean_variance))
+    def fake_pass2(dataset, mean, noise_variance, *args, **kwargs):
+        captured.update(kwargs, noise_variance=np.asarray(noise_variance))
         raise _Stop
 
     class _Dataset:
@@ -919,5 +916,3 @@ def test_firstiter_cc_global_winner_pass2_keeps_the_optics_group_noise_table_wit
 
     np.testing.assert_array_equal(captured["noise_variance"], noise)
     np.testing.assert_array_equal(captured["optics_group_ids"], optics)
-    # The per-class mean variance is still the class's own.
-    np.testing.assert_array_equal(captured["mean_variance"], mean_variance[0])

@@ -41,7 +41,6 @@ def _stats(best, *, log_evidence=-16455.26, max_posterior=0.0, n=1):
 def _assemble(**overrides):
     kwargs = dict(
         class_log_evidence=LARGE_OFFSET_CLASS_LOG_EVIDENCE,
-        new_means=None,
         Ft_y=[np.zeros(1, dtype=np.complex64) for _ in range(4)],
         Ft_ctf=[np.zeros(1, dtype=np.float32) for _ in range(4)],
         per_class_hard_assignments=np.zeros((4, 1), dtype=np.int64),
@@ -116,7 +115,6 @@ def test_k1_branch_is_unchanged():
     single = _stats(LARGE_OFFSET_CLASS_BEST[3], max_posterior=0.5)
     result = assemble_result(
         class_log_evidence=LARGE_OFFSET_CLASS_LOG_EVIDENCE[3:4],
-        new_means=None,
         Ft_y=[np.zeros(1, dtype=np.complex64)],
         Ft_ctf=[np.zeros(1, dtype=np.float32)],
         per_class_hard_assignments=np.zeros((1, 1), dtype=np.int64),

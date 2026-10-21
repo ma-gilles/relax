@@ -183,8 +183,6 @@ def run_tomo_initial_model_estep(
         result = class_segmented_em_result(
             scored.pass2,
             n_classes=state.K,
-            class_posterior_sums_from_noise=True,
-            return_profile=False,
             host_accumulators=True,
             mstep_full_half_axis=0,
             mstep_accumulator_shape=mstep_shape,

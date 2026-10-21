@@ -87,7 +87,6 @@ logger = logging.getLogger("relax.refinement.iteration_loop")
 
 def _should_run_final_all_data_iteration(
     *,
-    logger,
     has_converged: bool,
     iteration: int,
     max_iter: int,
@@ -121,7 +120,6 @@ def final_pass_due(state, options: RefinementOptions, *, iteration: int, after_m
     logged as the diagnostic it is.
     """
     should_run_final_iteration = _should_run_final_all_data_iteration(
-        logger=logger,
         has_converged=state.has_converged,
         iteration=iteration,
         max_iter=options.schedule.max_iter,

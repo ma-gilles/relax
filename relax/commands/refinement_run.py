@@ -398,7 +398,6 @@ def main(command=None):
     particle_inputs = refinement_particles.load_particle_inputs(
         args,
         relion_half_sets_from_input=relion_half_sets_from_input,
-        image_fourier_backend=job.image_fourier_backend,
         frozen_boundary=frozen_boundary,
         fixed_diagnostic_source_paths=fixed_diagnostic_source_paths,
     )

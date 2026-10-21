@@ -1,6 +1,5 @@
 """The global pass 1 sizes its Fourier window from the incoming sampling order."""
 
-import logging
 
 import pytest
 from helpers.run_options import stand_in
@@ -27,7 +26,6 @@ def _global_window(incoming, *, current=172, sealed=None):
             multi_shape_halves=False,
         ),
         options,
-        log=logging.getLogger(__name__),
     )
     if sealed is not None:
         plan = RelionReplaySource(RelionReplay(sealed_sampling_state=sealed), options).adaptive_coarse_size(

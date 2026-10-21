@@ -19,7 +19,6 @@ from relax.classification.k_class_inputs import (
     as_class_means,
     dataset_image_count,
     projection_float64_from_kwargs,
-    select_class_value,
     select_projector_half_for_class,
     translation_angle_scale_kwargs,
 )
@@ -301,7 +300,7 @@ class _PerClassSubsetResults:
         self.score_dtype = score_dtype
         self.return_best_pose_details = return_best_pose_details
 
-    def append_empty_class(self, *, mean, class_log_evidence, noise_variance, class_index, n_classes, n_rot, host_accumulators):
+    def append_empty_class(self, *, mean, class_log_evidence, noise_variance, n_rot, host_accumulators):
         zero = jnp.zeros_like(mean)
         zero_ctf = jnp.zeros_like(jnp.real(mean))
         self.Ft_y.append(as_host_accumulator(zero) if host_accumulators else zero)
@@ -375,7 +374,6 @@ class _PerClassSubsetResults:
                     self.per_class_noise[k] = _zero_noise_stats_like(self.per_class_noise[scored])
         return assemble_result(
             class_log_evidence=class_log_evidence,
-            new_means=None,
             Ft_y=self.Ft_y,
             Ft_ctf=self.Ft_ctf,
             per_class_hard_assignments=np.stack(self.hard_assignments, axis=0),
@@ -474,7 +472,6 @@ def run_sparse_firstiter_global_winner_subset_pass2(
         fine_rotation_parent_override=rot_parent_map_np,
         fine_translations_override=fine_translations_np,
         fine_translation_parent_override=trans_parent_map_np,
-        relion_half_volume_mstep=bool(pass2_kwargs.get("relion_half_volume_mstep", False)),
         relion_x_half_mstep=bool(pass2_kwargs.get("mstep_relion_x_half", False)),
         relion_firstiter_score_mode="normalized_cc",
         relion_firstiter_winner_take_all=True,
@@ -484,9 +481,6 @@ def run_sparse_firstiter_global_winner_subset_pass2(
         # algebraic shortcut.  Both are algebraically equivalent, but the
         # literal route follows RELION's reduction contract directly.
         relion_exact_fine_normalized_cc=n_classes == 1,
-        bpref_device_signature_active=bool(
-            pass2_kwargs.get("bpref_device_signature_active", False)
-        ),
         source_faithful_spectrum_norm=source_faithful_spectrum_norm,
         nyquist_column_counting=pass2_kwargs.get("nyquist_column_counting", "relion"),
         firstiter_cc_support=pass2_kwargs.get("firstiter_cc_support", "relion"),
@@ -551,8 +545,6 @@ def run_sparse_firstiter_global_winner_subset_pass2(
                 mean=means_array[class_index],
                 class_log_evidence=class_log_evidence[class_index],
                 noise_variance=noise_variance,
-                class_index=class_index,
-                n_classes=n_classes,
                 n_rot=n_rot_coarse,
                 host_accumulators=False,
             )
@@ -575,7 +567,6 @@ def run_sparse_firstiter_global_winner_subset_pass2(
         result = compute_pass2_stats_sparse(
             subset_dataset,
             means_array[class_index],
-            select_class_value(mean_variance, class_index, n_classes),
             noise_variance,
             coarse_translations_np,
             subset_sig,
@@ -600,7 +591,6 @@ def run_sparse_firstiter_global_winner_subset_pass2(
                 n_classes,
             ),
             relion_projector_r_max=relion_projector_r_max,
-            bpref_class_index=class_index,
             **common,
         )
         if coarse_result is None:

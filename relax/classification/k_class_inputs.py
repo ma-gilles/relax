@@ -34,13 +34,6 @@ def as_class_means(means) -> jax.Array:
     return means_array
 
 
-def select_class_value(value, class_index: int, n_classes: int):
-    value_array = jnp.asarray(value)
-    if value_array.ndim >= 2 and int(value_array.shape[0]) == n_classes:
-        return value_array[class_index]
-    return value
-
-
 def select_projector_half_for_class(value, class_index: int, n_classes: int):
     """Select one RELION projector before transferring it to the device.
 
@@ -134,13 +127,11 @@ def seed_iteration_supports(first_class_supports, unit_seed_classes, n_classes: 
     ]
 
 
-def dataset_image_count(experiment_dataset, fallback: int | None = None) -> int:
+def dataset_image_count(experiment_dataset) -> int:
     if hasattr(experiment_dataset, "n_units"):
         return int(experiment_dataset.n_units)
     if hasattr(experiment_dataset, "n_images"):
         return int(experiment_dataset.n_images)
-    if fallback is not None:
-        return int(fallback)
     raise AttributeError("experiment_dataset must expose n_units or n_images")
 
 
