@@ -487,6 +487,22 @@ def test_final_all_data_after_max_iter_defaults_to_disabled():
     require_final_pass_route(options_for(1, True))
 
 
+def test_kclass_refuses_the_stop_after_local_search_probes():
+    from relax.refinement.refinement_options import require_local_search_stop_route
+
+    def options_for(n_classes, **stop):
+        return stand_in.options(
+            schedule=stand_in.schedule(max_iter=5), k_class=KClassOptions(n_classes=n_classes),
+            local_search=LocalSearchOptions(sigma_ang_deg=5.0, **stop),
+        )
+
+    for stop in ("stop_after_local_search", "stop_after_local_search_profile", "stop_after_local_search_score_only"):
+        with pytest.raises(NotImplementedError, match="K=1 only; this run has n_classes=3"):
+            require_local_search_stop_route(options_for(3, **{stop: True}))
+        require_local_search_stop_route(options_for(1, **{stop: True}))
+    require_local_search_stop_route(options_for(3))
+
+
 def test_kclass_final_reconstruction_does_not_predivide_class_accumulators(monkeypatch):
     """The Class3D final pass solves each class from its own raw numerator and denominator, then stacks."""
     from helpers.tiny_refinement import CallTrace, run_tiny_refinement

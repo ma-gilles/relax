@@ -468,6 +468,15 @@ def require_final_pass_route(options: RefinementOptions) -> None:
         )
 
 
+def require_local_search_stop_route(options: RefinementOptions) -> None:
+    """Refuse the ``--stop_after_local_search*`` probes for Class3D: the stop returns one map, K=1's."""
+    if options.local_search.stops_after_local_search and options.k_class.n_classes > 1:
+        raise NotImplementedError(
+            "--stop_after_local_search, --stop_after_local_search_profile and --stop_after_local_search_score_only "
+            f"are implemented for K=1 only; this run has n_classes={options.k_class.n_classes}"
+        )
+
+
 def bpref_device_signature_target(environ=None) -> tuple[int, int] | None:
     """The numbered (iteration, half), both one-based, whose BPref device signature is captured, or None.
 

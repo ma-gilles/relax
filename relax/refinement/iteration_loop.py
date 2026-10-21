@@ -1269,7 +1269,7 @@ def refine_single_volume(
         setup_phase_seconds=setup_phase_seconds,
     )
     if profile_stop is not None:
-        # Local search is K=1 (Class3D was rejected above), so there are no class products.
+        # The stop is K=1 only (setup_checks refuses it for Class3D), so there are no class products.
         return refinement_result.RefinementResult(
             maps=finalization.numbered_k1_maps(reference_model.maps),
             follower_scale=None,
