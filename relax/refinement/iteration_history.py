@@ -348,9 +348,10 @@ def add_class_history_artifacts(save_dict, result, half1_idx, half2_idx, n_image
 
 def add_refinement_history_artifacts(save_dict, result, half1_idx, half2_idx, n_images):
     """Append refinement history in its existing NPZ layout and precision."""
-    # Save FSC curves per iteration
+    # Save FSC curves per iteration (Class3D has none: its history holds None)
     for i, fsc in enumerate(result["fsc_history"]):
-        save_dict[f"fsc_iter_{i:03d}"] = np.asarray(fsc)
+        if fsc is not None:
+            save_dict[f"fsc_iter_{i:03d}"] = np.asarray(fsc)
 
     # Save significant counts per iteration (if available). The refinement
     # loop concatenates half 1 then half 2, which is not generally image order.
