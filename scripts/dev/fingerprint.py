@@ -1377,8 +1377,8 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
             # size 16). The FSC gives resolution shell 6, which seeds the current resolution; the boundary's
             # state fields (frozen_seeds) are installed after it, so one that names the current resolution
             # replaces the FSC's and the order of the two shows. The FSC at the limit shell 7 (0.15) is not high,
-            # so the flag is the seed's; with it and the Pmax the first size grows by a quarter box (to 16),
-            # without either by the increment (to the box, 20). The increment is above the one the FSC implies
+            # so the flag is the seed's; with it and the Pmax the first size grows by RELION's ROUND of a quarter
+            # half-box, ROUND(2.5) = 3 shells (to 18), without either by the increment (to the box, 20). The increment is above the one the FSC implies
             # (6) and is carried into the checkpoints.
             init_current_size, frozen_state_fields = 16, dict(frozen_seeds)
             frozen_start_seeds = dict(
@@ -1635,9 +1635,9 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
         STAR files, and a schema-v2 boundary directory (its NPZ and SHA-256 manifest) bound to the two STARs.
         Returns ``{placeholder: path}`` for the case's arguments.
 
-        The boundary completes RELION iteration 1 at HEALPix order 2 and previous size 18 (not the size
+        The boundary completes RELION iteration 1 at HEALPix order 2 and previous size 14 (not the size
         --init_resolution gives, 16). Its start seeds are k1_frozen_seeds': an FSC of resolution shell 6 that is
-        not high at the limit shell, Pmax 0.5, the high-FSC flag and increment 13, so the first size is 16 only
+        not high at the limit shell, Pmax 0.5, the high-FSC flag and increment 13, so the first size is 18 only
         with the Pmax and the flag (the box otherwise).
         """
         import starfile
@@ -1659,7 +1659,7 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
             "schema": np.asarray(frozen_boundary.FROZEN_BOUNDARY_SCHEMA_V2),
             "completed_relion_iteration": np.int32(1),
             "volume_shape": np.asarray([box, box, box], dtype=np.int32),
-            "current_size": np.int32(18), "healpix_order": np.int32(2),
+            "current_size": np.int32(14), "healpix_order": np.int32(2),
             "relion_incr_size": np.int32(13), "has_high_fsc_at_limit": np.bool_(True),
             "mean_variance": np.full(size, 100.0, dtype=np.float32),
             "fsc": np.asarray([1.0, 0.95, 0.9, 0.85, 0.8, 0.7, 0.6, 0.15, 0.1, 0.05, 0.02], dtype=np.float32)[:n_shells],
