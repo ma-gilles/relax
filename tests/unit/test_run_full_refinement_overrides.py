@@ -56,6 +56,7 @@ from relax.refinement.startup_noise import (
 )
 from relax.relion.initial_noise import (
     compute_avg_unaligned_and_sigma2,
+    read_relion_sigma2_noise_by_group,
     read_relion_single_optics_sigma2_noise,
     relion_mpi_process_start_scoring_noise_pair,
 )
@@ -708,6 +709,21 @@ def test_relion_strict_replay_rejects_multiple_optics_noise_tables():
 
     with pytest.raises(NotImplementedError, match="2 optics-group sigma2_noise tables"):
         read_relion_single_optics_sigma2_noise(model, context="unit-test model")
+
+
+def test_relion_noise_tables_are_read_at_their_spectral_indices():
+    import pandas as pd
+
+    # RELION writes only the positive shells (ml_model.cpp:790-801) and reads each at its rlnSpectralIndex.
+    model = {
+        "model_general": {"rlnOriginalImageSize": 8},
+        "model_optics_group_1": pd.DataFrame({"rlnSpectralIndex": [1, 2, 4], "rlnSigma2Noise": [1.0, 2.0, 4.0]}),
+        "model_optics_group_2": pd.DataFrame({"rlnSpectralIndex": [0, 3], "rlnSigma2Noise": [5.0, 3.0]}),
+    }
+
+    got = read_relion_sigma2_noise_by_group(model, context="unit-test model")
+
+    assert_matches(got, np.array([[0.0, 1.0, 2.0, 0.0, 4.0], [5.0, 0.0, 0.0, 3.0, 0.0]]))
 
 
 def _read_relion_sigma(model_star: Path) -> float:
