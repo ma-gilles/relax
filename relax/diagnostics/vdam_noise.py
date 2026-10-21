@@ -41,7 +41,7 @@ def dump_noise_update_boundary(
     *,
     wsum_sigma2_noise: np.ndarray,
     wsum_img_power: np.ndarray,
-    noise_sumw: float,
+    noise_sumw: float | np.ndarray,
     wsum_noise_a2: np.ndarray | None,
     wsum_noise_xa: np.ndarray | None,
 ) -> str:
@@ -68,7 +68,8 @@ def dump_noise_update_boundary(
         "half0_wsum_sigma2_noise": residual,
         "half0_wsum_img_power": image_power,
         "half0_wsum_total": residual + image_power,
-        "half0_sumw": np.asarray([float(noise_sumw)], dtype=np.float64),
+        # [1] for one optics group, [G] for several (whose sums arrive per group).
+        "half0_sumw": np.atleast_1d(np.asarray(noise_sumw, dtype=np.float64)),
         "half0_previous_sigma2_noise": old_noise,
         "half0_sigma2_noise": new_noise,
     }

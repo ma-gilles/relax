@@ -676,7 +676,7 @@ def _first_class_k_class_output(pass2, n_classes: int, sampling: TomoSampling, p
         stats=stats,
         class_rotation_posterior_sums=by_class(rotation_sums, 0.0),
         class_reconstruction_posterior_sums=np.asarray(
-            [float(pass2.noise_stats.sumw)] + [0.0] * others, dtype=np.float64
+            [float(np.sum(np.asarray(pass2.noise_stats.sumw)))] + [0.0] * others, dtype=np.float64
         ),
         noise_stats=pass2.noise_stats,
         per_class_best_pose_rotations=class_tuple(pass2.best_rotations),
