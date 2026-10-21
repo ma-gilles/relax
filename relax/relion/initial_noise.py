@@ -241,10 +241,9 @@ def read_relion_sigma2_noise_by_group(model, *, context):
     """Every optics group's RELION ``sigma2_noise`` (``MlModel::sigma2_noise[optics_group]``), ``[G, n]``.
 
     One ``model_optics_group_<g>`` table per group, in group order; ``None`` when the model has none. RELION writes
-    only the positive shells, each with its ``rlnSpectralIndex`` (ml_model.cpp:790-801), and reads each value back
-    into a zeroed ``ori_size / 2 + 1`` spectrum at that index (ml_model.cpp:404-411); ``n`` is that length (from
-    ``model_general``'s ``rlnOriginalImageSize``, else the largest index + 1). A table without the index column is
-    read as dense from shell 0.
+    the positive shells with their ``rlnSpectralIndex`` (ml_model.cpp:790-801) and reads each back at its index of
+    a zeroed spectrum of ``n = ori_size / 2 + 1`` shells (ml_model.cpp:404-411; ``n`` is the largest index + 1
+    without ``model_general``). A table without the index column holds shells 0, 1, ... in order.
     """
     if not isinstance(model, dict):
         return None
@@ -260,22 +259,20 @@ def read_relion_sigma2_noise_by_group(model, *, context):
     if groups != list(range(1, len(groups) + 1)):
         raise ValueError(f"{context}: optics-group noise tables must be numbered 1..G, got {groups}")
     tables = [model[f"model_optics_group_{g}"] for g in groups]
-    values = [np.asarray(table["rlnSigma2Noise"], dtype=np.float64) for table in tables]
-    if not any("rlnSpectralIndex" in table.columns for table in tables):
-        return np.stack(values)
-    if not all("rlnSpectralIndex" in table.columns for table in tables):
-        raise ValueError(f"{context}: some optics-group noise tables lack rlnSpectralIndex")
-    indices = [np.asarray(table["rlnSpectralIndex"], dtype=np.int64) for table in tables]
+    indices = [
+        np.asarray(table["rlnSpectralIndex"] if "rlnSpectralIndex" in table.columns else range(len(table)), np.int64)
+        for table in tables
+    ]
     general = model.get("model_general")
     if isinstance(general, dict) and "rlnOriginalImageSize" in general:
         n = int(general["rlnOriginalImageSize"]) // 2 + 1
     else:
         n = 1 + max((int(index.max()) for index in indices if index.size), default=-1)
     sigma2 = np.zeros((len(groups), n), dtype=np.float64)
-    for row, index, value in zip(sigma2, indices, values):
+    for row, index, table in zip(sigma2, indices, tables):
         if index.size and (index.min() < 0 or index.max() >= n):
             raise ValueError(f"{context}: rlnSpectralIndex outside 0..{n - 1}")
-        row[index] = value
+        row[index] = np.asarray(table["rlnSigma2Noise"], dtype=np.float64)
     return sigma2
 
 
