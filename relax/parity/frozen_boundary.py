@@ -278,7 +278,6 @@ _V3_ALLOWED_PAYLOAD_KEYS = _REQUIRED_PAYLOAD_KEYS | _V3_REQUIRED_PAYLOAD_KEYS
 @dataclass(frozen=True)
 class FrozenRefinementBoundary:
     source_dir: Path
-    source_manifest: Path
     source_manifest_sha256: str
     boundary_sha256: str
     completed_relion_iteration: int
@@ -1019,7 +1018,6 @@ def load_frozen_refinement_boundary(boundary_dir: str | Path) -> FrozenRefinemen
 
         result = FrozenRefinementBoundary(
             source_dir=source_dir,
-            source_manifest=source_manifest,
             source_manifest_sha256=sha256_file(source_manifest),
             boundary_sha256=actual_sha256,
             completed_relion_iteration=completed_iteration,
