@@ -480,8 +480,9 @@ def find_relion_optimiser_star(args, *, relion_half_sets_from_input: bool):
     explicit = getattr(args, "relion_optimiser", None)
     if explicit:
         p = Path(explicit).resolve()
-        if p.exists():
-            return p
+        if not p.exists():
+            raise FileNotFoundError(f"--relion_optimiser {explicit}: no such file")
+        return p
     if relion_half_sets_from_input:
         return None
     class3d_standalone = int(getattr(args, "n_classes", 1)) > 1 and not any(

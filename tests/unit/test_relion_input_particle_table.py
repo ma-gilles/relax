@@ -295,6 +295,10 @@ def test_from_input_flag_does_not_discover_relion_optimiser_outputs(tmp_path):
     assert find_relion_optimiser_star(args, relion_half_sets_from_input=True) is None
     args.relion_optimiser = str(discovered)
     assert find_relion_optimiser_star(args, relion_half_sets_from_input=True) == discovered.resolve()
+    # An explicit path that does not exist is an error, not a fall-through to the search.
+    args.relion_optimiser = str(tmp_path / "typo_optimiser.star")
+    with pytest.raises(FileNotFoundError, match="--relion_optimiser .*typo_optimiser.star"):
+        find_relion_optimiser_star(args, relion_half_sets_from_input=False)
 
 
 def test_class3d_without_relion_state_does_not_discover_relion_optimiser_outputs(tmp_path):
