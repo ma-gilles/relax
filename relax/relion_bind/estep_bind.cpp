@@ -215,7 +215,8 @@ static int find_current_resolution(
 static py::array_t<double> update_noise_estimate(
     py::array_t<double, py::array::c_style | py::array::forcecast> wsum_sigma2_in,
     py::array_t<double, py::array::c_style | py::array::forcecast> npix_per_shell_in,
-    double sum_weight
+    double sum_weight,
+    bool ctf_premultiplied
 ) {
     auto ws_buf = wsum_sigma2_in.request();
     auto np_buf = npix_per_shell_in.request();
@@ -234,10 +235,10 @@ static py::array_t<double> update_noise_estimate(
         } else {
             out[i] = 0.0;
         }
-        // Clamp to minimum (ml_optimiser.cpp:5278)
-        if (out[i] < 1e-15)
+        // Clamp to minimum, for CTF-premultiplied data only (ml_optimiser.cpp:5274-5275)
+        if (ctf_premultiplied && out[i] < 1e-15)
             out[i] = 1e-15;
-        // Fill holes from previous shell (ml_optimiser.cpp:5282)
+        // Fill holes from previous shell (ml_optimiser.cpp:5279-5282)
         if (out[i] < 1e-14 && i > 0)
             out[i] = out[i - 1];
     }
@@ -333,9 +334,11 @@ Scans 1 <= ires < len - 1 and floors at minres_map. Returns shell index (int).
           py::arg("wsum_sigma2"),
           py::arg("npix_per_shell"),
           py::arg("sum_weight"),
+          py::arg("ctf_premultiplied") = false,
           R"doc(
 M9: Update noise estimate from weighted residuals.
-sigma2[n] = wsum_sigma2[n] / (2 * sum_weight * npix_per_shell[n])
+sigma2[n] = wsum_sigma2[n] / (2 * sum_weight * npix_per_shell[n]), floored at 1e-15 only for
+CTF-premultiplied data, then shells below 1e-14 take the previous shell's value.
 Returns: (n_shells,) noise variance per shell.
 )doc");
 

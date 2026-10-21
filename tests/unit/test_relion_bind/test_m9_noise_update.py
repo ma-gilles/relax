@@ -12,8 +12,8 @@ from helpers.float_compare import assert_matches
 from relax.relion_bind._relion_bind_core import update_noise_estimate
 
 
-def _reference_noise_update(wsum_sigma2, npix_per_shell, sum_weight):
-    """Pure numpy reference matching RELION ml_optimiser.cpp:5246-5286."""
+def _reference_noise_update(wsum_sigma2, npix_per_shell, sum_weight, ctf_premultiplied=False):
+    """Pure numpy reference matching RELION ml_optimiser.cpp:5246-5286 (the 1e-15 floor only for premultiplied CTF)."""
     n = len(wsum_sigma2)
     out = np.zeros(n)
     for i in range(n):
@@ -22,7 +22,7 @@ def _reference_noise_update(wsum_sigma2, npix_per_shell, sum_weight):
             out[i] = wsum_sigma2[i] / denom
         else:
             out[i] = 0.0
-        if out[i] < 1e-15:
+        if ctf_premultiplied and out[i] < 1e-15:
             out[i] = 1e-15
         if out[i] < 1e-14 and i > 0:
             out[i] = out[i - 1]
@@ -45,18 +45,20 @@ class TestM9Parity:
         max_diff = np.max(np.abs(relion - reference))
         assert max_diff < 1e-15, f"max_diff={max_diff}"
 
-    def test_zero_shells(self):
-        """Shells with zero npix should get clamped to 1e-15."""
+    @pytest.mark.parametrize("ctf_premultiplied", [False, True])
+    def test_zero_shells(self, ctf_premultiplied):
+        """Shells with zero npix take the previous shell's value; shell 0 is floored at 1e-15 only when premultiplied."""
         n_shells = 10
         wsum = np.ones(n_shells) * 100.0
         npix = np.zeros(n_shells)
-        npix[0:5] = 10.0
+        npix[1:5] = 10.0
         sumw = 100.0
 
-        relion = update_noise_estimate(wsum, npix, sumw)
-        reference = _reference_noise_update(wsum, npix, sumw)
+        relion = update_noise_estimate(wsum, npix, sumw, ctf_premultiplied)
+        reference = _reference_noise_update(wsum, npix, sumw, ctf_premultiplied)
 
         assert_matches(relion, reference)
+        assert relion[0] == (1e-15 if ctf_premultiplied else 0.0)
 
     def test_hole_filling(self):
         """Very small values should be filled from previous shell."""
