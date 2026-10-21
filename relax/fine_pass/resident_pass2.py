@@ -2442,6 +2442,53 @@ def _resident_pass2(
             * int(tilt_overflow_slot_block)
             * tilt_slot_row_bytes
         )
+        # The tilt M-step's translated tiles (resident_tilt_mstep.tilt_mstep_tile_bytes, with the translate-and-sum's
+        # table) are not in the chunk plan. A chunk's tiles take what the chunk budget leaves after that chunk's own
+        # planned peak (its row and unit classes) and, when the half's operands are prepared per chunk, the chunk's
+        # operands, which live beside its M-step; the preparation's batch working set runs before the chunk's
+        # programs and does not share it. Never less than the device share they had (2%); an explicit
+        # translation_tile_max_bytes stands as given.
+        tile_floor_bytes = max_translation_tile_bytes_for_pass(
+            device_memory_bytes, override=engine_tuning.translation_tile_max_bytes, has_external_normalization=False
+        )
+
+        def tilt_chunk_tile_budget_bytes(chunk):
+            if engine_tuning.translation_tile_max_bytes is not None:
+                return tile_floor_bytes
+            operand_bytes = 0
+            if resident_operands is None:
+                operand_bytes, _ = resident_projections.resident_half_operand_sizes(
+                    n_images=int(unit_image_offsets[int(chunk.image_start) + int(chunk.n_valid_images)])
+                    - int(unit_image_offsets[int(chunk.image_start)]),
+                    n_windowed=n_windowed,
+                    n_recon_windowed=n_recon_windowed,
+                    n_rect=n_rect,
+                    n_shells=n_shells,
+                    n_fine_trans=n_fine_trans,
+                    precision_policy=precision_policy,
+                    resolved_spectrum_norm=resolved_spectrum_norm,
+                    premultiplied_ctf=ctf_premultiplied_pass,
+                    image_shape=image_shape,
+                )
+            return resident_chunk_memory.leftover_tile_budget_bytes(
+                memory_plan,
+                row_capacity=chunk.row_capacity,
+                image_capacity=chunk.image_capacity,
+                reserved_bytes=operand_bytes,
+                floor_bytes=tile_floor_bytes,
+            )
+
+        tile_budgets = [tilt_chunk_tile_budget_bytes(chunk) for chunk in chunks]
+        if tile_budgets:
+            logger.info(
+                "Resident pass-2 tilt M-step translation tiles: %.2f-%.2f GiB per chunk (chunk budget %s GiB, "
+                "largest chunk peak %.2f GiB, device share %.2f GiB)",
+                min(tile_budgets) / float(1024**3),
+                max(tile_budgets) / float(1024**3),
+                "none" if memory_plan.budget_bytes is None else f"{memory_plan.budget_bytes / float(1024**3):.2f}",
+                memory_plan.peak_bytes / float(1024**3),
+                tile_floor_bytes / float(1024**3),
+            )
         # The next chunk's host preparation (prepare_tilt_chunk_host: plan-only NumPy) runs on a host thread while
         # this chunk's programs run; the chunks still run one after another, in order.
         from relax.cuda.preprocess import deferred_relion_preprocess_checks
@@ -2514,10 +2561,7 @@ def _resident_pass2(
                         image_shape=image_shape,
                         rect_indices_device=rect_indices_device,
                         exact_positions_device=exact_positions_device,
-                        tile_budget_bytes=max_translation_tile_bytes_for_pass(
-                            device_memory_bytes, override=engine_tuning.translation_tile_max_bytes,
-                            has_external_normalization=False,
-                        ),
+                        tile_budget_bytes=tile_budgets[chunk_index],
                         slot_block=chunk_slot_block,
                         mstep_census=mstep_census,
                         row_partial=row_partial,

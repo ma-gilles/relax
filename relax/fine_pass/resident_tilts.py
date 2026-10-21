@@ -555,6 +555,8 @@ def run_tilt_chunk(
         mstep_units,
         n_rect_pixels=int(rect_indices_device.shape[0]),
         n_exact_pixels=int(exact_positions_device.shape[0]),
+        n_recon_pixels=int(spec.n_recon_pixels),
+        block_rows=block_rows,
     )
     translation_blocks = mstep_translation_blocks(
         unit_kept, bytes_per_translation=bytes_per_translation, tile_budget_bytes=int(tile_budget_bytes)

@@ -100,12 +100,21 @@ class ResidentChunkMemoryPlan:
     budget_bytes: int | None
     # Device bytes the pass allocates once besides its chunks (accumulators).
     fixed_bytes: int = 0
+    # ((row capacity, image capacity), peak bytes) of every pair of the ladders' classes, and of the one-image
+    # overflow chunks' row capacities (multiples of the largest row class) at the smallest image class.
+    class_peak_bytes: tuple = ()
 
     @property
     def pass_bytes(self) -> int:
         """The pass's total device need: its fixed buffers plus its largest chunk."""
 
         return int(self.fixed_bytes) + int(self.peak_bytes)
+
+    def chunk_peak_bytes(self, row_capacity: int, image_capacity: int) -> int:
+        """The peak of a chunk of these capacity classes (:func:`resident_chunk_bytes`), or of an overflow chunk
+        (a particle past the row classes, run alone); ``peak_bytes`` for any other."""
+
+        return dict(self.class_peak_bytes).get((int(row_capacity), int(image_capacity)), int(self.peak_bytes))
 
 
 def _mstep_block_row_bytes(n_fine_trans: int, n_recon_pixels: int, mstep_tile_pixels: int | None = None) -> int:
@@ -366,10 +375,8 @@ def plan_resident_chunk_memory(
     if overflow_row_bytes is not None:
         overflow_kwargs["row_bytes"] = int(overflow_row_bytes)
 
-    def overflow_peak():
-        overflow_rows = overflow_row_capacity(max_image_rows, rows)
-        if not overflow_rows:
-            return 0
+    def overflow_chunk_peak(overflow_rows):
+        # A one-image chunk of ``overflow_rows`` rows past the row classes, run alone.
         if lone_row_bytes is not None:
             return resident_chunk_bytes(
                 row_capacity=max(rows) if lone_block_rows is None else int(lone_block_rows),
@@ -383,6 +390,10 @@ def plan_resident_chunk_memory(
             mstep_block_rows=block,
             **overflow_kwargs,
         )
+
+    def overflow_peak():
+        overflow_rows = overflow_row_capacity(max_image_rows, rows)
+        return overflow_chunk_peak(overflow_rows) if overflow_rows else 0
 
     def peak():
         return max(regular_peak(), overflow_peak())
@@ -460,13 +471,22 @@ def plan_resident_chunk_memory(
     block = min(block, min(rows))
     while block > 1 and min(rows) % block:
         block //= 2
+    block = max(block, 1)
+    # The overflow chunks' row capacities: multiples of the largest class (overflow_row_capacity).
+    overflow_capacities = range(2 * max(rows), overflow_row_capacity(max_image_rows, rows) + 1, max(rows))
     return ResidentChunkMemoryPlan(
         row_capacity_ladder=rows,
         image_capacity_ladder=images,
-        mstep_block_rows=max(block, 1),
+        mstep_block_rows=block,
         peak_bytes=peak(),
         budget_bytes=None if budget_bytes is None else int(budget_bytes),
         fixed_bytes=int(fixed_bytes),
+        class_peak_bytes=tuple(
+            ((r, i), resident_chunk_bytes(row_capacity=r, image_capacity=i, mstep_block_rows=block, **kwargs))
+            for r in rows
+            for i in images
+        )
+        + tuple(((r, min(images)), overflow_chunk_peak(r)) for r in overflow_capacities),
     )
 
 
@@ -480,6 +500,35 @@ def overflow_row_capacity(max_image_rows: int, row_capacity_ladder) -> int:
     largest = max(int(v) for v in row_capacity_ladder)
     n_rows = int(max_image_rows)
     return 0 if n_rows <= largest else -(-n_rows // largest) * largest
+
+
+# The most a chunk's leftover gives its translated tiles (relax#120). Leftovers of 19-30 GiB on an 80 GB card put
+# whole chunks' translations in one M-step block, and the local iteration 18 of the tilt-series run took 728 s
+# against 714-715 s at the card's 1.43 GiB device share (two same-node pairs, 15964005); 1.5 GiB ran the 16 GB
+# final iteration in 1409 s (15947763), 1304 s on the 80 GB card.
+MAX_LEFTOVER_TILE_BUDGET_BYTES = 3 << 29
+
+
+def leftover_tile_budget_bytes(
+    plan: ResidentChunkMemoryPlan, *, row_capacity: int, image_capacity: int, reserved_bytes: int, floor_bytes: int
+) -> int:
+    """The translated-tile budget of a chunk whose M-step tiles the chunk plan does not count (the tilt M-step).
+
+    The chunk budget is one chunk's share of the device (:data:`_RESIDENT_CHUNK_FREE_MEMORY_FRACTION`: row block,
+    translation tiles and M-step block together); a chunk of ``row_capacity`` rows and ``image_capacity`` images
+    fills it up to its own peak (:meth:`ResidentChunkMemoryPlan.chunk_peak_bytes`). The tiles take what is left
+    after ``reserved_bytes`` (what else lives beside the chunk's M-step that the plan does not count), at most
+    :data:`MAX_LEFTOVER_TILE_BUDGET_BYTES` and never less than ``floor_bytes`` (the fixed device share they had
+    before). Without a budget the floor stands. A fixed 2% of
+    the device gave a 16 GB card's final tilt iteration 8 translations per M-step block at current size 256: one
+    half's pass 2 took 9341 s, where the 80 GB card ran the whole iteration in 1316 s (relax#120).
+    """
+
+    if plan.budget_bytes is None:
+        return int(floor_bytes)
+    peak = plan.chunk_peak_bytes(row_capacity, image_capacity)
+    leftover = int(plan.budget_bytes) - int(peak) - int(reserved_bytes)
+    return max(int(floor_bytes), min(leftover, MAX_LEFTOVER_TILE_BUDGET_BYTES))
 
 
 def max_image_rows(row_offsets) -> int:

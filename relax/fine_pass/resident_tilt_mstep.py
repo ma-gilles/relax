@@ -20,17 +20,29 @@ import numpy as np
 from relax.reconstruction.half_volume_mstep import blocks_per_flush, flushed_block_loop
 from relax.runtime.shape_buckets import pow2_ceil, pow2_floor
 
+# relion_translate_sum.cuh kMinRowsPerTableImage: a translate-and-sum launch with at least this many rows per
+# image builds its images' shifted [images, T, recon pixels] float4 table.
+TRANSLATE_SUM_MIN_ROWS_PER_TABLE_IMAGE = 64
 
-def tilt_mstep_tile_bytes(n_units: int, *, n_rect_pixels: int, n_exact_pixels: int) -> int:
+
+def tilt_mstep_tile_bytes(
+    n_units: int, *, n_rect_pixels: int, n_exact_pixels: int, n_recon_pixels: int = 0, block_rows: int = 0
+) -> int:
     """Device bytes one M-step translation adds to a slot's translated Wavg tiles (:func:`tilt_mstep_program`).
 
     The tiles are per unit, ``[units, T, pixels]``: the translated rectangle (complex64) and its copy with the
     padded units zeroed (:func:`_slot_view_translate`), its exact-radius gather, and the rectangle's float32
     power and the product it is built from (``add_wavg_rectangle_image_power``). The M-step kernels read them
     by each row's image; no tile has a row axis.
+
+    An M-step block of ``block_rows`` rows with at least :data:`TRANSLATE_SUM_MIN_ROWS_PER_TABLE_IMAGE` per unit
+    also has the translate-and-sum's shifted table, ``n_recon_pixels`` float4 per unit and translation, beside
+    them: XLA's scratch for the call, from the same pool (relax#120).
     """
 
-    return int(n_units) * (3 * int(n_rect_pixels) + int(n_exact_pixels)) * 8
+    tiles = int(n_units) * (3 * int(n_rect_pixels) + int(n_exact_pixels)) * 8
+    table = int(n_units) * int(n_recon_pixels) * 16
+    return tiles + (table if int(block_rows) >= TRANSLATE_SUM_MIN_ROWS_PER_TABLE_IMAGE * int(n_units) else 0)
 
 
 def tilt_mstep_units(n_valid_units: int, *, unit_capacity: int) -> int:

@@ -330,6 +330,31 @@ def test_tilt_mstep_tiles_are_counted_per_unit_so_a_flat_particle_keeps_one_tran
 
 
 @pytest.mark.unit
+def test_tilt_mstep_tile_bytes_count_the_translate_sum_table_where_a_block_builds_it():
+    """relax#120: an M-step block with at least 64 rows per unit builds the translate-and-sum's shifted table, a float4
+    per recon pixel, unit and translation, from the same pool as the tiles; with fewer rows per unit it scores inline."""
+
+    from helpers.cuda_source import EM_CUDA_DIR
+
+    source = (EM_CUDA_DIR / "relion_translate_sum.cuh").read_text()
+    minimum = resident_tilt_mstep.TRANSLATE_SUM_MIN_ROWS_PER_TABLE_IMAGE
+    assert f"constexpr int64_t kMinRowsPerTableImage = {minimum};" in source
+    assert "row_count >= kMinRowsPerTableImage * batch_size" in source
+    n_rect, n_exact, n_recon = 33024, 33024, 25717
+
+    def tile_bytes(units, block_rows):
+        return resident_tilt_mstep.tilt_mstep_tile_bytes(
+            units, n_rect_pixels=n_rect, n_exact_pixels=n_exact, n_recon_pixels=n_recon, block_rows=block_rows
+        )
+
+    tiles = (3 * n_rect + n_exact) * 8
+    assert tile_bytes(1, 64) == tiles + n_recon * 16
+    assert tile_bytes(1, 63) == tiles
+    assert tile_bytes(32, 64) == 32 * tiles
+    assert tile_bytes(2, 128) == 2 * (tiles + n_recon * 16)
+
+
+@pytest.mark.unit
 def test_tilt_unit_capacity_at_the_full_box_is_bounded_by_its_gather():
     """At the S1 full box (T = 4120, 41 tilts) a tilt unit costs its S gathered images, not T tiles.
 
@@ -346,6 +371,70 @@ def test_tilt_unit_capacity_at_the_full_box_is_bounded_by_its_gather():
     assert max(spa) <= 4
     assert 32 in tilt
     assert all(units * slots * n_recon_pixels * 8 * 3 <= budget for units in tilt)
+
+
+@pytest.mark.unit
+def test_tilt_translation_tiles_take_what_the_chunk_budget_leaves_after_the_chunks_own_peak():
+    """relax#120: the tilt M-step tiles, which the chunk plan does not count, take the chunk budget less the chunk's
+    own planned peak (its row and image classes) and its reserved bytes, at most 1.5 GiB and never less than the
+    fixed device share; a chunk outside the classes takes the plan's peak, and without a budget the share stands."""
+
+    from relax.fine_pass.resident_chunk_memory import (
+        MAX_LEFTOVER_TILE_BUDGET_BYTES,
+        leftover_tile_budget_bytes,
+        plan_resident_chunk_memory,
+        resident_chunk_bytes,
+    )
+
+    gib = 1024**3
+    kwargs = dict(row_bytes=4 << 20, n_fine_trans=41, n_recon_pixels=25717, held_tile_pixels=2 * 33024)
+    plan = plan_resident_chunk_memory(
+        row_capacity_ladder=(128, 256), image_capacity_ladder=(32, 128), mstep_block_rows=64,
+        budget_bytes=int(5.76 * gib), **kwargs,
+    )
+    assert plan.peak_bytes <= plan.budget_bytes
+    for rows in plan.row_capacity_ladder:
+        for images in plan.image_capacity_ladder:
+            peak = resident_chunk_bytes(
+                row_capacity=rows, image_capacity=images, mstep_block_rows=plan.mstep_block_rows, **kwargs
+            )
+            assert plan.chunk_peak_bytes(rows, images) == peak
+    assert plan.chunk_peak_bytes(1024, 32) == plan.peak_bytes  # no particle past the row classes was planned
+    # The largest particle (700 rows) runs alone in a 768-row chunk of the smallest image class; a smaller one past
+    # the row classes, in a 512-row chunk, has its own lower peak.
+    overflow = plan_resident_chunk_memory(
+        row_capacity_ladder=(128, 256), image_capacity_ladder=(32, 128), mstep_block_rows=64,
+        budget_bytes=int(5.76 * gib), max_image_rows=700, **kwargs,
+    )
+    for rows in (512, 768):
+        assert overflow.chunk_peak_bytes(rows, 32) == resident_chunk_bytes(
+            row_capacity=rows, image_capacity=32, mstep_block_rows=overflow.mstep_block_rows, **kwargs
+        )
+    assert overflow.chunk_peak_bytes(512, 32) < overflow.chunk_peak_bytes(768, 32) <= overflow.peak_bytes
+    small = plan.chunk_peak_bytes(256, 32)
+    assert small < plan.peak_bytes
+    floor = int(0.02 * 12.49 * gib)
+    reserved = int(0.36 * gib)
+    assert leftover_tile_budget_bytes(
+        plan, row_capacity=256, image_capacity=32, reserved_bytes=reserved, floor_bytes=floor
+    ) == max(floor, min(plan.budget_bytes - small - reserved, MAX_LEFTOVER_TILE_BUDGET_BYTES))
+    # A large card's leftover is capped; a device share above the cap stands.
+    large = plan_resident_chunk_memory(
+        row_capacity_ladder=(256,), image_capacity_ladder=(32,), mstep_block_rows=64, budget_bytes=40 * gib, **kwargs
+    )
+    for share in (int(1.43 * gib), 2 * gib):
+        assert leftover_tile_budget_bytes(
+            large, row_capacity=256, image_capacity=32, reserved_bytes=0, floor_bytes=share
+        ) == max(share, MAX_LEFTOVER_TILE_BUDGET_BYTES)
+    assert leftover_tile_budget_bytes(
+        plan, row_capacity=256, image_capacity=32, reserved_bytes=plan.budget_bytes, floor_bytes=floor
+    ) == floor
+    unbudgeted = plan_resident_chunk_memory(
+        row_capacity_ladder=(256,), image_capacity_ladder=(32,), mstep_block_rows=64, budget_bytes=None, **kwargs
+    )
+    assert leftover_tile_budget_bytes(
+        unbudgeted, row_capacity=256, image_capacity=32, reserved_bytes=0, floor_bytes=floor
+    ) == floor
 
 
 @pytest.mark.unit
