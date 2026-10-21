@@ -235,11 +235,7 @@ def _planned_tile_images(stream, requested: int, memory_bytes, device_bytes, *, 
         return _PLANS[key]
     if not memory_bytes:
         return requested
-    if device_bytes is None and stream.static.cuda_kernels:
-        from relax.runtime import memory_budget as budget
-
-        device_bytes = budget.device_memory_limit_bytes(None)  # PPCA takes no EngineTuning: the device's own memory
-    budget_bytes = memory_bytes - TILE_FRAGMENTATION_HEADROOM * (device_bytes or memory_bytes)
+    budget_bytes, device_bytes = fragmentation_budget(stream, memory_bytes, device_bytes)
     reader = _reader_bytes(stream)
     planned = _plan_tile_images(stream, requested, reader, budget_bytes, pipelined)
     peak, resident = reader(stream, planned)
@@ -292,6 +288,19 @@ def plan_shape_key(stream: FullRowStream) -> tuple:
         tile_frames(stream),
         stream.tile_loader,
     )
+
+
+def fragmentation_budget(stream, memory_bytes, device_bytes):
+    """``(budget, device_bytes)``: ``memory_bytes`` less :data:`TILE_FRAGMENTATION_HEADROOM` of the device's memory.
+
+    ``device_bytes`` None on a GPU stream (what :func:`available_bytes` returns there) is the device's memory
+    limit; on a CPU stream, or when no total is known, the headroom is taken of ``memory_bytes``.
+    """
+    if device_bytes is None and stream.static.cuda_kernels:
+        from relax.runtime import memory_budget as budget
+
+        device_bytes = budget.device_memory_limit_bytes(None)  # PPCA takes no EngineTuning: the device's own memory
+    return memory_bytes - TILE_FRAGMENTATION_HEADROOM * (device_bytes or memory_bytes), device_bytes
 
 
 def available_bytes(stream):

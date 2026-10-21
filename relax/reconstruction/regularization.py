@@ -1336,9 +1336,6 @@ def compute_relion_fsc_from_backprojector(
                         "k i j real imag weight"
                     ),
                 )
-    fsc_dtype = jnp.dtype(output_dtype)
-    if fsc_dtype not in (jnp.dtype(jnp.float32), jnp.dtype(jnp.float64)):
-        raise ValueError(f"output_dtype must be float32 or float64, got {output_dtype}")
     return jnp.asarray(fsc, dtype=fsc_dtype)
 
 

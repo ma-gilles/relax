@@ -223,7 +223,7 @@ def uniform_direction_log_priors(plan, *, use_local: bool, symmetry: str) -> tup
     HEALPix order, symmetry-reduced) weighs every global-search sample, and relax's scorers leave that constant
     out where no learned prior applies; 0 for a local search or a learned prior, which the scores carry."""
 
-    from relax.sampling.grids import rotation_grid_n_in_planes, rotation_grid_size
+    from relax.sampling.grids import rotation_grid_n_in_planes
 
     if use_local:
         return (0.0, 0.0)

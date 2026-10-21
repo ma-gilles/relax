@@ -74,8 +74,8 @@ from relax.ppca_refinement.full_row_stream import (
     tile_support,
 )
 from relax.ppca_refinement.full_row_tile_plan import (
-    TILE_FRAGMENTATION_HEADROOM,
     available_bytes,
+    fragmentation_budget,
     plan_shape_key,
     tile_frames,
     tile_spec,
@@ -891,14 +891,10 @@ def plan_job_chunk(ostream: OversampledStream, n_images: int, *, memory_bytes=No
         # The device probes run nvidia-smi (tens of ms); a stage's shapes are planned once.
         key = (plan_shape_key(ostream.fine), int(n_images), getattr(ostream.fine.device, "id", None))
         if key not in _JOB_CHUNKS:
-            _JOB_CHUNKS[key] = plan_job_chunk(
-                ostream,
-                n_images,
-                memory_bytes=available_bytes(ostream.fine)[0],
-                device_bytes=available_bytes(ostream.fine)[1],
-            )
+            memory_bytes, device_bytes = available_bytes(ostream.fine)
+            _JOB_CHUNKS[key] = plan_job_chunk(ostream, n_images, memory_bytes=memory_bytes, device_bytes=device_bytes)
         return _JOB_CHUNKS[key]
-    budget = memory_bytes - TILE_FRAGMENTATION_HEADROOM * (device_bytes or memory_bytes)
+    budget, _ = fragmentation_budget(ostream.fine, memory_bytes, device_bytes)
     chunk = fixed_job_chunk(ostream)
     counted = job_program_bytes(ostream, n_images, chunk)
     if counted > budget:

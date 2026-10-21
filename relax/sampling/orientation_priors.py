@@ -425,11 +425,15 @@ def infer_direction_prior_healpix_order(
             if _direction_count(expected_order) == n_pixels:
                 return expected_order
         maximum_order = max(10, 0 if expected_order is None else expected_order + 3)
-        matches = [
-            order
-            for order in range(maximum_order + 1)
-            if _direction_count(order) == n_pixels
-        ]
+        # The direction count grows with the order, so the scan stops at the first order past the length
+        # instead of building (and caching) the symmetry-reduced grid of every order up to the maximum.
+        matches = []
+        for order in range(maximum_order + 1):
+            count = _direction_count(order)
+            if count is not None and count > n_pixels:
+                break
+            if count == n_pixels:
+                matches.append(order)
         if len(matches) == 1:
             return matches[0]
         if not matches:

@@ -766,7 +766,7 @@ def test_sampling_accuracy_uses_seeded_star_eulers_before_particles_are_visited(
         particle_order=np.asarray([2, 0], dtype=np.int64),
         random_seed=0,
         padding_factor=1,
-        sigma2_fudge=driver.DEFAULT_SIGMA2_FUDGE,
+        sigma2_fudge=driver.RELION_DEFAULT_SIGMA2_FUDGE,
         probe=NoProbe(),
         engine=EngineTuning(),
     )
@@ -814,7 +814,7 @@ def test_sampling_accuracy_runs_on_an_angle_free_star_with_relions_zero_angles(m
         particle_order=np.asarray([2, 0], dtype=np.int64),
         random_seed=0,
         padding_factor=1,
-        sigma2_fudge=driver.DEFAULT_SIGMA2_FUDGE,
+        sigma2_fudge=driver.RELION_DEFAULT_SIGMA2_FUDGE,
         probe=NoProbe(),
         engine=EngineTuning(),
     )
@@ -863,7 +863,7 @@ def test_subtomogram_accuracy_refuses_several_optics_constants_in_one_group(monk
             particle_order=np.asarray([0, 1], dtype=np.int64),
             random_seed=0,
             padding_factor=1,
-            sigma2_fudge=driver.DEFAULT_SIGMA2_FUDGE,
+            sigma2_fudge=driver.RELION_DEFAULT_SIGMA2_FUDGE,
             tilt_images=images,
             probe=NoProbe(),
             engine=EngineTuning(),
@@ -2252,7 +2252,7 @@ def test_sampling_accuracy_uses_sigma2_fudge_not_dynamic_tau2(monkeypatch, tmp_p
         particle_order=np.asarray([1, 0]),
         random_seed=0,
         padding_factor=1,
-        sigma2_fudge=driver.DEFAULT_SIGMA2_FUDGE,
+        sigma2_fudge=driver.RELION_DEFAULT_SIGMA2_FUDGE,
         probe=dump_observer.expectation_probe(),
         engine=EngineTuning(),
     )

@@ -51,6 +51,50 @@ def bpref_device_signature_scope(active: bool):
         _bpref_device_signature_scope.reset(token)
 
 
+def _symmetrise_grid(volume_shape, support_radius: int) -> tuple[tuple[int, int, int], int]:
+    """The point-group finaliser's cubic odd grid and its flat x-half size, after the support radius check."""
+
+    volume_shape = tuple(int(value) for value in volume_shape)
+    if len(volume_shape) != 3 or len(set(volume_shape)) != 1:
+        raise ValueError(
+            "RELION point-group BPref symmetry requires a cubic 3-D grid, "
+            f"got {volume_shape}"
+        )
+    if any(value <= 0 or value % 2 == 0 for value in volume_shape):
+        raise ValueError(
+            "RELION point-group BPref symmetry requires an odd positive grid, "
+            f"got {volume_shape}"
+        )
+
+    maximum_supported_radius = volume_shape[0] // 2 - 1
+    if support_radius < 0 or support_radius > maximum_supported_radius:
+        raise ValueError(
+            "RELION point-group BPref support radius must leave its one-voxel "
+            f"interpolation margin: got {support_radius} for {volume_shape} "
+            f"(maximum {maximum_supported_radius})"
+        )
+    return volume_shape, int(volume_shape[0] * volume_shape[1] * (volume_shape[2] // 2 + 1))
+
+
+def _require_symmetrise_operator_shape(right_operators) -> None:
+    if right_operators.ndim != 3 or right_operators.shape[1:] != (3, 3):
+        raise ValueError(
+            "RELION point-group operators must have shape (n, 3, 3), "
+            f"got {right_operators.shape}"
+        )
+    if right_operators.shape[0] < 1:
+        raise ValueError("RELION point-group operators must include identity first")
+
+
+def _require_symmetrise_cuda() -> None:
+    if jax.default_backend() != "gpu":
+        raise RuntimeError("RELION point-group BPref symmetry requires a JAX GPU backend")
+    if not custom_cuda_requested():
+        raise RuntimeError(
+            "RELION point-group BPref symmetry was requested but custom CUDA is disabled"
+        )
+
+
 @functools.partial(jax.jit, static_argnums=(3, 4))
 def relion_point_group_symmetrise_bpref(
     data_volume: jax.Array,
@@ -76,27 +120,7 @@ def relion_point_group_symmetrise_bpref(
     unchanged.
     """
 
-    volume_shape = tuple(int(value) for value in volume_shape)
-    if len(volume_shape) != 3 or len(set(volume_shape)) != 1:
-        raise ValueError(
-            "RELION point-group BPref symmetry requires a cubic 3-D grid, "
-            f"got {volume_shape}"
-        )
-    if any(value <= 0 or value % 2 == 0 for value in volume_shape):
-        raise ValueError(
-            "RELION point-group BPref symmetry requires an odd positive grid, "
-            f"got {volume_shape}"
-        )
-
-    maximum_supported_radius = volume_shape[0] // 2 - 1
-    if support_radius < 0 or support_radius > maximum_supported_radius:
-        raise ValueError(
-            "RELION point-group BPref support radius must leave its one-voxel "
-            f"interpolation margin: got {support_radius} for {volume_shape} "
-            f"(maximum {maximum_supported_radius})"
-        )
-
-    expected_size = int(volume_shape[0] * volume_shape[1] * (volume_shape[2] // 2 + 1))
+    volume_shape, expected_size = _symmetrise_grid(volume_shape, support_radius)
     if data_volume.ndim != 1 or data_volume.shape != (expected_size,):
         raise ValueError(
             "RELION point-group data accumulator must be flat with shape "
@@ -122,24 +146,13 @@ def relion_point_group_symmetrise_bpref(
             "RELION point-group weight dtype must match the data component dtype, "
             f"got data={data_volume.dtype}, weight={weight_volume.dtype}"
         )
-    if right_operators.ndim != 3 or right_operators.shape[1:] != (3, 3):
-        raise ValueError(
-            "RELION point-group operators must have shape (n, 3, 3), "
-            f"got {right_operators.shape}"
-        )
-    if right_operators.shape[0] < 1:
-        raise ValueError("RELION point-group operators must include identity first")
+    _require_symmetrise_operator_shape(right_operators)
     if right_operators.dtype != real_dtype:
         raise TypeError(
             "RELION point-group operator dtype must match the accumulator component dtype, "
             f"got operators={right_operators.dtype}, data={data_volume.dtype}"
         )
-    if jax.default_backend() != "gpu":
-        raise RuntimeError("RELION point-group BPref symmetry requires a JAX GPU backend")
-    if not custom_cuda_requested():
-        raise RuntimeError(
-            "RELION point-group BPref symmetry was requested but custom CUDA is disabled"
-        )
+    _require_symmetrise_cuda()
 
     library.ensure_ffi()
     output_types = (
@@ -177,26 +190,7 @@ def relion_point_group_symmetrise_bpref_host(
     bounded complex/weight output range, including the final partial chunk.
     """
 
-    volume_shape = tuple(int(value) for value in volume_shape)
-    if len(volume_shape) != 3 or len(set(volume_shape)) != 1:
-        raise ValueError(
-            "RELION point-group BPref symmetry requires a cubic 3-D grid, "
-            f"got {volume_shape}"
-        )
-    if any(value <= 0 or value % 2 == 0 for value in volume_shape):
-        raise ValueError(
-            "RELION point-group BPref symmetry requires an odd positive grid, "
-            f"got {volume_shape}"
-        )
-    maximum_supported_radius = volume_shape[0] // 2 - 1
-    if support_radius < 0 or support_radius > maximum_supported_radius:
-        raise ValueError(
-            "RELION point-group BPref support radius must leave its one-voxel "
-            f"interpolation margin: got {support_radius} for {volume_shape} "
-            f"(maximum {maximum_supported_radius})"
-        )
-
-    expected_size = int(volume_shape[0] * volume_shape[1] * (volume_shape[2] // 2 + 1))
+    volume_shape, expected_size = _symmetrise_grid(volume_shape, support_radius)
     for label, value in (
         ("complex data", data_volume),
         ("weight", weight_volume),
@@ -212,24 +206,13 @@ def relion_point_group_symmetrise_bpref_host(
                 f"RELION complex point-group {label} accumulator must be {expected_dtype}, "
                 f"got {value.dtype}"
             )
-    if right_operators.ndim != 3 or right_operators.shape[1:] != (3, 3):
-        raise ValueError(
-            "RELION point-group operators must have shape (n, 3, 3), "
-            f"got {right_operators.shape}"
-        )
-    if right_operators.shape[0] < 1:
-        raise ValueError("RELION point-group operators must include identity first")
+    _require_symmetrise_operator_shape(right_operators)
     if right_operators.dtype != jnp.dtype(jnp.float32):
         raise TypeError(
             "RELION complex point-group operators must be float32, "
             f"got {right_operators.dtype}"
         )
-    if jax.default_backend() != "gpu":
-        raise RuntimeError("RELION point-group BPref symmetry requires a JAX GPU backend")
-    if not custom_cuda_requested():
-        raise RuntimeError(
-            "RELION point-group BPref symmetry was requested but custom CUDA is disabled"
-        )
+    _require_symmetrise_cuda()
 
     if chunk_voxels <= 0:
         raise ValueError(f"RELION BPref symmetry chunk_voxels must be positive, got {chunk_voxels}")

@@ -26,6 +26,7 @@ from relax.star.metadata import (
     TOMO_INITIAL_MODEL_OPTICS_FEATURES,
     refuse_unsupported_optics,
 )
+from relax.steps.expected_accuracy import RELION_DEFAULT_SIGMA2_FUDGE
 from relax.steps.optics_shapes import (
     MultiShapeDataset,
     average_ctf2_parts,
@@ -33,7 +34,6 @@ from relax.steps.optics_shapes import (
     shape_datasets,
 )
 from relax.steps.sgd_schedule import (
-    DEFAULT_SIGMA2_FUDGE,
     default_subset_sizes_for_3d_initial_model,
     phase_lengths_from_effective_fractions,
 )
@@ -137,7 +137,7 @@ def _native_expectation_step(
                 particle_order=np.asarray(particle_ids, dtype=np.int64),
                 random_seed=int(opts.random_seed),
                 padding_factor=int(opts.padding_factor),
-                sigma2_fudge=DEFAULT_SIGMA2_FUDGE,
+                sigma2_fudge=RELION_DEFAULT_SIGMA2_FUDGE,
                 tilt_images=tilt_images,
                 optics_group_ids=optics_group_ids,
                 experiment_dataset=accuracy_dataset,

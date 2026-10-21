@@ -56,6 +56,16 @@ def _rotation_angle_degrees(a: np.ndarray, b: np.ndarray) -> float:
     return float(np.rad2deg(np.arccos(np.clip(cos_angle, -1.0, 1.0))))
 
 
+def _translation_far(trans_id: int, accepted_trans: int, translations: np.ndarray | None, min_translation_px: float) -> bool:
+    """Whether two candidates' shifts are at least ``min_translation_px`` apart (different ids without a table)."""
+    if translations is None or trans_id < 0 or accepted_trans < 0:
+        return int(trans_id) != int(accepted_trans)
+    return (
+        float(np.linalg.norm(translations[int(trans_id)] - translations[int(accepted_trans)]))
+        >= min_translation_px
+    )
+
+
 def _is_pose_distinct(
     rot_id: int,
     trans_id: int,
@@ -71,13 +81,7 @@ def _is_pose_distinct(
             rotation_far = int(rot_id) != int(accepted_rot)
         else:
             rotation_far = _rotation_angle_degrees(rotations[int(rot_id)], rotations[int(accepted_rot)]) >= min_angle_deg
-        if translations is None or trans_id < 0 or accepted_trans < 0:
-            translation_far = int(trans_id) != int(accepted_trans)
-        else:
-            translation_far = (
-                float(np.linalg.norm(translations[int(trans_id)] - translations[int(accepted_trans)]))
-                >= min_translation_px
-            )
+        translation_far = _translation_far(trans_id, accepted_trans, translations, min_translation_px)
         if not (rotation_far or translation_far):
             return False
     return True
@@ -164,13 +168,7 @@ def select_distinct_top_poses(
                     distinct = True
                     for accepted_idx, (_accepted_rot, accepted_trans) in enumerate(accepted):
                         rotation_far = _rotation_angle_degrees(candidate_mat, accepted_mats[accepted_idx]) >= min_angle
-                        if translations is None or trans_id < 0 or accepted_trans < 0:
-                            translation_far = int(trans_id) != int(accepted_trans)
-                        else:
-                            translation_far = (
-                                float(np.linalg.norm(translations[int(trans_id)] - translations[int(accepted_trans)]))
-                                >= min_trans
-                            )
+                        translation_far = _translation_far(trans_id, accepted_trans, translations, min_trans)
                         if not (rotation_far or translation_far):
                             distinct = False
                             break

@@ -220,6 +220,15 @@ def reconstruction_settings_for_run(
     )
 
 
+def _effective_optimizer_random_seed(options: RefinementOptions):
+    """The run's optimizer seed: ``parity.optimizer_random_seed``, else ``parity.perturb_seed`` (either may be None)."""
+    return (
+        options.parity.perturb_seed
+        if options.parity.optimizer_random_seed is None
+        else options.parity.optimizer_random_seed
+    )
+
+
 def _solvent_phase_stream(options: RefinementOptions) -> GlibcRand:
     """RELION's MPI leader ``rand()`` stream for the corrected FSC's phases, at the run's first draw.
 
@@ -227,12 +236,7 @@ def _solvent_phase_stream(options: RefinementOptions) -> GlibcRand:
     ``init_random_generator(random_seed)`` (ml_optimiser_mpi.cpp:827) and never reseeds; the split's
     draws (``options.solvent.split_draws``) come first. relax.reconstruction.solvent_mask.
     """
-    seed = (
-        options.parity.perturb_seed
-        if options.parity.optimizer_random_seed is None
-        else options.parity.optimizer_random_seed
-    )
-    stream = init_random_generator(int(seed or 0))
+    stream = init_random_generator(int(_effective_optimizer_random_seed(options) or 0))
     stream.rand_array(int(options.solvent.split_draws))
     return stream
 
@@ -250,11 +254,7 @@ def expected_accuracy_inputs_for_run(
     # Build that immutable local order once.  A missing/rebuilt-without-this-
     # helper binding is handled fail-closed below: acc_rot stays infinite and
     # cannot trigger convergence.
-    effective_optimizer_random_seed = (
-        options.parity.perturb_seed
-        if options.parity.optimizer_random_seed is None
-        else options.parity.optimizer_random_seed
-    )
+    effective_optimizer_random_seed = _effective_optimizer_random_seed(options)
     expected_accuracy_trial_order = prepare_relion_half1_trial_order(
         expected_accuracy=options.expected_accuracy,
         half1_dataset=half1_dataset,

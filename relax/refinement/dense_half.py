@@ -543,8 +543,6 @@ def _score_half_dense_one_shape(
     ``batching.safe_batch_sizes`` plans against memory available at invocation.
     """
 
-    from relax.sampling.symmetry import canonicalize_rotational_symmetry
-
     symmetry = canonicalize_rotational_symmetry(sampling.symmetry)
     if symmetry != "C1" and int(sampling.oversampling_order) <= 0 and sampling.coarse_engine != "gemm_dense":
         raise NotImplementedError(
