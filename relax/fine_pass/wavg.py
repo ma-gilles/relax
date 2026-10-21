@@ -339,22 +339,17 @@ def replace_low_shell_noise_with_relion_wavg_direct_residual_jnp(
     exclusive_shell_stop: "int | jax.Array",
     shell_count: int,
 ):
-    """``jax.numpy`` twin of the numpy direct-residual replacement above.
+    """Replace the low noise shells with RELION's direct Wavg residual.
 
-    Same contract, same float32 -> float64 widening of the atomic Wavg
-    ``diff2`` stream and the same shell-stop clamping as
-    :func:`_replace_low_shell_noise_with_relion_wavg_direct_residual`; written
-    for the device-resident statistics stage, which must keep the whole bucket
-    tail inside one traced program instead of pulling per-bucket shells to the
-    host (see ``relax/fine_pass/resident_statistics.py``).
-
-    The only difference from the numpy original is the association order of
-    the float64 shell sum: the original adds one image row at a time through
-    ``np.add.at``, this one sums the image axis and bins once.  Both add the
-    same float64 summands, so results agree to float64 rounding and are
-    bitwise identical whenever each shell receives at most one summand.
-    ``shell_count`` is static because it fixes the traced output shape;
-    ``residual_shells`` must already have that length.
+    Shells below ``exclusive_shell_stop`` (clamped to ``[0, shell_count]``) take
+    the float64 per-shell sum of the atomic Wavg ``diff2`` stream (float32
+    widened to float64) and a zero image power; the other shells keep
+    ``residual_shells`` and ``image_power_shells``. Written for the
+    device-resident statistics stage, which keeps the whole bucket tail inside
+    one traced program instead of pulling per-bucket shells to the host (see
+    ``relax/fine_pass/resident_statistics.py``). The shell sum adds the image
+    axis first and bins once. ``shell_count`` is static because it fixes the
+    traced output shape; ``residual_shells`` must already have that length.
     """
 
     residual = jnp.asarray(residual_shells, dtype=jnp.float64)
@@ -377,8 +372,8 @@ def replace_low_shell_noise_with_relion_wavg_direct_residual_jnp(
         )
     # A Python int or a traced int32 scalar (the resident engine's logical stop).
     shell_stop = jnp.clip(jnp.asarray(exclusive_shell_stop, dtype=jnp.int32), 0, shell_count)
-    # Pixels at or above the stop shell are dropped entirely, exactly as the
-    # numpy original's ``valid`` mask does, not merely overwritten afterwards.
+    # Pixels at or above the stop shell are dropped entirely, not merely
+    # overwritten afterwards.
     covered_shells = jnp.where(shells < shell_stop, shells, jnp.int32(-1))
     direct_shells = bin_shell_values_jax(
         jnp.sum(atomic_diff2.astype(jnp.float64), axis=0),

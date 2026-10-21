@@ -540,8 +540,8 @@ def get_local_rotation_grid_fast(
         Gaussian prior sigma for rotation, **radians**. Used as the
         cone radius scale and the log-prior denominator.
     sigma_psi : float
-        Gaussian prior sigma for in-plane angle, **radians**. Combined
-        Independent in-plane prior sigma; it must not widen the direction
+        Gaussian prior sigma for in-plane angle, **radians**. An
+        independent in-plane prior sigma; it must not widen the direction
         cone. RELION's direction `biggest_sigma` is `max(sigma_rot,
         sigma_tilt)`, and this SPA path uses `sigma_tilt == sigma_rot`.
     healpix_order : int

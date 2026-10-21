@@ -46,7 +46,6 @@ def apply_bpref_particle_order_policy(
     return preserve
 
 
-## THIS SEEMS TO INDICATE POOR PLANNING/SETTING UP IF WE HAVE TO DO THIS - REPLACE BY A NICER CLASS OR SOMETHING?
 def infer_healpix_order_from_rotation_count(
     n_rot: int,
     symmetry_label: str = "C1",

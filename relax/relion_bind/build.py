@@ -2,10 +2,10 @@
 """Build the RELION pybind11 bindings.
 
 Usage from repo root:
-    pixi run python recovar/relion_bind/build.py
+    pixi run python relax/relion_bind/build.py
 
 Or to rebuild after C++ changes:
-    cd recovar/relion_bind/build && make -j8
+    cd relax/relion_bind/build && make -j8
 """
 
 import os

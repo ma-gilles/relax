@@ -1,7 +1,5 @@
-"""EM-only symbols relocated from ``recovar.reconstruction.relion_functions`` (relax split P1, pure move).
-
-Function bodies are AST-identical to their originals at Q (tag q-reconcile-20260923); only the module
-path changed.  See pr179_coordination/relax_split_plan_20260923/PLAN.md.
+"""EM-only symbols split out of ``recovar.reconstruction.relion_functions``, plus relax-only code (the jitted
+large-grid finishers and the host padding path).
 """
 
 import functools

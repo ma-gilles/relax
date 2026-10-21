@@ -66,7 +66,7 @@ def _add_tilt_image_cc_diff2(running_diff2, projections, shifted, pixel_weight):
 
     ``cuda_kernel_diff2_CC_coarse`` has each of its 128 threads atomically add
     ``-X / (128 sqrt(A))`` to the particle's diff2, which already holds the earlier images' terms;
-    ``X`` and ``A`` are the SPA coarse CC GEMM terms (scoring.relion_coarse_gemm_terms).
+    ``X`` and ``A`` are the SPA coarse CC GEMM terms (``relax.scoring.coarse_kernels.relion_coarse_gemm_terms``).
     """
 
     from relax.scoring.coarse_kernels import relion_coarse_gemm_terms

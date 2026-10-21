@@ -15,8 +15,7 @@ def _parse(*arguments):
 
 
 def test_image_fourier_backend_cli_defaults_by_job_type_with_typed_choices():
-    # auto resolves to relion_cuda for K=1 and for Class3D on the resident pass 2, host_numpy for
-    # Class3D on the compact engine (refinement_arguments.resolve_job_defaults).
+    # auto resolves to relion_cuda for K=1 and Class3D alike (refinement_arguments.resolve_job_defaults).
     assert _parse().image_fourier_backend == "auto"
     assert [_parse("--image-fourier-backend", backend).image_fourier_backend for backend in BACKENDS] == list(BACKENDS)
     with pytest.raises(SystemExit):

@@ -12,7 +12,7 @@ The command chooses the observer once (``relax.diagnostics.observers``) and hand
 
 The base ``RunObserver`` is the default and does nothing. Each hook is named for the moment of the run it is called
 at and receives the values the run holds then; an observer must not mutate them, and must not keep a device
-array past the hook unless it says so (it would extend that array's lifetime, code rule 3). The two
+array past the hook unless it says so (it would extend that array's lifetime, code rule 3). The three
 collection requests (``keeps_rotation_posteriors``, ``collects_local_search_profiles``,
 ``keeps_pose_rotation_eulers``) and ``wants_unfiltered_maps`` ask the run to keep or compute something beside its own values; they cost memory
 or time, never a number of the run. ``bpref_diagnostics_armed`` asks the first-iteration BPref of a numbered half

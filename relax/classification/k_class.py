@@ -46,7 +46,7 @@ def _validate_bpref_device_signature_sparse_route(
     active: bool,
     n_classes: int,
 ) -> None:
-    """Fail closed unless scoped BPref capture uses a sparse pass-2 route."""
+    """Fail closed when scoped BPref capture is active with no class."""
 
     if bool(active) and int(n_classes) < 1:
         raise RuntimeError("active BPref device signature scope requires at least one class")

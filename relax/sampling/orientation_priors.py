@@ -2,8 +2,8 @@
 
 These functions build the Gaussian log-prior arrays that RELION uses to
 bias the E-step towards the previous best orientations and offsets.
-Called by ``refine_single_volume`` and ``_run_local_search_iteration``
-in ``refine.py``.
+The refinement's expectation, maximization, local-search sampling and
+finalization steps, the VDAM E-step and the parity replays call them.
 """
 
 from dataclasses import dataclass

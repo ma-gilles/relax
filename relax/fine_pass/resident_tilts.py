@@ -232,7 +232,7 @@ def run_tilt_chunk(
       and the significance are per particle (RELION's img_id loop, acc_ml_optimiser_impl.h:2282).
     - The M-step visits the slots again: each (image, row) backprojects with the particle's posterior,
       the image's matrix and phases; the noise and norm sums carry 1 / n_images, the scale sums and
-      the backprojection do not (docs in PLAN.md, "S4.2 statistics semantics").
+      the backprojection do not.
     - The M-step visits each particle's own translations with posterior mass (:func:`unit_mstep_translations`):
       a row's posterior and its image's phases are taken at its particle's ``k`` translations, so the
       translated tiles cover only those (the dropped terms carry exactly zero posterior).
@@ -884,7 +884,7 @@ def accumulate_tilt_chunk_terms(
     unit_ids,  # int32 [C_U], -1 padded
     unit_optics_groups,  # int32 [C_U] or None
     unit_translation_sqdist_ang,  # [C_U, T] or None
-    image_unit_local,  # int32 [C_I], C_U on padded images
+    image_unit_local,  # int32 [C_I], n_valid_units on padded images (zero weight)
     image_ids,  # int32 [C_I], -1 padded
     operands,  # ChunkStageOperands over the chunk's images (image_noise_scale set)
     tables,  # ChunkStageTables

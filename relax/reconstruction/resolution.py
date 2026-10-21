@@ -104,7 +104,6 @@ def relion_optics_image_current_sizes(
     return np.minimum(current_sizes.astype(np.int64), image_sizes)
 
 
-# Default threshold for when adaptive pass 2 is skipped.
 def compute_coarse_image_size(
     angular_step_deg,
     pixel_size,

@@ -1,7 +1,4 @@
-"""EM-only symbols relocated from ``recovar.reconstruction.regularization`` (relax split P1, pure move).
-
-Function bodies are AST-identical to their originals at Q (tag q-reconcile-20260923); only the module
-path changed.  See pr179_coordination/relax_split_plan_20260923/PLAN.md.
+"""EM-only symbols split out of ``recovar.reconstruction.regularization``, plus relax-only code.
 
 This module keeps the shell statistics, tau2 and the backprojector FSC. The low-resolution half join is
 ``low_resolution_join``'s and the resolution and image-size criteria are ``resolution_criteria``'s.

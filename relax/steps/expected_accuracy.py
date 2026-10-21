@@ -115,7 +115,7 @@ def expected_accuracy_class_ids(class_assignments_half1, *, k_class_enabled, n_u
 class IterationAccuracy:
     """One numbered iteration's expected-accuracy estimate, or why there is none.
 
-    ``status`` is ``"ok"``, ``"skipped_firstiter_cc"``, ``"unavailable_inputs"`` or ``"error:..."``.
+    ``status`` is ``"ok"``, ``"skipped_firstiter_cc"`` or ``"unavailable_inputs"``; a failed estimate raises.
     ``sampling_accuracy`` is the ``(acc_rot, acc_trans)`` the sampling state takes: the estimate, infinity
     when the estimate was due and could not be made, ``None`` when the state keeps its values.
     ``published`` says the trials and per-class values are those of a completed estimate.

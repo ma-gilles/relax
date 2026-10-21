@@ -172,7 +172,7 @@ def _resident_mstep_block(
         )
 
     # The backprojected CTF sum. For CTF-premultiplied images its weight is not
-    # the noise statistics' CTF^2 / sigma2 (sparse_pass2_bucket_io.premultiplied_bpref_weights).
+    # the noise statistics' CTF^2 / sigma2 (bucket_io.premultiplied_bpref_weights).
     bpref_ctf2_over_nv = operands.ctf2_over_nv_recon
     bpref_ctf_probs = ctf_probs
     if operands.bpref_ctf2_over_nv_recon is not None:
@@ -508,9 +508,7 @@ def resident_mstep_block_at(
     block_posterior = take(blocks.row_posterior)
     if blocks.class_row_range is not None:
         # A boundary block's rows of the neighbouring class are treated as
-        # padding (no weight, kernel id -1). A block past the capacity is
-        # clamped by the slice, but its unclamped positions are all at or past
-        # ``hi``, so every row of it is excluded.
+        # padding (no weight, kernel id -1).
         row = block_start + jnp.arange(block_rows, dtype=jnp.int32)
         in_class = (row >= blocks.class_row_range[0]) & (row < blocks.class_row_range[1])
         block_kernel_ids = jnp.where(in_class, block_kernel_ids, jnp.int32(-1))

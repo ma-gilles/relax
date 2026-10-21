@@ -19,8 +19,8 @@ def _load_external_core_if_available() -> None:
     Long EM jobs build the RELION binding under scratch via
     `RECOVAR_RELION_BIND_BUILD_DIR`; copying the shared object back into the
     checkout can fail when the source filesystem is quota-full. Preloading the
-    extension here lets both `from recovar.relion_bind import _relion_bind_core`
-    and `from recovar.relion_bind._relion_bind_core import ...` work without a
+    extension here lets both `from relax.relion_bind import _relion_bind_core`
+    and `from relax.relion_bind._relion_bind_core import ...` work without a
     package-local copy.
     """
 

@@ -14,8 +14,8 @@ EM refinement loop:
 - **Local angular search**: switch from global exhaustive to local
   Gaussian-prior search at the configured RELION auto-local HEALPix order.
 
-See docs/relion5_auto_refine_algorithm.md, sections A (convergence),
-G (angular sampling), H (speed tricks).
+See docs/math/relion_refinement_algorithm.md, sections 2 (sampling grids) and 6 (sampling
+transitions and convergence).
 """
 
 import logging

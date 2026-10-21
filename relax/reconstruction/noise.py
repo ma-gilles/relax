@@ -85,7 +85,7 @@ def normalize_wsum_to_sigma2_noise(
     Parameters
     ----------
     wsum_sigma2_noise : array, shape (n_shells,)
-        Accumulated A2 - 2*XA per shell from ``_compute_noise_block``.
+        Accumulated A2 - 2*XA per shell from ``relax.projection.noise_blocks.compute_noise_block``.
     wsum_img_power : array, shape (n_shells,)
         Accumulated |img|^2 per shell (P_img term).
     sumw : float

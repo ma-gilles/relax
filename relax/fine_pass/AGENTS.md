@@ -67,8 +67,6 @@ The local-search pass 2 (`resident_pass2.py` and its `resident_local_admission.p
   argument is threaded through `dispatch.py`, the gate and the driver; grep its name in all three.
 - `dispatch.py` logs under the logger name `relax.sampling.oversampling`, not its own module name, because
   run-log collectors read that category. Do not "fix" it.
-- The module docstring of `resident_pass2.py` still names `recovar.em.sparse_pass2.*` and
-  `recovar.cuda_backproject.*`. The modules are `relax.fine_pass.*` and the kernels are in `relax/cuda/`.
 - The translation is applied per pixel inside the fused scoring kernel. It differs from a pre-shifted tile
   only on the `ky = -N/2` Nyquist row of an unwindowed half image; the gate refuses the unwindowed case
   instead of handling it.

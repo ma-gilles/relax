@@ -121,12 +121,9 @@ def selected_rotation_matrices(
     if rotation_grid_rotations is not None:
         return np.asarray(rotation_grid_rotations, dtype=dtype).reshape(-1, 3, 3)[rotation_ids]
     unique_ids, inverse = unique_nonnegative_ids(rotation_ids)
-    # Stage eulers at the requested dtype before apply_relion_rotation_perturbation_to_eulers
-    # re-derives float64 internally regardless; truncating to float32 here
-    # first (the previous unconditional default) would discard precision
-    # that a dtype=float64 caller asked to keep, even though it leaves the
-    # existing float32 default path's output bit-for-bit unchanged. Matches
-    # the mstep sibling below, which already does this.
+    # Eulers are staged at the requested dtype; apply_relion_rotation_perturbation_to_eulers
+    # works in float64 internally, so a dtype=float64 caller keeps full precision.
+    # The mstep sibling below always stages them in float64.
     selected_eulers = _rotation_eulers_from_grid_metadata(unique_ids, grid_metadata, dtype=dtype)
     if abs(float(random_perturbation)) > 1e-12:
         if angular_sampling_deg is None:

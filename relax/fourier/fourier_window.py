@@ -15,7 +15,7 @@ size set, but the RELION-parity path now allows any even ``current_size`` up
 to the original box size because the gather/scatter window does not change the
 underlying CUDA image grid.
 
-See ``docs/math/plan_relion_parity.md``, Phase 3.
+See ``docs/math/relion_refinement_algorithm.md``, section 4 ("Fourier windows and performance").
 """
 
 from dataclasses import dataclass, replace

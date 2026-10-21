@@ -10,11 +10,11 @@ per capacity class, accumulators that stay on the device and one pull per half.
 
 Scope
 -----
-:func:`compute_local_search_resident` is the **fine pass 2** of every K=1 local search
-and its pass-1 parent probe; the fine pass is also the pass the final all-data iteration runs (``iteration_loop.py``
+:func:`compute_local_search_resident` is the **fine pass 2** of every local search
+(K=1 and Class3D) and its pass-1 parent probe; the fine pass is also the pass the final all-data iteration runs (``iteration_loop.py``
 reaches it through the same ``local_outputs = _run_local_search_iteration`` call
 site in ``relax/refinement/local_half.py``). Any other configuration raises
-:class:`NotImplementedError` naming the missing piece: there is no other local
+:class:`~relax.fine_pass.policy.ResidentConfigurationUnsupported` naming the missing piece: there is no other local
 fine-pass engine to fall back to.
 
 The pass-1 parent probe
@@ -226,10 +226,9 @@ def compute_local_search_resident(
     neighbourhoods in ``local_layout`` already include the symmetry mates of each
     prior direction; here the group only symmetrises the BPref accumulators.
 
-    Returns the same :class:`~recovar.em.helpers.types.LocalEMResult` the exact
-    local engine returns for this configuration. See the module docstring for
-    the three arithmetic differences that are deliberate and for why the
-    pass-1 parent probe is not routed here.
+    Returns a :class:`~relax.types.LocalEMResult`. See the module docstring for
+    the three deliberate arithmetic differences from the retired exact local
+    engine and for the pass-1 parent probe (``score_only``).
 
     ``kernel.nyquist_column_counting`` is the consistency option of the per-image sums
     (docs/math/relion_consistency_options.md): it changes the scoring weights and the image

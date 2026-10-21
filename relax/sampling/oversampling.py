@@ -16,9 +16,9 @@ the smallest set of (rotation, translation) samples whose cumulative weight is
 strictly greater than ``adaptive_fraction`` of the total posterior weight.
 Cap at max_significants
 to bound memory/compute (RELION's --maxsig semantics, counting SAMPLES
-not just orientations -- see C5 in plan_relion_parity.md).
+not just orientations).
 
-See docs/math/plan_relion_parity.md, Phase 5.
+See docs/math/relion_refinement_algorithm.md, section 4.
 """
 
 from functools import partial

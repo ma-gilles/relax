@@ -518,9 +518,9 @@ def _score_half_local_one_shape(
 ) -> HalfScoreResult:
     """Local-search E+M scoring for one half-set.
 
-    Routes through ``_run_local_search_iteration``. Local searches are K=1 only: Class3D keeps
-    global searches, as RELION switches to local searches from the HEALPix order
-    only under auto-refine (ml_optimiser.cpp:2541-2565, 3936-3938).
+    Routes through ``_run_local_search_iteration``. K=1 auto-refine switches to local searches
+    from the HEALPix order (ml_optimiser.cpp:2541-2565, 3936-3938); Class3D searches locally
+    only when given a prior width such as ``--sigma_ang``, and then scores every class.
     """
 
     # RELION's convertAllSquaredDifferencesToWeights uses mymodel.pdf_direction

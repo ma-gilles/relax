@@ -48,8 +48,8 @@ DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM = 8
 VDAM_STABLE_FOURIER_WINDOW_QUANTUM = 24
 DEFAULT_LOCAL_SELECTOR_MAX_ELEMENTS = 16_000_000
 DEFAULT_BPREF_SYMMETRY_CHUNK_VOXELS = 16 * 1024 * 1024
-# One local resident projector call's transient: the 4 GiB the exact local engine budgeted for its fused projection
-# matmul (local_batch_planning.EXACT_LOCAL_BIG_JIT_MATMUL_MAX_GB), so the two reserved comparable headroom.
+# One local resident projector call's transient: 4 GiB, the budget the retired exact local engine gave its fused
+# projection matmul.
 DEFAULT_LOCAL_PROJECTION_CALL_MAX_BYTES = 4 * 1024**3
 RESIDENT_DIAGNOSTIC_DIR_ENVS = (
     "RECOVAR_BPREF_DEVICE_SIGNATURE_DUMP_DIR",

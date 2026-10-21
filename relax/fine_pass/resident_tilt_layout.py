@@ -19,7 +19,7 @@ class ChunkTiltLayout(NamedTuple):
     """One chunk's tilt images and each row's image per image slot (host NumPy)."""
 
     image_ids: np.ndarray  # int64 [C_I], global image of each chunk image, -1 when padded
-    image_unit_local: np.ndarray  # int64 [C_I], chunk-local unit of each image, C_U when padded
+    image_unit_local: np.ndarray  # int64 [C_I], chunk-local unit of each image, n_valid_units when padded
     slot_image_ids: np.ndarray  # int32 [S, C_R], chunk-local image of a row's unit's s-th image, -1 past its images
     n_valid_images: int
 

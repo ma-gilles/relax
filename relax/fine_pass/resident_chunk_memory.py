@@ -257,7 +257,7 @@ def chunk_translated_tile_pixels(
     and the M-step. ``normalized_cc`` (the ``--firstiter_cc`` iteration) adds
     the row-order corrected score tile to both; without ``masked_scoring`` the
     preparation's recon and noise tiles are one array
-    (``sparse_pass2_bucket_io``), one recon tile fewer. Planning with three recon tiles
+    (``bucket_io``), one recon tile fewer. Planning with three recon tiles
     instead let EMPIAR-10202 iteration 22 take 32 images per chunk, a ~30 GiB
     preparation against a 22 GiB budget (14509861), and the global pass of
     VDAM K=1 ribosembly 100k run out of memory allocating the rectangle

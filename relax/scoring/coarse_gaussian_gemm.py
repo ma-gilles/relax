@@ -1,9 +1,8 @@
 """Coarse Gaussian GEMM backend of the K-class significance pass.
 
-The env-gated GEMM macro and its opt-ins, the device-memory budgets and
-projection cache, the hybrid image-batch plan and its request validation,
-and the hybrid batch itself. ``significance`` selects this backend once per
-pass and calls it per image batch.
+The projection-cache budget and row bytes, the rotation block-size fitting,
+the resource gate, and the projection-cache request validation and plan.
+``gaussian_plan`` reads them when it plans a pass.
 """
 
 import operator

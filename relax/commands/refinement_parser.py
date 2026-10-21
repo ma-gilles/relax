@@ -317,8 +317,7 @@ def parse_refinement_args(argv=None):
         help=(
             "Fourier preprocessing backend for RELION-masked particle images. auto (default) "
             "is relion_cuda, the source-faithful CUDA normalization, translation and mask path "
-            "that the fresh K=1 defaults and the resident pass 2 require, and host_numpy for "
-            "Class3D on the compact engine."
+            "that the resident pass 2 requires, for K=1 and Class3D alike."
         ),
     )
     parser.add_argument("--image_batch_size", type=int, default=500, help="Images per GPU batch")

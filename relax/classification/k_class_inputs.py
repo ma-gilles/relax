@@ -134,8 +134,6 @@ def seed_iteration_supports(first_class_supports, unit_seed_classes, n_classes: 
     ]
 
 
-### M- THIS SEEMS TO USE THE DATASET OBJECT OF RECOVAR - IS THIS OUTDATED - SHOULD WE REMOVE IT FOR BETTER EFFICIENCY/READABILITY? IT WASN'T MADE FOR THIS SO WE SHOULD THINK ABOUT JUST STRIPPING IT OUT/CLEANING IT
-
 def dataset_image_count(experiment_dataset, fallback: int | None = None) -> int:
     if hasattr(experiment_dataset, "n_units"):
         return int(experiment_dataset.n_units)

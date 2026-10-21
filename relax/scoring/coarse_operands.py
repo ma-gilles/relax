@@ -1,9 +1,8 @@
 """RELION exact coarse operands of the K-class significance pass.
 
-RELION's coarse Gaussian square operands (generic and sincosf), the exact
-operand assembly with its half-image preprocessing and CC inverse power,
-the pose tie-break keys and rescore winner slots, and the opt-ins that
-select the exact path.
+The exact operand assembly with its half-image preprocessing and CC inverse
+power, the CC coarse operands, the pose tie-break keys and the rescore
+winner slots.
 """
 
 from typing import NamedTuple

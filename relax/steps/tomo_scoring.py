@@ -725,8 +725,8 @@ def score_tomo_half_in_loop(
     best poses and class summaries are recorded by the controller.
 
     A local-search iteration passes ``local_search``: a dict with the particles' previous angles
-    (``previous_eulers_deg``), ``sigma_rot`` and ``sigma_psi`` and the pass-1 HEALPix order
-    (``parent_order``); ``sampling`` then carries that order and the local grid's perturbation.
+    (``previous_eulers_deg``), ``sigma_rot``, ``sigma_psi``, ``sigma_tilt_deg`` and, optionally,
+    ``prior_tilt_deg``; ``sampling`` then carries the pass-1 HEALPix order and the local grid's perturbation.
 
     Class3D (K>1): ``volume`` and ``relion_projector_half`` keep the loop's class axis,
     ``class_log_priors`` are the classes' ``log pdf_class`` and ``class_rotation_log_prior`` their

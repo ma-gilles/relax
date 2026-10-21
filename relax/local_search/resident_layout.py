@@ -3,10 +3,10 @@
 The device-resident pass-2 stages (T5-T9b) consume a flat, image-CSR table of
 candidate rows plus fixed-capacity chunks. The global pass 2 builds that table
 from
-:func:`recovar.em.scoring.sparse_bucket_arrays._prepare_per_image_pass2_inputs`
-(see :mod:`recovar.em.sparse_pass2.resident_candidates`). Local search instead
+:func:`relax.fine_pass.bucket_arrays.prepare_per_image_pass2_inputs`
+(see :mod:`relax.fine_pass.resident_candidates`). Local search instead
 carries its candidate set in a
-:class:`~recovar.em.local.local_layout.LocalHypothesisLayout`, whose rows
+:class:`~relax.local_search.layout.LocalHypothesisLayout`, whose rows
 already are the flat, image-CSR objects the resident stages want, with three
 differences this module resolves:
 
@@ -14,7 +14,7 @@ differences this module resolves:
    order 5 has 2.4M rotations and is never materialized, so a row carries its
    own ``rotations_flat[row]`` and ``mstep_rotations_flat[row]``. The resident
    local driver therefore projects a chunk's rows on the fly
-   (:func:`recovar.em.sparse_pass2.resident_scoring.project_resident_rows`)
+   (:func:`relax.fine_pass.resident_scoring.project_resident_rows`)
    instead of gathering a per-iteration projection cache. Because the layout's
    flat order *is* the CSR order, a chunk's rotations are a contiguous slice,
    not a gather.
@@ -298,8 +298,9 @@ def materialize_local_chunk(tables: ResidentLocalTables, chunk: CapacityChunk) -
     Because the local table's rows are already contiguous per chunk, every
     per-row field is a slice plus a pad, never a gather.
 
-    Padding contract: ``row_image_local`` pads to ``image_capacity - 1`` (a
-    padded image slot, which no valid row addresses), ``row_log_prior`` to
+    Padding contract: ``row_image_local`` pads to ``image_capacity - 1`` (an
+    in-range slot that may hold a real image; padded rows are excluded by
+    ``n_valid_rows`` and their log prior), ``row_log_prior`` to
     -1e30, ``row_mask_bits`` to all-zero bytes (no candidate translation),
     ``row_posterior_id`` to ``n_posterior_bins`` (dropped by the scatter),
     and both rotation arrays to the identity so a padded row's projection is

@@ -400,7 +400,7 @@ def prepare_chunk_reconstruction_operands(
     they are rebuilt per chunk from the same :func:`prepare_bucket_io` call,
     with the same keyword arguments, that the compact engine makes per bucket.
     The default path instead keeps the *unshifted* per-image operands resident
-    (:mod:`recovar.em.sparse_pass2.resident_operands`) and lets T15's kernel
+    (:mod:`relax.fine_pass.resident_operands`) and lets T15's kernel
     apply the translations inside the M-step reduction, so no tile is built at
     all.
 

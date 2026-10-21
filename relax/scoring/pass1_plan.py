@@ -143,9 +143,8 @@ def plan_pass1(request: Pass1Request) -> Pass1Plan:
     rotation_block_size = request.rotation_block_size
     translation_log_prior = request.translation_log_prior
 
-    # VDAM asks for the padded tail batch explicitly; the global coarse pass
-    # opts in through the environment while the bitwise equality is qualified.
-    # The command's switch (EngineTuning.coarse_pad_final_image_batch, on by default; VDAM also asks explicitly).
+    # VDAM asks for the padded tail batch explicitly; the global coarse pass pads it through
+    # EngineTuning.coarse_pad_final_image_batch (on by default, RELAX_COARSE_PAD_FINAL_IMAGE_BATCH).
     pad_final_image_batch = bool(pad_final_image_batch) or request.engine_tuning.coarse_pad_final_image_batch
     # RELION's pdf_orientation/pdf_offset priors and score/evidence/Pmax
     # outputs are RFLOAT (double), never narrowed -- derive from the

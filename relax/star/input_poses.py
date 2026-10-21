@@ -272,7 +272,7 @@ def _load_input_star_class3d_translations(input_particles, rows, *, voxel_size: 
     ``kclass_firstiter_translation_seed``), so only translations are
     returned: ``rows`` indexes the input STAR in the order of the single
     all-data accumulator, and the second accumulator is empty. With local
-    searches from the start (``--sigma_ang``, ``with_angles``) the input angles
+    searches from the start (``--sigma_ang``, ``with_orientations``) the input angles
     are the searches' centres, 0 where the STAR has none, as relion_refine reads them.
     Under ``--sigma_tilt`` they come with the ``rlnAngle*Prior`` columns (``angle_priors``): the prior is
     centred on ``rlnAngleTiltPrior`` and on the input tilt where that is absent.

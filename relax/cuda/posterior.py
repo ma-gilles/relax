@@ -170,7 +170,8 @@ def sparse_pass2_segmented_log_z_f64(
 ) -> jax.Array:
     """Per-segment float64 log-sum-exp of flat float32 sparse pass-2 scores.
 
-    Segmented form of :func:`sparse_pass2_log_z_f64`: segments without a finite
+    Segmented form of the rectangular FFI handler
+    (``library.TARGET_SPARSE_PASS2_LOG_Z_F64``): segments without a finite
     score, empty segments and segments at or beyond ``n_valid_images`` return
     ``-inf``, which is what the rectangular handler returns for an all ``-inf``
     row.  Flattening a rectangular row into a segment reproduces that row's
@@ -229,7 +230,7 @@ def sparse_pass2_segmented_posterior_f32(
     use_external_sum_weight: bool,
     return_scratch: bool = False,
 ) -> tuple[jax.Array, ...]:
-    """Segmented form of :func:`sparse_pass2_posterior_f32`.
+    """Segmented form of the rectangular ``library.TARGET_SPARSE_PASS2_POSTERIOR_F32`` FFI handler.
 
     ``scores`` is a flat cell array whose segment ``i`` is
     ``[segment_offsets[i], segment_offsets[i + 1])``; the per-segment operands

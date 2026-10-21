@@ -9,10 +9,9 @@ changes the placement and tiling of the translation phase.
 See ``docs/math/dense_gemm_experiment.md`` for the score and memory contract.
 
 **Batch program.** One compiled batch holds its images while it streams fixed rotation and translation tiles.
-Exact mode scores the complete grid twice. Lagged mode scores it once against a previous-iteration normalizer,
-after an exact bootstrap. The caller keeps the reference and accumulators on device across batches and swaps
-the two ID-indexed normalizer tables only after an iteration. The same document has the objective and update
-equations.
+It scores the complete grid twice (exact mode). The lagged mode that ``DenseGemmTileConfig`` also accepts is
+compiled by ``scripts/lib/dense_gemm_experiment.py``, not here. The caller keeps the reference and accumulators
+on device across batches. The same document has the objective and update equations.
 """
 
 from __future__ import annotations

@@ -1,7 +1,7 @@
 """Shared diagnostics-dict construction for PPCA EM iterations.
 
-Both ``dense_dataset.py``, ``local_dataset.py`` and ``dense_engine.py``
-publish the same handful of summary keys in their result diagnostics. The
+``dense_dataset.py`` and ``scripts/lib/local_dataset.py`` publish the same
+handful of summary keys in their result diagnostics. The
 helpers here own that contract so adding a key only happens in one place.
 
 The ``flavor``-specific extras (sparse_pass2 stats for dense, image-scale

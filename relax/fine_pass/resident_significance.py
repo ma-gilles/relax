@@ -5,18 +5,15 @@ Ticket T13 (``em_parity_tickets_20260918/T13_device_significance_compaction.md``
 The coarse posterior produces one boolean support mask per image batch, shaped
 ``[batch, n_classes * n_rot * n_trans]``.  At healpix order 3 with 21
 translations that is 774144 cells per image, so a 5000-image half carries
-about 3.8 GB of booleans per iteration.  The host path in
-``recovar/em/scoring/significance.py`` pulls that whole mask
-(``batch_sig_mask_np = np.array(batch_sig_mask, dtype=bool, copy=True)``),
-reduces it per image with :func:`numpy.flatnonzero`, and
-``prepare_per_image_pass2_inputs`` then re-expands the resulting ids into
-per-image candidate structures that the resident candidate tables flatten
-again.
+about 3.8 GB of booleans per iteration.  A host path would pull that whole
+mask, reduce it per image with :func:`numpy.flatnonzero`, and re-expand the
+resulting ids through ``prepare_per_image_pass2_inputs`` into per-image
+candidate structures that the resident candidate tables flatten again.
 
-This module replaces the first two steps with one jitted program that compacts
-the mask on the device into a CSR pair ``(offsets, ids)``, and the third with a
+This module does the first two steps in one jitted program that compacts
+the mask on the device into a CSR pair ``(offsets, ids)``, and the third in a
 vectorized builder that produces the same
-:class:`~recovar.em.sparse_pass2.resident_candidates.ResidentCandidateTables`
+:class:`~relax.fine_pass.resident_candidates.ResidentCandidateTables`
 straight from that CSR.  Only the compact ids cross the bus: a few MB per half
 instead of a few GB.
 
@@ -35,7 +32,7 @@ A support larger than half of the grid is stored as its excluded cells, the
 host encoder's sparse-complement choice, taken for exactly the same images
 (see :func:`host_support_rows`).
 
-Index conventions match :mod:`recovar.em.sparse_pass2.resident_candidates`:
+Index conventions match :mod:`relax.fine_pass.resident_candidates`:
 "image" is a local position inside the half's dataset, "parent" is an
 image-local coarse rotation, coarse cell ids are ``rot * n_coarse_trans +
 trans``, and coarse-translation bitsets pack bit ``k`` for coarse translation
@@ -713,7 +710,7 @@ def host_support_row(csr, image: int):
     """One image's host encoding, taken from the CSR.
 
     Reproduces
-    :func:`recovar.em.scoring.significant_samples.compact_significant_sample_indices_from_mask`
+    :func:`relax.fine_pass.significant_samples.compact_significant_sample_indices_from_mask`
     exactly, for every regime: ``None`` when the whole grid is significant, a
     :class:`ComplementSignificantSampleIndices` when more than half of it is,
     and an explicit ascending int32 id array otherwise. The compaction already
@@ -1007,7 +1004,7 @@ def build_resident_candidate_tables_from_csr(
     pass builds several image blocks from the same grid).
 
     Produces exactly what
-    :func:`recovar.em.sparse_pass2.resident_candidates.build_resident_candidate_tables`
+    :func:`relax.fine_pass.resident_candidates.build_resident_candidate_tables`
     produces from ``prepare_per_image_pass2_inputs`` for the same support, and
     is validated against it field by field.  Nothing here materializes a dense
     mask, a per-image rotation-matrix block, or a per-image Python loop over

@@ -1,16 +1,15 @@
 """Host candidate tables and capacity-chunk layouts for resident pass 2.
 
 This module builds a flat, row-major (CSR-by-image) table of pass-2 candidate
-rows from :func:`recovar.em.scoring.sparse_bucket_arrays.prepare_per_image_pass2_inputs`
+rows from :func:`relax.fine_pass.bucket_arrays.prepare_per_image_pass2_inputs`
 output, and chunks those rows into fixed-capacity "programs" so a future
 device-resident kernel can be traced once per (row capacity, image capacity,
 pixel count) triple instead of once per bucket shape.
 
 Everything here is host planning: plain numpy (int32/float32/uint32/int8) plus
 the ``jax.numpy`` chunk-mask expanders the device programs call. No scoring,
-projection or M-step arithmetic lives in this module; see
-``../em_device_resident_pass2_design_20260918.md`` for the stages this table
-feeds.
+projection or M-step arithmetic lives in this module; the stages this table
+feeds are listed in :mod:`relax.fine_pass.resident_pass2`.
 
 Index conventions
 ------------------
@@ -300,7 +299,7 @@ def build_resident_candidate_tables(
     """Flatten ``prepare_per_image_pass2_inputs`` output into one CSR table.
 
     ``per_image_inputs`` is exactly the dict returned by
-    :func:`recovar.em.scoring.sparse_bucket_arrays.prepare_per_image_pass2_inputs`;
+    :func:`relax.fine_pass.bucket_arrays.prepare_per_image_pass2_inputs`;
     only the ``oversampled_rot_indices``, ``parent_map``, ``log_prior`` and
     ``candidate_mask`` entries are read (rotations/mstep rotations/source
     Eulers stay on the shared fine grid and are looked up later by
@@ -1001,8 +1000,8 @@ def materialize_chunk(tables: ResidentCandidateTables, chunk: CapacityChunk) -> 
     """Gather one chunk's rows into padded, capacity-shaped numpy arrays.
 
     Padding contract (padded rows must never validate any (row, t) cell):
-    ``row_image_local`` pads to ``image_capacity - 1`` (a padded image slot,
-    see ``image_ids`` below), ``row_fine_rot``/``row_parent_local`` pad to 0,
+    ``row_image_local`` pads to ``image_capacity - 1`` (an in-range slot that
+    may hold a real image), ``row_fine_rot``/``row_parent_local`` pad to 0,
     ``row_log_prior`` pads to -1e30, ``row_mask_bits`` pads to 0 and
     ``row_mask_mode`` pads to 2 (empty) -- the mode alone is sufficient to
     invalidate every padded cell regardless of bits, so padding the other

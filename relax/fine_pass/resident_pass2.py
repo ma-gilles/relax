@@ -1,19 +1,18 @@
 """Device-resident K=1 sparse pass-2 driver (T9b integration).
 
-This module wires the five stage modules of
-``em_device_resident_pass2_design_20260918.md`` into one driver with the
-signature and return type of
-the compact engine's ``compute_pass2_stats_sparse_bucketed`` (deleted):
+This module wires the five device-resident pass-2 stage modules into one
+driver with the signature and return type of the compact engine's
+``compute_pass2_stats_sparse_bucketed`` (deleted):
 
-* T5 :mod:`recovar.em.sparse_pass2.resident_candidates` -- the flat image-CSR
+* T5 :mod:`relax.fine_pass.resident_candidates` -- the flat image-CSR
   candidate table and its fixed-capacity chunks;
-* T6 :mod:`recovar.em.sparse_pass2.resident_scoring` -- the resident per-image
+* T6 :mod:`relax.fine_pass.resident_scoring` -- the resident per-image
   scoring operands and the one-program-per-capacity-class scoring stage;
-* T7 ``recovar.cuda_backproject.sparse_pass2_segmented_*`` -- the segmented
+* T7 ``relax.cuda.posterior.sparse_pass2_segmented_*`` -- the segmented
   RELION float32 fine posterior over those CSR segments;
-* T8 ``recovar.cuda_backproject.relion_wavg_*flat_rows*`` -- the flat-row RELION
+* T8 ``relax.cuda.fine.relion_wavg_*flat_rows*`` -- the flat-row RELION
   Wavg triplet and its atomic accumulation;
-* T9a :mod:`recovar.em.sparse_pass2.resident_statistics` -- the device float64
+* T9a :mod:`relax.fine_pass.resident_statistics` -- the device float64
   accumulators, their finalization and the pose decode.
 
 Selection and scope

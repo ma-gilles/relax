@@ -300,8 +300,6 @@ def plan_expectation_sampling(
     )
     sigma_rot, sigma_psi = relion_local_search_sigmas(state, use_local=use_local)
 
-    # Angular step behind this iteration's pass-1 coarse size, when RELION's
-    # adaptive formula sets it (shape classes recompute their own from it).
     if use_local:
         local_sampling = prepare_numbered_local_sampling(
             LocalSearchSettings(

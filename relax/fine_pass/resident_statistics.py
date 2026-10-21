@@ -1,6 +1,6 @@
 """Device-resident noise, norm, scale and posterior statistics for K=1 pass 2.
 
-Stage 7 of ``../em_device_resident_pass2_design_20260918.md``. This module is
+Stage 7 of the device-resident pass 2. This module is
 the device twin of the host bucket tail of the deleted compact engine (its inner
 ``_bucket_tail``): instead of pulling ~35 per-bucket arrays to the
 host and accumulating them with numpy, the chunk programs of
@@ -20,7 +20,7 @@ ported; see the module's ticket report.
 Layout and padding contract
 ---------------------------
 Operands arrive in the flat, image-CSR row layout built by
-:mod:`recovar.em.sparse_pass2.resident_candidates`: ``C_R`` padded candidate
+:mod:`relax.fine_pass.resident_candidates`: ``C_R`` padded candidate
 rows (one per ``(image, fine rotation)`` pair) and ``C_B`` padded image slots
 from the capacity ladders. Callers must guarantee that
 
@@ -392,7 +392,7 @@ class FinalizedStatistics(NamedTuple):
     """Host arrays for ``make_noise_stats``/``make_relion_stats`` and the poses.
 
     The first seven fields are the keyword arguments of
-    ``recovar.em.helpers.stats.make_noise_stats``; the next four are
+    ``relax.types.make_noise_stats``; the next four are
     ``make_relion_stats``'s. ``hard_assignment`` counts in image-local rotation
     slots exactly like the host tail's, while ``best_fine_rotation_indices``
     are the global fine-grid ids the host reads out of

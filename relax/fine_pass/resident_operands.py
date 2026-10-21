@@ -3,7 +3,7 @@
 Why this module exists
 ----------------------
 The device-resident K=1 driver used to call
-:func:`~recovar.em.sparse_pass2.sparse_pass2_bucket_io.prepare_bucket_io` once
+:func:`~relax.fine_pass.bucket_io.prepare_bucket_io` once
 per capacity chunk. That call is per-image work -- a RELION FFT, the soft mask,
 the CTF and noise algebra, the corrections and the pre-centering phase -- and it
 was repeated for every chunk an image appears in, at an image occupancy of
@@ -80,7 +80,7 @@ RESIDENT_OPERANDS_ENV = "RELAX_SPARSE_PASS2_RESIDENT_OPERANDS"
 # half's image count, so a large particle count at a large box can outgrow the
 # budget; the driver then keeps the per-chunk preparation and says so, instead
 # of failing part way through. The cap is a share of what the JAX allocator can
-# still hand out when the pass plans (sparse_pass2_budget.device_available_bytes,
+# still hand out when the pass plans (memory_budget.device_available_bytes,
 # the reading the streamed projection budget uses); the other half stays for the
 # class accumulators and the chunk working set.
 _RESIDENT_OPERAND_AVAILABLE_FRACTION = 0.5
@@ -316,9 +316,9 @@ def resident_half_operand_presence(
     ``recon_weight`` exists when ``_batch_window_operands`` is handed a
     ``weighted_ctf_half``, and ``direct_ctf_rfloat_recon`` when it is handed a
     ``ctf_half_rfloat``; both are supplied only in the exact-BPref
-    configuration (``sparse_pass2_bucket_io.prepare_bucket_io``). The two
+    configuration (``bucket_io.prepare_bucket_io``). The two
     ``powerClass`` terms follow
-    :func:`~recovar.em.sparse_pass2.sparse_pass2_scoring.relion_powerclass_noise_presence`.
+    :func:`~relax.fine_pass.scoring.relion_powerclass_noise_presence`.
     """
 
     has_xi2, has_norm = relion_powerclass_noise_presence(
@@ -405,7 +405,7 @@ def resident_half_operand_avals(
     not the policy's real dtype in production: source-faithful normalization
     accumulates it in float64 while ``highres_Xi2`` stays float32. Leave it
     ``None`` only when the caller knows the two agree; the driver takes it from
-    :func:`~recovar.em.sparse_pass2.sparse_pass2_scoring.relion_powerclass_noise_dtypes`.
+    :func:`~relax.fine_pass.scoring.relion_powerclass_noise_dtypes`.
     Getting this wrong is what the driver's after-the-fact comparison caught on
     2026-09-20, before any measurement was believed.
 
@@ -473,7 +473,7 @@ def resident_operands_max_bytes(available_bytes: float | None, override: int | N
     """Budget for one half's resident per-image operands and their preparation peak.
 
     ``available_bytes`` is what the allocator can still hand out
-    (``sparse_pass2_budget.device_available_bytes``); unknown falls back to a
+    (``memory_budget.device_available_bytes``); unknown falls back to a
     fixed 6 GiB. ``override`` (``EngineTuning.resident_operand_max_bytes``,
     ``RELAX_SPARSE_PASS2_RESIDENT_OPERAND_MAX_BYTES``) replaces it.
     """
@@ -607,7 +607,7 @@ class _BatchWindowInputs(NamedTuple):
     score_indices: jax.Array
     recon_indices: jax.Array
     rect_indices: jax.Array
-    # CTF-premultiplied images only (sparse_pass2_bucket_io.premultiplied_bpref_weights).
+    # CTF-premultiplied images only (bucket_io.premultiplied_bpref_weights).
     bpref_ctf2_over_nv_recon_half: jax.Array | None = None
 
 

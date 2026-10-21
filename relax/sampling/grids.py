@@ -239,9 +239,9 @@ def get_rotation_grid(nside_level, n_in_planes=None, matrices=False):
     #  * 3		768		7.33
     #  * 4		3072	3.66
     #  * 5		12288	1.83
-    #  * 6		49152	0.55
-    #  * 7		196608	0.28
-    #  * 8		786432	0.14
+    #  * 6		49152	0.92
+    #  * 7		196608	0.46
+    #  * 8		786432	0.23
 
     nside = 2**nside_level
     m = hp.nside2npix(nside)

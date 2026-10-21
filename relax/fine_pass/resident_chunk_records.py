@@ -239,7 +239,7 @@ class ChunkStageOperands(NamedTuple):
     # (acc_ml_optimiser_impl.h:3490-3491, :3512-3516; resident_tilts).
     image_noise_scale: jax.Array | None = None
     # CTF-premultiplied images only: the backprojected CTF weight [C_B, P]
-    # (sparse_pass2_bucket_io.premultiplied_bpref_weights). None: ctf2_over_nv_recon
+    # (bucket_io.premultiplied_bpref_weights). None: ctf2_over_nv_recon
     # is both the backprojected weight and the noise statistics' CTF^2 / sigma2.
     bpref_ctf2_over_nv_recon: jax.Array | None = None
 

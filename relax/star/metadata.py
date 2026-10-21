@@ -95,8 +95,9 @@ def _required_relion_scalar(text, path, name, cast=float):
 
 
 def read_relion_sampling_metadata(sampling_star_path):
-    """Read the full set of RELION sampling metadata needed for replay:
-    ``(random_perturbation, perturbation_factor, healpix_order, offset_range, offset_step)``.
+    """Read the full set of RELION sampling metadata needed for replay, as a dict with keys
+    ``random_perturbation``, ``perturbation_factor``, ``healpix_order``, ``psi_step``,
+    ``offset_range`` and ``offset_step``.
 
     ``offset_range`` and ``offset_step`` are in the same units RELION writes
     (Angstroms at scale-0, or as configured). ``healpix_order`` is the order

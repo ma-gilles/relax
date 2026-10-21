@@ -1,11 +1,11 @@
 """Device-resident scoring stage of the K=1 sparse pass-2 prototype.
 
-Stages 1-3 of ``em_device_resident_pass2_design_20260918.md``: gather,
+Stages 1-3 of the device-resident pass 2: gather,
 "project" (a gather from the per-iteration projection cache, not a projector
 call) and score. The candidate rows and their capacity chunks come from
-:mod:`recovar.em.sparse_pass2.resident_candidates` (T5); the per-image image /
+:mod:`relax.fine_pass.resident_candidates` (T5); the per-image image /
 CTF / noise operands come from
-:func:`recovar.em.sparse_pass2.sparse_pass2_bucket_io.prepare_bucket_io`, run
+:func:`relax.fine_pass.bucket_io.prepare_bucket_io`, run
 once per half instead of once per bucket and kept on the device.
 
 What this module changes relative to the compact engine, and what it does not

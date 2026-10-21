@@ -134,18 +134,9 @@ def postprocess_ppca_half_volumes(
     *,
     config: PostprocessConfig | None = None,
 ) -> PPCAPostprocessResult:
-    cfg = config if config is not None else PostprocessConfig()
-    strategy = cfg.strategy
-    mask_radius_px = cfg.mask_radius_px
-    cosine_width_px = cfg.cosine_width_px
-    grid_correct = cfg.grid_correct
-    gridding_padding_factor = cfg.gridding_padding_factor
-    gridding_order = cfg.gridding_order
-    gridding_correct = cfg.gridding_correct
-    bandlimit_max_r = cfg.bandlimit_max_r
     """Apply explicit post-solve PPCA reference heuristics.
 
-    ``strategy`` choices:
+    ``config.strategy`` choices:
 
     ``none``
         Return raw M-step outputs unchanged.
@@ -162,6 +153,16 @@ def postprocess_ppca_half_volumes(
         preserve image-likelihood-fitted DC and solvent contributions in mu)
         but W must be confined to the structure region.
     """
+
+    cfg = config if config is not None else PostprocessConfig()
+    strategy = cfg.strategy
+    mask_radius_px = cfg.mask_radius_px
+    cosine_width_px = cfg.cosine_width_px
+    grid_correct = cfg.grid_correct
+    gridding_padding_factor = cfg.gridding_padding_factor
+    gridding_order = cfg.gridding_order
+    gridding_correct = cfg.gridding_correct
+    bandlimit_max_r = cfg.bandlimit_max_r
 
     strategy = str(strategy)
     if strategy not in {"none", "mean_only", "mean_and_w_mask", "w_only_mask"}:

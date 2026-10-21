@@ -26,7 +26,7 @@ def restore_convergence_state_from_replay_restart(state, replay, init_relion_ite
     RELION's convergence counters are not initialized against an infinite
     previous resolution -- a replay restart resumes them from the previous
     optimiser/model STAR instead of the fresh-run FSC/ini_high state. This is
-    the loop-boundary counterpart to ``apply_iter_replay_overrides`` below,
+    the loop-boundary counterpart to ``relion_replay.apply_iter_replay_overrides``,
     which handles the same ``perturb_replay_relion_dir`` source per mid-loop
     iteration.
     """
