@@ -75,11 +75,10 @@ __device__ void block_finite_argmax(
 }
 
 // ---------------------------------------------------------------------------
-// SparsePass2LogZF64: per-row log-sum-exp of float32 scores in float64.
+// Log-Z: the log-sum-exp of one row (segment) of float32 scores in float64.
 // ---------------------------------------------------------------------------
-// Shared body of the per-row float64 log-sum-exp.  The rectangular and the
-// segmented kernel differ only in how they locate their row, so both inline
-// this one copy of the arithmetic.
+// The per-row float64 log-sum-exp; the segmented kernel inlines it on each
+// segment's slice.
 __device__ __forceinline__ void log_z_body(
     const float* row, int64_t n, double* log_z_slot,
     float* shared_values, int64_t* shared_indices, double* shared_sums)
@@ -122,7 +121,7 @@ __device__ __forceinline__ void log_z_body(
 
 
 // ---------------------------------------------------------------------------
-// SparsePass2PosteriorF32: fused normalization + RELION float32 fine posterior.
+// Posterior: fused normalization + RELION float32 fine posterior, per row (segment).
 // ---------------------------------------------------------------------------
 struct RowState
 {
@@ -361,22 +360,19 @@ __device__ __forceinline__ void normalize_body(
 // ---------------------------------------------------------------------------
 // Segmented variants.
 //
-// The rectangular handlers above own a dense [B, M] score block: image i owns
-// row i and every image pays for the widest row.  The segmented handlers take
-// the same scores as one flat array of cells in which image i owns the
-// contiguous run [segment_offsets[i], segment_offsets[i + 1]).  Cells inside a
-// run are the CSR rows x translations of the device-resident pass-2 data model,
-// so a chunk no longer pads every image to a common row count.
+// The segmented handlers take the scores as one flat array of cells in which
+// image i owns the contiguous run [segment_offsets[i], segment_offsets[i + 1]).
+// Cells inside a run are the CSR rows x translations of the device-resident
+// pass-2 data model, so a chunk does not pad every image to a common row count.
 //
-// Every formula is the shared body of the rectangular path, called on the
-// segment's slice, so flattening a rectangular row into a segment reproduces
-// the rectangular outputs.  The significance boundary is block_radix_cut, one
+// Every formula is one of the per-row bodies above, called on the segment's
+// slice.  The significance boundary is block_radix_cut, one
 // block per segment, so the handler has no host round trip, and its launch
 // geometry is capacity-only: each kernel is launched at the static segment
 // count and n_valid_images is read only on the device.
 //
 // Empty segments and images at or beyond n_valid_images produce exactly the
-// values the rectangular path produces for an all -inf row.  Cells covered by
+// values the per-row bodies produce for an all -inf row.  Cells covered by
 // no segment are written as zero / false.
 // ---------------------------------------------------------------------------
 
@@ -500,7 +496,7 @@ __global__ void segmented_exponentiate_kernel(
     if (!covered)
     {
         // Padding cells, empty segments and images past n_valid_images behave
-        // like an all -inf rectangular row: zero weight, zero probability, no
+        // like an all -inf row: zero weight, zero probability, no
         // significant candidate.  normalized/reconstruction/mask are written
         // here because the normalize kernel only walks live segments.
         raw_weights[index] = 0.0f;
@@ -604,7 +600,7 @@ __global__ void segmented_normalize_kernel(
     __shared__ float shared_max[kRowThreads];
     const int segment = blockIdx.x;
     // Read the extent as scalars and keep the RowState reference in global
-    // memory, as the rectangular kernel does.  Copying SegmentState into a
+    // memory.  Copying SegmentState into a
     // local and passing its address puts the record in local memory, which the
     // inner loop then reloads once per cell; on a one-block 7.3M-cell segment
     // that alone cost ~1.9 ms.

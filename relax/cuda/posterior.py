@@ -121,7 +121,7 @@ _SPARSE_PASS2_ROW_STATE_BYTES = 40
 
 
 # Byte size of the device-side per-segment state record of
-# SparsePass2SegmentedPosteriorF32: the rectangular RowState plus the segment
+# SparsePass2SegmentedPosteriorF32: the per-row RowState plus the segment
 # extent (valid flag, explicit padding, begin, cell count) and the significance
 # cut's 256-bin histogram and state (BlockCut, 3112 bytes; the handler asserts the size).
 _SPARSE_PASS2_SEGMENT_STATE_BYTES = _SPARSE_PASS2_ROW_STATE_BYTES + 24 + 3112
@@ -170,12 +170,9 @@ def sparse_pass2_segmented_log_z_f64(
 ) -> jax.Array:
     """Per-segment float64 log-sum-exp of flat float32 sparse pass-2 scores.
 
-    Segmented form of the rectangular FFI handler
-    (``library.TARGET_SPARSE_PASS2_LOG_Z_F64``): segments without a finite
-    score, empty segments and segments at or beyond ``n_valid_images`` return
-    ``-inf``, which is what the rectangular handler returns for an all ``-inf``
-    row.  Flattening a rectangular row into a segment reproduces that row's
-    value bitwise.  This handler runs entirely on the device.
+    Segments without a finite score, empty segments and segments at or beyond
+    ``n_valid_images`` return ``-inf``, the log-sum-exp of an all ``-inf`` row.
+    This handler runs entirely on the device.
     """
 
     _, segments = _sparse_pass2_segment_geometry(scores, segment_offsets, n_valid_images)
@@ -230,19 +227,17 @@ def sparse_pass2_segmented_posterior_f32(
     use_external_sum_weight: bool,
     return_scratch: bool = False,
 ) -> tuple[jax.Array, ...]:
-    """Segmented form of the rectangular ``library.TARGET_SPARSE_PASS2_POSTERIOR_F32`` FFI handler.
+    """Fused normalization and RELION float32 fine posterior over segments of flat sparse pass-2 scores.
 
     ``scores`` is a flat cell array whose segment ``i`` is
-    ``[segment_offsets[i], segment_offsets[i + 1])``; the per-segment operands
-    and outputs replace the rectangular per-row ones.  Returns ``(log_z,
+    ``[segment_offsets[i], segment_offsets[i + 1])``; operands and outputs are
+    per segment.  Returns ``(log_z,
     best_log_score, best_cell_index, max_posterior, probs, normalized_weights,
     reconstruction_probs, mask, n_significant, sum_weight, threshold)``.
-    ``best_cell_index`` is relative to the segment, so it equals the rectangular
-    ``best_argmax`` of the row a segment was flattened from; add
+    ``best_cell_index`` is relative to the segment; add
     ``segment_offsets[i]`` for the flat cell.  Per-cell outputs keep the shape
     of ``scores``; cells covered by no segment, empty segments and segments at
-    or beyond ``n_valid_images`` carry the values the rectangular handler
-    produces for an all ``-inf`` row.
+    or beyond ``n_valid_images`` carry the values of an all ``-inf`` row.
 
     Launch geometry is capacity-only: every kernel is launched at the static
     segment count from ``segment_offsets.shape`` and ``n_valid_images`` is read on
