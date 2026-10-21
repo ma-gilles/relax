@@ -67,7 +67,12 @@ class CoarseScoreLayout:
 
 
 def coarse_score_layout(
-    image_shape, current_size, *, half_spectrum_scoring: bool, square_window: bool, image_current_size=None
+    image_shape,
+    current_size,
+    *,
+    half_spectrum_scoring: bool,
+    square_window: bool,
+    image_current_size: int | None = None,
 ) -> CoarseScoreLayout:
     """The SPA coarse pass's score window (significance.py:1105-1123, 1680-1726) for one current size;
     ``image_current_size`` is the iteration's (:class:`CoarseScoreLayout`)."""
@@ -100,7 +105,7 @@ def coarse_score_layout(
         half_weights=make_scoring_half_image_weights(
             image_shape, relion_half_sum=half_spectrum_scoring, exclude_relion_redundant_x0=True
         ),
-        image_current_size=None if image_current_size is None else int(image_current_size),
+        image_current_size=image_current_size,
     )
 
 
