@@ -311,13 +311,8 @@ def test_auto_gemm_precision_resolves_by_device():
     assert iteration_loop._gemm_precision_used(Config(stream_coarse_recompute=False)) == "fp32"  # host-mask engine
 
 
-def test_resume_under_another_gemm_precision_is_logged(tmp_path, monkeypatch, caplog):
-    """An fp32 checkpoint resumes under auto; the warning and every update record name the change."""
-    import dataclasses
-    import json
-    import logging
-
-    from relax.ppca_initial_model import checkpoint
+def _tiny_momentum_run(monkeypatch):
+    """A 40-image momentum-SGD run on a 4^3 stand-in: its dataset, fp32 config and iteration-1 state."""
 
     shape = (4, 4, 4)
     n_freq = shape[0] * shape[1] * (shape[2] // 2 + 1)
@@ -377,6 +372,18 @@ def test_resume_under_another_gemm_precision_is_logged(tmp_path, monkeypatch, ca
         {"seed": 1},
         sgd_momentum=jnp.zeros_like(theta),
     )
+    return dataset, fp32, state
+
+
+def test_resume_under_another_gemm_precision_is_logged(tmp_path, monkeypatch, caplog):
+    """An fp32 checkpoint resumes under auto; the warning and every update record name the change."""
+    import dataclasses
+    import json
+    import logging
+
+    from relax.ppca_initial_model import checkpoint
+
+    dataset, fp32, state = _tiny_momentum_run(monkeypatch)
     identity = {"fixture": "tiny"}
     checkpoint.save(tmp_path / "checkpoint_0001.npz", state, fp32, identity)
     auto = dataclasses.replace(fp32, gemm_precision="auto")
@@ -432,3 +439,21 @@ def test_tile_sums_keep_one_running_volume_and_add_in_tile_order():
     assert all(part.lhs_tri is None and part.residual_gradient is None for part in kept)
     merged = iteration_loop._merge_statistics(kept, sums.totals)
     assert merged.rhs is None and merged.n_images == sum(k + 1 for k in group)
+
+
+def test_a_stop_file_ends_the_run_after_a_checkpoint_whatever_the_interval(tmp_path, monkeypatch):
+    import dataclasses
+
+    from relax.ppca_initial_model import checkpoint
+
+    dataset, fp32, state = _tiny_momentum_run(monkeypatch)
+    config = dataclasses.replace(fp32, checkpoint_interval=10)
+    identity = {"fixture": "tiny"}
+    checkpoint.save(tmp_path / "checkpoint_0001.npz", state, config, identity)
+    stop = tmp_path / "stop"
+    stop.touch()
+    iteration_loop.run(
+        dataset, config, tmp_path / "run", identity, diameter_ang=2.0,
+        resume=tmp_path / "checkpoint_0001.npz", stop_file=str(stop),
+    )
+    assert sorted(p.name for p in (tmp_path / "run").glob("checkpoint_*.npz")) == ["checkpoint_0002.npz"]

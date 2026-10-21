@@ -746,9 +746,11 @@ def run(
             diagnostics.pop("direction_prior")
         with open(output / "iterations.jsonl", "a") as stream:
             stream.write(json.dumps(diagnostics, default=_json) + "\n")
-        if iteration % config.checkpoint_interval == 0 or iteration == end:
+        # A stop request ends the run after this iteration's checkpoint, whatever the checkpoint interval.
+        stop = stop_file is not None and Path(stop_file).exists()
+        if stop or iteration % config.checkpoint_interval == 0 or iteration == end:
             checkpoint.save(output / f"checkpoint_{iteration:04d}.npz", state, config, identity)
-        if stop_file is not None and Path(stop_file).exists():
+        if stop:
             break
     if state.iteration == config.iterations and not config.skip_final_embeddings:
         ids = np.arange(dataset.n_images)
