@@ -250,6 +250,17 @@ class TestComputeCurrentSizeRelion:
         )
         assert cs == 52
 
+    def test_aggressive_step_rounds_halves_away_from_zero(self):
+        """RELION's ROUND(0.25 * ori_size / 2) (ml_optimiser.cpp:5695): box 132 steps 17 shells, not 16."""
+        cs = compute_current_size_relion(10, 132, ave_Pmax=0.5, has_high_fsc_at_limit=True)
+        assert cs == 2 * (10 + 17)
+
+    def test_ini_high_bootstrap_rounds_halves_away_from_zero(self):
+        """RELION's ROUND(ori_size * pixel_size / ini_high) (ml_optimiser.cpp:5596): 10 * 1 / 4 = 2.5 -> 3."""
+        from relax.reconstruction.resolution import bootstrap_current_size_from_ini_high_relion
+
+        assert bootstrap_current_size_from_ini_high_relion(10, 1.0, 4.0, incr_size=0) == 6
+
     def test_clamp_to_ori_size(self):
         """Result should never exceed ori_size."""
         cs = compute_current_size_relion(100, 128, ave_Pmax=0.0)

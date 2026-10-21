@@ -13,6 +13,8 @@ import jax.numpy as jnp
 import numpy as np
 from recovar import jax_config
 
+from relax.relion.macros import relion_round
+
 # RELION's --minres_map default (relion/src/ml_optimiser.cpp:1298): the
 # smallest shell updateCurrentResolution may report, and the lowest shells
 # that MAP reconstruction leaves without the Wiener prior term.
@@ -181,10 +183,13 @@ def compute_current_size_relion(resolution_shell, box_size, ave_Pmax=0.0, has_hi
     -------
     int
         New current_size in pixels (diameter).
+
+    The 25% step is RELION's ``ROUND(0.25 * ori_size / 2)`` (ml_optimiser.cpp:5695), halves away from zero; the
+    VDAM loop uses this rule too.
     """
     maxres = resolution_shell
     if ave_Pmax > 0.1 and has_high_fsc_at_limit:
-        maxres += round(0.25 * box_size / 2)
+        maxres += relion_round(0.25 * box_size / 2)
     else:
         maxres += incr_size
     return min(2 * maxres, box_size)

@@ -14,6 +14,7 @@ import numpy as np
 
 from relax.fourier.fourier_window import quantize_current_size
 from relax.reconstruction.resolution_criteria import compute_current_size_relion, resolution_from_data_vs_prior
+from relax.relion.macros import relion_round
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -215,7 +216,8 @@ def bootstrap_current_size_from_ini_high_relion(
     """Bootstrap RELION's first current_size directly from ``--ini_high``."""
     if ini_high_angstrom is None or float(ini_high_angstrom) <= 0.0:
         return None
-    init_shell = max(1, int(np.round(float(box_size) * float(voxel_size) / float(ini_high_angstrom))))
+    # RELION ROUND (ml_optimiser.cpp:5596), halves away from zero.
+    init_shell = max(1, relion_round(float(box_size) * float(voxel_size) / float(ini_high_angstrom)))
     return bootstrap_current_size_relion(2 * init_shell, box_size=box_size, incr_size=incr_size)
 
 

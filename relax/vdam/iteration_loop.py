@@ -140,12 +140,13 @@ def update_current_resolution_from_data_vs_prior(state: InitialModelState) -> In
 
 def update_image_size_and_resolution_pointers(state: InitialModelState, pilot_controls=None) -> InitialModelState:
     """Mirror the current-size part of RELION ``updateImageSizeAndResolutionPointers``."""
-    maxres = relion_round(float(state.current_resolution) * float(state.pixel_size) * float(state.box_size))
-    if float(state.ave_Pmax) > 0.1 and bool(state.has_high_fsc_at_limit):
-        maxres += relion_round(0.25 * float(state.box_size) / 2.0)
-    else:
-        maxres += int(state.incr_size)
-    current_size = min(max(2 * maxres, 2), int(state.box_size))
+    current_size = resolution_criteria.compute_current_size_relion(
+        relion_round(float(state.current_resolution) * float(state.pixel_size) * float(state.box_size)),
+        int(state.box_size),
+        ave_Pmax=float(state.ave_Pmax),
+        has_high_fsc_at_limit=bool(state.has_high_fsc_at_limit),
+        incr_size=int(state.incr_size),
+    )
     current_size = current_size if pilot_controls is None else pilot_controls.cap_current_size(current_size)
 
     return replace(state, current_size=int(current_size))
