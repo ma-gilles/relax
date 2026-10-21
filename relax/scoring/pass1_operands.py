@@ -52,12 +52,11 @@ class ScoreOperands(NamedTuple):
 class GaussianOperandPlan:
     """What the Gaussian route prepares every batch's operands from, fixed for the pass.
 
-    ``gaussian_plan`` gives the scored rows and the power kernel. ``current_size`` is the call's current size and
-    ``image_current_size`` the iteration's (RELION's ``image_current_size``, beyond which the diff2 constant counts the
-    image power; None when it is ``current_size``); the
-    GEMM runs at the plan's physical size when ``stable_fourier_window_shapes`` (then ``score_size`` is the runtime
-    size). ``coarse_kernel_window`` and ``coarse_kernel_r_max`` name the rows RELION's coarse kernel shifts at a
-    relabelled position (``None`` when no row is).
+    ``gaussian_plan`` gives the scored rows and the power kernel. ``diff2_current_size`` is the static size beyond
+    which the diff2 constant counts the image power and ``diff2_runtime_current_size`` its runtime value (``None``: the
+    static one); :func:`relax.scoring.pass1_route.plan_gaussian_route` chooses both. ``coarse_kernel_window`` and
+    ``coarse_kernel_r_max`` name the rows RELION's coarse kernel shifts at a relabelled position (``None`` when no row
+    is).
     """
 
     experiment_dataset: Any
@@ -70,10 +69,8 @@ class GaussianOperandPlan:
     nyquist_column_counting: str
     scale_corrections_enabled: bool
     use_float64_scoring: bool
-    stable_fourier_window_shapes: bool
-    score_size: int
-    current_size: int | None
-    image_current_size: int | None
+    diff2_current_size: int | None
+    diff2_runtime_current_size: int | None
     coarse_kernel_window: int | None
     coarse_kernel_r_max: int | None
 
@@ -120,21 +117,11 @@ class GaussianOperandPlan:
             scale_corrections_enabled=self.scale_corrections_enabled,
             half_weights=self.half_weights,
             powerclass=self.gaussian_plan.powerclass,
-            # The diff2 constant is RELION's powerClass Xi2 beyond the iteration's image_current_size (taken once per
-            # particle for both passes), not beyond the coarse size: one program per box, the size a runtime scalar.
-            current_size=(
-                int(self.image_shape[0])
-                if self.image_current_size is not None
-                else self.gaussian_plan.square_layout.physical_current_size
-                if self.stable_fourier_window_shapes
-                else self.current_size
-            ),
+            current_size=self.diff2_current_size,
             runtime_current_size=(
-                jnp.asarray(self.image_current_size, dtype=jnp.int32)
-                if self.image_current_size is not None
-                else jnp.asarray(self.score_size, dtype=jnp.int32)
-                if self.stable_fourier_window_shapes
-                else None
+                None
+                if self.diff2_runtime_current_size is None
+                else jnp.asarray(self.diff2_runtime_current_size, dtype=jnp.int32)
             ),
             coarse_kernel_window=self.coarse_kernel_window,
             coarse_kernel_r_max=self.coarse_kernel_r_max,

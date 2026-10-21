@@ -71,6 +71,16 @@ def plan_gaussian_route(
         stable_fourier_window_shapes=request.stable_fourier_window_shapes,
         engine_tuning=request.engine_tuning,
     )
+    # The diff2 constant is RELION's powerClass Xi2 beyond the iteration's image_current_size (taken once per particle
+    # for both passes), not beyond the coarse size: one program per box, the size a runtime scalar. Without it, a
+    # stable-shape GEMM runs at the plan's physical size with the score size at run time.
+    if request.image_current_size is not None:
+        diff2_current_size, diff2_runtime_current_size = int(shape.image_shape[0]), request.image_current_size
+    elif request.stable_fourier_window_shapes:
+        diff2_current_size = gaussian_plan.square_layout.physical_current_size
+        diff2_runtime_current_size = shape.score_size
+    else:
+        diff2_current_size, diff2_runtime_current_size = request.current_size, None
     return RoutePlan(
         operand_plan=GaussianOperandPlan(
             experiment_dataset=request.experiment_dataset,
@@ -83,10 +93,8 @@ def plan_gaussian_route(
             nyquist_column_counting=request.nyquist_column_counting,
             scale_corrections_enabled=request.scale_corrections is not None,
             use_float64_scoring=request.use_float64_scoring,
-            stable_fourier_window_shapes=request.stable_fourier_window_shapes,
-            score_size=shape.score_size,
-            current_size=request.current_size,
-            image_current_size=request.image_current_size,
+            diff2_current_size=diff2_current_size,
+            diff2_runtime_current_size=diff2_runtime_current_size,
             coarse_kernel_window=kernel_window,
             coarse_kernel_r_max=None if kernel_window is None else int(request.relion_projector_r_max),
         ),
