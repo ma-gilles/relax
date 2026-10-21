@@ -185,6 +185,28 @@ def sparse_pass2_segmented_log_z_f64(
     )(scores, segment_offsets, n_valid_images.astype(jnp.int32).reshape(()))
 
 
+def _segmented_posterior_segments(
+    scores, segment_offsets, n_valid_images, log_z, external_sum_weight, keep_all, use_external_sum_weight
+) -> int:
+    """The segment count, after the operand checks the two segmented posterior handlers share."""
+
+    _, segments = _sparse_pass2_segment_geometry(
+        scores, segment_offsets, n_valid_images
+    )
+    if log_z.dtype != jnp.float64 or log_z.shape != (segments,):
+        raise TypeError(
+            f"log_z must be float64 with shape ({segments},), got {log_z.dtype} {log_z.shape}"
+        )
+    if external_sum_weight.dtype != jnp.float32 or external_sum_weight.shape != (segments,):
+        raise TypeError(
+            f"external_sum_weight must be float32 with shape ({segments},), got "
+            f"{external_sum_weight.dtype} {external_sum_weight.shape}"
+        )
+    if type(keep_all) is not bool or type(use_external_sum_weight) is not bool:
+        raise TypeError("keep_all and use_external_sum_weight must be static Python bools")
+    return segments
+
+
 @functools.partial(
     jax.jit,
     static_argnames=(
@@ -230,20 +252,9 @@ def sparse_pass2_segmented_posterior_f32(
     ``return_scratch`` appends the handler's raw weights to the result.
     """
 
-    _, segments = _sparse_pass2_segment_geometry(
-        scores, segment_offsets, n_valid_images
+    segments = _segmented_posterior_segments(
+        scores, segment_offsets, n_valid_images, log_z, external_sum_weight, keep_all, use_external_sum_weight
     )
-    if log_z.dtype != jnp.float64 or log_z.shape != (segments,):
-        raise TypeError(
-            f"log_z must be float64 with shape ({segments},), got {log_z.dtype} {log_z.shape}"
-        )
-    if external_sum_weight.dtype != jnp.float32 or external_sum_weight.shape != (segments,):
-        raise TypeError(
-            f"external_sum_weight must be float32 with shape ({segments},), got "
-            f"{external_sum_weight.dtype} {external_sum_weight.shape}"
-        )
-    if type(keep_all) is not bool or type(use_external_sum_weight) is not bool:
-        raise TypeError("keep_all and use_external_sum_weight must be static Python bools")
     if type(return_scratch) is not bool:
         raise TypeError("return_scratch must be a static Python bool")
     _require_sparse_pass2_cuda_backend("Segmented sparse pass-2 posterior")
@@ -277,3 +288,60 @@ def sparse_pass2_segmented_posterior_f32(
         use_external_sum_weight=np.int64(use_external_sum_weight),
     )
     return tuple(result[:12] if return_scratch else result[:11])
+
+
+@functools.partial(
+    jax.jit,
+    static_argnames=("adaptive_fraction", "keep_all", "use_external_sum_weight"),
+)
+def sparse_pass2_segmented_reconstruction_f32(
+    scores: jax.Array,
+    segment_offsets: jax.Array,
+    n_valid_images: jax.Array,
+    log_z: jax.Array,
+    external_sum_weight: jax.Array,
+    *,
+    adaptive_fraction: float,
+    keep_all: bool,
+    use_external_sum_weight: bool,
+) -> tuple[jax.Array, ...]:
+    """:func:`sparse_pass2_segmented_posterior_f32` without ``probs``, ``normalized_weights`` and ``mask``.
+
+    Returns ``(log_z, best_log_score, best_cell_index, max_posterior, reconstruction_probs, n_significant,
+    sum_weight, threshold)``, each bitwise the full handler's: the same kernels run in the same order and skip
+    only the three per-cell outputs (SparsePass2SegmentedReconstructionF32). The handler holds 12 bytes per cell
+    (scores, reconstruction and raw weights) instead of 29, for a particle too large for the full posterior
+    (relax#118).
+    """
+
+    segments = _segmented_posterior_segments(
+        scores, segment_offsets, n_valid_images, log_z, external_sum_weight, keep_all, use_external_sum_weight
+    )
+    _require_sparse_pass2_cuda_backend("Reconstruction-only segmented sparse pass-2 posterior")
+    library.ensure_optional_ffi(library.TARGET_SPARSE_PASS2_SEGMENTED_RECONSTRUCTION_F32)
+    full = scores.shape
+    outputs = (
+        jax.ShapeDtypeStruct((segments,), jnp.float64),  # log_z
+        jax.ShapeDtypeStruct((segments,), jnp.float32),  # best_log_score
+        jax.ShapeDtypeStruct((segments,), jnp.int64),    # best_cell_index
+        jax.ShapeDtypeStruct((segments,), jnp.float32),  # max_posterior
+        jax.ShapeDtypeStruct(full, jnp.float32),         # reconstruction_probs
+        jax.ShapeDtypeStruct((segments,), jnp.int32),    # n_significant
+        jax.ShapeDtypeStruct((segments,), jnp.float32),  # sum_weight
+        jax.ShapeDtypeStruct((segments,), jnp.float32),  # threshold
+        jax.ShapeDtypeStruct(full, jnp.float32),         # raw weights (scratch)
+        jax.ShapeDtypeStruct(
+            (segments, _SPARSE_PASS2_SEGMENT_STATE_BYTES), jnp.uint8
+        ),                                               # segment state
+    )
+    result = jax.ffi.ffi_call(library.TARGET_SPARSE_PASS2_SEGMENTED_RECONSTRUCTION_F32, outputs)(
+        scores,
+        segment_offsets,
+        n_valid_images.astype(jnp.int32).reshape(()),
+        log_z,
+        external_sum_weight,
+        adaptive_fraction=np.float32(adaptive_fraction),
+        keep_all=np.int64(keep_all),
+        use_external_sum_weight=np.int64(use_external_sum_weight),
+    )
+    return tuple(result[:8])

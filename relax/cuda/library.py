@@ -62,6 +62,9 @@ TARGET_SPARSE_PASS2_SEGMENTED_LOG_Z_F64 = (
 TARGET_SPARSE_PASS2_SEGMENTED_POSTERIOR_F32 = (
     "cuda_sparse_pass2_segmented_posterior_f32"
 )
+TARGET_SPARSE_PASS2_SEGMENTED_RECONSTRUCTION_F32 = (
+    "cuda_sparse_pass2_segmented_reconstruction_f32"
+)
 TARGET_RELION_VDAM_MSTEP_SUMS_F32 = "cuda_relion_vdam_mstep_sums_f32"
 TARGET_RELION_VDAM_MSTEP_DENOMINATOR_F32 = (
     "cuda_relion_vdam_mstep_denominator_f32"
@@ -403,6 +406,11 @@ OPTIONAL_FFI_REGISTRATIONS = {
     TARGET_SPARSE_PASS2_SEGMENTED_POSTERIOR_F32: (
         "SparsePass2SegmentedPosteriorF32",
         "The segmented sparse pass-2 posterior requires an explicit CUDA build with SparsePass2SegmentedPosteriorF32",
+    ),
+    TARGET_SPARSE_PASS2_SEGMENTED_RECONSTRUCTION_F32: (
+        "SparsePass2SegmentedReconstructionF32",
+        "The reconstruction-only segmented sparse pass-2 posterior requires an explicit CUDA build with "
+        "SparsePass2SegmentedReconstructionF32",
     ),
     TARGET_RELION_WAVG_SEQUENTIAL_RUNTIME_FLAT_ROWS_TRIPLET_F32: (
         "RelionWavgSequentialRuntimeFlatRowsTripletF32",

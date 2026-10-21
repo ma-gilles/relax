@@ -93,8 +93,14 @@ def chunk_posterior_from_scores(
     spec: resident_chunk_records.ChunkProgramSpec,
     row_is_valid,
     kernel_row_image_ids,
+    reconstruction_only: bool = False,
 ) -> resident_chunk_records.ChunkPosterior:
-    """The segmented RELION posterior of a scored chunk (:func:`resident_chunk_posterior`'s tail)."""
+    """The segmented RELION posterior of a scored chunk (:func:`resident_chunk_posterior`'s tail).
+
+    ``reconstruction_only`` takes the posterior from the handler that skips the per-cell outputs the chunk does
+    not read (``sparse_pass2_segmented_reconstruction_f32``, the same values): 12 instead of 29 bytes per cell,
+    for a tilt particle run alone whose cells the full handler cannot hold (relax#118).
+    """
 
     from relax.cuda import posterior as cuda_posterior
 
@@ -112,7 +118,12 @@ def chunk_posterior_from_scores(
     log_z = cuda_posterior.sparse_pass2_segmented_log_z_f64(
         scores_flat, rows.segment_offsets, rows.n_valid_images
     )
-    posterior = cuda_posterior.sparse_pass2_segmented_posterior_f32(
+    handler = (
+        cuda_posterior.sparse_pass2_segmented_reconstruction_f32
+        if reconstruction_only
+        else cuda_posterior.sparse_pass2_segmented_posterior_f32
+    )
+    posterior = handler(
         scores_flat,
         rows.segment_offsets,
         rows.n_valid_images,
@@ -122,19 +133,11 @@ def chunk_posterior_from_scores(
         keep_all=reuse,
         use_external_sum_weight=reuse,
     )
-    (
-        log_z_out,
-        best_log_score,
-        best_cell_index,
-        max_posterior,
-        _probs,
-        _normalized_weights,
-        reconstruction_probs,
-        _mask,
-        _n_significant,
-        _sum_weight,
-        _threshold,
-    ) = posterior
+    if reconstruction_only:
+        log_z_out, best_log_score, best_cell_index, max_posterior, reconstruction_probs, *_ = posterior
+    else:
+        log_z_out, best_log_score, best_cell_index, max_posterior, _, _, reconstruction_probs, *_ = posterior
+    del posterior
     if reuse:
         # The compact engine's zero-oversampling arithmetic
         # (the deleted sparse_pass2_bucketed.py, reuse_coarse_normalization): RELION keeps the

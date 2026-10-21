@@ -24,6 +24,13 @@
 //
 // Both call the shared bodies below on the segment's slice, so flattening a
 // rectangular row into a segment reproduces the rectangular outputs.
+//
+//   SparsePass2SegmentedReconstructionF32 <-> SparsePass2SegmentedPosteriorF32
+//                                             without probs, normalized and mask
+//
+// runs the same kernels with the per-cell outputs only the reconstruction
+// needs (relax#118: a particle with 3.5e8 cells), writing reconstruction and
+// every per-segment output bit for bit as the full handler does.
 
 namespace recovar_sparse_pass2_posterior {
 
@@ -229,7 +236,9 @@ __global__ void row_max_kernel(
                  best_argmax + row_index);
 }
 
-// Shared per-cell exponentiation of one candidate score.
+// Shared per-cell exponentiation of one candidate score.  kProb = false skips
+// the float64 probability (the reconstruction-only handler has none).
+template <bool kProb = true>
 __device__ __forceinline__ void exponentiate_cell(
     const RowState& s, float value, float* raw_slot, double* prob_slot)
 {
@@ -238,6 +247,7 @@ __device__ __forceinline__ void exponentiate_cell(
     // relion_exponentiate_batched_f32_kernel: expf(value + add), zero below -88.
     const float exponent = finite_score + s.exponent_add;
     *raw_slot = exponent < -88.0f ? 0.0f : expf(exponent);
+    if (!kProb) return;
     // _normalize_pass2_bucket_with_log_z: exp(scores - safe_log_z) in float64,
     // zero when the row has no finite normalizer or the value overflows.
     double p = 0.0;
@@ -367,6 +377,8 @@ __global__ void row_cut_kernel(
 
 // Shared normalization / pruning body.  All pointers are already offset to the
 // start of the row or segment; every thread of the block must call it.
+// kCells = false writes only the reconstruction of the per-cell outputs.
+template <bool kCells = true>
 __device__ __forceinline__ void normalize_body(
     const float* row_scores, const float* row_raw, const RowState& s, int64_t n,
     float* row_normalized, float* row_reconstruction, bool* row_mask,
@@ -384,9 +396,12 @@ __device__ __forceinline__ void normalize_body(
         const bool significant = s.has_mass && finite &&
             (s.keep_all ? (raw > 0.0f) : (raw >= s.threshold));
         const float kept = significant ? weight : 0.0f;
-        row_normalized[i] = weight;
+        if (kCells)
+        {
+            row_normalized[i] = weight;
+            row_mask[i] = significant;
+        }
         row_reconstruction[i] = kept;
-        row_mask[i] = significant;
         local_count += significant ? 1 : 0;
         local_max = kept > local_max ? kept : local_max;
     }
@@ -628,6 +643,7 @@ __global__ void segmented_max_kernel(
     }
 }
 
+template <bool kCells>
 __global__ void segmented_exponentiate_kernel(
     const float* scores, const int32_t* offsets, const SegmentState* state,
     int n_segments, int64_t n_cells, float* raw_weights, double* probs,
@@ -662,13 +678,17 @@ __global__ void segmented_exponentiate_kernel(
         // significant candidate.  normalized/reconstruction/mask are written
         // here because the normalize kernel only walks live segments.
         raw_weights[index] = 0.0f;
-        probs[index] = 0.0;
-        normalized[index] = 0.0f;
         reconstruction[index] = 0.0f;
-        mask[index] = false;
+        if (kCells)
+        {
+            probs[index] = 0.0;
+            normalized[index] = 0.0f;
+            mask[index] = false;
+        }
         return;
     }
-    exponentiate_cell(state[segment].row, scores[index], raw_weights + index, probs + index);
+    exponentiate_cell<kCells>(state[segment].row, scores[index], raw_weights + index,
+                              kCells ? probs + index : nullptr);
 }
 
 __global__ void segmented_cut_kernel(
@@ -686,6 +706,7 @@ __global__ void segmented_cut_kernel(
              sum_weight_out + segment, threshold_out + segment);
 }
 
+template <bool kCells>
 __global__ void segmented_normalize_kernel(
     const float* scores, const float* raw_weights, const SegmentState* state,
     float* normalized, float* reconstruction, bool* mask,
@@ -701,10 +722,11 @@ __global__ void segmented_normalize_kernel(
     // that alone cost ~1.9 ms.
     const int64_t begin = state[segment].begin;
     const int64_t n = state[segment].n;
-    normalize_body(scores + begin, raw_weights + begin, state[segment].row, n,
-                   normalized + begin, reconstruction + begin, mask + begin,
-                   n_significant + segment, max_posterior + segment,
-                   shared_counts, shared_max);
+    normalize_body<kCells>(scores + begin, raw_weights + begin, state[segment].row, n,
+                           kCells ? normalized + begin : nullptr, reconstruction + begin,
+                           kCells ? mask + begin : nullptr,
+                           n_significant + segment, max_posterior + segment,
+                           shared_counts, shared_max);
 }
 
 inline bool flat_geometry(const ffi::Span<const int64_t> dims, int64_t& count)
@@ -777,6 +799,111 @@ ffi::Error segmented_log_z_impl(
     return ffi::Error::Success();
 }
 
+// The four launches of the segmented posterior: segment max, exponentiate, cut,
+// normalize.  kCells = false (SparsePass2SegmentedReconstructionF32) passes null
+// probs, normalized and mask and the kernels skip them; every other value is
+// computed by the same code in the same order.
+template <bool kCells>
+ffi::Error launch_segmented_posterior(
+    cudaStream_t stream, float adaptive_fraction, int64_t keep_all, int64_t use_external_sum_weight,
+    int64_t n_cells, int64_t n_segments,
+    const float* scores_ptr, const int32_t* offsets_ptr, const int32_t* n_valid_images_ptr,
+    const double* log_z_ptr, const float* external_sum_weight_ptr,
+    double* log_z_out_ptr, float* best_log_score_ptr, int64_t* best_cell_index_ptr, float* max_posterior_ptr,
+    double* probs_ptr, float* normalized_ptr, float* reconstruction_ptr, bool* mask_ptr,
+    int32_t* n_significant_ptr, float* sum_weight_ptr, float* threshold_ptr, float* raw_ptr,
+    SegmentState* state_ptr)
+{
+    segmented_max_kernel<<<static_cast<int>(n_segments), kRowThreads, 0, stream>>>(
+        scores_ptr, offsets_ptr, n_valid_images_ptr, log_z_ptr,
+        static_cast<int>(n_segments), n_cells, state_ptr,
+        log_z_out_ptr, best_log_score_ptr, best_cell_index_ptr);
+    cudaError_t error = cudaGetLastError();
+    if (error != cudaSuccess)
+        return ffi::Error::Internal(
+            std::string("SparsePass2SegmentedPosteriorF32 segment max: ") + cudaGetErrorString(error));
+
+    constexpr int threads = 256;
+    const int64_t block_count = (n_cells + threads - 1) / threads;
+    if (block_count > static_cast<int64_t>(std::numeric_limits<int>::max()))
+        return ffi::Error::InvalidArgument(
+            "SparsePass2SegmentedPosteriorF32: launch grid exceeds CUDA limit");
+    segmented_exponentiate_kernel<kCells><<<static_cast<int>(block_count), threads, 0, stream>>>(
+        scores_ptr, offsets_ptr, state_ptr, static_cast<int>(n_segments), n_cells,
+        raw_ptr, probs_ptr, normalized_ptr, reconstruction_ptr, mask_ptr);
+    error = cudaGetLastError();
+    if (error != cudaSuccess)
+        return ffi::Error::Internal(
+            std::string("SparsePass2SegmentedPosteriorF32 exponentiate: ") + cudaGetErrorString(error));
+
+    segmented_cut_kernel<<<static_cast<int>(n_segments), kCutThreads, 0, stream>>>(
+        raw_ptr, external_sum_weight_ptr,
+        static_cast<int>(n_segments), adaptive_fraction,
+        static_cast<int>(keep_all != 0), static_cast<int>(use_external_sum_weight != 0),
+        state_ptr, sum_weight_ptr, threshold_ptr);
+    error = cudaGetLastError();
+    if (error != cudaSuccess)
+        return ffi::Error::Internal(
+            std::string("SparsePass2SegmentedPosteriorF32 cut: ") + cudaGetErrorString(error));
+
+    segmented_normalize_kernel<kCells><<<static_cast<int>(n_segments), kRowThreads, 0, stream>>>(
+        scores_ptr, raw_ptr, state_ptr, normalized_ptr, reconstruction_ptr, mask_ptr,
+        n_significant_ptr, max_posterior_ptr);
+    error = cudaGetLastError();
+    if (error != cudaSuccess)
+        return ffi::Error::Internal(
+            std::string("SparsePass2SegmentedPosteriorF32 normalize: ") + cudaGetErrorString(error));
+    return ffi::Error::Success();
+}
+
+// Shape checks shared by the two segmented posterior handlers: inputs, the
+// per-segment outputs, the reconstruction, the raw-weight and segment-state
+// scratch.  Returns null when they hold, else the message; sets n_cells and
+// n_segments.
+inline const char* segmented_posterior_shape_error(
+    const ffi::AnyBuffer& scores, const ffi::AnyBuffer& segment_offsets, const ffi::AnyBuffer& n_valid_images,
+    const ffi::AnyBuffer& log_z, const ffi::AnyBuffer& external_sum_weight,
+    const ffi::AnyBuffer& log_z_out, const ffi::AnyBuffer& best_log_score, const ffi::AnyBuffer& best_cell_index,
+    const ffi::AnyBuffer& max_posterior, const ffi::AnyBuffer& reconstruction, const ffi::AnyBuffer& n_significant,
+    const ffi::AnyBuffer& sum_weight, const ffi::AnyBuffer& threshold, const ffi::AnyBuffer& raw_weights,
+    const ffi::AnyBuffer& segment_state, int64_t& n_cells, int64_t& n_segments)
+{
+    n_cells = 0;
+    n_segments = 0;
+    if (scores.element_type() != ffi::DataType::F32 || !flat_geometry(scores.dimensions(), n_cells))
+        return "scores must be a nonempty F32 array";
+    if (n_cells > static_cast<int64_t>(std::numeric_limits<int32_t>::max()))
+        return "cell count exceeds the int32 offset range";
+    if (segment_offsets.element_type() != ffi::DataType::S32 ||
+        segment_offsets.dimensions().size() != 1 || segment_offsets.dimensions()[0] < 2)
+        return "segment_offsets must be S32 with shape (n_segments + 1,)";
+    n_segments = segment_offsets.dimensions()[0] - 1;
+    if (n_segments > static_cast<int64_t>(std::numeric_limits<int>::max()))
+        return "too many segments for one launch grid";
+    if (!scalar_ok(n_valid_images, ffi::DataType::S32))
+        return "n_valid_images must be a single S32 value";
+    if (!segmented_vector_ok(log_z, ffi::DataType::F64, n_segments) ||
+        !segmented_vector_ok(external_sum_weight, ffi::DataType::F32, n_segments))
+        return "log_z must be F64 (n_segments,) and external_sum_weight F32 (n_segments,)";
+    if (!segmented_vector_ok(log_z_out, ffi::DataType::F64, n_segments) ||
+        !segmented_vector_ok(best_log_score, ffi::DataType::F32, n_segments) ||
+        !segmented_vector_ok(best_cell_index, ffi::DataType::S64, n_segments) ||
+        !segmented_vector_ok(max_posterior, ffi::DataType::F32, n_segments) ||
+        !segmented_vector_ok(n_significant, ffi::DataType::S32, n_segments) ||
+        !segmented_vector_ok(sum_weight, ffi::DataType::F32, n_segments) ||
+        !segmented_vector_ok(threshold, ffi::DataType::F32, n_segments))
+        return "per-segment outputs must have shape (n_segments,) with the documented dtypes";
+    if (!segmented_flat_ok(reconstruction, ffi::DataType::F32, n_cells) ||
+        !segmented_flat_ok(raw_weights, ffi::DataType::F32, n_cells))
+        return "per-cell outputs must hold n_cells elements with the documented dtypes";
+    if (segment_state.element_type() != ffi::DataType::U8 ||
+        segment_state.dimensions().size() != 2 ||
+        segment_state.dimensions()[0] != n_segments ||
+        segment_state.dimensions()[1] != static_cast<int64_t>(sizeof(SegmentState)))
+        return "segment_state scratch must be U8 (n_segments, sizeof(SegmentState))";
+    return nullptr;
+}
+
 ffi::Error segmented_posterior_impl(
     cudaStream_t stream,
     float adaptive_fraction,
@@ -801,108 +928,89 @@ ffi::Error segmented_posterior_impl(
     ffi::Result<ffi::AnyBuffer> raw_weights,
     ffi::Result<ffi::AnyBuffer> segment_state)
 {
-    int64_t n_cells = 0;
-    if (scores.element_type() != ffi::DataType::F32 || !flat_geometry(scores.dimensions(), n_cells))
-        return ffi::Error::InvalidArgument(
-            "SparsePass2SegmentedPosteriorF32: scores must be a nonempty F32 array");
-    if (n_cells > static_cast<int64_t>(std::numeric_limits<int32_t>::max()))
-        return ffi::Error::InvalidArgument(
-            "SparsePass2SegmentedPosteriorF32: cell count exceeds the int32 offset range");
-    if (segment_offsets.element_type() != ffi::DataType::S32 ||
-        segment_offsets.dimensions().size() != 1 || segment_offsets.dimensions()[0] < 2)
-        return ffi::Error::InvalidArgument(
-            "SparsePass2SegmentedPosteriorF32: segment_offsets must be S32 with shape (n_segments + 1,)");
-    const int64_t n_segments = segment_offsets.dimensions()[0] - 1;
-    if (n_segments > static_cast<int64_t>(std::numeric_limits<int>::max()))
-        return ffi::Error::InvalidArgument(
-            "SparsePass2SegmentedPosteriorF32: too many segments for one launch grid");
-    if (!scalar_ok(n_valid_images, ffi::DataType::S32))
-        return ffi::Error::InvalidArgument(
-            "SparsePass2SegmentedPosteriorF32: n_valid_images must be a single S32 value");
-    if (!segmented_vector_ok(log_z, ffi::DataType::F64, n_segments) ||
-        !segmented_vector_ok(external_sum_weight, ffi::DataType::F32, n_segments))
-        return ffi::Error::InvalidArgument(
-            "SparsePass2SegmentedPosteriorF32: log_z must be F64 (n_segments,) and external_sum_weight F32 (n_segments,)");
-    if (!segmented_vector_ok(*log_z_out, ffi::DataType::F64, n_segments) ||
-        !segmented_vector_ok(*best_log_score, ffi::DataType::F32, n_segments) ||
-        !segmented_vector_ok(*best_cell_index, ffi::DataType::S64, n_segments) ||
-        !segmented_vector_ok(*max_posterior, ffi::DataType::F32, n_segments) ||
-        !segmented_vector_ok(*n_significant, ffi::DataType::S32, n_segments) ||
-        !segmented_vector_ok(*sum_weight, ffi::DataType::F32, n_segments) ||
-        !segmented_vector_ok(*threshold, ffi::DataType::F32, n_segments))
-        return ffi::Error::InvalidArgument(
-            "SparsePass2SegmentedPosteriorF32: per-segment outputs must have shape (n_segments,) with the documented dtypes");
+    int64_t n_cells = 0, n_segments = 0;
+    if (const char* message = segmented_posterior_shape_error(
+            scores, segment_offsets, n_valid_images, log_z, external_sum_weight, *log_z_out, *best_log_score,
+            *best_cell_index, *max_posterior, *reconstruction, *n_significant, *sum_weight, *threshold,
+            *raw_weights, *segment_state, n_cells, n_segments))
+        return ffi::Error::InvalidArgument(std::string("SparsePass2SegmentedPosteriorF32: ") + message);
     if (!segmented_flat_ok(*probs, ffi::DataType::F64, n_cells) ||
         !segmented_flat_ok(*normalized, ffi::DataType::F32, n_cells) ||
-        !segmented_flat_ok(*reconstruction, ffi::DataType::F32, n_cells) ||
-        !segmented_flat_ok(*mask, ffi::DataType::PRED, n_cells) ||
-        !segmented_flat_ok(*raw_weights, ffi::DataType::F32, n_cells))
+        !segmented_flat_ok(*mask, ffi::DataType::PRED, n_cells))
         return ffi::Error::InvalidArgument(
             "SparsePass2SegmentedPosteriorF32: per-cell outputs must hold n_cells elements with the documented dtypes");
-    if (segment_state->element_type() != ffi::DataType::U8 ||
-        segment_state->dimensions().size() != 2 ||
-        segment_state->dimensions()[0] != n_segments ||
-        segment_state->dimensions()[1] != static_cast<int64_t>(sizeof(SegmentState)))
-        return ffi::Error::InvalidArgument(
-            "SparsePass2SegmentedPosteriorF32: segment_state scratch must be U8 (n_segments, sizeof(SegmentState))");
 
-    const float* scores_ptr = static_cast<const float*>(scores.untyped_data());
-    const int32_t* offsets_ptr = static_cast<const int32_t*>(segment_offsets.untyped_data());
-    SegmentState* state_ptr = static_cast<SegmentState*>(segment_state->untyped_data());
-    float* raw_ptr = static_cast<float*>(raw_weights->untyped_data());
-
-    segmented_max_kernel<<<static_cast<int>(n_segments), kRowThreads, 0, stream>>>(
-        scores_ptr, offsets_ptr,
+    return launch_segmented_posterior<true>(
+        stream, adaptive_fraction, keep_all, use_external_sum_weight, n_cells, n_segments,
+        static_cast<const float*>(scores.untyped_data()),
+        static_cast<const int32_t*>(segment_offsets.untyped_data()),
         static_cast<const int32_t*>(n_valid_images.untyped_data()),
         static_cast<const double*>(log_z.untyped_data()),
-        static_cast<int>(n_segments), n_cells, state_ptr,
+        static_cast<const float*>(external_sum_weight.untyped_data()),
         static_cast<double*>(log_z_out->untyped_data()),
         static_cast<float*>(best_log_score->untyped_data()),
-        static_cast<int64_t*>(best_cell_index->untyped_data()));
-    cudaError_t error = cudaGetLastError();
-    if (error != cudaSuccess)
-        return ffi::Error::Internal(
-            std::string("SparsePass2SegmentedPosteriorF32 segment max: ") + cudaGetErrorString(error));
-
-    constexpr int threads = 256;
-    const int64_t block_count = (n_cells + threads - 1) / threads;
-    if (block_count > static_cast<int64_t>(std::numeric_limits<int>::max()))
-        return ffi::Error::InvalidArgument(
-            "SparsePass2SegmentedPosteriorF32: launch grid exceeds CUDA limit");
-    segmented_exponentiate_kernel<<<static_cast<int>(block_count), threads, 0, stream>>>(
-        scores_ptr, offsets_ptr, state_ptr, static_cast<int>(n_segments), n_cells,
-        raw_ptr, static_cast<double*>(probs->untyped_data()),
-        static_cast<float*>(normalized->untyped_data()),
-        static_cast<float*>(reconstruction->untyped_data()),
-        static_cast<bool*>(mask->untyped_data()));
-    error = cudaGetLastError();
-    if (error != cudaSuccess)
-        return ffi::Error::Internal(
-            std::string("SparsePass2SegmentedPosteriorF32 exponentiate: ") + cudaGetErrorString(error));
-
-    segmented_cut_kernel<<<static_cast<int>(n_segments), kCutThreads, 0, stream>>>(
-        raw_ptr, static_cast<const float*>(external_sum_weight.untyped_data()),
-        static_cast<int>(n_segments), adaptive_fraction,
-        static_cast<int>(keep_all != 0), static_cast<int>(use_external_sum_weight != 0),
-        state_ptr, static_cast<float*>(sum_weight->untyped_data()),
-        static_cast<float*>(threshold->untyped_data()));
-    error = cudaGetLastError();
-    if (error != cudaSuccess)
-        return ffi::Error::Internal(
-            std::string("SparsePass2SegmentedPosteriorF32 cut: ") + cudaGetErrorString(error));
-
-    segmented_normalize_kernel<<<static_cast<int>(n_segments), kRowThreads, 0, stream>>>(
-        scores_ptr, raw_ptr, state_ptr,
+        static_cast<int64_t*>(best_cell_index->untyped_data()),
+        static_cast<float*>(max_posterior->untyped_data()),
+        static_cast<double*>(probs->untyped_data()),
         static_cast<float*>(normalized->untyped_data()),
         static_cast<float*>(reconstruction->untyped_data()),
         static_cast<bool*>(mask->untyped_data()),
         static_cast<int32_t*>(n_significant->untyped_data()),
-        static_cast<float*>(max_posterior->untyped_data()));
-    error = cudaGetLastError();
-    if (error != cudaSuccess)
-        return ffi::Error::Internal(
-            std::string("SparsePass2SegmentedPosteriorF32 normalize: ") + cudaGetErrorString(error));
-    return ffi::Error::Success();
+        static_cast<float*>(sum_weight->untyped_data()),
+        static_cast<float*>(threshold->untyped_data()),
+        static_cast<float*>(raw_weights->untyped_data()),
+        static_cast<SegmentState*>(segment_state->untyped_data()));
+}
+
+// SparsePass2SegmentedPosteriorF32 without probs, normalized and mask: 12 bytes
+// per cell (scores, reconstruction, raw weights) instead of 29.
+ffi::Error segmented_reconstruction_impl(
+    cudaStream_t stream,
+    float adaptive_fraction,
+    int64_t keep_all,
+    int64_t use_external_sum_weight,
+    ffi::AnyBuffer scores,
+    ffi::AnyBuffer segment_offsets,
+    ffi::AnyBuffer n_valid_images,
+    ffi::AnyBuffer log_z,
+    ffi::AnyBuffer external_sum_weight,
+    ffi::Result<ffi::AnyBuffer> log_z_out,
+    ffi::Result<ffi::AnyBuffer> best_log_score,
+    ffi::Result<ffi::AnyBuffer> best_cell_index,
+    ffi::Result<ffi::AnyBuffer> max_posterior,
+    ffi::Result<ffi::AnyBuffer> reconstruction,
+    ffi::Result<ffi::AnyBuffer> n_significant,
+    ffi::Result<ffi::AnyBuffer> sum_weight,
+    ffi::Result<ffi::AnyBuffer> threshold,
+    ffi::Result<ffi::AnyBuffer> raw_weights,
+    ffi::Result<ffi::AnyBuffer> segment_state)
+{
+    int64_t n_cells = 0, n_segments = 0;
+    if (const char* message = segmented_posterior_shape_error(
+            scores, segment_offsets, n_valid_images, log_z, external_sum_weight, *log_z_out, *best_log_score,
+            *best_cell_index, *max_posterior, *reconstruction, *n_significant, *sum_weight, *threshold,
+            *raw_weights, *segment_state, n_cells, n_segments))
+        return ffi::Error::InvalidArgument(std::string("SparsePass2SegmentedReconstructionF32: ") + message);
+
+    return launch_segmented_posterior<false>(
+        stream, adaptive_fraction, keep_all, use_external_sum_weight, n_cells, n_segments,
+        static_cast<const float*>(scores.untyped_data()),
+        static_cast<const int32_t*>(segment_offsets.untyped_data()),
+        static_cast<const int32_t*>(n_valid_images.untyped_data()),
+        static_cast<const double*>(log_z.untyped_data()),
+        static_cast<const float*>(external_sum_weight.untyped_data()),
+        static_cast<double*>(log_z_out->untyped_data()),
+        static_cast<float*>(best_log_score->untyped_data()),
+        static_cast<int64_t*>(best_cell_index->untyped_data()),
+        static_cast<float*>(max_posterior->untyped_data()),
+        nullptr, nullptr,
+        static_cast<float*>(reconstruction->untyped_data()),
+        nullptr,
+        static_cast<int32_t*>(n_significant->untyped_data()),
+        static_cast<float*>(sum_weight->untyped_data()),
+        static_cast<float*>(threshold->untyped_data()),
+        static_cast<float*>(raw_weights->untyped_data()),
+        static_cast<SegmentState*>(segment_state->untyped_data()));
 }
 
 }  // namespace recovar_sparse_pass2_posterior
@@ -965,6 +1073,30 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(
         .Ret<ffi::AnyBuffer>()
         .Ret<ffi::AnyBuffer>()
         .Ret<ffi::AnyBuffer>()
+        .Ret<ffi::AnyBuffer>()
+        .Ret<ffi::AnyBuffer>()
+        .Ret<ffi::AnyBuffer>()
+        .Ret<ffi::AnyBuffer>()
+        .Ret<ffi::AnyBuffer>()
+        .Ret<ffi::AnyBuffer>()
+        .Ret<ffi::AnyBuffer>()
+        .Ret<ffi::AnyBuffer>()
+        .Ret<ffi::AnyBuffer>()
+        .Ret<ffi::AnyBuffer>()
+);
+
+XLA_FFI_DEFINE_HANDLER_SYMBOL(
+    SparsePass2SegmentedReconstructionF32, recovar_sparse_pass2_posterior::segmented_reconstruction_impl,
+    ffi::Ffi::Bind()
+        .Ctx<ffi::PlatformStream<cudaStream_t>>()
+        .Attr<float>("adaptive_fraction")
+        .Attr<int64_t>("keep_all")
+        .Attr<int64_t>("use_external_sum_weight")
+        .Arg<ffi::AnyBuffer>()
+        .Arg<ffi::AnyBuffer>()
+        .Arg<ffi::AnyBuffer>()
+        .Arg<ffi::AnyBuffer>()
+        .Arg<ffi::AnyBuffer>()
         .Ret<ffi::AnyBuffer>()
         .Ret<ffi::AnyBuffer>()
         .Ret<ffi::AnyBuffer>()

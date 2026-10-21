@@ -127,11 +127,12 @@ def test_segment_state_bytes_match_header():
 
 
 def test_segmented_targets_are_optional_abi():
-    """Both handlers register lazily, like the other optional CUDA targets."""
+    """The segmented handlers register lazily, like the other optional CUDA targets."""
 
     for target in (
         library.TARGET_SPARSE_PASS2_SEGMENTED_LOG_Z_F64,
         library.TARGET_SPARSE_PASS2_SEGMENTED_POSTERIOR_F32,
+        library.TARGET_SPARSE_PASS2_SEGMENTED_RECONSTRUCTION_F32,
     ):
         assert target in library.OPTIONAL_FFI_REGISTRATIONS
         assert target not in {name for name, _symbol in cb._FFI_REGISTRATIONS}
@@ -305,6 +306,64 @@ def test_cut_follows_its_definition_on_production_chunks(images, rows, translati
     assert_matches(out["sum_weight"], sums)
     assert_matches(out["n_significant"], counts)
     assert_matches(out["mask"].sum(), counts.sum())
+
+
+_RECONSTRUCTION_NAMES = (
+    "log_z",
+    "best_log_score",
+    "best_cell_index",
+    "max_posterior",
+    "reconstruction_probs",
+    "n_significant",
+    "sum_weight",
+    "threshold",
+)
+
+
+@pytest.mark.gpu
+@pytest.mark.parametrize("external", [False, True])
+@pytest.mark.parametrize("keep_all", [False, True])
+@pytest.mark.parametrize("adaptive_fraction", _ADAPTIVE_FRACTIONS)
+@pytest.mark.parametrize(
+    "images, rows, translations, occupancy",
+    [
+        pytest.param(32, 4096, 21, 0.9, id="32img_4096rows"),
+        # One particle owning the whole chunk, the lone tilt particle of relax#118 at a small size.
+        pytest.param(1, 2048, 1176, 1.0, id="1img_2048rows_1176trans"),
+    ],
+)
+def test_reconstruction_only_handler_returns_the_full_handlers_values(
+    images, rows, translations, occupancy, adaptive_fraction, keep_all, external
+):
+    """SparsePass2SegmentedReconstructionF32 runs the full handler's kernels and skips probs, normalized and
+    mask: its eight outputs are the full handler's, on padded ragged chunks and on one large segment."""
+
+    _require_segmented_gpu()
+    if not _gpu_library_has("SparsePass2SegmentedReconstructionF32"):
+        pytest.skip("loaded CUDA library lacks SparsePass2SegmentedReconstructionF32")
+    scores, offsets = make_production_chunk(images, rows, translations, occupancy, 41)
+    log_z = _chunk_log_z(scores, offsets, images)
+    external_sum_weight = np.linspace(2.0, 5.0, images).astype(np.float32) if external else None
+    full = _segmented(
+        scores, offsets, images, log_z, external_sum_weight, adaptive_fraction=adaptive_fraction, keep_all=keep_all
+    )
+    lean = cuda_posterior.sparse_pass2_segmented_reconstruction_f32(
+        jnp.asarray(scores, dtype=jnp.float32),
+        jnp.asarray(offsets, dtype=jnp.int32),
+        jnp.asarray(images, dtype=jnp.int32),
+        jnp.asarray(log_z, dtype=jnp.float64),
+        jnp.asarray(np.ones(images, np.float32) if external_sum_weight is None else external_sum_weight),
+        adaptive_fraction=float(adaptive_fraction),
+        keep_all=bool(keep_all),
+        use_external_sum_weight=bool(external),
+    )
+    assert len(lean) == len(_RECONSTRUCTION_NAMES)
+    for name, value in zip(_RECONSTRUCTION_NAMES, lean):
+        value = np.asarray(value)
+        assert value.dtype == full[name].dtype and value.shape == full[name].shape, name
+        assert np.isfinite(value[np.isfinite(full[name])]).all(), name
+        assert_matches(value, full[name], err_msg=name)
+    assert np.count_nonzero(full["reconstruction_probs"]) > 0
 
 
 @pytest.mark.gpu
