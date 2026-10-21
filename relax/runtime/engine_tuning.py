@@ -415,10 +415,11 @@ def parse_large_grid_switch(
     flag_raw: str | None, min_voxels_raw: str | None, default_min_voxels: int, *, min_voxels_name: str,
 ) -> LargeGridSwitch:
     """A large-grid switch from its two variables: a set flag is on unless it is a false token (0/false/no/off, any
-    case, stripped); an unset or blank minimum keeps ``default_min_voxels``, and one that is not an integer is
-    refused (``min_voxels_name`` names it)."""
+    case, stripped), and an unset or blank one forces nothing (as ``env_flags.parse_env_flag``); an unset or blank
+    minimum keeps ``default_min_voxels``, and one that is not an integer is refused (``min_voxels_name`` names it)."""
 
-    forced = None if flag_raw is None else flag_raw.strip().lower() not in {"0", "false", "no", "off"}
+    blank = flag_raw is None or not flag_raw.strip()
+    forced = None if blank else flag_raw.strip().lower() not in {"0", "false", "no", "off"}
     min_voxels = default_min_voxels
     if min_voxels_raw is not None and min_voxels_raw.strip():
         try:
