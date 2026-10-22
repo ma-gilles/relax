@@ -307,6 +307,25 @@ class TestRunVdamIterations:
         assert capped.current_size == 16
         assert capped.current_resolution_shell == 20
 
+    def test_current_size_at_zero_maxres_has_no_lower_floor(self):
+        # RELION's updateImageSizeAndResolutionPointers (ml_optimiser.cpp:6866-6885) sets current_size = 2 * maxres
+        # and clamps it only at ori_size; the old VDAM copy's max(2 * maxres, 2) floor is not RELION's.
+        state = initialise_denovo_state(
+            box_size=64,
+            pixel_size=2.0,
+            K=1,
+            nr_iter=1,
+            n_directions=12,
+            pseudo_halfsets=True,
+        )
+        state.current_resolution = 0.0
+        state.ave_Pmax = 0.0
+
+        state.incr_size = 10
+        assert update_image_size_and_resolution_pointers(state).current_size == 20
+        state.incr_size = 0
+        assert update_image_size_and_resolution_pointers(state).current_size == 0
+
     def test_iteration_loop_feeds_updated_current_size_to_next_estep(self, monkeypatch):
         import relax.vdam.iteration_loop as loop
 
