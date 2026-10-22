@@ -489,4 +489,3 @@ def test_the_quantum_override_is_read_once_at_the_boundary(monkeypatch):
         monkeypatch.setenv(STABLE_FOURIER_WINDOW_QUANTUM_ENV, bad)
         with pytest.raises(ValueError, match="must be an even integer >= 2"):
             EngineTuning.from_environ()
-
