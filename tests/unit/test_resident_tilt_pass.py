@@ -626,7 +626,12 @@ def _lean_lone_run(monkeypatch, args, tilt, *, block_rows=None):
     from relax.fine_pass import resident_pass2 as rp
     from relax.fine_pass import resident_tilts
 
-    monkeypatch.setattr(resident_tilts, "tilt_lone_row_bytes", lambda *a, **k: 1 << 50)
+    real_row_bytes = resident_tilts.tilt_lone_row_bytes
+    monkeypatch.setattr(
+        resident_tilts,
+        "tilt_lone_row_bytes",
+        lambda *a, lean=False, **k: real_row_bytes(*a, lean=True, **k) if lean else 1 << 50,
+    )
     real_chunk, calls = resident_tilts.run_tilt_chunk, []
 
     def chunk(tilt_chunk, *a, **k):
@@ -678,6 +683,31 @@ def test_lean_lone_tilt_particle_is_the_full_lone_pass(monkeypatch):
     _assert_tilt_pass_matches_spa(whole, smaller)
 
 
+def test_lean_lone_blocks_halve_to_a_fitting_block_that_divides_the_particle():
+    """The lean plan halves the block from the largest row class until the plan fits, and refuses a block that
+    does not divide the particle's rows when it reaches one, naming that cause (not the first-iteration CC pass)."""
+
+    from relax.fine_pass.policy import ResidentConfigurationUnsupported
+    from relax.fine_pass.resident_tilts import plan_lean_lone_blocks
+
+    def planner(fits_rows):
+        def plan_memory(lone_row_bytes, projection_factor, lone_block_rows=None):
+            if lone_block_rows > fits_rows:
+                raise ResidentConfigurationUnsupported(f"{lone_block_rows} rows do not fit")
+            return ("plan", lone_row_bytes, lone_block_rows)
+
+        return plan_memory
+
+    kwargs = dict(lean_row_bytes=100, slot_capacity=4, slot_row_bytes=1, budget_bytes=None, gathered_row_copies=2)
+    plan, slot_block, rows = plan_lean_lone_blocks(planner(64), lone_rows=512, largest_row_class=256, **kwargs)
+    assert (plan, slot_block, rows) == (("plan", 100, 64), 4, 64)
+    with pytest.raises(ResidentConfigurationUnsupported, match="16 rows do not fit"):
+        plan_lean_lone_blocks(planner(8), lone_rows=512, largest_row_class=256, **kwargs)
+    # 66 rows halve to 33, which divides the particle's 132, then to 16, which does not.
+    with pytest.raises(ResidentConfigurationUnsupported, match="divide its 132 rows.*reached 16 rows"):
+        plan_lean_lone_blocks(planner(8), lone_rows=132, largest_row_class=66, **kwargs)
+
+
 def test_lean_lone_plan_fits_the_16gb_refusal():
     """The budget arithmetic of the 16 GB refusal (relax#118, job 15929725): 294,912 rows, 41 image slots of
     300,808 bytes per projected row, 1,176 translations, a 6.71 GiB chunk budget.
@@ -688,7 +718,6 @@ def test_lean_lone_plan_fits_the_16gb_refusal():
 
     from relax.fine_pass import resident_chunk_memory
     from relax.fine_pass.policy import ResidentConfigurationUnsupported
-    from relax.fine_pass.resident_tilt_lone import lean_lone_row_bytes
     from relax.fine_pass.resident_tilts import tilt_lone_row_bytes
 
     gib = 1024**3
@@ -711,7 +740,7 @@ def test_lean_lone_plan_fits_the_16gb_refusal():
     assert full == 40512
     with pytest.raises(ResidentConfigurationUnsupported, match="needs 14.24 GiB"):
         resident_chunk_memory.plan_resident_chunk_memory(**kwargs, lone_row_bytes=full)
-    lean = lean_lone_row_bytes(1176, slot_capacity=41)
+    lean = tilt_lone_row_bytes(1176, slot_capacity=41, lean=True)
     assert lean == 1176 * 13 + 64 + 41 * 40
     with pytest.raises(ResidentConfigurationUnsupported):
         resident_chunk_memory.plan_resident_chunk_memory(**kwargs, lone_row_bytes=lean)

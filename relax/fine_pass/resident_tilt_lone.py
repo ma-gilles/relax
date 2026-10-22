@@ -9,8 +9,8 @@ arrays (``resident_chunk_posterior.chunk_posterior_from_scores(reconstruction_on
 posterior are the full form's: every cell is computed by the same operations, and the particle's minimum,
 normalization and significance cut are still taken over all of its cells at once.
 
-resident_pass2 plans it only when the full form does not fit (:func:`lean_lone_row_bytes`), so a run that fits
-keeps the full form.
+resident_pass2 plans it only when the full form does not fit (``resident_tilts.tilt_lone_row_bytes`` with
+``lean``), so a run that fits keeps the full form.
 """
 
 from __future__ import annotations
@@ -19,24 +19,6 @@ import functools
 
 import jax
 import jax.numpy as jnp
-
-# Per posterior cell of a lean lone particle, at its peak (the posterior handler): the scores, the handler's raw
-# weights and reconstruction (float32 each) and the candidate mask.
-_LEAN_LONE_CELL_BYTES = 3 * 4 + 1
-
-
-def lean_lone_row_bytes(n_fine_trans: int, *, slot_capacity: int, n_accumulators: int = 1) -> int:
-    """Device bytes each row of a lean lone particle keeps beyond its block (cf. ``resident_tilts.tilt_lone_row_bytes``).
-
-    - At the posterior: its ``T`` cells of scores, raw weights and reconstruction, and its candidate mask.
-    - In the M-step (the scores and raw weights gone): the reconstruction and its posterior at the particle's
-      own translations (at most ``T`` float32 cells) per accumulator.
-    - Per image slot, the row's float32 3x3 matrix ``inv(L_i A_r)`` and its int32 chunk image.
-    """
-
-    t = int(n_fine_trans)
-    cells = max(_LEAN_LONE_CELL_BYTES, 4 + 4 * max(int(n_accumulators), 1) + 1)
-    return t * cells + 64 + int(slot_capacity) * (36 + 4)
 
 
 @functools.partial(jax.jit, donate_argnums=0)

@@ -95,24 +95,112 @@ def tilt_projection_slot_block(max_rows: int, *, slot_capacity: int, slot_row_by
     return -(-int(slot_capacity) // n_blocks)
 
 
-def tilt_lone_row_bytes(n_fine_trans: int, *, slot_capacity: int, n_accumulators: int = 1) -> int:
+# Per posterior cell of a lean lone particle (resident_tilt_lone), at its peak (the posterior handler): the scores,
+# the handler's raw weights and reconstruction (float32 each) and the candidate mask.
+_LEAN_LONE_CELL_BYTES = 3 * 4 + 1
+
+
+def tilt_lone_row_bytes(n_fine_trans: int, *, slot_capacity: int, n_accumulators: int = 1, lean: bool = False) -> int:
     """Device bytes each row of a row-blocked lone particle keeps beyond its block (:func:`run_tilt_chunk`).
 
     A particle's chunk holds ``rows x image slots x pixels`` projection values at once (each row is projected
     once per tilt image); when that does not fit for a particle run alone, its rows are projected, scored and
     backprojected ``lone_block_rows`` at a time, and only these stay for all of its rows:
 
-    - its ``T`` posterior cells, as the SPA lone chunk counts them (``resident_chunk_memory.lone_chunk_row_bytes``),
-      and its posterior at the particle's own translations (at most ``T`` float32 cells) per accumulator;
+    - its ``T`` posterior cells and row tables, as the SPA lone chunk counts them
+      (``resident_chunk_memory.lone_chunk_row_bytes``), and its posterior at the particle's own translations (at
+      most ``T`` float32 cells) per accumulator. In the ``lean`` form (``resident_tilt_lone``) the cells are the
+      larger of the posterior's peak (scores, raw weights, reconstruction and mask) and the M-step's (the scores
+      and raw weights gone: the reconstruction and the posterior per accumulator, and the mask);
     - per image slot, the row's float32 3x3 matrix ``inv(L_i A_r)`` and its int32 chunk image.
     """
 
     from relax.fine_pass.resident_chunk_memory import lone_chunk_row_bytes
 
-    return (
-        lone_chunk_row_bytes(int(n_fine_trans))
-        + int(n_fine_trans) * 4 * max(int(n_accumulators), 1)
-        + int(slot_capacity) * (36 + 4)
+    t, accumulators = int(n_fine_trans), max(int(n_accumulators), 1)
+    if lean:
+        cells = t * max(_LEAN_LONE_CELL_BYTES, 4 + 4 * accumulators + 1) + lone_chunk_row_bytes(0)
+    else:
+        cells = lone_chunk_row_bytes(t) + t * 4 * accumulators
+    return cells + int(slot_capacity) * (36 + 4)
+
+
+# The smallest row block a lean lone tilt particle is planned in (resident_tilt_lone): halving stops here.
+MIN_LEAN_LONE_BLOCK_ROWS = 16
+
+
+def plan_lean_lone_blocks(
+    plan_memory,
+    *,
+    lean_row_bytes: int,
+    lone_rows: int,
+    largest_row_class: int,
+    slot_capacity: int,
+    slot_row_bytes: int,
+    budget_bytes,
+    gathered_row_copies: int,
+):
+    """The lean lone plan (resident_tilt_lone) at the largest block of rows that fits, halving from the largest
+    row class; each block's slots are sized for its rows (:func:`tilt_projection_slot_block`).
+
+    ``plan_memory(lone_row_bytes, projection_factor, lone_block_rows=...)`` is the pass's chunk memory plan and
+    raises ``ResidentConfigurationUnsupported`` when it does not fit. A block must divide the particle's
+    ``lone_rows`` (:func:`run_tilt_chunk`); one that does not is refused here, where its cause is known.
+    Returns ``(plan, slot block, block rows)``.
+    """
+
+    from relax.fine_pass.policy import ResidentConfigurationUnsupported
+
+    block_rows = int(largest_row_class)
+    while True:
+        if int(lone_rows) % block_rows:
+            raise ResidentConfigurationUnsupported(
+                f"the lean form of a lone tilt particle runs in row blocks that divide its {int(lone_rows)} rows; "
+                f"halving the largest row class {int(largest_row_class)} reached {block_rows} rows, which do not"
+            )
+        slot_block = tilt_projection_slot_block(
+            block_rows, slot_capacity=slot_capacity, slot_row_bytes=slot_row_bytes, budget_bytes=budget_bytes
+        )
+        try:
+            plan = plan_memory(lean_row_bytes, int(slot_block) * gathered_row_copies, lone_block_rows=block_rows)
+            return plan, int(slot_block), block_rows
+        except ResidentConfigurationUnsupported:
+            if block_rows // 2 < MIN_LEAN_LONE_BLOCK_ROWS:
+                raise
+            block_rows //= 2
+
+
+def tilt_chunk_tile_budget_bytes(
+    chunk, *, memory_plan, floor_bytes: int, explicit_floor: bool, unit_image_offsets, operand_size_kwargs, cap_bytes
+) -> int:
+    """The bytes a tilt chunk's M-step translated tiles take (``resident_tilt_mstep.tilt_mstep_tile_bytes``).
+
+    They are not in the chunk plan: they take what the chunk budget leaves after the chunk's own planned peak
+    (its row and unit classes) and, when the half's operands are prepared per chunk (``operand_size_kwargs``,
+    ``resident_projections.resident_half_operand_sizes``'s arguments but ``n_images``; None when the operands
+    are resident for the pass), the chunk's operands, which live beside its M-step. At most ``cap_bytes``
+    (``resident_chunk_memory.leftover_tile_budget_bytes``; None for the whole leftover), never less than
+    ``floor_bytes``; an ``explicit_floor`` (translation_tile_max_bytes) stands as given.
+    """
+
+    from relax.fine_pass import resident_chunk_memory, resident_projections
+
+    if explicit_floor:
+        return floor_bytes
+    operand_bytes = 0
+    if operand_size_kwargs is not None:
+        first = int(chunk.image_start)
+        operand_bytes, _ = resident_projections.resident_half_operand_sizes(
+            n_images=int(unit_image_offsets[first + int(chunk.n_valid_images)]) - int(unit_image_offsets[first]),
+            **operand_size_kwargs,
+        )
+    return resident_chunk_memory.leftover_tile_budget_bytes(
+        memory_plan,
+        row_capacity=chunk.row_capacity,
+        image_capacity=chunk.image_capacity,
+        reserved_bytes=operand_bytes,
+        floor_bytes=floor_bytes,
+        cap_bytes=cap_bytes,
     )
 
 
@@ -259,7 +347,7 @@ def run_tilt_chunk(
       the M-step blocks changes. Its M-step tables and translated tiles hold its one unit; any other chunk's
       hold its valid units, rounded up to a power of two (:func:`tilt_mstep_units`).
     - ``lean_lone`` (resident_pass2's plan where the particle's full posterior arrays do not fit,
-      :func:`~relax.fine_pass.resident_tilt_lone.lean_lone_row_bytes`): such a particle's scores are built in
+      :func:`tilt_lone_row_bytes` with ``lean``): such a particle's scores are built in
       place a block of rows at a time and its posterior comes from the reconstruction-only handler, the same
       values in 13 instead of 33 bytes per cell (:mod:`relax.fine_pass.resident_tilt_lone`, relax#118).
     The per-stage (non-jitted) path.
@@ -283,11 +371,13 @@ def run_tilt_chunk(
         raise ValueError("the lean form is a lone particle's: lean_lone needs lone_block_rows")
     if lone and int(chunk.n_valid_images) != 1:
         raise ValueError(f"a chunk run in row blocks holds one particle, not {int(chunk.n_valid_images)}")
-    if lone and (bool(spec_kwargs.get("firstiter_cc")) or int(chunk.row_capacity) % int(lone_block_rows)):
+    if lone and bool(spec_kwargs.get("firstiter_cc")):
         raise ResidentConfigurationUnsupported(
-            "a particle past the largest row class runs in row blocks that divide its rows, which the "
-            "first-iteration cross-correlation pass does not implement"
+            "a particle past the largest row class runs in row blocks, which the first-iteration "
+            "cross-correlation pass does not implement"
         )
+    if lone and int(chunk.row_capacity) % int(lone_block_rows):
+        raise ValueError(f"row blocks of {int(lone_block_rows)} do not divide the lone particle's {int(chunk.row_capacity)} rows")
 
     unit_capacity = int(chunk.image_capacity)
     n_slots = int(tilt.slot_capacity)

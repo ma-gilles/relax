@@ -174,8 +174,6 @@ _FLOAT32_BUCKETED_IMAGE_SUMS = False
 # memory plan drop it wherever a chunk that size does not fit.
 _DEFAULT_ROW_CAPACITY_LADDER = (8192, 32768, 131072, 524288)
 _DEFAULT_IMAGE_CAPACITY_LADDER = (32, 128, 512)
-# The smallest row block a lean lone tilt particle is planned in (resident_tilt_lone): halving stops here.
-_MIN_LEAN_LONE_BLOCK_ROWS = 16
 
 __all__ = [
     "ResidentClassInputs",
@@ -1726,8 +1724,8 @@ def _resident_pass2(
     tilt_lone_row_blocks = False
     tilt_lean_lone_rows = None
     if tilt is not None:
-        from relax.fine_pass.resident_tilt_lone import lean_lone_row_bytes
         from relax.fine_pass.resident_tilts import (
+            plan_lean_lone_blocks,
             tilt_capacity_ladders,
             tilt_lone_row_bytes,
             tilt_projection_slot_block,
@@ -1824,30 +1822,6 @@ def _resident_pass2(
                 ),
             )
 
-        def plan_lean_lone():
-            # The lean lone plan (resident_tilt_lone) at the largest block of rows that fits, halving from the
-            # largest row class; each block's slots are sized for its rows. Returns (plan, slot block, rows).
-            lean_row_bytes = lean_lone_row_bytes(
-                int(n_fine_trans), slot_capacity=int(tilt.slot_capacity), n_accumulators=int(tables.n_slots)
-            )
-            block_rows = max(int(v) for v in row_ladder_start)
-            while True:
-                slot_block = tilt_projection_slot_block(
-                    block_rows,
-                    slot_capacity=int(tilt.slot_capacity),
-                    slot_row_bytes=tilt_slot_row_bytes,
-                    budget_bytes=chunk_budget_bytes,
-                )
-                try:
-                    plan = plan_memory(
-                        lean_row_bytes, int(slot_block) * gathered_row_copies, lone_block_rows=block_rows
-                    )
-                    return plan, int(slot_block), block_rows
-                except ResidentConfigurationUnsupported:
-                    if block_rows // 2 < _MIN_LEAN_LONE_BLOCK_ROWS:
-                        raise
-                    block_rows //= 2
-
         if tilt is None:
             memory_plan = plan_memory(resident_chunk_memory.lone_chunk_row_bytes(int(plan_translations)), row_projection_factor)
         else:
@@ -1881,7 +1855,23 @@ def _resident_pass2(
                     # Nor does that (relax#118: 294,912 rows x 1,176 translations, 11 GiB of posterior arrays
                     # against a 16 GB card's 6.7 GiB): the particle takes its lean form, at the largest block of
                     # rows down from the largest row class that fits.
-                    memory_plan, lone_slot_block, tilt_lean_lone_rows = plan_lean_lone()
+                    memory_plan, lone_slot_block, tilt_lean_lone_rows = plan_lean_lone_blocks(
+                        plan_memory,
+                        lean_row_bytes=tilt_lone_row_bytes(
+                            int(n_fine_trans),
+                            slot_capacity=int(tilt.slot_capacity),
+                            n_accumulators=int(tables.n_slots),
+                            lean=True,
+                        ),
+                        lone_rows=resident_chunk_memory.overflow_row_capacity(
+                            resident_chunk_memory.max_image_rows(tables.row_offsets), row_ladder_start
+                        ),
+                        largest_row_class=max(int(v) for v in row_ladder_start),
+                        slot_capacity=int(tilt.slot_capacity),
+                        slot_row_bytes=tilt_slot_row_bytes,
+                        budget_bytes=chunk_budget_bytes,
+                        gathered_row_copies=gathered_row_copies,
+                    )
                 tilt_slot_block, tilt_lone_row_blocks = int(lone_slot_block), True
                 logger.info(
                     "Resident pass-2 tilt particles past the largest row class run in row blocks: the largest "
@@ -2381,7 +2371,12 @@ def _resident_pass2(
         from concurrent.futures import ThreadPoolExecutor
         from functools import partial
 
-        from relax.fine_pass.resident_tilts import TiltMstepCensus, prepare_tilt_chunk_host, run_tilt_chunk
+        from relax.fine_pass.resident_tilts import (
+            TiltMstepCensus,
+            prepare_tilt_chunk_host,
+            run_tilt_chunk,
+            tilt_chunk_tile_budget_bytes,
+        )
 
         # Without the half's resident operands (they do not fit), each chunk prepares the same
         # per-image operands for its own tilt images, a consecutive range of the half's images.
@@ -2433,49 +2428,41 @@ def _resident_pass2(
             * int(tilt_overflow_slot_block)
             * tilt_slot_row_bytes
         )
-        # The tilt M-step's translated tiles (resident_tilt_mstep.tilt_mstep_tile_bytes, with the translate-and-sum's
-        # table) are not in the chunk plan. A chunk's tiles take what the chunk budget leaves after that chunk's own
-        # planned peak (its row and unit classes) and, when the half's operands are prepared per chunk, the chunk's
-        # operands, which live beside its M-step; the preparation's batch working set runs before the chunk's
-        # programs and does not share it. Never less than the device share they had (2%); an explicit
-        # translation_tile_max_bytes stands as given.
+        # The tilt M-step's translated tiles (with the translate-and-sum's table) take what the chunk budget leaves
+        # (resident_tilts.tilt_chunk_tile_budget_bytes); the preparation's batch working set runs before the chunk's
+        # programs and does not share it. Never less than the device share they had (2%).
         tile_floor_bytes = max_translation_tile_bytes_for_pass(
             device_memory_bytes, override=engine_tuning.translation_tile_max_bytes, has_external_normalization=False
         )
-
-        def tilt_chunk_tile_budget_bytes(chunk, cap_bytes):
-            if engine_tuning.translation_tile_max_bytes is not None:
-                return tile_floor_bytes
-            operand_bytes = 0
-            if resident_operands is None:
-                operand_bytes, _ = resident_projections.resident_half_operand_sizes(
-                    n_images=int(unit_image_offsets[int(chunk.image_start) + int(chunk.n_valid_images)])
-                    - int(unit_image_offsets[int(chunk.image_start)]),
-                    n_windowed=n_windowed,
-                    n_recon_windowed=n_recon_windowed,
-                    n_rect=n_rect,
-                    n_shells=n_shells,
-                    n_fine_trans=n_fine_trans,
-                    precision_policy=precision_policy,
-                    resolved_spectrum_norm=resolved_spectrum_norm,
-                    premultiplied_ctf=ctf_premultiplied_pass,
-                    image_shape=image_shape,
-                )
-            return resident_chunk_memory.leftover_tile_budget_bytes(
-                memory_plan,
-                row_capacity=chunk.row_capacity,
-                image_capacity=chunk.image_capacity,
-                reserved_bytes=operand_bytes,
-                floor_bytes=tile_floor_bytes,
-                cap_bytes=cap_bytes,
+        operand_size_kwargs = (
+            None
+            if resident_operands is not None
+            else dict(
+                n_windowed=n_windowed,
+                n_recon_windowed=n_recon_windowed,
+                n_rect=n_rect,
+                n_shells=n_shells,
+                n_fine_trans=n_fine_trans,
+                precision_policy=precision_policy,
+                resolved_spectrum_norm=resolved_spectrum_norm,
+                premultiplied_ctf=ctf_premultiplied_pass,
+                image_shape=image_shape,
             )
-
+        )
+        chunk_tile_budget = partial(
+            tilt_chunk_tile_budget_bytes,
+            memory_plan=memory_plan,
+            floor_bytes=tile_floor_bytes,
+            explicit_floor=engine_tuning.translation_tile_max_bytes is not None,
+            unit_image_offsets=unit_image_offsets,
+            operand_size_kwargs=operand_size_kwargs,
+        )
         # The capped budgets size the blocks; the whole leftover only widens blocks the cap cuts small
         # (resident_tilt_mstep.mstep_translation_blocks).
         tile_budgets = [
-            tilt_chunk_tile_budget_bytes(chunk, resident_chunk_memory.MAX_LEFTOVER_TILE_BUDGET_BYTES) for chunk in chunks
+            chunk_tile_budget(chunk, cap_bytes=resident_chunk_memory.MAX_LEFTOVER_TILE_BUDGET_BYTES) for chunk in chunks
         ]
-        wide_tile_budgets = [tilt_chunk_tile_budget_bytes(chunk, None) for chunk in chunks]
+        wide_tile_budgets = [chunk_tile_budget(chunk, cap_bytes=None) for chunk in chunks]
         if tile_budgets:
             logger.info(
                 "Resident pass-2 tilt M-step translation tiles: %.2f-%.2f GiB per chunk, widening blocks up to "
