@@ -385,10 +385,21 @@ def unit_mstep_translations(
 # 48 KB of shared memory: 8 T bytes at one row per block for tilt images, whose angle tables stay in
 # global memory (relion_translate_sum.cuh).
 TILT_MSTEP_MAX_TRANSLATIONS = 2048
+# The block a chunk cut into smaller blocks takes when it keeps more translations than this and its uncapped
+# leftover holds them (relax#120). The cost follows the block structure, not the bytes or the translations alone
+# (per-chunk times, 80 GB tilt-series windows 16001863/64/901/902): merged blocks of a many-unit chunk gain from
+# width (64 units, k 2048: 32 x 64 blocks 3.02 s, 512 x 4 1.96 s; 32 units: 64 x 32 1.69 s, 512 x 4 1.18 s), but a
+# chunk whose translations fit one capped block loses when split (one unit, k 1176: one block 34.3 s, 512 x 3
+# 38.7 s; k 648: 0.78 s, 512 x 2 0.86 s), and one unmerged 512 block of 64 units loses to 64 x 8 (0.72 s, 0.61 s).
+TILT_MSTEP_BLOCK_TRANSLATIONS = 512
 
 
 def mstep_translation_blocks(
-    kept: MstepTranslations, *, bytes_per_translation: int, tile_budget_bytes: int
+    kept: MstepTranslations,
+    *,
+    bytes_per_translation: int,
+    tile_budget_bytes: int,
+    wide_tile_budget_bytes: int | None = None,
 ) -> tuple[MstepTranslations, ...]:
     """``kept`` in blocks of equal power-of-two size whose translated tiles fit ``tile_budget_bytes``.
 
@@ -396,13 +407,21 @@ def mstep_translation_blocks(
     the per-row gather's block rows, times the Wavg rectangle and exact pixels, complex64). Blocks also
     stay within the translate-and-sum kernel's table limit (``TILT_MSTEP_MAX_TRANSLATIONS``). One block
     when ``kept`` fits; otherwise every block has the largest power of two that fits (at least one),
-    the last padded with ``valid`` false.
+    the last padded with ``valid`` false. Blocks of fewer than ``TILT_MSTEP_BLOCK_TRANSLATIONS`` of more
+    than that many translations take ``TILT_MSTEP_BLOCK_TRANSLATIONS`` when ``wide_tile_budget_bytes``
+    (the chunk's uncapped leftover) holds them.
     """
 
-    fit = min(max(int(tile_budget_bytes) // max(int(bytes_per_translation), 1), 1), TILT_MSTEP_MAX_TRANSLATIONS)
-    if kept.index.size <= fit:
+    per_translation = max(int(bytes_per_translation), 1)
+    fit = min(max(int(tile_budget_bytes) // per_translation, 1), TILT_MSTEP_MAX_TRANSLATIONS)
+    n = int(kept.index.size)
+    if n <= fit:
         return (kept,)
     block = pow2_floor(fit)
+    wide = TILT_MSTEP_BLOCK_TRANSLATIONS
+    widens = wide_tile_budget_bytes is not None and int(wide_tile_budget_bytes) // per_translation >= wide
+    if block < wide < n and widens:
+        block = wide
     out = []
     for start in range(0, kept.index.size, block):
         index = kept.index[start : start + block]

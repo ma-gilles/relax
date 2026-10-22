@@ -204,6 +204,7 @@ def run_tilt_chunk(
     rect_indices_device,
     exact_positions_device,
     tile_budget_bytes: int,
+    wide_tile_budget_bytes: int | None = None,
     operand_image_start: int = 0,
     slot_block: int | None = None,
     score_pixel_indices=None,
@@ -238,7 +239,8 @@ def run_tilt_chunk(
       translated tiles cover only those (the dropped terms carry exactly zero posterior).
     - Memory: the translated Wavg tiles of one slot are ``[C_U, T_b, P_rect]`` (the slot view), for blocks
       of ``T_b`` of the particles' ``k`` translations, sized to fit ``tile_budget_bytes``
-      (:func:`tilt_mstep_tile_bytes`, :func:`mstep_translation_blocks`); ``mstep_census`` records each
+      (:func:`tilt_mstep_tile_bytes`, :func:`mstep_translation_blocks`; ``wide_tile_budget_bytes``, the
+      chunk's uncapped leftover, widens blocks the budget cuts small); ``mstep_census`` records each
       chunk's ``k`` and blocks (:class:`TiltMstepCensus`). Every translation block repeats the M-step
       block bodies of the slot's rows, so a block holds as many translations as fit (relax#82).
     - K>1 classes (RELION subtomogram Class3D): a particle's rows are class-major (the candidate
@@ -559,7 +561,10 @@ def run_tilt_chunk(
         block_rows=block_rows,
     )
     translation_blocks = mstep_translation_blocks(
-        unit_kept, bytes_per_translation=bytes_per_translation, tile_budget_bytes=int(tile_budget_bytes)
+        unit_kept,
+        bytes_per_translation=bytes_per_translation,
+        tile_budget_bytes=int(tile_budget_bytes),
+        wide_tile_budget_bytes=wide_tile_budget_bytes,
     )
     # Several blocks merge each row's partials in a [C_R, recon pixels] pair before its one adjoint
     # (relax#27); the pair's bytes come out of the tiles' budget.
@@ -576,6 +581,9 @@ def run_tilt_chunk(
             unit_kept,
             bytes_per_translation=bytes_per_translation,
             tile_budget_bytes=max(int(tile_budget_bytes) - row_sum_bytes, 0),
+            wide_tile_budget_bytes=(
+                None if wide_tile_budget_bytes is None else max(int(wide_tile_budget_bytes) - row_sum_bytes, 0)
+            ),
         )
     if mstep_census is not None:
         mstep_census.add(n_unit_trans, translation_blocks[0].index.size, len(translation_blocks))

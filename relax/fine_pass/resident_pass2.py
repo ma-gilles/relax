@@ -2443,7 +2443,7 @@ def _resident_pass2(
             device_memory_bytes, override=engine_tuning.translation_tile_max_bytes, has_external_normalization=False
         )
 
-        def tilt_chunk_tile_budget_bytes(chunk):
+        def tilt_chunk_tile_budget_bytes(chunk, cap_bytes):
             if engine_tuning.translation_tile_max_bytes is not None:
                 return tile_floor_bytes
             operand_bytes = 0
@@ -2467,15 +2467,22 @@ def _resident_pass2(
                 image_capacity=chunk.image_capacity,
                 reserved_bytes=operand_bytes,
                 floor_bytes=tile_floor_bytes,
+                cap_bytes=cap_bytes,
             )
 
-        tile_budgets = [tilt_chunk_tile_budget_bytes(chunk) for chunk in chunks]
+        # The capped budgets size the blocks; the whole leftover only widens blocks the cap cuts small
+        # (resident_tilt_mstep.mstep_translation_blocks).
+        tile_budgets = [
+            tilt_chunk_tile_budget_bytes(chunk, resident_chunk_memory.MAX_LEFTOVER_TILE_BUDGET_BYTES) for chunk in chunks
+        ]
+        wide_tile_budgets = [tilt_chunk_tile_budget_bytes(chunk, None) for chunk in chunks]
         if tile_budgets:
             logger.info(
-                "Resident pass-2 tilt M-step translation tiles: %.2f-%.2f GiB per chunk (chunk budget %s GiB, "
-                "largest chunk peak %.2f GiB, device share %.2f GiB)",
+                "Resident pass-2 tilt M-step translation tiles: %.2f-%.2f GiB per chunk, widening blocks up to "
+                "%.2f GiB (chunk budget %s GiB, largest chunk peak %.2f GiB, device share %.2f GiB)",
                 min(tile_budgets) / float(1024**3),
                 max(tile_budgets) / float(1024**3),
+                max(wide_tile_budgets) / float(1024**3),
                 "none" if memory_plan.budget_bytes is None else f"{memory_plan.budget_bytes / float(1024**3):.2f}",
                 memory_plan.peak_bytes / float(1024**3),
                 tile_floor_bytes / float(1024**3),
@@ -2553,6 +2560,7 @@ def _resident_pass2(
                         rect_indices_device=rect_indices_device,
                         exact_positions_device=exact_positions_device,
                         tile_budget_bytes=tile_budgets[chunk_index],
+                        wide_tile_budget_bytes=wide_tile_budgets[chunk_index],
                         slot_block=chunk_slot_block,
                         mstep_census=mstep_census,
                         row_partial=row_partial,

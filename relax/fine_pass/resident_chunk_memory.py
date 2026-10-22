@@ -506,12 +506,19 @@ def overflow_row_capacity(max_image_rows: int, row_capacity_ladder) -> int:
 # The most a chunk's leftover gives its translated tiles (relax#120). Leftovers of 19-30 GiB on an 80 GB card put
 # whole chunks' translations in one M-step block, and the local iteration 18 of the tilt-series run took 728 s
 # against 714-715 s at the card's 1.43 GiB device share (two same-node pairs, 15964005); 1.5 GiB ran the 16 GB
-# final iteration in 1409 s (15947763), 1304 s on the 80 GB card.
+# final iteration in 1409 s (15947763), 1304 s on the 80 GB card. The uncapped leftover (``cap_bytes=None``) only
+# widens blocks the cap cuts small (resident_tilt_mstep.TILT_MSTEP_BLOCK_TRANSLATIONS).
 MAX_LEFTOVER_TILE_BUDGET_BYTES = 3 << 29
 
 
 def leftover_tile_budget_bytes(
-    plan: ResidentChunkMemoryPlan, *, row_capacity: int, image_capacity: int, reserved_bytes: int, floor_bytes: int
+    plan: ResidentChunkMemoryPlan,
+    *,
+    row_capacity: int,
+    image_capacity: int,
+    reserved_bytes: int,
+    floor_bytes: int,
+    cap_bytes: int | None = MAX_LEFTOVER_TILE_BUDGET_BYTES,
 ) -> int:
     """The translated-tile budget of a chunk whose M-step tiles the chunk plan does not count (the tilt M-step).
 
@@ -519,8 +526,8 @@ def leftover_tile_budget_bytes(
     translation tiles and M-step block together); a chunk of ``row_capacity`` rows and ``image_capacity`` images
     fills it up to its own peak (:meth:`ResidentChunkMemoryPlan.chunk_peak_bytes`). The tiles take what is left
     after ``reserved_bytes`` (what else lives beside the chunk's M-step that the plan does not count), at most
-    :data:`MAX_LEFTOVER_TILE_BUDGET_BYTES` and never less than ``floor_bytes`` (the fixed device share they had
-    before). Without a budget the floor stands. A fixed 2% of
+    ``cap_bytes`` (:data:`MAX_LEFTOVER_TILE_BUDGET_BYTES`; None for the whole leftover) and never less than
+    ``floor_bytes`` (the fixed device share they had before). Without a budget the floor stands. A fixed 2% of
     the device gave a 16 GB card's final tilt iteration 8 translations per M-step block at current size 256: one
     half's pass 2 took 9341 s, where the 80 GB card ran the whole iteration in 1316 s (relax#120).
     """
@@ -529,7 +536,9 @@ def leftover_tile_budget_bytes(
         return int(floor_bytes)
     peak = plan.chunk_peak_bytes(row_capacity, image_capacity)
     leftover = int(plan.budget_bytes) - int(peak) - int(reserved_bytes)
-    return max(int(floor_bytes), min(leftover, MAX_LEFTOVER_TILE_BUDGET_BYTES))
+    if cap_bytes is not None:
+        leftover = min(leftover, int(cap_bytes))
+    return max(int(floor_bytes), leftover)
 
 
 def max_image_rows(row_offsets) -> int:
