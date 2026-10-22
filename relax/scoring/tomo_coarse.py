@@ -34,6 +34,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
+from relax.fine_pass.resident_statistics import resident_image_capacity
 from relax.runtime import memory_budget
 from relax.runtime.shape_buckets import pow2_ceil, pow2_floor
 from relax.scoring.exact_cut import (
@@ -364,7 +365,9 @@ def _undecided_scorer_rotations(
     n_particles, capacity = (int(n) for n in ids.shape)
     table = None
     if unit_rotation_rows is not None:
-        table = np.zeros((n_particles, max(int(np.max(rotation_counts)), 1)), dtype=np.int32)
+        # ``r_pad`` columns, not the flush's largest count (a new width every flush): the program reads a row's
+        # columns below its count only.
+        table = np.zeros((n_particles, int(r_pad)), dtype=np.int32)
         for p, rows in enumerate(unit_rotation_rows):
             table[p, : rows.size] = rows
         table = jnp.asarray(table)
@@ -387,6 +390,24 @@ def _undecided_scorer_rotations(
         group=max(1, int(np.sqrt(_UNDECIDED_ROTATION_CALL_BYTES / (36.0 * slots * capacity)))),
         pass1_rotations=pass1_rotations,
     )
+
+
+def _exact_cut_eulers(coarse_eulers_deg, *, local: bool):
+    """The coarse grid's Euler angles ``[R, 3]`` float32 on the device, as the exact cut gathers them.
+
+    A local search's grid is the union of its particles' local rotations, a new size for each half in each iteration
+    (928,738 and 950,302 rows at iteration 24 of the real tilt-series case), and its length keyed
+    :func:`_lay_out_undecided_rotations` again every time (10 of the 13 real compiles of a constant-size local
+    iteration, explain job 15973107). Its rows are padded with zeros to the capacity class of the grid
+    (:func:`relax.fine_pass.resident_statistics.resident_image_capacity`, as the pass's rotation-mass accumulator):
+    the program reads only the rows a particle's own rotations name. A global grid keeps its length.
+    """
+
+    eulers = np.asarray(coarse_eulers_deg, dtype=np.float32)
+    if local and eulers.shape[0] > 0:
+        padding = np.zeros((resident_image_capacity(eulers.shape[0]) - eulers.shape[0], 3), np.float32)
+        eulers = np.concatenate([eulers, padding])
+    return jnp.asarray(eulers)
 
 
 @partial(
@@ -1368,7 +1389,7 @@ def particle_coarse_supports(
         "%.2f GiB flush budget)", flush_size, n_units, p_pad_all, by_diff2, by_device, budget.flush / 2**30,
     )
     class_full = [None] * n_classes  # each class's full projector for the direct-square kernel, built on first use
-    eulers_f32 = jnp.asarray(np.asarray(coarse_eulers_deg, dtype=np.float32))  # the exact cut's rotations, gathered on the device
+    eulers_f32 = _exact_cut_eulers(coarse_eulers_deg, local=local)  # gathered on the device by the exact cut
     rescored, n_scored, full_sorted = [], 0, []
     supports, pmax_by_unit, count_by_unit = [{} for _ in range(n_classes)], {}, {}
     last_total = None

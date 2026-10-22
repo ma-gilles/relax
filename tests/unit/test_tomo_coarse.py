@@ -1197,6 +1197,47 @@ def test_undecided_scorer_rotations_are_the_rotation_kernels_per_particle(gpu_de
         _check_undecided_scorer_rotations(pass1_rotations_left_f32, local, random_perturbation, reference=reference)
 
 
+def test_exact_cut_eulers_pad_a_local_grid_to_its_capacity_class_and_keep_the_layout_bitwise():
+    """A local search's compact grid is padded with zero rows to its capacity class (the two grids of iteration 24
+    of the real tilt-series case, and of iteration 11, share one class each), a global grid keeps its length, and the
+    exact cut's scorer matrices from the padded table are bitwise those from the grid itself."""
+
+    from relax.fine_pass.resident_statistics import resident_image_capacity
+
+    for sizes in ((928_738, 950_302), (131_222, 135_021)):
+        assert len({resident_image_capacity(n) for n in sizes}) == 1
+    rng = np.random.default_rng(11)
+    eulers = rng.uniform(-180.0, 180.0, size=(1000, 3))
+    assert tomo_coarse._exact_cut_eulers(eulers, local=False).shape == (1000, 3)
+    padded = np.asarray(tomo_coarse._exact_cut_eulers(eulers, local=True))
+    assert padded.shape == (resident_image_capacity(1000), 3) and padded.shape[0] > 1000
+    assert np.array_equal(padded[:1000].view(np.uint32), eulers.astype(np.float32).view(np.uint32))
+    assert not padded[1000:].any()
+
+    def pass1_rotations(eulers_deg, right_f32, left_matrices):
+        e = jnp.asarray(eulers_deg, dtype=jnp.float32)
+        base = jnp.sin(e[:, :, None] * jnp.float32(0.01) + jnp.arange(3, dtype=jnp.float32)[None, None, :])
+        return jnp.asarray(left_matrices, dtype=jnp.float32)[:, None, :, :] * base[None, :, :, :]
+
+    n_particles, slots, capacity, r_pad = 6, 3, 8, 128
+    counts = np.array([97, 120, 1, 64, 128, 33])
+    unit_rows = [np.sort(rng.choice(1000, size=int(c), replace=False)) for c in counts]
+    particle_left = [rng.normal(size=(int(n), 3, 3)) for n in (3, 1, 2, 3, 2, 3)]
+    ids = rng.integers(0, r_pad, size=(n_particles, capacity)).astype(np.int32)
+    use = rng.random((n_particles, capacity)) < 0.8
+    layouts = [
+        np.asarray(
+            tomo_coarse._undecided_scorer_rotations(
+                jnp.asarray(ids), jnp.asarray(use), counts, unit_rows, table, particle_left, 0.0, 15.0,
+                r_pad=r_pad, slots=slots, pass1_rotations=pass1_rotations,
+            )
+        )
+        for table in (jnp.asarray(eulers.astype(np.float32)), jnp.asarray(padded))
+    ]
+    assert layouts[0].any()
+    assert np.array_equal(layouts[0].view(np.uint32), layouts[1].view(np.uint32))
+
+
 def _check_undecided_scorer_rotations(pass1_rotations, local, random_perturbation, reference):
     rng = np.random.default_rng(7)
     n_particles, slots, capacity, n_rot, r_pad = 5, 4, 3, 11, 16
