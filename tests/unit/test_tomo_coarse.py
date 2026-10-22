@@ -304,6 +304,89 @@ def test_cells_capacity_is_the_power_of_four_class_that_holds_the_cells():
     assert len({tomo_coarse._cells_capacity(n) for n in pow2_sizes}) == 9
 
 
+@pytest.mark.parametrize("limit", [5, 16, 64, 300])
+@pytest.mark.parametrize("width", [1, 4, 16])
+def test_window_rows_are_first_rows_columns(limit, width):
+    """Each window of :func:`_window_rows` is that slice of ``first_rows`` at capacity ``limit``: the same ids and
+    slots in use, zero ids past a row's count, nothing past ``limit``."""
+
+    from relax.scoring.exact_cut import first_rows
+
+    rng = np.random.default_rng(width * 1000 + limit)
+    rows = rng.random((7, 300)) < rng.uniform(0.0, 0.6, size=(7, 1))
+    rows[0] = False
+    capacity = -(-limit // width) * width
+    ids, use = (np.asarray(v) for v in first_rows(jnp.asarray(rows), capacity=capacity))
+    use = use & (np.arange(capacity) < limit)[None, :]
+    ids = np.where(use, ids, 0)
+    for first in range(0, capacity, width):
+        got_ids, got_use = (
+            np.asarray(v)
+            for v in tomo_coarse._window_rows(jnp.asarray(rows), jnp.int32(first), jnp.int32(limit), width=width)
+        )
+        np.testing.assert_array_equal(got_use, use[:, first : first + width])
+        np.testing.assert_array_equal(np.where(got_use, got_ids, 0), ids[:, first : first + width])
+        np.testing.assert_array_equal(got_ids[~got_use], 0)
+
+
+@pytest.mark.gpu
+@pytest.mark.parametrize("rows_per_call", [256, 16], ids=["windows_of_64", "windows_of_16"])
+def test_group_rescore_in_chunks_and_windows_is_the_one_call_rescore(gpu_device, rows_per_call):
+    """The group rescore (``_RESCORE_GROUP_PARTICLES`` particles and at most ``_RESCORE_WINDOW_ROWS`` rotations per
+    call) with RELION's direct-square kernel: the diff2 and counts are bitwise those of scoring every group
+    particle's undecided rotations in one call, for 19 of 21 flush particles (two chunks, the second padded) with
+    up to 230 undecided rotations each (four windows of 64)."""
+
+    import jax
+    from recovar.cuda_backproject import custom_cuda_requested
+
+    from relax.scoring.exact_cut import first_rows
+
+    if not custom_cuda_requested():
+        pytest.skip("custom CUDA is disabled")
+    with jax.default_device(gpu_device):
+        n_particles, n_slots, n_rot, n_trans, capacity = 21, 2, 256, 24, 256
+        rng = np.random.default_rng(41)
+        f = _gemm_fixture(rng, n_images=n_particles * n_slots, n_rot=n_rot, n_trans=n_trans)
+        layout = f["layout"]
+        rotation_table = jnp.asarray(f["rotations"].reshape(n_particles, n_slots, n_rot, 3, 3))
+        operands = (
+            jnp.asarray(f["images"]).reshape(n_particles, n_slots, -1),
+            jnp.asarray(f["weight"]).reshape(n_particles, n_slots, -1),
+            jnp.asarray(f["initial"]).reshape(n_particles, n_slots),
+            jnp.asarray(f["angles"]).reshape(n_particles, n_slots, n_trans, 2),
+        )
+        counts = rng.integers(9, 231, size=n_particles)
+        rows = np.zeros((n_particles, n_rot), bool)
+        for p_, c in enumerate(counts):
+            rows[p_, rng.choice(n_rot, size=int(c), replace=False)] = True
+        diff2 = jnp.asarray(rng.uniform(100.0, 200.0, size=(n_particles, n_rot, n_trans)).astype(np.float32))
+        scored = jnp.zeros(n_particles, jnp.int32)
+        positions = np.setdiff1d(np.arange(n_particles), [3, 17])
+
+        def rescore(units, values, ids, use, group_operands):
+            row_rotations = jnp.take_along_axis(rotation_table[np.asarray(units)], ids[:, None, :, None, None], axis=2)
+            return tomo_coarse._exact_rows_diff2(
+                values, ids, use, row_rotations, (f["full"],), *group_operands, layout.full_to_compact,
+                r_pad=n_rot, current_size=layout.current_size, physical_image_size=f["box"],
+                model_max_r=f["max_r"], padding_factor=f["pad"],
+            )
+
+        got, got_scored = tomo_coarse._rescore_group(
+            rescore, lambda n_pad: rows_per_call, np.arange(n_particles), diff2, scored, jnp.asarray(rows),
+            operands, positions, capacity,
+        )
+        ids, use = first_rows(jnp.asarray(rows[positions]), capacity=capacity)
+        one_call = rescore(positions, diff2[positions], ids, use, tuple(v[positions] for v in operands))
+        want = np.asarray(diff2).copy()
+        want[positions] = np.asarray(one_call)
+        want_scored = np.zeros(n_particles, np.int32)
+        want_scored[positions] = counts[positions]
+        assert not np.array_equal(want, np.asarray(diff2))
+        np.testing.assert_array_equal(np.asarray(got).view(np.uint32), want.view(np.uint32))
+        np.testing.assert_array_equal(np.asarray(got_scored), want_scored)
+
+
 def test_shared_frames_group_a_tomograms_particles_and_rank_frames_in_slot_order():
     """Images with one left matrix are one frame; the frames are ranked in an order every particle's slots follow,
     and the particles sharing frames go together. None when frames hold fewer than two images on average, when a

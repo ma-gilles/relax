@@ -484,25 +484,78 @@ def _exact_rows_diff2(
     return diff2
 
 
-@partial(jax.jit, static_argnames=("capacity",))
-def _take_rescore_group(rows, exact, operands, take, n, *, capacity: int):
-    """The rows, operands and diff2 of a rescore group's flush particles ``take`` (``[n_pad]``, the first ``n``
-    real), its undecided rotations (``first_rows`` at ``capacity``) and which of them it scores (none on padding).
-    One program in place of the group's eager gathers, each compiled for every new group shape (relax#115)."""
-
-    ids, use = first_rows(rows[take], capacity=capacity)
-    use = use & (jnp.arange(take.shape[0]) < n)[:, None]
-    return ids, use, tuple(value[take] for value in operands), exact[take]
+# Flush particles scored again in one rescore call of a group (padded to a power of two), and undecided rotations
+# per particle in one call: the call shapes [particles, rows] of the group rescore are then at most 5 x 4 for a
+# current size, where a group's own particle count and capacity (powers of two up to 1024 and 8192) gave 66 shapes
+# and 152 compiles of the group gather per run of the real tilt-series case (census 1f09764b, single-counted).
+_RESCORE_GROUP_PARTICLES = 16
+_RESCORE_WINDOW_ROWS = 64
 
 
 @jax.jit
-def _put_rescore_group(exact, scored, group_exact, group_use, take, n):
+def _take_rescore_group(rows, exact, operands, take, n):
+    """The undecided rotations, operands and diff2 of a rescore group's flush particles ``take`` (``[n_pad]``, the
+    first ``n`` real; the padding's rows are cleared, so it scores nothing). One program in place of the group's
+    eager gathers, each compiled for every new group shape (relax#115)."""
+
+    group_rows = rows[take] & (jnp.arange(take.shape[0]) < n)[:, None]
+    return group_rows, tuple(value[take] for value in operands), exact[take]
+
+
+@partial(jax.jit, static_argnames=("width",))
+def _window_rows(rows, start, limit, *, width: int):
+    """Columns ``start`` to ``start + width`` of :func:`relax.scoring.exact_cut.first_rows` of ``rows`` ``[B, N]`` at
+    capacity ``limit`` (both traced): each row's true columns of rank ``start`` onwards (int32, ascending; zero past
+    the row's count) and which of the ``width`` slots hold one."""
+
+    n_images, n_rows = rows.shape
+    rank = jnp.cumsum(rows, axis=1, dtype=jnp.int32) - 1
+    position = rank - start
+    # A column outside the window writes past the end, which the scatter drops.
+    position = jnp.where(rows & (position >= 0) & (position < width) & (rank < limit), position, width)
+    ids = jnp.zeros((n_images, width), jnp.int32).at[jnp.arange(n_images)[:, None], position].set(
+        jnp.broadcast_to(jnp.arange(n_rows, dtype=jnp.int32), rows.shape), mode="drop"
+    )
+    count = jnp.minimum(jnp.sum(rows, axis=1, dtype=jnp.int32), limit)
+    return ids, jnp.arange(width, dtype=jnp.int32)[None, :] < (count - start)[:, None]
+
+
+@jax.jit
+def _put_rescore_group(exact, scored, group_exact, group_rows, limit, take, n):
     """``exact`` with a rescore group's diff2 written back to its real particles, and ``scored`` with their counts
-    of rotations scored again; the padding writes past the end, which the scatters drop."""
+    of rotations scored again (their undecided rotations, at most ``limit``); the padding writes past the end,
+    which the scatters drop."""
 
     back = jnp.where(jnp.arange(take.shape[0]) < n, take, exact.shape[0])
-    group_scored = jnp.sum(group_use, axis=1, dtype=jnp.int32)
+    group_scored = jnp.minimum(jnp.sum(group_rows, axis=1, dtype=jnp.int32), limit)
     return exact.at[back].set(group_exact, mode="drop"), scored.at[back].set(group_scored, mode="drop")
+
+
+def _rescore_group(rescore, rows_per_call, units_all, exact, scored, rows, operands, positions, group_capacity):
+    """``exact`` with the undecided rotations ``rows`` of the flush particles ``positions`` scored again by
+    ``rescore(units, diff2, ids, use, operands)``, up to ``group_capacity`` each, and ``scored`` with their counts
+    of rotations scored again.
+
+    The particles go ``_RESCORE_GROUP_PARTICLES`` at a time, padded to a power of two (the padding scores nothing
+    and writes nothing back), and their rotations ``_RESCORE_WINDOW_ROWS`` at a time (fewer where
+    ``rows_per_call(n_pad)``, the rescore bytes' bound, is smaller): a rotation's direct square depends on neither
+    the other particles nor the other rotations of its call, so the call shapes stay few and the scores are those
+    of one call."""
+
+    limit = jnp.int32(group_capacity)
+    for start in range(0, int(positions.size), _RESCORE_GROUP_PARTICLES):
+        chunk = positions[start : start + _RESCORE_GROUP_PARTICLES]
+        n = int(chunk.size)
+        n_pad = pow2_ceil(n)
+        take = np.concatenate([chunk, np.full(n_pad - n, chunk[-1])]).astype(np.int64)
+        take_device, n_device = jnp.asarray(take, dtype=jnp.int32), jnp.int32(n)
+        group_rows, group_operands, group_exact = _take_rescore_group(rows, exact, operands, take_device, n_device)
+        per_call = min(_RESCORE_WINDOW_ROWS, int(rows_per_call(n_pad)))
+        for first in range(0, group_capacity, per_call):
+            ids, use = _window_rows(group_rows, jnp.int32(first), limit, width=per_call)
+            group_exact = rescore(units_all[take], group_exact, ids, use, group_operands)
+        exact, scored = _put_rescore_group(exact, scored, group_exact, group_rows, limit, take_device, n_device)
+    return exact, scored
 
 
 @jax.jit
@@ -1516,24 +1569,11 @@ def particle_coarse_supports(
         )
 
     def rescore_group(units_all, exact, scored, rows, operands, positions, group_capacity):
-        """``exact`` with the undecided rotations of the flush particles ``positions`` scored again, up to
-        ``group_capacity`` each, and ``scored`` with their counts of rotations scored again. The group is padded to
-        a power of two of particles (the padding scores nothing and writes nothing back)."""
-
-        n = int(positions.size)
-        n_pad = pow2_ceil(n)
-        take = np.concatenate([positions, np.full(n_pad - n, positions[-1])]).astype(np.int64)
-        take_device, n_device = jnp.asarray(take, dtype=jnp.int32), jnp.int32(n)
-        group_ids, group_use, group_operands, group_exact = _take_rescore_group(
-            rows, exact, operands, take_device, n_device, capacity=group_capacity
+        return _rescore_group(
+            rescore,
+            lambda n_pad: _rescore_rows_per_call(n_pad, slots, n_coarse_trans, rescore_bytes, group_capacity),
+            units_all, exact, scored, rows, operands, positions, group_capacity,
         )
-        per_call = _rescore_rows_per_call(n_pad, slots, n_coarse_trans, rescore_bytes, group_capacity)
-        for first in range(0, group_capacity, per_call):
-            chunk = slice(first, first + per_call)
-            group_exact = rescore(
-                units_all[take], group_exact, group_ids[:, chunk], group_use[:, chunk], group_operands
-            )
-        return _put_rescore_group(exact, scored, group_exact, group_use, take_device, n_device)
 
     def exact_cut_again(cut_operands, unresolved):
         """The flush's exact cut at the size its undecided rotations need (read from the device): every rotation
