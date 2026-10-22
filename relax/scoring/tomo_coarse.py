@@ -267,6 +267,17 @@ def _significant_cells(mask, *, capacity: int, row_length: int):
     return jnp.where(cell >= 0, row_ids[cell // row_length] * row_length + cell % row_length, -1)
 
 
+def _cells_capacity(n_cells: int) -> int:
+    """The compaction size of a flush's ``n_cells`` significant cells: the smallest power of four at least
+    ``n_cells`` (and 4). :func:`_significant_cells` takes it as a static argument, and the flushes' counts span
+    128 to 8M cells in one global iteration (14 sizes and 14 real compiles at powers of two, iteration 7 of the
+    real tilt-series case, explain job 15973107); powers of four halve the sizes. The ids past the count are -1
+    and cropped, so the cells are the same at any size that holds them."""
+
+    bits = (max(int(n_cells), 4) - 1).bit_length()
+    return 1 << (bits + (bits & 1))
+
+
 # Rotations per particle whose samples the adaptive-fraction rule sorts (exact_cut.undecided_rotations).
 _SORTED_ROTATIONS = 256
 
@@ -1397,8 +1408,8 @@ def particle_coarse_supports(
     # The last flush's device results, read back by the next flush: by then the GPU holds the batches
     # queued after them, so the readback waits for nothing and the host's bookkeeping overlaps them.
     in_flight = None
-    # The flush's compaction size, a guess from the previous flush's significant cells (2x margin); a
-    # flush whose cells overflow it is compacted again at its exact size.
+    # The flush's compaction size, a guess from the previous flush's significant cells (2x margin, then the
+    # power-of-four class); a flush whose cells overflow it is compacted again at its own count's class.
     cells_capacity = 0
 
     def rotation_prior_of(batch_units):
@@ -1602,12 +1613,10 @@ def particle_coarse_supports(
         counts = np.asarray(counts, dtype=np.int64)
         n_significant = int(counts.sum())
         if flat is None or n_significant > int(flat.shape[0]):
-            flat = _significant_cells(
-                mask, capacity=pow2_ceil(n_significant), row_length=n_coarse_trans
-            )
+            flat = _significant_cells(mask, capacity=_cells_capacity(n_significant), row_length=n_coarse_trans)
         # The next flush's guess follows this flush, not the largest so far: one flat-posterior particle's
         # millions of cells kept every later flush compacting at its size (0.9 s per flush, relax#98's real case).
-        cells_capacity = pow2_ceil(2 * n_significant, minimum=2)
+        cells_capacity = _cells_capacity(2 * n_significant)
         flat = np.asarray(flat, dtype=np.int64)[:n_significant]
         particle_pmax = np.asarray(pmax, dtype=np.float64)
         particle_count = np.asarray(cutoff_count, dtype=np.int64)

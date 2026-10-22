@@ -292,6 +292,18 @@ def test_significant_cells_are_the_first_true_cells_in_order(capacity):
     np.testing.assert_array_equal(got, want)
 
 
+def test_cells_capacity_is_the_power_of_four_class_that_holds_the_cells():
+    """A flush's compaction size is the smallest power of four that holds its cells (at least 4): the 14 power-of-two
+    sizes one global iteration of the real tilt-series case compiled fall into 9 classes."""
+
+    for n in [0, 1, 4, 5, 16, 17, 1000, 4096, 4097, 3_000_000]:
+        c = tomo_coarse._cells_capacity(n)
+        assert c >= max(n, 4) and c & (c - 1) == 0 and (c.bit_length() - 1) % 2 == 0
+        assert c // 4 < max(n, 4)
+    pow2_sizes = [128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 262144, 524288, 2097152, 4194304, 8388608]
+    assert len({tomo_coarse._cells_capacity(n) for n in pow2_sizes}) == 9
+
+
 def test_shared_frames_group_a_tomograms_particles_and_rank_frames_in_slot_order():
     """Images with one left matrix are one frame; the frames are ranked in an order every particle's slots follow,
     and the particles sharing frames go together. None when frames hold fewer than two images on average, when a
