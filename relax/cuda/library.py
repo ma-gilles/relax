@@ -20,6 +20,9 @@ TARGET_PROJECT_RELION_HALF_RUNTIME = "cuda_project_relion_half_runtime"
 TARGET_PROJECT_RELION_HALF_IMAGE_RADIUS = "cuda_project_relion_half_image_radius"
 TARGET_PROJECT_RELION_HALF_CAPACITY_TEXTURE = "cuda_project_relion_half_capacity_texture"
 TARGET_PROJECT_RELION_HALF_CAPACITY_TEXTURE_COMPACT_PACKED = "cuda_project_relion_half_capacity_texture_compact_packed"
+TARGET_PROJECT_RELION_HALF_CAPACITY_TEXTURE_COMPACT_PACKED_ENERGY = (
+    "cuda_project_relion_half_capacity_texture_compact_packed_energy"
+)
 TARGET_RELION_PROJECTOR_HALF_TEXTURE_F32 = "cuda_relion_projector_half_texture_f32"
 TARGET_RELION_PROJECTOR_PERSISTENT_HALF_TEXTURE_F32 = "cuda_relion_projector_persistent_half_texture_f32"
 TARGET_RELION_FUSED_X_HALF_BP = "cuda_relion_fused_x_half_bp"
@@ -244,6 +247,11 @@ OPTIONAL_FFI_REGISTRATIONS = {
     TARGET_PROJECT_RELION_HALF_CAPACITY_TEXTURE_COMPACT_PACKED: (
         "ProjectRelionHalfCapacityTextureCompactPacked",
         "Packed coarse GEMM rows require ProjectRelionHalfCapacityTextureCompactPacked; explicitly rebuild the custom CUDA library",
+    ),
+    TARGET_PROJECT_RELION_HALF_CAPACITY_TEXTURE_COMPACT_PACKED_ENERGY: (
+        "ProjectRelionHalfCapacityTextureCompactPackedEnergy",
+        "Packed coarse GEMM rows with their model energy require ProjectRelionHalfCapacityTextureCompactPackedEnergy; "
+        "explicitly rebuild the custom CUDA library",
     ),
     TARGET_RELION_FINE_DIFF2_RECTANGULAR_MASKED_F32: (
         "RelionFineDiff2RectangularMaskedF32",

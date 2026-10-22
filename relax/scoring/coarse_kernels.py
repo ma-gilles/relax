@@ -228,6 +228,7 @@ def relion_coarse_gemm_terms(
     n_images: int,
     n_trans: int,
     wide,
+    model_energy=None,
 ):
     """RELION's coarse cross and model-energy terms as two real-packed GEMMs.
 
@@ -239,7 +240,10 @@ def relion_coarse_gemm_terms(
     :func:`relax.projection.projection.project_relion_coarse_packed_rows`). ``X`` is one real GEMM over ``[Re, Im]``-packed operands
     (the complex product's imaginary half is never formed) and ``A`` is a second
     GEMM. Both run at ``wide`` precision with an explicit full-precision dot
-    algorithm (float32 never falls to TF32).
+    algorithm (float32 never falls to TF32). A given ``model_energy`` ``[B, R]``
+    (the projection kernel's own sum,
+    :func:`relax.projection.projection.project_relion_coarse_packed_rows_energy`)
+    replaces the second GEMM.
     """
 
     active = jnp.arange(n_images, dtype=jnp.int32) < jnp.asarray(
@@ -276,12 +280,15 @@ def relion_coarse_gemm_terms(
         precision=algorithm,
         preferred_element_type=wide,
     ).reshape(n_images, n_trans, -1)
-    model_energy = jax.lax.dot(
-        weight,
-        (reference_re * reference_re + reference_im * reference_im).T,
-        precision=algorithm,
-        preferred_element_type=wide,
-    )
+    if model_energy is None:
+        model_energy = jax.lax.dot(
+            weight,
+            (reference_re * reference_re + reference_im * reference_im).T,
+            precision=algorithm,
+            preferred_element_type=wide,
+        )
+    else:
+        model_energy = jnp.where(active[:, None], model_energy, 0).astype(wide)
     image_energy = jnp.sum(
         (shifted_re * shifted_re + shifted_im * shifted_im) * weight[:, None, :],
         axis=-1,
@@ -310,6 +317,7 @@ def relion_coarse_gaussian_gemm_scores_jit(
     float64: bool = False,
     translation_major: bool = False,
     return_model_energy: bool = False,
+    model_energy=None,
 ):
     """Score exact RELION coarse operands with two real-packed GEMMs.
 
@@ -321,7 +329,8 @@ def relion_coarse_gaussian_gemm_scores_jit(
     Scores are ``[B, R, T]``, or ``[B, T, R]`` (the GEMM's own layout, the same
     values) with ``translation_major``. ``return_model_energy`` also returns the
     model energy ``A`` ``[B, R]`` the scores were assembled from (the scores are
-    the same program's either way).
+    the same program's either way). A given ``model_energy`` ``[B, R]`` is used
+    for ``A`` instead of its GEMM (:func:`relion_coarse_gemm_terms`).
     """
 
     del projected_reference_abs2, image_shape, volume_shape
@@ -335,6 +344,7 @@ def relion_coarse_gaussian_gemm_scores_jit(
         n_images=n_images,
         n_trans=n_trans,
         wide=wide,
+        model_energy=model_energy,
     )
     initial = jnp.where(active, initial_diff2, 0).astype(wide)
     half = jnp.asarray(0.5, dtype=wide)

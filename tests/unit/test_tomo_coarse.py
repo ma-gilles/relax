@@ -600,10 +600,53 @@ def _gemm_fixture(rng, *, n_images=3, n_rot=256, n_trans=200, box=32):
 
 
 @pytest.mark.gpu
-@pytest.mark.parametrize("persistent_texture", [False, True], ids=["complex_rows", "packed_rows"])
-def test_the_gemm_scorer_follows_relions_direct_square_kernel(gpu_device, persistent_texture):
+@pytest.mark.parametrize("box", [32, 72], ids=["2_pixel_blocks", "11_pixel_blocks"])
+def test_the_projection_kernels_model_energy_is_the_weighted_power_of_its_rows(gpu_device, box):
+    """The packed projection with its model energy: the rows are the packed projection's, and each row's energy is
+    sum_j w_j (Re_j^2 + Im_j^2) of its stored values with its own image's weights (float64 reference), for
+    images whose rotations do not fill whole blocks of four (rows of two images in one block, a last short block).
+    """
+
+    import jax
+    from recovar.cuda_backproject import custom_cuda_requested
+
+    from relax.projection.projection import project_relion_coarse_packed_rows, project_relion_coarse_packed_rows_energy
+
+    if not custom_cuda_requested():
+        pytest.skip("custom CUDA is disabled")
+    n_images, n_rot = 3, 130
+    with jax.default_device(gpu_device):
+        f = _gemm_fixture(np.random.default_rng(41), n_images=n_images, n_rot=n_rot, n_trans=3, box=box)
+        layout = f["layout"]
+        texture = tomo_coarse._coarse_capacity_texture(
+            f["half"], layout, model_max_r=f["max_r"], padding_factor=f["pad"], class_index=0
+        )
+        assert texture is not None
+        args = (texture, jnp.asarray(f["rotations"]), jnp.asarray(layout.score_indices_np, jnp.int32))
+        static = dict(image_shape=tuple(layout.image_shape), projector_output_size=int(layout.current_size))
+        packed = np.asarray(project_relion_coarse_packed_rows(*args, **static))
+        fused, energy = project_relion_coarse_packed_rows_energy(*args, jnp.asarray(f["weight"]), **static)
+        fused, energy = np.asarray(fused), np.asarray(energy)
+        texture.close_after(jnp.asarray(energy))
+    assert_matches(fused, packed, strict=True)
+    n_px = packed.shape[1] // 2
+    rows = packed.astype(np.float64).reshape(n_images, n_rot, 2 * n_px)
+    power = rows[..., :n_px] ** 2 + rows[..., n_px:] ** 2
+    expected = np.einsum("ip,irp->ir", f["weight"].astype(np.float64), power).reshape(-1)
+    assert energy.shape == (n_images * n_rot,) and energy.dtype == np.float32
+    assert_matches(energy, expected)
+
+
+@pytest.mark.gpu
+@pytest.mark.parametrize(
+    "persistent_texture, kernel_energy",
+    [(False, False), (True, False), (True, True)],
+    ids=["complex_rows", "packed_rows", "packed_rows_kernel_energy"],
+)
+def test_the_gemm_scorer_follows_relions_direct_square_kernel(gpu_device, persistent_texture, kernel_energy):
     """The coarse pass's GEMM scorer against the fused direct-square kernel, image by image, on the
-    complex projections and on the packed rows a persistent texture projects.
+    complex projections and on the packed rows a persistent texture projects, with the model energy from the
+    scorer's product or from the projection kernel (the slot-block programs' route).
 
     The two round differently (the expansion d0 + 0.5 A + 0.5 C - X against RELION's sum of
     squares), so they agree to a few float32 ULP of the terms' scale, not bitwise: 1.8e-6 of
@@ -625,14 +668,19 @@ def test_the_gemm_scorer_follows_relions_direct_square_kernel(gpu_device, persis
             if persistent_texture else None
         )
         assert (texture is not None) == persistent_texture
-        projected = _coarse_gemm_projections(
-            f["half"], jnp.asarray(f["rotations"]), layout, model_max_r=f["max_r"], padding_factor=f["pad"],
-            texture=texture,
-        ).reshape(f["n_images"], f["n_rot"], -1)
+        score_indices = jnp.asarray(layout.score_indices_np, jnp.int32)
+        projected, model_energy = tomo_coarse_gemm._score_window_projections(
+            f["half"], jnp.asarray(f["rotations"]), score_indices, image_shape=tuple(layout.image_shape),
+            current_size=int(layout.current_size), model_max_r=f["max_r"], padding_factor=f["pad"], texture=texture,
+            weight=jnp.asarray(f["weight"]),
+        )
+        projected = projected.reshape(f["n_images"], f["n_rot"], -1)
         assert projected.dtype == (jnp.float32 if persistent_texture else jnp.complex64)
+        assert (model_energy is not None) == persistent_texture
         gemm, bounds = tomo_coarse_gemm._images_coarse_gemm_diff2(
             projected, jnp.asarray(f["images"]), jnp.asarray(f["weight"]), jnp.asarray(f["initial"]),
-            jnp.asarray(f["angles"]), jnp.asarray(layout.score_indices_np, jnp.int32), image_shape=(f["box"], f["box"]),
+            jnp.asarray(f["angles"]), score_indices, model_energy if kernel_energy else None,
+            image_shape=(f["box"], f["box"]),
         )
         gemm, bounds = np.asarray(gemm), np.asarray(bounds)
         if texture is not None:

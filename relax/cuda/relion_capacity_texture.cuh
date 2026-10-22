@@ -494,20 +494,15 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(
 // each block on its setup (1.34x on H100 at 924 pixels, etobspeed 2026-10-15).
 constexpr int kCompactPackedRotationsPerBlock = 4;
 
-__global__ void __launch_bounds__(BLOCK_SIZE)
-project_capacity_texture_compact_packed_kernel(
-    cudaTextureObject_t texture,
-    float* __restrict__ out, const float* __restrict__ rot, const int32_t* __restrict__ crop_index,
-    int n_rotations, int n_compact, int image_h, int image_w, int tex_yinit, int tex_zinit, int upsampling,
-    int maxR2_padded, const int32_t* image_radius, float scale)
+// One pixel j of project_capacity_texture_compact_packed_kernel's rotations first..first + n_block - 1; with
+// kEnergy, e[n] is its weighted energy w (Re^2 + Im^2) of the stored values for rotation n.
+template <bool kEnergy>
+__device__ __forceinline__ void project_compact_packed_pixel(
+    cudaTextureObject_t texture, float* __restrict__ out, const float (*R)[6], const int32_t* __restrict__ crop_index,
+    int first, int n_block, int j, int n_compact, int image_h, int image_w, int tex_yinit, int tex_zinit,
+    int upsampling, int maxR2_padded, const int32_t* image_radius, float scale, const float* __restrict__ weight,
+    int rows_per_image, float* e)
 {
-    __shared__ float R[kCompactPackedRotationsPerBlock][6];
-    const int first = blockIdx.x * kCompactPackedRotationsPerBlock;
-    const int n_block = min(kCompactPackedRotationsPerBlock, n_rotations - first);
-    const int j = blockIdx.y * BLOCK_SIZE + threadIdx.x;
-    if (threadIdx.x < 6 * n_block) R[threadIdx.x / 6][threadIdx.x % 6] = rot[first * 6 + threadIdx.x];
-    __syncthreads();
-    if (j >= n_compact) return;
     const int pix = crop_index[j];
     const bool live = pix >= 0;
     const int radius = *image_radius;
@@ -516,6 +511,7 @@ project_capacity_texture_compact_packed_kernel(
             float* row = out + static_cast<int64_t>(first + n) * 2 * n_compact;
             row[j] = nanf("");
             row[n_compact + j] = nanf("");
+            if constexpr (kEnergy) e[n] = nanf("");
         }
         return;
     }
@@ -546,12 +542,72 @@ project_capacity_texture_compact_packed_kernel(
         float* row = out + static_cast<int64_t>(first + n) * 2 * n_compact;
         row[j] = __fmul_rn(re, scale);
         row[n_compact + j] = __fmul_rn(im, scale);
+        if constexpr (kEnergy) {
+            const float w = weight[static_cast<int64_t>((first + n) / rows_per_image) * n_compact + j];
+            const float re_s = __fmul_rn(re, scale), im_s = __fmul_rn(im, scale);
+            e[n] = __fmul_rn(w, __fadd_rn(__fmul_rn(re_s, re_s), __fmul_rn(im_s, im_s)));
+        }
     }
 }
 
-ffi::Error ProjectRelionHalfCapacityTextureCompactPackedImpl(
-    cudaStream_t stream, int64_t owner_handle, int64_t image_h, int64_t image_w, float scale,
-    ffi::AnyBuffer rot, ffi::AnyBuffer image_radius, ffi::AnyBuffer crop_index, ffi::Result<ffi::AnyBuffer> output)
+// kEnergy also writes each row's weighted energy over this block's pixels, energy[row, blockIdx.y] =
+// sum_j w_j (Re_j^2 + Im_j^2) of the scaled packed values, with w the row's image's pixel weights
+// (weight[(row / rows_per_image) * n_compact + j]); the caller adds the pixel blocks' partials in block order.
+// The sum is a fixed shared-memory tree over the block's threads, so the result is the same on every run; it
+// replaces the coarse GEMM scorer's model-energy product, whose summation order it does not keep.
+template <bool kEnergy>
+__global__ void __launch_bounds__(BLOCK_SIZE)
+project_capacity_texture_compact_packed_kernel(
+    cudaTextureObject_t texture,
+    float* __restrict__ out, const float* __restrict__ rot, const int32_t* __restrict__ crop_index,
+    int n_rotations, int n_compact, int image_h, int image_w, int tex_yinit, int tex_zinit, int upsampling,
+    int maxR2_padded, const int32_t* image_radius, float scale,
+    const float* __restrict__ weight, int rows_per_image, float* __restrict__ energy)
+{
+    __shared__ float R[kCompactPackedRotationsPerBlock][6];
+    __shared__ float partial[kEnergy ? kCompactPackedRotationsPerBlock : 1][kEnergy ? BLOCK_SIZE : 1];
+    const int first = blockIdx.x * kCompactPackedRotationsPerBlock;
+    const int n_block = min(kCompactPackedRotationsPerBlock, n_rotations - first);
+    const int j = blockIdx.y * BLOCK_SIZE + threadIdx.x;
+    if (threadIdx.x < 6 * n_block) R[threadIdx.x / 6][threadIdx.x % 6] = rot[first * 6 + threadIdx.x];
+    __syncthreads();
+    if constexpr (kEnergy) {
+        // Every thread takes part in the tree, a pixel past n_compact with zero energy.
+        float e[kCompactPackedRotationsPerBlock];
+#pragma unroll
+        for (int n = 0; n < kCompactPackedRotationsPerBlock; ++n) e[n] = 0.0f;
+        if (j < n_compact)
+            project_compact_packed_pixel<true>(texture, out, R, crop_index, first, n_block, j, n_compact, image_h,
+                                               image_w, tex_yinit, tex_zinit, upsampling, maxR2_padded, image_radius,
+                                               scale, weight, rows_per_image, e);
+#pragma unroll
+        for (int n = 0; n < kCompactPackedRotationsPerBlock; ++n) partial[n][threadIdx.x] = e[n];
+        __syncthreads();
+        for (int stride = BLOCK_SIZE / 2; stride > 0; stride /= 2) {
+            if (threadIdx.x < stride) {
+#pragma unroll
+                for (int n = 0; n < kCompactPackedRotationsPerBlock; ++n)
+                    partial[n][threadIdx.x] = __fadd_rn(partial[n][threadIdx.x], partial[n][threadIdx.x + stride]);
+            }
+            __syncthreads();
+        }
+        if (threadIdx.x < n_block)
+            energy[static_cast<int64_t>(first + threadIdx.x) * gridDim.y + blockIdx.y] = partial[threadIdx.x][0];
+    } else {
+        if (j >= n_compact) return;
+        project_compact_packed_pixel<false>(texture, out, R, crop_index, first, n_block, j, n_compact, image_h,
+                                            image_w, tex_yinit, tex_zinit, upsampling, maxR2_padded, image_radius,
+                                            scale, nullptr, rows_per_image, nullptr);
+    }
+}
+
+// The checks and launch of ProjectRelionHalfCapacityTextureCompactPacked; with weight and energy (kEnergy), also
+// each row's per-pixel-block energy partials [n_rotations, pixel blocks] of project_capacity_texture_compact_packed_kernel.
+template <bool kEnergy>
+ffi::Error project_compact_packed_launch(
+    const char* name, cudaStream_t stream, int64_t owner_handle, int64_t image_h, int64_t image_w, float scale,
+    ffi::AnyBuffer rot, ffi::AnyBuffer image_radius, ffi::AnyBuffer crop_index, ffi::AnyBuffer* weight,
+    int64_t rows_per_image, ffi::Result<ffi::AnyBuffer>& output, ffi::Result<ffi::AnyBuffer>* energy)
 {
     const auto r = rot.dimensions();
     const auto c = crop_index.dimensions();
@@ -560,24 +616,34 @@ ffi::Error ProjectRelionHalfCapacityTextureCompactPackedImpl(
         image_radius.element_type() != ffi::DataType::S32 || image_radius.dimensions().size() != 0 ||
         crop_index.element_type() != ffi::DataType::S32 || c.size() != 1 || c[0] <= 0)
         return ffi::Error::InvalidArgument(
-            "ProjectRelionHalfCapacityTextureCompactPacked: F32 rotations, S32 image radius and crop index, F32 output");
+            std::string(name) + ": F32 rotations, S32 image radius and crop index, F32 output");
     // One block row per rotation on grid x (up to 2^31 - 1), so a slot block's rotations take one launch;
     // the pixel blocks on grid y.
     if (r.size() != 2 || r[1] != 6 || r[0] <= 0 || r[0] > std::numeric_limits<int>::max() ||
         image_h <= 0 || image_h != image_w || image_h % 2 != 0 || image_h > 4096 ||
         o.size() != 2 || o[0] != r[0] || o[1] != 2 * c[0] || (c[0] + BLOCK_SIZE - 1) / BLOCK_SIZE > 65535)
-        return ffi::Error::InvalidArgument("ProjectRelionHalfCapacityTextureCompactPacked: invalid geometry");
+        return ffi::Error::InvalidArgument(std::string(name) + ": invalid geometry");
+    const int64_t pixel_blocks = (c[0] + BLOCK_SIZE - 1) / BLOCK_SIZE;
+    if constexpr (kEnergy) {
+        const auto w = weight->dimensions();
+        const auto e = (*energy)->dimensions();
+        if (weight->element_type() != ffi::DataType::F32 || (*energy)->element_type() != ffi::DataType::F32 ||
+            rows_per_image <= 0 || r[0] % rows_per_image != 0 || w.size() != 2 || w[0] != r[0] / rows_per_image ||
+            w[1] != c[0] || e.size() != 2 || e[0] != r[0] || e[1] != pixel_blocks)
+            return ffi::Error::InvalidArgument(
+                std::string(name) + ": F32 weight [rotations / rows_per_image, pixels] and energy [rotations, pixel blocks]");
+    }
     std::shared_ptr<CapacityRelionHalfTextureF32> owner;
     {
         std::lock_guard<std::mutex> lock(capacity_relion_half_texture_f32_mutex);
         const auto found = capacity_relion_half_texture_f32_registry.find(static_cast<uint64_t>(owner_handle));
         if (found == capacity_relion_half_texture_f32_registry.end())
-            return ffi::Error::InvalidArgument("ProjectRelionHalfCapacityTextureCompactPacked: owner handle is not live");
+            return ffi::Error::InvalidArgument(std::string(name) + ": owner handle is not live");
         owner = found->second;
     }
     if (!owner->acquire_call())
         return ffi::Error::InvalidArgument(
-            "ProjectRelionHalfCapacityTextureCompactPacked: owner is closing, refreshing or failed its last refresh");
+            std::string(name) + ": owner is closing, refreshing or failed its last refresh");
     struct Release { CapacityRelionHalfTextureF32* owner; ~Release() { owner->release_call(); } } release{owner.get()};
 
     // The geometry of ProjectRelionHalfCapacityTextureImpl.
@@ -586,15 +652,36 @@ ffi::Error ProjectRelionHalfCapacityTextureCompactPackedImpl(
     const int n_compact = static_cast<int>(c[0]);
     const int n_rotations = static_cast<int>(r[0]);
     dim3 grid((n_rotations + kCompactPackedRotationsPerBlock - 1) / kCompactPackedRotationsPerBlock,
-              (n_compact + BLOCK_SIZE - 1) / BLOCK_SIZE);
-    project_capacity_texture_compact_packed_kernel<<<grid, BLOCK_SIZE, 0, stream>>>(
+              static_cast<unsigned>(pixel_blocks));
+    project_capacity_texture_compact_packed_kernel<kEnergy><<<grid, BLOCK_SIZE, 0, stream>>>(
         owner->texture, static_cast<float*>(output->untyped_data()),
         static_cast<const float*>(rot.untyped_data()), static_cast<const int32_t*>(crop_index.untyped_data()),
         n_rotations, n_compact, (int)image_h, (int)(image_w / 2 + 1), -(maxR + 1), -(maxR + 1), owner->padding_factor,
-        maxR * maxR, static_cast<const int32_t*>(image_radius.untyped_data()), scale);
+        maxR * maxR, static_cast<const int32_t*>(image_radius.untyped_data()), scale,
+        kEnergy ? static_cast<const float*>(weight->untyped_data()) : nullptr, static_cast<int>(rows_per_image),
+        kEnergy ? static_cast<float*>((*energy)->untyped_data()) : nullptr);
     const cudaError_t err = cudaGetLastError();
     if (err != cudaSuccess) return ffi::Error::Internal(std::string("CUDA: ") + cudaGetErrorString(err));
     return ffi::Error::Success();
+}
+
+ffi::Error ProjectRelionHalfCapacityTextureCompactPackedImpl(
+    cudaStream_t stream, int64_t owner_handle, int64_t image_h, int64_t image_w, float scale,
+    ffi::AnyBuffer rot, ffi::AnyBuffer image_radius, ffi::AnyBuffer crop_index, ffi::Result<ffi::AnyBuffer> output)
+{
+    return project_compact_packed_launch<false>(
+        "ProjectRelionHalfCapacityTextureCompactPacked", stream, owner_handle, image_h, image_w, scale, rot,
+        image_radius, crop_index, nullptr, 1, output, nullptr);
+}
+
+ffi::Error ProjectRelionHalfCapacityTextureCompactPackedEnergyImpl(
+    cudaStream_t stream, int64_t owner_handle, int64_t image_h, int64_t image_w, float scale, int64_t rows_per_image,
+    ffi::AnyBuffer rot, ffi::AnyBuffer image_radius, ffi::AnyBuffer crop_index, ffi::AnyBuffer weight,
+    ffi::Result<ffi::AnyBuffer> output, ffi::Result<ffi::AnyBuffer> energy)
+{
+    return project_compact_packed_launch<true>(
+        "ProjectRelionHalfCapacityTextureCompactPackedEnergy", stream, owner_handle, image_h, image_w, scale, rot,
+        image_radius, crop_index, &weight, rows_per_image, output, &energy);
 }
 
 XLA_FFI_DEFINE_HANDLER_SYMBOL(
@@ -608,5 +695,22 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(
         .Arg<ffi::AnyBuffer>()
         .Arg<ffi::AnyBuffer>()
         .Arg<ffi::AnyBuffer>()
+        .Ret<ffi::AnyBuffer>()
+);
+
+XLA_FFI_DEFINE_HANDLER_SYMBOL(
+    ProjectRelionHalfCapacityTextureCompactPackedEnergy, ProjectRelionHalfCapacityTextureCompactPackedEnergyImpl,
+    ffi::Ffi::Bind()
+        .Ctx<ffi::PlatformStream<cudaStream_t>>()
+        .Attr<int64_t>("owner_handle")
+        .Attr<int64_t>("image_h")
+        .Attr<int64_t>("image_w")
+        .Attr<float>("scale")
+        .Attr<int64_t>("rows_per_image")
+        .Arg<ffi::AnyBuffer>()
+        .Arg<ffi::AnyBuffer>()
+        .Arg<ffi::AnyBuffer>()
+        .Arg<ffi::AnyBuffer>()
+        .Ret<ffi::AnyBuffer>()
         .Ret<ffi::AnyBuffer>()
 );

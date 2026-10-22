@@ -241,6 +241,46 @@ class RelionCapacityHalfTextureF32:
         self._last_output = output
         return output
 
+    def project_compact_packed_energy(
+        self,
+        rotation_matrices: jax.Array,
+        crop_index: jax.Array,
+        weight: jax.Array,
+        *,
+        image_shape: Tuple[int, int],
+        image_r_max: jax.Array,
+        scale: float,
+    ) -> tuple[jax.Array, jax.Array]:
+        """:meth:`project_compact_packed` and each row's model energy ``sum_j w_j (Re_j^2 + Im_j^2)`` of its packed
+        values in one kernel: ``([rotation, 2 P], [rotation])``. ``weight`` ``[I, P]`` holds the pixel weights of
+        ``I`` images whose rotations are consecutive, ``rotation / I`` each. The packed rows are
+        :meth:`project_compact_packed`'s bit for bit; the energy's sum runs in a fixed order (a block tree per
+        256 pixels, then the blocks in order), not a GEMM's."""
+
+        if self.closed:
+            raise RuntimeError("the persistent capacity projector texture is closed")
+        rotation_matrices = jnp.asarray(rotation_matrices)
+        if rotation_matrices.dtype != jnp.float32 or rotation_matrices.ndim != 3 or rotation_matrices.shape[1:] != (3, 3):
+            raise ValueError("rotation_matrices must be F32 [rotation,3,3]")
+        weight = jnp.asarray(weight)
+        if (
+            weight.dtype != jnp.float32 or weight.ndim != 2 or weight.shape[1] != crop_index.shape[0]
+            or rotation_matrices.shape[0] % weight.shape[0] != 0
+        ):
+            raise ValueError("weight must be F32 [images, pixels], the rotations a whole number per image")
+        library.ensure_optional_ffi(library.TARGET_PROJECT_RELION_HALF_CAPACITY_TEXTURE_COMPACT_PACKED_ENERGY)
+        output, energy = _project_relion_half_capacity_texture_compact_packed_energy(
+            rotation_matrices,
+            jnp.asarray(image_r_max, dtype=jnp.int32),
+            jnp.asarray(crop_index, dtype=jnp.int32),
+            weight,
+            owner_handle=self._handle,
+            image_shape=(int(image_shape[0]), int(image_shape[1])),
+            scale=float(scale),
+        )
+        self._last_output = output
+        return output, energy
+
     def close_after(self, completion) -> None:
         """Destroy after a concrete result depending on the last use is ready.
 
@@ -369,6 +409,41 @@ def _project_relion_half_capacity_texture_compact_packed(
         image_w=np.int64(image_shape[1]),
         scale=np.float32(scale),
     )
+
+
+# The CUDA kernels' BLOCK_SIZE (recovar_cuda_common.cuh): the energy kernel writes one partial per this many pixels.
+_CUDA_BLOCK_SIZE = 256
+
+
+@functools.partial(jax.jit, static_argnames=("owner_handle", "image_shape", "scale"))
+def _project_relion_half_capacity_texture_compact_packed_energy(
+    rotation_matrices, image_r_max, crop_index, weight, *, owner_handle, image_shape, scale
+):
+    n_rotations, n_pixels = rotation_matrices.shape[0], crop_index.shape[0]
+    pixel_blocks = -(-n_pixels // _CUDA_BLOCK_SIZE)
+    output, partials = jax.ffi.ffi_call(
+        library.TARGET_PROJECT_RELION_HALF_CAPACITY_TEXTURE_COMPACT_PACKED_ENERGY,
+        (
+            jax.ShapeDtypeStruct((n_rotations, 2 * n_pixels), jnp.float32),
+            jax.ShapeDtypeStruct((n_rotations, pixel_blocks), jnp.float32),
+        ),
+        vmap_method="sequential",
+    )(
+        _rot_to_compact(rotation_matrices, jnp.float32),
+        image_r_max,
+        crop_index,
+        weight,
+        owner_handle=np.int64(owner_handle),
+        image_h=np.int64(image_shape[0]),
+        image_w=np.int64(image_shape[1]),
+        scale=np.float32(scale),
+        rows_per_image=np.int64(n_rotations // weight.shape[0]),
+    )
+    # The pixel blocks' partials added in block order, one after another (a fixed order on every run).
+    energy = partials[:, 0]
+    for block in range(1, pixel_blocks):
+        energy = energy + partials[:, block]
+    return output, energy
 
 
 def _persistent_relion_half_texture_c_api():

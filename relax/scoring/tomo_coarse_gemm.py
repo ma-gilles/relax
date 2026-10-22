@@ -21,18 +21,31 @@ from relax.scoring.exact_cut import gemm_error_bound
 
 
 def _score_window_projections(
-    projector_half, rotations, score_indices, *, image_shape, current_size, model_max_r, padding_factor, texture
+    projector_half, rotations, score_indices, *, image_shape, current_size, model_max_r, padding_factor, texture,
+    weight=None,
 ):
     """Score-window projections: float32 ``[N, 2 P]`` packed ``[Re | Im]`` straight from ``texture`` where it
-    serves, else complex64 ``[N, P]``; the GEMM scorer takes either."""
+    serves, else complex64 ``[N, P]``; the GEMM scorer takes either.
+
+    With ``weight`` ``[I, P]`` (the pixel weights of ``I`` images whose ``N / I`` rotations each are consecutive),
+    returns ``(projections, model_energy)``: the packed rows' model energy ``[I, N / I]`` from the projection
+    kernel (:func:`relax.projection.projection.project_relion_coarse_packed_rows_energy`), or None where the texture
+    does not serve (the scorer then forms it)."""
 
     from relax.projection.projection import (
         compute_relion_projector_projections_block,
         project_relion_coarse_packed_rows,
+        project_relion_coarse_packed_rows_energy,
         relion_coarse_packed_rows_serve,
     )
 
     if texture is not None and relion_coarse_packed_rows_serve(image_shape[0], current_size, model_max_r):
+        if weight is not None:
+            packed, energy = project_relion_coarse_packed_rows_energy(
+                texture, rotations, score_indices, weight, image_shape=image_shape,
+                projector_output_size=int(current_size),
+            )
+            return packed, energy.reshape(weight.shape[0], -1)
         return project_relion_coarse_packed_rows(
             texture, rotations, score_indices, image_shape=image_shape, projector_output_size=int(current_size)
         )
@@ -51,13 +64,17 @@ def _score_window_projections(
         relion_kernel="coarse",
         capacity_texture=texture,
     )
-    return projected
+    return projected if weight is None else (projected, None)
 
 
 @partial(jax.jit, static_argnames=("image_shape",))
-def _images_coarse_gemm_diff2(projected, unshifted, pixel_weight, initial_diff2, translation_angles, score_indices, *, image_shape):
+def _images_coarse_gemm_diff2(
+    projected, unshifted, pixel_weight, initial_diff2, translation_angles, score_indices, model_energy=None, *,
+    image_shape,
+):
     """Coarse diff2 ``[N, T, R]`` (translation-major) of ``N`` tilt images with their own projections ``[N, R, P]``
-    and phases ``[N, T, 2]``, and each image's GEMM error bound ``[N]``.
+    and phases ``[N, T, 2]``, and each image's GEMM error bound ``[N]``. A given ``model_energy`` ``[N, R]`` (the
+    projection kernel's, :func:`_score_window_projections`) is the scorer's model energy instead of its product.
 
     Each image is scored by the SPA coarse GEMM scorer (:func:`relax.scoring.coarse_kernels.relion_coarse_gaussian_gemm_scores_jit`,
     RELION's ``d0 + 0.5 sum w |p - y|^2`` as two real-packed float32 GEMMs) on its shifted pixels from RELION's
@@ -75,7 +92,7 @@ def _images_coarse_gemm_diff2(projected, unshifted, pixel_weight, initial_diff2,
         unshifted, translation_angles, score_indices, image_shape
     ).reshape(n_images, n_trans, -1)
 
-    def one(reference, shifted, weight, initial):
+    def one(reference, shifted, weight, initial, energy):
         scores, model_energy = relion_coarse_gaussian_gemm_scores_jit(
             reference,
             None,
@@ -89,10 +106,11 @@ def _images_coarse_gemm_diff2(projected, unshifted, pixel_weight, initial_diff2,
             volume_shape=(1, 1, 1),
             translation_major=True,
             return_model_energy=True,
+            model_energy=None if energy is None else energy[None],
         )
         return -scores[0], jnp.max(model_energy[0])
 
-    diff2, model_energy = jax.vmap(one)(projected, shifted_all, pixel_weight, initial_diff2)
+    diff2, model_energy = jax.vmap(one)(projected, shifted_all, pixel_weight, initial_diff2, model_energy)
     weight = pixel_weight.astype(jnp.float32)
     image_energy = jnp.sum((unshifted.real * unshifted.real + unshifted.imag * unshifted.imag) * weight, axis=-1)
     return diff2, gemm_error_bound(model_energy, image_energy, initial_diff2, int(weight.shape[-1]))
@@ -123,7 +141,9 @@ def coarse_gemm_slot_block(
     initial_diff2, translation_angles = block(initial_diff2), block(translation_angles)
     n_particles, n_slots, n_rot = (int(n) for n in rotations.shape[:3])
     n_images = n_particles * n_slots
-    projected = _score_window_projections(
+    # Each image's model energy comes from the projection kernel where the texture serves (no second pass over
+    # the projections); its sum runs in the kernel's order, not the scorer's product's.
+    projected, model_energy = _score_window_projections(
         projector_half,
         rotations.reshape(n_images * n_rot, 3, 3),
         score_indices,
@@ -132,14 +152,16 @@ def coarse_gemm_slot_block(
         model_max_r=model_max_r,
         padding_factor=padding_factor,
         texture=texture,
-    ).reshape(n_images, n_rot, -1)
+        weight=pixel_weight.reshape(n_images, -1).astype(jnp.float32),
+    )
     image_diff2, bound = _images_coarse_gemm_diff2(
-        projected,
+        projected.reshape(n_images, n_rot, -1),
         unshifted.reshape(n_images, -1),
         pixel_weight.reshape(n_images, -1),
         initial_diff2.reshape(n_images),
         translation_angles.reshape(n_images, translation_angles.shape[2], 2),
         score_indices,
+        model_energy,
         image_shape=image_shape,
     )
     return (

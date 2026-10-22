@@ -1103,6 +1103,28 @@ def project_relion_coarse_packed_rows(
     )
 
 
+def project_relion_coarse_packed_rows_energy(
+    capacity_texture, rotations_block, pixel_indices, weight, *, image_shape, projector_output_size: int
+):
+    """:func:`project_relion_coarse_packed_rows` and each row's model energy ``sum_j w_j |p_j|^2`` over its packed
+    values, in one kernel: ``([N, 2 P], [N])``. ``weight`` ``[I, P]`` is the pixel weight of ``I`` images (at
+    ``pixel_indices``) whose ``N / I`` rotations each are consecutive in ``rotations_block``. This is the coarse
+    GEMM scorer's model energy ``A`` (:func:`relax.scoring.coarse_kernels.relion_coarse_gemm_terms`) summed in the
+    kernel's fixed order instead of the scorer's product, so it agrees with it to float32 rounding, not bitwise.
+    """
+
+    crop_size = int(projector_output_size)
+    crop_indices, _ky, _cols = _centered_crop_indices(pixel_indices, box_size=int(image_shape[0]), crop_size=crop_size)
+    return capacity_texture.project_compact_packed_energy(
+        rotations_block,
+        crop_indices,
+        weight,
+        image_shape=(crop_size, crop_size),
+        image_r_max=jnp.asarray(crop_size // 2, jnp.int32),
+        scale=float(_dense_means_scale(int(image_shape[0]))),
+    )
+
+
 def project_half_spectrum(
     volume,
     rotations_block,
