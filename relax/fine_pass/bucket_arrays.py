@@ -31,7 +31,6 @@ def _children_of(parent, by_parent, offsets, parents) -> np.ndarray:
     the fine rotations sorted by parent and ``offsets`` (``[n_coarse_rot + 1]``) where each parent's run
     starts; ``parent`` is each fine rotation's parent, for a selection that holds a large part of them."""
 
-    parents = np.asarray(parents, dtype=np.int64)
     starts = offsets[parents]
     counts = offsets[parents + 1] - starts
     n_children = int(counts.sum())

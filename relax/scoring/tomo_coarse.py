@@ -851,7 +851,6 @@ def _operand_batches(image_indices):
     """``image_indices`` in batches of ``_OPERAND_IMAGE_BATCH``, the last padded with its last image (so every
     batch runs the same programs)."""
 
-    image_indices = np.asarray(image_indices, dtype=np.int64)
     return [
         np.concatenate([indices, np.full(_OPERAND_IMAGE_BATCH - indices.size, indices[-1])])
         for indices in (
@@ -999,7 +998,6 @@ def _batch_scoring_rotations(
         left = np.tile(np.eye(3), (len(units), slots, 1, 1))
         built = []
         for p, (unit, unit_rows) in enumerate(zip(units, unit_rotation_rows)):
-            unit_rows = np.asarray(unit_rows)
             left[p, : counts[p]] = tomo_particles.relion_left_matrices(image_left[offsets[unit] : offsets[unit + 1]])[0]
             built.append(
                 pass1_rotations(

@@ -318,8 +318,8 @@ def _require_relion_convention_reference(path, option: str) -> None:
 
 def _classes_are_one_reference(class_maps) -> bool:
     """Whether a Class3D snapshot's classes are still copies of one reference. A helper, so the run's main frame
-    keeps no reference to the snapshot's volumes, which the loop takes and frees (relax#117)."""
-    class_maps = np.asarray(class_maps)
+    keeps no reference to the snapshot's volumes, which the loop takes and frees (relax#117). ``class_maps`` is
+    the ``[K, ...]`` array run_files stacks for K > 1."""
     return all(np.array_equal(class_maps[0], other) for other in class_maps[1:])
 
 

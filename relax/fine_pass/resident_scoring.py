@@ -578,12 +578,11 @@ def _flat_rows_scores_at_min(raw_diff2, valid, min_diff2, row_image_local, row_l
     cells of the whole chunk's scores.
     """
 
-    real_dtype = raw_diff2.dtype
     row_image_local = jnp.asarray(row_image_local, dtype=jnp.int32)
-    row_min = min_diff2[row_image_local].astype(real_dtype)
+    row_min = min_diff2[row_image_local].astype(raw_diff2.dtype)
     valid = valid & (raw_diff2 >= row_min[:, None])
-    scores = jnp.asarray(row_log_prior, dtype=real_dtype)[:, None] + jnp.asarray(
-        chunk_translation_prior, dtype=real_dtype
+    scores = jnp.asarray(row_log_prior, dtype=raw_diff2.dtype)[:, None] + jnp.asarray(
+        chunk_translation_prior, dtype=raw_diff2.dtype
     )[row_image_local]
     scores = jax.lax.optimization_barrier(scores)
     scores = scores + row_min[:, None]

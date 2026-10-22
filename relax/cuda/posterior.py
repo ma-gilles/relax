@@ -318,17 +318,16 @@ def sparse_pass2_segmented_reconstruction_f32(
     )
     _require_sparse_pass2_cuda_backend("Reconstruction-only segmented sparse pass-2 posterior")
     library.ensure_optional_ffi(library.TARGET_SPARSE_PASS2_SEGMENTED_RECONSTRUCTION_F32)
-    full = scores.shape
     outputs = (
         jax.ShapeDtypeStruct((segments,), jnp.float64),  # log_z
         jax.ShapeDtypeStruct((segments,), jnp.float32),  # best_log_score
         jax.ShapeDtypeStruct((segments,), jnp.int64),    # best_cell_index
         jax.ShapeDtypeStruct((segments,), jnp.float32),  # max_posterior
-        jax.ShapeDtypeStruct(full, jnp.float32),         # reconstruction_probs
+        jax.ShapeDtypeStruct(scores.shape, jnp.float32), # reconstruction_probs
         jax.ShapeDtypeStruct((segments,), jnp.int32),    # n_significant
         jax.ShapeDtypeStruct((segments,), jnp.float32),  # sum_weight
         jax.ShapeDtypeStruct((segments,), jnp.float32),  # threshold
-        jax.ShapeDtypeStruct(full, jnp.float32),         # raw weights (scratch)
+        jax.ShapeDtypeStruct(scores.shape, jnp.float32), # raw weights (scratch)
         jax.ShapeDtypeStruct(
             (segments, _SPARSE_PASS2_SEGMENT_STATE_BYTES), jnp.uint8
         ),                                               # segment state

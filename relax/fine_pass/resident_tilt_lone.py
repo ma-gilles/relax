@@ -59,7 +59,6 @@ def lean_lone_scores(
         tilt_row_block_scores,
     )
 
-    block_rows = int(block_rows)
     if int(row_capacity) % block_rows:
         raise ValueError(f"lone row blocks of {block_rows} do not divide the particle's {row_capacity} rows")
     starts = range(0, int(row_capacity), block_rows)
