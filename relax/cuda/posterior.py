@@ -122,8 +122,9 @@ _SPARSE_PASS2_ROW_STATE_BYTES = 40
 
 # Byte size of the device-side per-segment state record of
 # SparsePass2SegmentedPosteriorF32: the rectangular RowState plus the segment
-# extent (valid flag, explicit padding, begin, cell count).
-_SPARSE_PASS2_SEGMENT_STATE_BYTES = _SPARSE_PASS2_ROW_STATE_BYTES + 24
+# extent (valid flag, explicit padding, begin, cell count) and the significance
+# cut's 256-bin histogram and state (BlockCut, 3112 bytes; the handler asserts the size).
+_SPARSE_PASS2_SEGMENT_STATE_BYTES = _SPARSE_PASS2_ROW_STATE_BYTES + 24 + 3112
 
 
 def _sparse_pass2_segment_geometry(
@@ -246,8 +247,10 @@ def sparse_pass2_segmented_posterior_f32(
     segment count from ``segment_offsets.shape`` and ``n_valid_images`` is read on
     the device alone, so nothing on the host depends on the chunk's occupancy and
     the handler has no host round trip. The significance boundary is RELION's cut
-    with float64 cumulative sums, by radix select, one block per segment (the
-    definition of :func:`relion_coarse_cut_f32`).
+    with float64 cumulative sums, by radix select (the definition of
+    :func:`relion_coarse_cut_f32`), each segment's histogram added over the
+    blocks its cells are split into (the grid's segment-count and cell-count
+    are static, so the split is too).
 
     ``return_scratch`` appends the handler's raw weights to the result.
     """

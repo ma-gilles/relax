@@ -285,60 +285,78 @@ struct BlockCut
     float cut;
 };
 
+__device__ __forceinline__ void radix_cut_reset(BlockCut& c)
+{
+    c.prefix = 0u; c.low = 0.0; c.empty = 0; c.cut = 0.0f; c.total = 0.0;
+}
+
+// One radix pass's histogram term of a weight: its bin, or -1 when the weight is not positive or lies outside
+// the bins the earlier passes chose.
+__device__ __forceinline__ int radix_cut_bin(float weight, int pass, uint32_t prefix)
+{
+    if (!(weight > 0.0f)) return -1;
+    const uint32_t bits = __float_as_uint(weight);
+    const int shift = 24 - 8 * pass;
+    if (pass > 0 && (bits >> (shift + 8)) != prefix) return -1;
+    return static_cast<int>((bits >> shift) & 0xffu);
+}
+
+// One radix pass's choice from its histogram (one thread): the bin holding the tail target, the mass below it,
+// and after the fourth pass the cut value.
+__device__ void radix_cut_select(BlockCut& c, int pass, float fraction)
+{
+    if (c.empty) return;
+    if (pass == 0)
+    {
+        double total = 0.0;
+        for (int b = 0; b < 256; ++b) total += c.masses[b];
+        c.total = total;
+        // relion_cuda_f32_tail_target on the float32 sum.
+        c.target = static_cast<double>(static_cast<float>(
+            (1.0 - static_cast<double>(fraction)) * static_cast<double>(static_cast<float>(total))));
+    }
+    double cumulative = c.low;
+    int chosen = -1, last = -1;
+    for (int b = 0; b < 256; ++b)
+    {
+        if (c.counts[b] == 0u) continue;
+        last = b;
+        if (cumulative + c.masses[b] > c.target) { chosen = b; break; }
+        cumulative += c.masses[b];
+    }
+    if (chosen < 0 && last < 0) c.empty = 1;
+    else
+    {
+        if (chosen < 0) { chosen = last; cumulative -= c.masses[last]; }
+        c.low = cumulative;
+        c.prefix = (c.prefix << 8) | static_cast<uint32_t>(chosen);
+        if (pass == 3)
+        {
+            // The cut value is reached inside its tied run (the threshold, as a value).
+            c.cut = __uint_as_float(c.prefix);
+        }
+    }
+}
+
 __device__ void block_radix_cut(const float* weights, int64_t n, float fraction, BlockCut& c)
 {
-    if (threadIdx.x == 0) { c.prefix = 0u; c.low = 0.0; c.empty = 0; c.cut = 0.0f; c.total = 0.0; }
+    if (threadIdx.x == 0) radix_cut_reset(c);
     for (int pass = 0; pass < 4; ++pass)
     {
         for (int b = threadIdx.x; b < 256; b += blockDim.x) { c.counts[b] = 0u; c.masses[b] = 0.0; }
         __syncthreads();
-        const int shift = 24 - 8 * pass;
         const uint32_t prefix = c.prefix;
         if (!c.empty)
             for (int64_t i = threadIdx.x; i < n; i += blockDim.x)
             {
                 const float weight = weights[i];
-                if (!(weight > 0.0f)) continue;
-                const uint32_t bits = __float_as_uint(weight);
-                if (pass > 0 && (bits >> (shift + 8)) != prefix) continue;
-                const uint32_t bin = (bits >> shift) & 0xffu;
+                const int bin = radix_cut_bin(weight, pass, prefix);
+                if (bin < 0) continue;
                 atomicAdd(&c.counts[bin], 1u);
                 atomicAdd(&c.masses[bin], static_cast<double>(weight));
             }
         __syncthreads();
-        if (threadIdx.x == 0 && !c.empty)
-        {
-            if (pass == 0)
-            {
-                double total = 0.0;
-                for (int b = 0; b < 256; ++b) total += c.masses[b];
-                c.total = total;
-                // relion_cuda_f32_tail_target on the float32 sum.
-                c.target = static_cast<double>(static_cast<float>(
-                    (1.0 - static_cast<double>(fraction)) * static_cast<double>(static_cast<float>(total))));
-            }
-            double cumulative = c.low;
-            int chosen = -1, last = -1;
-            for (int b = 0; b < 256; ++b)
-            {
-                if (c.counts[b] == 0u) continue;
-                last = b;
-                if (cumulative + c.masses[b] > c.target) { chosen = b; break; }
-                cumulative += c.masses[b];
-            }
-            if (chosen < 0 && last < 0) c.empty = 1;
-            else
-            {
-                if (chosen < 0) { chosen = last; cumulative -= c.masses[last]; }
-                c.low = cumulative;
-                c.prefix = (c.prefix << 8) | static_cast<uint32_t>(chosen);
-                if (pass == 3)
-                {
-                    // The cut value is reached inside its tied run (the threshold, as a value).
-                    c.cut = __uint_as_float(c.prefix);
-                }
-            }
-        }
+        if (threadIdx.x == 0) radix_cut_select(c, pass, fraction);
         __syncthreads();
     }
 }
@@ -564,7 +582,10 @@ struct SegmentState
     int reserved;   // explicit padding, keeps begin 8-byte aligned
     int64_t begin;  // first cell of the segment, clamped into [0, n_cells]
     int64_t n;      // cell count, 0 for empty or invalid segments
+    BlockCut cut;   // the significance cut's histogram and state (segmented_cut_*_kernel)
 };
+// The Python wrapper's _SPARSE_PASS2_SEGMENT_STATE_BYTES (relax/cuda/posterior.py).
+static_assert(sizeof(SegmentState) == 3176, "SegmentState layout changed: update posterior.py");
 
 // Last index i with offsets[i] <= cell, or -1 when no segment covers the cell.
 // Empty segments are never returned: offsets[i] == offsets[i + 1] cannot
@@ -691,19 +712,81 @@ __global__ void segmented_exponentiate_kernel(
                               kCells ? probs + index : nullptr);
 }
 
-__global__ void segmented_cut_kernel(
-    const float* raw_weights, const float* external_sum_weight, int n_segments, float adaptive_fraction,
-    int keep_all, int use_external_sum_weight, SegmentState* state, float* sum_weight_out, float* threshold_out)
+// The segments' significance cut is block_radix_cut's, with each segment's cells split over
+// kCutBlocksPerSegment blocks (gridDim.y): every radix pass adds the blocks' shared histograms into the
+// segment's (SegmentState::cut) and one thread per segment then chooses the bin (radix_cut_select). One
+// block per segment ran a lone tilt particle's 188M cells alone (4.1 s on an H100). The counts are exact and
+// the masses float64 sums, as in the one-block cut, whose shared-memory atomics add them in no fixed order.
+__global__ void segmented_cut_reset_kernel(SegmentState* state)
 {
-    __shared__ BlockCut c;
+    BlockCut& c = state[blockIdx.x].cut;
+    for (int b = threadIdx.x; b < 256; b += blockDim.x) { c.counts[b] = 0u; c.masses[b] = 0.0; }
+    if (threadIdx.x == 0) radix_cut_reset(c);
+}
+
+__global__ void segmented_cut_histogram_kernel(const float* raw_weights, int pass, SegmentState* state)
+{
+    __shared__ uint32_t counts[256];
+    __shared__ double masses[256];
     const int segment = blockIdx.x;
-    if (segment >= n_segments) return;
-    const int64_t begin = state[segment].begin;
+    BlockCut& c = state[segment].cut;
     const int64_t n = state[segment].n;
-    block_radix_cut(raw_weights + begin, n, adaptive_fraction, c);
+    if (c.empty || n == 0) return;
+    const int64_t share = (n + gridDim.y - 1) / gridDim.y;
+    const int64_t first = static_cast<int64_t>(blockIdx.y) * share;
+    const int64_t last = first + share < n ? first + share : n;
+    if (first >= last) return;
+    for (int b = threadIdx.x; b < 256; b += blockDim.x) { counts[b] = 0u; masses[b] = 0.0; }
+    __syncthreads();
+    const uint32_t prefix = c.prefix;
+    const float* weights = raw_weights + state[segment].begin;
+    for (int64_t i = first + threadIdx.x; i < last; i += blockDim.x)
+    {
+        const float weight = weights[i];
+        const int bin = radix_cut_bin(weight, pass, prefix);
+        if (bin < 0) continue;
+        atomicAdd(&counts[bin], 1u);
+        atomicAdd(&masses[bin], static_cast<double>(weight));
+    }
+    __syncthreads();
+    for (int b = threadIdx.x; b < 256; b += blockDim.x)
+    {
+        if (counts[b] == 0u) continue;
+        atomicAdd(&c.counts[b], counts[b]);
+        atomicAdd(&c.masses[b], masses[b]);
+    }
+}
+
+__global__ void segmented_cut_select_kernel(
+    int pass, const float* external_sum_weight, float adaptive_fraction, int keep_all, int use_external_sum_weight,
+    SegmentState* state, float* sum_weight_out, float* threshold_out)
+{
+    const int segment = blockIdx.x;
+    BlockCut& c = state[segment].cut;
+    if (threadIdx.x == 0) radix_cut_select(c, pass, adaptive_fraction);
+    __syncthreads();
+    if (pass < 3)
+    {
+        // The next pass's histogram starts from zero.
+        for (int b = threadIdx.x; b < 256; b += blockDim.x) { c.counts[b] = 0u; c.masses[b] = 0.0; }
+        return;
+    }
     if (threadIdx.x != 0) return;
-    cut_body(c, n, external_sum_weight[segment], keep_all, use_external_sum_weight, state[segment].row,
+    cut_body(c, state[segment].n, external_sum_weight[segment], keep_all, use_external_sum_weight, state[segment].row,
              sum_weight_out + segment, threshold_out + segment);
+}
+
+// Blocks per segment of the segmented cut: about kCutCellsPerBlock cells each when the cells fill one segment,
+// at most kCutMaxBlocks in the grid.
+constexpr int64_t kCutCellsPerBlock = 1 << 16;
+constexpr int64_t kCutMaxBlocks = 8192;
+
+inline int segmented_cut_blocks_per_segment(int64_t n_cells, int64_t n_segments)
+{
+    int64_t blocks = (n_cells + kCutCellsPerBlock - 1) / kCutCellsPerBlock;
+    const int64_t cap = kCutMaxBlocks / (n_segments > 0 ? n_segments : 1);
+    if (blocks > cap) blocks = cap;
+    return static_cast<int>(blocks < 1 ? 1 : blocks);
 }
 
 template <bool kCells>
@@ -836,11 +919,17 @@ ffi::Error launch_segmented_posterior(
         return ffi::Error::Internal(
             std::string("SparsePass2SegmentedPosteriorF32 exponentiate: ") + cudaGetErrorString(error));
 
-    segmented_cut_kernel<<<static_cast<int>(n_segments), kCutThreads, 0, stream>>>(
-        raw_ptr, external_sum_weight_ptr,
-        static_cast<int>(n_segments), adaptive_fraction,
-        static_cast<int>(keep_all != 0), static_cast<int>(use_external_sum_weight != 0),
-        state_ptr, sum_weight_ptr, threshold_ptr);
+    segmented_cut_reset_kernel<<<static_cast<int>(n_segments), kCutThreads, 0, stream>>>(state_ptr);
+    const dim3 cut_grid(static_cast<unsigned>(n_segments),
+                        static_cast<unsigned>(segmented_cut_blocks_per_segment(n_cells, n_segments)));
+    for (int pass = 0; pass < 4; ++pass)
+    {
+        segmented_cut_histogram_kernel<<<cut_grid, kCutThreads, 0, stream>>>(raw_ptr, pass, state_ptr);
+        segmented_cut_select_kernel<<<static_cast<int>(n_segments), kCutThreads, 0, stream>>>(
+            pass, external_sum_weight_ptr, adaptive_fraction,
+            static_cast<int>(keep_all != 0), static_cast<int>(use_external_sum_weight != 0),
+            state_ptr, sum_weight_ptr, threshold_ptr);
+    }
     error = cudaGetLastError();
     if (error != cudaSuccess)
         return ffi::Error::Internal(

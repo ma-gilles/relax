@@ -113,17 +113,24 @@ def _segmented(
 def test_segment_state_bytes_match_header():
     """The Python scratch size tracks sizeof(SegmentState) in the CUDA header."""
 
-    header = os.path.join(os.path.dirname(cuda_posterior.__file__), "sparse_pass2_posterior.cuh")
-    body = open(header).read().split("struct SegmentState", 1)[1].split("};", 1)[0]
-    sizes = {"RowState": cuda_posterior._SPARSE_PASS2_ROW_STATE_BYTES, "int": 4, "int64_t": 8}
-    fields = [line.split()[0] for line in body.splitlines() if line.strip() and line.strip()[0] not in "{/"]
-    total = 0
-    for kind in fields:
-        size = sizes[kind]
-        align = min(size, 8)
-        total = (total + align - 1) // align * align + size
-    total = (total + 7) // 8 * 8
-    assert total == cuda_posterior._SPARSE_PASS2_SEGMENT_STATE_BYTES
+    header = open(os.path.join(os.path.dirname(cuda_posterior.__file__), "sparse_pass2_posterior.cuh")).read()
+    sizes = {"RowState": cuda_posterior._SPARSE_PASS2_ROW_STATE_BYTES, "int": 4, "int64_t": 8, "uint32_t": 4,
+             "double": 8, "float": 4}
+
+    def struct_bytes(name):
+        body = header.split(f"struct {name}\n", 1)[1].split("};", 1)[0]
+        total = 0
+        for line in body.splitlines():
+            if not line.strip() or line.strip()[0] in "{/":
+                continue
+            kind, field = line.split()[:2]
+            count = int(field.split("[", 1)[1].split("]", 1)[0]) if "[" in field else 1
+            align = min(sizes[kind], 8)
+            total = (total + align - 1) // align * align + sizes[kind] * count
+        return (total + 7) // 8 * 8
+
+    sizes["BlockCut"] = struct_bytes("BlockCut")
+    assert struct_bytes("SegmentState") == cuda_posterior._SPARSE_PASS2_SEGMENT_STATE_BYTES
 
 
 def test_segmented_targets_are_optional_abi():
@@ -428,3 +435,37 @@ def test_a_malformed_offset_table_empties_the_offending_segment():
     actual = _segmented(scores, malformed, 3, _chunk_log_z(scores, malformed, 3), None, adaptive_fraction=0.999, keep_all=False)
     for name in ("log_z", "best_log_score", "n_significant", "sum_weight", "threshold"):
         assert_matches(actual[name][:2], expected[name][:2], err_msg=f"{name} before the malformed entry")
+
+
+@pytest.mark.gpu
+@pytest.mark.parametrize("adaptive_fraction", _ADAPTIVE_FRACTIONS)
+@pytest.mark.parametrize(
+    "images, rows, translations, occupancy",
+    [
+        # One particle holding the chunk (a lone tilt particle): its cut spans ~60 blocks.
+        pytest.param(1, 32768, 120, 1.0, id="1img_lone"),
+        # A few large segments and many small ones in one grid.
+        pytest.param(32, 32768, 168, 0.95, id="32img_32768rows"),
+    ],
+)
+def test_a_segment_cut_split_over_blocks_is_the_rows_cut(images, rows, translations, occupancy, adaptive_fraction):
+    """The segmented cut adds each segment's histogram over the blocks its cells are split into; its sum and
+    threshold are those of the coarse cut (relion_coarse_cut_f32, the same radix definition) applied to each
+    segment's raw weights as a row, bitwise."""
+
+    _require_segmented_gpu()
+    scores, offsets = make_production_chunk(images, rows, translations, occupancy, 23)
+    log_z = _chunk_log_z(scores, offsets, images)
+    out = _segmented(scores, offsets, images, log_z, None, adaptive_fraction=adaptive_fraction, keep_all=False, scratch=True)
+    lengths = np.diff(offsets)
+    # The handler's split (segmented_cut_blocks_per_segment): ~64K cells a block, at most 8,192 blocks in the grid.
+    blocks_per_segment = min(-(-scores.size // 65536), 8192 // images)
+    assert blocks_per_segment > 1 and lengths.max() > 4 * blocks_per_segment
+    padded = np.zeros((images, int(lengths.max())), np.float32)
+    for index in range(images):
+        padded[index, : lengths[index]] = out["raw_weights"][offsets[index] : offsets[index + 1]]
+    sums, cuts, _ = cuda_posterior.relion_coarse_cut_f32(
+        jnp.asarray(padded), adaptive_fraction=float(adaptive_fraction), max_significants=0
+    )
+    np.testing.assert_array_equal(out["sum_weight"], np.asarray(sums))
+    np.testing.assert_array_equal(out["threshold"], np.asarray(cuts))
