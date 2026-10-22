@@ -333,6 +333,8 @@ def run_numbered_halves(
     half_inputs,
     diagnostic_half_indices,
     significance: SignificanceStatistics,
+    *,
+    remote_halves=None,
 ) -> None:
     """Score the halves of a numbered iteration and close its expectation.
 
@@ -342,14 +344,24 @@ def run_numbered_halves(
     stops here. Then the deferred preprocess checks are drained (dropped when the halves
     raise, :func:`relax.cuda.preprocess.expectation_relion_preprocess_checks`) and the halves' significant-sample
     counts combined; the caller marks the end of the expectation for its observer.
+
+    ``remote_halves`` (a multi-GPU run's :class:`~relax.refinement.remote_halves.RemoteHalves`, None on one GPU)
+    scores its halves on their ranks: their calls are sent first, and each result is published in its half's turn.
     """
     from relax.cuda.preprocess import expectation_relion_preprocess_checks
 
     run_half = partial(_score_and_finish_half, score_half, finish_half, half_inputs)
+    remote = () if remote_halves is None else tuple(k for k in diagnostic_half_indices if remote_halves.remote(k))
+    for k in remote:
+        remote_halves.submit(k, score_half, half_inputs[k])
     # The deferred preprocess checks are read when the halves are done, and dropped if they raise.
     with expectation_relion_preprocess_checks():
         for k in diagnostic_half_indices:
-            run_half(k)
+            if k in remote:
+                finish_half(half_inputs[k], remote_halves.result(k))
+                return_freed_heap(f"half {k + 1}'s E-step")
+            else:
+                run_half(k)
         if diagnostic_half_indices != (0, 1):
             raise RuntimeError(
                 "targeted half-only significance diagnostic returned without writing its "
@@ -394,6 +406,7 @@ def run_numbered_expectation(
     half_inputs: list,
     diagnostic_half_indices,
     history,
+    remote_halves=None,
 ) -> NumberedExpectationResult:
     """Score both halves of a numbered iteration (step S3): the dense route's variant, the expectation phase
     shared by the halves, the subtomogram sampling, then each half scored and published (half 0's
@@ -403,7 +416,8 @@ def run_numbered_expectation(
     halves to score (both, except for a targeted significance diagnostic, which stops the run). Reads from
     ``carry``: ``state``, ``coarse_grids``, ``random_perturbation`` and the class log priors; from ``ctx``: the
     run's scoring settings and its expectation probe (the observer's per-half hooks). Appends the local and
-    global profile rows to ``history``'s profile lists as the scorers produce them.
+    global profile rows to ``history``'s profile lists as the scorers produce them. ``remote_halves`` scores the
+    halves another GPU owns (``run_numbered_halves``; None on one GPU).
     """
     use_local = carry.state.do_local_search
     variant = _numbered_dense_variant(
@@ -472,7 +486,7 @@ def run_numbered_expectation(
             ),
             use_local=use_local, dtype=ctx.scoring_dtype,
         ),
-        half_inputs, diagnostic_half_indices, significance,
+        half_inputs, diagnostic_half_indices, significance, remote_halves=remote_halves,
     )
     return NumberedExpectationResult(per_half=per_half, significance=significance)
 

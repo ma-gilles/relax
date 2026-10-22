@@ -87,6 +87,7 @@ their semantics already match:
 | `fourier/`, `numerics/` | Fourier windows, shifts and preprocessing; precision, shells and finite checks |
 | `io/`, `star/` | Map and particle I/O and batch fetch; STAR tables, metadata and input poses |
 | `runtime/` | Batch and memory planning, environment flags, compilation cache, timing and engine tuning |
+| `parallel/` | One process per GPU (`--gpu 0:1`): the channel between the ranks; the ranks are started by the `relax` console script, the top-level package `relax_cli` (standard library only, before anything imports `relax`, whose import starts JAX); `refinement/remote_halves.py` sends half 2's scoring call to rank 1 and publishes its result in the one-GPU order |
 | `relion/` | Runtime RELION metadata, normalization, CTF and native adapters |
 | `cuda/` | The EM CUDA library `librelax_cuda.so`: translation unit `relax_kernels.cu`, its headers and Makefile, and the Python side: `library.py` (build inputs, FFI target names, registration tables and the `NativeLibrary` loader) and the FFI wrappers by kernel family, `preprocess.py`, `rotations.py`, `coarse.py`, `fine.py` (fine diff2 and Wavg), `posterior.py`, `translate.py`, `projector.py` (projection and its textures), `backprojection.py` and `ppca.py` |
 | `reconstruction/` | EM-only RELION variants split from `recovar.reconstruction` (`regularization`, `relion_functions`, `noise`), the volume solver, resolution and the accumulator guard |

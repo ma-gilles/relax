@@ -350,6 +350,22 @@ def _explicit_consistency_options(args) -> dict[str, str]:
     return {name: getattr(args, name) for name in names if getattr(args, name) is not None}
 
 
+def require_gpu_ranks(args, ranks) -> None:
+    """Refuse a process whose rank count is not ``--gpu``'s device count (``ranks``: this process's
+    ``relax_cli.launch.RankEnvironment``, None outside a multi-GPU run). The ``relax`` console script
+    (``relax_cli``) starts the ranks; an entry point that skipped it would run one GPU's work on each."""
+
+    from relax_cli import launch
+
+    devices = 0 if args.gpu is None else len(launch.gpu_devices(args.gpu))
+    world = 1 if ranks is None else ranks.world
+    if max(devices, 1) != world:
+        raise RuntimeError(
+            f"--gpu {args.gpu!r} lists {devices} devices but this process is one of {world} ranks: start "
+            "multi-GPU refinements through `relax refine` or `python -m relax_cli refine`"
+        )
+
+
 def require_consistency_arguments(args) -> None:
     """Refuse, from the command line alone, the consistency options and ``--mode relax`` the run cannot honour.
 

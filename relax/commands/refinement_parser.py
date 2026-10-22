@@ -68,6 +68,13 @@ def parse_refinement_args(argv=None):
     )
     add_particle_read_arguments(parser)
     parser.add_argument(
+        "--gpu",
+        default=None,
+        help="RELION's GPU device list: one process per listed device id, separated by ':' or ',' (e.g. 0:1; "
+        "the ids index CUDA_VISIBLE_DEVICES). Two devices score one half each; absent or one device runs on one GPU. "
+        "The relax command starts the processes before JAX (relax_cli).",
+    )
+    parser.add_argument(
         "--max_iter",
         type=int,
         default=None,

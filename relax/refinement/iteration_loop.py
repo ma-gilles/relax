@@ -40,6 +40,7 @@ from relax.refinement import (
     reference_state,
     refinement_options,
     refinement_result,
+    remote_halves,
     setup_checks,
     sigma_offset,
     startup_references,
@@ -438,6 +439,7 @@ def refine_single_volume(
     observer: ports.RunObserver,
     source: ports.InputSource,
     k_class_probe: KClassProbe | None = None,
+    ranks: remote_halves.RankLink | None = None,
 ) -> refinement_result.RefinementResult:
     """Multi-iteration RELION-parity EM refinement.
 
@@ -468,6 +470,7 @@ def refine_single_volume(
     k_class_probe : the K-class E-step's diagnostics (``relax.classification.probes.KClassProbe``), which observe
         its passes and never change them; the commands build ``relax.diagnostics.k_class_diagnostics.KClassDiagnostics``
         (None: the ``NoProbe`` that observes nothing).
+    ranks : a multi-GPU run's ``RankLink`` (``relax.refinement.remote_halves``): rank 1 scores half 2 (None: one GPU).
 
     Returns
     -------
@@ -565,6 +568,11 @@ def refine_single_volume(
     )
 
     follower_setup = mode.follower_scale_setup(options, source, halves, experiment_datasets)
+    # A multi-GPU run: the other ranks connect here and score the halves they own.
+    remote = None if ranks is None else remote_halves.accept_remote_halves(
+        ranks, remote_halves.run_objects(ctx, options, experiment_datasets, history.local_profile_history),
+        remote_halves.run_fingerprint(ctx, experiment_datasets),
+    )
 
     if resume is None:
         # --- A fresh run starts from the caller's references, noise and replayed particle state ---
@@ -936,6 +944,7 @@ def refine_single_volume(
                 this_iteration.numbered_relion_iteration, n_classes=options.k_class.n_classes,
                 experiment_datasets=experiment_datasets,
             ),
+            remote_halves=remote,
         )
         # The assignments outlive the iteration: the result, the next accuracy estimate and the final pass read them.
         carry = replace(
@@ -1309,6 +1318,7 @@ def refine_single_volume(
         halves, ctx=ctx, carry=carry, reference_model=reference_model, history=history, options=options,
         follower_setup=follower_setup, expected_accuracy_inputs=expected_accuracy_inputs,
         final_join_means=final_join_means, final_use_local=final_use_local, source=source, iteration=iteration,
+        remote_halves=remote,
     )
     return replace(final_result, numbered=numbered)
 

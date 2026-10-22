@@ -39,7 +39,7 @@ dev = [
 Homepage = "https://github.com/ma-gilles/relax"
 
 [project.scripts]
-relax = "relax.command_line:main_commands"
+relax = "relax_cli:main"
 
 [tool.setuptools.packages.find]
 where = ["."]

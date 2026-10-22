@@ -44,6 +44,17 @@ about 434 GB of host memory, in the final reconstruction's padded inverse FFT; R
 With large particle stacks on a network file system, pass `--scratch_dir` (node-local disk) or
 `--preread_images`: reading the images over the network can dominate the first iterations.
 
+`relax refine` and `relax class3d` take RELION's `--gpu` device list. With two devices (`--gpu 0:1`;
+the ids index `CUDA_VISIBLE_DEVICES`) relax runs one process per GPU and each scores one half set; rank 0
+runs the rest of the refinement and writes every output, and the other rank writes only its log, under
+`<output>/.rank1/`. The outputs are those of a one-GPU run up to GPU run-to-run noise. Request the second GPU
+and its host memory (each process holds its own copy of the particle tables) from the scheduler. A run with
+observers or captures (`--timing_dir`, saved intermediates, dump environment variables) or a RELION replay
+is refused on more than one GPU; more than two devices is not supported yet. Start a multi-GPU run with the
+`relax` command (or `python -m relax_cli refine ...`): `python -m relax.commands.refine` refuses `--gpu` with two
+devices, because importing `relax` starts JAX on every visible GPU before the processes could be split. When one process fails, the
+other is stopped and the run exits non-zero.
+
 Leave `XLA_PYTHON_CLIENT_PREALLOCATE` unset. relax runs with JAX's default, one
 preallocated memory pool, and that is the supported mode. `=false` lets another
 process share the GPU, but the pool then grows in separate regions and an array

@@ -24,6 +24,7 @@ Algorithm to code: `docs/math/relion_refinement_algorithm.md`.
 | `map_postprocess.py` | what a numbered reconstruction does to its maps after the solve: initial low-pass, solvent mask and flattening, K=1 sign alignment |
 | `sigma_offset.py` | the translation prior width a run carries (`SigmaOffset`) and its update from an expectation's offsets |
 | `finalization.py`, `final_reconstruction.py` (its sampling and grids: `trial_grids.py`) | the final all-data pass |
+| `remote_halves.py` | a multi-GPU run's halves scored by another rank (`--gpu 0:1`): rank 0's side and the other ranks' task loop |
 | `run_files.py`, `result_files.py` | RELION's per-iteration run files and `--continue`; final archives and maps |
 | `refinement_result.py` | what the controller and the final pass return (`RefinementResult` and its records); `archive_fields()` is the saved flat mapping |
 | `startup_references.py`, `startup_noise.py` | start-up maps, prior and noise |

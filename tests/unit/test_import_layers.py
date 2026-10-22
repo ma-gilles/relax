@@ -21,7 +21,7 @@ ROOT = Path(relax.__file__).parent
 
 # Bottom to top; inside a band the packages are ordered too. "(top)" is relax/__init__.py and relax/command_line.py.
 LAYERS = (
-    ("foundation", ("io", "runtime", "cuda", "numerics", "relion_bind", "types")),
+    ("foundation", ("io", "runtime", "cuda", "numerics", "relion_bind", "types", "parallel")),
     ("primitives", ("fourier", "relion", "projection", "sampling")),
     ("engines", ("reconstruction", "fine_pass", "scoring", "dense", "local_search", "ppca_refinement")),
     ("operations", ("classification", "star", "steps")),

@@ -7,6 +7,7 @@ post-convergence sampling/scoring/reconstruction sequence and its result.
 
 import logging
 from dataclasses import dataclass, replace
+from functools import partial
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -180,8 +181,11 @@ def run_final_all_data(
     final_use_local,
     source: InputSource,
     iteration,
+    remote_halves=None,
 ) -> RefinementResult:
     """Score the converged halves at full size and reconstruct the final maps.
+
+    ``remote_halves`` (a multi-GPU run's ``RemoteHalves``; None on one GPU) scores the halves another GPU owns.
 
     Replay and final-pass admission are resolved by the numbered controller.
     The returned result holds this phase's results with ``numbered`` None; the caller adds the set-up and
@@ -434,8 +438,14 @@ def run_final_all_data(
     )
     final_outs = PerHalfOutputs()
     first_projector_power_spectrum = None
+    score_half = partial(score_final_half, ctx=ctx, options=options, follower_setup=follower_setup)
+    # A multi-GPU run sends the halves another GPU owns first and publishes each in its turn.
+    remote = () if remote_halves is None else tuple(half.index for half in halves if remote_halves.remote(half.index))
     for half in halves:
-        scored = score_final_half(half, final_pass, ctx=ctx, options=options, follower_setup=follower_setup)
+        if half.index in remote:
+            remote_halves.submit(half.index, score_half, half, final_pass)
+    for half in halves:
+        scored = remote_halves.result(half.index) if half.index in remote else score_half(half, final_pass)
         if first_projector_power_spectrum is None:
             first_projector_power_spectrum = scored.projector_power_spectrum
         final_outs.translation_search_bases[half.index] = scored.translation_search_base

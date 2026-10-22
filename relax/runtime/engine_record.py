@@ -172,3 +172,11 @@ def record_coarse_engine_call(
 def take_coarse_engine_calls() -> list[dict]:
     """Return and clear executed global-call records since the last boundary."""
     return _drain(_coarse_entries)
+
+
+def append_taken(pass_engines: list[str], coarse_calls: list[dict]) -> None:
+    """Append records another process took (``take_pass_engines`` and ``take_coarse_engine_calls`` there), in
+    their order: a half scored by another rank of a multi-GPU run (``relax.refinement.remote_halves``)."""
+
+    _entries.extend(pass_engines)
+    _coarse_entries.extend(coarse_calls)

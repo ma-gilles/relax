@@ -40,6 +40,7 @@ import relax.runtime.scoring_overrides
 from relax.commands import refinement_arguments, refinement_particles
 from relax.diagnostics import observers, parity_dump
 from relax.numerics.precision import DensePrecisionPolicy, use_float32_matmuls
+from relax.parallel import channel
 from relax.parity import (
     archive_provenance,
     frozen_boundary_cli,
@@ -49,7 +50,7 @@ from relax.parity import (
     replay_inputs,
     startup_noise_inputs,
 )
-from relax.refinement import refinement_options, run_files, startup_noise, startup_references
+from relax.refinement import refinement_options, remote_halves, run_files, startup_noise, startup_references
 from relax.refinement.result_files import (
     RunReport,
     build_archive_metadata,
@@ -64,6 +65,7 @@ from relax.runtime import xla_memory_reserve
 from relax.runtime.compilation_cache import activate_recovar_compilation_cache
 from relax.star import input_particle_table, input_poses
 from relax.star import metadata as relion_metadata
+from relax_cli import launch
 
 logging.basicConfig(
     level=logging.INFO,
@@ -330,6 +332,18 @@ def main(command=None):
     use_float32_matmuls()
     _assert_expected_repo_imports()
     args = relax.commands.refinement_parser.parse_refinement_args()
+    # A multi-GPU run (--gpu with two devices): rank 0 listens for the other ranks, which write under a hidden
+    # directory of the output and score the halves rank 0 sends them (relax.refinement.remote_halves).
+    ranks = launch.rank_environment()
+    refinement_arguments.require_gpu_ranks(args, ranks)
+    rank_link = None
+    if ranks is not None and ranks.is_leader:
+        rank_link = remote_halves.RankLink(channel.listen(ranks.address, ranks.authkey), ranks.world)
+    elif ranks is not None:
+        args.output = launch.rank_directory(args.output, ranks.rank)
+        if args.scratch_dir:  # each rank stages its own copy of the stacks
+            args.scratch_dir = launch.rank_directory(args.scratch_dir, ranks.rank)
+            os.makedirs(args.scratch_dir, exist_ok=True)
     if command is not None:
         refinement_arguments.require_command_n_classes(command, int(args.n_classes))
     refinement_arguments.require_consistency_arguments(args)
@@ -1220,6 +1234,26 @@ def main(command=None):
     # One stable-window class history for the refinement (see refine_single_volume).
     from relax.fine_pass.resident_stable_windows import stable_window_class_history
 
+    observer = observers.command_observer(args, timing_dir=timing_dir_path)
+    k_class_probe = observers.command_k_class_probe()
+    source = relion_replay_source.RelionReplaySource.for_run(
+        relion_replay_source.RelionReplay.from_environ(
+            frozen_boundary,
+            perturb_replay_relion_dir=args.perturb_replay_relion_dir,
+            replay_iteration_overrides=replay_iteration_overrides,
+            follower_topology=follower_topology,
+        ),
+        run_options,
+    )
+    if ranks is not None:
+        remote_halves.require_rank_route(observer, source)
+    if ranks is not None and not ranks.is_leader:
+        # This rank scores the halves rank 0 sends it; rank 0 writes every output.
+        remote_halves.serve_remote_halves(
+            channel.connect(ranks.address, ranks.authkey, ranks.rank), experiment_datasets=experiment_datasets,
+            options=run_options, observer=observer, source=source, k_class_probe=k_class_probe,
+        )
+        return
     with stable_window_class_history():
         result = refine_single_volume(
             experiment_datasets=experiment_datasets,
@@ -1227,17 +1261,10 @@ def main(command=None):
             init_noise_variance=noise_variance,
             translations=translations_jnp,
             options=run_options,
-            observer=observers.command_observer(args, timing_dir=timing_dir_path),
-            k_class_probe=observers.command_k_class_probe(),
-            source=relion_replay_source.RelionReplaySource.for_run(
-                relion_replay_source.RelionReplay.from_environ(
-                    frozen_boundary,
-                    perturb_replay_relion_dir=args.perturb_replay_relion_dir,
-                    replay_iteration_overrides=replay_iteration_overrides,
-                    follower_topology=follower_topology,
-                ),
-                run_options,
-            ),
+            observer=observer,
+            k_class_probe=k_class_probe,
+            source=source,
+            ranks=rank_link,
         )
     # The options (with their replay slots) live no longer than the refinement.
     del run_options, startup
