@@ -36,7 +36,7 @@ from relax.refinement.local_half import (
     LocalPriorSpec,
     score_half_local_in_bpref_scope,
 )
-from relax.refinement.local_sampling import LocalSearchSettings, prepare_final_local_sampling
+from relax.refinement.local_sampling import LocalSampling, LocalSearchSettings, prepare_final_local_sampling
 from relax.refinement.numbered_reconstruction import merged_half_map, weighted_class_merge
 from relax.refinement.ports import FinalHalfScored, InputSource
 from relax.refinement.priors import join_half_accumulators_at_low_resolution
@@ -403,234 +403,49 @@ def run_final_all_data(
             engine_tuning=options.environment.engine,
             scoring_overrides=options.environment.scoring,
         )
+    final_pass = FinalPass(
+        current_size=final_current_size,
+        volume_shape=volume_shape,
+        use_local=final_use_local,
+        sampling=final_sampling,
+        route=(
+            FinalLocalRoute(
+                sampling=final_local_sampling,
+                batching=final_local_batching,
+                execution=final_local_execution,
+                diagnostics=final_local_diagnostics,
+            )
+            if final_use_local
+            else FinalDenseRoute(
+                sampling=final_dense_sampling,
+                batching=final_dense_batching,
+                variant=final_dense_variant,
+                execution=final_dense_execution,
+            )
+        ),
+        references=final_join_means,
+        tau2=reference_model.tau2,
+        state=carry.state,
+        noise_model=carry.noise_model,
+        sigma_offset=carry.sigma_offset,
+        direction_priors=carry.direction_priors,
+        class_log_priors=carry.class_mixture.log_priors,
+        scale_gate=carry.previous_data_vs_prior_for_scheduling,
+        sealed_sampling_state=(
+            source.sealed_sampling_state if final_sampling.base_rotations is carry.coarse_grids.rotation_grid.rotations else None
+        ),
+    )
     final_outs = PerHalfOutputs()
     first_projector_power_spectrum = None
-    for half, reference in zip(halves, final_join_means, strict=True):
-        # Pass 1 scores RELION's exact coarse operands on every route, so the final pass builds the projector too.
-        # Each half's Projector::data is built when its pass starts and released when it ends: complex128, 33 GiB
-        # per half at EMPIAR-10202's box, and both were held for the whole final pass (relax#39).
-        projector_clock = Stopwatch()
-        projector = prepare_scoring_projector(
-            reference,
-            volume_shape=volume_shape,
-            current_size=final_current_size,
-            padding_factor=PROJECTION_PADDING_FACTOR,
-            n_classes=options.k_class.n_classes,
-            dump_label=f"final_half{half.index}",
-            gridding_kernel=ctx.reconstruction_settings.gridding_kernel,
-            files=options.environment.projector_files,
-            stable_window_quantum=options.environment.engine.stable_window_quantum,
-        )
-        logger.info(
-            "RELION final all-data half-%d: built exact Projector::data for scoring at current_size=%d r_max=%s "
-            "in %.2fs",
-            half.index + 1,
-            final_current_size,
-            projector.r_max,
-            projector_clock.seconds,
-        )
+    for half in halves:
+        scored = score_final_half(half, final_pass, ctx=ctx, options=options, follower_setup=follower_setup)
         if first_projector_power_spectrum is None:
-            first_projector_power_spectrum = projector.power_spectrum
-        scoring_half = None
-        half = local_search_centre_half(half, (options.start.init_angle_priors or (None, None))[half.index], carry.state)
-        final_half_clock = Stopwatch()
-        logger.info(
-            "RELION final all-data half-%d start: images=%d current_size=%d "
-            "healpix_order=%d n_rot=%d n_trans=%d local_search=%s",
-            half.index + 1,
-            half.dataset.n_units,
-            final_current_size,
-            final_sampling.settings.grid_order,
-            final_sampling.base_rotations.shape[0],
-            final_sampling.grid.translations.shape[0],
-            final_use_local,
-        )
-        translation_search_base = relion_translation_search_base(
-            half.translations, dtype=scoring_dtype
-        )
-        final_outs.translation_search_bases[half.index] = translation_search_base
-        final_sigma_offset_k = carry.sigma_offset.for_half(half.index)
-        if ctx.tomo_halves:
-            final_inputs = None  # the half preparation below is single-particle only
-            # Subtomograms: the tomo half pass at the final sampling (RELION's local search on the
-            # previous poses), with the merged reference for both halves.
-            # RELION's final iteration keeps the orientational prior the run converged with: a local search,
-            # or below --auto_local_healpix_order the --sigma_tilt prior or none, on the global sampling
-            # (the convergence branch sets has_converged, do_join_random_halves and do_use_all_data and
-            # nothing of the prior or the sampling, ml_optimiser.cpp:10152-10160).
-            tilt_prior = half_inputs.tilt_prior_for_half(
-                half,
-                (options.start.init_angle_priors or (None, None))[half.index],
-                options.local_search.tilt_prior_deg(carry.state.do_local_search),
-            )
-            if final_use_local:
-                tomo_final_sampling = local_tomo_sampling(
-                    fine_order=final_local_sampling.search.healpix_order,
-                    oversampling_order=final_local_sampling.search.oversampling_order,
-                    translation_range_px=final_sampling.settings.translation_range,
-                    translation_step_px=final_sampling.settings.translation_step,
-                    model_pixel_size=ctx.optics.model_pixel_size,
-                    random_perturbation=final_local_sampling.perturbation,
-                    pass1_size=final_local_sampling.coarse_image_window_size,
-                    current_size=final_current_size,
-                )
-                tomo_final_search = dict(
-                    previous_eulers_deg=half.rotation_eulers,
-                    sigma_rot=final_local_sampling.search.sigma_rot,
-                    sigma_psi=final_local_sampling.search.sigma_psi,
-                    sigma_tilt_deg=0.0,
-                )
-            else:
-                tomo_final_sampling = local_tomo_sampling(
-                    fine_order=final_sampling.settings.grid_order + carry.state.adaptive_oversampling,
-                    oversampling_order=carry.state.adaptive_oversampling,
-                    translation_range_px=final_sampling.settings.translation_range,
-                    translation_step_px=final_sampling.settings.translation_step,
-                    model_pixel_size=ctx.optics.model_pixel_size,
-                    random_perturbation=final_sampling.settings.random_perturbation,
-                    pass1_size=relion_coarse_image_size(
-                        angular_sampling_deg(final_sampling.settings.grid_order),
-                        image_geometry.pixel_size_angstrom,
-                        image_geometry.box_size,
-                        particle_diameter=options.schedule.particle_diameter_ang,
-                        current_size=final_current_size,
-                    ),
-                    current_size=final_current_size,
-                )
-                if tilt_prior is not None:
-                    logger.info(
-                        "RELION final all-data iteration under the --sigma_tilt prior: healpix_order=%d, "
-                        "sigma_tilt=%g deg",
-                        final_sampling.settings.grid_order, tilt_prior.sigma_deg,
-                    )
-                    tomo_final_search = dict(
-                        previous_eulers_deg=(
-                            np.zeros((half.dataset.n_units, 3), dtype=np.float64)
-                            if half.rotation_eulers is None
-                            else half.rotation_eulers
-                        ),
-                        sigma_rot=0.0,
-                        sigma_psi=0.0,
-                        sigma_tilt_deg=tilt_prior.sigma_deg,
-                        prior_tilt_deg=tilt_prior.centre_deg,
-                    )
-                else:
-                    # No orientational prior (RELION's NOPRIOR): the global search of the numbered iterations,
-                    # each orientation weighted by this half's direction distribution
-                    # (acc_ml_optimiser_impl.h:1968-1969), which is even when the sampling changed since it
-                    # was learned.
-                    logger.info(
-                        "RELION final all-data iteration as a global subtomogram search: healpix_order=%d",
-                        final_sampling.settings.grid_order,
-                    )
-                    tomo_final_search = None
-                    tomo_final_direction_log_prior = relion_direction_log_priors_for_half(
-                        use_local=False,
-                        scoring_healpix_order=final_sampling.settings.grid_order,
-                        n_classes=options.k_class.n_classes,
-                        prior=carry.direction_priors[half.index],
-                        sealed_sampling_state=None,
-                        dtype=scoring_dtype,
-                        log=logger,
-                        half_index=half.index,
-                        symmetry=options.symmetry.point_group,
-                    ).rotation_log_prior
-            final_result = score_tomo_half_in_loop(
-                HalfScoringData(
-                    particles=half,
-                    reference=final_join_means[half.index],
-                    noise_variance=carry.noise_model.variance_per_half[half.index],
-                    projector=projector,
-                    scale_group_ids=follower_setup.scale_stats_group_ids_per_half[half.index],
-                    scale_group_count=follower_setup.scale_stats_group_count_per_half[half.index],
-                    scale_correction_data_vs_prior=carry.previous_data_vs_prior_for_scheduling,
-                ),
-                use_adaptive=tomo_final_sampling.oversampling_order > 0,
-                sampling=tomo_final_sampling,
-                local_search=tomo_final_search,
-                rotation_log_prior=None if tomo_final_search is not None else tomo_final_direction_log_prior,
-                sigma_offset_angst=final_sigma_offset_k,
-                max_significants=options.adaptive.max_significants,
-                reconstruction_current_size=final_current_size,
-                symmetry=options.symmetry.point_group,
-                engine_tuning=options.environment.engine,
-                scoring_overrides=options.environment.scoring,
-            )
-        else:
-            # The final pass scores each half with its own priors on the grid rows it
-            # actually uses; sealed rows apply only when the sealed grid is reused.
-            final_inputs = prepare_final_half(
-                half,
-                final_sampling,
-                image_geometry=image_geometry,
-                sigma_offset_angstrom=final_sigma_offset_k,
-                noise_radial=carry.noise_model.radial_per_half[half.index],
-                direction_prior=carry.direction_priors[half.index],
-                n_classes=options.k_class.n_classes,
-                use_local=final_use_local,
-                coarse_angular_step_deg=final_local_sampling.coarse_angular_step_deg if final_use_local else None,
-                particle_diameter_angstrom=options.schedule.particle_diameter_ang,
-                sealed_sampling_state=(
-                    source.sealed_sampling_state if final_sampling.base_rotations is carry.coarse_grids.rotation_grid.rotations else None
-                ),
-                symmetry=options.symmetry.point_group,
-                dtype=scoring_dtype,
-                projection_scale=ctx.relion_projection_scale,
-            )
-            scoring_half = HalfScoringData(
-                particles=half,
-                projector=projector,
-                reference=final_join_means[half.index],
-                mean_variance=reference_model.tau2,
-                noise_variance=carry.noise_model.variance_per_half[half.index],
-                scale_group_ids=follower_setup.scale_stats_group_ids_per_half[half.index],
-                scale_group_count=follower_setup.scale_stats_group_count_per_half[half.index],
-                scale_correction_data_vs_prior=carry.previous_data_vs_prior_for_scheduling,
-            )
-            if final_use_local:
-                final_result = score_half_local_in_bpref_scope(
-                    half=scoring_half,
-                    sampling=final_local_sampling,
-                    priors=LocalPriorSpec(
-                        trans_prior_center=final_inputs.translations.local_prior_center,
-                        trans_prior_center_for_engine=final_inputs.translations.engine_prior_center,
-                        current_sigma_offset_angstrom=final_sigma_offset_k,
-                        translation_search_base=translation_search_base,
-                        class_log_priors=carry.class_mixture.log_priors,
-                    ),
-                    batching=final_local_batching,
-                    execution=final_local_execution,
-                    diagnostics=final_local_diagnostics,
-                    optics=final_inputs.optics,
-                )
-            else:
-                final_result = score_half_dense_in_bpref_scope(
-                    half=scoring_half,
-                    sampling=final_dense_sampling,
-                    priors=DensePriorSpec(
-                        rotation_log_prior_k=final_inputs.directions.rotation_log_prior,
-                        class_rotation_log_prior_k=final_inputs.directions.class_rotation_log_prior,
-                        translation_log_prior=final_inputs.translation_log_prior,
-                        translation_search_base=translation_search_base,
-                        trans_prior_center_for_engine=final_inputs.translations.engine_prior_center,
-                        class_log_priors=carry.class_mixture.log_priors,
-                    ),
-                    batching=final_dense_batching,
-                    variant=final_dense_variant,
-                    execution=final_dense_execution,
-                    optics=final_inputs.optics,
-                )
-        if final_result.best_pose_translations is not None:
-            final_result.best_pose_translations = relion_metadata_translations(
-                half.translations,
-                final_result.best_pose_translations,
-                own_pixel_factors=image_translation_factors(half.dataset),
-                dtype=scoring_dtype,
-            )
-        final_outs.update_from(half.index, final_result, dtype=scoring_dtype)
+            first_projector_power_spectrum = scored.projector_power_spectrum
+        final_outs.translation_search_bases[half.index] = scored.translation_search_base
+        final_outs.update_from(half.index, scored.result, dtype=scoring_dtype)
         record_score_profile(
             history.global_profile_history,
-            final_result,
+            scored.result,
             phase="final_all_data",
             iteration=iteration + 1,
             relion_iteration=final_sampling.settings.relion_iteration,
@@ -642,16 +457,16 @@ def run_final_all_data(
         logger.info(
             "RELION final all-data half-%d done: wall=%.1fs",
             half.index + 1,
-            final_half_clock.seconds,
+            scored.clock.seconds,
         )
         ctx.expectation_probe.final_half_scored(FinalHalfScored(
-            half, final_sampling, final_inputs,
-            translation_search_base=translation_search_base, reference=final_join_means[half.index],
+            scored.half, final_sampling, scored.prepared,
+            translation_search_base=scored.translation_search_base, reference=final_join_means[half.index],
             reference_model=reference_model, noise_variance=carry.noise_model.variance_per_half[half.index],
             current_size=final_current_size, precision=final_precision, use_local=final_use_local,
         ))
-        # The pass is over: nothing below reads this half's Projector::data.
-        del projector, scoring_half
+        # The half is published: drop this loop's references to its result before the next half is scored.
+        del scored
 
     final_mstep_accumulator_shape = resolve_mstep_accumulator_shape(
         final_outs.mstep_accumulator_shape,
@@ -953,3 +768,304 @@ def prepare_final_half(
         single_shape_projection_scale=projection_scale,
     )
     return PreparedFinalHalf(translations, translation_log_prior, directions, optics)
+
+
+@dataclass(frozen=True, kw_only=True)
+class FinalLocalRoute:
+    """The exact-local route of the final all-data pass: its sampling and the local engine's policies."""
+
+    sampling: LocalSampling
+    batching: LocalBatchPolicy
+    execution: LocalExecutionPolicy
+    diagnostics: LocalDiagnosticPolicy
+
+
+@dataclass(frozen=True, kw_only=True)
+class FinalDenseRoute:
+    """The dense route of the final all-data pass: its sampling and the dense engine's policies."""
+
+    sampling: DenseSamplingSpec
+    batching: DenseBatchPolicy
+    variant: DenseVariantPolicy
+    execution: DenseExecutionPolicy
+
+
+@dataclass(frozen=True, kw_only=True)
+class FinalPass:
+    """What each half of the final all-data pass is scored with, resolved once before the halves.
+
+    ``route`` is the subtomogram pass's local sampling too (a ``FinalLocalRoute`` when ``use_local``); a
+    subtomogram global pass reads ``sampling`` and ``state`` alone. ``references`` are the halves' scoring maps
+    (the joined means), ``tau2`` the reference model's shared tau2, ``scale_gate`` the iteration-start
+    scale-correction curve (``previous_data_vs_prior_for_scheduling``) and ``sealed_sampling_state`` the input
+    source's sealed rows when the final grid is the sealed one, else None. ``state`` and the carry's records
+    are the run's own objects: scoring reads them and changes none.
+    """
+
+    current_size: int
+    volume_shape: tuple
+    use_local: bool
+    sampling: FinalSampling
+    route: FinalLocalRoute | FinalDenseRoute
+    references: list
+    tau2: object
+    state: object
+    noise_model: object
+    sigma_offset: object
+    direction_priors: list
+    class_log_priors: object
+    scale_gate: object
+    sealed_sampling_state: object | None
+
+
+@dataclass(frozen=True, kw_only=True)
+class FinalHalfScore:
+    """One half of the final all-data pass scored by :func:`score_final_half`.
+
+    ``half`` is the half as scored (centred for this pass's local search), ``prepared`` its single-particle
+    priors and optics (None for subtomograms), ``projector_power_spectrum`` its scoring projector's power
+    spectrum (Class3D's final tau2 reads half 1's) and ``clock`` started when the half's scoring started, after
+    its projector was built.
+    """
+
+    half: half_inputs.HalfSet
+    result: object
+    translation_search_base: object
+    prepared: PreparedFinalHalf | None
+    projector_power_spectrum: object
+    clock: Stopwatch
+
+
+def score_final_half(
+    half: half_inputs.HalfSet, final_pass: FinalPass, *, ctx: "RunContext", options: RefinementOptions, follower_setup
+) -> FinalHalfScore:
+    """Build one half's scoring projector and score the half on the final pass's route.
+
+    Each half's Projector::data lives only inside this call. The caller publishes the result.
+    """
+    image_geometry = ctx.optics.image_geometry
+    scoring_dtype = options.precision.rotation_real_dtype
+    # Pass 1 scores RELION's exact coarse operands on every route, so the final pass builds the projector too.
+    # Each half's Projector::data is built when its pass starts and released when it ends: complex128, 33 GiB
+    # per half at EMPIAR-10202's box, and both were held for the whole final pass (relax#39).
+    projector_clock = Stopwatch()
+    projector = prepare_scoring_projector(
+        final_pass.references[half.index],
+        volume_shape=final_pass.volume_shape,
+        current_size=final_pass.current_size,
+        padding_factor=PROJECTION_PADDING_FACTOR,
+        n_classes=options.k_class.n_classes,
+        dump_label=f"final_half{half.index}",
+        gridding_kernel=ctx.reconstruction_settings.gridding_kernel,
+        files=options.environment.projector_files,
+        stable_window_quantum=options.environment.engine.stable_window_quantum,
+    )
+    logger.info(
+        "RELION final all-data half-%d: built exact Projector::data for scoring at current_size=%d r_max=%s "
+        "in %.2fs",
+        half.index + 1,
+        final_pass.current_size,
+        projector.r_max,
+        projector_clock.seconds,
+    )
+    half = local_search_centre_half(half, (options.start.init_angle_priors or (None, None))[half.index], final_pass.state)
+    final_half_clock = Stopwatch()
+    logger.info(
+        "RELION final all-data half-%d start: images=%d current_size=%d "
+        "healpix_order=%d n_rot=%d n_trans=%d local_search=%s",
+        half.index + 1,
+        half.dataset.n_units,
+        final_pass.current_size,
+        final_pass.sampling.settings.grid_order,
+        final_pass.sampling.base_rotations.shape[0],
+        final_pass.sampling.grid.translations.shape[0],
+        final_pass.use_local,
+    )
+    translation_search_base = relion_translation_search_base(
+        half.translations, dtype=scoring_dtype
+    )
+    final_sigma_offset_k = final_pass.sigma_offset.for_half(half.index)
+    if ctx.tomo_halves:
+        final_inputs = None  # the half preparation below is single-particle only
+        # Subtomograms: the tomo half pass at the final sampling (RELION's local search on the
+        # previous poses), with the merged reference for both halves.
+        # RELION's final iteration keeps the orientational prior the run converged with: a local search,
+        # or below --auto_local_healpix_order the --sigma_tilt prior or none, on the global sampling
+        # (the convergence branch sets has_converged, do_join_random_halves and do_use_all_data and
+        # nothing of the prior or the sampling, ml_optimiser.cpp:10152-10160).
+        tilt_prior = half_inputs.tilt_prior_for_half(
+            half,
+            (options.start.init_angle_priors or (None, None))[half.index],
+            options.local_search.tilt_prior_deg(final_pass.state.do_local_search),
+        )
+        if final_pass.use_local:
+            tomo_final_sampling = local_tomo_sampling(
+                fine_order=final_pass.route.sampling.search.healpix_order,
+                oversampling_order=final_pass.route.sampling.search.oversampling_order,
+                translation_range_px=final_pass.sampling.settings.translation_range,
+                translation_step_px=final_pass.sampling.settings.translation_step,
+                model_pixel_size=ctx.optics.model_pixel_size,
+                random_perturbation=final_pass.route.sampling.perturbation,
+                pass1_size=final_pass.route.sampling.coarse_image_window_size,
+                current_size=final_pass.current_size,
+            )
+            tomo_final_search = dict(
+                previous_eulers_deg=half.rotation_eulers,
+                sigma_rot=final_pass.route.sampling.search.sigma_rot,
+                sigma_psi=final_pass.route.sampling.search.sigma_psi,
+                sigma_tilt_deg=0.0,
+            )
+        else:
+            tomo_final_sampling = local_tomo_sampling(
+                fine_order=final_pass.sampling.settings.grid_order + final_pass.state.adaptive_oversampling,
+                oversampling_order=final_pass.state.adaptive_oversampling,
+                translation_range_px=final_pass.sampling.settings.translation_range,
+                translation_step_px=final_pass.sampling.settings.translation_step,
+                model_pixel_size=ctx.optics.model_pixel_size,
+                random_perturbation=final_pass.sampling.settings.random_perturbation,
+                pass1_size=relion_coarse_image_size(
+                    angular_sampling_deg(final_pass.sampling.settings.grid_order),
+                    image_geometry.pixel_size_angstrom,
+                    image_geometry.box_size,
+                    particle_diameter=options.schedule.particle_diameter_ang,
+                    current_size=final_pass.current_size,
+                ),
+                current_size=final_pass.current_size,
+            )
+            if tilt_prior is not None:
+                logger.info(
+                    "RELION final all-data iteration under the --sigma_tilt prior: healpix_order=%d, "
+                    "sigma_tilt=%g deg",
+                    final_pass.sampling.settings.grid_order, tilt_prior.sigma_deg,
+                )
+                tomo_final_search = dict(
+                    previous_eulers_deg=(
+                        np.zeros((half.dataset.n_units, 3), dtype=np.float64)
+                        if half.rotation_eulers is None
+                        else half.rotation_eulers
+                    ),
+                    sigma_rot=0.0,
+                    sigma_psi=0.0,
+                    sigma_tilt_deg=tilt_prior.sigma_deg,
+                    prior_tilt_deg=tilt_prior.centre_deg,
+                )
+            else:
+                # No orientational prior (RELION's NOPRIOR): the global search of the numbered iterations,
+                # each orientation weighted by this half's direction distribution
+                # (acc_ml_optimiser_impl.h:1968-1969), which is even when the sampling changed since it
+                # was learned.
+                logger.info(
+                    "RELION final all-data iteration as a global subtomogram search: healpix_order=%d",
+                    final_pass.sampling.settings.grid_order,
+                )
+                tomo_final_search = None
+                tomo_final_direction_log_prior = relion_direction_log_priors_for_half(
+                    use_local=False,
+                    scoring_healpix_order=final_pass.sampling.settings.grid_order,
+                    n_classes=options.k_class.n_classes,
+                    prior=final_pass.direction_priors[half.index],
+                    sealed_sampling_state=None,
+                    dtype=scoring_dtype,
+                    log=logger,
+                    half_index=half.index,
+                    symmetry=options.symmetry.point_group,
+                ).rotation_log_prior
+        final_result = score_tomo_half_in_loop(
+            HalfScoringData(
+                particles=half,
+                reference=final_pass.references[half.index],
+                noise_variance=final_pass.noise_model.variance_per_half[half.index],
+                projector=projector,
+                scale_group_ids=follower_setup.scale_stats_group_ids_per_half[half.index],
+                scale_group_count=follower_setup.scale_stats_group_count_per_half[half.index],
+                scale_correction_data_vs_prior=final_pass.scale_gate,
+            ),
+            use_adaptive=tomo_final_sampling.oversampling_order > 0,
+            sampling=tomo_final_sampling,
+            local_search=tomo_final_search,
+            rotation_log_prior=None if tomo_final_search is not None else tomo_final_direction_log_prior,
+            sigma_offset_angst=final_sigma_offset_k,
+            max_significants=options.adaptive.max_significants,
+            reconstruction_current_size=final_pass.current_size,
+            symmetry=options.symmetry.point_group,
+            engine_tuning=options.environment.engine,
+            scoring_overrides=options.environment.scoring,
+        )
+    else:
+        # The final pass scores each half with its own priors on the grid rows it
+        # actually uses; sealed rows apply only when the sealed grid is reused.
+        final_inputs = prepare_final_half(
+            half,
+            final_pass.sampling,
+            image_geometry=image_geometry,
+            sigma_offset_angstrom=final_sigma_offset_k,
+            noise_radial=final_pass.noise_model.radial_per_half[half.index],
+            direction_prior=final_pass.direction_priors[half.index],
+            n_classes=options.k_class.n_classes,
+            use_local=final_pass.use_local,
+            coarse_angular_step_deg=final_pass.route.sampling.coarse_angular_step_deg if final_pass.use_local else None,
+            particle_diameter_angstrom=options.schedule.particle_diameter_ang,
+            sealed_sampling_state=final_pass.sealed_sampling_state,
+            symmetry=options.symmetry.point_group,
+            dtype=scoring_dtype,
+            projection_scale=ctx.relion_projection_scale,
+        )
+        scoring_half = HalfScoringData(
+            particles=half,
+            projector=projector,
+            reference=final_pass.references[half.index],
+            mean_variance=final_pass.tau2,
+            noise_variance=final_pass.noise_model.variance_per_half[half.index],
+            scale_group_ids=follower_setup.scale_stats_group_ids_per_half[half.index],
+            scale_group_count=follower_setup.scale_stats_group_count_per_half[half.index],
+            scale_correction_data_vs_prior=final_pass.scale_gate,
+        )
+        if final_pass.use_local:
+            final_result = score_half_local_in_bpref_scope(
+                half=scoring_half,
+                sampling=final_pass.route.sampling,
+                priors=LocalPriorSpec(
+                    trans_prior_center=final_inputs.translations.local_prior_center,
+                    trans_prior_center_for_engine=final_inputs.translations.engine_prior_center,
+                    current_sigma_offset_angstrom=final_sigma_offset_k,
+                    translation_search_base=translation_search_base,
+                    class_log_priors=final_pass.class_log_priors,
+                ),
+                batching=final_pass.route.batching,
+                execution=final_pass.route.execution,
+                diagnostics=final_pass.route.diagnostics,
+                optics=final_inputs.optics,
+            )
+        else:
+            final_result = score_half_dense_in_bpref_scope(
+                half=scoring_half,
+                sampling=final_pass.route.sampling,
+                priors=DensePriorSpec(
+                    rotation_log_prior_k=final_inputs.directions.rotation_log_prior,
+                    class_rotation_log_prior_k=final_inputs.directions.class_rotation_log_prior,
+                    translation_log_prior=final_inputs.translation_log_prior,
+                    translation_search_base=translation_search_base,
+                    trans_prior_center_for_engine=final_inputs.translations.engine_prior_center,
+                    class_log_priors=final_pass.class_log_priors,
+                ),
+                batching=final_pass.route.batching,
+                variant=final_pass.route.variant,
+                execution=final_pass.route.execution,
+                optics=final_inputs.optics,
+            )
+    if final_result.best_pose_translations is not None:
+        final_result.best_pose_translations = relion_metadata_translations(
+            half.translations,
+            final_result.best_pose_translations,
+            own_pixel_factors=image_translation_factors(half.dataset),
+            dtype=scoring_dtype,
+        )
+
+    return FinalHalfScore(
+        half=half,
+        result=final_result,
+        translation_search_base=translation_search_base,
+        prepared=final_inputs,
+        projector_power_spectrum=projector.power_spectrum,
+        clock=final_half_clock,
+    )
