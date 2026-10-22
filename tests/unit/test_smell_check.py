@@ -110,6 +110,45 @@ def test_record_fields_unpacked_or_indexed_namedtuple_is_read(tmp_path):
     }
 
 
+def test_record_fields_unpacked_in_a_loop_or_comprehension_are_read(tmp_path):
+    repo = make_repo(
+        tmp_path,
+        {
+            "relax/algo.py": """
+            from typing import NamedTuple
+
+            class Pair(NamedTuple):
+                left: int
+                right: int
+
+            class Triple(NamedTuple):
+                first: int
+                second: int
+                third: int
+
+            class Unread(NamedTuple):
+                one: int
+                two: int
+
+            def f(pairs: list[Pair], triples: "tuple[Triple, ...]", others):
+                total = 0
+                for left, right in pairs:
+                    total += left + right
+                firsts = [first for first, _second in triples]
+                for a, b in others:
+                    total += a + b
+                return total, firsts
+        """,
+        },
+    )
+    # A two-name target reads a three-field record's first two fields; an untyped iterable reads no field.
+    assert keys(smell_check.check_record_fields(repo)) == {
+        "record-field:relax.algo:Triple.third",
+        "record-field:relax.algo:Unread.one",
+        "record-field:relax.algo:Unread.two",
+    }
+
+
 def test_record_fields_a_typed_read_counts_for_its_class_alone(tmp_path):
     repo = make_repo(
         tmp_path,

@@ -409,6 +409,12 @@ class _FieldReads:
         ):
             # A NamedTuple unpacked (``a, b = record``) reads its fields by position.
             self._positional(self.classes_of(node.value, types), node.targets[0].elts)
+        elif isinstance(node, (ast.For, ast.AsyncFor, ast.comprehension)) and isinstance(
+            node.target, (ast.Tuple, ast.List)
+        ):
+            # Records unpacked as they are iterated (``for a, b in records``, records typed as a collection of one
+            # record class) read their fields by position.
+            self._positional(self.classes_of(node.iter, types), node.target.elts)
         elif isinstance(node, ast.Subscript) and isinstance(node.ctx, ast.Load):
             # A NamedTuple indexed by a constant (``record[1]``, ``record[-1]``) reads that field.
             try:
