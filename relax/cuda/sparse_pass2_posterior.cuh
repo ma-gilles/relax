@@ -11,8 +11,8 @@
 // Every per-element formula is copied from the XLA path.  Order-independent
 // reductions (max, argmax with smallest index, mask counts) are exact.  The
 // RELION significance boundary is relion_coarse_cut_f32's definition (RELION's
-// cut with float64 cumulative sums, by radix select; block_radix_cut), one block
-// per segment, with no sort, scan or host round trip.  The float64 bin
+// cut with float64 cumulative sums, by radix select over each segment's cells),
+// with no sort, scan or host round trip.  The float64 bin
 // masses and the log-sum-exp of the log-Z handler are the order-dependent sums.
 // The per-row bodies below (RowState and the *_body helpers) are shared by these
 // handlers; the rectangular-row handlers that used them as well were removed.
@@ -262,29 +262,6 @@ __device__ void radix_cut_select(BlockCut& c, int pass, float fraction)
     }
 }
 
-__device__ void block_radix_cut(const float* weights, int64_t n, float fraction, BlockCut& c)
-{
-    if (threadIdx.x == 0) radix_cut_reset(c);
-    for (int pass = 0; pass < 4; ++pass)
-    {
-        for (int b = threadIdx.x; b < 256; b += blockDim.x) { c.counts[b] = 0u; c.masses[b] = 0.0; }
-        __syncthreads();
-        const uint32_t prefix = c.prefix;
-        if (!c.empty)
-            for (int64_t i = threadIdx.x; i < n; i += blockDim.x)
-            {
-                const float weight = weights[i];
-                const int bin = radix_cut_bin(weight, pass, prefix);
-                if (bin < 0) continue;
-                atomicAdd(&c.counts[bin], 1u);
-                atomicAdd(&c.masses[bin], static_cast<double>(weight));
-            }
-        __syncthreads();
-        if (threadIdx.x == 0) radix_cut_select(c, pass, fraction);
-        __syncthreads();
-    }
-}
-
 // The rest of RELION's boundary: the normalizing sum (the coarse pass's, or this pass's own)
 // and the row state the normalization reads. ``n == 0`` is an empty segment.
 __device__ __forceinline__ void cut_body(
@@ -366,8 +343,8 @@ __device__ __forceinline__ void normalize_body(
 // pass-2 data model, so a chunk does not pad every image to a common row count.
 //
 // Every formula is one of the per-row bodies above, called on the segment's
-// slice.  The significance boundary is block_radix_cut, one
-// block per segment, so the handler has no host round trip, and its launch
+// slice.  The significance boundary is a radix select on the device
+// (segmented_cut_*_kernel), so the handler has no host round trip, and its launch
 // geometry is capacity-only: each kernel is launched at the static segment
 // count and n_valid_images is read only on the device.
 //
@@ -513,11 +490,11 @@ __global__ void segmented_exponentiate_kernel(
                               kCells ? probs + index : nullptr);
 }
 
-// The segments' significance cut is block_radix_cut's, with each segment's cells split over
+// The segments' significance cut is a radix select, with each segment's cells split over
 // kCutBlocksPerSegment blocks (gridDim.y): every radix pass adds the blocks' shared histograms into the
 // segment's (SegmentState::cut) and one thread per segment then chooses the bin (radix_cut_select). One
 // block per segment ran a lone tilt particle's 188M cells alone (4.1 s on an H100). The counts are exact and
-// the masses float64 sums, as in the one-block cut, whose shared-memory atomics add them in no fixed order.
+// the masses float64 sums, which the shared-memory and global atomics add in no fixed order.
 __global__ void segmented_cut_reset_kernel(SegmentState* state)
 {
     BlockCut& c = state[blockIdx.x].cut;
