@@ -163,13 +163,13 @@ _FLOAT32_BUCKETED_IMAGE_SUMS = False
 # bought nothing: at hp3 the matched pairs put the two ladders inside the
 # control's own drift (loop 22.6 versus 22.1 s per half) and at the early state
 # they are indistinguishable (resident warm 67.6 / 60.4 versus 67.0 / 61.5 s,
-# occupancy 0.95-0.97 either way, jobs 14143902 and 14143904), while the dense
+# occupancy 0.95-0.97 either way), while the dense
 # ladder costs 84 extra traced programs. Every extra class is one more program
 # per capacity-class stage.
 # The occupancy of each plan is still logged, so a future change has its number.
 # 524288 is for early low-SNR states, where each image keeps thousands of rows:
 # Class3D K4 100k/256 snr05 iteration 2 ran 8722 chunks of 131072 rows, 2028 of
-# 524288, chunk loop 619 -> 523 s and iteration 3 453 -> 374 s (job 14580683).
+# 524288, chunk loop 619 -> 523 s and iteration 3 453 -> 374 s.
 # The cached-path gather budget (cached_row_capacity_ladder) and the chunk
 # memory plan drop it wherever a chunk that size does not fit.
 _DEFAULT_ROW_CAPACITY_LADDER = (8192, 32768, 131072, 524288)
@@ -774,7 +774,7 @@ def _resident_pass2(
             # RELION projects through a float32 texture (AccProjector::setMdlData).
             # Left complex128, this driver's projections fell back to the vmapped
             # JAX projector: different values (os1 iteration 1: hard assignments
-            # 97.7% equal, 14384091) and twice the iteration time.
+            # 97.7% equal) and twice the iteration time.
             if not use_float64_scoring and relion_projector_half.dtype == jnp.complex128:
                 relion_projector_half = relion_projector_half.astype(jnp.complex64)
             class_projector_halves.append(relion_projector_half)
@@ -1086,10 +1086,10 @@ def _resident_pass2(
     # budget they were not counted, up to 23 GiB at EMPIAR-10202's full box.
     # A K-class pass whose sums fit carries per-projection row sums instead
     # (projection_sums_bytes); the volumes are then built after the chunk loop.
-    # K=1 keeps the per-row backprojection: it measured no gain (K1 50k, job
-    # 14585996: 1095 -> 1092 s), and its cold-start parity cases carry the
+    # K=1 keeps the per-row backprojection: it measured no gain (K1 50k:
+    # 1095 -> 1092 s), and its cold-start parity cases carry the
     # reassociation into the trajectory (fast tier k1_os1_coldstart_standalone
-    # half-1 FSC-AUC 1.000000 -> 0.998679, bisect 14587006).
+    # half-1 FSC-AUC 1.000000 -> 0.998679).
     n_fine_rot = int(np.asarray(fine_rotations_override).shape[0])
     sums_bytes = resident_projections.projection_sums_bytes(
         n_slots=int(tables.n_slots),
@@ -1399,14 +1399,14 @@ def _resident_pass2(
     # the allocator can still hand out now, after reserving the half's resident
     # operands (allocated later): a fraction of the device total alone let the
     # whole-grid cache take memory that earlier iterations or a capped allocator
-    # did not have (bench 14445196, K=1 10097 10k at hp3).
+    # did not have (K=1 10097 10k at hp3).
     physical_free_bytes = device_free_memory_bytes()
     allocator_free_bytes = jax_allocator_free_memory_bytes()
     pool_free_bytes = jax_allocator_pool_free_bytes()
     # The operands are reserved only when the admission below would take them
     # at this reading: operands that stay per chunk are never allocated, and
     # reserving them anyway left a 0.38 GiB chunk budget at EMPIAR-10202
-    # iteration 2 (box 800, bigbox 14446465).
+    # iteration 2 (box 800, bigbox case).
     reserved_operand_bytes = 0
     # A tilt pass's CC iteration translates each image's resident CC operands per image slot (resident_tilts).
     if engine_tuning.resident_operands and (not firstiter_cc or tilt is not None):
@@ -1443,7 +1443,7 @@ def _resident_pass2(
     # (chunk-local projection caches and the posterior program's temporaries)
     # is not in the chunk estimate, and next to 21.5 GiB of resident operands
     # the full EMPIAR-10097 hp3 pass (65000 images, current size 126) could not
-    # allocate 9.65 GiB (job 14518607); the per-chunk preparation ran that pass
+    # allocate 9.65 GiB; the per-chunk preparation ran that pass
     # at cd26a5e. When the reservation alone is what makes the whole-grid cache
     # miss, the cache is kept instead of the operands.
     operands_yield_to_cache = False
@@ -1463,11 +1463,11 @@ def _resident_pass2(
         reserved_operand_bytes = 0
     # The union cache is one array. The free totals above do not promise one block
     # that large (EMPIAR-10345 it13 half 2 could not allocate 20.19 GiB with over
-    # 40 GiB free, bench 14643272), so it is allocated now, and a pass whose
+    # 40 GiB free), so it is allocated now, and a pass whose
     # allocator refuses it streams its projections instead. Deciding from the
     # allocator's largest free block instead streamed Class3D K4 100k from
     # iteration 19, a 5.50 GiB cache against a 5.25 GiB block, at 3.5x the
-    # iteration time (bench 14719385).
+    # iteration time.
     union_cache = None
     if not stream_projections and union_indices is not None:
         union_cache = resident_projections.allocate_projection_cache_blocks(
@@ -1661,7 +1661,7 @@ def _resident_pass2(
     # when the cache holds one (cached_block_projections), not the score
     # window's. Counting the score window let a 524288-row chunk past both
     # budgets at current size 108 and its 19.8 GiB gather ran out of memory
-    # (union 5008 vs score 3690 pixels, job 14592696).
+    # (union 5008 vs score 3690 pixels).
     gathered_row_pixels = int(n_windowed) if union_indices is None else int(union_indices.shape[0])
     # A row-blocked cache's gather holds the rows taken so far next to the next
     # block's (resident_scoring.cache_rows): two row copies instead of one.
@@ -1676,7 +1676,7 @@ def _resident_pass2(
     else:
         # The chunk gathers its rows out of the cache into one [rows, pixels]
         # block; at box 800 (10202, current size 304) capacity 131072 needs
-        # 35.7 GiB for it (14434683). The budget is read again now that the
+        # 35.7 GiB for it. The budget is read again now that the
         # cache is resident; unknown readings do not cap.
         gather_budget_bytes = resident_projections.stream_projection_budget_bytes(
             device_memory_bytes if device_memory_bytes is not None else 1 << 62,
@@ -1967,7 +1967,7 @@ def _resident_pass2(
     # too large), a chunk prepares its own images' unshifted operands (T16)
     # where they are supported, instead of translated tiles: several times
     # smaller per image, so a chunk takes more images. At K=1 100k/256 hp3 the
-    # tiles held 32 images per chunk, 1560 chunks per half (job 14561455).
+    # tiles held 32 images per chunk, 1560 chunks per half.
     chunk_unshifted_supported = resident_chunk_inputs.chunk_unshifted_operands_supported(
         bucket_io_kwargs,
         window_indices=window_indices,

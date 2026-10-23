@@ -122,8 +122,8 @@ def slot_mstep_tables(
     safe = np.where(valid, unit_slot_images, np.max(unit_slot_images, axis=1, keepdims=True)).clip(min=0)
     image_of_unit = np.where(valid, np.asarray(layout_image_ids)[np.maximum(unit_slot_images, 0)], 0)
     # Gathered once, at each unit's own translations: taken inside the comprehension, every translation
-    # block repeated the whole [S, C_U, T, 2] gather (5 s of each late et09 subtomogram VDAM iteration,
-    # py-spy 14993731).
+    # block repeated the whole [S, C_U, T, 2] gather (5 s of each late et09 subtomogram VDAM iteration
+    # in a py-spy profile).
     unit_translations = np.asarray(unit_translations, dtype=np.int64)
     unit_angles = np.asarray(image_angles)[image_of_unit[:, :, None], unit_translations[None, :, :]]
     angles = np.stack([unit_angles[:, :, kept.index] for kept in translation_blocks], axis=1)

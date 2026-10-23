@@ -461,7 +461,7 @@ def _kept(n):
 @pytest.mark.unit
 def test_tilt_mstep_chunk_that_fits_the_capped_budget_keeps_one_block_whatever_the_wide_budget():
     """relax#120: a chunk whose translations fit one block of the capped tile budget stays one block (one unit,
-    k 1176: one block 34.3 s against 512 x 3 38.7 s, 16001863), however much the uncapped leftover holds."""
+    k 1176: one block 34.3 s against 512 x 3 38.7 s), however much the uncapped leftover holds."""
 
     blocks = resident_tilt_mstep.mstep_translation_blocks(
         _kept(1176), bytes_per_translation=1, tile_budget_bytes=2048, wide_tile_budget_bytes=10**12
@@ -473,7 +473,7 @@ def test_tilt_mstep_chunk_that_fits_the_capped_budget_keeps_one_block_whatever_t
 def test_tilt_mstep_blocks_the_cap_cuts_small_widen_to_the_block_translations_when_the_leftover_holds_them():
     """relax#120: a chunk of more than TILT_MSTEP_BLOCK_TRANSLATIONS translations that the capped budget cuts into
     smaller blocks takes blocks of TILT_MSTEP_BLOCK_TRANSLATIONS when its uncapped leftover holds them (64 units,
-    k 2048: 32 x 64 blocks 3.02 s against 512 x 4 1.96 s, 16001864); without that room, as when the leftover is no
+    k 2048: 32 x 64 blocks 3.02 s against 512 x 4 1.96 s); without that room, as when the leftover is no
     more than the cap, the capped blocks stand."""
 
     wide = resident_tilt_mstep.TILT_MSTEP_BLOCK_TRANSLATIONS
@@ -496,7 +496,7 @@ def test_tilt_mstep_blocks_the_cap_cuts_small_widen_to_the_block_translations_wh
 @pytest.mark.unit
 def test_tilt_mstep_chunks_of_at_most_the_block_translations_keep_their_capped_blocks():
     """relax#120: a chunk of at most TILT_MSTEP_BLOCK_TRANSLATIONS translations keeps the capped budget's blocks
-    (64 units, k 512: 64 x 8 0.61 s against one 512 block 0.72 s, 16001863), as does one whose capped blocks are
+    (64 units, k 512: 64 x 8 0.61 s against one 512 block 0.72 s), as does one whose capped blocks are
     already at least that wide (one unit, k 2056: 2048 x 2)."""
 
     wide = resident_tilt_mstep.TILT_MSTEP_BLOCK_TRANSLATIONS
@@ -524,7 +524,7 @@ def test_mstep_translation_blocks_stay_within_the_kernel_table_limit():
 @pytest.mark.unit
 @pytest.mark.parametrize("pass1_size", [None, 64])
 def test_final_pass_local_tomo_sampling_without_a_parent_pass_size(pass1_size):
-    """The final all-data pass at order 9 has no parent-pass size (14506700 crashed on it): coarse = current."""
+    """The final all-data pass at order 9 has no parent-pass size (a run there crashed on it): coarse = current."""
     from relax.steps.tomo_half import local_tomo_sampling
 
     sampling = local_tomo_sampling(
@@ -600,7 +600,7 @@ def test_tomo_trial_shifts_are_relion_angstrom_offsets_of_the_model_pixel_over_t
 
 @pytest.mark.unit
 def test_tilt_image_power_above_the_cutoff_carries_one_over_n_images():
-    """Above the norm cutoff a tilt image adds its power with 1 / n_images, not 1 (14547997 kept it at 1:
+    """Above the norm cutoff a tilt image adds its power with 1 / n_images, not 1 (at 1,
     the noise above the current size came out n_images times RELION's)."""
     from relax.fine_pass.wavg import weighted_image_power_from_shells
 

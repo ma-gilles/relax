@@ -74,7 +74,7 @@ def _cap_image_capacity_ladder(
     that does (at least one), as RELION translates one particle's images at a
     time; keeping the smallest class instead ran EMPIAR-10202 iteration 13
     (148 translations, 132095 pixels, 469 MiB per image against a 1.5 GiB
-    budget) out of memory with 32-image tiles (14460403).
+    budget) out of memory with 32-image tiles.
     """
 
     per_image = max(int(n_fine_trans), 1) * max(int(n_recon_pixels), 1) * 8 * 3
@@ -159,15 +159,14 @@ def resident_chunk_bytes(
     chunk's preparation, projection, scoring and its own M-step: both stages
     add one more row block and held tiles. Unmodelled, that let EMPIAR-10202
     iteration 22 plan 4096-row chunks (11.78 GiB of row projections, a 19.03
-    GiB modelled peak of a 22.12 GiB budget) and run out of memory (bigbox
-    14564062).
+    GiB modelled peak of a 22.12 GiB budget) and run out of memory.
 
     ``projection_transient_bytes`` is what one projector call holds while it
     projects a block of the chunk's rows (:func:`projection_call_row_bytes`);
     it is live in the row stage, before scoring, never together with the
     M-step block. A constant reserve of one full-half-spectrum call missed the
     texture crop held beside it: the EMPIAR-10202 final pass (current size 800)
-    ran out of memory allocating the second 4 GiB array (bigbox 14560923).
+    ran out of memory allocating the second 4 GiB array (bigbox case).
     """
 
     t, p = max(int(n_fine_trans), 1), max(int(n_recon_pixels), 1)
@@ -243,9 +242,9 @@ def chunk_translated_tile_pixels(
 
     The ``held_tile_pixels`` / ``prepare_tile_pixels`` arguments of
     :func:`plan_resident_chunk_memory` for the global and the local resident
-    pass. Counted from the live device arrays of one chunk (bigbox 14514327,
-    14521841); ``n_score_pixels`` / ``n_recon_pixels`` are the windows the
-    preparation's tiles carry (the half spectrum when the preparation is not
+    pass. Counted from the live device arrays of one chunk of the bigbox case;
+    ``n_score_pixels`` / ``n_recon_pixels`` are the windows the preparation's
+    tiles carry (the half spectrum when the preparation is not
     windowed).
 
     With the translated tiles (:func:`prepare_chunk_reconstruction_operands`),
@@ -259,7 +258,7 @@ def chunk_translated_tile_pixels(
     preparation's recon and noise tiles are one array
     (``bucket_io``), one recon tile fewer. Planning with three recon tiles
     instead let EMPIAR-10202 iteration 22 take 32 images per chunk, a ~30 GiB
-    preparation against a 22 GiB budget (14509861), and the global pass of
+    preparation against a 22 GiB budget, and the global pass of
     VDAM K=1 ribosembly 100k run out of memory allocating the rectangle
     (9.93 GiB, bench refresh 2026-09-27).
 
@@ -318,7 +317,7 @@ def plan_resident_chunk_memory(
     Each class starts from its own device-fraction rule, which alone let the
     row gather, the translation tiles and the M-step block overcommit the device
     together (EMPIAR-10202 iteration 14: a 9.7 GiB M-step block sized without
-    its translation axis, bigbox 14475506). While the largest chunk exceeds the
+    its translation axis, bigbox case). While the largest chunk exceeds the
     budget, the largest of the three terms shrinks: the M-step block halves, the
     image ladder drops its largest class and then halves a single class, the row
     ladder does the same down to :data:`MIN_PLANNED_ROW_CAPACITY` rows. When the
@@ -337,7 +336,7 @@ def plan_resident_chunk_memory(
     (:func:`overflow_row_capacity`), which the chunk loops run alone
     (:func:`chunk_runs_alone`), so it is counted without a pipelined neighbour.
     Uncounted, the EMPIAR-10202 final pass planned 1024-row chunks at 16.05 of a
-    16.16 GiB budget and ran out of memory in a 2048-row one (bigbox 14607861).
+    16.16 GiB budget and ran out of memory in a 2048-row one (bigbox case).
     ``lone_row_bytes`` is set where that chunk runs in blocks of the largest row
     class (the global pass, :func:`~relax.fine_pass.resident_chunk_run.run_lone_resident_chunk`): it is then a
     largest-class chunk of the smallest image class plus ``lone_row_bytes`` for
@@ -438,7 +437,7 @@ def plan_resident_chunk_memory(
             # The row ladder drops its largest class, then halves a single class
             # down to MIN_PLANNED_ROW_CAPACITY: the EMPIAR-10202 final pass of a
             # cold run had a 13.81 GiB budget for a 13.90 GiB 1024-row chunk
-            # (bigbox 14640954), which 512 rows fit.
+            # (bigbox case), which 512 rows fit.
             rows_can_shrink = len(rows) > 1 or max(rows) > MIN_PLANNED_ROW_CAPACITY
             rows_in_prepare = rows_bytes * (int(rows_live_during_prepare) + int(pipelined))
             if prepare_stage > rows_bytes + held_bytes + max(mstep_bytes, projection, posterior_scratch):
@@ -609,7 +608,7 @@ def resident_image_capacity_start(
 
     The fixed tile budget decides as before wherever it fits a class. When it
     fits none (EMPIAR-10202 from iteration 4: 2-8 images against 32, which
-    doubled the chunk loops, bigbox 14468367) and the device headroom is known,
+    doubled the chunk loops, bigbox case) and the device headroom is known,
     the plan starts from the whole ladder and :func:`plan_resident_chunk_memory`
     sizes the tiles from the measured budget together with the rows and the
     M-step block.

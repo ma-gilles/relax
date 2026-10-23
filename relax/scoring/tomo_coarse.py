@@ -288,8 +288,8 @@ _UNDECIDED_ROTATIONS = 8
 
 # The share of the GEMM error bound (relax.scoring.exact_cut.gemm_error_bound) the cut's margin takes. The bound is
 # the worst case, (4P + 11) u times the largest term, while the measured GEMM - direct-square differences are 1.6e3
-# to 2.6e4 times smaller (10th to 50th percentile per particle over a w2_09 box-192 Refine3D, relax#33 dumps, job
-# 15178008). On hard-noise subtomogram VDAM K=1 (cell 13, one iteration from RELION it190, job 15206974) a tenth of
+# to 2.6e4 times smaller (10th to 50th percentile per particle over a w2_09 box-192 Refine3D, relax#33
+# dumps). On hard-noise subtomogram VDAM K=1 (cell 13, one iteration from RELION it190) a tenth of
 # it leaves 79,880 rows undecided instead of 56.8M and flips none of the 22,782 significant cells against the full
 # bound (GEMM scores alone flip 26); the tenth still leaves a factor of 160 over the largest observed difference.
 _GEMM_ERROR_MARGIN_SHARE = 0.1
@@ -623,10 +623,10 @@ def _coarse_pass_budget(resident_bytes: int) -> CoarsePassBudget:
 
 # A flush's cut, in copies of its summed diff2 live beside the held flushes (the significance's log weights, mask
 # and weights, the near-cut search's tables and sort, then the exact scores and their significance). Measured on
-# et09 at iteration 100 (H100), every cut on the full sort (sorted_rotations=None, job 15134533): the coarse pass's
+# et09 at iteration 100 (H100), every cut on the full sort (sorted_rotations=None): the coarse pass's
 # device peak (live bytes plus the near-cut program's temporaries) grew by 167 MB per flush particle between
 # flushes of 29 and 7, 6.6 diff2 copies beyond the held flushes and the operand copy (4.1 with the 256-rotation
-# sort, job 15131889).
+# sort).
 _CUT_DIFF2_COPIES = 7
 
 # The share of a flush's budget left for scoring its undecided rotations again (their scorer matrices and
