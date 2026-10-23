@@ -125,8 +125,14 @@ def test_skipped_required_item_fails(tmp_path):
     (tmp_path / "t.py").write_text("import pytest\n\ndef test_x():\n    pytest.skip('missing')\n")
     result = run_test_tier.run_item(item, tmp_path / "run", tmp_path, None)
     assert result["rc"] == 0 and result["junit"]["skipped"] == 1 and result["status"] == "fail"
+    # An optional item may skip some tests, not all of them, unless it is declared all-skip by design.
     item.required = False
-    assert run_test_tier.run_item(item, tmp_path / "run2", tmp_path, None)["status"] == "pass"
+    assert run_test_tier.run_item(item, tmp_path / "run2", tmp_path, None)["status"] == "fail"
+    item.all_skipped_ok = True
+    assert run_test_tier.run_item(item, tmp_path / "run3", tmp_path, None)["status"] == "pass"
+    item.all_skipped_ok = False
+    (tmp_path / "t.py").write_text("import pytest\n\ndef test_x():\n    pytest.skip('missing')\n\ndef test_y():\n    pass\n")
+    assert run_test_tier.run_item(item, tmp_path / "run4", tmp_path, None)["status"] == "pass"
 
 
 def test_receipt_is_written_and_appended(tmp_path):
@@ -247,6 +253,29 @@ def test_tier_last_line_names_the_pinned_status_and_medium_asks_for_the_h100(tmp
     assert run_test_tier.cmd_run(Namespace(run_root=tmp_path, tier="medium")) == 0
     assert "pinned: not_configured, not enforced" in capsys.readouterr().out.strip().splitlines()[-1]
     assert run_test_tier.DEFAULT_GPU_MODEL == {"medium": "h100"}
+
+
+@pytest.mark.parametrize(
+    ("fsc", "pinned", "failed"),
+    [
+        ({"status": "error"}, {}, ["fsc"]),
+        ({"status": "reported"}, {"status": "error"}, ["pinned_compare"]),
+        ({"status": "reported"}, {"status": "fail", "enforced": False}, []),
+    ],
+)
+def test_an_fsc_scoring_or_pinned_comparison_that_did_not_run_fails_the_tier(tmp_path, monkeypatch, fsc, pinned, failed):
+    (tmp_path / "src").mkdir()
+    (tmp_path / "PLAN.json").write_text(json.dumps({"tier": "medium", "source": {"head": "abc"}, "items": []}))
+    monkeypatch.setattr(run_test_tier, "check_native_sources", lambda *_args: None)
+    monkeypatch.setattr(run_test_tier, "check_imports", lambda *_args: ({}, None))
+    monkeypatch.setattr(run_test_tier, "gpu_models", lambda *_args: {"test-gpu": "H100"})
+    monkeypatch.setattr(run_test_tier, "execute", lambda *_args: [])
+    monkeypatch.setattr(run_test_tier, "write_receipt", lambda *_args: None)
+    monkeypatch.setattr(run_test_tier, "score_fsc", lambda *_args: fsc)
+    monkeypatch.setattr(run_test_tier, "compare_pinned", lambda *_args: pinned)
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "test-gpu")
+    assert run_test_tier.cmd_run(Namespace(run_root=tmp_path, tier="medium")) == (1 if failed else 0)
+    assert json.loads((tmp_path / "SUMMARY.json").read_text())["failed_items"] == failed
 
 
 def _case(auc, shell):

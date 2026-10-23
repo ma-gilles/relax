@@ -29,9 +29,10 @@ Inside the allocation ``run`` executes the tier's items: CPU items alongside the
 items, GPU items on one worker process per visible GPU (longest first, after any items
 they depend on). Each item keeps its log,
 junit XML and pytest basetemp under ``<run-root>/items/<name>``. A tier passes when
-every item exits 0 and no required item skipped a test. FSC summaries of the parity
-cases are written to ``<run-root>/fsc.json``; they are reported, not gated, until the
-thresholds in ``tests/tiers/fsc_thresholds.json`` are approved. Every run ends with a
+every item exits 0, no required item skipped a test and no pytest item skipped every
+test. FSC summaries of the parity cases are written to ``<run-root>/fsc.json``; they are
+reported, not gated, until the thresholds in ``tests/tiers/fsc_thresholds.json`` are
+approved, but a scoring or pinned comparison that fails to run fails the tier. Every run ends with a
 receipt (``scripts/write_test_receipt.py``).
 """
 
@@ -230,6 +231,9 @@ class Item:
     gpu: bool
     seconds: float
     required: bool = True  # a skipped test fails a required item
+    # A pytest item whose every test skipped (a symbol the built library lacks, an opt-in variable unset) ran
+    # nothing and fails, unless it is declared to be all-skip by design here.
+    all_skipped_ok: bool = False
     env: dict[str, str] = field(default_factory=dict)
     after: list[str] = field(default_factory=list)  # items that must pass first
 
@@ -592,6 +596,9 @@ def run_item(item: Item, run_root: Path, src: Path, gpu: str | None) -> dict:
         status = "fail"  # a required case that did not execute is not a pass
     if status == "pass" and "pytest" in argv and not counts.get("tests"):
         status = "fail"
+    all_skipped = counts.get("skipped", 0) >= counts.get("tests", 0) > 0
+    if status == "pass" and "pytest" in argv and all_skipped and not item.all_skipped_ok:
+        status = "fail"  # every test skipped: the item ran nothing
     result = {
         "name": item.name,
         "gpu": gpu,
@@ -756,6 +763,11 @@ def cmd_run(args: argparse.Namespace) -> int:
     fsc = score_fsc(run_root, src) if spec["tier"] in ("smoke", "medium") else {}
     pinned = compare_pinned(run_root, src, spec["tier"], model) if fsc.get("status") == "reported" else {}
     failed = [r["name"] for r in results if r["status"] != "pass"]
+    # A scoring or comparison that did not run is not a pass: the cases' FSC was never checked.
+    if fsc.get("status") == "error":
+        failed.append("fsc")
+    if pinned.get("status") == "error":
+        failed.append("pinned_compare")
     if pinned.get("status") == "fail" and pinned.get("enforced"):
         failed.append("pinned_fsc")
     summary = {
