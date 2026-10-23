@@ -369,3 +369,24 @@ def test_vdam_result_and_checkpoint_fields_whose_default_was_removed_are_redefau
     b = _fingerprint(k1=_case({key: "1"}))
     counts, _ = fingerprint.diff_fingerprints(_fingerprint(k1=_case({key: "1 =default"})), b)
     assert counts["redefaulted"] == 0 and counts["outputs"] == 1
+
+
+def test_a_rev_export_has_every_top_level_package_and_imports_the_command_entry(tmp_path):
+    """relax#123: ``export_rev`` exports every top-level package of the rev (``relax_cli`` since da6742f0), so the
+    exported tree imports the refinement command entry on its own; an export of ``relax`` and ``tests`` alone did not."""
+    import subprocess
+    import sys
+
+    export = fingerprint_cli.export_rev("HEAD", tmp_path)
+
+    packages = sorted(path.name for path in fingerprint_cli.REPO_ROOT.iterdir() if (path / "__init__.py").is_file())
+    assert {"relax", "relax_cli"} <= set(packages)
+    assert all((export / name / "__init__.py").is_file() for name in packages)
+    imported = subprocess.run(
+        [sys.executable, "-c", "import relax.commands.refinement_run as entry; print(entry.__file__)"],
+        cwd=tmp_path, capture_output=True, text=True,
+        env={"PATH": "/usr/bin:/bin", "HOME": str(tmp_path), "PYTHONPATH": str(export), "PYTHONNOUSERSITE": "1",
+             "JAX_PLATFORMS": "cpu", "CUDA_VISIBLE_DEVICES": ""},
+    )
+    assert imported.returncode == 0, imported.stderr[-2000:]
+    assert imported.stdout.strip().startswith(str(export))

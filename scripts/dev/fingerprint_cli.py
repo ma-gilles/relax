@@ -65,15 +65,25 @@ def _print_not_covered(harness: Harness) -> None:
 
 
 def export_rev(rev: str, work_dir: Path) -> Path:
-    """A ``git archive`` export of ``rev`` (``relax`` and ``tests``) under ``work_dir``."""
+    """A ``git archive`` export of ``rev`` under ``work_dir``: every top-level package of ``rev`` (a directory
+    with an ``__init__.py``, such as ``relax`` and ``relax_cli``) and ``tests``, so the commands' imports resolve."""
     sha = subprocess.run(
         ["git", "-C", str(REPO_ROOT), "rev-parse", "--verify", f"{rev}^{{commit}}"],
         check=True, capture_output=True, text=True,
     ).stdout.strip()
     target = work_dir / f"src_{sha[:12]}"
     if not target.exists():
+        top_level = subprocess.run(
+            ["git", "-C", str(REPO_ROOT), "ls-tree", "-d", "--name-only", sha], check=True, capture_output=True, text=True,
+        ).stdout.splitlines()
+        packages = [
+            name for name in top_level
+            if subprocess.run(["git", "-C", str(REPO_ROOT), "cat-file", "-e", f"{sha}:{name}/__init__.py"]).returncode == 0
+        ]
         staging = Path(tempfile.mkdtemp(dir=work_dir, prefix="export_"))
-        archive = subprocess.Popen(["git", "-C", str(REPO_ROOT), "archive", sha, "relax", "tests"], stdout=subprocess.PIPE)
+        archive = subprocess.Popen(
+            ["git", "-C", str(REPO_ROOT), "archive", sha, *packages, "tests"], stdout=subprocess.PIPE
+        )
         subprocess.run(["tar", "-x", "-C", str(staging)], stdin=archive.stdout, check=True)
         if archive.wait() != 0:
             raise RuntimeError(f"git archive {sha} failed")
