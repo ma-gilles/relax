@@ -80,7 +80,7 @@ from relax.steps.scoring_policy import (
     local_precision,
 )
 from relax.steps.shape_class_scoring import OpticsSpec
-from relax.steps.tomo_half import local_tomo_sampling
+from relax.steps.tomo_half import local_tomo_sampling, tomo_search_rotations
 from relax.steps.tomo_scoring import score_tomo_half_in_loop
 
 if TYPE_CHECKING:
@@ -996,7 +996,13 @@ def score_final_half(
             ),
             use_adaptive=tomo_final_sampling.oversampling_order > 0,
             sampling=tomo_final_sampling,
-            local_search=tomo_final_search,
+            local_rotations=tomo_search_rotations(
+                tomo_final_search,
+                tomo_final_sampling,
+                voxel_size=half.dataset.voxel_size,
+                symmetry=options.symmetry.point_group,
+                engine_tuning=options.environment.engine,
+            ),
             rotation_log_prior=None if tomo_final_search is not None else tomo_final_direction_log_prior,
             sigma_offset_angst=final_sigma_offset_k,
             max_significants=options.adaptive.max_significants,

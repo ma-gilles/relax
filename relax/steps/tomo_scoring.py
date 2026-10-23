@@ -17,7 +17,7 @@ from relax.runtime.engine_tuning import EngineTuning
 from relax.sampling import tomo_particles
 from relax.steps.half_inputs import HalfScoringData
 from relax.steps.scoring_policy import RELION_ADAPTIVE_FRACTION
-from relax.steps.tomo_half import TomoHalf, TomoSampling, tomo_local_rotations, tomo_translation_grids
+from relax.steps.tomo_half import TomoHalf, TomoLocalRotations, TomoSampling, tomo_translation_grids
 
 logger = logging.getLogger(__name__)
 
@@ -702,7 +702,7 @@ def score_tomo_half_in_loop(
     sigma_offset_angst: float,
     max_significants,
     reconstruction_current_size,
-    local_search=None,
+    local_rotations: TomoLocalRotations | None = None,
     symmetry: str = "C1",
     class_log_priors=None,
     class_rotation_log_prior=None,
@@ -722,9 +722,9 @@ def score_tomo_half_in_loop(
     (3D); the loop adds the rounded previous offset, as RELION writes ``old + shift``. The returned
     best poses and class summaries are recorded by the controller.
 
-    A local-search iteration passes ``local_search``: a dict with the particles' previous angles
-    (``previous_eulers_deg``), ``sigma_rot``, ``sigma_psi``, ``sigma_tilt_deg`` and, optionally,
-    ``prior_tilt_deg``; ``sampling`` then carries the pass-1 HEALPix order and the local grid's perturbation.
+    A local-search iteration passes ``local_rotations``, the half's particles' own orientations built once per half
+    (:func:`relax.steps.tomo_half.tomo_search_rotations`, at ``sampling``'s pass-1 HEALPix order and perturbation),
+    so a subset of the half's particles scores against the half's union of orientations.
 
     Class3D (K>1): ``volume`` and ``relion_projector_half`` keep the loop's class axis,
     ``class_log_priors`` are the classes' ``log pdf_class`` and ``class_rotation_log_prior`` their
@@ -734,7 +734,7 @@ def score_tomo_half_in_loop(
     first iteration from one reference (:func:`score_tomo_half`). ``normalized_cc`` is the
     ``--firstiter_cc`` iteration (:func:`score_tomo_half`).
 
-    Class3D with ``local_search`` (RELION's ``--sigma_ang`` or ``--sigma_tilt``): every class is scored on the
+    Class3D with ``local_rotations`` (RELION's ``--sigma_ang`` or ``--sigma_tilt``): every class is scored on the
     particle's own orientations and their prior is the whole orientation weight, so the direction priors and
     ``class_log_priors`` are not folded in; a class whose ``log pdf_class`` is ``-inf`` is skipped
     (:func:`score_tomo_half`). The class rotation sums come back on the whole grid of ``sampling.healpix_order``.
@@ -752,7 +752,7 @@ def score_tomo_half_in_loop(
     unit_groups, scale_corrections = data.particles.optics_group_ids, data.particles.scale_corrections
     group_ids, scale_correction_group_count = data.scale_group_ids, data.scale_group_count
     scale_correction_data_vs_prior = data.scale_correction_data_vs_prior
-    if not (use_adaptive or local_search is not None) or int(sampling.oversampling_order) < 1:
+    if not (use_adaptive or local_rotations is not None) or int(sampling.oversampling_order) < 1:
         raise NotImplementedError("subtomogram particles run RELION's adaptive two-pass E-step only")
     if RECONSTRUCTION_PADDING_FACTOR != PROJECTION_PADDING_FACTOR:
         raise ValueError("the tomo half pass projects and backprojects with one padding factor")
@@ -778,20 +778,8 @@ def score_tomo_half_in_loop(
             raise ValueError(f"{np.shape(volume)[0]} class volumes for {n_classes} classes")
         if n_classes == 1:
             volume = volume[0]
-    local_rotations, empty_classes = None, ()
-    if local_search is not None:
-        local_rotations = tomo_local_rotations(
-            local_search["previous_eulers_deg"],
-            sigma_rot=local_search["sigma_rot"],
-            sigma_psi=local_search["sigma_psi"],
-            sigma_tilt_deg=local_search["sigma_tilt_deg"],
-            prior_tilt_deg=local_search.get("prior_tilt_deg"),
-            healpix_order=int(sampling.healpix_order),
-            random_perturbation=float(sampling.random_perturbation),
-            voxel_size=half.voxel_size,
-            symmetry=symmetry,
-            engine_tuning=engine_tuning,
-        )
+    empty_classes = ()
+    if local_rotations is not None:
         prior = None
         if n_classes > 1:
             empty_classes = tuple(

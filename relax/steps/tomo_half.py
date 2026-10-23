@@ -636,3 +636,31 @@ def tomo_local_rotations(
     return TomoLocalRotations(
         coarse_rotation_ids=union, unit_rotation_ids=tuple(unit_ids), unit_rotation_log_priors=tuple(unit_priors)
     )
+
+
+def tomo_search_rotations(
+    search, sampling: TomoSampling, *, voxel_size: float, symmetry: str, engine_tuning
+) -> TomoLocalRotations | None:
+    """The particles' own orientations for one half's subtomogram pass, or None for a global search.
+
+    ``search`` is the pass's search: None (global), or a dict with the particles' previous angles
+    (``previous_eulers_deg``), ``sigma_rot``, ``sigma_psi``, ``sigma_tilt_deg`` and, optionally, ``prior_tilt_deg``
+    (a local search, or RELION's ``--sigma_tilt`` below the local-search order). The orientations are built once
+    per half, at ``sampling``'s HEALPix order and perturbation, so every subset of the half's particles scores
+    against the half's union (:func:`tomo_local_rotations`).
+    """
+
+    if search is None:
+        return None
+    return tomo_local_rotations(
+        search["previous_eulers_deg"],
+        sigma_rot=search["sigma_rot"],
+        sigma_psi=search["sigma_psi"],
+        sigma_tilt_deg=search["sigma_tilt_deg"],
+        prior_tilt_deg=search.get("prior_tilt_deg"),
+        healpix_order=int(sampling.healpix_order),
+        random_perturbation=float(sampling.random_perturbation),
+        voxel_size=voxel_size,
+        symmetry=symmetry,
+        engine_tuning=engine_tuning,
+    )

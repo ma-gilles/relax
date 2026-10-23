@@ -51,7 +51,7 @@ from relax.steps.score_outputs import (
     record_score_profile,
 )
 from relax.steps.scoring_policy import local_precision
-from relax.steps.tomo_half import TomoSampling, numbered_iteration_tomo_sampling
+from relax.steps.tomo_half import TomoSampling, numbered_iteration_tomo_sampling, tomo_search_rotations
 from relax.steps.tomo_scoring import score_tomo_half_in_loop
 
 if TYPE_CHECKING:
@@ -803,29 +803,35 @@ def score_numbered_half(
             half.data,
             use_adaptive=phase.use_adaptive,
             sampling=tomo_sampling,
-            local_search=(
-                dict(
-                    previous_eulers_deg=particle_half.rotation_eulers,
-                    sigma_rot=sampling.search.sigma_rot,
-                    sigma_psi=sampling.search.sigma_psi,
-                    sigma_tilt_deg=0.0,
-                )
-                if use_local
-                # RELION's --sigma_tilt below the local-search order: each particle's own orientations, every
-                # rot and psi within three widths of its prior tilt, on the otherwise global sampling.
-                else dict(
-                    previous_eulers_deg=(
-                        np.zeros((particle_half.dataset.n_units, 3), dtype=np.float64)
-                        if particle_half.rotation_eulers is None
-                        else particle_half.rotation_eulers
-                    ),
-                    sigma_rot=0.0,
-                    sigma_psi=0.0,
-                    sigma_tilt_deg=half.data.tilt_prior.sigma_deg,
-                    prior_tilt_deg=half.data.tilt_prior.centre_deg,
-                )
-                if half.data.tilt_prior is not None
-                else None
+            local_rotations=tomo_search_rotations(
+                (
+                    dict(
+                        previous_eulers_deg=particle_half.rotation_eulers,
+                        sigma_rot=sampling.search.sigma_rot,
+                        sigma_psi=sampling.search.sigma_psi,
+                        sigma_tilt_deg=0.0,
+                    )
+                    if use_local
+                    # RELION's --sigma_tilt below the local-search order: each particle's own orientations, every
+                    # rot and psi within three widths of its prior tilt, on the otherwise global sampling.
+                    else dict(
+                        previous_eulers_deg=(
+                            np.zeros((particle_half.dataset.n_units, 3), dtype=np.float64)
+                            if particle_half.rotation_eulers is None
+                            else particle_half.rotation_eulers
+                        ),
+                        sigma_rot=0.0,
+                        sigma_psi=0.0,
+                        sigma_tilt_deg=half.data.tilt_prior.sigma_deg,
+                        prior_tilt_deg=half.data.tilt_prior.centre_deg,
+                    )
+                    if half.data.tilt_prior is not None
+                    else None
+                ),
+                tomo_sampling,
+                voxel_size=particle_half.dataset.voxel_size,
+                symmetry=symmetry,
+                engine_tuning=options.environment.engine,
             ),
             rotation_log_prior=half.direction_priors.rotation_log_prior,
             sigma_offset_angst=half.sigma_offset_angstrom,

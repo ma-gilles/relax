@@ -36,7 +36,7 @@ def numbered_inputs(*, local=False, adaptive=False, n_classes=1, n_units=2):
     translations = np.array([[0, 0], [1, -1]], dtype=np.float32)
     grid = TrialGrid(rotations, eulers, rotations, translations)
     dataset = SimpleNamespace(
-        n_units=n_units, n_images=n_units, image_shape=(4, 4), volume_shape=(4, 4, 4),
+        n_units=n_units, n_images=n_units, image_shape=(4, 4), volume_shape=(4, 4, 4), voxel_size=1.0,
         _index_layout=SimpleNamespace(original_image_indices_for_local=lambda indices: np.asarray(indices) + 2),
     )
     particles = HalfSet(index=0, dataset=dataset, translations=None,
@@ -396,13 +396,23 @@ def test_tomography_seeding_uses_original_unit_rows_without_spa_optics(monkeypat
     def reject(*args, **kw):
         raise AssertionError('tomography must not prepare SPA image priors or optics')
 
+    searches = []
+    rotations = object()
+
+    def search_rotations(search, sampling, **inputs):
+        searches.append(search)
+        return None if search is None else rotations
+
     monkeypatch.setattr(expectation, 'score_tomo_half_in_loop', score)
+    monkeypatch.setattr(expectation, 'tomo_search_rotations', search_rotations)
     monkeypatch.setattr(expectation.shape_class_scoring, 'prepare_optics', reject)
     monkeypatch.setattr(expectation, 'relion_half_translation_prior_inputs', reject)
     score_flat(half, phase, **kwargs)
     assert_matches(captured['unit_seed_classes'], [0, 2])
     assert captured['sampling'] is kwargs['tomo_sampling']
-    assert (captured['local_search'] is not None) == local
+    # The half's orientations are built once, by the caller, for the whole half (tomo_half.tomo_search_rotations).
+    assert len(searches) == 1 and (searches[0] is not None) == local
+    assert captured['local_rotations'] is (rotations if local else None)
     assert captured['class_rotation_log_prior'] is class_direction_prior
 
 
