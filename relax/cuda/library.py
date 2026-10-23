@@ -55,12 +55,6 @@ TARGET_SPARSE_PASS2_SEGMENTED_POSTERIOR_F32 = (
 TARGET_SPARSE_PASS2_SEGMENTED_RECONSTRUCTION_F32 = (
     "cuda_sparse_pass2_segmented_reconstruction_f32"
 )
-TARGET_RELION_VDAM_MSTEP_FUSED_PROJECTOR_X_HALF = (
-    "cuda_relion_vdam_mstep_fused_projector_x_half"
-)
-TARGET_RELION_VDAM_MSTEP_FUSED_PROJECTOR_RUNTIME_X_HALF = (
-    "cuda_relion_vdam_mstep_fused_projector_runtime_x_half"
-)
 TARGET_RELION_COARSE_DIFF2_RECTANGULAR_F32 = (
     "cuda_relion_coarse_diff2_rectangular_f32"
 )
@@ -124,9 +118,7 @@ _RELAX_CUDA_LIB_ENV = "RELAX_CUDA_LIB"
 
 _RELAX_CUDA_BUILD_SOURCE_NAMES = (
     "relax_kernels.cu",
-    "vdam_trace.cuh",
     "relion_preprocess.cuh",
-    "relion_vdam_mstep.cuh",
     "relion_scoring.cuh",
     "relion_posterior.cuh",
     "sparse_pass2_posterior.cuh",
@@ -184,14 +176,6 @@ FFI_REGISTRATIONS: tuple[tuple[str, str], ...] = (
     (TARGET_RELION_TRANSLATE_SCORE_F64, "RelionTranslateScoreF64"),
     (TARGET_RELION_TRANSLATE_BPREF_F32, "RelionTranslateBprefF32"),
     (TARGET_RELION_TRANSLATE_BPREF_F64, "RelionTranslateBprefF64"),
-    (
-        TARGET_RELION_VDAM_MSTEP_FUSED_PROJECTOR_X_HALF,
-        "RelionVdamMstepFusedProjectorXHalf",
-    ),
-    (
-        TARGET_RELION_VDAM_MSTEP_FUSED_PROJECTOR_RUNTIME_X_HALF,
-        "RelionVdamMstepFusedProjectorRuntimeXHalf",
-    ),
     (
         TARGET_RELION_COARSE_DIFF2_RECTANGULAR_F32,
         "RelionCoarseDiff2RectangularF32",

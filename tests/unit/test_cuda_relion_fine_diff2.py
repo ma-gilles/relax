@@ -386,9 +386,7 @@ def test_relion_coarse_prehalf_shared_body_is_built_packaged_and_stale_checked()
     local_inputs = (
         "relax_kernels.cu",
         include_name,
-        "vdam_trace.cuh",
         "relion_preprocess.cuh",
-        "relion_vdam_mstep.cuh",
         "relion_scoring.cuh",
         "relion_posterior.cuh",
         "sparse_pass2_posterior.cuh",
