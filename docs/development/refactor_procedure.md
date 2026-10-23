@@ -96,10 +96,14 @@ device tests, a parser or option resolver by precedence, rejection and round-tri
       `relax/parity`. The option field it replaces is retired in the same commit (the fingerprint lists it
       as a retired input); `tests/unit/test_refinement_port_imports.py` must still pass.
 - [ ] A new option field shows in the fingerprint as "added inputs" (a controller input only the new side
-      has); it is accepted and listed. A removed field that the cases left at `None` or `False` shows as
-      "retired inputs" and is accepted too; a removed field that a case set is an output difference. A field
-      moved to another group shows as "moved inputs" when its move is listed in the harness's `MOVED_INPUTS`
-      and its value is unchanged.
+      has). A removed field that the cases left at its declared default (the `=default` mark) shows as
+      "retired inputs"; a removed field that a case set, or held at a plain `None` or `False` without the
+      mark, is an output difference. A field moved to another group shows as "moved inputs" when its move is
+      listed in the harness's `MOVED_INPUTS` and its value is unchanged; a same value under a changed declared
+      default shows as "redefaulted". None of these passes by itself: each added, retired, moved or
+      redefaulted leaf needs an entry in the harness's `ACCEPTED_CHANGES` table (path pattern, class, one-line
+      reason), the owner's decision for that change; the diff names every leaf without one (UNACCEPTED) and
+      fails. The table is empty otherwise.
       Results, files, checkpoints and trace must still be identical.
 - [ ] The commit message says what moved, what did not, the benefit, the supporting numbers, and any
       log-only trace differences, added or retired inputs.

@@ -24,20 +24,23 @@ upstream changes every later array of the run. The comparison is exact because b
 arithmetic on the same CPU; it is a check for move-only commits, not a merge gate for numerical changes
 (``tests/CLAUDE.md``: no bitwise float asserts).
 
-``diff`` and ``check`` count differences in six classes: outputs (cases, status, results, files and
-checkpoints), added controller inputs, retired controller inputs, moved controller inputs, non-log trace rows
-(selected calls), and log trace rows. Log order is not behaviour (code rule 2 in ``docs/development/refactor_rules.md``), so when only
-log rows differ they print "only log rows differ (N); accepted under rule 2" and exit 0. A controller input
-present only in B (a leaf under ``refine<N>/inputs``: a new option field the command hands the controller) is
-listed and accepted: a value that changed what the controller does would change its results, which are
-compared. So is one present only in A whose value there was ``None``, ``False`` or the field's declared default
-(recorded with a ``=default`` mark; an option field that was off in the case and is retired, its behaviour now
-chosen through a port: code rule 15), and the length of the
-container that holds only such added or retired members. So is an input moved to another option group with its
-value (``MOVED_INPUTS`` names each move), a leaf of any section whose record field was renamed with its value
-(``RENAMED_FIELDS``), and an input or checkpoint leaf whose value is unchanged but whose field's declared default
-changed (only its ``=default`` mark differs: the record's default was aligned or removed, the value was not). A removed
-input that was on, or a changed one, is an output difference. Any other difference exits 1.
+``diff`` and ``check`` count differences in seven classes: outputs (cases, status, results, files and
+checkpoints), added controller inputs, retired controller inputs, moved controller inputs, redefaulted leaves,
+non-log trace rows (selected calls), and log trace rows. Log order is not behaviour (code rule 2 in
+``docs/development/refactor_rules.md``), so when only log rows differ they print "only log rows differ (N);
+accepted under rule 2" and exit 0. The four change classes are listed, and each of their leaves passes only when
+it matches an entry of the harness's ``ACCEPTED_CHANGES`` table (path pattern, class, one-line reason: the
+owner's decision for that change); a leaf that matches none is named on an UNACCEPTED line and the diff exits 1.
+The table is empty unless a change under review needs an entry. The classes: a controller input present only in
+B (a leaf under ``refine<N>/inputs``: a new option field the command hands the controller) is added; one present
+only in A at the field's declared default (recorded with a ``=default`` mark; an option field that was off in the
+case and is retired, its behaviour now chosen through a port: code rule 15) is retired, and the length of the
+container that holds only such added or retired members follows them; an input moved to another option group
+with its value (``MOVED_INPUTS`` names each move), or a leaf of any section whose record field was renamed with its
+value (``RENAMED_FIELDS``), is moved; an input or checkpoint leaf whose value is unchanged but whose field's
+declared default changed (only its ``=default`` mark differs) is redefaulted. A removed input that was not at its
+declared default (a plain ``None`` or ``False`` included), or a changed one, is an output difference. Any other difference
+exits 1.
 
 NOT covered (use the GPU test tiers): the real E-step engines and their numbers; local search and the
 profile-only return; symmetry other than C1; tomography; multi-shape optics halves; follower-scale
@@ -87,12 +90,17 @@ NODE_DEPENDENT_TEMPLATES = (
 )
 DROPPED_RESULT_KEYS = frozenset({"wall_times", "setup_phase_seconds"})
 SECTIONS = ("status", "result", "files", "checkpoints")
-# The classes a difference is counted in; only a difference confined to "log" is accepted.
+# The classes a difference is counted in. A difference passes when it has no outputs and no trace rows, and every
+# leaf of the four change classes matches an ACCEPTED_CHANGES entry (diff_fingerprints counts the others as
+# "unaccepted"); log rows pass under rule 2.
 DIFFERENCE_CLASSES = ("outputs", "added", "retired", "moved", "redefaulted", "trace", "log")
-# A controller input B no longer has is accepted only at one of these off values in A, or at its declared
-# default (a leaf ending in DEFAULT_MARK): an option field that was off in the case is retired (its non-default
-# behaviour moved behind a port, code rule 15).
-OFF_VALUES = frozenset({"None", "False"})
+CHANGE_CLASSES = ("added", "retired", "moved", "redefaulted")
+# The added, retired, moved and redefaulted leaves this harness accepts, as (path pattern, class, one-line
+# reason): a leaf of that class whose path (for a moved leaf, its A or its B path) re.search-matches the pattern
+# is accepted. Each entry is the owner's decision for one change; delete it once that change has landed.
+ACCEPTED_CHANGES: tuple[tuple[str, str, str], ...] = ()
+# A controller input B no longer has is retired only at its declared default in A (a leaf ending in DEFAULT_MARK):
+# an option field that was off in the case is retired (its non-default behaviour moved behind a port, code rule 15).
 DEFAULT_MARK = "=default"
 # Leaves of what refinement_run.main hands the controller (fingerprints of the main_* cases).
 CONTROLLER_INPUT = re.compile(r"^refine\d+/inputs\[")
@@ -402,15 +410,29 @@ def diff_fingerprints(
     *,
     shown_per_section: int = 12,
     redefaulted_sections: tuple[str, ...] = ("checkpoints",),
+    accepted_changes: tuple[tuple[str, str, str], ...] = ACCEPTED_CHANGES,
 ) -> tuple[dict[str, int], list[str]]:
-    """``(differences per class of DIFFERENCE_CLASSES, report lines)`` between two fingerprints written by ``run``.
+    """``(differences per class of DIFFERENCE_CLASSES, plus "unaccepted", report lines)`` between two fingerprints
+    written by ``run``.
 
     ``outputs`` counts missing cases and changed status, result, file and checkpoint leaves; ``trace`` the
     removed or added trace rows that are not log records; ``log`` those that are. ``redefaulted`` counts
     controller inputs, and leaves of ``redefaulted_sections``, whose only difference is the ``=default`` mark.
+    ``unaccepted`` counts the added, retired, moved and redefaulted leaves that match no entry of
+    ``accepted_changes`` (the harness's ACCEPTED_CHANGES); each distinct one is named on an UNACCEPTED line.
     """
     lines = []
     counts = dict.fromkeys(DIFFERENCE_CLASSES, 0)
+    counts["unaccepted"] = 0
+    unaccepted: dict[tuple[str, str, str], list[str]] = {}
+
+    def check_accepted(change: str, case: str, section: str, *keys: str) -> None:
+        if not any(
+            entry_class == change and any(re.search(pattern, key) for key in keys)
+            for pattern, entry_class, _ in accepted_changes
+        ):
+            counts["unaccepted"] += 1
+            unaccepted.setdefault((change, section, " -> ".join(keys)), []).append(case)
     cases_a, cases_b = a["cases"], b["cases"]
     for name in sorted(set(cases_a) ^ set(cases_b)):
         counts["outputs"] += 1
@@ -433,6 +455,8 @@ def diff_fingerprints(
                 and _unmarked(flat_b.get(key.replace(old, new), "")) == _unmarked(flat_a[key])
             }
             counts["moved"] += len(moved_pairs)
+            for key, new_key in moved_pairs.items():
+                check_accepted("moved", name, section, key, new_key)
             for key in list(moved_pairs)[:shown_per_section]:
                 lines.append(f"MOVED {name} {section} {key} -> {moved_pairs[key]}")
             changed = [key for key in changed if key not in moved_pairs and key not in moved_pairs.values()]
@@ -446,19 +470,24 @@ def diff_fingerprints(
                 and _unmarked(flat_a[key]) == _unmarked(flat_b[key])
             ]
             counts["redefaulted"] += len(redefaulted)
+            for key in redefaulted:
+                check_accepted("redefaulted", name, section, key)
             for key in redefaulted[:shown_per_section]:
                 lines.append(f"REDEFAULTED {name} {section} {key}: {flat_a[key]} -> {flat_b[key]}")
             changed = [key for key in changed if key not in redefaulted]
             added = [key for key in changed if key not in flat_a and CONTROLLER_INPUT.match(key)]
             counts["added"] += len(added)
+            for key in added:
+                check_accepted("added", name, section, key)
             for key in added[:shown_per_section]:
                 lines.append(f"ADDED {name} {section} {key}: {flat_b[key]}")
             retired = [
                 key for key in changed
-                if key not in flat_b and CONTROLLER_INPUT.match(key)
-                and (flat_a[key] in OFF_VALUES or flat_a[key].endswith(DEFAULT_MARK))
+                if key not in flat_b and CONTROLLER_INPUT.match(key) and flat_a[key].endswith(DEFAULT_MARK)
             ]
             counts["retired"] += len(retired)
+            for key in retired:
+                check_accepted("retired", name, section, key)
             for key in retired[:shown_per_section]:
                 lines.append(f"RETIRED {name} {section} {key}: {flat_a[key]}")
             # A controller-input container whose length changed only through added or retired members.
@@ -496,8 +525,10 @@ def diff_fingerprints(
         )
     for line, names in trace_lines.items():
         lines.append(f"TRACE [{len(names)} cases, e.g. {names[0]}] {line[:400]}")
+    for (change, section, keys), names in unaccepted.items():
+        lines.append(f"UNACCEPTED {change} {section} {keys} [{len(names)} cases, e.g. {names[0]}]: no ACCEPTED_CHANGES entry")
     lines.append(
-        f"{len(set(cases_a) & set(cases_b))} cases compared; {sum(counts.values())} differences "
+        f"{len(set(cases_a) & set(cases_b))} cases compared; {sum(counts[c] for c in DIFFERENCE_CLASSES)} differences "
         f"(outputs {counts['outputs']}, added inputs {counts['added']}, retired inputs {counts['retired']}, "
         f"moved inputs {counts['moved']}, redefaulted inputs {counts['redefaulted']}, "
         f"trace rows {counts['trace']}, log rows {counts['log']}); leaves compared: "
@@ -506,20 +537,22 @@ def diff_fingerprints(
     )
     if counts["log"] and not counts["outputs"] and not counts["trace"]:
         lines.append(f"only log rows differ ({counts['log']}); accepted under rule 2")
-    if counts["added"] and not counts["outputs"] and not counts["trace"]:
-        lines.append(f"controller inputs added ({counts['added']}); accepted: new option fields")
-    if counts["retired"] and not counts["outputs"] and not counts["trace"]:
-        lines.append(f"controller inputs retired ({counts['retired']}); accepted: option fields removed at their off value")
-    if counts["moved"] and not counts["outputs"] and not counts["trace"]:
-        lines.append(
-            f"controller inputs moved ({counts['moved']}); accepted: option fields moved or record fields renamed "
-            "(MOVED_INPUTS, RENAMED_FIELDS)"
-        )
-    if counts["redefaulted"] and not counts["outputs"] and not counts["trace"]:
-        lines.append(
-            f"controller inputs redefaulted ({counts['redefaulted']}); accepted: same values, the fields' declared "
-            f"defaults changed (option inputs or fields of {', '.join(redefaulted_sections)})"
-        )
+    kinds = {
+        "added": "new option fields",
+        "retired": "option fields removed at their declared default",
+        "moved": "option fields moved or record fields renamed (MOVED_INPUTS, RENAMED_FIELDS)",
+        "redefaulted": "same values, the fields' declared defaults changed (option inputs or fields of "
+        f"{', '.join(redefaulted_sections)})",
+    }
+    for change, kind in kinds.items():
+        if counts[change]:
+            missing = sum(len(names) for (c, _, _), names in unaccepted.items() if c == change)
+            verdict = (
+                f"NOT accepted: {missing} match no ACCEPTED_CHANGES entry" if missing
+                else "accepted by ACCEPTED_CHANGES" if not counts["outputs"] and not counts["trace"] else ""
+            )
+            if verdict:
+                lines.append(f"controller inputs {change} ({counts[change]}); {verdict}: {kind}")
     return counts, lines
 
 
@@ -563,8 +596,9 @@ def case_errors(fingerprint: dict, refused: frozenset[str] = REFUSED_CASES) -> l
 
 
 def accepted(counts: dict[str, int]) -> bool:
-    """Whether a difference of ``counts`` passes: nothing but log rows differs."""
-    return not counts["outputs"] and not counts["trace"]
+    """Whether a difference of ``counts`` passes: no outputs and no trace rows differ, and every added, retired,
+    moved or redefaulted leaf matched an ACCEPTED_CHANGES entry (log rows pass under rule 2)."""
+    return not counts["outputs"] and not counts["trace"] and not counts["unaccepted"]
 
 
 def differing_cases(a: dict, b: dict) -> list[str]:

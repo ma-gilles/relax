@@ -270,6 +270,10 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
 # ----------------------------------------------------------------------------- commands
 
 
+# The added, retired, moved and redefaulted leaves this harness accepts (fingerprint.ACCEPTED_CHANGES): (path
+# pattern, class, one-line reason) per owner-accepted change; empty unless a change under review needs one.
+ACCEPTED_CHANGES: tuple[tuple[str, str, str], ...] = ()
+
 HARNESS = fingerprint_cli.Harness(
     script=Path(__file__).resolve(),
     description=__doc__.split("\n\n")[0],
@@ -277,7 +281,9 @@ HARNESS = fingerprint_cli.Harness(
     mutations=MUTATIONS,
     not_covered=NOT_COVERED,
     worker=_worker,
-    diff_fingerprints=functools.partial(diff_fingerprints, redefaulted_sections=("checkpoints",)),
+    diff_fingerprints=functools.partial(
+        diff_fingerprints, redefaulted_sections=("checkpoints",), accepted_changes=ACCEPTED_CHANGES
+    ),
     accepted=accepted,
     case_errors=lambda fingerprint: case_errors(fingerprint, frozenset()),
     differing_cases=differing_cases,
