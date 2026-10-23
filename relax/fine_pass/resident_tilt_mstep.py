@@ -399,7 +399,7 @@ def mstep_translation_blocks(
     *,
     bytes_per_translation: int,
     tile_budget_bytes: int,
-    wide_tile_budget_bytes: int | None = None,
+    wide_tile_budget_bytes: int,
 ) -> tuple[MstepTranslations, ...]:
     """``kept`` in blocks of equal power-of-two size whose translated tiles fit ``tile_budget_bytes``.
 
@@ -419,8 +419,7 @@ def mstep_translation_blocks(
         return (kept,)
     block = pow2_floor(fit)
     wide = TILT_MSTEP_BLOCK_TRANSLATIONS
-    widens = wide_tile_budget_bytes is not None and int(wide_tile_budget_bytes) // per_translation >= wide
-    if block < wide < n and widens:
+    if block < wide < n and int(wide_tile_budget_bytes) // per_translation >= wide:
         block = wide
     out = []
     for start in range(0, kept.index.size, block):

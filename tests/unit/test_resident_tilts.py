@@ -290,14 +290,16 @@ def test_mstep_translation_blocks_fit_the_tile_budget_and_cover_every_kept_trans
     kept = resident_tilt_mstep.MstepTranslations(index=np.arange(0, 600, 2, dtype=np.int64), valid=np.ones(300, dtype=bool))
     per_translation = 1000
     blocks = resident_tilt_mstep.mstep_translation_blocks(
-        kept, bytes_per_translation=per_translation, tile_budget_bytes=70_000
+        kept, bytes_per_translation=per_translation, tile_budget_bytes=70_000, wide_tile_budget_bytes=70_000
     )
     assert {int(b.index.size) for b in blocks} == {64}
     assert all(int(b.index.size) * per_translation <= 70_000 for b in blocks)
     covered = np.concatenate([b.index[b.valid] for b in blocks])
     np.testing.assert_array_equal(covered, kept.index)
     # A chunk whose kept translations fit keeps one block.
-    assert resident_tilt_mstep.mstep_translation_blocks(kept, bytes_per_translation=1, tile_budget_bytes=10**9) == (kept,)
+    assert resident_tilt_mstep.mstep_translation_blocks(
+        kept, bytes_per_translation=1, tile_budget_bytes=10**9, wide_tile_budget_bytes=10**9
+    ) == (kept,)
 
 
 @pytest.mark.unit
@@ -318,13 +320,18 @@ def test_tilt_mstep_tiles_are_counted_per_unit_so_a_flat_particle_keeps_one_tran
     assert one_unit == (3 * n_rect + n_exact) * 8
     assert resident_tilt_mstep.tilt_mstep_tile_bytes(32, n_rect_pixels=n_rect, n_exact_pixels=n_exact) == 32 * one_unit
     budget = max_translation_tile_bytes_for_pass(80 * 1024**3, override=None)
-    assert resident_tilt_mstep.mstep_translation_blocks(kept, bytes_per_translation=one_unit, tile_budget_bytes=budget) == (kept,)
+    assert resident_tilt_mstep.mstep_translation_blocks(
+        kept, bytes_per_translation=one_unit, tile_budget_bytes=budget, wide_tile_budget_bytes=budget
+    ) == (kept,)
     with_block_rows = (128 + 256) * (n_rect + n_exact) * 8
-    blocks = resident_tilt_mstep.mstep_translation_blocks(kept, bytes_per_translation=with_block_rows, tile_budget_bytes=budget)
+    blocks = resident_tilt_mstep.mstep_translation_blocks(
+        kept, bytes_per_translation=with_block_rows, tile_budget_bytes=budget, wide_tile_budget_bytes=budget
+    )
     assert (len(blocks), int(blocks[0].index.size)) == (74, 16)
     # A 16 GB card's budget still holds the particle's translations in a few blocks.
+    small_budget = max_translation_tile_bytes_for_pass(16 * 1024**3, override=None)
     small = resident_tilt_mstep.mstep_translation_blocks(
-        kept, bytes_per_translation=one_unit, tile_budget_bytes=max_translation_tile_bytes_for_pass(16 * 1024**3, override=None)
+        kept, bytes_per_translation=one_unit, tile_budget_bytes=small_budget, wide_tile_budget_bytes=small_budget
     )
     assert len(small) <= 4
 
@@ -466,8 +473,8 @@ def test_tilt_mstep_chunk_that_fits_the_capped_budget_keeps_one_block_whatever_t
 def test_tilt_mstep_blocks_the_cap_cuts_small_widen_to_the_block_translations_when_the_leftover_holds_them():
     """relax#120: a chunk of more than TILT_MSTEP_BLOCK_TRANSLATIONS translations that the capped budget cuts into
     smaller blocks takes blocks of TILT_MSTEP_BLOCK_TRANSLATIONS when its uncapped leftover holds them (64 units,
-    k 2048: 32 x 64 blocks 3.02 s against 512 x 4 1.96 s, 16001864); without that room, or without a wide budget,
-    the capped blocks stand."""
+    k 2048: 32 x 64 blocks 3.02 s against 512 x 4 1.96 s, 16001864); without that room, as when the leftover is no
+    more than the cap, the capped blocks stand."""
 
     wide = resident_tilt_mstep.TILT_MSTEP_BLOCK_TRANSLATIONS
     assert wide == 512
@@ -479,7 +486,7 @@ def test_tilt_mstep_blocks_the_cap_cuts_small_widen_to_the_block_translations_wh
         )
         assert {int(b.index.size) for b in blocks} == {wide} and len(blocks) == -(-k // wide)
         np.testing.assert_array_equal(np.concatenate([b.index[b.valid] for b in blocks]), np.arange(k))
-    for wide_budget in (None, wide * per - 1):
+    for wide_budget in (capped, wide * per - 1):
         blocks = resident_tilt_mstep.mstep_translation_blocks(
             _kept(2048), bytes_per_translation=per, tile_budget_bytes=capped, wide_tile_budget_bytes=wide_budget
         )
@@ -507,7 +514,9 @@ def test_tilt_mstep_chunks_of_at_most_the_block_translations_keep_their_capped_b
 
 def test_mstep_translation_blocks_stay_within_the_kernel_table_limit():
     kept = resident_tilt_mstep.MstepTranslations(index=np.arange(4120, dtype=np.int64), valid=np.ones(4120, dtype=bool))
-    blocks = resident_tilt_mstep.mstep_translation_blocks(kept, bytes_per_translation=1, tile_budget_bytes=10**12)
+    blocks = resident_tilt_mstep.mstep_translation_blocks(
+        kept, bytes_per_translation=1, tile_budget_bytes=10**12, wide_tile_budget_bytes=10**12
+    )
     assert all(int(b.index.size) == resident_tilt_mstep.TILT_MSTEP_MAX_TRANSLATIONS for b in blocks)
     np.testing.assert_array_equal(np.concatenate([b.index[b.valid] for b in blocks]), kept.index)
 

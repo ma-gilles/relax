@@ -861,8 +861,8 @@ def test_translation_blocked_tilt_mstep_is_the_one_block_mstep(monkeypatch):
     blocks = resident_tilt_mstep.mstep_translation_blocks
     n_blocks = []
 
-    def one_translation_each(kept, *, bytes_per_translation, tile_budget_bytes, wide_tile_budget_bytes=None):
-        out = blocks(kept, bytes_per_translation=1, tile_budget_bytes=1)
+    def one_translation_each(kept, *, bytes_per_translation, tile_budget_bytes, wide_tile_budget_bytes):
+        out = blocks(kept, bytes_per_translation=1, tile_budget_bytes=1, wide_tile_budget_bytes=1)
         n_blocks.append(len(out))
         return out
 
@@ -906,10 +906,13 @@ def test_mstep_at_the_chunks_valid_units_is_the_unit_capacity_mstep(monkeypatch)
         sizing.append((int(unit_capacity) if capacity_sized else valid_units, valid_units, int(unit_capacity)))
         return sizing[-1][0]
 
-    def two_capacity_translations(kept, *, bytes_per_translation, tile_budget_bytes, wide_tile_budget_bytes=None):
+    def two_capacity_translations(kept, *, bytes_per_translation, tile_budget_bytes, wide_tile_budget_bytes):
         mstep_units, _, unit_capacity = sizing[-1]
         capacity_bytes = bytes_per_translation // mstep_units * unit_capacity
-        out = blocks(kept, bytes_per_translation=bytes_per_translation, tile_budget_bytes=2 * capacity_bytes)
+        out = blocks(
+            kept, bytes_per_translation=bytes_per_translation, tile_budget_bytes=2 * capacity_bytes,
+            wide_tile_budget_bytes=2 * capacity_bytes,
+        )
         n_blocks[-1] += len(out)
         return out
 

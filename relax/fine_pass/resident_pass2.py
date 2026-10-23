@@ -2457,10 +2457,11 @@ def _resident_pass2(
         )
         # The capped budgets size the blocks; the whole leftover only widens blocks the cap cuts small
         # (resident_tilt_mstep.mstep_translation_blocks).
-        tile_budgets = [
-            chunk_tile_budget(chunk, cap_bytes=resident_chunk_memory.MAX_LEFTOVER_TILE_BUDGET_BYTES) for chunk in chunks
-        ]
-        wide_tile_budgets = [chunk_tile_budget(chunk, cap_bytes=None) for chunk in chunks]
+        tile_budgets, wide_tile_budgets = [], []
+        for chunk in chunks:
+            capped, wide = chunk_tile_budget(chunk)
+            tile_budgets.append(capped)
+            wide_tile_budgets.append(wide)
         if tile_budgets:
             logger.info(
                 "Resident pass-2 tilt M-step translation tiles: %.2f-%.2f GiB per chunk, widening blocks up to "

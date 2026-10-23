@@ -171,22 +171,24 @@ def plan_lean_lone_blocks(
 
 
 def tilt_chunk_tile_budget_bytes(
-    chunk, *, memory_plan, floor_bytes: int, explicit_floor: bool, unit_image_offsets, operand_size_kwargs, cap_bytes
-) -> int:
-    """The bytes a tilt chunk's M-step translated tiles take (``resident_tilt_mstep.tilt_mstep_tile_bytes``).
+    chunk, *, memory_plan, floor_bytes: int, explicit_floor: bool, unit_image_offsets, operand_size_kwargs
+) -> tuple[int, int]:
+    """The bytes a tilt chunk's M-step translated tiles take (``resident_tilt_mstep.tilt_mstep_tile_bytes``):
+    the capped budget that sizes the blocks and the whole leftover that widens blocks the cap cuts small
+    (``resident_tilt_mstep.mstep_translation_blocks``).
 
     They are not in the chunk plan: they take what the chunk budget leaves after the chunk's own planned peak
     (its row and unit classes) and, when the half's operands are prepared per chunk (``operand_size_kwargs``,
     ``resident_projections.resident_half_operand_sizes``'s arguments but ``n_images``; None when the operands
-    are resident for the pass), the chunk's operands, which live beside its M-step. At most ``cap_bytes``
-    (``resident_chunk_memory.leftover_tile_budget_bytes``; None for the whole leftover), never less than
-    ``floor_bytes``; an ``explicit_floor`` (translation_tile_max_bytes) stands as given.
+    are resident for the pass), the chunk's operands, which live beside its M-step. The capped budget is at most
+    ``resident_chunk_memory.MAX_LEFTOVER_TILE_BUDGET_BYTES`` (``resident_chunk_memory.leftover_tile_budget_bytes``),
+    and neither is less than ``floor_bytes``; an ``explicit_floor`` (translation_tile_max_bytes) is both budgets.
     """
 
     from relax.fine_pass import resident_chunk_memory, resident_projections
 
     if explicit_floor:
-        return floor_bytes
+        return floor_bytes, floor_bytes
     operand_bytes = 0
     if operand_size_kwargs is not None:
         first = int(chunk.image_start)
@@ -194,14 +196,15 @@ def tilt_chunk_tile_budget_bytes(
             n_images=int(unit_image_offsets[first + int(chunk.n_valid_images)]) - int(unit_image_offsets[first]),
             **operand_size_kwargs,
         )
-    return resident_chunk_memory.leftover_tile_budget_bytes(
+    leftover = partial(
+        resident_chunk_memory.leftover_tile_budget_bytes,
         memory_plan,
         row_capacity=chunk.row_capacity,
         image_capacity=chunk.image_capacity,
         reserved_bytes=operand_bytes,
         floor_bytes=floor_bytes,
-        cap_bytes=cap_bytes,
     )
+    return leftover(cap_bytes=resident_chunk_memory.MAX_LEFTOVER_TILE_BUDGET_BYTES), leftover(cap_bytes=None)
 
 
 class TiltMstepCensus:
@@ -292,7 +295,7 @@ def run_tilt_chunk(
     rect_indices_device,
     exact_positions_device,
     tile_budget_bytes: int,
-    wide_tile_budget_bytes: int | None = None,
+    wide_tile_budget_bytes: int,
     operand_image_start: int = 0,
     slot_block: int | None = None,
     score_pixel_indices=None,
@@ -671,9 +674,7 @@ def run_tilt_chunk(
             unit_kept,
             bytes_per_translation=bytes_per_translation,
             tile_budget_bytes=max(int(tile_budget_bytes) - row_sum_bytes, 0),
-            wide_tile_budget_bytes=(
-                None if wide_tile_budget_bytes is None else max(int(wide_tile_budget_bytes) - row_sum_bytes, 0)
-            ),
+            wide_tile_budget_bytes=max(int(wide_tile_budget_bytes) - row_sum_bytes, 0),
         )
     if mstep_census is not None:
         mstep_census.add(n_unit_trans, translation_blocks[0].index.size, len(translation_blocks))
