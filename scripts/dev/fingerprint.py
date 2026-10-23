@@ -143,9 +143,10 @@ TMP_TOKEN = "<TMP>"
 # (``engine_kwargs.get(key, default)`` or a named parameter): passing the default is the same call as
 # omitting the key. The stand-in engine drops a key whose value is this default before it digests its
 # operands, so a caller that always passes such a key (code rule 12, no conditional insertions) records the
-# same call as one that inserts it only when it differs. The commit that added this table lists where each
-# key is read; a key that changes behaviour when passed at its default (pass2_use_float64_scoring: None
-# inherits use_float64_scoring, False overrides it) is not listed.
+# same call as one that inserts it only when it differs. tests/unit/test_dev_fingerprint.py
+# (test_engine_keyword_defaults_match_the_engine) scans the modules k_class imports and requires every key here to
+# be read there, only at this default; a key that changes behaviour when passed at its default
+# (pass2_use_float64_scoring: None inherits use_float64_scoring, False overrides it) is not listed.
 ENGINE_KWARG_DEFAULTS = {
     "coarse_engine": "auto",
     "symmetry_label": "C1",
@@ -162,7 +163,6 @@ ENGINE_KWARG_DEFAULTS = {
     "relion_projector_half": None,
     "relion_projector_r_max": None,
     "mstep_relion_x_half": False,
-    "relion_half_volume_mstep": False,
     "coarse_current_size": None,
     "fine_current_size": None,
 }

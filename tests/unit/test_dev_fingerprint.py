@@ -1,7 +1,9 @@
 """Pure logic of the controller fingerprint tool (``scripts/dev/fingerprint.py``); no refinement runs here."""
 
+import ast
 import json
 from dataclasses import dataclass
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -74,6 +76,77 @@ def test_an_engine_keyword_at_its_default_is_the_same_call_as_an_omitted_one():
     assert fingerprint.engine_kwargs_without_defaults({"pass2_use_float64_scoring": None}) == {
         "pass2_use_float64_scoring": None
     }
+
+
+def _engine_modules() -> list[Path]:
+    """The relax modules ``relax.classification.k_class`` imports, directly or through each other (function-level
+    imports included): the engine ``run_dense_k_class_em_adaptive`` and every module its callees live in."""
+
+    root = Path(fingerprint_cli.REPO_ROOT)
+
+    def module_path(name: str) -> Path | None:
+        path = root / Path(*name.split("."))
+        for candidate in (path.with_suffix(".py"), path / "__init__.py"):
+            if candidate.is_file():
+                return candidate
+        return None
+
+    seen, todo = set(), ["relax.classification.k_class"]
+    while todo:
+        name = todo.pop()
+        path = module_path(name)
+        if name in seen or path is None:
+            continue
+        seen.add(name)
+        package = name if path.name == "__init__.py" else name.rpartition(".")[0]
+        for node in ast.walk(ast.parse(path.read_text())):
+            if isinstance(node, ast.Import):
+                todo += [alias.name for alias in node.names if alias.name.startswith("relax")]
+            elif isinstance(node, ast.ImportFrom):
+                base = node.module or ""
+                if node.level:
+                    base = ".".join(package.split(".")[: len(package.split(".")) - node.level + 1] + ([base] if base else []))
+                if base.startswith("relax"):
+                    todo += [base, *(f"{base}.{alias.name}" for alias in node.names)]
+    return sorted(module_path(name) for name in seen)
+
+
+def _engine_keyword_defaults(paths: list[Path], keys) -> dict[str, set[str]]:
+    """Per key, the defaults the engine modules read it with: a named parameter's default, or the default of a
+    ``<...kwargs>.get(key[, default])`` (None when omitted), as source text."""
+
+    found = {key: set() for key in keys}
+    for path in paths:
+        for node in ast.walk(ast.parse(path.read_text())):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                args = node.args
+                positional = args.posonlyargs + args.args
+                pairs = [*zip(positional[len(positional) - len(args.defaults):], args.defaults),
+                         *zip(args.kwonlyargs, args.kw_defaults)]
+                for arg, default in pairs:
+                    if default is not None and arg.arg in found:
+                        found[arg.arg].add(ast.unparse(default))
+            elif (
+                isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "get"
+                and ast.unparse(node.func.value).endswith("kwargs")
+                and node.args and isinstance(node.args[0], ast.Constant) and node.args[0].value in found
+            ):
+                found[node.args[0].value].add(ast.unparse(node.args[1]) if len(node.args) > 1 else "None")
+    return found
+
+
+def test_engine_keyword_defaults_match_the_engine():
+    """Every key of ENGINE_KWARG_DEFAULTS is read by the engine or a callee, and only at the table's default: a
+    default changed in relax while callers pass the old one would otherwise leave the digest on both sides (G9b)."""
+
+    paths = _engine_modules()
+    assert Path(fingerprint_cli.REPO_ROOT, "relax", "classification", "k_class.py") in paths
+    found = _engine_keyword_defaults(paths, fingerprint.ENGINE_KWARG_DEFAULTS)
+    for key, default in fingerprint.ENGINE_KWARG_DEFAULTS.items():
+        assert found[key], f"{key}: no engine module reads it with a default; delete it from ENGINE_KWARG_DEFAULTS"
+        assert {ast.literal_eval(text) for text in found[key]} == {default}, (
+            f"{key}: the table says {default!r}, the engine modules read {sorted(found[key])}"
+        )
 
 
 def test_log_row_keeps_the_template_and_drops_wall_times():
