@@ -153,20 +153,28 @@ def row_capacity(most: int, n_rows: int, least: int = 64) -> int:
     return min(pow2_ceil(most, minimum=least), int(n_rows))
 
 
-@partial(jax.jit, static_argnames=("capacity",))
-def first_rows(rows, *, capacity: int):
-    """Each image's first ``capacity`` true columns of ``rows`` ``[B, N]`` (int32, ascending; zero past the image's
-    count) and which of the ``capacity`` slots hold one."""
+@partial(jax.jit, static_argnames=("width",))
+def window_rows(rows, start, limit, *, width: int):
+    """Each image's true columns of ``rows`` ``[B, N]`` of rank ``start`` to ``start + width``, of its first
+    ``limit`` (``start`` and ``limit`` traced): the ids (int32, ascending; zero past the image's count) and which of
+    the ``width`` slots hold one."""
 
     n_images, n_rows = rows.shape
-    position = jnp.cumsum(rows, axis=1, dtype=jnp.int32) - 1
-    # A column that is not kept writes past the end, which the scatter drops.
-    position = jnp.where(rows & (position < capacity), position, capacity)
-    ids = jnp.zeros((n_images, capacity), jnp.int32).at[jnp.arange(n_images)[:, None], position].set(
+    rank = jnp.cumsum(rows, axis=1, dtype=jnp.int32) - 1
+    position = rank - start
+    # A column outside the window writes past the end, which the scatter drops.
+    position = jnp.where(rows & (position >= 0) & (position < width) & (rank < limit), position, width)
+    ids = jnp.zeros((n_images, width), jnp.int32).at[jnp.arange(n_images)[:, None], position].set(
         jnp.broadcast_to(jnp.arange(n_rows, dtype=jnp.int32), rows.shape), mode="drop"
     )
-    count = jnp.minimum(jnp.sum(rows, axis=1, dtype=jnp.int32), capacity)
-    return ids, jnp.arange(capacity, dtype=jnp.int32)[None, :] < count[:, None]
+    count = jnp.minimum(jnp.sum(rows, axis=1, dtype=jnp.int32), limit)
+    return ids, jnp.arange(width, dtype=jnp.int32)[None, :] < (count - start)[:, None]
+
+
+def first_rows(rows, *, capacity: int):
+    """Each image's first ``capacity`` true columns of ``rows`` ``[B, N]``: :func:`window_rows` from rank zero."""
+
+    return window_rows(rows, jnp.int32(0), jnp.int32(capacity), width=capacity)
 
 
 @jax.jit

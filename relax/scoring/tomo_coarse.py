@@ -44,6 +44,7 @@ from relax.scoring.exact_cut import (
     put_rows,
     row_capacity,
     undecided_rotations,
+    window_rows,
 )
 from relax.scoring.tomo_coarse_gemm import coarse_gemm_frame, coarse_gemm_slot_block, slot_block_error
 
@@ -502,24 +503,6 @@ def _take_rescore_group(rows, exact, operands, take, n):
     return group_rows, tuple(value[take] for value in operands), exact[take]
 
 
-@partial(jax.jit, static_argnames=("width",))
-def _window_rows(rows, start, limit, *, width: int):
-    """Columns ``start`` to ``start + width`` of :func:`relax.scoring.exact_cut.first_rows` of ``rows`` ``[B, N]`` at
-    capacity ``limit`` (both traced): each row's true columns of rank ``start`` onwards (int32, ascending; zero past
-    the row's count) and which of the ``width`` slots hold one."""
-
-    n_images, n_rows = rows.shape
-    rank = jnp.cumsum(rows, axis=1, dtype=jnp.int32) - 1
-    position = rank - start
-    # A column outside the window writes past the end, which the scatter drops.
-    position = jnp.where(rows & (position >= 0) & (position < width) & (rank < limit), position, width)
-    ids = jnp.zeros((n_images, width), jnp.int32).at[jnp.arange(n_images)[:, None], position].set(
-        jnp.broadcast_to(jnp.arange(n_rows, dtype=jnp.int32), rows.shape), mode="drop"
-    )
-    count = jnp.minimum(jnp.sum(rows, axis=1, dtype=jnp.int32), limit)
-    return ids, jnp.arange(width, dtype=jnp.int32)[None, :] < (count - start)[:, None]
-
-
 @jax.jit
 def _put_rescore_group(exact, scored, group_exact, group_rows, limit, take, n):
     """``exact`` with a rescore group's diff2 written back to its real particles, and ``scored`` with their counts
@@ -552,7 +535,7 @@ def _rescore_group(rescore, rows_per_call, units_all, exact, scored, rows, opera
         group_rows, group_operands, group_exact = _take_rescore_group(rows, exact, operands, take_device, n_device)
         per_call = min(_RESCORE_WINDOW_ROWS, int(rows_per_call(n_pad)))
         for first in range(0, group_capacity, per_call):
-            ids, use = _window_rows(group_rows, jnp.int32(first), limit, width=per_call)
+            ids, use = window_rows(group_rows, jnp.int32(first), limit, width=per_call)
             group_exact = rescore(units_all[take], group_exact, ids, use, group_operands)
         exact, scored = _put_rescore_group(exact, scored, group_exact, group_rows, limit, take_device, n_device)
     return exact, scored

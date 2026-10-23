@@ -304,31 +304,6 @@ def test_cells_capacity_is_the_power_of_four_class_that_holds_the_cells():
     assert len({tomo_coarse._cells_capacity(n) for n in pow2_sizes}) == 9
 
 
-@pytest.mark.parametrize("limit", [5, 16, 64, 300])
-@pytest.mark.parametrize("width", [1, 4, 16])
-def test_window_rows_are_first_rows_columns(limit, width):
-    """Each window of :func:`_window_rows` is that slice of ``first_rows`` at capacity ``limit``: the same ids and
-    slots in use, zero ids past a row's count, nothing past ``limit``."""
-
-    from relax.scoring.exact_cut import first_rows
-
-    rng = np.random.default_rng(width * 1000 + limit)
-    rows = rng.random((7, 300)) < rng.uniform(0.0, 0.6, size=(7, 1))
-    rows[0] = False
-    capacity = -(-limit // width) * width
-    ids, use = (np.asarray(v) for v in first_rows(jnp.asarray(rows), capacity=capacity))
-    use = use & (np.arange(capacity) < limit)[None, :]
-    ids = np.where(use, ids, 0)
-    for first in range(0, capacity, width):
-        got_ids, got_use = (
-            np.asarray(v)
-            for v in tomo_coarse._window_rows(jnp.asarray(rows), jnp.int32(first), jnp.int32(limit), width=width)
-        )
-        np.testing.assert_array_equal(got_use, use[:, first : first + width])
-        np.testing.assert_array_equal(np.where(got_use, got_ids, 0), ids[:, first : first + width])
-        np.testing.assert_array_equal(got_ids[~got_use], 0)
-
-
 @pytest.mark.gpu
 @pytest.mark.parametrize("rows_per_call", [256, 16], ids=["windows_of_64", "windows_of_16"])
 def test_group_rescore_in_chunks_and_windows_is_the_one_call_rescore(gpu_device, rows_per_call):

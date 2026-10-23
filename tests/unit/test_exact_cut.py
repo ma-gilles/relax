@@ -36,6 +36,35 @@ def test_first_rows_are_each_images_true_columns_in_order():
     assert exact_cut.row_capacity(100, 80) == 80
 
 
+@pytest.mark.parametrize("limit", [5, 16, 64, 300])
+@pytest.mark.parametrize("width", [1, 4, 16])
+def test_window_rows_are_slices_of_each_images_first_true_columns(limit, width):
+    """Each window of :func:`exact_cut.window_rows` is that slice of each image's first ``limit`` true columns: the
+    same ids and slots in use, zero ids past an image's count, nothing past ``limit``; ``first_rows`` is the
+    window from rank zero."""
+
+    rng = np.random.default_rng(width * 1000 + limit)
+    rows = rng.random((7, 300)) < rng.uniform(0.0, 0.6, size=(7, 1))
+    rows[0] = False
+    capacity = -(-limit // width) * width
+    ids = np.zeros((rows.shape[0], capacity), np.int32)
+    use = np.zeros((rows.shape[0], capacity), bool)
+    for image, row in enumerate(rows):
+        columns = np.flatnonzero(row)[:limit]
+        ids[image, : columns.size] = columns
+        use[image, : columns.size] = True
+    for first in range(0, capacity, width):
+        got_ids, got_use = (
+            np.asarray(v)
+            for v in exact_cut.window_rows(jnp.asarray(rows), jnp.int32(first), jnp.int32(limit), width=width)
+        )
+        np.testing.assert_array_equal(got_use, use[:, first : first + width])
+        np.testing.assert_array_equal(got_ids, ids[:, first : first + width])
+    got_ids, got_use = (np.asarray(v) for v in exact_cut.first_rows(jnp.asarray(rows), capacity=limit))
+    np.testing.assert_array_equal(got_use, use[:, :limit])
+    np.testing.assert_array_equal(got_ids, ids[:, :limit])
+
+
 def test_undecided_rotations_need_the_cut_set_by_max_significants():
     """Samples within the margin of the cut are undecided; without a diff2 (scores that carry their priors) the
     minimum's neighbourhood is not; an image cut by the adaptive fraction, or with a negative margin, has none."""
