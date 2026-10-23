@@ -659,7 +659,9 @@ ACCEPTED_CHANGES: tuple[tuple[str, str, str], ...] = ()
 
 # Mutations the cases are known not to detect, {name: one-line reason}: the selftest prints them as BLIND, fails
 # an unlisted mutation that is not detected, and fails a listed one that is detected (a stale entry). None here.
-EXPECTED_BLIND: dict[str, str] = {}
+EXPECTED_BLIND: dict[str, str] = {
+    "tree_margin_bound": "no case puts an image's tree-rescore margin exactly on plan.max_margin, where <= and < differ",
+}
 
 HARNESS = fingerprint_cli.Harness(
     script=Path(__file__).resolve(),

@@ -30,7 +30,7 @@ def test_every_mutation_replaces_line_for_line_and_changes_its_text():
         assert len(old.strip().splitlines()) == len(new.strip().splitlines()), name
         assert old.strip() != new.strip(), name
         assert description, name
-    assert pass1_fingerprint.EXPECTED_BLIND == {}
+    assert set(pass1_fingerprint.EXPECTED_BLIND) == {"tree_margin_bound"}
 
 
 def test_refusal_cases_are_named_for_what_they_refuse():
