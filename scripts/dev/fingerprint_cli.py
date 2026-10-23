@@ -119,7 +119,10 @@ def run_tree(harness: Harness, source: Path, out: Path, work_dir: Path, names: l
         tail = log_path.read_text().splitlines()
         for line in tail if code != 0 else tail[-1:]:
             print(line)
-    shutil.rmtree(tmp_root, ignore_errors=True)
+    if code == 0:
+        shutil.rmtree(tmp_root, ignore_errors=True)
+    else:  # kept, with the log beside ``out``, so a failed run can be diagnosed
+        print(f"run failed (rc {code}): kept {tmp_root} and {log_path}")
     return code
 
 
@@ -224,9 +227,7 @@ def command_selftest(harness: Harness, args) -> int:
         out = work_dir / f"{harness.file_prefix}fp_mutant_{name}.json"
         if run_tree(harness, target, out, work_dir, all_cases, threads=2, quiet=True) != 0:
             return name, changed, None
-        cases = harness.differing_cases(clean, json.loads(out.read_text()))
-        shutil.rmtree(target, ignore_errors=True)
-        return name, changed, cases
+        return name, changed, harness.differing_cases(clean, json.loads(out.read_text()))
 
     with ThreadPoolExecutor(max_workers=args.jobs) as pool:
         outcomes = list(pool.map(one, selected))
@@ -251,6 +252,12 @@ def command_selftest(harness: Harness, args) -> int:
             verdict, detail = "OK", f"detected in {len(cases)} cases, e.g. {cases[0]}"
         failures += verdict == "FAIL"
         blinds += verdict == "BLIND"
+        target = work_dir / f"{harness.file_prefix}mutant_{name}"
+        if verdict == "FAIL":  # the mutated tree and its run's log stay for diagnosis
+            out_log = work_dir / f"{harness.file_prefix}fp_mutant_{name}.json.log"
+            detail += f" (kept: {target}, {out_log})"
+        else:
+            shutil.rmtree(target, ignore_errors=True)
         print(f"{verdict:5s} {name}: {description} [{', '.join(changed)}] -> {detail}")
     print(f"{len(selected)} mutations, {failures} failed, {blinds} blind (EXPECTED_BLIND)")
     _print_not_covered(harness)

@@ -473,8 +473,8 @@ def test_the_case_and_mutation_tables_are_well_formed():
 
 
 def test_only_the_three_known_blind_spots_are_expected_blind():
-    """G13: the refinement harness lists exactly its three undetected mutations, each with a reason; the other
-    harnesses list none (k1_mstep_join_radius is detected and is not listed)."""
+    """G13: the refinement harness lists exactly its three undetected mutations and pass1 its one, each with a
+    reason; vdam and ppca list none (k1_mstep_join_radius is detected and is not listed)."""
     from scripts.dev import pass1_fingerprint, ppca_fingerprint, vdam_fingerprint
 
     assert set(fingerprint.EXPECTED_BLIND) == {
@@ -482,8 +482,12 @@ def test_only_the_three_known_blind_spots_are_expected_blind():
     }
     assert all(reason.strip() for reason in fingerprint.EXPECTED_BLIND.values())
     assert set(fingerprint.EXPECTED_BLIND) <= {mutation[0] for mutation in fingerprint.MUTATIONS}
+    assert set(pass1_fingerprint.EXPECTED_BLIND) == {"tree_margin_bound"}
     for harness in (vdam_fingerprint, ppca_fingerprint, pass1_fingerprint):
-        assert harness.EXPECTED_BLIND == {} and harness.HARNESS.expected_blind is harness.EXPECTED_BLIND
+        assert all(reason.strip() for reason in harness.EXPECTED_BLIND.values())
+        assert set(harness.EXPECTED_BLIND) <= {mutation[0] for mutation in harness.MUTATIONS}
+        assert harness.HARNESS.expected_blind is harness.EXPECTED_BLIND
+    assert vdam_fingerprint.EXPECTED_BLIND == {} and ppca_fingerprint.EXPECTED_BLIND == {}
     assert fingerprint.HARNESS.expected_blind is fingerprint.EXPECTED_BLIND
 
 
@@ -517,6 +521,9 @@ def test_selftest_fails_an_undetected_unlisted_mutation_and_a_detected_listed_on
     assert "BLIND blind: blind breaks [relax/x.py] -> not detected, as EXPECTED_BLIND says: no case reaches it" in out
     assert "FAIL  stale:" in out and "listed in EXPECTED_BLIND (a stale entry; delete it)" in out
     assert "4 mutations, 2 failed, 1 blind (EXPECTED_BLIND)" in out
+    # A failed mutation's tree and log stay for diagnosis; a passed one's tree is removed.
+    assert f"(kept: {tmp_path / (harness.file_prefix + 'mutant_missed')}," in out
+    assert not (tmp_path / (harness.file_prefix + "mutant_caught")).exists()
     harness = dataclasses.replace(harness, expected_blind={"gone": "no such mutation"})
     with pytest.raises(SystemExit, match="EXPECTED_BLIND names no mutation: gone"):
         fingerprint_cli.command_selftest(harness, args)
