@@ -54,9 +54,9 @@ def tree(tmp_path_factory):
     return repo, base, tmp_path_factory.mktemp("gate_scratch")
 
 
-def _gate(tree, step: str, base: str):
+def _env(tree, step: str, base: str) -> dict[str, str]:
     repo, _, scratch = tree
-    env = {
+    return {
         "PATH": "/usr/bin:/bin",
         "HOME": str(scratch),
         "REFACTOR_SCRATCH": str(scratch),
@@ -64,8 +64,15 @@ def _gate(tree, step: str, base: str):
         "REFACTOR_PYTHON": sys.executable,
         "REFACTOR_TAG": f"{step}_{base[:7]}",
     }
+
+
+def _gate(tree, step: str, base: str):
     return subprocess.run(
-        ["bash", "scripts/dev/refactor_gate.sh", step, base], cwd=repo, env=env, capture_output=True, text=True
+        ["bash", "scripts/dev/refactor_gate.sh", step, base],
+        cwd=tree[0],
+        env=_env(tree, step, base),
+        capture_output=True,
+        text=True,
     )
 
 
@@ -89,3 +96,45 @@ def test_the_head_against_itself_passes_the_step(tree, step):
     result = _gate(tree, step, "HEAD")
     assert result.returncode == 0, result.stdout + result.stderr
     assert result.stdout.count("\n") == 1
+
+
+def test_a_change_to_the_gate_inputs_fails_until_the_owner_accepts_it(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init", "-q")
+    (repo / "scripts" / "dev").mkdir(parents=True)
+    for name in GATE_SCRIPTS:
+        shutil.copy(REPO_ROOT / "scripts" / "dev" / name, repo / "scripts" / "dev" / name)
+    base = _commit(repo, BASE_FILES)
+    head = _commit(repo, {"scripts/dev/fingerprint_cases.py": "CASES = {}\n", "tests/tiers/pins.json": "{}\n"})
+    tree = (repo, base, tmp_path / "scratch")
+    result = _gate(tree, "harness", base)
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "scripts/dev/fingerprint_cases.py tests/tiers/pins.json" in result.stdout
+    accepted = subprocess.run(
+        ["bash", "scripts/dev/refactor_gate.sh", "harness", base],
+        cwd=repo,
+        env={**_env(tree, "harness", base), "REFACTOR_ACCEPT_HARNESS": head},
+        capture_output=True,
+        text=True,
+    )
+    assert accepted.returncode == 0, accepted.stdout + accepted.stderr
+    assert _gate(tree, "harness", "HEAD").returncode == 0
+
+
+def test_a_ruff_or_arity_checker_that_does_not_run_fails_its_step(tree, tmp_path):
+    # A Python without ruff exits 1 like a run with findings, and a crashing checker prints nothing: both must fail,
+    # not read as "0 new".
+    broken = tmp_path / "python"
+    broken.write_text(f'#!/bin/sh\ncase "$1$2" in -mruff) echo "No module named ruff" >&2; exit 1;; esac\n'
+                      f'case "$1" in *call_arity_check.py) exit 1;; esac\nexec {sys.executable} "$@"\n')
+    broken.chmod(0o755)
+    for step in ("ruff", "arity"):
+        result = subprocess.run(
+            ["bash", "scripts/dev/refactor_gate.sh", step, "HEAD"],
+            cwd=tree[0],
+            env={**_env(tree, step, "HEAD"), "REFACTOR_PYTHON": str(broken)},
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode != 0, (step, result.stdout + result.stderr)

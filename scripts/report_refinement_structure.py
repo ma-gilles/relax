@@ -218,9 +218,12 @@ def main(argv: list[str] | None = None) -> int:
         type=Path,
         help="After a clean-up: lower the ceilings in this file to what the code now allows; never raises one",
     )
+    parser.add_argument(
+        "--root", type=Path, default=REPO_ROOT, help="the tree to measure (default: this one); a relative --check or --lower-ceilings path is under it"
+    )
     args = parser.parse_args(argv)
 
-    repo_root = REPO_ROOT
+    repo_root = args.root.resolve()
     metrics = collect_metrics(repo_root, args.package)
     if args.lower_ceilings is not None:
         path = args.lower_ceilings if args.lower_ceilings.is_absolute() else repo_root / args.lower_ceilings

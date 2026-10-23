@@ -109,7 +109,15 @@ device tests, a parser or option resolver by precedence, rejection and round-tri
 On a frozen copy of the head (`git worktree add --detach <dir> <sha>`, with the checkout's `.pixi` linked
 into it), from that directory: `REFACTOR_SCRATCH=<dir> scripts/dev/refactor_gate.sh <step>`, or all steps as
 one Slurm CPU job, `sbatch --account=<account> --export=ALL scripts/dev/refactor_gate.sh all`. Use the login
-node only when `uptime` shows a load under 20. Each step prints one summary line per check. The steps:
+node only when `uptime` shows a load under 20. Each step prints one summary line per check. With
+`REFACTOR_HARNESS=<a checkout of the base>` the base's gate inputs judge the head: the fingerprint harnesses
+(cases, mutations), the CPU unit list, the module table, the ruff configuration, the arity, anchor, ceiling
+and smell checkers, the ceilings file and the smell baseline; run the base's `refactor_gate.sh` with
+`REFACTOR_WORKTREE` the head's frozen copy. The steps:
+
+- [ ] `harness [BASE]`: the diff touches none of the gate's inputs (`HARNESS_PATTERNS` in the script:
+      `scripts/dev/` fingerprints, `refactor_*`, `smell_*` and checkers, `tests/tiers/*.json`, the ceilings
+      file), or the owner accepted the change for this head (`REFACTOR_ACCEPT_HARNESS=<head sha>`).
 
 - [ ] `fp`: `fingerprint.py check origin/main`: results, files and checkpoints 0 differences; trace
       differences confined to log rows are allowed and are reported as such. After any rebase, run it and
@@ -124,12 +132,15 @@ node only when `uptime` shows a load under 20. Each step prints one summary line
       docs/development/refinement_structure_metrics.json`; a warning within the slack passes and is named
       in the report). Each also runs alone, as its own step.
 - [ ] `smell`: `scripts/dev/smell_check.py` against its baseline; new findings are listed in its log as a
-      warning, never a failure.
+      warning. A checker that does not finish fails the step, as does a ruff or arity checker that does not
+      run (a missing module is not "0 new").
 - [ ] `extra BASE FILE...` (`all BASE FILE...` runs it last): the given test files on the head and on a
-      snapshot of the base; the two failure lists must be identical.
+      snapshot of the base; the two failure lists must be identical, and both runs must end in a test outcome
+      (pytest exit 0 or 1).
 - [ ] `tests head HEAD`, `clean head`: the CPU unit list (`scripts/dev/refactor_cpu_unit_list.txt`) and every
-      `test_*.py` of the module's test directories, on a detached git worktree of the head (the launcher tests
+      `test_*.py` of every module's test directories, on a detached git worktree of the head (the launcher tests
       need git and a pixi Python, which the step provides). Every test passes: `logs/fail_head.txt` is empty.
+      A listed file the head lacks, or a pytest run that does not end in a test outcome, fails the step.
       `tests base <rev>` and `compare base head` remain for comparing a base by hand.
 - [ ] Repeat the search of all of `tests/` and `scripts/` for every moved or removed name: the CPU list does
       not run the GPU unit files.

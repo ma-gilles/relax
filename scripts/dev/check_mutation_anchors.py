@@ -13,6 +13,7 @@ fingerprinted module (``docs/development/refactor_procedure.md``).
 
 from __future__ import annotations
 
+import argparse
 import subprocess
 import sys
 from pathlib import Path
@@ -48,8 +49,12 @@ def stale_mutations(root: Path = REPO_ROOT) -> list[tuple[str, int, int]]:
     return stale
 
 
-def main() -> int:
-    stale = stale_mutations()
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--root", type=Path, default=REPO_ROOT, help="the tree whose relax/ the mutations must apply to (default: this one)"
+    )
+    stale = stale_mutations(parser.parse_args(argv).root.resolve())
     for name, found, expected in stale:
         print(f"STALE {name}: {found} replacements, expected {expected}")
     print(f"mutation anchors checked: {len(MUTATIONS)} stale: {len(stale)}")
