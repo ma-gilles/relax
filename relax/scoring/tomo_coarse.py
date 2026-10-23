@@ -272,8 +272,8 @@ def _cells_capacity(n_cells: int) -> int:
     """The compaction size of a flush's ``n_cells`` significant cells: the smallest power of four at least
     ``n_cells`` (and 4). :func:`_significant_cells` takes it as a static argument, and the flushes' counts span
     128 to 8M cells in one global iteration (14 sizes and 14 real compiles at powers of two, iteration 7 of the
-    real tilt-series case, explain job 15973107); powers of four halve the sizes. The ids past the count are -1
-    and cropped, so the cells are the same at any size that holds them."""
+    real tilt-series case); powers of four halve the sizes. The ids past the count are -1 and cropped, so the cells
+    are the same at any size that holds them."""
 
     bits = (max(int(n_cells), 4) - 1).bit_length()
     return 1 << (bits + (bits & 1))
@@ -410,7 +410,7 @@ def _exact_cut_eulers(coarse_eulers_deg, *, local: bool):
     A local search's grid is the union of its particles' local rotations, a new size for each half in each iteration
     (928,738 and 950,302 rows at iteration 24 of the real tilt-series case), and its length keyed
     :func:`_lay_out_undecided_rotations` again every time (10 of the 13 real compiles of a constant-size local
-    iteration, explain job 15973107). Its rows are padded with zeros to the capacity class of the grid
+    iteration). Its rows are padded with zeros to the capacity class of the grid
     (:func:`relax.fine_pass.resident_statistics.resident_image_capacity`, as the pass's rotation-mass accumulator):
     the program reads only the rows a particle's own rotations name. A global grid keeps its length.
     """

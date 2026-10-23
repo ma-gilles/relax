@@ -387,7 +387,7 @@ def unit_mstep_translations(
 TILT_MSTEP_MAX_TRANSLATIONS = 2048
 # The block a chunk cut into smaller blocks takes when it keeps more translations than this and its uncapped
 # leftover holds them (relax#120). The cost follows the block structure, not the bytes or the translations alone
-# (per-chunk times, 80 GB tilt-series windows 16001863/64/901/902): merged blocks of a many-unit chunk gain from
+# (per-chunk times of the tilt-series run's windows on an 80 GB card): merged blocks of a many-unit chunk gain from
 # width (64 units, k 2048: 32 x 64 blocks 3.02 s, 512 x 4 1.96 s; 32 units: 64 x 32 1.69 s, 512 x 4 1.18 s), but a
 # chunk whose translations fit one capped block loses when split (one unit, k 1176: one block 34.3 s, 512 x 3
 # 38.7 s; k 648: 0.78 s, 512 x 2 0.86 s), and one unmerged 512 block of 64 units loses to 64 x 8 (0.72 s, 0.61 s).

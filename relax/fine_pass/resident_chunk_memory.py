@@ -505,8 +505,8 @@ def overflow_row_capacity(max_image_rows: int, row_capacity_ladder) -> int:
 
 # The most a chunk's leftover gives its translated tiles (relax#120). Leftovers of 19-30 GiB on an 80 GB card put
 # whole chunks' translations in one M-step block, and the local iteration 18 of the tilt-series run took 728 s
-# against 714-715 s at the card's 1.43 GiB device share (two same-node pairs, 15964005); 1.5 GiB ran the 16 GB
-# final iteration in 1409 s (15947763), 1304 s on the 80 GB card. The uncapped leftover (``cap_bytes=None``) only
+# against 714-715 s at the card's 1.43 GiB device share (two same-node pairs); 1.5 GiB ran the final iteration
+# in 1409 s on a 16 GB card, 1304 s on the 80 GB card. The uncapped leftover (``cap_bytes=None``) only
 # widens blocks the cap cuts small (resident_tilt_mstep.TILT_MSTEP_BLOCK_TRANSLATIONS).
 MAX_LEFTOVER_TILE_BUDGET_BYTES = 3 << 29
 
