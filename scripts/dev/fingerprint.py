@@ -197,11 +197,13 @@ def engine_kwargs_without_defaults(kwargs: dict) -> dict:
 def without_probe(kwargs: dict) -> dict:
     """``kwargs`` less ``probe``, the K-class engine's diagnostics (layout S15): they observe the pass and never steer
     it, and a tree from before S15 passes none. Refuses a ``probe`` that is not a probe (or None), so no other value
-    can leave the digest under that name. Also less ``engine_tuning`` (``relax.runtime.engine_tuning.EngineTuning``,
-    rule 5 env slice, 2026-10-12): how the engines execute, which changes no value; a tree from before it reads the
-    same settings from the environment. Refuses an ``engine_tuning`` that is not an ``EngineTuning``. Also less a
-    ``scoring_overrides`` (``relax.runtime.scoring_overrides.ScoringOverrides``, 2026-10-12) at its defaults, the
-    production path a tree from before it took; a set override changes values and stays in the digest."""
+    can leave the digest under that name. ``engine_tuning`` (``relax.runtime.engine_tuning.EngineTuning``, rule 5
+    env slice, 2026-10-12) is replaced by its fields that differ from ``EngineTuning()``, and left out when none
+    does: a tree from before it read the same settings from the environment, so an absent tuning and a default one
+    digest the same, and a tuning field that does change is in the digest. Refuses an ``engine_tuning`` that is not
+    an ``EngineTuning``. Also less a ``scoring_overrides`` (``relax.runtime.scoring_overrides.ScoringOverrides``,
+    2026-10-12) at its defaults, the production path a tree from before it took; a set override changes values and
+    stays in the digest."""
 
     probe = kwargs.get("probe")
     assert probe is None or all(
@@ -215,9 +217,32 @@ def without_probe(kwargs: dict) -> dict:
     assert overrides is None or type(overrides).__name__ == "ScoringOverrides", (
         f"the engine's scoring_overrides keyword holds {type(overrides).__name__}, not a ScoringOverrides"
     )
-    return {
+    out = {
         key: value for key, value in kwargs.items()
         if key not in ("probe", "engine_tuning") and not default_scoring_overrides(value)
+    }
+    changed = non_default_tuning(tuning)
+    if changed:
+        out["engine_tuning"] = changed
+    return out
+
+
+def default_tuning(value) -> bool:
+    """Whether ``value`` is an ``EngineTuning`` equal to ``EngineTuning()`` field by field."""
+
+    return type(value).__name__ == "EngineTuning" and not non_default_tuning(value)
+
+
+def non_default_tuning(tuning) -> dict:
+    """The fields of an ``EngineTuning`` that differ from ``EngineTuning()``, by name (empty for None)."""
+
+    if tuning is None:
+        return {}
+    default = type(tuning)()
+    return {
+        field.name: getattr(tuning, field.name)
+        for field in dataclasses.fields(tuning)
+        if getattr(tuning, field.name) != getattr(default, field.name)
     }
 
 
@@ -346,7 +371,7 @@ def digest_operands(*values) -> int:
             h.update(repr(value).encode())
         elif isinstance(value, dict):
             for key in sorted(value, key=str):
-                if type(value[key]).__name__ == "EngineTuning" or default_scoring_overrides(value[key]):
+                if default_tuning(value[key]) or default_scoring_overrides(value[key]):
                     continue  # not an operand (see below), so not its key either
                 if retired_operand_field(key, value[key]):
                     continue
@@ -363,10 +388,12 @@ def digest_operands(*values) -> int:
             h.update(np.ascontiguousarray(host).tobytes())
         elif callable(value):
             h.update(b"<callable>")
-        elif type(value).__name__ == "EngineTuning" or default_scoring_overrides(value):
-            # How the engines execute (relax.runtime.engine_tuning, rule 5 env slice): no value depends on it, and
-            # an older tree reads the same settings from the environment, so it is not an operand.
+        elif default_tuning(value) or default_scoring_overrides(value):
+            # How the engines execute (relax.runtime.engine_tuning, rule 5 env slice) at its defaults, which an older
+            # tree read from the same environment: not an operand.
             return
+        elif type(value).__name__ == "EngineTuning":
+            feed(non_default_tuning(value), depth + 1)  # only the fields that differ from EngineTuning()
         elif dataclasses.is_dataclass(value) and not isinstance(value, type) and depth < 4:
             feed({f.name: getattr(value, f.name) for f in dataclasses.fields(value)}, depth + 1)
         else:

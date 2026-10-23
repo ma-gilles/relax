@@ -83,6 +83,28 @@ def test_operand_digest_changes_with_any_operand():
     assert seed != fingerprint.digest_operands(dict(operands, extra=None))
 
 
+def test_engine_tuning_is_digested_by_its_fields_that_differ_from_the_default():
+    """G9c: an absent EngineTuning and a default one digest the same; a field set off its default is an operand."""
+    import dataclasses
+
+    from relax.runtime.engine_tuning import EngineTuning
+
+    default = EngineTuning()
+    changed = dataclasses.replace(default, prepare_image_batch=default.prepare_image_batch + 1)
+    operands = {"current_size": 8}
+    assert fingerprint.without_probe({**operands, "engine_tuning": default}) == operands
+    assert fingerprint.without_probe({**operands, "engine_tuning": changed}) == {
+        **operands, "engine_tuning": {"prepare_image_batch": default.prepare_image_batch + 1}
+    }
+    seed = fingerprint.digest_operands(operands)
+    assert fingerprint.digest_operands({**operands, "engine_tuning": default}) == seed
+    assert fingerprint.digest_operands(fingerprint.without_probe({**operands, "engine_tuning": default})) == seed
+    assert fingerprint.digest_operands({**operands, "engine_tuning": changed}) != seed
+    assert fingerprint.digest_operands(fingerprint.without_probe({**operands, "engine_tuning": changed})) != seed
+    with pytest.raises(AssertionError, match="not an EngineTuning"):
+        fingerprint.without_probe({"engine_tuning": {"prepare_image_batch": 1}})
+
+
 def test_an_engine_keyword_at_its_default_is_the_same_call_as_an_omitted_one():
     projector = np.ones(3)
     omitted = {"current_size": 8, "relion_projector_half": projector}
