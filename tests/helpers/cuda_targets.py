@@ -41,7 +41,7 @@ def sparse_pass2_segmented_supported() -> bool:
     """Return whether the loaded library exports both segmented pass-2 targets.
 
     The segmented handlers are an optional ABI, so a library built before them
-    stays loadable and callers fall back to the rectangular handlers.
+    stays loadable; a test that needs them skips on such a library.
     """
 
     try:
