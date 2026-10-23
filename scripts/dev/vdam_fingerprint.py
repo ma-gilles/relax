@@ -71,8 +71,11 @@ NOT_COVERED = (
     "RELION's CUDA image preprocessing (the cases use --image-fourier-backend host_numpy)",
     "GPU operation order, peak memory and array lifetimes",
 )
-# Keys of a written JSON file that hold wall times.
-TIMING_WORDS = ("time", "wall", "seconds", "elapsed")
+# Keys of a written JSON file that hold wall times, by exact name (at any depth); every other key is compared.
+TIMING_KEYS = frozenset({
+    "expectation_time_s", "mstep_time_s", "pre_artifact_time_s", "projector_refresh_time_s", "schedule_time_s",
+    "state_update_time_s", "subset_time_s",
+})
 
 
 # ----------------------------------------------------------------------------- cases
@@ -488,8 +491,7 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
 
                 def drop_timing(value):
                     if isinstance(value, dict):
-                        return {k: drop_timing(v) for k, v in value.items()
-                                if not any(word in str(k) for word in TIMING_WORDS)}
+                        return {k: drop_timing(v) for k, v in value.items() if str(k) not in TIMING_KEYS}
                     return value
 
                 flatten(drop_timing(payload), rel, out, scrub=scrub)

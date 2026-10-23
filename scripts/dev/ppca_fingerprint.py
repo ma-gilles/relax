@@ -55,8 +55,9 @@ NOT_COVERED = (
 )
 # The memory the harness reports to the tile and pass-2 job planners, whatever the host has.
 PLAN_MEMORY_BYTES = 4 * 2**30
-# Keys of a written JSON record that hold wall times or the host's memory.
-HOST_WORDS = ("time", "wall", "seconds", "elapsed", "memory")
+# Keys of a written JSON record that hold a wall time or the host's memory, by exact name (at any depth); every
+# other key is compared.
+HOST_KEYS = frozenset({"elapsed_seconds", "memory_gb", "memory_fraction"})
 
 # ----------------------------------------------------------------------------- cases
 
@@ -195,7 +196,7 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
 
     def drop_host(value):
         if isinstance(value, dict):
-            return {k: drop_host(v) for k, v in value.items() if not any(word in str(k) for word in HOST_WORDS)}
+            return {k: drop_host(v) for k, v in value.items() if str(k) not in HOST_KEYS}
         if isinstance(value, list):
             return [drop_host(v) for v in value]
         return value

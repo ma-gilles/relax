@@ -58,8 +58,6 @@ NOT_COVERED = (
     "GPU operation order, reduction shapes, peak memory and array lifetimes",
     "the overlap of the host read-back of one batch with the device scoring of the next (defer_publish)",
 )
-# Keys of a written JSON file that hold wall times (none today; the dump files are arrays).
-TIMING_WORDS = ("time", "wall", "seconds", "elapsed")
 
 
 # ----------------------------------------------------------------------------- cases

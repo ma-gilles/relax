@@ -43,6 +43,27 @@ def test_flatten_drops_wall_times_and_scrubs_strings():
     assert flat["/path"] == repr("<TMP>/out.npz")
 
 
+def test_written_files_drop_only_the_named_timing_and_host_keys():
+    """G10: archives and JSON files drop keys by exact name, the ones measured to vary between two runs of one tree
+    (wall times, git state, host memory); a key that only contains "time", "git" or "memory" is compared."""
+    from scripts.dev import ppca_fingerprint, vdam_fingerprint
+
+    assert fingerprint.DROPPED_ARCHIVE_KEYS == {"wall_times", "total_time", "setup_phase_cumulative_s"}
+    assert fingerprint.DROPPED_LEDGER_KEYS == {
+        "git_provenance", "git_commit", "setup_phase_seconds", "total_time_s", "wall_times_trajectory",
+    }
+    assert vdam_fingerprint.TIMING_KEYS == {
+        f"{stage}_time_s" for stage in
+        ("expectation", "mstep", "pre_artifact", "projector_refresh", "schedule", "state_update", "subset")
+    }
+    assert ppca_fingerprint.HOST_KEYS == {"elapsed_seconds", "memory_gb", "memory_fraction"}
+    compared = ("timing_dir", "n_wall_times", "timing_rows", "timing_summary", "jax_persistent_cache_min_compile_time_secs",
+                "runtime_s", "digit")
+    for table in (fingerprint.DROPPED_ARCHIVE_KEYS, fingerprint.DROPPED_LEDGER_KEYS, vdam_fingerprint.TIMING_KEYS,
+                  ppca_fingerprint.HOST_KEYS):
+        assert not table.intersection(compared)
+
+
 def test_flatten_reads_object_arrays_element_by_element():
     flat = fingerprint.flatten(np.array([np.zeros(2), None], dtype=object))
 

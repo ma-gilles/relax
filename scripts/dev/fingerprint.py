@@ -89,6 +89,12 @@ NODE_DEPENDENT_TEMPLATES = (
     "timing", "batch planner memory inputs", "RELION EM batch sizing", "Persistent JAX compilation cache",
 )
 DROPPED_RESULT_KEYS = frozenset({"wall_times", "setup_phase_seconds"})
+# Keys of a written archive (npz) and of a written JSON ledger that hold wall times or the source tree's git state,
+# by exact name (a field whose name merely contains "time" or "git" is compared); every other key is compared.
+DROPPED_ARCHIVE_KEYS = frozenset({"wall_times", "total_time", "setup_phase_cumulative_s"})
+DROPPED_LEDGER_KEYS = frozenset(
+    {"git_provenance", "git_commit", "setup_phase_seconds", "total_time_s", "wall_times_trajectory"}
+)
 SECTIONS = ("status", "result", "files", "checkpoints")
 # The classes a difference is counted in. A difference passes when it has no outputs and no trace rows, and every
 # leaf of the four change classes matches an ACCEPTED_CHANGES entry (diff_fingerprints counts the others as
@@ -1752,7 +1758,7 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
             if path.suffix == ".npz":
                 with np.load(path, allow_pickle=True) as data:
                     for key in data.files:
-                        if any(word in key for word in ("time", "wall", "seconds", "elapsed", "cumulative_s")):
+                        if key in DROPPED_ARCHIVE_KEYS:
                             continue
                         value = data[key]
                         if value.dtype.kind == "U":  # paths of the run's directories
@@ -1765,8 +1771,7 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
                 # A ledger: its wall times and the checkout's git state differ per run and per source tree.
                 ledger = json.loads(path.read_text())
                 if isinstance(ledger, dict):
-                    ledger = {key: value for key, value in ledger.items()
-                              if not any(word in key for word in ("time", "wall", "git", "seconds", "timing"))}
+                    ledger = {key: value for key, value in ledger.items() if key not in DROPPED_LEDGER_KEYS}
                 flatten(ledger, rel, out, scrub=scrub)
             elif path.suffix in (".star", ".txt", ".log"):
                 lines = [line for line in path.read_text().splitlines() if not line.startswith("# Created")]
