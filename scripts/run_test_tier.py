@@ -1,13 +1,17 @@
 #!/usr/bin/env python
 """Run a relax test tier: smoke, medium or long (the tier policy is in CONTRIBUTING.md).
 
-    pixi run test-smoke     # python scripts/run_test_tier.py submit smoke
-    pixi run test-medium    # python scripts/run_test_tier.py submit medium
-    pixi run test-long      # python scripts/run_test_tier.py submit long
+    pixi run test-smoke     # python scripts/run_test_tier.py submit smoke [--base <rev>]
+    pixi run test-medium    # python scripts/run_test_tier.py submit medium [--base <rev>]
+    pixi run test-long      # python scripts/run_test_tier.py submit long [--base <rev>]
 
 ``submit`` freezes the checkout (HEAD plus any uncommitted diff) into
 ``<run-root>/src``, verifies the tier's fixture sets against the manifest, builds the
-native libraries once (``scripts/build_test_natives.sh``) and starts the tier.
+native libraries once (``scripts/build_test_natives.sh``) and starts the tier. ``--base`` (default
+``origin/main``) names the branch's base commit: smoke selects the GPU unit files for the paths changed since
+the merge base of HEAD with it, and PLAN.json records the resolved sha and merge base. A smoke whose merge base
+is HEAD with nothing changed (``origin/main`` already at or past the head) would select no GPU file and is
+refused; pass the base the change is measured against.
 
 ``submit`` builds the natives on the host it runs on (nvcc -j8 for A100 and H100, about 4 minutes): run it
 from a short CPU Slurm job (``sbatch`` works from inside one) or an interactive compute node, not from a
@@ -823,6 +827,25 @@ def _git(src: Path, *args: str) -> str:
     return subprocess.check_output(["git", "-C", str(src), *args], text=True)
 
 
+def resolve_base(src: Path, base: str, tier: str) -> tuple[str, str]:
+    """The commit ``base`` names and its merge base with HEAD; smoke selects GPU files against the merge base.
+
+    A smoke whose merge base is HEAD and whose checkout has no change against it selects no touched GPU test
+    (``origin/main``, which nothing here fetches, can already point at or past the head): it is refused.
+    """
+    try:
+        sha = _git(src, "rev-parse", "--verify", "--quiet", f"{base}^{{commit}}").strip()
+        merge_base = _git(src, "merge-base", sha, "HEAD").strip()
+    except subprocess.CalledProcessError as exc:
+        raise SystemExit(f"--base {base!r}: not a commit, or no merge base with HEAD ({exc})") from exc
+    if tier == "smoke" and merge_base == _git(src, "rev-parse", "HEAD").strip() and not changed_paths(src, merge_base):
+        raise SystemExit(
+            f"--base {base!r} ({sha[:8]}) is at or past HEAD and the checkout has no change against it: smoke would "
+            "select no touched GPU test; pass --base <the commit this change is measured against>"
+        )
+    return sha, merge_base
+
+
 def freeze_source(run_root: Path) -> dict:
     """Detached worktree of HEAD plus the uncommitted diff; the queued job never sees later edits."""
     src = run_root / "src"
@@ -1036,6 +1059,7 @@ def cmd_submit(args: argparse.Namespace) -> int:
     tier = args.tier
     stamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
     head = _git(REPO_ROOT, "rev-parse", "--short", "HEAD").strip()
+    base_sha, merge_base = resolve_base(REPO_ROOT, args.base, tier)
     run_root = (args.run_root or RUN_BASE / f"{tier}_{head}_{stamp}").resolve()
     run_root.mkdir(parents=True, exist_ok=False)
     (run_root.parent / "SAFE_TO_DELETE").touch()
@@ -1044,9 +1068,10 @@ def cmd_submit(args: argparse.Namespace) -> int:
     verify_fixtures(tier, src)
     if tier == "long" and not args.dry_run:
         prepare_long(run_root, src, args.coarse_engine)
-    items = plan(tier, src, args.base, run_root)
+    items = plan(tier, src, merge_base, run_root)
     select_coarse_engine(items, args.coarse_engine)
-    spec = {"tier": tier, "source": source, "base": args.base, "created": stamp,
+    spec = {"tier": tier, "source": source, "base": args.base, "base_sha": base_sha, "merge_base": merge_base,
+            "created": stamp,
             "coarse_engine": args.coarse_engine, "items": [asdict(i) for i in items]}
     (run_root / "PLAN.json").write_text(json.dumps(spec, indent=1) + "\n")
     for i in items:
@@ -1094,7 +1119,9 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("submit", help="freeze the checkout and start a tier")
     p.add_argument("tier", choices=["smoke", "medium", "long"])
     p.add_argument("--run-root", type=Path)
-    p.add_argument("--base", default="origin/main", help="changes against this ref select smoke's GPU unit files")
+    p.add_argument("--base", default="origin/main",
+                   help="the branch's base commit; changes since the merge base of HEAD with it select smoke's GPU "
+                   "unit files, and PLAN.json records its sha")
     p.add_argument("--where", choices=["auto", "slurm", "local"], default="auto",
                    help="smoke only: auto = cryoem if it starts within --queue-wait-minutes, else one idle local GPU 1-3")
     p.add_argument("--queue-wait-minutes", type=int, default=15)
@@ -1117,13 +1144,13 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--run-root", type=Path, required=True)
     p = sub.add_parser("plan", help="print a tier's items for this checkout")
     p.add_argument("tier", choices=["smoke", "medium", "long"])
-    p.add_argument("--base", default="origin/main")
+    p.add_argument("--base", default="origin/main", help="the branch's base commit, as for submit")
     args = parser.parse_args(argv)
     if args.cmd == "submit":
         return cmd_submit(args)
     if args.cmd == "run":
         return cmd_run(args)
-    for i in plan(args.tier, REPO_ROOT, args.base):
+    for i in plan(args.tier, REPO_ROOT, resolve_base(REPO_ROOT, args.base, args.tier)[1]):
         print(f"{'GPU' if i.gpu else 'CPU'} {i.name:36s} ~{i.seconds / 60:5.1f} min  {shlex.join(i.argv[3:])[:160]}")
     return 0
 

@@ -97,6 +97,54 @@ def test_long_dry_run_never_prepares_completion_or_builds(tmp_path, monkeypatch)
     spec = json.loads((root / "PLAN.json").read_text())
     assert spec["coarse_engine"] == "gemm_hybrid"
     assert spec["items"][0]["env"]["RELAX_TIER_COARSE_ENGINE"] == "gemm_hybrid"
+    head = subprocess.check_output(["git", "-C", str(REPO_ROOT), "rev-parse", "HEAD"], text=True).strip()
+    assert (spec["base"], spec["base_sha"], spec["merge_base"]) == ("HEAD", head, head)
+
+
+def test_base_defaults_to_origin_main(monkeypatch):
+    seen = []
+    monkeypatch.setattr(run_test_tier, "resolve_base", lambda src, base, tier: seen.append((base, tier)) or ("s", "m"))
+    monkeypatch.setattr(run_test_tier, "plan", lambda *_args: [])
+    assert run_test_tier.main(["plan", "smoke"]) == 0
+    assert seen == [("origin/main", "smoke")]
+
+
+def test_base_resolves_to_the_merge_base_with_head(tmp_path):
+    def git(*args):
+        return subprocess.check_output(["git", "-C", str(tmp_path), *args], text=True).strip()
+
+    git("init", "-q", "-b", "main")
+    git("config", "user.email", "t@t")
+    git("config", "user.name", "t")
+    (tmp_path / "a.txt").write_text("a\n")
+    git("add", "a.txt")
+    git("commit", "-q", "-m", "root")
+    root = git("rev-parse", "HEAD")
+    git("checkout", "-q", "-b", "branch")
+    (tmp_path / "relax.py").write_text("x = 1\n")
+    git("add", "relax.py")
+    git("commit", "-q", "-m", "branch")
+    git("checkout", "-q", "main")
+    (tmp_path / "b.txt").write_text("b\n")
+    git("add", "b.txt")
+    git("commit", "-q", "-m", "main moves on")
+    main = git("rev-parse", "HEAD")
+    git("checkout", "-q", "branch")
+    assert run_test_tier.resolve_base(tmp_path, "main", "smoke") == (main, root)
+    assert run_test_tier.changed_paths(tmp_path, root) == ["relax.py"]
+    with pytest.raises(SystemExit, match="not a commit"):
+        run_test_tier.resolve_base(tmp_path, "no-such-ref", "smoke")
+    # A base at or past HEAD with nothing changed selects no touched GPU test (G17): smoke refuses, the other
+    # tiers do not select by it; an uncommitted change is still a selection.
+    branch = git("rev-parse", "HEAD")
+    git("checkout", "-q", "main")
+    git("merge", "-q", "--no-edit", "branch")
+    git("checkout", "-q", "branch")
+    with pytest.raises(SystemExit, match="pass --base"):
+        run_test_tier.resolve_base(tmp_path, "main", "smoke")
+    assert run_test_tier.resolve_base(tmp_path, "main", "medium")[1] == branch
+    (tmp_path / "relax.py").write_text("x = 2\n")
+    assert run_test_tier.resolve_base(tmp_path, "main", "smoke")[1] == branch
 
 
 def test_touched_gpu_tests_follow_imports(tmp_path):

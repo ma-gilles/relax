@@ -145,7 +145,7 @@ and smell checkers, the ceilings file and the smell baseline; run the base's `re
 - [ ] Repeat the search of all of `tests/` and `scripts/` for every moved or removed name: the CPU list does
       not run the GPU unit files.
 - [ ] GPU tiers on the final head, same GPU model for every arm:
-      `python scripts/run_test_tier.py submit smoke --where slurm --gpu-model h100 --run-root <dir>`, and the
+      `python scripts/run_test_tier.py submit smoke --base <base sha> --where slurm --gpu-model h100 --run-root <dir>`, and the
       same with `medium`. `submit` builds the natives with nvcc on the host it runs on (about 4 minutes):
       run it from a short CPU Slurm job or an interactive compute node, not a login node. `--exclude <nodes>`
       keeps the job off a degraded node. Current practice, not an owner ruling: smoke alone is enough for docs, tests,

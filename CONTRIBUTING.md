@@ -79,8 +79,9 @@ Run the smallest meaningful check first. Use focused tests between edits, then t
 | long | `pixi run test-long` | about 6 h on H100, 7 h on A100 | one Slurm job, 4 GPUs | the EM long tier (K=1 50k/256 standalone and seeded, native VDAM, K=4 50k/256) and the K=1 and K=4 100k/256 completions, against RELION repeat bands |
 | regeneration | `pixi run regen-fixture-manifest`, `pixi run regen-pinned-fast` | - | - | the fixture manifest and the pinned outputs; only on the owner's instruction; each pinned entry records its commit, job, GPU model and date |
 
-Options of `python scripts/run_test_tier.py submit <tier>`: `--run-root <dir>`, `--base <ref>` (default
-`origin/main`; selects smoke's GPU files), `--where auto|slurm|local` (smoke), `--queue-wait-minutes`,
+Options of `python scripts/run_test_tier.py submit <tier>`: `--run-root <dir>`, `--base <rev>` (default
+`origin/main`: smoke selects its GPU files from the paths changed since the merge base of HEAD with it, and
+refuses when that merge base is HEAD with nothing changed; PLAN.json records the sha), `--where auto|slurm|local` (smoke), `--queue-wait-minutes`,
 `--gpu-model any|a100|h100` (default `h100` for medium on the cryoem queue, `any` otherwise), `--dry-run`,
 `--coarse-engine`. `plan <tier>` prints the items without running.
 
