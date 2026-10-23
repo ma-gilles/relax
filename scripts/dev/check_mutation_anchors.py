@@ -39,9 +39,8 @@ def stale_mutations(root: Path = REPO_ROOT) -> list[tuple[str, int, int]]:
         listed = sorted(str(path.relative_to(root)) for path in root.glob("relax/**/*.py"))
     sources = [(root / name).read_text() for name in listed]
     stale = []
-    for mutation in MUTATIONS:
-        name, old, new = mutation[:3]
-        expected = mutation[5] if len(mutation) > 5 else 1
+    for name, old, new, _ in MUTATIONS:
+        expected = 1
         first_line = old.strip().splitlines()[0].strip()
         found = sum(fingerprint.apply_mutation(text, old, new)[1] for text in sources if first_line in text)
         if found != expected:

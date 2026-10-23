@@ -6,7 +6,7 @@
 # CPU gate of a refactor slice, on a frozen worktree of the head (git worktree add --detach <dir> <sha>).
 # usage: REFACTOR_SCRATCH=<dir> [REFACTOR_WORKTREE=<frozen worktree>] scripts/dev/refactor_gate.sh <step>
 #   fp [BASE]                 fingerprint check of the worktree against BASE (default origin/main)
-#   selftest                  every fingerprint mutation must be detected
+#   selftest                  every fingerprint mutation must be detected, except the harness's EXPECTED_BLIND ones
 #   guard                     the fast guard and the agent-guide check
 #   tests <label> <rev>       the CPU unit list and every module's test directories on a detached git worktree of
 #                             <rev> (the launcher tests need git); writes logs/fail_<label>.txt. A listed file

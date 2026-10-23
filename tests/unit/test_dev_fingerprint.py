@@ -467,9 +467,59 @@ def test_the_case_and_mutation_tables_are_well_formed():
     assert {case["command"] for case in main_cases.values()} == {"refine", "class3d"}
     names = [mutation[0] for mutation in fingerprint.MUTATIONS]
     assert len(names) == len(set(names))
-    for _, old, new, description, detected in fingerprint.MUTATIONS:
+    for _, old, new, description in fingerprint.MUTATIONS:
         assert len(old.splitlines()) == len(new.splitlines())
-        assert old != new and description and isinstance(detected, bool)
+        assert old != new and description
+
+
+def test_only_the_three_known_blind_spots_are_expected_blind():
+    """G13: the refinement harness lists exactly its three undetected mutations, each with a reason; the other
+    harnesses list none (k1_mstep_join_radius is detected and is not listed)."""
+    from scripts.dev import pass1_fingerprint, ppca_fingerprint, vdam_fingerprint
+
+    assert set(fingerprint.EXPECTED_BLIND) == {
+        "next_sampling_star_skipped", "previous_data_vs_prior_doubled", "star_prior_translations_reversed",
+    }
+    assert all(reason.strip() for reason in fingerprint.EXPECTED_BLIND.values())
+    assert set(fingerprint.EXPECTED_BLIND) <= {mutation[0] for mutation in fingerprint.MUTATIONS}
+    for harness in (vdam_fingerprint, ppca_fingerprint, pass1_fingerprint):
+        assert harness.EXPECTED_BLIND == {} and harness.HARNESS.expected_blind is harness.EXPECTED_BLIND
+    assert fingerprint.HARNESS.expected_blind is fingerprint.EXPECTED_BLIND
+
+
+def test_selftest_fails_an_undetected_unlisted_mutation_and_a_detected_listed_one(tmp_path, monkeypatch, capsys):
+    """An unlisted mutation must be detected; a listed one prints BLIND when it is not, and fails as a stale entry
+    when it is."""
+    import dataclasses
+
+    detected = {"caught", "stale"}
+
+    def run_tree(_harness, _source, out, _work_dir, _names, **_options):
+        out.write_text(json.dumps({"mutant": out.stem}))
+        return 0
+
+    def differing_cases(_clean, mutant):
+        return ["k1"] if any(mutant["mutant"].endswith(name) for name in detected) else []
+
+    monkeypatch.setattr(fingerprint_cli, "run_tree", run_tree)
+    mutations = tuple((name, "old", "new", f"{name} breaks") for name in ("caught", "missed", "blind", "stale"))
+    harness = dataclasses.replace(
+        fingerprint.HARNESS, mutations=mutations, differing_cases=differing_cases,
+        mutated_tree=lambda *_args: {"relax/x.py": 1},
+        expected_blind={"blind": "no case reaches it", "stale": "no case reaches it"},
+    )
+    args = fingerprint_cli.argparse.Namespace(work_dir=str(tmp_path), source=str(tmp_path), rev=None, mutations=[], jobs=1)
+
+    assert fingerprint_cli.command_selftest(harness, args) == 1
+    out = capsys.readouterr().out
+    assert "OK    caught:" in out
+    assert "FAIL  missed: missed breaks [relax/x.py] -> not detected (not in EXPECTED_BLIND)" in out
+    assert "BLIND blind: blind breaks [relax/x.py] -> not detected, as EXPECTED_BLIND says: no case reaches it" in out
+    assert "FAIL  stale:" in out and "listed in EXPECTED_BLIND (a stale entry; delete it)" in out
+    assert "4 mutations, 2 failed, 1 blind (EXPECTED_BLIND)" in out
+    harness = dataclasses.replace(harness, expected_blind={"gone": "no such mutation"})
+    with pytest.raises(SystemExit, match="EXPECTED_BLIND names no mutation: gone"):
+        fingerprint_cli.command_selftest(harness, args)
 
 
 def test_scratch_inside_the_checkout_is_refused():

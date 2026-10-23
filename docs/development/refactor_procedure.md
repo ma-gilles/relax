@@ -126,7 +126,8 @@ and smell checkers, the ceilings file and the smell baseline; run the base's `re
 - [ ] `fp`: `fingerprint.py check origin/main`: results, files and checkpoints 0 differences; trace
       differences confined to log rows are allowed and are reported as such. After any rebase, run it and
       the lint again: a clean rebase can still leave a dangling name.
-- [ ] `selftest`: `fingerprint.py selftest --jobs 4`, every mutation detected.
+- [ ] `selftest`: `fingerprint.py selftest --jobs 4`, every mutation detected except those in the harness's
+      `EXPECTED_BLIND` (each with its reason; printed BLIND); a listed mutation that is detected fails as a stale entry.
 - [ ] `guard`: `bash scripts/run_em_fast_guard.sh` and `python scripts/check_agent_guides.py`.
 - [ ] `static [BASE]`, one line per check, each failing on a finding: `ruff` (findings of `relax`, `tests`
       and `scripts` that the base lacks: none), `arity` (rule 18: `scripts/dev/call_arity_check.py` of the

@@ -79,28 +79,28 @@ def _cases() -> dict[str, tuple[str, dict]]:
 
 CASES = _cases()
 
-# A deliberately wrong trainer for the self-test: (name, old lines, new lines, what breaks, detected).
+# A deliberately wrong trainer for the self-test: (name, old lines, new lines, what breaks).
 # A target must occur in exactly one place of the tree: when a statement is rewritten, update its entry.
 MUTATIONS = (
     ("metric_floor", "return np.float32(0.5 / int(image_size) ** 4)", "return np.float32(1.0 / int(image_size) ** 4)",
-     "the coupled direction's spectral floor doubles", True),
+     "the coupled direction's spectral floor doubles"),
     ("first_moment", "0.9 * moments.first + 0.1 * directions", "0.8 * moments.first + 0.2 * directions",
-     "VDAM's first moment decays faster", True),
+     "VDAM's first moment decays faster"),
     ("second_moment", "second = jnp.where(active[:, None], 0.999 * moments.second + 0.001 * ratio, moments.second)",
      "second = jnp.where(active[:, None], 0.99 * moments.second + 0.01 * ratio, moments.second)",
-     "VDAM's second moment decays faster", True),
+     "VDAM's second moment decays faster"),
     ("gate_fudge", "rho = jnp.where(disagreement > 0, 2 * fudge * signal / safe_disagreement, 0)",
      "rho = jnp.where(disagreement > 0, fudge * signal / safe_disagreement, 0)",
-     "the half-set gate halves its signal-to-disagreement ratio", True),
+     "the half-set gate halves its signal-to-disagreement ratio"),
     ("offset_prior", "prior = -jnp.sum(jnp.asarray(translations) ** 2, axis=-1) / (2 * state.offset_variance)",
      "prior = -jnp.sum(jnp.asarray(translations) ** 2, axis=-1) / (4 * state.offset_variance)",
-     "the E-step's translation prior is twice as wide", True),
+     "the E-step's translation prior is twice as wide"),
     ("initial_offset_variance", "100.0 / dataset.voxel_size**2", "50.0 / dataset.voxel_size**2",
-     "the run starts with half VDAM's offset variance", True),
+     "the run starts with half VDAM's offset variance"),
     ("bootstrap_images", "ids = rng.permutation(dataset.n_images)[:1000]", "ids = rng.permutation(dataset.n_images)[1:1000]",
-     "the bootstrap reconstruction drops one image", True),
+     "the bootstrap reconstruction drops one image"),
     ("stage_radius", "radius = min(radius, dataset.grid_size // 2 - 1)", "radius = min(radius, dataset.grid_size // 2 - 1) - 1",
-     "every E-step projects one shell short", True),
+     "every E-step projects one shell short"),
 )
 
 
@@ -275,11 +275,16 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
 # pattern, class, one-line reason) per owner-accepted change; empty unless a change under review needs one.
 ACCEPTED_CHANGES: tuple[tuple[str, str, str], ...] = ()
 
+# Mutations the cases are known not to detect, {name: one-line reason}: the selftest prints them as BLIND, fails
+# an unlisted mutation that is not detected, and fails a listed one that is detected (a stale entry). None here.
+EXPECTED_BLIND: dict[str, str] = {}
+
 HARNESS = fingerprint_cli.Harness(
     script=Path(__file__).resolve(),
     description=__doc__.split("\n\n")[0],
     cases=CASES,
     mutations=MUTATIONS,
+    expected_blind=EXPECTED_BLIND,
     not_covered=NOT_COVERED,
     worker=_worker,
     diff_fingerprints=functools.partial(

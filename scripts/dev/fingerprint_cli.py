@@ -31,7 +31,8 @@ class Harness:
     script: Path  # the harness file; ``run_tree`` runs it again as ``<script> _worker ...`` in a child process
     description: str  # the argparse description (the first paragraph of the harness's docstring)
     cases: dict  # {name: (description, keywords)}, in run order
-    mutations: tuple  # (name, old, new, description, expected detected) per selftest mutation
+    mutations: tuple  # (name, old, new, description) per selftest mutation
+    expected_blind: dict  # {mutation name: one-line reason} for the mutations the cases are known not to detect
     not_covered: tuple[str, ...]
     worker: Callable[[str, str, str, list[str]], None]  # (source, out, tmp_root, case names)
     diff_fingerprints: Callable  # (a, b) -> (counts, lines)
@@ -202,6 +203,9 @@ def command_selftest(harness: Harness, args) -> int:
     unknown = [name for name in args.mutations if name not in known]
     if unknown:
         raise SystemExit(f"unknown mutation(s): {', '.join(unknown)}")
+    orphans = sorted(set(harness.expected_blind) - set(known))
+    if orphans:
+        raise SystemExit(f"EXPECTED_BLIND names no mutation: {', '.join(orphans)}")
     selected = [known[name] for name in args.mutations] if args.mutations else list(harness.mutations)
     clean_out = work_dir / f"{harness.file_prefix}fp_selftest_clean.json"
     if run_tree(harness, source, clean_out, work_dir, all_cases, quiet=True) != 0:
@@ -210,7 +214,7 @@ def command_selftest(harness: Harness, args) -> int:
     clean = json.loads(clean_out.read_text())
 
     def one(mutation):
-        name, old, new, _, _ = mutation
+        name, old, new, _ = mutation
         target = work_dir / f"{harness.file_prefix}mutant_{name}"
         shutil.rmtree(target, ignore_errors=True)
         target.mkdir()
@@ -226,25 +230,29 @@ def command_selftest(harness: Harness, args) -> int:
 
     with ThreadPoolExecutor(max_workers=args.jobs) as pool:
         outcomes = list(pool.map(one, selected))
-    failures = 0
-    for (name, _, _, description, expected), (_, changed, cases) in zip(selected, outcomes, strict=True):
+    failures = blinds = 0
+    for (name, _, _, description), (_, changed, cases) in zip(selected, outcomes, strict=True):
+        blind = harness.expected_blind.get(name)
         if sum(changed.values()) != 1:
             verdict, detail = "FAIL", (
                 f"the mutation's target text is in {sum(changed.values())} places of this tree, not one; update MUTATIONS"
             )
         elif cases is None:
             verdict, detail = "FAIL", "the mutated tree did not run to a fingerprint"
-        elif expected and not cases:
-            verdict, detail = "FAIL", "not detected"
-        elif not expected and not cases:
-            verdict, detail = "BLIND", "not detected (known blind spot of the cases)"
-        elif not expected:
-            verdict, detail = "OK", f"detected in {len(cases)} cases (was a known blind spot; mark it detected)"
+        elif blind is None and not cases:
+            verdict, detail = "FAIL", "not detected (not in EXPECTED_BLIND)"
+        elif not cases:
+            verdict, detail = "BLIND", f"not detected, as EXPECTED_BLIND says: {blind}"
+        elif blind is not None:
+            verdict, detail = "FAIL", (
+                f"detected in {len(cases)} cases, e.g. {cases[0]}, but listed in EXPECTED_BLIND (a stale entry; delete it)"
+            )
         else:
             verdict, detail = "OK", f"detected in {len(cases)} cases, e.g. {cases[0]}"
         failures += verdict == "FAIL"
+        blinds += verdict == "BLIND"
         print(f"{verdict:5s} {name}: {description} [{', '.join(changed)}] -> {detail}")
-    print(f"{len(selected)} mutations, {failures} failed")
+    print(f"{len(selected)} mutations, {failures} failed, {blinds} blind (EXPECTED_BLIND)")
     _print_not_covered(harness)
     return 1 if failures else 0
 

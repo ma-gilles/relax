@@ -133,62 +133,62 @@ def _cases() -> dict[str, tuple[str, dict]]:
 
 CASES = _cases()
 
-# A deliberately wrong controller for the self-test: (name, old lines, new lines, what breaks, detected).
+# A deliberately wrong controller for the self-test: (name, old lines, new lines, what breaks).
 # A target must occur in exactly one place of the tree: when a statement is rewritten, update its entry.
 MUTATIONS = (
     ("noise_blend", "relion_blend(new_sigma2[g], np.asarray(wsum_g, dtype=np.float64), float(shape[0] ** 4), my_mu),",
      "relion_blend(new_sigma2[g], np.asarray(wsum_g, dtype=np.float64), float(shape[0] ** 4) / 2, my_mu),",
-     "the noise update doubles the new spectrum", True),
+     "the noise update doubles the new spectrum"),
     ("pdf_class_blend",
      "new_pdf_class = relion_blend(np.asarray(state.pdf_class, dtype=np.float64), class_sums, sum_weight, my_mu)",
      "new_pdf_class = relion_blend(np.asarray(state.pdf_class, dtype=np.float64), class_sums[::-1], sum_weight, my_mu)",
-     "the class prior update reads the class sums reversed", True),
+     "the class prior update reads the class sums reversed"),
     ("ave_pmax_halved", "current = replace(current, ave_Pmax=float(ave_pmax))",
      "current = replace(current, ave_Pmax=0.5 * float(ave_pmax))",
-     "the loop installs half the average Pmax", True),
+     "the loop installs half the average Pmax"),
     ("stall_counter", "sampling_state.nr_iter_wo_resol_gain += 1", "sampling_state.nr_iter_wo_resol_gain += 2",
-     "the resolution-stall counter counts twice", True),
+     "the resolution-stall counter counts twice"),
     ("solvent_edge", "mask[edge] = 0.5 - 0.5 * np.cos(np.pi * (radius_p - r[edge]) / width)",
      "mask[edge] = 0.5 - 0.5 * np.cos(np.pi * (radius_p - r[edge]) / (2 * width))",
-     "the solvent mask's soft edge is stretched", True),
+     "the solvent mask's soft edge is stretched"),
     ("tau2_fudge_doubled", "tau2_fudge_factor=current.tau2_fudge_factor,", "tau2_fudge_factor=2 * current.tau2_fudge_factor,",
-     "the VDAM M-step receives twice the tau2 fudge", True),
+     "the VDAM M-step receives twice the tau2 fudge"),
     ("resolution_minres", "minres_map=resolution_criteria.RELION_MINRES_MAP,",
      "minres_map=resolution_criteria.RELION_MINRES_MAP - 1,",
-     "the current resolution starts one shell early", True),
+     "the current resolution starts one shell early"),
     ("schedule_radius", "current_resolution_shell=radius,", "current_resolution_shell=radius - 1,",
-     "a scheduled Fourier radius installs the resolution shell one small", True),
+     "a scheduled Fourier radius installs the resolution shell one small"),
     ("stochastic_batch", "batch_size = min(int(pilot_controls.stochastic_batch_size), int(nr_particles))",
      "batch_size = min(int(pilot_controls.stochastic_batch_size), int(nr_particles)) - 1",
-     "the stochastic batch is one particle short", True),
+     "the stochastic batch is one particle short"),
     ("sgd_learning_rate", "return sgd_m_step(current, accumulators, learning_rate=self.learning_rate,", "return sgd_m_step(current, accumulators, learning_rate=2 * self.learning_rate,",
-     "momentum SGD steps with twice the learning rate", True),
+     "momentum SGD steps with twice the learning rate"),
     ("retained_fraction", "meta[\"class_retained_mass_fraction_by_class\"] = (retained_class_sums / retained_mass).tolist()",
      "meta[\"class_retained_mass_fraction_by_class\"] = (retained_class_sums / (2 * retained_mass)).tolist()",
-     "the reported retained class fractions are halved", True),
+     "the reported retained class fractions are halved"),
     ("uniform_prior_report", "meta[\"effective_joint_direction_prior_per_class_direction\"] = 1.0 / float(current.K * n_directions)",
      "meta[\"effective_joint_direction_prior_per_class_direction\"] = 2.0 / float(current.K * n_directions)",
-     "the uniform-prior report doubles the joint prior", True),
+     "the uniform-prior report doubles the joint prior"),
     ("subtract_switch_ignored", "engine_kwargs[\"reconstruction_subtract_projected_reference\"] = False", "pass",
-     "RELAX_DISABLE_SUBTRACT_PROJECTED_REFERENCE is ignored", True),
+     "RELAX_DISABLE_SUBTRACT_PROJECTED_REFERENCE is ignored"),
     ("adaptive_fraction_ignored", "adaptive_fraction=opts.environment.adaptive_fraction,", "adaptive_fraction=None,",
-     "RELAX_ADAPTIVE_FRACTION is ignored", True),
+     "RELAX_ADAPTIVE_FRACTION is ignored"),
     ("float64_scoring_admitted", "if env.get(\"RELAX_USE_FLOAT64_SCORING\", \"\").strip().lower() in {\"1\", \"true\", \"yes\", \"on\"}:", "if False:",
-     "RELAX_USE_FLOAT64_SCORING is admitted and silently ignored", True),
+     "RELAX_USE_FLOAT64_SCORING is admitted and silently ignored"),
     ("nan_tau2_fudge_admitted", "if not math.isfinite(compute_tau2_fudge(it, phases, True, 3, tau2_fudge_arg=self.tau2_fudge))",
-     "if False", "a VDAM schedule with a NaN tau2 fudge is admitted", True),
+     "if False", "a VDAM schedule with a NaN tau2 fudge is admitted"),
     ("write_cadence", "return (iteration % grad_write_iter) == 0 or iteration == nr_iter",
      "return (iteration % grad_write_iter) == 1 or iteration == nr_iter",
-     "the iteration files are written at the wrong cadence", True),
+     "the iteration files are written at the wrong cadence"),
     ("optics_group_noise", "wsum_g = noise.normalize_wsum_to_sigma2_noise(wsum_rows[g], power_rows[g], float(sumw_rows[g]), shape, apply_floors=False)",
      "wsum_g = noise.normalize_wsum_to_sigma2_noise(wsum_rows[0], power_rows[0], float(sumw_rows[0]), shape, apply_floors=False)",
-     "every optics group's noise is updated from group 1's sums", True),
+     "every optics group's noise is updated from group 1's sums"),
     ("tomo_offset_winner", "np.asarray(fine_px, dtype=np.float64)[pose % int(fine_px.shape[0])]",
      "np.asarray(fine_px, dtype=np.float64)[(pose + 1) % int(fine_px.shape[0])]",
-     "a subtomogram's new 3D offset takes the next fine translation, not its winner", True),
+     "a subtomogram's new 3D offset takes the next fine translation, not its winner"),
     ("shape_offset_sigma", "sigma_angstrom = shape_translations.sigma_angstrom",
      "sigma_angstrom = 2 * shape_translations.sigma_angstrom",
-     "each image shape's coarse offset prior uses twice the offset sigma", True),
+     "each image shape's coarse offset prior uses twice the offset sigma"),
 )
 
 
@@ -601,11 +601,16 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
 # pattern, class, one-line reason) per owner-accepted change; empty unless a change under review needs one.
 ACCEPTED_CHANGES: tuple[tuple[str, str, str], ...] = ()
 
+# Mutations the cases are known not to detect, {name: one-line reason}: the selftest prints them as BLIND, fails
+# an unlisted mutation that is not detected, and fails a listed one that is detected (a stale entry). None here.
+EXPECTED_BLIND: dict[str, str] = {}
+
 HARNESS = fingerprint_cli.Harness(
     script=Path(__file__).resolve(),
     description=__doc__.split("\n\n")[0],
     cases=CASES,
     mutations=MUTATIONS,
+    expected_blind=EXPECTED_BLIND,
     not_covered=NOT_COVERED,
     worker=_worker,
     # The result is the run's final model state, a record like the checkpoints: a mark-only change of its

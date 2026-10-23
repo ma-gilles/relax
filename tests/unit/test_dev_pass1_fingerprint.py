@@ -26,10 +26,11 @@ def test_every_case_has_a_description_and_only_known_spec_keys():
 def test_every_mutation_replaces_line_for_line_and_changes_its_text():
     names = [mutation[0] for mutation in pass1_fingerprint.MUTATIONS]
     assert len(names) == len(set(names))
-    for name, old, new, description, expected in pass1_fingerprint.MUTATIONS:
+    for name, old, new, description in pass1_fingerprint.MUTATIONS:
         assert len(old.strip().splitlines()) == len(new.strip().splitlines()), name
         assert old.strip() != new.strip(), name
-        assert description and isinstance(expected, bool), name
+        assert description, name
+    assert pass1_fingerprint.EXPECTED_BLIND == {}
 
 
 def test_refusal_cases_are_named_for_what_they_refuse():
