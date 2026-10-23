@@ -1876,9 +1876,14 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
 
 
 def mutated_tree(source: Path, target: Path, old: str, new: str) -> dict[str, int]:
-    """Copy ``source``'s ``relax`` to ``target`` with one mutation applied; ``{file: places replaced}``."""
+    """Copy ``source``'s ``relax`` to ``target`` with one mutation applied; ``{file: places replaced}``.
+
+    ``tests`` and every other top-level package of ``source`` (``relax_cli`` since da6742f0) are linked, so the
+    mutant imports the command entry as ``source`` does (relax#123; ``export_rev`` exports them all too)."""
     shutil.copytree(source / "relax", target / "relax", ignore=shutil.ignore_patterns("__pycache__", "*.so", "build"))
-    os.symlink(source / "tests", target / "tests")
+    for path in sorted(source.iterdir()):
+        if path.name == "tests" or (path.name != "relax" and (path / "__init__.py").is_file()):
+            os.symlink(path, target / path.name)
     first_line = old.strip().splitlines()[0].strip()
     changed = {}
     for path in sorted((target / "relax").rglob("*.py")):

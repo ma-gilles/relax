@@ -390,3 +390,27 @@ def test_a_rev_export_has_every_top_level_package_and_imports_the_command_entry(
     )
     assert imported.returncode == 0, imported.stderr[-2000:]
     assert imported.stdout.strip().startswith(str(export))
+
+
+def test_a_mutant_tree_links_every_top_level_package_and_imports_the_command_entry(tmp_path):
+    """relax#123: the selftest's mutant tree copies ``relax`` (mutated) and links ``tests`` and every other top-level
+    package of its source, so a mutant imports ``relax_cli`` and the refinement command entry as its source does."""
+    import subprocess
+    import sys
+
+    (tmp_path / "work").mkdir()
+    source = fingerprint_cli.export_rev("HEAD", tmp_path / "work")
+    target = tmp_path / "mutant"
+    target.mkdir()
+    changed = fingerprint.mutated_tree(source, target, *fingerprint.MUTATIONS[0][1:3])
+
+    assert sum(changed.values()) == 1
+    assert not (target / "relax").is_symlink() and (target / "relax_cli").is_symlink() and (target / "tests").is_symlink()
+    imported = subprocess.run(
+        [sys.executable, "-c", "import relax_cli, relax.commands.refinement_run as entry; print(entry.__file__)"],
+        cwd=tmp_path, capture_output=True, text=True,
+        env={"PATH": "/usr/bin:/bin", "HOME": str(tmp_path), "PYTHONPATH": str(target), "PYTHONNOUSERSITE": "1",
+             "JAX_PLATFORMS": "cpu", "CUDA_VISIBLE_DEVICES": ""},
+    )
+    assert imported.returncode == 0, imported.stderr[-2000:]
+    assert imported.stdout.strip().startswith(str(target))
