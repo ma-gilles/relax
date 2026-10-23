@@ -212,8 +212,7 @@ def test_duplicated_class_at_zero_oversampling_is_the_one_class_pass_split_in_ha
     support = k_args.pop("significant_sample_indices")
     prior = k_args.pop("rotation_log_prior")
     volume = k_args.pop("volume")
-    for name in ("normalization_other_score_log_z", "normalization_score_mode"):
-        k_args.pop(name, None)
+    k_args.pop("normalization_other_score_log_z", None)
     k_args["relion_f32_normalization_sum_weight"] = 2.0 * np.asarray(args["relion_f32_normalization_sum_weight"])
     k_args["relion_coarse_max_posterior"] = 0.5 * np.asarray(args["relion_coarse_max_posterior"])
     n_images = int(args["experiment_dataset"].n_units)

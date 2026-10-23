@@ -679,7 +679,6 @@ def test_k2_square_cc_full_grid_maps_wavg_and_keeps_one_winner(monkeypatch):
     args.pop("significant_sample_indices")
     prior = args.pop("rotation_log_prior")
     args.pop("normalization_other_score_log_z")
-    args.pop("normalization_score_mode")
     volumes = jnp.stack([_hermitian_volume(VOLUME_SHAPE, seed=17 + i) for i in range(2)])
     slabs = [_ppref(volumes[i]) for i in range(2)]
     args.update(
@@ -731,10 +730,8 @@ def test_public_k2_dense_engine_runs_joint_full_grid(monkeypatch):
     args.pop("noise_variance")
     args.pop("significant_sample_indices")
     args.pop("normalization_other_score_log_z")
-    args.pop("normalization_score_mode")
     args.pop("relion_x_half_mstep")
     args.pop("return_score_log_z")
-    args.pop("preserve_bpref_particle_order")
     fine_rotations = args.pop("fine_rotations_override")
     rot_parent = args.pop("fine_rotation_parent_override")
     fine_translations = args.pop("fine_translations_override")
@@ -801,7 +798,6 @@ def test_k4_full_grid_has_one_joint_posterior_and_all_statistics(
     args.pop("significant_sample_indices")
     base_rotation_prior = args.pop("rotation_log_prior")
     args.pop("normalization_other_score_log_z")
-    args.pop("normalization_score_mode")
     if class_fixture == "skew":
         volumes = jnp.stack([
             _hermitian_volume(VOLUME_SHAPE, seed=17 + 13 * class_id)
@@ -970,7 +966,6 @@ def test_k1_firstiter_cc_keeps_canonical_winner_and_statistics(monkeypatch):
         relion_firstiter_score_mode="normalized_cc",
         relion_firstiter_winner_take_all=True,
         relion_exact_fine_normalized_cc=True,
-        normalization_score_mode="normalized_cc",
     )
     diagnostic_path = os.environ.get("RELAX_DENSE_GEMM_CC_DIAGNOSTIC_NPZ")
     control_chunks = []

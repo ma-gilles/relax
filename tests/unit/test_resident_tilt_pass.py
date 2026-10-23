@@ -245,8 +245,7 @@ def test_duplicated_class_of_tilt_particles_is_the_k1_pass():
     k_args = dict(args, tilt=tilt)
     prior = k_args.pop("rotation_log_prior")
     volume = k_args.pop("volume")
-    for name in ("normalization_other_score_log_z", "normalization_score_mode"):
-        k_args.pop(name)
+    k_args.pop("normalization_other_score_log_z")
     half = (prior + np.float32(np.log(0.5))).astype(np.float32)
     doubled = _resident(k_args, jnp.stack([volume, volume]), [support, support], [half, half])
 

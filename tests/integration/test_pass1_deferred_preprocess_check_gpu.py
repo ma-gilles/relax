@@ -39,7 +39,7 @@ def _run_adaptive_k2(monkeypatch, dataset_edit=None):
     monkeypatch.setattr(ctf, "relion_exact_ctf_half_from_source_star", _variable_ctf_rows)
     for name in (
         "volume", "noise_variance", "significant_sample_indices", "normalization_other_score_log_z",
-        "normalization_score_mode", "relion_x_half_mstep", "return_score_log_z", "preserve_bpref_particle_order",
+        "relion_x_half_mstep", "return_score_log_z",
     ):
         args.pop(name)
     fine_rotations = args.pop("fine_rotations_override")

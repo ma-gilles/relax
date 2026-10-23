@@ -29,19 +29,11 @@ from relax.types import make_relion_stats
 logger = logging.getLogger("relax.classification.k_class")  # the engine's logger before the split: log rows keep it
 
 
-def apply_bpref_particle_order_policy(
-    common: dict,
-    engine_kwargs: dict,
-    *,
-    n_classes: int,
-) -> None:
-    """Forward the guarded fresh-K=1 BPref order into a sparse pass."""
+def check_bpref_particle_order_policy(engine_kwargs: dict, *, n_classes: int) -> None:
+    """Refuse RELION's preserved BPref particle order on a K>1 sparse pass (it is K=1-only)."""
 
-    preserve = bool(engine_kwargs.get("preserve_bpref_particle_order", False))
-    if preserve and int(n_classes) != 1:
+    if bool(engine_kwargs.get("preserve_bpref_particle_order", False)) and int(n_classes) != 1:
         raise ValueError("RELION BPref particle-order preservation is K=1-only")
-    if preserve:
-        common["preserve_bpref_particle_order"] = True
 
 
 def infer_healpix_order_from_rotation_count(
@@ -228,11 +220,7 @@ def run_sparse_k_class_adaptive_pass2(
         common["relion_coarse_max_posterior"] = base_engine_kwargs.get("relion_coarse_max_posterior")
         if n_classes > 1:
             common["relion_coarse_class_assignment"] = base_engine_kwargs["relion_coarse_class_assignment"]
-    apply_bpref_particle_order_policy(
-        common,
-        base_engine_kwargs,
-        n_classes=n_classes,
-    )
+    check_bpref_particle_order_policy(base_engine_kwargs, n_classes=n_classes)
     # Images on another grid fill the backprojector at the reference model size.
     mstep_current_size = (
         common["reconstruction_volume_current_size"]
@@ -374,14 +362,13 @@ def resident_production_arithmetic(options: dict) -> dict:
     fine posterior and pruned M-step, the literal normalized-CC reduction of
     ``--firstiter_cc``, its powerClass spectrum and exact BPref operands, and
     the atomic Wavg triplet of the preserved BPref order
-    (``source_faithful_spectrum_norm``, ``preserve_bpref_particle_order``). The
+    (``source_faithful_spectrum_norm``). The
     compact K>1 routes keep their historical arithmetic until they are deleted.
     """
 
     options = dict(options)
     options.update(
         source_faithful_spectrum_norm=True,
-        preserve_bpref_particle_order=True,
         relion_f32_fine_posterior=True,
         relion_fine_mstep_prune=True,
         relion_exact_fine_normalized_cc=True,

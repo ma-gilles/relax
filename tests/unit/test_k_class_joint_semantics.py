@@ -899,7 +899,6 @@ def test_adaptive_k_class_firstiter_sparse_fine_pass_uses_global_winner_subsets(
         )
         assert kwargs["relion_firstiter_score_mode"] == "normalized_cc"
         assert kwargs["relion_firstiter_winner_take_all"] is True
-        assert kwargs["preserve_bpref_particle_order"] is True
         assert kwargs["relion_exact_fine_normalized_cc"] is True
         # The K=1 production pass of each winner class carries the scale groups.
         assert_matches(

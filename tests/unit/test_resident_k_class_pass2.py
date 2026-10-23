@@ -227,8 +227,7 @@ def _k_class_args(n_classes, seed=20260925):
     priors = [(rotation_log_prior + np.float32(np.log(_CLASS_PRIORS[k]))).astype(np.float32) for k in range(n_classes)]
     args.pop("volume")
     volumes = jnp.stack([_hermitian_volume(VOLUME_SHAPE, seed=17 + 13 * k) for k in range(n_classes)])
-    for name in ("normalization_other_score_log_z", "normalization_score_mode"):
-        args.pop(name)
+    args.pop("normalization_other_score_log_z")
     # Each class masks its scale sums with its own data_vs_prior_class > 3
     # (acc_ml_optimiser_impl.h:4908): class k keeps shells below n_shells - 1 - k.
     dvp = np.asarray(args["scale_correction_data_vs_prior"], dtype=np.float64)
@@ -285,8 +284,7 @@ def test_duplicated_class_is_the_k1_pass():
     support = k_args.pop("significant_sample_indices")
     prior = k_args.pop("rotation_log_prior")
     volume = k_args.pop("volume")
-    for name in ("normalization_other_score_log_z", "normalization_score_mode"):
-        k_args.pop(name)
+    k_args.pop("normalization_other_score_log_z")
     half = (prior + np.float32(np.log(0.5))).astype(np.float32)
     doubled = _resident(k_args, jnp.stack([volume, volume]), [support, support], [half, half])
 

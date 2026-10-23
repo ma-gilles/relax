@@ -878,7 +878,6 @@ def _driver_fixture_args(seed=20260918):
         relion_fine_mstep_prune=True,
         relion_f32_fine_posterior=True,
         relion_exact_fine_gaussian=True,
-        preserve_bpref_particle_order=True,
         source_faithful_spectrum_norm=False,
         return_score_log_z=True,
         # Production K=1 reaches the M-step call through
@@ -887,7 +886,6 @@ def _driver_fixture_args(seed=20260918):
         # vector is all -inf; carry it here so the fixture exercises the same
         # branch the matched Slurm pairs do.
         normalization_other_score_log_z=np.full(n_images, -np.inf, dtype=np.float64),
-        normalization_score_mode="gaussian",
         adaptive_fraction=0.999,
     )
 
@@ -1418,7 +1416,9 @@ def test_dispatcher_sends_every_pass_to_the_resident_engine(monkeypatch):
     monkeypatch.setattr(rp, "compute_pass2_stats_resident", lambda *a, **k: calls.append(k) or "resident")
     args = _driver_fixture_args()
     take_pass_engines()
-    assert sparse_dispatch.compute_pass2_stats_sparse(**args, engine_tuning=EngineTuning(), scoring_overrides=ScoringOverrides()) == "resident"
+    assert sparse_dispatch.compute_pass2_stats_sparse(
+        **args, normalization_score_mode="gaussian", engine_tuning=EngineTuning(), scoring_overrides=ScoringOverrides()
+    ) == "resident"
     assert len(calls) == 1
     assert take_pass_engines() == ["global:resident"]
 
