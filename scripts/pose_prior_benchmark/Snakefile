@@ -1,0 +1,252 @@
+# Pose-prior benchmark: how well does relax refine learn the orientation prior on non-uniform data?
+#
+# Per scenario (config.yaml: `scenarios`), four stages:
+#   1. simulate_dataset  RECOVAR simulates a K=1 PDB fixture; its viewing directions form a polar cap of
+#                        preferred views (RECOVAR's Kent option) or are uniform (control).       [GPU]
+#   2. refine_k1         relax refine from the low-passed ground-truth map, a global search and no input
+#                        poses: --initial-pose-source none makes relax ignore the true angles and origins
+#                        that particles.star holds, and evaluate_run refuses a run that used them. [GPU]
+#   3. evaluate_run      half-map and ground-truth FSC resolution, and the accuracy of every iteration's
+#                        learned direction prior against the true viewing directions.
+#   4. orientation_distribution
+#                        angdist plots of the true angles and of the final estimated poses.
+#
+# Outputs, under config `output_root`:
+#   <scenario>/dataset/     particles.star (true angles), particles.<box>.mrcs, reference_*_relion.mrc
+#   <scenario>/refine/      run_itNNN_* files, final_merged.mrc, final_half{1,2}_unfil.mrc
+#   <scenario>/evaluation/  metrics.json, prior_by_iteration.csv, fsc_curves.csv, summary.png,
+#                           angdist_true.png, angdist_estimated.png
+#   logs/                   one log per rule and scenario
+#
+# Run (the profile submits the GPU rules to Slurm). --directory keeps Snakemake's metadata and the Slurm logs
+# (<dir>/.snakemake) beside the results instead of in the checkout; a --configfile must be on a shared file system:
+#   mkdir -p <dir>
+#   snakemake --snakefile scripts/pose_prior_benchmark/Snakefile --directory <dir> --profile slurm \
+#       --config output_root=<dir> natives_dir=<natives>
+
+import os
+import re
+import shlex
+import sys
+from pathlib import Path
+
+from snakemake.exceptions import WorkflowError
+
+
+configfile: os.path.join(workflow.basedir, "config.yaml")
+
+
+# ----------------------------------------------------------------------------------------------------------------
+# Settings
+# ----------------------------------------------------------------------------------------------------------------
+
+
+def required_path(key):
+    """A config entry that has no default, as a Path."""
+    if not config.get(key):
+        raise WorkflowError(f"set {key}: --config {key}=<path> (see config.yaml)")
+    return Path(config[key])
+
+
+BENCHMARK_DIR = Path(workflow.basedir).resolve()
+REPO = BENCHMARK_DIR.parents[1]
+PYTHON = config["python"] or str(REPO / ".pixi/envs/default/bin/python")
+OUTPUT_ROOT = required_path("output_root")
+NATIVES = required_path("natives_dir")
+# angdist runs in the Snakemake environment (it is not part of the pixi environment).
+ANGDIST = config["angdist"] or str(Path(sys.executable).parent / "angdist")
+SCENARIOS = config["scenarios"]
+SIMULATE_SCRIPT = str(BENCHMARK_DIR / "simulate_dataset.py")
+EVALUATE_SCRIPT = str(BENCHMARK_DIR / "evaluate_run.py")
+
+# The rules call the Python of the repository's pixi environment directly (no conda: directive).
+# The pinned environment only: no user site packages, none of the Python or conda variables the Snakemake
+# environment sets, and this checkout (not another one the shared environment's editable install may name) on the
+# import path, plus the native pack for the GPU rules.
+CLEAN_ENV = f"env -u PYTHONHOME -u CONDA_PREFIX -u VIRTUAL_ENV PYTHONNOUSERSITE=1 PYTHONPATH={REPO}"
+RUN_ENV = (
+    f"{CLEAN_ENV} "
+    f"RECOVAR_CUDA_LIB={NATIVES}/libcuda_backproject.so "
+    f"RELAX_CUDA_LIB={NATIVES}/librelax_cuda.so "
+    f"RELAX_HOST_MATH_LIB={NATIVES}/librelax_host_math.so"
+)
+
+
+def output_path(*parts):
+    """A path pattern under output_root; {scenario} stays a wildcard."""
+    return str(OUTPUT_ROOT.joinpath(*parts))
+
+
+def scenario_setting(scenario, section):
+    """The shared `dataset` or `refine` settings with the scenario's own overrides."""
+    return {**config[section], **SCENARIOS[scenario].get(section, {})}
+
+
+def pose_flags(wildcards):
+    """simulate_dataset.py flags of the scenario's pose distribution."""
+    poses = SCENARIOS[wildcards.scenario]["poses"]
+    if poses["kind"] == "uniform":
+        return "--poses uniform"
+    return (
+        f"--poses kent --kappa {poses['kappa']} --beta {poses['beta']} "
+        f"--mu {' '.join(map(str, poses['mu']))} --mu0 {' '.join(map(str, poses['mu0']))}"
+    )
+
+
+wildcard_constraints:
+    scenario="|".join(map(re.escape, SCENARIOS)),
+
+
+localrules:
+    all,
+    evaluate_run,
+    orientation_distribution,
+
+
+rule all:
+    """Simulate, refine and evaluate every scenario of the config."""
+    input:
+        expand(output_path("{scenario}", "evaluation", "metrics.json"), scenario=SCENARIOS),
+        expand(output_path("{scenario}", "evaluation", "angdist_estimated.png"), scenario=SCENARIOS),
+
+
+# ----------------------------------------------------------------------------------------------------------------
+# Stage 1: simulated dataset
+# ----------------------------------------------------------------------------------------------------------------
+
+
+rule simulate_dataset:
+    message:
+        "Simulating {wildcards.scenario}: {params.dataset[n_images]} particles, box {params.dataset[grid_size]}"
+    input:
+        script=SIMULATE_SCRIPT,
+    output:
+        particles_star=output_path("{scenario}", "dataset", "particles.star"),
+        reference_gt=output_path("{scenario}", "dataset", "reference_gt_relion.mrc"),
+        reference_init=output_path("{scenario}", "dataset", "reference_init_relion.mrc"),
+        generation_config=output_path("{scenario}", "dataset", "generation_config.json"),
+        pose_distribution=output_path("{scenario}", "dataset", "pose_distribution.json"),
+    params:
+        dataset=lambda wildcards: scenario_setting(wildcards.scenario, "dataset"),
+        pose_flags=pose_flags,
+        env=RUN_ENV,
+        python=PYTHON,
+        dataset_dir=lambda wildcards, output: str(Path(output.particles_star).parent),
+    resources:
+        gpu=1,
+    log:
+        output_path("logs", "{scenario}.simulate.log"),
+    shell:
+        "{params.env} {params.python} {input.script} "
+        "--output-dir {params.dataset_dir} "
+        "--n-images {params.dataset[n_images]} "
+        "--grid-size {params.dataset[grid_size]} "
+        "--noise-level {params.dataset[noise_level]} "
+        "--total-bfactor {params.dataset[total_bfactor]} "
+        "--init-resolution-ang {params.dataset[init_resolution_ang]} "
+        "--seed {params.dataset[seed]} "
+        "{params.pose_flags} "
+        "> {log} 2>&1"
+
+
+# ----------------------------------------------------------------------------------------------------------------
+# Stage 2: refinement
+# ----------------------------------------------------------------------------------------------------------------
+
+
+rule refine_k1:
+    message:
+        "Refining {wildcards.scenario} with relax refine (K=1, global search, no input poses)"
+    input:
+        particles_star=rules.simulate_dataset.output.particles_star,
+        reference_init=rules.simulate_dataset.output.reference_init,
+    output:
+        final_merged=output_path("{scenario}", "refine", "final_merged.mrc"),
+        final_half1=output_path("{scenario}", "refine", "final_half1_unfil.mrc"),
+        final_half2=output_path("{scenario}", "refine", "final_half2_unfil.mrc"),
+    params:
+        settings=lambda wildcards: scenario_setting(wildcards.scenario, "refine"),
+        extra_args=lambda wildcards: " ".join(
+            map(shlex.quote, map(str, scenario_setting(wildcards.scenario, "refine")["extra_args"]))
+        ),
+        env=RUN_ENV,
+        python=PYTHON,
+        dataset_dir=lambda wildcards, input: str(Path(input.particles_star).parent),
+        run_dir=lambda wildcards, output: str(Path(output.final_merged).parent),
+    resources:
+        gpu=1,
+    log:
+        output_path("logs", "{scenario}.refine.log"),
+    shell:
+        "{params.env} {params.python} -m relax_cli refine "
+        "--data_dir {params.dataset_dir} "
+        "--output {params.run_dir} "
+        "--init_volume {input.reference_init} "
+        "--init_resolution {params.settings[init_resolution]} "
+        "--particle_diameter_ang {params.settings[particle_diameter_ang]} "
+        "--sym C1 "
+        "--seed {params.settings[seed]} "
+        "--no-firstiter_cc "
+        "--initial-pose-source none "
+        "{params.extra_args} "
+        "> {log} 2>&1"
+
+
+# ----------------------------------------------------------------------------------------------------------------
+# Stage 3: evaluation and orientation plots
+# ----------------------------------------------------------------------------------------------------------------
+
+
+rule evaluate_run:
+    message:
+        "Evaluating {wildcards.scenario}: resolution and direction-prior accuracy"
+    input:
+        particles_star=rules.simulate_dataset.output.particles_star,
+        reference_gt=rules.simulate_dataset.output.reference_gt,
+        final_merged=rules.refine_k1.output.final_merged,
+        final_half1=rules.refine_k1.output.final_half1,
+        final_half2=rules.refine_k1.output.final_half2,
+        script=EVALUATE_SCRIPT,
+    output:
+        metrics=output_path("{scenario}", "evaluation", "metrics.json"),
+        prior_by_iteration=output_path("{scenario}", "evaluation", "prior_by_iteration.csv"),
+        fsc_curves=output_path("{scenario}", "evaluation", "fsc_curves.csv"),
+        summary_figure=output_path("{scenario}", "evaluation", "summary.png"),
+    params:
+        env=CLEAN_ENV,
+        python=PYTHON,
+        dataset_dir=lambda wildcards, input: str(Path(input.particles_star).parent),
+        run_dir=lambda wildcards, input: str(Path(input.final_merged).parent),
+        out_dir=lambda wildcards, output: str(Path(output.metrics).parent),
+    log:
+        output_path("logs", "{scenario}.evaluate.log"),
+    shell:
+        "{params.env} JAX_PLATFORMS=cpu {params.python} {input.script} "
+        "--dataset-dir {params.dataset_dir} "
+        "--run-dir {params.run_dir} "
+        "--out-dir {params.out_dir} "
+        "--label {wildcards.scenario} "
+        "> {log} 2>&1"
+
+
+rule orientation_distribution:
+    message:
+        "Plotting {wildcards.scenario}: orientation distribution of the true angles and the final estimated poses"
+    input:
+        particles_star=rules.simulate_dataset.output.particles_star,
+        final_merged=rules.refine_k1.output.final_merged,
+    output:
+        true_angles=output_path("{scenario}", "evaluation", "angdist_true.png"),
+        estimated_poses=output_path("{scenario}", "evaluation", "angdist_estimated.png"),
+    params:
+        angdist=ANGDIST,
+        run_dir=lambda wildcards, input: str(Path(input.final_merged).parent),
+        true_title=lambda wildcards: f"{wildcards.scenario}: true angles (simulated)",
+    log:
+        output_path("logs", "{scenario}.angdist.log"),
+    shell:
+        "export MPLBACKEND=Agg; "
+        "final=$(ls {params.run_dir}/run_it*_data.star | sort | tail -n 1); "
+        "{params.angdist} {input.particles_star} -t {params.true_title:q} -o {output.true_angles} > {log} 2>&1; "
+        '{params.angdist} "$final" -t "{wildcards.scenario}: estimated poses, $(basename "$final")" '
+        "-o {output.estimated_poses} >> {log} 2>&1"

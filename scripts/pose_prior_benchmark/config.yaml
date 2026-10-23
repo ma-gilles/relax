@@ -1,0 +1,48 @@
+# Pose-prior benchmark: paths, simulation recipe, refinement settings and scenarios (read by the Snakefile).
+# Override any value on the command line, e.g. --config output_root=<dir> natives_dir=<dir>.
+
+# Directory that receives every scenario's dataset, refinement and evaluation. Required: it names a scratch
+# directory of one account, so there is no default.
+output_root: null
+
+# Native-library pack that refinement loads, built with `bash scripts/build_test_natives.sh <dir>`. Required.
+natives_dir: null
+
+# Python of the relax pixi environment. null: <checkout>/.pixi/envs/default/bin/python.
+python: null
+
+# angdist executable that plots the orientation distributions. null: the one beside the Python running Snakemake.
+angdist: null
+
+# Simulation recipe shared by every scenario: the canonical K=1 PDB fixture of
+# scripts/prepare_pdb_k1_relion_sanity_benchmark.py (5nrl atoms, white noise, total B-factor 80 A^2).
+# The 100k-particle, box-256 milestone fixture is n_images: 100000, grid_size: 256.
+dataset:
+  n_images: 50000
+  grid_size: 128               # box in pixels; the voxel size is 4.25 * 128 / grid_size A
+  noise_level: 1.0
+  total_bfactor: 80.0          # A^2
+  init_resolution_ang: 30.0    # low-pass of the ground-truth map that starts the refinement
+  seed: 17                     # noise seed (RECOVAR draws the poses with its own fixed seed 0)
+
+# relax refine settings; every flag not listed keeps the RELION GUI job default.
+refine:
+  particle_diameter_ang: 450   # the map's density reaches about 220 A from the centre
+  init_resolution: 30          # --ini_high, A
+  seed: 1                      # --random_seed: half sets and sampling perturbation
+  extra_args: []               # appended verbatim to the relax refine command
+
+# One entry per scenario: its own dataset, refinement and evaluation. `poses` selects RECOVAR's pose generator;
+# optional `dataset:` and `refine:` entries override the shared settings above.
+scenarios:
+  # RECOVAR's Kent option draws the third COLUMN of each rotation matrix from a Kent distribution (mean direction
+  # mu0, major axis mu) and the in-plane angle uniformly. RELION's viewing direction is the third ROW, so it is
+  # always uniform in rot: mu0 = z gives a polar cap of preferred views (median tilt 25 deg, 90% within 48 deg;
+  # half of the particles in 5% of the sphere, KL 2.4 bits from uniform at HEALPix order 3, 50k particles);
+  # mu0 perpendicular to z gives an equatorial belt instead. kappa=8, beta=2 keeps the rejection sampler exact:
+  # RECOVAR's default kappa=10, beta=5 accepts 0.05% of the draws and fills most particles from an approximation.
+  kent_cap:
+    poses: {kind: kent, kappa: 8.0, beta: 2.0, mu: [1.0, 1.0, 0.0], mu0: [0.0, 0.0, 1.0]}
+  # Control: uniform viewing directions, where the true prior is flat.
+  uniform:
+    poses: {kind: uniform}

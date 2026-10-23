@@ -13,6 +13,7 @@ The root guide applies. Slurm requests in a script follow the owner's global ins
 | `build_em_fixture_manifest.py` | writes `tests/fixtures/em_fixture_manifest.json`; the owner's instruction only |
 | `run_em_*_slurm.sh`, `run_em_*_slurm.py`, `run_vdam_*.sbatch`, `gpu_matrix/`, `polar/` | Slurm launchers |
 | `prepare_vdam_ppca_fixture.py`, `prepare_vdam_ppca_small_pilot.py`, `prepare_vdam_ppca_star.py`, `ppca_suite_score_star.py`, `lib/ppca_training_star.py` | PPCA training data as RELION particle STARs for `relax ppca_initial_model --i`: simulated fixtures, the converter from a retired `recovar-ppca-training-v1` manifest, and scoring such a run with the curated PPCA suite's `suite_score.py` |
+| `pose_prior_benchmark/` | the pose-prior benchmark, a Snakemake workflow (`Snakefile`, `config.yaml`): `simulate_dataset.py` simulates a K=1 fixture with non-uniform viewing directions through RECOVAR's simulator, `relax refine` runs on it, `evaluate_run.py` scores the map resolution (half-map and ground-truth FSC) and the learned direction prior against the true one |
 | `lib/` | library modules that only scripts and tests import (moved out of `relax/`, which no command of it reaches); imported as `scripts.lib.<module>` |
 | `run_*`, `analyze_*`, `audit_*`, `validate_*`, `compare_*`, `prepare_*` (about 180 files) | one-off experiment drivers and analyses; most are records of a past question |
 
