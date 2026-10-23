@@ -10,6 +10,7 @@ from dataclasses import dataclass, replace
 from functools import partial
 from typing import TYPE_CHECKING
 
+import jax
 import numpy as np
 
 from relax.numerics.precision import diagnostic_float64_pass2_matches
@@ -38,14 +39,16 @@ from relax.refinement.local_half import (
     score_half_local_in_bpref_scope,
 )
 from relax.refinement.local_sampling import LocalSampling, LocalSearchSettings, prepare_final_local_sampling
+from relax.refinement.noise_updates import NoiseModel
 from relax.refinement.numbered_reconstruction import merged_half_map, weighted_class_merge
 from relax.refinement.ports import FinalHalfScored, InputSource
 from relax.refinement.priors import join_half_accumulators_at_low_resolution
 from relax.refinement.reference_state import class_weights_from_posterior
 from relax.refinement.refinement_options import FINAL_ALL_DATA_AFTER_MAX_ITER_ENV, RefinementOptions
 from relax.refinement.refinement_result import ModelMaps, RefinementResult
-from relax.refinement.refinement_state import update_angular_sampling
+from relax.refinement.refinement_state import RefinementState, update_angular_sampling
 from relax.refinement.result_files import final_pass_result
+from relax.refinement.sigma_offset import SigmaOffset
 from relax.refinement.trial_grids import FinalSampling, prepare_final_sampling
 from relax.relion.geometry import PROJECTION_PADDING_FACTOR, RECONSTRUCTION_PADDING_FACTOR
 from relax.runtime.timing import Stopwatch
@@ -67,6 +70,7 @@ from relax.steps.half_inputs import HalfScoringData, local_search_centre_half
 from relax.steps.optics_shapes import image_translation_factors
 from relax.steps.projector_preparation import prepare_scoring_projector
 from relax.steps.score_outputs import (
+    HalfScoreResult,
     PerHalfOutputs,
     record_score_profile,
     resolve_mstep_accumulator_shape,
@@ -407,7 +411,6 @@ def run_final_all_data(
     final_pass = FinalPass(
         current_size=final_current_size,
         volume_shape=volume_shape,
-        use_local=final_use_local,
         sampling=final_sampling,
         route=(
             FinalLocalRoute(
@@ -470,7 +473,7 @@ def run_final_all_data(
             scored.half, final_sampling, scored.prepared,
             translation_search_base=scored.translation_search_base, reference=final_join_means[half.index],
             reference_model=reference_model, noise_variance=carry.noise_model.variance_per_half[half.index],
-            current_size=final_current_size, precision=final_precision, use_local=final_use_local,
+            current_size=final_pass.current_size, precision=final_precision, use_local=final_pass.use_local,
         ))
         # The half is published: drop this loop's references to its result before the next half is scored.
         del scored
@@ -801,7 +804,7 @@ class FinalDenseRoute:
 class FinalPass:
     """What each half of the final all-data pass is scored with, resolved once before the halves.
 
-    ``route`` is the subtomogram pass's local sampling too (a ``FinalLocalRoute`` when ``use_local``); a
+    ``route`` is the subtomogram pass's local sampling too (a ``FinalLocalRoute`` for a local search); a
     subtomogram global pass reads ``sampling`` and ``state`` alone. ``references`` are the halves' scoring maps
     (the joined means), ``tau2`` the reference model's shared tau2, ``scale_gate`` the iteration-start
     scale-correction curve (``previous_data_vs_prior_for_scheduling``) and ``sealed_sampling_state`` the input
@@ -811,18 +814,22 @@ class FinalPass:
 
     current_size: int
     volume_shape: tuple
-    use_local: bool
     sampling: FinalSampling
     route: FinalLocalRoute | FinalDenseRoute
     references: list
-    tau2: object
-    state: object
-    noise_model: object
-    sigma_offset: object
+    tau2: jax.Array | np.ndarray
+    state: RefinementState
+    noise_model: NoiseModel
+    sigma_offset: SigmaOffset
     direction_priors: list
-    class_log_priors: object
-    scale_gate: object
+    class_log_priors: np.ndarray
+    scale_gate: jax.Array | np.ndarray | None
     sealed_sampling_state: object | None
+
+    @property
+    def use_local(self) -> bool:
+        """Whether the pass is a local search: its route is the exact-local one."""
+        return isinstance(self.route, FinalLocalRoute)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -836,8 +843,8 @@ class FinalHalfScore:
     """
 
     half: half_inputs.HalfSet
-    result: object
-    translation_search_base: object
+    result: HalfScoreResult
+    translation_search_base: np.ndarray | None
     prepared: PreparedFinalHalf | None
     projector_power_spectrum: object
     clock: Stopwatch
