@@ -1544,7 +1544,7 @@ def test_capped_particles_are_cut_on_the_direct_squares_of_their_undecided_rotat
         monkeypatch.setattr(tomo_coarse, "_UNDECIDED_ROTATIONS", 1)
     if variant == "rescored_one_by_one":
         # The undecided rotations scored again one call per rotation: the same exact cut.
-        monkeypatch.setattr(tomo_coarse, "_rescore_rows_per_call", lambda *args: 1)
+        monkeypatch.setattr(tomo_coarse, "_rescore_rows_per_call", lambda *args, **kwargs: 1)
         tomo_coarse._exact_rows_diff2.clear_cache()  # a trace cached by "one_row" would bypass direct_calls
     supports, _pmax, counts = tomo_coarse.particle_coarse_supports(None, **kwargs)
     if variant == "flushes_of_three":

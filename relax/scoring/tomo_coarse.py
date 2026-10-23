@@ -1510,7 +1510,13 @@ def particle_coarse_supports(
             exact = rescore(units_all, exact, ids[:, chunk], use[:, chunk], operands)
         scored = jnp.sum(use, axis=1, dtype=jnp.int32)  # each particle's rotations scored again
         for positions, group_capacity in groups:
-            exact, scored = rescore_group(units_all, exact, scored, rows, operands, positions, group_capacity)
+            rows_per_call = partial(
+                _rescore_rows_per_call, slots=slots, n_trans=n_coarse_trans, rescore_bytes=rescore_bytes,
+                capacity=group_capacity,
+            )
+            exact, scored = _rescore_group(
+                rescore, rows_per_call, units_all, exact, scored, rows, operands, positions, group_capacity
+            )
         check = _exact_cut_check(scored, unresolved, most, jnp.int32(n_real))
         return significance(units_all, exact), check
 
@@ -1547,13 +1553,6 @@ def particle_coarse_supports(
             physical_image_size=int(layout.image_shape[0]),
             model_max_r=int(model_max_r),
             padding_factor=int(padding_factor),
-        )
-
-    def rescore_group(units_all, exact, scored, rows, operands, positions, group_capacity):
-        return _rescore_group(
-            rescore,
-            lambda n_pad: _rescore_rows_per_call(n_pad, slots, n_coarse_trans, rescore_bytes, group_capacity),
-            units_all, exact, scored, rows, operands, positions, group_capacity,
         )
 
     def exact_cut_again(cut_operands, unresolved):
