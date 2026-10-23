@@ -41,7 +41,7 @@ from relax.fine_pass.wavg import (
     replace_low_shell_noise_with_relion_wavg_direct_residual_jnp,
     weighted_image_power_from_shells,
 )
-from relax.runtime.shape_buckets import pow2_floor
+from relax.runtime.shape_buckets import pow2_ceil, pow2_floor
 
 logger = logging.getLogger(__name__)
 
@@ -1192,3 +1192,42 @@ def tilt_capacity_ladders(row_ladder, image_ladder, *, slot_capacity: int, min_r
     rows = sorted({max(int(min_rows), pow2_floor(max(int(r) // slots, 1))) for r in row_ladder})
     units = sorted({max(1, int(b)) for b in image_ladder})
     return tuple(rows), tuple(units)
+
+
+# A tilt chunk pays a fixed cost (its M-step program's slot loop, ~5,100 launches) whatever its particle count. On
+# EMPIAR-10499 hp7 a 512-row chunk held 5.6 particles: 1,654 chunks per half, 69 ms of GPU idle each, 38% busy (H100
+# nsys). Chunks are filled by rows, so a class holds ``class / mean rows`` particles, the mean over the particles that
+# fit it (a heavy tail of larger particles runs alone). Measured with that estimate at today's 512 class: EMPIAR-10499
+# hp7 6.9-7.0, EMPIAR-10491 bin-2 final 6.3-6.5; the real tilt-series case's tightest numbered passes (hp8) 8.3-9.0,
+# its hp7 ~18, its global passes and the tutorial far above. A pass below 8 gets the smallest class holding 16: 2048
+# rows for 10499 and the 10491 final (10499 it19 -16.7% with 2048, -7.4% with 1024; same-node H100 A/Bs).
+TILT_MIN_PARTICLES_PER_CHUNK = 8
+TILT_TARGET_PARTICLES_PER_CHUNK = 16
+
+
+def tilt_amortised_row_classes(
+    row_classes, row_offsets, *, slot_capacity: int, row_bytes, budget_bytes, max_rows: int,
+    min_particles: int = TILT_MIN_PARTICLES_PER_CHUNK, target_particles: int = TILT_TARGET_PARTICLES_PER_CHUNK,
+):
+    """The tilt row classes with one more when the largest holds too few particles to amortise a chunk's fixed cost.
+
+    The largest class holds ``class / mean_rows`` particles, ``mean_rows`` the mean row count of the particles
+    (``row_offsets``) that fit it; particles without rows, and those past the class (they run alone), are left out.
+    When that is fewer than ``min_particles``, the smallest power of two holding ``target_particles`` is added, if its
+    ``rows * S`` projections fit ``budget_bytes`` at ``row_bytes`` each and it is at most ``max_rows``; otherwise the
+    classes are kept. Returns ``(classes, mean_rows)``.
+    """
+
+    classes = tuple(sorted({int(r) for r in row_classes}))
+    counts = np.diff(np.asarray(row_offsets, dtype=np.int64))
+    counts = counts[(counts > 0) & (counts <= classes[-1])]
+    if counts.size == 0:
+        return classes, 0.0
+    mean_rows = float(np.mean(counts))
+    if classes[-1] >= min_particles * mean_rows:
+        return classes, mean_rows
+    rows = pow2_ceil(int(np.ceil(target_particles * mean_rows)))
+    fits = budget_bytes is None or float(rows) * max(int(slot_capacity), 1) * float(row_bytes) <= float(budget_bytes)
+    if rows > int(max_rows) or not fits:
+        return classes, mean_rows
+    return tuple(sorted(set(classes) | {rows})), mean_rows

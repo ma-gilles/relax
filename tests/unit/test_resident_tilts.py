@@ -156,6 +156,41 @@ def test_tilt_capacity_ladders_divide_the_rows_by_the_slot_count():
     assert units == (32, 128, 512)
 
 
+def _offsets(counts):
+    return np.concatenate([[0], np.cumsum(counts)])
+
+
+@pytest.mark.unit
+def test_tilt_amortised_row_classes_add_a_class_only_when_chunks_hold_too_few_particles():
+    row_bytes = 2 * 126.4 * 1024
+    budget = 21.38 * 1024**3
+    kw = dict(slot_capacity=41, row_bytes=row_bytes, budget_bytes=budget, max_rows=8192)
+    # Below 8 particles in the largest class, the smallest class holding 16 is added. EMPIAR-10499 hp7 at 73 rows a
+    # fitting particle (7.0 in 512 rows) and at 88 -> 2048; EMPIAR-10491's final at 80 (6.4) -> 2048.
+    for rows_each in (73, 80, 88):
+        rows, mean = resident_tilts.tilt_amortised_row_classes((256, 512), _offsets([rows_each] * 100), **kw)
+        assert rows == (256, 512, 2048) and mean == float(rows_each)
+    # A pass with only the 256 class at 61 rows a particle (4.2) -> 1024.
+    assert resident_tilts.tilt_amortised_row_classes((256,), _offsets([61] * 100), **kw)[0] == (256, 1024)
+    # A mean, not a median: half the particles at 40 and half at 136 rows (mean 88) pack like 88.
+    assert resident_tilts.tilt_amortised_row_classes((256, 512), _offsets([40] * 50 + [136] * 50), **kw)[0] == (256, 512, 2048)
+    # The real tilt-series case's tightest numbered passes (hp8): 57-61.4 rows a particle, 8.3-9.0 in 512 rows: kept.
+    for rows_each in (57, 61):
+        assert resident_tilts.tilt_amortised_row_classes((256, 512), _offsets([rows_each] * 100), **kw)[0] == (256, 512)
+    # Global passes of the real tilt-series case: a heavy tail of particles past the class runs alone and does not
+    # set the packing.
+    tail = [6] * 90 + [2000] * 10
+    assert resident_tilts.tilt_amortised_row_classes((256, 512), _offsets(tail), **kw)[0] == (256, 512)
+    # Particles without rows do not count.
+    assert resident_tilts.tilt_amortised_row_classes((256, 512), _offsets([0] * 50 + [60] * 50), **kw)[0] == (256, 512)
+    # The new class must fit the budget and the ladder's top, else the classes stay.
+    small = dict(kw, budget_bytes=1500 * 41 * row_bytes)
+    assert resident_tilts.tilt_amortised_row_classes((256, 512), _offsets([88] * 100), **small)[0] == (256, 512)
+    capped = dict(kw, max_rows=512)
+    assert resident_tilts.tilt_amortised_row_classes((256, 512), _offsets([88] * 100), **capped)[0] == (256, 512)
+    assert resident_tilts.tilt_amortised_row_classes((256, 512), _offsets([]), **kw) == ((256, 512), 0.0)
+
+
 @pytest.mark.unit
 def test_slot_views_visit_every_chunk_image_once_and_their_partials_land_on_it():
     """The M-step's slot views: unit u's s-th image is chunk image offsets[u] + s, each chunk image in one slot."""

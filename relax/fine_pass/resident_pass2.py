@@ -1723,7 +1723,10 @@ def _resident_pass2(
     tilt_lean_lone_rows = None
     if tilt is not None:
         from relax.fine_pass.resident_tilts import (
+            TILT_MIN_PARTICLES_PER_CHUNK,
+            TILT_TARGET_PARTICLES_PER_CHUNK,
             plan_lean_lone_blocks,
+            tilt_amortised_row_classes,
             tilt_capacity_ladders,
             tilt_lone_row_bytes,
             tilt_projection_slot_block,
@@ -1732,6 +1735,32 @@ def _resident_pass2(
         row_ladder_start, _ = tilt_capacity_ladders(
             row_ladder_start, (1,), slot_capacity=int(tilt.slot_capacity)
         )
+        # Too few particles per chunk at these classes: one larger class, from the unfiltered ladder's top and the
+        # streamed projections' budget (tilt_amortised_row_classes).
+        top_tilt_rows, _ = tilt_capacity_ladders(
+            engine_tuning.resident_row_capacities or _DEFAULT_ROW_CAPACITY_LADDER, (1,), slot_capacity=int(tilt.slot_capacity)
+        )
+        amortised_rows, mean_particle_rows = tilt_amortised_row_classes(
+            row_ladder_start,
+            tables.row_offsets,
+            slot_capacity=int(tilt.slot_capacity),
+            row_bytes=projection_row_bytes,
+            budget_bytes=stream_projection_budget_bytes,
+            max_rows=max(int(v) for v in top_tilt_rows),
+        )
+        if amortised_rows != tuple(int(v) for v in row_ladder_start):
+            logger.info(
+                "Resident pass-2 tilt row classes %s -> %s: particles of %.0f rows on average fill a %d-row chunk with "
+                "%.1f particles (fewer than %d; the new class holds %d)",
+                ",".join(str(int(v)) for v in row_ladder_start),
+                ",".join(str(v) for v in amortised_rows),
+                mean_particle_rows,
+                max(int(v) for v in row_ladder_start),
+                max(int(v) for v in row_ladder_start) / mean_particle_rows,
+                TILT_MIN_PARTICLES_PER_CHUNK,
+                TILT_TARGET_PARTICLES_PER_CHUNK,
+            )
+        row_ladder_start = amortised_rows
         # A chunk whose rows' projections over all its images do not fit is projected, scored and
         # backprojected a block of image slots at a time (resident_tilts.run_tilt_chunk). A chunk of the row
         # classes takes the largest class's slot block; a particle past them (run alone) takes the largest
