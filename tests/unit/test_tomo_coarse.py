@@ -955,15 +955,15 @@ def test_the_class_texture_is_refilled_for_the_next_pass(gpu_device):
         kwargs = dict(model_max_r=f["max_r"], padding_factor=f["pad"])
         first = tomo_coarse._coarse_capacity_texture(f["half"], layout, class_index=0, **kwargs)
         used = _coarse_gemm_projections(f["half"], rotations, layout, texture=first, **kwargs)
-        tomo_coarse._CLASS_TEXTURES[0] = (first, used)  # the pass's end (particle_coarse_supports)
+        tomo_coarse.COARSE_TEXTURES[0] = (first, used)  # the pass's end (particle_coarse_supports)
         changed = jnp.asarray(f["half"] * (0.5 + 0.25j))
         second = tomo_coarse._coarse_capacity_texture(changed, layout, class_index=0, **kwargs)
         assert second is first
         refilled = np.asarray(_coarse_gemm_projections(changed, rotations, layout, texture=second, **kwargs))
-        tomo_coarse._CLASS_TEXTURES.pop(0)[0].close_after(jnp.asarray(refilled))
+        tomo_coarse.COARSE_TEXTURES.pop(0)[0].close_after(jnp.asarray(refilled))
         fresh = tomo_coarse._coarse_capacity_texture(changed, layout, class_index=1, **kwargs)
         expected = np.asarray(_coarse_gemm_projections(changed, rotations, layout, texture=fresh, **kwargs))
-        tomo_coarse._CLASS_TEXTURES.pop(1)[0].close_after(jnp.asarray(expected))
+        tomo_coarse.COARSE_TEXTURES.pop(1)[0].close_after(jnp.asarray(expected))
     assert fresh is not first
     # Both textures hold the same projector and interpolate it with the same kernel: the default float32 band
     # (no bitwise float asserts, user rule 2026-09-24).

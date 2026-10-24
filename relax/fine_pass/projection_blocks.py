@@ -38,6 +38,12 @@ logger = logging.getLogger(__name__)
 # 16 GB device, which then failed with CUDA error 2).
 PASS_TEXTURES: dict = {}
 KEPT_TEXTURE_MAX_BYTES = 1 << 30
+# Each class's subtomogram coarse-pass texture (scoring/tomo_coarse.py), kept from pass to pass for the same reason:
+# class index -> (texture, a concrete result of its last coarse use, which a refill or close must wait for). A pass
+# whose slab has the coarse texture's shape refills and projects through that texture instead of staging its own
+# (open_pass_capacity_texture): two textures of a full-box slab, each with its staging, did not fit beside the pool
+# at a 16 GB final pass from box 288 (10491 bin 1 padded to box 320: CUDA error 2 creating the pass's texture).
+COARSE_TEXTURES: dict = {}
 
 
 def _release_kept_textures_of_other_shapes(shape: tuple, padding_factor: int) -> None:
@@ -50,9 +56,26 @@ def _release_kept_textures_of_other_shapes(shape: tuple, padding_factor: int) ->
 
 
 def keeps_pass_texture(texture) -> bool:
-    """Whether ``texture`` is one of the kept pass textures (the pass leaves it open)."""
+    """Whether ``texture`` is one of the kept pass or coarse textures (the pass leaves it open)."""
 
-    return any(kept is texture for kept in PASS_TEXTURES.values())
+    return any(kept is texture for kept in PASS_TEXTURES.values()) or any(
+        kept is texture for kept, _ in COARSE_TEXTURES.values()
+    )
+
+
+def _coarse_texture_serving(class_index: int, shape: tuple, padding_factor: int, device):
+    """Class ``class_index``'s live coarse texture and its completion when it holds a slab of ``shape``, else None."""
+
+    texture, completion = COARSE_TEXTURES.get(int(class_index), (None, None))
+    if (
+        texture is None
+        or texture.closed
+        or texture.shape != shape
+        or texture.padding_factor != int(padding_factor)
+        or texture.device != device
+    ):
+        return None
+    return texture, completion
 
 
 def open_pass_capacity_texture(
@@ -77,7 +100,9 @@ def open_pass_capacity_texture(
     when the shapes agree (``PASS_TEXTURES``) and stays open after the pass;
     the caller closes any other texture after the loop. With ``kept_only`` a
     larger slab gets None (its projections stage their own texture per call).
-    Before either, every kept texture of another shape is closed (relax#105; see ``PASS_TEXTURES``).
+    Before either, every kept texture of another shape is closed (relax#105; see ``PASS_TEXTURES``). Where the
+    class's coarse pass holds a texture of the slab's shape (``COARSE_TEXTURES``), that texture is refilled and
+    returned instead, whatever the slab's size: the pass stages no second one.
 
     ``logical_r_max`` marks a center-padded capacity slab of a stable-window pass
     (``resident_stable_windows.pass_capacity_projection``, static radius 0): the
@@ -110,8 +135,22 @@ def open_pass_capacity_texture(
     from relax.cuda.projector import RelionCapacityHalfTextureF32
 
     relion_projector_half = jnp.asarray(relion_projector_half)
+    shape = tuple(int(n) for n in relion_projector_half.shape)
     # Kept textures of another shape hold memory outside the pool that this pass's own texture needs (relax#105).
-    _release_kept_textures_of_other_shapes(tuple(int(n) for n in relion_projector_half.shape), projection_padding_factor)
+    _release_kept_textures_of_other_shapes(shape, projection_padding_factor)
+    (device,) = relion_projector_half.devices()
+    coarse = _coarse_texture_serving(class_index, shape, projection_padding_factor, device)
+    if coarse is not None:
+        # The coarse pass's texture of this slab, refilled with the pass's projector after its last coarse use: one
+        # texture (and handle) for both passes, whatever the slab's size. A kept pass texture of the same shape
+        # would only duplicate it. The texture stays the coarse pass's: its next refill waits for that pass's own
+        # completion, and for this pass's projections through the stream order (its projector is built after them).
+        texture, completion = coarse
+        duplicate = PASS_TEXTURES.pop(int(class_index), None)
+        if duplicate is not None and duplicate is not texture:
+            duplicate.close()
+        texture.refresh_after(relion_projector_half, completion, logical_r_max=staged_r_max)
+        return texture
     if relion_projector_half.nbytes > KEPT_TEXTURE_MAX_BYTES:
         if kept_only:
             return None

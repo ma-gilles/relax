@@ -34,6 +34,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
+from relax.fine_pass.projection_blocks import COARSE_TEXTURES
 from relax.fine_pass.resident_statistics import resident_image_capacity
 from relax.runtime import memory_budget
 from relax.runtime.shape_buckets import pow2_ceil, pow2_floor
@@ -206,9 +207,8 @@ _SIGNIFICANCE_BATCH_BYTES = 512 << 20
 
 # Each class's projector texture, kept from pass to pass and refilled with the pass's projector: the compiled
 # coarse programs capture the texture's native handle, so a new texture per pass compiled every slot-block
-# program again (1,061 compiles, 220 s of a 200-iteration et09_box64 subtomogram run). Class index -> (texture,
-# a concrete result of its last use, which a refill or close must wait for).
-_CLASS_TEXTURES: dict = {}
+# program again (1,061 compiles, 220 s of a 200-iteration et09_box64 subtomogram run). The registry is
+# projection_blocks.COARSE_TEXTURES, where the pass 2 of a slab of the same shape finds and reuses the texture.
 
 
 def _coarse_capacity_texture(
@@ -230,7 +230,7 @@ def _coarse_capacity_texture(
         return None
     from relax.cuda.projector import RelionCapacityHalfTextureF32
 
-    texture, completion = _CLASS_TEXTURES.pop(int(class_index), (None, None))
+    texture, completion = COARSE_TEXTURES.pop(int(class_index), (None, None))
     if (
         texture is not None
         and not texture.closed
@@ -245,7 +245,7 @@ def _coarse_capacity_texture(
         texture = RelionCapacityHalfTextureF32(
             projector_half, int(model_max_r), padding_factor=int(padding_factor), reusable_staging=True
         )
-    _CLASS_TEXTURES[int(class_index)] = (texture, jnp.zeros((), jnp.float32))
+    COARSE_TEXTURES[int(class_index)] = (texture, jnp.zeros((), jnp.float32))
     return texture
 
 
@@ -1733,7 +1733,7 @@ def particle_coarse_supports(
         if texture is not None and last_total is not None:
             # The flush read every batch's significance back, so the last projection has completed; the
             # texture stays for the next pass (_coarse_capacity_texture), which refills it after this result.
-            _CLASS_TEXTURES[k] = (texture, last_total)
+            COARSE_TEXTURES[k] = (texture, last_total)
     class_supports = [[supports[k][u] for u in range(n_units)] for k in range(n_classes)]
     return class_supports[0] if n_classes == 1 else class_supports, np.asarray(
         [pmax_by_unit[u] for u in range(n_units)], dtype=np.float64
