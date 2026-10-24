@@ -1,7 +1,9 @@
 /* Shared body for the default RELION coarse projector and the optional
  * prehalved-weight specialization.  The including wrapper must define
  * RELAX_RELION_COARSE_STAGE_WEIGHT(weight) and
- * RELAX_RELION_COARSE_DIFF2_UPDATE before including this file. */
+ * RELAX_RELION_COARSE_DIFF2_UPDATE before including this file, and have
+ * FLOAT2_TEXTURE in scope: true when tex_real is one float2 (Re, Im) texture
+ * (tex_imag unused), false for the float texture pair. */
 {
     static_assert(
         !SINGLE_LANE_CANONICAL || CANONICAL_REDUCTION,
@@ -139,16 +141,28 @@
                         zp = -zp;
                         imag_sign = -1.0f;
                     }
-                    reference.x = projector_scale * tex3D<float>(
-                        tex_real,
-                        xp + 0.5f,
-                        yp - static_cast<float>(tex_yinit) + 0.5f,
-                        zp - static_cast<float>(tex_zinit) + 0.5f);
-                    reference.y = projector_scale * imag_sign * tex3D<float>(
-                        tex_imag,
-                        xp + 0.5f,
-                        yp - static_cast<float>(tex_yinit) + 0.5f,
-                        zp - static_cast<float>(tex_zinit) + 0.5f);
+                    if constexpr (FLOAT2_TEXTURE) {
+                        // One float2 (Re, Im) texel per sample (a capacity texture): the hardware filters each
+                        // channel with the weights of a single float texture, so the values are the pair's.
+                        const float2 value = tex3D<float2>(
+                            tex_real,
+                            xp + 0.5f,
+                            yp - static_cast<float>(tex_yinit) + 0.5f,
+                            zp - static_cast<float>(tex_zinit) + 0.5f);
+                        reference.x = projector_scale * value.x;
+                        reference.y = projector_scale * imag_sign * value.y;
+                    } else {
+                        reference.x = projector_scale * tex3D<float>(
+                            tex_real,
+                            xp + 0.5f,
+                            yp - static_cast<float>(tex_yinit) + 0.5f,
+                            zp - static_cast<float>(tex_zinit) + 0.5f);
+                        reference.y = projector_scale * imag_sign * tex3D<float>(
+                            tex_imag,
+                            xp + 0.5f,
+                            yp - static_cast<float>(tex_yinit) + 0.5f,
+                            zp - static_cast<float>(tex_zinit) + 0.5f);
+                    }
                 }
             }
             shared_references[

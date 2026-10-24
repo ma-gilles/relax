@@ -714,3 +714,132 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(
         .Ret<ffi::AnyBuffer>()
         .Ret<ffi::AnyBuffer>()
 );
+
+// RelionCoarseDiff2ProjectorPerImageF32 on a live capacity texture: the same per-image fused coarse kernel and
+// canonical reduction, sampling the owner's float2 (Re, Im) texels instead of staging the projector's full cube
+// into the coarse texture cache. The exact cut scores its undecided rotations against the class texture the coarse
+// pass already holds, so no second slab lives beside it outside the XLA pool. The owner must be staged at
+// model_max_r (the caller checks its logical radius): fill_relion_texture_capacity_kernel then places the texels
+// fill_relion_texture_compact_kernel places from the full cube at the same origin, -(model_max_r * pf + 1), and
+// the texels past them (the capacity's physical margin, zero) are never reached by a sample inside the radius.
+ffi::Error RelionCoarseDiff2CapacityTexturePerImageF32Impl(
+    cudaStream_t stream,
+    int64_t owner_handle,
+    int64_t current_size,
+    int64_t physical_image_size,
+    int64_t model_max_r,
+    int64_t padding_factor,
+    ffi::AnyBuffer rotations,
+    ffi::AnyBuffer images,
+    ffi::AnyBuffer translation_angles,
+    ffi::AnyBuffer weight,
+    ffi::AnyBuffer initial_diff2,
+    ffi::AnyBuffer full_to_compact,
+    ffi::Result<ffi::AnyBuffer> output)
+{
+    constexpr const char* name = "RelionCoarseDiff2CapacityTexturePerImageF32";
+    if (images.element_type() != ffi::DataType::C64 ||
+        rotations.element_type() != ffi::DataType::F32 ||
+        translation_angles.element_type() != ffi::DataType::F32 ||
+        weight.element_type() != ffi::DataType::F32 ||
+        initial_diff2.element_type() != ffi::DataType::F32 ||
+        full_to_compact.element_type() != ffi::DataType::S32 ||
+        output->element_type() != ffi::DataType::F32)
+        return ffi::Error::InvalidArgument(std::string(name) + ": operand dtypes");
+    const auto rotation_dims = rotations.dimensions();
+    const auto image_dims = images.dimensions();
+    const auto angle_dims = translation_angles.dimensions();
+    const auto weight_dims = weight.dimensions();
+    const auto initial_dims = initial_diff2.dimensions();
+    const auto lookup_dims = full_to_compact.dimensions();
+    const auto output_dims = output->dimensions();
+    if (image_dims.size() != 2 || image_dims[0] <= 0 || image_dims[1] <= 0 ||
+        rotation_dims.size() != 3 || rotation_dims[0] != image_dims[0] ||
+        rotation_dims[1] <= 0 || rotation_dims[2] != 6 ||
+        angle_dims.size() != 3 || angle_dims[0] != image_dims[0] ||
+        angle_dims[1] <= 0 || angle_dims[1] > kRelionCoarseDiff2BlockSize ||
+        angle_dims[2] != 2 ||
+        weight_dims.size() != 2 || weight_dims[0] != image_dims[0] ||
+        weight_dims[1] != image_dims[1] ||
+        initial_dims.size() != 1 || initial_dims[0] != image_dims[0] ||
+        lookup_dims.size() != 1 ||
+        lookup_dims[0] != current_size * (current_size / 2 + 1) ||
+        output_dims.size() != 3 || output_dims[0] != image_dims[0] ||
+        output_dims[1] != rotation_dims[1] || output_dims[2] != angle_dims[1] ||
+        current_size <= 0 || physical_image_size <= 0 || model_max_r <= 0 ||
+        padding_factor <= 0)
+        return ffi::Error::InvalidArgument(std::string(name) + ": inconsistent operand shapes or attributes");
+
+    std::shared_ptr<CapacityRelionHalfTextureF32> owner;
+    {
+        std::lock_guard<std::mutex> lock(capacity_relion_half_texture_f32_mutex);
+        const auto found = capacity_relion_half_texture_f32_registry.find(static_cast<uint64_t>(owner_handle));
+        if (found == capacity_relion_half_texture_f32_registry.end())
+            return ffi::Error::InvalidArgument(std::string(name) + ": owner handle is not live");
+        owner = found->second;
+    }
+    if (!owner->acquire_call())
+        return ffi::Error::InvalidArgument(
+            std::string(name) + ": owner is closing, refreshing or failed its last refresh");
+    struct Release { CapacityRelionHalfTextureF32* owner; ~Release() { owner->release_call(); } } release{owner.get()};
+
+    // The texture's origin is at the staged (logical) radius, model_max_r in padded units, as the cube path's.
+    const int padded_max_r = static_cast<int>(model_max_r * padding_factor);
+    if (owner->padding_factor != padding_factor || padded_max_r > owner->half_z / 2 - 1)
+        return ffi::Error::InvalidArgument(
+            std::string(name) + ": the owner's padding factor or capacity does not hold the model radius");
+    const int batch_size = static_cast<int>(image_dims[0]);
+    const int rotation_count = static_cast<int>(rotation_dims[1]);
+    const int translation_count = static_cast<int>(angle_dims[1]);
+    float* out = static_cast<float*>(output->untyped_data());
+    const int64_t output_count = static_cast<int64_t>(batch_size) * rotation_count * translation_count;
+    constexpr int initialize_block_size = 256;
+    relion_coarse_diff2_initialize_f32_kernel<<<
+        (output_count + initialize_block_size - 1) / initialize_block_size, initialize_block_size, 0, stream>>>(
+            static_cast<const float*>(initial_diff2.untyped_data()), out, rotation_count, translation_count,
+            output_count);
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) return ffi::Error::Internal(std::string("CUDA: ") + cudaGetErrorString(err));
+    const int rotation_blocks = (rotation_count + kRelionCoarseEulersPerBlock - 1) / kRelionCoarseEulersPerBlock;
+    // RelionCoarseDiff2ProjectorPerImageF32's launch: canonical reduction, per-image poses, the score radius
+    // min(model radius, current size / 2) and RELION's projector scale.
+    launch_relion_coarse_diff2_projector_f32_variant<
+        kRelionCoarseEulersPerBlock, false, true, false, false, true, true>(
+            batch_size * rotation_blocks,
+            stream,
+            owner->texture, 0,
+            static_cast<const float*>(rotations.untyped_data()),
+            static_cast<const float2*>(images.untyped_data()),
+            static_cast<const float*>(translation_angles.untyped_data()),
+            static_cast<const float*>(weight.untyped_data()),
+            static_cast<const int32_t*>(full_to_compact.untyped_data()),
+            out,
+            nullptr,
+            0, rotation_count, rotation_count, batch_size, translation_count,
+            static_cast<int>(image_dims[1]), static_cast<int>(current_size),
+            -(padded_max_r + 1), -(padded_max_r + 1),
+            static_cast<int>(std::min<int64_t>(model_max_r, current_size / 2)),
+            -static_cast<float>(physical_image_size * physical_image_size),
+            static_cast<float>(padding_factor));
+    err = cudaGetLastError();
+    if (err != cudaSuccess) return ffi::Error::Internal(std::string("CUDA: ") + cudaGetErrorString(err));
+    return ffi::Error::Success();
+}
+
+XLA_FFI_DEFINE_HANDLER_SYMBOL(
+    RelionCoarseDiff2CapacityTexturePerImageF32, RelionCoarseDiff2CapacityTexturePerImageF32Impl,
+    ffi::Ffi::Bind()
+        .Ctx<ffi::PlatformStream<cudaStream_t>>()
+        .Attr<int64_t>("owner_handle")
+        .Attr<int64_t>("current_size")
+        .Attr<int64_t>("physical_image_size")
+        .Attr<int64_t>("model_max_r")
+        .Attr<int64_t>("padding_factor")
+        .Arg<ffi::AnyBuffer>()
+        .Arg<ffi::AnyBuffer>()
+        .Arg<ffi::AnyBuffer>()
+        .Arg<ffi::AnyBuffer>()
+        .Arg<ffi::AnyBuffer>()
+        .Arg<ffi::AnyBuffer>()
+        .Ret<ffi::AnyBuffer>()
+);

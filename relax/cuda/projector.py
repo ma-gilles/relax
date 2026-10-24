@@ -185,6 +185,12 @@ class RelionCapacityHalfTextureF32:
     def closed(self) -> bool:
         return self._handle == 0
 
+    @property
+    def handle(self) -> int:
+        """The native owner handle a kernel outside this class reads the texture by
+        (:func:`relax.cuda.coarse.relion_coarse_diff2_capacity_texture_per_image_f32`)."""
+        return self._handle
+
     def project(
         self,
         rotation_matrices: jax.Array,

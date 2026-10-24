@@ -452,7 +452,8 @@ template <
     bool CAPTURE_LANES = false,
     bool CANONICAL_REDUCTION = false,
     bool SINGLE_LANE_CANONICAL = false,
-    bool PER_IMAGE_POSES = false>
+    bool PER_IMAGE_POSES = false,
+    bool FLOAT2_TEXTURE = false>
 __global__ __launch_bounds__(kRelionCoarseDiff2BlockSize)
 void relion_coarse_diff2_projector_f32_kernel(
     cudaTextureObject_t tex_real,
@@ -509,6 +510,7 @@ void relion_coarse_diff2_projector_prehalf_f32_kernel(
 #define CANONICAL_REDUCTION false
 #define SINGLE_LANE_CANONICAL false
 #define PER_IMAGE_POSES false
+#define FLOAT2_TEXTURE false
 #define RELAX_RELION_COARSE_STAGE_WEIGHT(pixel_weight) \
     pixel_weight = __fmul_rn(pixel_weight, 0.5f);
 #define RELAX_RELION_COARSE_DIFF2_UPDATE \
@@ -516,6 +518,7 @@ void relion_coarse_diff2_projector_prehalf_f32_kernel(
 #include "relion_coarse_diff2_projector_body.inc"
 #undef RELAX_RELION_COARSE_DIFF2_UPDATE
 #undef RELAX_RELION_COARSE_STAGE_WEIGHT
+#undef FLOAT2_TEXTURE
 #undef PER_IMAGE_POSES
 #undef SINGLE_LANE_CANONICAL
 #undef CANONICAL_REDUCTION
@@ -526,7 +529,8 @@ template <
     bool CANONICAL_REDUCTION,
     bool SINGLE_LANE_CANONICAL,
     bool PREHALF_WEIGHT,
-    bool PER_IMAGE_POSES = false>
+    bool PER_IMAGE_POSES = false,
+    bool FLOAT2_TEXTURE = false>
 void launch_relion_coarse_diff2_projector_f32_variant(
     int blocks,
     cudaStream_t stream,
@@ -556,6 +560,7 @@ void launch_relion_coarse_diff2_projector_f32_variant(
         !PREHALF_WEIGHT || (!CANONICAL_REDUCTION && !SINGLE_LANE_CANONICAL),
         "prehalved coarse weights require native atomic reduction");
     static_assert(!PREHALF_WEIGHT || !PER_IMAGE_POSES, "per-image poses use the default weights");
+    static_assert(!PREHALF_WEIGHT || !FLOAT2_TEXTURE, "a float2 texture uses the default weights");
     if constexpr (PREHALF_WEIGHT) {
         relion_coarse_diff2_projector_prehalf_f32_kernel<
             EULERS_PER_BLOCK,
@@ -588,7 +593,8 @@ void launch_relion_coarse_diff2_projector_f32_variant(
             CAPTURE_LANES,
             CANONICAL_REDUCTION,
             SINGLE_LANE_CANONICAL,
-            PER_IMAGE_POSES><<<
+            PER_IMAGE_POSES,
+            FLOAT2_TEXTURE><<<
             blocks, kRelionCoarseDiff2BlockSize, 0, stream>>>(
                 tex_real,
                 tex_imag,

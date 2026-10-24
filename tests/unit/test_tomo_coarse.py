@@ -907,6 +907,40 @@ def test_direct_rows_are_the_one_image_kernels_rows_in_slot_order(gpu_device, mo
 
 
 @pytest.mark.gpu
+def test_direct_rows_from_the_class_texture_are_the_cube_rows(gpu_device):
+    """The exact cut's direct square read from the coarse pass's capacity texture (no cube, no staged texture) gives
+    the rows the full projector cube gives: the same kernel samples the same texels at the same origin."""
+
+    import jax
+    from recovar.cuda_backproject import custom_cuda_requested
+
+    if not custom_cuda_requested():
+        pytest.skip("custom CUDA is disabled")
+    with jax.default_device(gpu_device):
+        n_particles, n_slots, n_rot = 2, 3, 37
+        f = _gemm_fixture(np.random.default_rng(31), n_images=n_particles * n_slots, n_rot=n_rot, n_trans=200)
+        layout = f["layout"]
+        kwargs = dict(model_max_r=f["max_r"], padding_factor=f["pad"])
+        texture = tomo_coarse._coarse_capacity_texture(f["half"], layout, class_index=0, **kwargs)
+        try:
+            operands = (
+                jnp.asarray(f["rotations"].reshape(n_particles, n_slots, n_rot, 3, 3)),
+                jnp.asarray(f["images"]).reshape(n_particles, n_slots, -1),
+                jnp.asarray(f["weight"]).reshape(n_particles, n_slots, -1),
+                jnp.asarray(f["initial"]).reshape(n_particles, n_slots),
+                jnp.asarray(f["angles"]).reshape(n_particles, n_slots, 200, 2),
+                layout.full_to_compact,
+            )
+            settings = dict(current_size=layout.current_size, physical_image_size=f["box"], **kwargs)
+            from_cube = np.asarray(tomo_coarse.direct_rows_diff2(f["full"], *operands, **settings))
+            from_texture = np.asarray(tomo_coarse.direct_rows_diff2(texture, *operands, **settings))
+        finally:
+            tomo_coarse.COARSE_TEXTURES.pop(0)[0].close_after(jnp.zeros((), jnp.float32))
+    assert np.count_nonzero(from_cube) == from_cube.size
+    assert_matches(from_texture, from_cube)
+
+
+@pytest.mark.gpu
 @pytest.mark.parametrize("n_rot", [300, 301, 303], ids=["whole_blocks", "one_in_the_last_block", "three_in_the_last_block"])
 def test_packed_rows_are_the_complex_projections_split(gpu_device, n_rot):
     """The persistent texture's packed ``[Re | Im]`` rows are the complex coarse projections (the same texture

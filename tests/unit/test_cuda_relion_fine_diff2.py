@@ -342,9 +342,18 @@ def test_relion_fused_coarse_projector_source_pins_vdam_support_and_segmentation
         source.index("relion_coarse_diff2_projector_prehalf_f32_kernel", start) :
         source.index("launch_relion_coarse_diff2_projector_f32_variant", start)
     ]
-    assert "bool SINGLE_LANE_CANONICAL = false,\n    bool PER_IMAGE_POSES = false>" in default_kernel
+    assert (
+        "bool SINGLE_LANE_CANONICAL = false,\n    bool PER_IMAGE_POSES = false,\n    bool FLOAT2_TEXTURE = false>"
+        in default_kernel
+    )
     # Per-image poses (subtomogram tilt images) only offset the rotation and phase reads.
     assert "#define PER_IMAGE_POSES false" in prehalf_kernel
+    # A float2 capacity texture (the exact cut on the coarse class texture) changes only the texel fetch: one
+    # tex3D<float2> whose channels take the pair's place, with the same scale and sign products.
+    assert "#define FLOAT2_TEXTURE false" in prehalf_kernel
+    assert "if constexpr (FLOAT2_TEXTURE)" in block
+    assert "reference.x = projector_scale * value.x;" in block
+    assert "reference.y = projector_scale * imag_sign * value.y;" in block
     assert "rotations[rotation_base + rotation * 6 + component]" in block
     assert "image_angles[2 * translation]" in block
     assert "PREHALF_WEIGHT" not in default_kernel

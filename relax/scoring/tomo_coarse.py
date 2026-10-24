@@ -454,13 +454,21 @@ def _lay_out_undecided_rotations(
     return jnp.where(keep[..., None, None], rotations, jnp.zeros((), jnp.float32))
 
 
-@partial(jax.jit, static_argnames=("r_pad", "current_size", "physical_image_size", "model_max_r", "padding_factor"))
+@partial(
+    jax.jit,
+    static_argnames=("r_pad", "current_size", "physical_image_size", "model_max_r", "padding_factor", "textures"),
+)
 def _exact_rows_diff2(
     diff2, ids, use, row_rotations, projectors_full, unshifted, pixel_weight, initial_diff2, translation_angles,
     full_to_compact, *, r_pad: int, current_size: int, physical_image_size: int, model_max_r: int, padding_factor: int,
+    textures: tuple = (),
 ):
     """Particles' diff2 ``[P, K * R_pad, T]`` with their undecided rotations ``ids`` ``[P, M]`` (where ``use``)
     scored by the direct square against their class's projector, as one program.
+
+    A class with a texture in ``textures`` (its coarse pass's capacity texture, captured by the program as the
+    coarse GEMM programs capture it) is scored from that texture and its ``projectors_full`` entry is None; the
+    others from their full projector cube.
 
     ``row_rotations`` ``[P, S, M, 3, 3]`` are those rotations' scorer matrices for each tilt image; the other
     operands are the particles' (``[P, S, pixels]``, ``[P, S]``, ``[P, S, T, 2]``).
@@ -468,8 +476,9 @@ def _exact_rows_diff2(
 
     for class_index, projector_full in enumerate(projectors_full):
         own = use & (ids // r_pad == class_index)
+        texture = textures[class_index] if textures else None
         exact = direct_rows_diff2(
-            projector_full,
+            projector_full if texture is None else texture,
             row_rotations,
             unshifted,
             pixel_weight,
@@ -1496,7 +1505,9 @@ def particle_coarse_supports(
         rows, most, unresolved = _particle_near_cut_rows(cut_inputs, full_sort, **cut_static)
         ids, use = first_rows(rows, capacity=capacity)
         for class_index, class_projector in enumerate(class_projectors):
-            if class_full[class_index] is None:
+            # A class whose coarse pass holds a capacity texture is scored from it (_exact_rows_diff2): its cube,
+            # 8 (pf Q + 3)^3 bytes in the pool, and the kernel's own staged texture outside it are never made.
+            if class_full[class_index] is None and class_textures[class_index] is None:
                 # Cast first (the embedding only moves values): one complex64 cube, not a complex128 one and its cast.
                 class_full[class_index] = relion_projector_half_to_texture_full(
                     jnp.asarray(class_projector).astype(jnp.complex64)
@@ -1553,6 +1564,7 @@ def particle_coarse_supports(
             physical_image_size=int(layout.image_shape[0]),
             model_max_r=int(model_max_r),
             padding_factor=int(padding_factor),
+            textures=tuple(class_textures),
         )
 
     def exact_cut_again(cut_operands, unresolved):

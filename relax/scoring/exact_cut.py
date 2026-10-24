@@ -188,7 +188,7 @@ def put_rows(table, ids, own, rows):
 
 
 def direct_rows_diff2(
-    projector_full,
+    projector,
     rotations,
     unshifted,
     pixel_weight,
@@ -203,6 +203,11 @@ def direct_rows_diff2(
 ):
     """Direct-square diff2 ``[B, M, T]`` at each particle's own rotations ``[B, S, M, 3, 3]``.
 
+    ``projector`` is the class's full complex64 projector cube, or the live
+    :class:`~relax.cuda.projector.RelionCapacityHalfTextureF32` its coarse pass holds: the same kernel then samples
+    that texture (:func:`relax.cuda.coarse.relion_coarse_diff2_capacity_texture_per_image_f32`, the cube's values)
+    and neither a cube nor a second staged texture is made.
+
     RELION's fused coarse kernel on every image ``[B, S]`` with its own phases ``[B, S, T, 2]``
     (:func:`relax.cuda.coarse.relion_coarse_diff2_projector_per_image_f32`, the translations in blocks of
     its capacity), the particle's ``S`` images added in slot order with their Xi2 / 2 as RELION adds them
@@ -211,6 +216,12 @@ def direct_rows_diff2(
     """
 
     from relax.cuda import coarse as cuda_coarse
+    from relax.cuda.projector import RelionCapacityHalfTextureF32
+
+    if isinstance(projector, RelionCapacityHalfTextureF32):
+        per_image = partial(cuda_coarse.relion_coarse_diff2_capacity_texture_per_image_f32, projector)
+    else:
+        per_image = partial(cuda_coarse.relion_coarse_diff2_projector_per_image_f32, projector)
 
     n_particles, n_slots, n_rows = (int(n) for n in rotations.shape[:3])
     n_images, n_trans = n_particles * n_slots, int(translation_angles.shape[2])
@@ -226,8 +237,7 @@ def direct_rows_diff2(
     for first in range(0, n_rows, block_rows):
         rows = images[:, first : first + block_rows]
         blocks = [
-            cuda_coarse.relion_coarse_diff2_projector_per_image_f32(
-                projector_full,
+            per_image(
                 rows,
                 unshifted.reshape(n_images, -1),
                 angles[:, start : start + FUSED_TRANSLATION_CAPACITY],

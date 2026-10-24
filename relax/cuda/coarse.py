@@ -1,5 +1,5 @@
 """RELION coarse-pass kernels on the GPU: the coarse diff2 scores (rectangular, and on the fly from the projector,
-batched or per image) and the normalized cross-correlation pairs (from projections or from the native
+batched or per image, or per image from a live capacity texture) and the normalized cross-correlation pairs (from projections or from the native
 projector texture).
 
 Each wrapper registers the library targets through ``library.ensure_ffi()`` before its first FFI call; the
@@ -262,7 +262,7 @@ def relion_coarse_normalized_cc_native_texture_pairs_f32(
 
 
 def _prepare_relion_coarse_diff2_projector_f32(
-    projector_full: jax.Array,
+    projector_full: jax.Array | None,
     rotation_matrices: jax.Array,
     images: jax.Array,
     translation_angles: jax.Array,
@@ -274,8 +274,9 @@ def _prepare_relion_coarse_diff2_projector_f32(
     physical_image_size: int,
     model_max_r: int,
 ) -> tuple[jax.Array, jax.ShapeDtypeStruct]:
-    """Validate and prepare the one shared fused coarse-projector ABI."""
-    if projector_full.dtype != jnp.complex64 or projector_full.ndim != 3:
+    """Validate and prepare the one shared fused coarse-projector ABI (``projector_full`` None: a capacity texture
+    holds the projector, :func:`relion_coarse_diff2_capacity_texture_per_image_f32`)."""
+    if projector_full is not None and (projector_full.dtype != jnp.complex64 or projector_full.ndim != 3):
         raise TypeError(
             "projector_full must be a rank-3 complex64 array, got "
             f"{projector_full.shape} {projector_full.dtype}"
@@ -518,6 +519,74 @@ def relion_coarse_diff2_projector_per_image_f32(
         weight,
         initial_diff2,
         full_to_compact,
+        current_size=np.int64(current_size),
+        physical_image_size=np.int64(physical_image_size),
+        model_max_r=np.int64(model_max_r),
+        padding_factor=np.int64(int(padding_factor)),
+    )
+
+
+def relion_coarse_diff2_capacity_texture_per_image_f32(
+    texture,
+    rotation_matrices: jax.Array,
+    images: jax.Array,
+    translation_angles: jax.Array,
+    weight: jax.Array,
+    initial_diff2: jax.Array,
+    full_to_compact: jax.Array,
+    *,
+    current_size: int,
+    physical_image_size: int,
+    model_max_r: int,
+    padding_factor: int,
+) -> jax.Array:
+    """:func:`relion_coarse_diff2_projector_per_image_f32` sampling a live
+    :class:`~relax.cuda.projector.RelionCapacityHalfTextureF32` (``texture``) instead of a full projector cube.
+
+    The same kernel, launch and reduction read the owner's float2 texels, which are the values the full cube's
+    staged texture pair holds (the same projector at the same radius), so the diff2 are the cube path's. No cube
+    is built and nothing is staged: the exact cut scores against the class texture its coarse pass already holds.
+    A compiled caller captures the owner's handle, as the texture's own projections do.
+    """
+
+    n_images, n_rotations = int(rotation_matrices.shape[0]), int(rotation_matrices.shape[1])
+    if rotation_matrices.shape[2:] != (3, 3) or translation_angles.ndim != 3 or translation_angles.shape[2] != 2:
+        raise ValueError(
+            f"per-image poses are [B, R, 3, 3] and [B, T, 2], got {rotation_matrices.shape} {translation_angles.shape}"
+        )
+    if images.shape[0] != n_images or translation_angles.shape[0] != n_images:
+        raise ValueError("rotations, phases and images must have one entry per image")
+    if texture.closed:
+        raise RuntimeError("the capacity texture is closed")
+    if int(texture.padding_factor) != int(padding_factor) or int(texture.logical_r_max) != int(model_max_r):
+        raise ValueError(
+            f"the texture is staged at radius {texture.logical_r_max}, padding {texture.padding_factor}; the scores "
+            f"need radius {model_max_r}, padding {padding_factor}"
+        )
+    compact_rotations, _ = _prepare_relion_coarse_diff2_projector_f32(
+        None,
+        rotation_matrices.reshape(n_images * n_rotations, 3, 3),
+        images,
+        translation_angles[0],
+        weight,
+        initial_diff2,
+        full_to_compact,
+        current_size=current_size,
+        physical_image_size=physical_image_size,
+        model_max_r=model_max_r,
+    )
+    return jax.ffi.ffi_call(
+        library.TARGET_RELION_COARSE_DIFF2_CAPACITY_TEXTURE_PER_IMAGE_F32,
+        jax.ShapeDtypeStruct((n_images, n_rotations, int(translation_angles.shape[1])), jnp.float32),
+        vmap_method="sequential",
+    )(
+        compact_rotations.reshape(n_images, n_rotations, 6),
+        images,
+        translation_angles,
+        weight,
+        initial_diff2,
+        full_to_compact,
+        owner_handle=np.int64(texture.handle),
         current_size=np.int64(current_size),
         physical_image_size=np.int64(physical_image_size),
         model_max_r=np.int64(model_max_r),

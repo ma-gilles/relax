@@ -65,6 +65,7 @@ TARGET_RELION_COARSE_DIFF2_PROJECTOR_F32 = (
     "cuda_relion_coarse_diff2_projector_f32"
 )
 TARGET_RELION_COARSE_DIFF2_PROJECTOR_PER_IMAGE_F32 = "cuda_relion_coarse_diff2_projector_per_image_f32"
+TARGET_RELION_COARSE_DIFF2_CAPACITY_TEXTURE_PER_IMAGE_F32 = "cuda_relion_coarse_diff2_capacity_texture_per_image_f32"
 TARGET_RELION_COARSE_NORMALIZED_CC_PAIRS_F32 = (
     "cuda_relion_coarse_normalized_cc_pairs_f32"
 )
@@ -190,6 +191,10 @@ FFI_REGISTRATIONS: tuple[tuple[str, str], ...] = (
     (
         TARGET_RELION_COARSE_DIFF2_PROJECTOR_PER_IMAGE_F32,
         "RelionCoarseDiff2ProjectorPerImageF32",
+    ),
+    (
+        TARGET_RELION_COARSE_DIFF2_CAPACITY_TEXTURE_PER_IMAGE_F32,
+        "RelionCoarseDiff2CapacityTexturePerImageF32",
     ),
     (
         TARGET_RELION_COARSE_NORMALIZED_CC_PAIRS_F32,
