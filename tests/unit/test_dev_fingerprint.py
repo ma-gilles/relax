@@ -193,6 +193,28 @@ def test_engine_keyword_defaults_match_the_engine():
         )
 
 
+def test_retired_engine_keywords_are_read_by_no_engine():
+    """A RETIRED_ENGINE_KWARGS key leaves the stand-in digest whatever its value, which is safe only while no engine
+    module reads it: no module k_class imports names it (a parameter, a string key, an attribute), and it is not
+    also in ENGINE_KWARG_DEFAULTS."""
+
+    assert not fingerprint.RETIRED_ENGINE_KWARGS & set(fingerprint.ENGINE_KWARG_DEFAULTS)
+    for path in _engine_modules():
+        for node in ast.walk(ast.parse(path.read_text())):
+            names = (
+                {node.arg} if isinstance(node, ast.arg)
+                else {node.value} if isinstance(node, ast.Constant) and isinstance(node.value, str)
+                else {node.attr} if isinstance(node, ast.Attribute)
+                else {node.arg} if isinstance(node, ast.keyword) and node.arg
+                else set()
+            )
+            read = names & fingerprint.RETIRED_ENGINE_KWARGS
+            assert not read, f"{path}:{getattr(node, 'lineno', '?')} reads retired engine keyword {sorted(read)}"
+    kwargs = {key: True for key in fingerprint.RETIRED_ENGINE_KWARGS}
+    assert fingerprint.engine_kwargs_without_defaults({**kwargs, "coarse_engine": "gemm"}) == {"coarse_engine": "gemm"}
+    assert fingerprint.without_retired({**kwargs, "coarse_engine": "auto"}) == {"coarse_engine": "auto"}
+
+
 def test_log_row_keeps_the_template_and_drops_wall_times():
     plain = fingerprint.log_row("relax.a", "INFO", "order %d", "order 2")
     timed = fingerprint.log_row("relax.a", "INFO", "done in %.2fs", "done in 0.31s")
@@ -221,7 +243,7 @@ def test_trace_order_does_not_depend_on_when_a_background_thread_logged():
 
 
 def _fingerprint(**cases):
-    return {"source": "tree", "cases": cases}
+    return {"source": "tree", "host": "node1", "cases": cases}
 
 
 def _counts(**nonzero):
@@ -639,3 +661,17 @@ def test_a_mutant_tree_links_every_top_level_package_and_imports_the_command_ent
     )
     assert imported.returncode == 0, imported.stderr[-2000:]
     assert imported.stdout.strip().startswith(str(target))
+
+
+def test_diff_refuses_fingerprints_made_on_two_hosts(tmp_path, capsys):
+    """CPU results differ between node types: a pair made on two hosts (or with no host) is not compared."""
+
+    a, b = tmp_path / "a.json", tmp_path / "b.json"
+    a.write_text(json.dumps(_fingerprint(k1=_case({}))))
+    b.write_text(json.dumps({**_fingerprint(k1=_case({})), "host": "node2"}))
+    assert fingerprint.main(["diff", str(a), str(b)]) == 2
+    assert "REFUSED" in capsys.readouterr().out
+    b.write_text(json.dumps({key: value for key, value in _fingerprint(k1=_case({})).items() if key != "host"}))
+    assert fingerprint.main(["diff", str(a), str(b)]) == 2
+    b.write_text(json.dumps(_fingerprint(k1=_case({}))))
+    assert fingerprint.main(["diff", str(a), str(b)]) == 0

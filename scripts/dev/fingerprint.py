@@ -167,7 +167,6 @@ ENGINE_KWARG_DEFAULTS = {
     "optics_group_ids": None,
     "reconstruction_current_size": None,
     "wsum_current_size": None,
-    "preserve_bpref_particle_order": False,
     "source_faithful_spectrum_norm": False,
     "firstiter_cc_tree_rescore_max_margin": None,
     "relion_translation_angle_scale": 1.0,
@@ -182,8 +181,17 @@ ENGINE_KWARG_DEFAULTS = {
 }
 
 
+# Keywords no engine module reads any more, dropped from every stand-in's digest (this harness's and
+# vdam_fingerprint's, through without_retired) whatever their value: a stand-in
+# seeds its outputs from the digest, so a caller that still passes one, or stops passing it, would otherwise move
+# every output of the cases that pass it at a non-default value. test_retired_engine_keywords_are_read_by_no_engine
+# requires that no module k_class imports reads one and that none is also in ENGINE_KWARG_DEFAULTS.
+RETIRED_ENGINE_KWARGS = frozenset({"preserve_bpref_particle_order"})
+
+
 def engine_kwargs_without_defaults(kwargs: dict) -> dict:
-    """``kwargs`` less every key of ``ENGINE_KWARG_DEFAULTS`` passed at its default (exact type and value)."""
+    """``kwargs`` less every key of ``ENGINE_KWARG_DEFAULTS`` passed at its default (exact type and value) and every
+    key of ``RETIRED_ENGINE_KWARGS``."""
 
     def at_default(key, value):
         if key not in ENGINE_KWARG_DEFAULTS:
@@ -191,7 +199,14 @@ def engine_kwargs_without_defaults(kwargs: dict) -> dict:
         default = ENGINE_KWARG_DEFAULTS[key]
         return value is None if default is None else type(value) is type(default) and value == default
 
-    return {key: value for key, value in without_probe(kwargs).items() if not at_default(key, value)}
+    return {key: value for key, value in without_retired(kwargs).items() if not at_default(key, value)}
+
+
+def without_retired(kwargs: dict) -> dict:
+    """``without_probe(kwargs)`` less every ``RETIRED_ENGINE_KWARGS`` key: what every stand-in engine digests (this
+    harness's and vdam_fingerprint's)."""
+
+    return {key: value for key, value in without_probe(kwargs).items() if key not in RETIRED_ENGINE_KWARGS}
 
 
 def without_probe(kwargs: dict) -> dict:
@@ -1894,9 +1909,12 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
             os.environ.clear()
             os.environ.update(environ)
         files = hash_output_files(work, {})
-        # What main prints (its summary table): wall times blanked, kept as log rows.
+        # What main prints (its summary table): wall times blanked, kept as log rows. Runs of spaces collapse too:
+        # the table pads each column to its widest wall time, so the padding varies with the run's timing (a
+        # selftest once counted it as a detection, gate 16161837).
         for line in printed.getvalue().splitlines():
-            trace.append(("MainThread", ["log", "relax.stdout", "PRINT", "", scrub(re.sub(r"\d+\.\d+s?", "#", line))]))
+            row = re.sub(r" +", " ", re.sub(r"\d+\.\d+s?", "#", line))
+            trace.append(("MainThread", ["log", "relax.stdout", "PRINT", "", scrub(row)]))
         result = {}
         for index, (inputs, out) in enumerate(zip(refine_inputs, refine_results + [{}] * len(refine_inputs))):
             result.update({f"refine{index}/inputs{key}": value for key, value in inputs.items()})

@@ -58,7 +58,7 @@ from fingerprint import (  # noqa: E402
     flatten,
     log_row,
     mutated_tree,
-    without_probe,
+    without_retired,
 )
 
 # The cases whose run is a refusal (fingerprint.case_errors).
@@ -270,15 +270,16 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
             *lines, self.pending = self.pending.split("\n")
             for line in lines:
                 if line.strip():
-                    trace.append(["log", "stdout", "PRINT", re.sub(r"[0-9][0-9.e+-]*", "#", scrub(line)), ""])
+                    # Numbers blanked and runs of spaces collapsed: column padding follows the numbers' widths.
+                    trace.append(["log", "stdout", "PRINT", re.sub(r" +", " ", re.sub(r"[0-9][0-9.e+-]*", "#", scrub(line))), ""])
             return len(text)
 
     def stand_in_engine(experiment_dataset, means, mean_variance, noise_variance, coarse_rotations,
                         coarse_translations, fine_rotations, fine_translations, rot_parent_map, trans_parent_map,
                         disc_type, **kwargs):
         """CPU stand-in for run_dense_k_class_em_adaptive: a result seeded by every operand it receives (not the
-        diagnostics probe: ``fingerprint.without_probe``)."""
-        kwargs = without_probe(kwargs)
+        diagnostics probe or a retired keyword: ``fingerprint.without_retired``)."""
+        kwargs = without_retired(kwargs)
         seed = digest_operands(means, mean_variance, noise_variance, coarse_rotations, coarse_translations,
                                fine_rotations, fine_translations, rot_parent_map, trans_parent_map, disc_type, kwargs)
         record("call", "engine", f"seed={seed:016x}", "kwargs=" + ",".join(sorted(kwargs)))
@@ -354,7 +355,7 @@ def _worker(source: str, out_path: str, tmp_root: str, names: list[str]) -> None
         except ImportError:  # the source before tomo_half moved to steps (layout S8b)
             from relax.refinement.tomo_half import tomo_translation_grids
 
-        scalars = dict(without_probe(kwargs), relion_projector_r_max=relion_projector_r_max, sampling=repr(sampling),
+        scalars = dict(without_retired(kwargs), relion_projector_r_max=relion_projector_r_max, sampling=repr(sampling),
                        sigma_offset_angst=sigma_offset_angst, adaptive_fraction=adaptive_fraction,
                        max_significants=max_significants, padding_factor=padding_factor,
                        reconstruction_group_count=reconstruction_group_count, n_units=int(half.n_units))

@@ -149,7 +149,8 @@ and smell checkers, the ceilings file and the smell baseline; run the base's `re
       need git and a pixi Python, which the step provides). Every test passes: `logs/fail_head.txt` is empty.
       A listed file the head lacks, or a pytest run that does not end in a test outcome, fails the step.
       `counts BASE` (in `all`) runs the same tests on the base and fails when the head passes fewer of them,
-      unless the owner accepted the head's harness change.
+      unless the owner accepted the head's tests/ diff (REFACTOR_ACCEPT_COUNTS; the refactor tools key the
+      acceptance by that diff's sha256, as for the harness).
       `tests base <rev>` and `compare base head` remain for comparing a base by hand.
 - [ ] Repeat the search of all of `tests/` and `scripts/` for every moved or removed name: the CPU list does
       not run the GPU unit files.

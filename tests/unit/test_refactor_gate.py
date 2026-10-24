@@ -196,7 +196,7 @@ def test_a_head_that_passes_fewer_tests_than_its_base_fails_until_accepted(tmp_p
     result = _gate_steps(tree, "tests head HEAD", f"counts {tree[1]}")
     assert result.returncode == 1, result.stdout + result.stderr
     assert "head passes 1 fewer tests" in result.stdout
-    accepted = _gate_steps(tree, "tests head HEAD", f"counts {tree[1]}", env={"REFACTOR_ACCEPT_HARNESS": head})
+    accepted = _gate_steps(tree, "tests head HEAD", f"counts {tree[1]}", env={"REFACTOR_ACCEPT_COUNTS": head})
     assert accepted.returncode == 0, accepted.stdout + accepted.stderr
 
 

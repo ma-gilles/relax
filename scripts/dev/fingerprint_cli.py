@@ -12,6 +12,7 @@ import argparse
 import hashlib
 import json
 import os
+import platform
 import shutil
 import subprocess
 import sys
@@ -121,6 +122,11 @@ def run_tree(harness: Harness, source: Path, out: Path, work_dir: Path, names: l
             print(line)
     if code == 0:
         shutil.rmtree(tmp_root, ignore_errors=True)
+        # The host the fingerprint was made on: CPU results differ between node types, so diff refuses a pair
+        # made on two hosts (a base fingerprint cached by an earlier run elsewhere was compared once, 2026-10-24).
+        made = json.loads(out.read_text())
+        made["host"] = platform.node()
+        out.write_text(json.dumps(made, sort_keys=True))
     else:  # kept, with the log beside ``out``, so a failed run can be diagnosed
         print(f"run failed (rc {code}): kept {tmp_root} and {log_path}")
     return code
@@ -159,6 +165,10 @@ def command_run(harness: Harness, args) -> int:
 
 def command_diff(harness: Harness, args) -> int:
     a, b = (json.loads(Path(path).read_text()) for path in (args.a, args.b))
+    if a.get("host") is None or a.get("host") != b.get("host"):
+        print(f"REFUSED: A was made on host {a.get('host')!r} and B on {b.get('host')!r}; CPU results differ between "
+              "hosts, so only fingerprints made on one host are compared (rerun both here)")
+        return 2
     counts, lines = harness.diff_fingerprints(a, b)
     print(f"A: {args.a} ({a['source']})\nB: {args.b} ({b['source']})")
     print("\n".join(lines))

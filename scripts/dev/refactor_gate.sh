@@ -14,7 +14,8 @@
 #                             kill, a timeout, a collection abort), fails the step
 #   clean <label>             the failure list of a tests run must be empty
 #   counts [BASE]             tests base BASE, then the head passes at least as many tests as the base (junit counts)
-#                             unless REFACTOR_ACCEPT_HARNESS is the head's sha
+#                             unless REFACTOR_ACCEPT_COUNTS is the head's sha (the refactor tools set it from the
+#                             same hash-keyed acceptance as the harness: a sha256 of the head's tests/ diff)
 #   compare <label> <label>   the two failure lists must be identical (to compare a base by hand)
 #   smell                     scripts/dev/smell_check.py against its baseline: new findings are a warning; a
 #                             checker that does not run to its summary line fails
@@ -145,8 +146,8 @@ step_counts() {
   head=$(git -C "$W" rev-parse HEAD)
   echo "test counts (collected passed skipped): head $hc $hp $hs, base $bc $bp $bs"
   [ "$hp" -ge "$bp" ] && return 0
-  if [ "${REFACTOR_ACCEPT_HARNESS:-}" = "$head" ]; then echo "test counts: head passes $((bp - hp)) fewer, accepted for $head"; return 0; fi
-  echo "test counts: the head passes $((bp - hp)) fewer tests than $base; the owner must accept it (REFACTOR_ACCEPT_HARNESS=$head)"
+  if [ "${REFACTOR_ACCEPT_COUNTS:-}" = "$head" ]; then echo "test counts: head passes $((bp - hp)) fewer, accepted for $head"; return 0; fi
+  echo "test counts: the head passes $((bp - hp)) fewer tests than $base; the owner must accept it (REFACTOR_ACCEPT_COUNTS=$head)"
   return 1
 }
 step_harness() {
