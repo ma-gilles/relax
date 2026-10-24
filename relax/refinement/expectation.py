@@ -946,7 +946,6 @@ def score_numbered_half(
             bpref_device_signature_active=bpref_device_signature_active,
             debug_iteration=numbered_relion_iteration,
             diagnostic_float64_pass2=diagnostic_float64_pass2,
-            preserve_bpref_particle_order=options.parity.preserve_bpref_particle_order,
             source_faithful_spectrum_norm=source_faithful_spectrum_norm,
             relion_translation_angle_scale=relion_translation_angle_scale,
             firstiter_cc_tree_rescore_max_margin=options.parity.firstiter_cc_tree_rescore_max_margin,

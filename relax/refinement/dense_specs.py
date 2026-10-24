@@ -125,7 +125,6 @@ class DenseExecutionPolicy:
     bpref_device_signature_active: bool
     debug_iteration: int | None
     diagnostic_float64_pass2: bool
-    preserve_bpref_particle_order: bool
     source_faithful_spectrum_norm: bool
     relion_translation_angle_scale: float
     # The K=1 --firstiter_cc coarse-tree top-2 rescore margin (RelionParityOptions); None is off.

@@ -394,7 +394,6 @@ def run_final_all_data(
             bpref_device_signature_active=False,
             debug_iteration=final_sampling.settings.relion_iteration,
             diagnostic_float64_pass2=diagnostic_float64_pass2,
-            preserve_bpref_particle_order=options.parity.preserve_bpref_particle_order,
             # RELION's source-faithful powerClass normalisation applies wherever its particle order is preserved.
             source_faithful_spectrum_norm=options.parity.preserve_bpref_particle_order,
             relion_translation_angle_scale=ctx.relion_translation_angle_scale,

@@ -279,7 +279,6 @@ def dense_execution_policy(**fields):
             "bpref_device_signature_active": False,
             "debug_iteration": None,
             "diagnostic_float64_pass2": False,
-            "preserve_bpref_particle_order": False,
             "source_faithful_spectrum_norm": False,
             "relion_translation_angle_scale": 1.0,
             "firstiter_cc_tree_rescore_max_margin": None,
