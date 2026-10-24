@@ -13,6 +13,8 @@
 #                             the tree lacks, or a pytest run that ends other than passed/failed (a crash, an OOM
 #                             kill, a timeout, a collection abort), fails the step
 #   clean <label>             the failure list of a tests run must be empty
+#   counts [BASE]             tests base BASE, then the head passes at least as many tests as the base (junit counts)
+#                             unless REFACTOR_ACCEPT_HARNESS is the head's sha
 #   compare <label> <label>   the two failure lists must be identical (to compare a base by hand)
 #   smell                     scripts/dev/smell_check.py against its baseline: new findings are a warning; a
 #                             checker that does not run to its summary line fails
@@ -27,7 +29,7 @@
 #   static [BASE]             ruff, arity, diffcheck, anchors, ceilings (a few minutes)
 #   extra BASE FILE...        the pytest FILEs on the head and on a snapshot of BASE: the failure lists must be
 #                             identical (a file BASE lacks runs on the head only)
-#   all [BASE [FILE...]]      harness, fp, selftest, guard, tests head HEAD, clean head, static, smell, then extra
+#   all [BASE [FILE...]]      harness, fp, selftest, guard, tests head HEAD, clean head, counts, static, smell, then extra
 #                             when FILEs are given (about 40 minutes; more with the modules' test directories)
 # Each step prints one summary line per check and exits nonzero on failure ("tests" does not: "clean" or
 # "compare" decides; "smell" always exits 0 and lists its new findings in its log). New findings are listed
@@ -49,8 +51,10 @@ T=${REFACTOR_TAG:-$(git -C "$W" rev-parse --short HEAD)}
 HN=$(cd "${REFACTOR_HARNESS:-$W}" && pwd) || exit 2
 # shellcheck source=scripts/dev/refactor_module.sh
 . "$HN/scripts/dev/refactor_module.sh"
-# The gate's own inputs: a diff that touches one needs the owner's acceptance (step_harness).
-HARNESS_PATTERNS='^scripts/dev/(fingerprint[^/]*|[^/]*_fingerprint\.py|refactor_[^/]*|smell_[^/]*|call_arity_check\.py|check_mutation_anchors\.py|ceilings\.py)$|^tests/tiers/[^/]*\.json$|^docs/development/refinement_structure_metrics\.json$|^scripts/report_refinement_structure\.py$'
+# The gate's own inputs (scripts/dev/harness_patterns.txt of the harness tree, the one copy the refactor tools read
+# too): a diff that touches one needs the owner's acceptance (step_harness).
+HARNESS_PATTERNS=$(grep -v '^#' "$HN/scripts/dev/harness_patterns.txt" | grep . | paste -sd'|') || {
+  echo "no harness patterns in $HN/scripts/dev/harness_patterns.txt" >&2; exit 2; }
 mkdir -p "$S/logs"
 unset PYTHONHOME CONDA_PREFIX VIRTUAL_ENV RELAX_TEST_RECEIPTS
 export CUDA_VISIBLE_DEVICES= JAX_PLATFORMS=cpu PYTHONNOUSERSITE=1 PYTHONDONTWRITEBYTECODE=1
@@ -83,15 +87,15 @@ step_tests() {
   [ -e "$W/.pixi" ] && ln -s "$(readlink -f "$W/.pixi")" "$src/.pixi"
   cd "$src" || return 2
   # Every module's test directories, whichever module the gate is for (a VDAM change runs the VDAM unit tests).
-  local m d files missing dirs=""
+  local m d files missing="" dirs=""
   for m in refinement vdam ppca scoring; do
     for d in $(REFACTOR_MODULE=$m; . "$HN/scripts/dev/refactor_module.sh"; echo "$MODULE_TESTS"); do
-      [ -d "$d" ] && dirs="$dirs $d"
+      if [ -d "$d" ]; then dirs="$dirs $d"; else missing="$missing$d (a module's test directory)"$'\n'; fi
     done
   done
-  missing=$(grep -v '^#' "$HN/scripts/dev/refactor_cpu_unit_list.txt" | grep . | while read -r f; do [ -f "$f" ] || echo "$f"; done)
+  missing=$missing$(grep -v '^#' "$HN/scripts/dev/refactor_cpu_unit_list.txt" | grep . | while read -r f; do [ -f "$f" ] || echo "$f"; done)
   if [ -n "$missing" ]; then
-    echo "tests $label ($rev): listed in the CPU unit list but missing from the tree:"; echo "$missing"; return 2
+    echo "tests $label ($rev): listed in the CPU unit list or the module table but missing from the tree:"; echo "$missing"; return 2
   fi
   # shellcheck disable=SC2086
   files=$( { grep -v '^#' "$HN/scripts/dev/refactor_cpu_unit_list.txt" | grep .; [ -z "$dirs" ] || find $dirs -name 'test_*.py'; } | sort -u)
@@ -99,8 +103,20 @@ step_tests() {
   # The robustness-matrix and completion launchers need an installed pixi Python as their base environment.
   EM_COMPLETION_PIXI_PY=$PY EM_K1_MATRIX_PIXI_PY=$PY \
     PYTHONPATH=$src JAX_COMPILATION_CACHE_DIR=$S/jax_cache_tests_$label RECOVAR_JAX_CACHE_DIR=$S/recovar_jax_cache_tests_$label \
-    "$PY" -m pytest $files -p no:cacheprovider --basetemp="$S/pytest_tmp_$label" -rfEs -v > "$S/logs/tests_$label.log" 2>&1; rc=$?
+    "$PY" -m pytest $files -p no:cacheprovider --basetemp="$S/pytest_tmp_$label" --junitxml="$S/logs/junit_$label.xml" \
+    -rfEs -v > "$S/logs/tests_$label.log" 2>&1; rc=$?
   grep -E "^(FAILED|ERROR) " "$S/logs/tests_$label.log" | sed 's/ - .*//' | sort > "$S/logs/fail_$label.txt"
+  # collected passed skipped failed, from the junit report (the "counts" step compares the head's with the base's).
+  "$PY" - "$S/logs/junit_$label.xml" > "$S/logs/counts_$label.txt" <<'PY' || rm -f "$S/logs/counts_$label.txt"
+import sys
+import xml.etree.ElementTree as ET
+
+root = ET.parse(sys.argv[1]).getroot()
+suites = [root] if root.tag == "testsuite" else list(root.iter("testsuite"))
+n = {k: sum(int(s.get(k, 0)) for s in suites) for k in ("tests", "failures", "errors", "skipped")}
+failed = n["failures"] + n["errors"]
+print(n["tests"], n["tests"] - failed - n["skipped"], n["skipped"], failed)
+PY
   echo "tests $label ($rev, $(echo "$files" | wc -l) files, all modules): rc=$rc $(tail -1 "$S/logs/tests_$label.log") -> $S/logs/fail_$label.txt"
   # pytest exits 0 (passed) or 1 (some failed: "clean" decides); anything else is a run that did not finish.
   [ $rc -le 1 ] || { echo "tests $label: pytest exited $rc (not a test outcome)"; return 1; }
@@ -118,9 +134,24 @@ step_smell() {
   if [ $rc != 0 ] || [[ $last != "smell check: "* ]]; then echo "smell check: rc=$rc, did not finish: $last -> $S/logs/smell_$T.txt"; return 1; fi
   echo "$last -> $S/logs/smell_$T.txt (new findings: warning only)"; return 0
 }
+step_counts() {
+  # The base's tests under the same harness, then: the head passes at least as many tests as the base, unless the
+  # owner accepted the head's harness change (a deleted test, a narrowed collection).
+  local base=${1:-origin/main} h b head
+  step_tests base "$base"
+  h=$(cat "$S/logs/counts_head.txt" 2>/dev/null) || { echo "test counts: no head counts (run tests head HEAD first)"; return 2; }
+  b=$(cat "$S/logs/counts_base.txt" 2>/dev/null) || { echo "test counts: no base counts"; return 2; }
+  set -- $h; local hc=$1 hp=$2 hs=$3; set -- $b; local bc=$1 bp=$2 bs=$3
+  head=$(git -C "$W" rev-parse HEAD)
+  echo "test counts (collected passed skipped): head $hc $hp $hs, base $bc $bp $bs"
+  [ "$hp" -ge "$bp" ] && return 0
+  if [ "${REFACTOR_ACCEPT_HARNESS:-}" = "$head" ]; then echo "test counts: head passes $((bp - hp)) fewer, accepted for $head"; return 0; fi
+  echo "test counts: the head passes $((bp - hp)) fewer tests than $base; the owner must accept it (REFACTOR_ACCEPT_HARNESS=$head)"
+  return 1
+}
 step_harness() {
   local base=${1:-origin/main} touched head
-  touched=$(git -C "$W" diff --name-only "$base" HEAD) || { echo "harness: git diff $base HEAD failed"; return 2; }
+  touched=$(git -C "$W" diff --no-renames --name-only "$base" HEAD) || { echo "harness: git diff $base HEAD failed"; return 2; }
   touched=$(printf '%s\n' "$touched" | grep -E "$HARNESS_PATTERNS" || true)
   head=$(git -C "$W" rev-parse HEAD)
   if [ -z "$touched" ]; then echo "harness files touched since $base: none"; return 0; fi
@@ -224,6 +255,7 @@ clean) step_clean "${2:-}";;
 compare) step_compare "${2:-}" "${3:-}";;
 smell) step_smell;;
 harness) step_harness "${2:-}";;
+counts) step_counts "${2:-}";;
 ruff) step_ruff "${2:-}";;
 arity) step_arity "${2:-}";;
 diffcheck) step_diffcheck "${2:-}";;
@@ -234,9 +266,9 @@ extra) shift; step_extra "$@";;
 all) status=0; base=${2:-origin/main}; shift $(($# < 2 ? $# : 2))
   step_harness "$base" || status=1
   step_fp "$base" || status=1; step_selftest || status=1; step_guard || status=1
-  step_tests head HEAD || status=1; step_clean head || status=1
+  step_tests head HEAD || status=1; step_clean head || status=1; step_counts "$base" || status=1
   step_static "$base" || status=1; step_smell || status=1
   [ $# = 0 ] || step_extra "$base" "$@" || status=1
   exit $status;;
-*) sed -n '6,45p' "$0"; exit 2;;
+*) sed -n '6,/^# Logs/p' "$0"; exit 2;;
 esac

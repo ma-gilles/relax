@@ -119,9 +119,11 @@ node only when `uptime` shows a load under 20. Each step prints one summary line
 and smell checkers, the ceilings file and the smell baseline; run the base's `refactor_gate.sh` with
 `REFACTOR_WORKTREE` the head's frozen copy. The steps:
 
-- [ ] `harness [BASE]`: the diff touches none of the gate's inputs (`HARNESS_PATTERNS` in the script:
-      `scripts/dev/` fingerprints, `refactor_*`, `smell_*` and checkers, `tests/tiers/*.json`, the ceilings
-      file), or the owner accepted the change for this head (`REFACTOR_ACCEPT_HARNESS=<head sha>`).
+- [ ] `harness [BASE]`: the diff (`--no-renames`) touches none of the gate's inputs
+      (`scripts/dev/harness_patterns.txt`: `scripts/dev/` fingerprints, `refactor_*`, `smell_*` and checkers,
+      `tests/tiers/*.json`, the ceilings file, the tier runner and the scripts it runs, `pyproject.toml`, every
+      `conftest.py` and `tests/helpers/`), or the owner accepted the change for this head
+      (`REFACTOR_ACCEPT_HARNESS=<head sha>`).
 
 - [ ] `fp`: `fingerprint.py check origin/main`: results, files and checkpoints 0 differences; trace
       differences confined to log rows are allowed and are reported as such. After any rebase, run it and
@@ -146,6 +148,8 @@ and smell checkers, the ceilings file and the smell baseline; run the base's `re
       `test_*.py` of every module's test directories, on a detached git worktree of the head (the launcher tests
       need git and a pixi Python, which the step provides). Every test passes: `logs/fail_head.txt` is empty.
       A listed file the head lacks, or a pytest run that does not end in a test outcome, fails the step.
+      `counts BASE` (in `all`) runs the same tests on the base and fails when the head passes fewer of them,
+      unless the owner accepted the head's harness change.
       `tests base <rev>` and `compare base head` remain for comparing a base by hand.
 - [ ] Repeat the search of all of `tests/` and `scripts/` for every moved or removed name: the CPU list does
       not run the GPU unit files.

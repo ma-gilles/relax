@@ -1,0 +1,14 @@
+# The gate's own inputs, one extended regex per line, matched against the paths of `git diff --no-renames
+# --name-only BASE HEAD`: a branch that touches one needs the owner's acceptance (refactor_gate.sh harness; the
+# refactor tools read this file from the tree that judges the head). '#' starts a comment line.
+^scripts/dev/(fingerprint[^/]*|[^/]*_fingerprint\.py|refactor_[^/]*|smell_[^/]*|call_arity_check\.py|check_mutation_anchors\.py|ceilings\.py|harness_patterns\.txt)$
+^tests/tiers/[^/]*\.json$
+^docs/development/refinement_structure_metrics\.json$
+^scripts/report_refinement_structure\.py$
+# The tier runner and what it runs or trusts: its SUMMARY.json is the tier's verdict.
+^scripts/(run_test_tier|write_test_receipt|em_tier_fsc|em_tier_pinned|check_agent_guides)\.py$
+^scripts/(build_test_natives|run_em_fast_guard)\.sh$
+# The pytest configuration and collection: options, hooks, fixtures and shared helpers decide what runs.
+^pyproject\.toml$
+(^|/)conftest\.py$
+^tests/helpers/
