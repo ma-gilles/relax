@@ -849,7 +849,7 @@ MAX_JOB_CHUNK = 1024
 # Jobs per pass-2 program: a constant per platform, never the device's memory. Each program scores and sums its
 # chunk at once, so a chunk planned from free memory (up to 1024 jobs) made the same oversampling command give
 # other numbers on another card (CPU, chunks of 32 to 128: theta 1e-7, z 1e-5 relative). 128 jobs cost nothing
-# against 1024 on an A100 (26.0 s against 26.6 s per oversampled update, Slurm 15780529); a CPU program of 128 jobs
+# against 1024 on an A100 (26.0 s against 26.6 s per oversampled update); a CPU program of 128 jobs
 # takes 8-16 GiB, of 32 about 3. CPU and GPU runs therefore sum in different chunks: their numbers differ at
 # float32 rounding, as they do anyway (other kernels, other reduction orders); runs on one platform agree.
 GPU_JOB_CHUNK = 128

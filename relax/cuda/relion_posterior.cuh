@@ -212,7 +212,7 @@ ffi::Error RelionCubSortScanBatchedF32Impl(
         const int rows = static_cast<int>(std::min<int64_t>(group_rows, row_count - first));
         const int64_t offset = first * static_cast<int64_t>(count);
         // One block per 4096-weight span of a row: a block per row read a
-        // K15 row of about 20 M weights alone (17.6 ms per batch, nsys 14693142).
+        // K15 row of about 20 M weights alone (17.6 ms per batch in an nsys profile).
         error = cudaMemsetAsync(counts, 0, static_cast<size_t>(rows) * sizeof(int32_t), stream);
         if (error == cudaSuccess)
         {

@@ -457,8 +457,8 @@ def prepare_per_image_pass2_inputs(
         "mstep_rotation_table": mstep_rotation_table,
         "mstep_rotation_table_key": None if mstep_rotation_table is None else _rotation_table_key(mstep_rotation_table),
         # One coarse-row capacity for the whole pass: the device index builder
-        # otherwise compiled a family per chunk-wise coarse-row count (census job
-        # 13837258: 28 compiles, 18.7 s). Padded coarse rows are inert.
+        # otherwise compiled a family per chunk-wise coarse-row count (census: 28
+        # compiles, 18.7 s). Padded coarse rows are inert.
         "coarse_rows_capacity": pow2_ceil(
             max((int(np.asarray(u).shape[0]) for u in per_image_unique_rot), default=1), minimum=64
         ),

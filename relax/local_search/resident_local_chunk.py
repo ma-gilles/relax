@@ -728,7 +728,7 @@ def start_resident_local_chunk(
         # point whole and the block program gathers its rows inside the jit.
         # RELAX_LOCAL_SEARCH_RESIDENT_BLOCK_ROW_PROGRAM=0 has the Python callback
         # gather them per block, three eager dispatches each time; on the full
-        # EMPIAR-10097 run that path took 2964 s against 2868 s (job 14550046).
+        # EMPIAR-10097 run that path took 2964 s against 2868 s.
         block_row_program = engine_tuning.local_block_row_program
 
         def run_mstep(rows, n_live, Ft_y, Ft_ctf, projector=None):

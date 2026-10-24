@@ -2,8 +2,8 @@
 
 NumPy dispatches some float64 functions to SIMD kernels whose rounding is not the
 C library's: on della's Intel (AVX512) nodes ``np.arccos`` differs from glibc's
-``acos`` in about 9% of arguments and ``np.arctan2`` in about 0.1% (probe job
-14748696), while ``np.sin``, ``np.cos`` and ``np.sqrt`` agree. A one-ulp angle
+``acos`` in about 9% of arguments and ``np.arctan2`` in about 0.1% (a probe
+run), while ``np.sin``, ``np.cos`` and ``np.sqrt`` agree. A one-ulp angle
 decides exact cone and radius ties against RELION, so the sampling ports take
 these two functions from the C library: ``librelax_host_math.so``
 (``relax/host_math``), a host-only loop of the scalar ``acos``/``atan2`` that

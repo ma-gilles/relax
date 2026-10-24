@@ -7,7 +7,7 @@ CUDA arrays allocated outside the pool (``relion_scoring.cuh``,
 ``RelionCapacityHalfTextureF32``, ``relion_capacity_texture.cuh``), so it has to fit in the rest of the card
 next to the CUDA context and the CUB scratch. At EMPIAR-10202 current size 626
 that is 7.9 GB of a ~9 GB remainder, and the allocation failed with CUDA out of
-memory (bigbox 14480549, 14507538). A fixed fraction only moves that cliff to
+memory (bigbox case, twice). A fixed fraction only moves that cliff to
 another box, so the reserve is sized from the run's own model box before the
 JAX backend initialises: the texture of the largest local-search slab
 (``r_max = box // 2``) plus a fixed allowance for the context and scratch.
@@ -27,8 +27,8 @@ the reserve does nothing and says so in its record.
 The pool cannot be shrunk once the backend runs, so the refinement driver calls
 :func:`require_projector_texture_reserve` at start-up: an entry point that
 skipped the reserve is refused in the first seconds instead of failing when the
-final pass opens its full-box texture (EMPIAR-10202, box 800, after 6 h 17 min
-in job 14963923, relax#17).
+final pass opens its full-box texture (EMPIAR-10202, box 800, after 6 h 17 min,
+relax#17).
 """
 
 from __future__ import annotations
@@ -236,8 +236,8 @@ def _backend_pool_limit_bytes() -> int | None:
 
 # The share of the XLA pool limit that one device working set (a large transform, or one chunk of it) may take.
 # After a pass's peak, or with preallocation off, the pool fragments (relax#20): at 16 GB (limit 17.0 GB, 4.8 GB in
-# use) the 1.63 GiB cuFFT work area of a 5.2 GB inverse FFT could not be found and XLA aborted (relax#40, job
-# 15191052), while the same transform at 40 and 80 GB ran.
+# use) the 1.63 GiB cuFFT work area of a 5.2 GB inverse FFT could not be found and XLA aborted (relax#40),
+# while the same transform at 40 and 80 GB ran.
 SINGLE_WORKING_SET_LIMIT_SHARE = 0.25
 
 
@@ -419,7 +419,7 @@ def explains_pool_region_failure(run):
     must fit inside one of them, so after many iterations of small requests a large buffer can fail
     while its bytes are free (EMPIAR-10202, box 800: 18.54 GiB at iteration 13 in a 60.9 GiB pool whose
     largest region was 16 GiB, relax#20). With JAX's default, one preallocated region, a long run can
-    still fragment that region (EMPIAR-10202, 7.65 GiB at iteration 23, gpuport 15073680). The note
+    still fragment that region (EMPIAR-10202, 7.65 GiB at iteration 23 of the gpuport run). The note
     gives the pool's limit, its peak in use and the request; the error itself is unchanged.
     """
 

@@ -21,8 +21,8 @@ def half_accumulator_guard_mode(raw: str | None, *, warn_only: bool) -> str:
     ``RELAX_EM_FINITE_CHECK_WARN`` (``env_flags.parse_env_true_flag``, as ``EngineTuning.finite_check`` reads it), both read once
     by ``RefinementEnvironment.from_environ``; ``finite_check.check_half_accumulators`` runs in this mode.
 
-    The guard is on by default in ``raise`` mode. Job 14193291 (P4-D,
-    2026-09-20) measured its cost on an interleaved off/on pair of twelve
+    The guard is on by default in ``raise`` mode. A P4-D run (2026-09-20)
+    measured its cost on an interleaved off/on pair of twelve
     one-iteration arms at current size 74 on one H100: in the eight arms that
     ran without a co-located cold compile the medians were 218.0 s off and
     218.3 s on, inside the 217.4 to 219.1 s same-source spread, so production

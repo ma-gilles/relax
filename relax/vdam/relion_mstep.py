@@ -333,7 +333,7 @@ def _pad_bpref_to_window_class(value, *, radius: int, box_size: int, padding_fac
     """A host BPref slab zero-padded to the slab of its stable Fourier-window class.
 
     The device pack is one program per slab shape, and the slab follows RELION's current size,
-    which takes about thirty values in a 200-iteration run (62 compiles, 3.7 s, census 14974371).
+    which takes about thirty values in a 200-iteration run (62 compiles, 3.7 s in a compile census).
     Padded here to the class of ``2 * radius`` (step ``quantum``) the slab keeps its centre, so the packed cube is
     the same and the pack compiles once per class.
     """

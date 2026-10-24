@@ -697,7 +697,7 @@ def _coarse_projection_bytes_per_pixel(
     The texture's packed float32 ``[Re | Im]`` rows take 8 bytes. The JAX projection the pass falls back to
     (no texture: a complex128 projector, or a window the packed rows do not serve) holds its rows in the
     projector's complex dtype and a temporary of the same size: 6.42 GiB for 164 images x 4608 rotations x
-    (81 translations x 4 B + 278 pixels x 32 B) with a complex128 projector (Polar 413469).
+    (81 translations x 4 B + 278 pixels x 32 B) with a complex128 projector (on Polar).
     """
 
     from relax.projection.projection import relion_coarse_packed_rows_serve

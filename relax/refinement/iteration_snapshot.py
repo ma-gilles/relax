@@ -113,7 +113,7 @@ class IterationSnapshot:
 
         Except the configured limits in :data:`RUN_LIMIT_FIELDS`, which come from
         the continuing run's command line: a continuation from a run capped at
-        HEALPix 7 kept that cap over ``--max_healpix_order 12`` (bigbox 14557970).
+        HEALPix 7 kept that cap over ``--max_healpix_order 12`` (bigbox case).
         """
 
         unknown = sorted(set(self.state_fields) - set(REFINEMENT_STATE_SCALAR_FIELDS))

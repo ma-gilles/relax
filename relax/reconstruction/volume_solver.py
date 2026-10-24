@@ -29,8 +29,8 @@ _LARGE_IRFFT_TRANSFORM_SIZE_LIMIT = np.iinfo(np.int32).max
 # logical current size and pixel counts travel as device scalars
 # (WindowLogicalSizes), so the current sizes of one class share their chunk
 # programs. Default on for Class3D and auto-refine: on the 5k K4 census
-# (14460993) the 25-iteration wall drops from 367 to 336 s with maps identical
-# to non-MPI RELION (14468487). ``=0`` restores RELION's logical window as the
+# the 25-iteration wall drops from 367 to 336 s with maps identical
+# to non-MPI RELION. ``=0`` restores RELION's logical window as the
 # programs' key; VDAM's resident route (--grad) takes them only with ``=1``.
 _RESIDENT_STABLE_WINDOWS_ENV = "RELAX_SPARSE_PASS2_RESIDENT_STABLE_WINDOWS"
 
@@ -480,7 +480,7 @@ def reconstruct_volume_eager(
             # and the pad into the 16.4-GB FFTW half runs on the host, as RELION
             # windows its reconstruction on the CPU. Padding on the device built
             # the zero grid and its scattered copy side by side (32.8 GB live in
-            # the census, bigbox 14468686) on top of the resident state.
+            # the census of the bigbox case) on top of the resident state.
             wiener_half_device = relion_functions.post_process_from_filter_v2(
                 *postprocess_args,
                 **postprocess_kwargs,
@@ -603,7 +603,7 @@ def _large_irfft_requires_explicit_normalization(volume_shape) -> bool:
 
 
 # Padding the Wiener half into the FFTW half on the device holds the zero FFTW half and its scattered copy side by
-# side (bigbox 14468686): two halves.
+# side (census of the bigbox case): two halves.
 _DEVICE_PAD_HALVES = 2.0
 
 

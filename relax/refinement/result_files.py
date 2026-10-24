@@ -149,7 +149,7 @@ def _rotation_posterior_arrays(key, posterior_per_half):
 # Complex arrays at least this large are Fourier maps, which deflate does not
 # shrink: the 10097 run's three 134 MB maps compressed to 94% and took most of
 # the 12.5 s the archive cost; stored, the archive writes in 0.35 s at 437 MB
-# instead of 391 MB (job 14514567's archive, login node).
+# instead of 391 MB (that run's archive, login node).
 _NPZ_STORED_COMPLEX_MIN_BYTES = 16 * 1024**2
 
 

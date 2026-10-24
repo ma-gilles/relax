@@ -457,7 +457,7 @@ def compute_sparse_pass2_windowed_projections_block(
     RELION projector projects only the union's pixels and the windows are
     taken from it, instead of expanding every row to the full half spectrum
     first: at EMPIAR-10202 box 800 a row is 320,800 pixels for a ~155,000-pixel
-    window (bigbox 14558025).
+    window (bigbox case).
     """
 
     projection_kwargs = dict(projection_kwargs)
@@ -499,7 +499,7 @@ def compute_sparse_pass2_windowed_projections_block(
 
     # Each chunk's windows are written into the outputs in place: concatenating
     # the chunks held a streamed chunk's projections twice, outside every plan
-    # (bench 14572645, K=1 50k/256 at current size 178: 7.70 GiB).
+    # (K=1 50k/256 at current size 178: 7.70 GiB).
     score_proj, recon_proj, recon_abs2 = (None, None, None) if outputs is None else outputs
     for start, stop in chunk_ranges:
         proj_chunk, _ = compute_sparse_pass2_projections_block(
@@ -562,7 +562,7 @@ def class_call_length(n_rows: int) -> int:
     least 256: the programs see eight lengths per octave and a call of more than 256 rows
     projects at most a quarter more than its rows. A whole 8192-rotation stream quantum per class projected up to
     ``K * 8191`` padding rotations per K>1 chunk (K15 VDAM it150: 19-21 s of every 120 s
-    of the main thread in the streamed projections, e2e job 14881673).
+    of the main thread in the streamed projections of an end-to-end run).
     """
 
     quantum = max(256, pow2_ceil(n_rows) // 8)

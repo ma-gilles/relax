@@ -363,7 +363,7 @@ def run_resident_chunk(
         if stream_projection_fn is not None and tables.n_classes > 1:
             # A streamed lone chunk keeps its rows' projection ids, class * n_fine_rot +
             # rotation; the statistics map a winner back to its rotation within the class
-            # through this table, as through a streamed chunk's slot table (bench 14694988:
+            # through this table, as through a streamed chunk's slot table (without it
             # Class3D K4 100k crashed on a missing table).
             stage_tables = stage_tables._replace(
                 cache_slot_fine_rot=(
@@ -463,7 +463,7 @@ def run_lone_resident_chunk(
 
     An image whose candidates exceed the largest row class (a flat coarse
     posterior keeps every coarse sample, so every fine rotation: 294,912 rows at
-    HEALPix 3 in bench 14641043) is one chunk that runs alone. Holding all its
+    HEALPix 3) is one chunk that runs alone. Holding all its
     rows' projections at once does not fit the device, so the rows are scored in
     blocks (:func:`~relax.fine_pass.resident_scoring.score_resident_chunk_in_row_blocks`),
     keeping only their ``[C_R, T]`` diff2; the image's posterior is then formed

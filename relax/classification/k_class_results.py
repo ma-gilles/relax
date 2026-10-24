@@ -118,7 +118,7 @@ def sum_noise_stats(noise_stats: tuple[NoiseStats, ...] | None, *, host_arrays=F
             raise ValueError(f"Cannot aggregate mixed missing/present noise field {name}")
         if len(values) == 1:
             # One class has nothing to add (as the host branch above): the stacked sum compiled once
-            # per field and per subset size, 102 programs in a 200-iteration VDAM run (census 14974371).
+            # per field and per subset size, 102 programs in a 200-iteration VDAM run (compile census).
             return jnp.asarray(values[0])
         return _stacked_sum(tuple(jnp.asarray(value) for value in values))
 

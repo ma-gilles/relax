@@ -49,8 +49,8 @@ def projection_sums_displace_resident_operands(
 
     The resident operands are worth more than the sums: at Class3D K4 100k/256
     current size 90, 5.9 GiB of sums next to 21.2 GiB of operands sent the pass
-    to the per-chunk operand preparation, and its pass 2 went from 57 to 89 s
-    (job 14589109). The same predicate as the operand admission
+    to the per-chunk operand preparation, and its pass 2 went from 57 to 89 s.
+    The same predicate as the operand admission
     (resident_operands_fit), read before either is allocated. ``resident_operands`` is
     ``EngineTuning.resident_operands``: without them nothing is displaced.
     """
@@ -119,7 +119,7 @@ _STREAM_FREE_MEMORY_FRACTION = 0.5
 
 # While a chunk's projections are padded to the row capacity, the projected
 # block and its padded copy are both live (flipqual 10097 it13: a 12.16 GiB pad
-# at row capacity 131072 ran the device out of memory, 14397073).
+# at row capacity 131072 ran the device out of memory).
 STREAM_PEAK_COPIES = 2
 
 
@@ -401,7 +401,7 @@ def stream_chunk_projections(
     slot_ids_device = jnp.asarray(slot_fine_rot, dtype=jnp.int32)
     # Projected straight into row_capacity-long arrays: padding the projection
     # call's arrays afterwards held both copies, 9.73 GiB past the plan at K=1
-    # 50k/256 (bench 14576794).
+    # 50k/256.
     caches = tuple(project(slot_fine_rot[:n_project], int(row_capacity)))
     return (
         rows._replace(row_fine_rot=jnp.asarray(row_slot, dtype=jnp.int32)),
@@ -422,10 +422,10 @@ def allocate_projection_cache_blocks(n_rows: int, n_pixels: int, dtype):
 
     A fragmented pool can hold far more free memory than any one block
     (Class3D K4 100k from iteration 19: a 6.32 GiB cache against a 5.25 GiB
-    largest block with 56 GiB free, bench 14719385), so a cache the allocator
+    largest block with 56 GiB free), so a cache the allocator
     refuses whole is tried in row blocks (:func:`~relax.fine_pass.resident_scoring.cache_rows`)
     before the pass streams; ``None`` means even the blocks were refused
-    (EMPIAR-10345 it13 half 2, bench 14643272).
+    (EMPIAR-10345 it13 half 2).
     """
 
     n_blocks = 1

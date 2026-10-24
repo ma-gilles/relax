@@ -112,7 +112,7 @@ def tilt_translation_angles(shifts_3d, old_offsets_3d, image_projections, image_
     # Every image's phases are its own arithmetic, so blocks of images run on host threads (NumPy
     # releases the GIL inside each operation) and fill one float32 array: the same values as one
     # call, without its float64 [I, T, 2] temporaries. One fine-grid call was 1.8 s of each late
-    # et09 subtomogram VDAM iteration (39,000 tilt images; py-spy, job 14993731).
+    # et09 subtomogram VDAM iteration (39,000 tilt images; py-spy).
     out = np.empty((n_images, n_shifts, 2), dtype=np.float32)
     block = max(1, _THREADED_PHASE_VALUES // max(n_shifts, 1))
 

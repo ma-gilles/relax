@@ -234,7 +234,7 @@ def _host_pixel_indices(pixel_indices) -> bool:
     passes' :func:`~relax.fine_pass.projection_blocks.projection_window_union`
     (it keeps only in-crop pixels); reading them back to validate synchronized
     every projector call, about 70 s per half of the EMPIAR-10202 pass-1 probe
-    (py-spy, bigbox 14747301). Traced indices cannot be read.
+    (py-spy, bigbox case). Traced indices cannot be read.
     """
 
     return not isinstance(pixel_indices, (jax.Array, jax.core.Tracer))

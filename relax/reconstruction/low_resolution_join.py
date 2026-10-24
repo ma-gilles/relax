@@ -375,7 +375,7 @@ def join_halves_at_low_resolution(
     # grid stores about half its voxels. Counting stored elements moved the host
     # half accumulators of a 611^3 grid (114M elements, 228M voxels) back to the
     # device, and the reconstruction then took its monolithic device 1600^3
-    # inverse FFT and failed to create the cuFFT plan (EMPIAR-10202 it3, 14456981).
+    # inverse FFT and failed to create the cuFFT plan (EMPIAR-10202 it3).
     if _low_resolution_join_host_fallback_enabled_for_size(
         max(max_input_size, full_size), join_indices_np.size, route=route,
     ):

@@ -64,7 +64,7 @@ def _snapshot_and_release_previous_k1_means(means):
     ]
     # Dropping the list's references frees the device buffers; there is no
     # cycle for a collection to break (every explicit gc.collect() of the 5k
-    # K=1 run found nothing and freed no device memory, job 14503450).
+    # K=1 run found nothing and freed no device memory).
     for half_index in range(2):
         means[half_index] = None
     return previous_means
@@ -460,7 +460,7 @@ def k1_maximization(
     # resident E-step does not use them). Keep them on the host between
     # uses, as RELION keeps tau2 as a host spectrum: at box 800 the four
     # float32 volumes are 8 GB of the device floor (GPU census, bigbox
-    # 14480607). The per-half reconstruction volumes are not read again:
+    # case). The per-half reconstruction volumes are not read again:
     # they are released with split_prior when this function returns.
     host_tau2 = _host_tau2_volumes(reference_model.tau2, [reference_model.half_tau2(0), reference_model.half_tau2(1)])
     reference_model.tau2 = host_tau2.shared

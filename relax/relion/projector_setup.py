@@ -126,7 +126,7 @@ def setup_relion_projector_on_host(
     ``L`` on its way to the host. The chunks are separate device programs, so a
     large box never holds the whole transform: at EMPIAR-10202 (box 800, padding
     2) the full-capacity transform needed about 100 GB and the build fell back to
-    two single-threaded host builds (117 s per iteration, bigbox py-spy 14561585).
+    two single-threaded host builds (117 s per iteration, a py-spy profile of the bigbox case).
 
     ``gridding_kernel`` selects the real-space correction window: RELION's
     ``"radial"`` one or the ``"separable"`` per-axis product.
@@ -159,7 +159,7 @@ def _gridding_corrected(reference, *, box_size: int, padding_factor: int):
 
     Called eagerly it materializes its coordinate grids, radius and sinc as
     separate volumes: about 31 GiB of float64 temporaries at box 800, the peak of
-    the whole host build (bigbox 14575379).
+    the whole host build (bigbox case).
     """
 
     return gridding_correct_volume_real(reference, box_size, padding_factor)
@@ -222,7 +222,7 @@ def _build_projector_window(
     of every padded axis is zero, so only the reference's own voxels are
     transformed. With w = N / 2 the window is the fixed capacity
     ``(M + 3, M + 3, M // 2 + 2)``; that costs 0.99-1.04x the whole-volume rfftn at
-    padded 128-512 and agrees with it to 4.8e-16 (bigbox 14563130), and a smaller
+    padded 128-512 and agrees with it to 4.8e-16 (bigbox case), and a smaller
     window is proportionally cheaper. Only the order of the three one-dimensional
     passes differs from native; tests/unit/test_relion_projector_setup.py holds
     the float64 bound. ``to_host`` collects each chunk on the host (eager calls

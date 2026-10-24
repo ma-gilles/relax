@@ -1142,7 +1142,7 @@ def main(command=None):
     continued_iterations = 0 if resume_snapshot is None else int(resume_snapshot.relion_iteration)
 
     # The start-up volume, tau2 and projector maps are box-scale (12.3 GB at box 800). The tau2 goes over as a
-    # host array, so this frame does not hold it on the device (census, bigbox 14468686). They go to the loop in a
+    # host array, so this frame does not hold it on the device (census of the bigbox case). They go to the loop in a
     # single-use holder and this frame drops its names: the loop takes them once and frees them after the
     # start-up, where a plain argument stayed referenced until the call returned (relax#26).
     startup = startup_references.StartupHandoff(

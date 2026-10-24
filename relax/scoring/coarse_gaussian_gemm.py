@@ -246,7 +246,7 @@ def plan_coarse_gaussian_gemm_projection_cache(
             ),
         ),
         budget_bytes=int(budget_bytes),
-        # Job 13332001 observed donation aliasing on one H100 lowering.  The
+        # One run observed donation aliasing on one H100 lowering.  The
         # production admission remains conservative and correct if that
         # informational hardware-specific observation does not generalize.
         destination_alias_proven=False,

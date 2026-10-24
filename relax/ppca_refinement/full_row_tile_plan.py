@@ -215,7 +215,7 @@ def plan_tile_images(
     plan that shrinks tiles makes the numbers follow the device's memory. At the default 150 images per tile it
     does not on our A100s: every stage of the box-128 and box-192 schedules up to HEALPix 4, radius 37, keeps
     150 images on an 80 GB card and on one limited to a 40 GB card's allocator (largest tile 26.9 of 31 GiB;
-    Slurm 15779102, 2026-10-18). Larger boxes, finer grids or smaller cards can shrink them.
+    2026-10-18). Larger boxes, finer grids or smaller cards can shrink them.
     """
     if tiles_per_call is not None and tiles_per_call(requested) <= 1:
         single = _planned_tile_images(stream, requested, memory_bytes, device_bytes, pipelined=False)
@@ -342,8 +342,8 @@ def reserve_plan_region(device, counted_bytes) -> int:
     Without preallocation (``XLA_PYTHON_CLIENT_PREALLOCATE=false``) the pool grows by regions sized
     by the requests so far, so the small early stages leave a pool of small regions in which a later
     stage's large block finds no room while its bytes are free: an 8.48 GiB tilt-reader block failed
-    with 9.2 GiB in use of a 36.4 GiB pool on a 40 GB A100 (Polar 413542; reproduced on an H100
-    limited to that pool, Slurm 14992893, where the same run with a preallocated pool passes).
+    with 9.2 GiB in use of a 36.4 GiB pool on a 40 GB A100 (on Polar; reproduced on an H100
+    limited to that pool, where the same run with a preallocated pool passes).
     Allocating :func:`plan_region_bytes` as one block and releasing it makes the allocator grow the
     pool by a region of at least that size, unless the pool already has such a block free. The plan
     and the results do not change: the allocator can hand out the same bytes before and after, and

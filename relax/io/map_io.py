@@ -48,7 +48,7 @@ def write_map(path, volume, voxel_size=None) -> None:
 
     A device volume is converted on the device and arrives contiguous: the host's
     transposed view of a 256^3 map costs mrcfile a strided copy of 0.3-0.5 s, which was
-    half of each VDAM checkpoint (py-spy, job 14935204). The two conversions are the
+    half of each VDAM checkpoint (py-spy). The two conversions are the
     same negation and cast, so the file is identical.
     """
     if not isinstance(volume, jax.Array):

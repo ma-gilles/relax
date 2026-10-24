@@ -33,8 +33,8 @@ FINITE_CHECK_ENV = "RELAX_EM_FINITE_CHECK"
 FINITE_CHECK_WARN_ENV = "RELAX_EM_FINITE_CHECK_WARN"
 DEFAULT_PREPARE_IMAGE_BATCH = 256
 # Two image batches ahead by default: K4 100k/256 Class3D, same node, depth 0 against 2:
-# 2115 vs 1933 s (job 14515590), 1925 vs 1756 s (14515190) and 1770 vs 1593 s
-# (14523034), with equal GT scores (14522527).
+# 2115 vs 1933 s, 1925 vs 1756 s and 1770 vs 1593 s in three pairs, with equal GT
+# scores.
 DEFAULT_PREFETCH_BATCHES = 2
 DEFAULT_FIRSTITER_CC_RECON_COMPLEX_BUDGET = 268_435_456
 DEFAULT_EM_BATCH_PROJECTION_FRACTION = 0.20
@@ -44,7 +44,7 @@ DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM = 8
 # VDAM's stable Fourier-window class step (VdamEnvironment.engine; Class3D and auto-refine keep 8). A
 # new class recompiles the resident pass programs (~5 s each); padding costs VDAM's small subsets almost nothing
 # (10k/256 late E-step 1.40 s at class 144, 1.41 s at 120). 24 visits 4 classes instead of 11: the 200-iteration
-# wall 439 -> 384 s (10k/256, same node, job 14867921), 577 -> 562 s on EMPIAR-10076 10k (14876259).
+# wall 439 -> 384 s (10k/256, same node), 577 -> 562 s on EMPIAR-10076 10k.
 VDAM_STABLE_FOURIER_WINDOW_QUANTUM = 24
 DEFAULT_LOCAL_SELECTOR_MAX_ELEMENTS = 16_000_000
 DEFAULT_BPREF_SYMMETRY_CHUNK_VOXELS = 16 * 1024 * 1024

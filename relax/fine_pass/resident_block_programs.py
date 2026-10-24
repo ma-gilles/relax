@@ -188,7 +188,7 @@ def relion_native_fine_units_in_place(values, fft_size):
     The whole-grid projection cache is several GiB; the eager form holds the
     complex64 input, two float64 part arrays and the output at once (EMPIAR-10097
     VDAM at healpix 3, current size 56: a 7.77 GiB float64 temporary ran the
-    device out of memory, job 14422223). The fused program has no float64
+    device out of memory). The fused program has no float64
     temporaries and writes into the donated input. Same elementwise statements,
     so the same values.
     """

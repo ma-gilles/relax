@@ -89,7 +89,7 @@ def pad_batch_to_capacity(values, capacity: int):
 # reused capacity-sized buffer. A 512-image fetch at box 800 (1.3 GB) otherwise
 # faulted in fresh pages twice per chunk, for the gather and for the padding:
 # about 95 s per half of host time in the EMPIAR-10202 pass-1 probe
-# (py-spy, bigbox 14747301), against 5 s for the exact engine's per-image reads.
+# (py-spy, bigbox case), against 5 s for the exact engine's per-image reads.
 _FETCH_SUB_BATCH_BYTES = 24 << 20
 
 

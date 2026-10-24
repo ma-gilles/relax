@@ -1,6 +1,6 @@
 """Opt-in finite checks for the pass-2 M-step operands and accumulators (P4-D).
 
-Job 14178118's second compact control crashed at RELION iteration 15 with a
+A second compact control run crashed at RELION iteration 15 with a
 non-finite ``wsum_norm_correction``. Its saved accumulators localise the damage
 but not its source: ``Ft_ctf`` for half 2 holds 2.35 M ``+inf`` entries and
 ``Ft_y`` follows to NaN, while half 1 is clean apart from the radius <= 18 ball
@@ -218,7 +218,7 @@ def check_arrays(stage: str, arrays: dict, *, warn_only: bool, context: str = ""
 def check_per_image(stage: str, arrays: dict, *, warn_only: bool, image_ids=None, context: str = ""):
     """Check per-image statistics and name the offending image ids (logged under ``warn_only``, else raised).
 
-    ``wsum_norm_correction`` is the statistic that failed in job 14178118, and
+    ``wsum_norm_correction`` is the statistic that failed in that control run, and
     it is per image, so the report is only useful if it says which particles.
     """
 
@@ -422,7 +422,7 @@ def check_bundle(
 def check_half_accumulators(accumulators: dict, *, mode: str, context: str = ""):
     """Fail where the damage is, not four stages later.
 
-    Job 14178118's compact control wrote a non-finite BPref accumulator, then
+    That compact control run wrote a non-finite BPref accumulator, then
     reconstructed and saved two all-NaN half maps, updated tau2 from an FSC of
     [1, 0, 0, ...], printed a healthy noise spectrum, and only then raised on a
     non-finite ``wsum_norm_correction``. Nothing in that sequence says which

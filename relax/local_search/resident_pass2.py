@@ -587,8 +587,8 @@ def compute_local_search_resident(
     # capacity plan so the plan's device reading sees it. Projected per call,
     # the texture path stages the slab's two float32 CUDA arrays outside the
     # XLA pool on every chunk (7.9 GB at EMPIAR-10202 current size 626, which
-    # failed with CUDA out of memory once the pool had grown, bigbox 14480549,
-    # 14507538) and synchronizes the stream. RELION builds its projector
+    # failed with CUDA out of memory once the pool had grown, bigbox case)
+    # and synchronizes the stream. RELION builds its projector
     # texture once per iteration.
     capacity_texture = projection_blocks.open_pass_capacity_texture(
         relion_projector_half,
@@ -616,7 +616,7 @@ def compute_local_search_resident(
             # The staged texture serves every projection of the pass, which reads
             # only the slab's geometry from here on, so the device slab is released
             # (15.35 GiB at EMPIAR-10202's full box, where it left no free block for
-            # the x-half accumulators: bigbox 14575557).
+            # the x-half accumulators: bigbox case).
             relion_projector_half = jax.ShapeDtypeStruct(relion_projector_half.shape, relion_projector_half.dtype)
         class_projectors = None
         if class_slabs is not None:
@@ -873,7 +873,7 @@ def compute_local_search_resident(
         # The rotation posterior is accumulated over the bins the rows use, not the
         # layout's whole rotation histogram: at MS2 box 512's final pass (I2,
         # HEALPix 9) that histogram is 9.60 GiB of float64 on the device, which
-        # ran it out of memory (bench 14684161). It is expanded on the host.
+        # ran it out of memory. It is expanded on the host.
         if tables.n_classes == 1:
             posterior_bin_ids, row_posterior_bin = np.unique(tables.row_posterior_id, return_inverse=True)
             row_posterior_bin = row_posterior_bin.astype(np.int32, copy=False)

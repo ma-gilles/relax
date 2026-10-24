@@ -409,7 +409,7 @@ def map_over_classes(function, items) -> list:
     The per-class candidate work is NumPy on disjoint inputs and outputs, which
     releases the GIL, so the classes run side by side; results keep the input
     order. On Class3D K=4 100k the serial class loop and merge were about 170 s
-    of host time with the device idle (py-spy of job 14557476).
+    of host time with the device idle (py-spy).
     """
 
     items = list(items)
@@ -873,7 +873,7 @@ def share_image_capacity(chunks, row_capacity_ladder) -> list[CapacityChunk]:
 # Counting rows alone let a dense support build 1.1e8 ids per block: Class3D K4
 # on EMPIAR-10076 10k/256 at current size 34 reached 27.8 GB of anonymous host
 # memory (relax#34); K4 100k/256 held 1.3e9 rows at once and its host process
-# was killed at 134 GB (bench job 14557771).
+# was killed at 134 GB.
 BLOCK_UNITS = 1 << 25
 
 

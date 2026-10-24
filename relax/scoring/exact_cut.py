@@ -9,7 +9,7 @@ etob2l_plain, iteration 2). The pass therefore takes its cut twice: on the GEMM 
 rotations holding an undecided sample (:func:`undecided_rotations`, within the bound
 :func:`gemm_error_bound` of the cut) have been scored by RELION's fused direct-square kernel
 (:func:`direct_rows_diff2`). The single-particle pass 1 keeps its GEMM cut: with one image per particle it
-reproduces RELION's (plain 10k K=1, iteration 2: maps within RELION-vs-RELION, jobs 14974373/14974374).
+reproduces RELION's (plain 10k K=1, iteration 2: maps within RELION-vs-RELION).
 """
 
 from __future__ import annotations

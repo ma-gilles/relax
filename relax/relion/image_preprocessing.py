@@ -113,7 +113,7 @@ def batched_fft_is_per_image(shape) -> bool:
 # (height, width, device kind) -> how many images one cuFFT plan may transform at the per-image arithmetic.
 _PER_IMAGE_FFT_SUB_BATCH: dict[tuple, int] = {}
 # The largest sub-batch probed. On H100 and A100 the batched plan is bitwise the per-image one up to 15 images at
-# 256x256 and 31 at 128x128 (relax tomoglobal2 probes 15916651/15916652); 16 per plan is about 13x faster than one.
+# 256x256 and 31 at 128x128 (relax tomoglobal2 probes); 16 per plan is about 13x faster than one.
 _MAX_PER_IMAGE_FFT_SUB_BATCH = 16
 
 

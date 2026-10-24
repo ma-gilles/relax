@@ -625,7 +625,7 @@ def prepare_unshifted_bucket_operands(
 
     if finite_check_mode != "off":
         # P4-D. The per-image per-pixel operands, before any translation or
-        # posterior weighting. The accumulator geometry of job 14178118 points
+        # posterior weighting. The accumulator geometry of the failed control run points
         # at exactly these: a scattered corruption here ruins the weighted
         # image sum and the CTF sum at the same pixel of the same image, which
         # is the only operand-level fault consistent with the nested bad voxel

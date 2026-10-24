@@ -293,7 +293,7 @@ def score_resident_chunk_in_row_blocks(
     """:func:`score_resident_chunk` for a chunk whose rows' projections do not fit at once.
 
     A single image past the largest row class (EMPIAR-10202-like flat posteriors:
-    every one of 294,912 fine rotations a candidate, bench 14641043) would hold
+    every one of 294,912 fine rotations a candidate) would hold
     every row's projection. Here each block of ``block_rows`` rows is projected
     (``block_reference``), scored by the same fused kernel and dropped; only the
     kernel's ``[C_R, T]`` diff2 is kept, and the per-image common minimum and the
@@ -1022,7 +1022,7 @@ def live_projection_block_rows(row_capacity: int, max_projected_rotations: int) 
     of two dividing it: an overflow chunk's capacity is a multiple of the
     largest row class, and projected in one call a 1536-row EMPIAR-10202
     final-pass chunk held a 2.88 GiB crop past the plan's 609-row projector
-    call (bigbox 14684083).
+    call (bigbox case).
     """
 
     max_rows = max(int(max_projected_rotations), 1)

@@ -27,7 +27,7 @@ def pass1_batch_constants(batch_size: int, enable_x64: bool):
     ``-inf`` at the default float dtype, float64 zeros and int32 zeros: the
     running maxima, sums and argmaxes start from these every batch and every
     class, which was 2 + 2K eager dispatches per image batch (41 s of the main
-    thread on K4 100k/256, job 14514641). JAX arrays are immutable and nothing
+    thread on K4 100k/256). JAX arrays are immutable and nothing
     donates them, so one copy serves every batch. ``enable_x64`` keys the
     default float dtype.
     """
@@ -271,7 +271,7 @@ def coarse_pass1_blocks(
     support-value block per entry and, with ``dump_rows``, each entry's dump scores
     (``None`` without). At K15, 400+ eager programs per batch kept the
     host behind the device queue while the device idled between batches (K15 50k,
-    nsys 14868231).
+    in an nsys profile).
     """
 
     values = []

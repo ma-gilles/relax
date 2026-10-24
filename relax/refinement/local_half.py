@@ -1141,7 +1141,7 @@ def _run_local_search_iteration(
         )
 
     # A regular iteration at the full box hands current_size=None (full-box support;
-    # MS2 box 512 it25, bench 14641044); the resident driver scores RELION's radial
+    # MS2 box 512 it25); the resident driver scores RELION's radial
     # window at the box for it, as for the final all-data pass's explicit box size.
     # The device-resident local pass is relax's one local engine, for the fine pass 2
     # and for RELION's pass-1 parent probe (score-only: significant samples, no

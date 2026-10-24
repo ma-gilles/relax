@@ -43,11 +43,11 @@ _AUTO_FUSED_KCLASS_TRANSLATION_TILE_DEVICE_FRACTION = 0.007
 # EMPIAR-10097 convergence run while per-chunk recompute cost 1200-3900 s per
 # iteration.  25% admitted that cache on 80 GB devices and still rejected it on
 # 40 GB devices.  Measured evidence: docs handoff em_soft_posterior_block_bpref
-# prototype 2026-09-17, jobs 14045912 / 14046044.  The stable Fourier windows
+# prototype 2026-09-17.  The stable Fourier windows
 # pad the window to a physical class, so the same cache now takes 20.00 GiB
 # (71.1 KiB per rotation) against the 17.81 GiB 25% share, and the 10097 10k
 # hp3 iterations streamed their projections again: 21.0 s and 11.7 s of
-# projection per half (job 14514823).  30% admits it on 80 GB devices; the
+# projection per half.  30% admits it on 80 GB devices; the
 # chunk plan is read from free memory after the cache exists.
 _AUTO_PROJECTION_CACHE_DEVICE_FRACTION = 0.300
 
@@ -62,10 +62,10 @@ _AUTO_ADJOINT_BLOCK_DEVICE_FRACTION = 0.006
 # the device whole up to this fraction of device memory; above it, each projection
 # streams it in z-plane chunks of at most ACCURACY_SLAB_STREAM_CHUNK_BYTES. At
 # EMPIAR-10202's full box the slab is 30.7 GiB, which the pool of a 26-iteration run
-# could not place (gpuport 15003773, final all-data pass), and chunks of a tenth of
+# could not place (gpuport run, final all-data pass), and chunks of a tenth of
 # the device, uploaded and freed at every projection, fragmented the pool until a
-# 7.65 GiB reconstruction buffer failed at iteration 23 (gpuport 15073680; the same
-# run without streaming passed, 15085606/15085607). Small chunks leave no large hole.
+# 7.65 GiB reconstruction buffer failed at iteration 23 (gpuport run; the same
+# run without streaming passed). Small chunks leave no large hole.
 # A full-size box-256 slab (1.1 GB at padding 2) stays whole on a 16 GB device.
 _AUTO_ACCURACY_SLAB_DEVICE_FRACTION = 0.100
 ACCURACY_SLAB_STREAM_CHUNK_BYTES = 512 * 1024**2
@@ -107,7 +107,7 @@ def device_memory_limit_bytes(override_bytes: int | None) -> int | None:
     The device's total from nvidia-smi, capped by the JAX allocator's limit:
     under ``XLA_PYTHON_CLIENT_MEM_FRACTION=.50`` an 80 GB H100 gives the process
     about 40 GB, and every budget taken as a fraction of the device total then
-    overshot (K=1 10097 10k, bench 14445196, ran out of memory in the whole-grid
+    overshot (K=1 10097 10k ran out of memory in the whole-grid
     projection cache at 42 GB).
     """
 
@@ -244,7 +244,7 @@ def device_free_memory_bytes() -> int | None:
 
     NVML answers in microseconds; the ``nvidia-smi`` subprocess it replaces took
     15-20 ms and was read per chunk by a budget since removed, 33 s of two late
-    Class3D K4 100k iterations (py-spy, job 14594324). The subprocess
+    Class3D K4 100k iterations (py-spy). The subprocess
     stays the fallback where NVML cannot be loaded.
     """
 
@@ -480,8 +480,8 @@ def projection_cache_build_max_rotations_per_call(
     live next to the projection intermediates.  The cache build runs before
     any of those exist, so it may project several times more rotations per
     call: at HEALPix order 3 (294912 fine rotations, current_size 92) the
-    build took 19.9 s per half at 809 rotations per call and 3.6 s at 4096
-    (jobs 14051847 / 14052595), while the scoring-loop budget kept the peak
+    build took 19.9 s per half at 809 rotations per call and 3.6 s at 4096,
+    while the scoring-loop budget kept the peak
     memory profile unchanged.  An explicit
     ``RELAX_SPARSE_PASS2_MAX_PROJECTED_ROTATIONS`` (``override``, ``EngineTuning.max_projected_rotations``) still
     applies verbatim.
@@ -523,7 +523,7 @@ def device_available_bytes(physical_free_bytes, allocator_free_bytes, pool_free_
     The allocator's own headroom (limit minus in use), bounded by the device:
     the physically free memory plus what the allocator's pool already holds
     unused, which ``nvidia-smi`` counts as used. The physical reading alone is
-    not a bound once the pool has grown (10097 it13 in 14400302: 13.37 GiB
+    not a bound once the pool has grown (10097 it13: 13.37 GiB
     physically free against 70.04 GiB of headroom). Without a pool reading the
     physical reading bounds only when the allocator reports nothing; ``None``
     when nothing is known.
