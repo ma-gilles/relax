@@ -29,13 +29,6 @@ from relax.types import make_relion_stats
 logger = logging.getLogger("relax.classification.k_class")  # the engine's logger before the split: log rows keep it
 
 
-def check_bpref_particle_order_policy(engine_kwargs: dict, *, n_classes: int) -> None:
-    """Refuse RELION's preserved BPref particle order on a K>1 sparse pass (it is K=1-only)."""
-
-    if bool(engine_kwargs.get("preserve_bpref_particle_order", False)) and int(n_classes) != 1:
-        raise ValueError("RELION BPref particle-order preservation is K=1-only")
-
-
 def infer_healpix_order_from_rotation_count(
     n_rot: int,
     symmetry_label: str = "C1",
@@ -220,7 +213,6 @@ def run_sparse_k_class_adaptive_pass2(
         common["relion_coarse_max_posterior"] = base_engine_kwargs.get("relion_coarse_max_posterior")
         if n_classes > 1:
             common["relion_coarse_class_assignment"] = base_engine_kwargs["relion_coarse_class_assignment"]
-    check_bpref_particle_order_policy(base_engine_kwargs, n_classes=n_classes)
     # Images on another grid fill the backprojector at the reference model size.
     mstep_current_size = (
         common["reconstruction_volume_current_size"]

@@ -3,7 +3,6 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from relax.classification.k_class_sparse_pass2 import check_bpref_particle_order_policy
 from relax.refinement.setup_checks import validate_bpref_particle_order_scope
 from scripts.lib.bucket_shapes import plan_consecutive_padded_batches
 from scripts.lib.bucketed_pass2 import _bucket_pass2_inputs
@@ -273,14 +272,6 @@ def test_sparse_pass2_execution_order_can_stay_stable_within_size_buckets():
         [1, 4],
     ]
     assert [int(bucket["bucket_size"]) for bucket in buckets] == [16, 32, 64]
-
-
-def test_sparse_pass_order_policy_is_k1_only():
-    check_bpref_particle_order_policy({}, n_classes=4)
-    check_bpref_particle_order_policy({"preserve_bpref_particle_order": True}, n_classes=1)
-
-    with pytest.raises(ValueError, match="K=1-only"):
-        check_bpref_particle_order_policy({"preserve_bpref_particle_order": True}, n_classes=4)
 
 
 def test_fresh_k1_bpref_order_scope_accepts_perturbation_replay_from_iteration_zero():

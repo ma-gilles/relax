@@ -32,7 +32,6 @@ from relax.classification.k_class_results import (
 )
 from relax.classification.k_class_sparse_pass2 import (
     as_host_accumulator,
-    check_bpref_particle_order_policy,
     resident_production_arithmetic,
     sparse_pose_ids_to_fine_grid,
 )
@@ -495,7 +494,6 @@ def run_sparse_firstiter_global_winner_subset_pass2(
     if pass2_kwargs.get("wsum_current_size") is not None:
         # --strict_highres_exp: the weighted sums' image size, above the E-step's (the resident engine).
         common["wsum_current_size"] = int(pass2_kwargs["wsum_current_size"])
-    check_bpref_particle_order_policy(pass2_kwargs, n_classes=n_classes)
     resident_arithmetic = n_classes > 1
     if resident_arithmetic:
         # Each image's fine pass is a K=1 pass inside its coarse winner class,
