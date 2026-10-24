@@ -602,7 +602,6 @@ def _score_half_dense_one_shape(
         "optics_group_ids": half.particles.optics_group_ids,
         "reconstruction_current_size": sampling.model_support_size,
         "wsum_current_size": sampling.wsum_current_size,
-        "preserve_bpref_particle_order": execution.preserve_bpref_particle_order,
         "source_faithful_spectrum_norm": execution.source_faithful_spectrum_norm,
         "firstiter_cc_tree_rescore_max_margin": execution.firstiter_cc_tree_rescore_max_margin,
         "relion_translation_angle_scale": float(execution.relion_translation_angle_scale),

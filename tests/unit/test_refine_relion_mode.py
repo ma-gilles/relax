@@ -7493,7 +7493,7 @@ class TestRelionModeSmokeTest:
                 trans_parent_map,
                 disc_type,
             )
-            assert kwargs.get("preserve_bpref_particle_order", False) == preserve_order
+            assert "preserve_bpref_particle_order" not in kwargs  # the order is the run option's, not an engine kwarg
             # Pass 1 always scores the exact operands; the removed switch is not passed.
             assert "relion_exact_coarse" not in kwargs
             half_idx = call_idx["value"]

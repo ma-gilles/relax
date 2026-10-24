@@ -378,8 +378,7 @@ def run_adaptive_initial_model_estep(
         relion_firstiter_score_mode="gaussian",
         relion_exact_fine_gaussian=True,
         fine_source_eulers_override=route.fine_source_eulers,
-        # The fresh K=1 guard: RELION's BPref particle order, exact BPref operands and powerClass spectrum norm.
-        preserve_bpref_particle_order=fresh_k1,
+        # The fresh K=1 guard: RELION's exact BPref operands and powerClass spectrum norm.
         source_faithful_spectrum_norm=fresh_k1,
         debug_iteration=group_kwargs.get("debug_iteration"),
         probe=group_kwargs.get("k_class_probe"),
