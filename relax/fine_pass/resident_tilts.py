@@ -881,13 +881,12 @@ def tilt_cc_scores(
     slot's images are translated with their own phases (RELION's score translation,
     ``relion_translate_score_f32``) over the translations some row may take, in blocks that fit
     ``tile_budget_bytes``, and each row is scored by the SPA reduction
-    (``relion_cuda_fine_normalized_cc_score``); the float32 running sum keeps the slot order.
+    (``relion_cuda_fine_normalized_cc_score``); the float32 running sum keeps the slot order. Each slot block
+    and translation block is one program (:func:`_tilt_cc_slot_block`, a scan over the slots).
     ``min_diff2`` is the particle's ``0.5 |X_i|^2`` summed over its images (the SPA evidence offset).
     """
 
-    from relax.cuda import translate as cuda_translate
     from relax.fine_pass.resident_scoring import ResidentChunkScores
-    from relax.fine_pass.scoring import relion_cuda_fine_normalized_cc_score
 
     slot_image_ids = np.asarray(slot_image_ids, dtype=np.int64)
     unit_slot_images = np.asarray(unit_slot_images, dtype=np.int64)
@@ -896,49 +895,41 @@ def tilt_cc_scores(
     kept = np.flatnonzero(np.any(np.asarray(candidate_mask & row_is_valid[:, None]), axis=0))
     if kept.size == 0:
         kept = np.zeros(1, dtype=np.int64)
+    # Translation blocks of a power-of-two width within the budget, the last one padded with the extra column
+    # n_trans of ``running`` (dropped at the end): one program per chunk shape and width, not per chunk.
     per_translation = (int(unit_capacity) + int(block_rows)) * n_pixels * 8
-    t_block = int(min(kept.size, max(1, int(tile_budget_bytes) // max(per_translation, 1))))
+    t_block = min(pow2_floor(max(1, int(tile_budget_bytes) // max(per_translation, 1))), pow2_ceil(int(kept.size)))
+    padded = np.full(-(-kept.size // t_block) * t_block, n_trans, dtype=np.int64)
+    padded[: kept.size] = kept
     pixels = jnp.asarray(score_pixel_indices, dtype=jnp.int32)
     score_input = jnp.asarray(operands.score_input, dtype=jnp.complex64)
     weight = jnp.asarray(operands.corr_img_score, dtype=jnp.float32)
     row_unit = jnp.asarray(row_unit_local, dtype=jnp.int32)
-    running = jnp.zeros((int(row_capacity), n_trans), dtype=jnp.float32)
+    angles = jnp.asarray(image_angles)
+    running = jnp.zeros((int(row_capacity), n_trans + 1), dtype=jnp.float32)
     shape = tuple(int(n) for n in image_shape)
-    for t_start in range(0, kept.size, t_block):
-        index = kept[t_start : t_start + t_block]
-        index_device = jnp.asarray(index, dtype=jnp.int32)
-        block_angles = jnp.asarray(image_angles)[:, index_device]  # [C_B, T_b, 2]
+    for t_start in range(0, padded.size, t_block):
+        index = padded[t_start : t_start + t_block]
+        block_angles = angles[:, jnp.asarray(np.where(index < n_trans, index, kept[0]), dtype=jnp.int32)]  # [C_B, T_b, 2]
         for start, stop in slot_blocks:
-            cache = block_score_cache(start, stop)
-            for slot in range(start, stop):
-                units_images = unit_slot_images[slot]
-                valid_units = units_images >= 0
-                safe = jnp.asarray(np.where(valid_units, units_images, 0), dtype=jnp.int32)
-                # [C_U, T_b, N]: the slot's images with their own phases, one launch.
-                tiles = cuda_translate.relion_translate_score_f32(
-                    score_input[safe], block_angles[safe], pixels, shape
-                ).reshape(safe.shape[0], index.size, -1)
-                images = jnp.asarray(np.where(slot_image_ids[slot] >= 0, slot_image_ids[slot], 0), dtype=jnp.int32)
-                has_image = jnp.asarray(slot_image_ids[slot] >= 0) & row_is_valid
-                projections = jax.lax.dynamic_slice_in_dim(cache, (slot - start) * row_capacity, row_capacity, axis=0)
-
-                def block_cc(first, projections=projections, tiles=tiles, images=images):
-                    rows = jax.lax.dynamic_slice_in_dim(row_unit, first, block_rows)
-                    row_images = jax.lax.dynamic_slice_in_dim(images, first, block_rows)
-                    return relion_cuda_fine_normalized_cc_score(
-                        jax.lax.dynamic_slice_in_dim(projections, first, block_rows)[:, None, :],
-                        tiles[rows],
-                        weight[row_images][:, None, :],
-                        half_weights,
-                        full_to_compact,
-                    )
-
-                starts = jnp.arange(0, int(row_capacity), int(block_rows), dtype=jnp.int32)
-                cc = jax.lax.map(block_cc, starts).reshape(int(row_capacity), index.size)
-                running = running.at[:, index_device].add(
-                    jnp.where(has_image[:, None], -cc.astype(jnp.float32), jnp.float32(0.0))
-                )
-            del cache
+            running = _tilt_cc_slot_block(
+                running,
+                block_score_cache(start, stop),
+                jnp.asarray(unit_slot_images[start:stop], dtype=jnp.int32),
+                jnp.asarray(slot_image_ids[start:stop], dtype=jnp.int32),
+                score_input,
+                block_angles,
+                jnp.asarray(index, dtype=jnp.int32),
+                weight,
+                row_unit,
+                row_is_valid,
+                pixels,
+                half_weights,
+                full_to_compact,
+                image_shape=shape,
+                block_rows=int(block_rows),
+            )
+    running = running[:, :n_trans]
     valid_cells = candidate_mask & row_is_valid[:, None]
     scores = jnp.where(valid_cells & jnp.isfinite(running), -running, -jnp.inf)
     image_units = jnp.asarray(image_unit_local, dtype=jnp.int32)
@@ -948,6 +939,68 @@ def tilt_cc_scores(
     return ResidentChunkScores(
         raw_diff2=jnp.where(jnp.isfinite(scores), running, jnp.inf), scores=scores, min_diff2=half_norm
     )
+
+
+@partial(jax.jit, static_argnames=("image_shape", "block_rows"))
+def _tilt_cc_slot_block(
+    running,  # float32 [C_R, T + 1] the earlier slots' and translation blocks' sum, column T the padding's
+    projections,  # complex [S_b * C_R, N] the block's slots' projections, slot-major
+    unit_slot_images,  # int32 [S_b, C_U] chunk image of each unit's s-th image, -1 past its images
+    slot_image_ids,  # int32 [S_b, C_R] chunk image of each row per slot, -1 past its particle's images
+    score_input,
+    block_angles,  # float32 [C_B, T_b, 2] each image's phases of the block's translations
+    index,  # int32 [T_b] the block's translations, T on padding
+    weight,
+    row_unit,
+    row_is_valid,
+    pixels,
+    half_weights,
+    full_to_compact,
+    *,
+    image_shape,
+    block_rows: int,
+):
+    """:func:`tilt_cc_scores`' slots of one slot block and translation block, in slot order: one program.
+
+    Per slot, the slot's images translated with their own phases (one launch) and each row's normalized CC
+    (``relion_cuda_fine_normalized_cc_score``) in blocks of ``block_rows``, added into ``running``.
+    """
+
+    from relax.cuda import translate as cuda_translate
+    from relax.fine_pass.scoring import relion_cuda_fine_normalized_cc_score
+
+    row_capacity = int(slot_image_ids.shape[1])
+    n_index = int(index.shape[0])
+    starts = jnp.arange(0, row_capacity, int(block_rows), dtype=jnp.int32)
+
+    def add_slot(running, slot_inputs):
+        slot, units_images, image_ids = slot_inputs
+        safe = jnp.where(units_images >= 0, units_images, 0)
+        # [C_U, T_b, N]: the slot's images with their own phases, one launch.
+        tiles = cuda_translate.relion_translate_score_f32(
+            score_input[safe], block_angles[safe], pixels, image_shape
+        ).reshape(safe.shape[0], n_index, -1)
+        images = jnp.where(image_ids >= 0, image_ids, 0)
+        has_image = (image_ids >= 0) & row_is_valid
+        slot_projections = jax.lax.dynamic_slice_in_dim(projections, slot * row_capacity, row_capacity, axis=0)
+
+        def block_cc(first):
+            rows = jax.lax.dynamic_slice_in_dim(row_unit, first, block_rows)
+            row_images = jax.lax.dynamic_slice_in_dim(images, first, block_rows)
+            return relion_cuda_fine_normalized_cc_score(
+                jax.lax.dynamic_slice_in_dim(slot_projections, first, block_rows)[:, None, :],
+                tiles[rows],
+                weight[row_images][:, None, :],
+                half_weights,
+                full_to_compact,
+            )
+
+        cc = jax.lax.map(block_cc, starts).reshape(row_capacity, n_index)
+        return running.at[:, index].add(jnp.where(has_image[:, None], -cc.astype(jnp.float32), jnp.float32(0.0))), None
+
+    slots = jnp.arange(slot_image_ids.shape[0], dtype=jnp.int32)
+    running, _ = jax.lax.scan(add_slot, running, (slots, unit_slot_images, slot_image_ids))
+    return running
 
 
 def project_slot_rows(project_rotations, slot_matrices, entry_class, *, n_classes: int):
