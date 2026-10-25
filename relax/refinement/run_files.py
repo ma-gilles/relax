@@ -53,6 +53,7 @@ from relax.refinement.iteration_snapshot import (
     REFINEMENT_STATE_SCALAR_FIELDS,
     IterationSnapshot,
 )
+from relax.relion import normalization
 from relax.star.blocks import general_columns, read_star_blocks
 
 logger = logging.getLogger(__name__)
@@ -168,6 +169,8 @@ class RunSettings:
     # RELION --sigma_tilt in degrees when the run has the prior on the tilt angle alone (not under
     # --sigma_ang); 0: none. Written to the model STARs until the local searches start.
     sigma_tilt_deg: float
+    # Whether new references are solvent-flattened (map_postprocess.flattens_solvent), as rlnDoSolventFlattening.
+    do_solvent_flattening: bool
 
 
 class RunFileWriter:
@@ -591,7 +594,8 @@ def _write_sampling_star(root: Path, snapshot: IterationSnapshot, settings: RunS
     pixel = float(snapshot.pixel_size)
     items = [
         ("rlnIs3DSampling", True),
-        ("rlnIs3DTranslationalSampling", False),
+        # Subtomograms search 3D offsets (RELION's is_tomo); single particles 2D.
+        ("rlnIs3DTranslationalSampling", bool(state["subtomogram"])),
         ("rlnHealpixOrder", int(state["healpix_order"])),
         ("rlnSymmetryGroup", settings.symmetry),
         ("rlnTiltAngleLimit", -91.0),
@@ -735,7 +739,7 @@ def _write_optimiser_star(root: Path, snapshot: IterationSnapshot, settings: Run
         ("rlnParticleDiameter", float(settings.particle_diameter)),
         ("rlnWidthMaskEdge", int(settings.width_mask_edge)),
         ("rlnDoZeroMask", True),
-        ("rlnDoSolventFlattening", False),
+        ("rlnDoSolventFlattening", bool(settings.do_solvent_flattening)),
         ("rlnDoSolventFscCorrection", bool(settings.do_solvent_fsc)),
         ("rlnSolventMaskName", str(settings.solvent_mask_name)),
         ("rlnSolventMask2Name", "None"),
@@ -773,7 +777,7 @@ def _write_optimiser_star(root: Path, snapshot: IterationSnapshot, settings: Run
         ("rlnHasConverged", bool(state["has_converged"])),
         ("rlnHasHighFscAtResolLimit", bool(snapshot.has_high_fsc_at_limit)),
         ("rlnHasLargeSizeIncreaseIterationsAgo", 0),
-        ("rlnDoCorrectNorm", True),
+        ("rlnDoCorrectNorm", normalization.norm_correction_on(subtomogram=bool(state["subtomogram"]))),
         ("rlnDoCorrectScale", True),
         ("rlnDoCorrectCtf", True),
         ("rlnDoCenterClasses", False),

@@ -290,6 +290,7 @@ def _run_settings(output_root, **fields):
             "command_line": "",
             "mode": "relion",
             "sigma_tilt_deg": 0.0,
+            "do_solvent_flattening": True,
             **fields,
         }
     )
@@ -406,6 +407,34 @@ def test_optimiser_star_records_mode_relax_and_relions_mode_writes_nothing(tmp_p
         _assert_snapshots_match(read, snapshot)
         assert "mode" not in read.extra
 
+
+@pytest.mark.parametrize("subtomogram", [False, True])
+def test_optimiser_and_sampling_record_the_runs_flattening_norm_and_offset_dimensions(tmp_path, subtomogram):
+    """The run's own options, as RELION writes them: references flattened with a mask or a particle diameter
+    (rlnDoSolventFlattening), the norm corrected for single particles only (RELION forces it off for subtomograms,
+    rlnDoCorrectNorm 0), and subtomograms' 3D offsets (rlnIs3DTranslationalSampling)."""
+
+    import dataclasses
+
+    rng = np.random.default_rng(1)
+    input_star = _write_input_star(tmp_path, 7)
+    half_rows = [np.array([4, 0, 2, 6]), np.array([5, 1, 3])]
+    snapshot = _k1_snapshot([4, 3], rng)
+    snapshot = dataclasses.replace(snapshot, state_fields={**snapshot.state_fields, "subtomogram": subtomogram})
+    for flatten in (True, False):
+        writer = RunFileWriter(
+            tmp_path / str(flatten),
+            settings=_run_settings(tmp_path / str(flatten) / "run", do_solvent_flattening=flatten),
+            input_star=input_star,
+            half_rows=half_rows,
+            background=False,
+        )
+        optimiser = writer(snapshot)
+        general = read_star_blocks(optimiser)["optimiser_general"]
+        assert general["rlnDoSolventFlattening"] == ("1" if flatten else "0")
+        assert general["rlnDoCorrectNorm"] == ("0" if subtomogram else "1")
+        sampling = read_star_blocks(optimiser.parent / "run_it005_sampling.star")["sampling_general"]
+        assert sampling["rlnIs3DTranslationalSampling"] == ("1" if subtomogram else "0")
 
 def test_subtomogram_run_files_round_trip_3d_offsets(tmp_path):
     """Subtomogram particles' 3D offsets go to rlnOriginXAngst/Y/Z and come back (--continue)."""

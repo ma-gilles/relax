@@ -50,7 +50,14 @@ from relax.parity import (
     replay_inputs,
     startup_noise_inputs,
 )
-from relax.refinement import refinement_options, remote_halves, run_files, startup_noise, startup_references
+from relax.refinement import (
+    map_postprocess,
+    refinement_options,
+    remote_halves,
+    run_files,
+    startup_noise,
+    startup_references,
+)
 from relax.refinement.result_files import (
     RunReport,
     build_archive_metadata,
@@ -1128,6 +1135,9 @@ def main(command=None):
                 sigma_tilt_deg=refinement_arguments.resolve_local_search(args).tilt_prior_deg(do_local_search=False),
                 do_solvent_fsc=bool(args.solvent_correct_fsc),
                 solvent_mask_name="None" if args.solvent_mask is None else str(args.solvent_mask),
+                do_solvent_flattening=map_postprocess.flattens_solvent(
+                    has_solvent_mask=args.solvent_mask is not None, particle_diameter_angstrom=particle_diameter_ang
+                ),
                 command_line=" ".join(sys.orig_argv),
                 mode=args.mode,
             ),

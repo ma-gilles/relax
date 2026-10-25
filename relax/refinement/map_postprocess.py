@@ -100,11 +100,18 @@ def _align_fourier_volume_sign_to_reference(volume_ft_flat, reference_ft_flat, v
     return volume_ft_flat, False
 
 
-def solvent_flatten_requested(settings: ReconstructionSettings) -> bool:
-    """Return whether new references are solvent-flattened: a user mask or a particle diameter is set."""
-    if settings.solvent_mask is not None:
+def flattens_solvent(*, has_solvent_mask: bool, particle_diameter_angstrom) -> bool:
+    """Whether new references are solvent-flattened: a user mask or a particle diameter is set."""
+    if has_solvent_mask:
         return True
-    return settings.particle_diameter_angstrom is not None and settings.particle_diameter_angstrom > 0
+    return particle_diameter_angstrom is not None and particle_diameter_angstrom > 0
+
+
+def solvent_flatten_requested(settings: ReconstructionSettings) -> bool:
+    """Return whether new references are solvent-flattened (:func:`flattens_solvent`)."""
+    return flattens_solvent(
+        has_solvent_mask=settings.solvent_mask is not None, particle_diameter_angstrom=settings.particle_diameter_angstrom
+    )
 
 
 def numbered_solvent_mask(settings: ReconstructionSettings, *, dtype):

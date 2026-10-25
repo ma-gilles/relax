@@ -389,6 +389,12 @@ def prepare_norm_scale_update(
     )
 
 
+def norm_correction_on(*, subtomogram: bool) -> bool:
+    """Whether a refinement corrects the per-particle norm: RELION forces it off for subtomograms (ml_optimiser.cpp,
+    ``data_dim == 3 || is_tomo``: "Don't do norm correction for volume averaging")."""
+    return not subtomogram
+
+
 def numbered_norm_scale_update(
     per_half,
     halves,

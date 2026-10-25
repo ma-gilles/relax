@@ -1130,7 +1130,7 @@ def refine_single_volume(
 
         correction_report = normalization.NormScaleCorrectionReport()
         norm_scale_update = normalization.numbered_norm_scale_update(
-            expected.per_half, halves, firstiter_cc=this_iteration.first_iteration.relion_firstiter_cc, do_norm_correction=not ctx.tomo_halves,
+            expected.per_half, halves, firstiter_cc=this_iteration.first_iteration.relion_firstiter_cc, do_norm_correction=normalization.norm_correction_on(subtomogram=bool(ctx.tomo_halves)),
             do_scale_correction=follower_setup.follower_scale_state is None, dtype=ctx.scoring_dtype,
             iteration=iteration, current_size=this_iteration.current_size,
             finite_check_mode=options.environment.engine.finite_check,
