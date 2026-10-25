@@ -586,7 +586,7 @@ def run_final_all_data(
         # They are reconstructed first, from the pre-join arrays, so the join
         # below can update those arrays in place instead of copying them: at
         # EMPIAR-10202's full box a copy of both halves' accumulators is 49 GB
-        # of host memory (bigbox 14592943, 14594535). Each map is kept on the
+        # of host memory (bigbox case). Each map is kept on the
         # host so the device holds only the reconstruction in progress.
         final_unfiltered_means_for_output = final_reconstruction.reconstruct_unfiltered_halfmaps(
             (final_Ft_y_0, final_Ft_y_1),
