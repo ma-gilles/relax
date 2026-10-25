@@ -140,10 +140,15 @@ class TomoHalfJob:
     def cut(self, costs, ranks: int) -> tuple["TomoHalfJob", list]:
         """The call its shards are taken from and the shards for ``ranks`` ranks, from the particles' predicted
         ``costs``: the call scores with the whole half's coarse plan, and a frame-shared global pass's shards are
-        whole groups of its frame order (``relax.parallel.shards``)."""
+        whole groups of its frame order (``relax.parallel.shards``).
+
+        The ``--firstiter_cc`` iteration has no coarse pass (each particle's best CC is its support): its half is one
+        shard, the whole call, so the pool scores it on one rank per half."""
 
         from relax.parallel.shards import cut_group_shards, cut_shards
 
+        if self.arguments.get("normalized_cc"):
+            return self, [np.arange(self.n_units, dtype=np.int64)]
         plan = self.coarse_plan()
         if plan.frame_order is None:
             return self.with_coarse_plan(plan), cut_shards(costs, ranks)
@@ -157,6 +162,8 @@ class TomoHalfJob:
         each particle as the half's call does."""
 
         units = np.asarray(units, dtype=np.int64).reshape(-1)
+        if np.array_equal(units, np.arange(self.n_units)):
+            return self  # the whole half: the call itself
         if units.size == 0 or units.min() < 0 or units.max() >= self.n_units:
             raise ValueError(f"a shard takes 1 to {self.n_units} of the half's particles, got {units.size}")
         if self.arguments.get("class_log_priors") is not None:

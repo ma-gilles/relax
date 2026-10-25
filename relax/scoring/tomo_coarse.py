@@ -1487,8 +1487,7 @@ def particle_coarse_supports(
         )
         for k, class_projector in enumerate(class_projectors)
     ]
-    coarse_plan = plan_use.pinned
-    if coarse_plan is None:
+    if plan_use.pinned is None:
         # One budget for the pass, less the full projectors the exact cut builds for each class on first use
         # (complex64 cubes kept for the pass, and one more cube and the cast half while one is built).
         cube_bytes = 8 * int(np.prod(jax.eval_shape(relion_projector_half_to_texture_full, class_projectors[0]).shape))
@@ -1511,12 +1510,12 @@ def particle_coarse_supports(
     else:
         # A shard of a half takes the half's plan, so that its batches and flushes are the half's (the shard's own
         # particles would size them otherwise: their tilts, their count).
-        if slots > coarse_plan.slots or (rotation_counts and max(rotation_counts) > coarse_plan.r_pad):
+        if slots > plan_use.pinned.slots or (rotation_counts and max(rotation_counts) > plan_use.pinned.r_pad):
             raise ValueError(
                 f"these particles need {slots} tilts and {max(rotation_counts, default=0)} rotations, more than the "
-                f"given plan's {coarse_plan.slots} and {coarse_plan.r_pad}"
+                f"given plan's {plan_use.pinned.slots} and {plan_use.pinned.r_pad}"
             )
-        pass_plan, slots = coarse_plan, coarse_plan.slots
+        pass_plan, slots = plan_use.pinned, plan_use.pinned.slots
     if plan_use.plan_only:
         frames = None if local or n_units == 0 else shared_frames(image_left, offsets)
         return pass_plan._replace(frame_order=None if frames is None else frames.unit_order)

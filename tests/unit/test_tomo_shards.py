@@ -288,3 +288,54 @@ def test_group_shards_keep_whole_groups_and_put_heavy_groups_alone():
     assert len(shards) <= 1 + 4
     with pytest.raises(ValueError):
         cut_group_shards(costs, groups[:-1], ranks=2)
+
+
+def test_the_firstiter_cc_iteration_is_scored_whole_one_half_per_rank(monkeypatch):
+    """--firstiter_cc has no coarse pass, so no plan to pin: each half is one shard, the whole call."""
+
+    import threading
+    from multiprocessing import Pipe
+
+    from relax.refinement import remote_halves
+    from relax.steps import tomo_scoring
+    from relax.steps.tomo_shards import DeferredTomoHalf
+
+    calls = []
+
+    def scorer(data, *, plan_use=None, **kw):
+        assert plan_use is None, "a --firstiter_cc call never asks for or takes a coarse plan"
+        calls.append(data.particles.dataset.n_units)
+        return _fake_tomo_scorer(data, plan_use=None, **kw)
+
+    monkeypatch.setattr(tomo_scoring, "score_tomo_half_in_loop", scorer)
+    datasets = [_TiltDataset(np.arange(9) + 100 * k, np.full(9, 3)) for k in range(2)]
+    rotations = TomoLocalRotations(np.arange(6), tuple(np.array([u % 6]) for u in range(9)), tuple(np.zeros(1) for _ in range(9)))
+    jobs = {
+        k: TomoHalfJob(
+            data=HalfScoringData(particles=HalfSet(index=k, dataset=datasets[k]), reference=None, noise_variance=None),
+            local_rotations=rotations,
+            unit_seed_classes=None,
+            arguments={"normalized_cc": True},
+        )
+        for k in range(2)
+    }
+    cut_job, shards = jobs[0].cut(np.ones(9), ranks=4)
+    assert cut_job is jobs[0] and len(shards) == 1 and np.array_equal(shards[0], np.arange(9))
+    assert jobs[0].shard(np.arange(9)) is jobs[0]
+    assert calls == []
+
+    objects = {"dataset_half1": datasets[0], "dataset_half2": datasets[1], "local_profile_history": []}
+    ends = {rank: Pipe() for rank in (1, 2, 3)}
+    threads = [threading.Thread(target=_fake_rank, args=(theirs, objects), daemon=True) for _, theirs in ends.values()]
+    for thread in threads:
+        thread.start()
+    pool = remote_halves.ShardPool({rank: ours for rank, (ours, _) in ends.items()}, objects)
+    done = pool.score_halves({k: DeferredTomoHalf(jobs[k], lambda result: result) for k in range(2)})
+    # One whole call per half, wherever it ran.
+    assert sorted(calls) == [9, 9]
+    for k in range(2):
+        np.testing.assert_array_equal(done[k].ha, jobs[k].score().ha)
+    for ours, _ in ends.values():
+        ours.close()
+    for thread in threads:
+        thread.join(timeout=10)

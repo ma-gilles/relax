@@ -28,6 +28,11 @@ N_PARTICLES = 120
 # As tests/integration/test_two_gpu_refine.py: a few times the one-GPU repeat floor of maps and norm corrections.
 MAX_MAP_REL_L2 = 1e-5
 MAX_NORM_CORRECTION_REL = 1e-6
+# The --firstiter_cc iteration's rlnLogLikeliContribution is a float32 sum, and two one-GPU runs already differ in the
+# last bit of some rows (1,291 of 18,466 and 3,762 of 10,633 rows between same-code one-GPU repeats, sig89b and memw,
+# 2026-10-25). Here the 3-GPU run differed in 7 of 120 rows by at most 1.25e-7 relative (one float32 ulp at
+# |LL| ~2.7e5; job 16207525). The bound is two float32 ulps.
+MAX_CC_LOG_LIKELIHOOD_REL = 2.0**-22
 
 
 def _visible_gpus(env) -> int:
@@ -81,7 +86,7 @@ def _refine(env, project: Path, reference: Path, out: Path, *extra: str) -> str:
         "--data_dir", str(project), "--output", str(out), "--init_volume", str(reference),
         "--init_resolution", "20", "--particle_diameter_ang", "120", "--sym", "C1",
         "--healpix_order", "2", "--auto_local_healpix_order", "4", "--offset_range", "3", "--offset_step", "1",
-        "--seed", "1", "--max_iter", "2", "--no-firstiter_cc", *extra,
+        "--seed", "1", "--max_iter", "2", *extra,
     ]  # fmt: skip
     proc = subprocess.run(
         command, capture_output=True, text=True, env=dict(env, RELAX_FINAL_ALL_DATA_AFTER_MAX_ITER="1"), timeout=1800
@@ -95,15 +100,23 @@ def _map(path: Path) -> np.ndarray:
         return np.asarray(handle.data, dtype=np.float64)
 
 
-def test_shards_on_every_gpu_give_the_one_gpu_first_iteration(tmp_path, shard_env):
+@pytest.mark.parametrize("firstiter_cc", [False, True], ids=["ml", "firstiter-cc"])
+def test_shards_on_every_gpu_give_the_one_gpu_first_iteration(tmp_path, shard_env, firstiter_cc):
+    """With --firstiter_cc the first iteration has no coarse pass: each half is scored whole on one rank
+    (TomoHalfJob.cut), the second iteration and the final pass in shards."""
+
     env, gpus = shard_env
     project, reference = _project(tmp_path)
     one, many = tmp_path / "one", tmp_path / "many"
-    _refine(env, project, reference, one)
-    log = _refine(env, project, reference, many, "--gpu", ":".join(str(gpu) for gpu in range(gpus)))
+    cc = "--firstiter_cc" if firstiter_cc else "--no-firstiter_cc"
+    _refine(env, project, reference, one, cc)
+    log = _refine(env, project, reference, many, cc, "--gpu", ":".join(str(gpu) for gpu in range(gpus)))
     assert f"Multi-GPU run: {gpus} ranks connected" in log
     # Iterations 1 and 2 and the final pass.
-    assert len(re.findall(rf"Shards of halves 1,2: \S+ shards \(\S+ alone\) on {gpus} ranks", log)) == 3, log[-4000:]
+    counts = re.findall(rf"Shards of halves 1,2: (\S+) shards \(\S+ alone\) on {gpus} ranks", log)
+    assert len(counts) == 3, log[-4000:]
+    if firstiter_cc:
+        assert counts[0] == "1+1", counts  # the CC iteration: each half whole
     for rank in range(1, gpus):
         assert re.search(rf"rank {rank} exited with status 0; peak resident memory", log)
         assert not list((many / f".rank{rank}").glob("run_it*")), f"rank {rank} wrote run files"
@@ -111,9 +124,14 @@ def test_shards_on_every_gpu_give_the_one_gpu_first_iteration(tmp_path, shard_en
     ours = starfile.read(one / "run_it001_data.star", always_dict=True)["particles"]
     theirs = starfile.read(many / "run_it001_data.star", always_dict=True)["particles"]
     differing = [column for column in ours.columns if not ours[column].equals(theirs[column])]
-    assert differing in ([], ["rlnNormCorrection"]), differing
-    norm_a, norm_b = (frame["rlnNormCorrection"].to_numpy(dtype=np.float64) for frame in (ours, theirs))
-    assert np.max(np.abs(norm_a - norm_b) / np.abs(norm_a)) < MAX_NORM_CORRECTION_REL
+    # Every column bitwise but these, each within its one-GPU repeat floor.
+    bounded = {"rlnNormCorrection": MAX_NORM_CORRECTION_REL}
+    if firstiter_cc:
+        bounded["rlnLogLikeliContribution"] = MAX_CC_LOG_LIKELIHOOD_REL
+    assert set(differing) <= set(bounded), differing
+    for column, bound in bounded.items():
+        a, b = (frame[column].to_numpy(dtype=np.float64) for frame in (ours, theirs))
+        assert np.max(np.abs(a - b) / np.abs(a)) < bound, column
     for name in ("run_it001_half1_class001.mrc", "run_it001_half2_class001.mrc"):
         a, b = _map(one / name), _map(many / name)
         assert np.linalg.norm(a - b) / np.linalg.norm(a) < MAX_MAP_REL_L2, name
