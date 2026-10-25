@@ -47,6 +47,7 @@ from relax.refinement.reference_state import class_weights_from_posterior
 from relax.refinement.refinement_options import FINAL_ALL_DATA_AFTER_MAX_ITER_ENV, RefinementOptions
 from relax.refinement.refinement_result import ModelMaps, RefinementResult
 from relax.refinement.refinement_state import RefinementState, update_angular_sampling
+from relax.refinement.remote_halves import half_results
 from relax.refinement.result_files import final_pass_result
 from relax.refinement.sigma_offset import SigmaOffset
 from relax.refinement.trial_grids import FinalSampling, prepare_final_sampling
@@ -81,7 +82,7 @@ from relax.steps.scoring_policy import (
 )
 from relax.steps.shape_class_scoring import OpticsSpec
 from relax.steps.tomo_half import local_tomo_sampling, tomo_search_rotations
-from relax.steps.tomo_scoring import score_tomo_half_in_loop
+from relax.steps.tomo_shards import DeferredTomoHalf, TomoHalfJob
 
 if TYPE_CHECKING:
     from relax.refinement.setup_checks import RunContext
@@ -185,11 +186,12 @@ def run_final_all_data(
     final_use_local,
     source: InputSource,
     iteration,
-    remote_halves=None,
+    remote_halves,
 ) -> RefinementResult:
     """Score the converged halves at full size and reconstruct the final maps.
 
-    ``remote_halves`` (a multi-GPU run's ``RemoteHalves``; None on one GPU) scores the halves another GPU owns.
+    ``remote_halves`` (a multi-GPU run's ``RemoteHalves`` or ``ShardPool``; None on one GPU) scores halves on
+    other ranks (``remote_halves.half_results``).
 
     Replay and final-pass admission are resolved by the numbered controller.
     The returned result holds this phase's results with ``numbered`` None; the caller adds the set-up and
@@ -441,37 +443,32 @@ def run_final_all_data(
     final_outs = PerHalfOutputs()
     first_projector_power_spectrum = None
     score_half = partial(score_final_half, ctx=ctx, options=options, follower_setup=follower_setup)
-    # A multi-GPU run sends the halves another GPU owns first and publishes each in its turn.
-    remote = () if remote_halves is None else tuple(half.index for half in halves if remote_halves.remote(half.index))
-    for half in halves:
-        if half.index in remote:
-            remote_halves.submit(half.index, score_half, half, final_pass)
-    for half in halves:
-        scored = remote_halves.result(half.index) if half.index in remote else score_half(half, final_pass)
+    # Each half is published in its turn; a multi-GPU run scores some on other ranks (half_results).
+    for half_index, scored in half_results(score_half, {half.index: (half, final_pass) for half in halves}, remote_halves):
         if first_projector_power_spectrum is None:
             first_projector_power_spectrum = scored.projector_power_spectrum
-        final_outs.translation_search_bases[half.index] = scored.translation_search_base
-        final_outs.update_from(half.index, scored.result, dtype=scoring_dtype)
+        final_outs.translation_search_bases[half_index] = scored.translation_search_base
+        final_outs.update_from(half_index, scored.result, dtype=scoring_dtype)
         record_score_profile(
             history.global_profile_history,
             scored.result,
             phase="final_all_data",
             iteration=iteration + 1,
             relion_iteration=final_sampling.settings.relion_iteration,
-            half_index=half.index,
+            half_index=half_index,
             current_size=final_current_size,
             healpix_order=final_sampling.settings.grid_order,
             k_class_enabled=k_class_enabled,
         )
         logger.info(
             "RELION final all-data half-%d done: wall=%.1fs",
-            half.index + 1,
+            half_index + 1,
             scored.clock.seconds,
         )
         ctx.expectation_probe.final_half_scored(FinalHalfScored(
             scored.half, final_sampling, scored.prepared,
-            translation_search_base=scored.translation_search_base, reference=final_join_means[half.index],
-            reference_model=reference_model, noise_variance=carry.noise_model.variance_per_half[half.index],
+            translation_search_base=scored.translation_search_base, reference=final_join_means[half_index],
+            reference_model=reference_model, noise_variance=carry.noise_model.variance_per_half[half_index],
             current_size=final_pass.current_size, precision=final_precision, use_local=final_pass.use_local,
         ))
         # The half is published: drop this loop's references to its result before the next half is scored.
@@ -850,11 +847,20 @@ class FinalHalfScore:
 
 
 def score_final_half(
-    half: half_inputs.HalfSet, final_pass: FinalPass, *, ctx: "RunContext", options: RefinementOptions, follower_setup
-) -> FinalHalfScore:
+    half: half_inputs.HalfSet,
+    final_pass: FinalPass,
+    *,
+    ctx: "RunContext",
+    options: RefinementOptions,
+    follower_setup,
+    defer_tomo: bool = False,
+) -> FinalHalfScore | DeferredTomoHalf:
     """Build one half's scoring projector and score the half on the final pass's route.
 
     Each half's Projector::data lives only inside this call. The caller publishes the result.
+    ``defer_tomo`` (a multi-GPU run's shards, :mod:`relax.steps.tomo_shards`): a subtomogram half returns its
+    scoring call unscored, as a ``DeferredTomoHalf`` whose ``complete`` makes this function's result (its
+    projector then lives until the call is scored).
     """
     image_geometry = ctx.optics.image_geometry
     scoring_dtype = options.precision.rotation_real_dtype
@@ -983,8 +989,8 @@ def score_final_half(
                     half_index=half.index,
                     symmetry=options.symmetry.point_group,
                 ).rotation_log_prior
-        final_result = score_tomo_half_in_loop(
-            HalfScoringData(
+        job = TomoHalfJob(
+            data=HalfScoringData(
                 particles=half,
                 reference=final_pass.references[half.index],
                 noise_variance=final_pass.noise_model.variance_per_half[half.index],
@@ -993,8 +999,6 @@ def score_final_half(
                 scale_group_count=follower_setup.scale_stats_group_count_per_half[half.index],
                 scale_correction_data_vs_prior=final_pass.scale_gate,
             ),
-            use_adaptive=tomo_final_sampling.oversampling_order > 0,
-            sampling=tomo_final_sampling,
             local_rotations=tomo_search_rotations(
                 tomo_final_search,
                 tomo_final_sampling,
@@ -1002,14 +1006,31 @@ def score_final_half(
                 symmetry=options.symmetry.point_group,
                 engine_tuning=options.environment.engine,
             ),
-            rotation_log_prior=None if tomo_final_search is not None else tomo_final_direction_log_prior,
-            sigma_offset_angst=final_sigma_offset_k,
-            max_significants=options.adaptive.max_significants,
-            reconstruction_current_size=final_pass.current_size,
-            symmetry=options.symmetry.point_group,
-            engine_tuning=options.environment.engine,
-            scoring_overrides=options.environment.scoring,
+            unit_seed_classes=None,
+            arguments=dict(
+                use_adaptive=tomo_final_sampling.oversampling_order > 0,
+                sampling=tomo_final_sampling,
+                rotation_log_prior=None if tomo_final_search is not None else tomo_final_direction_log_prior,
+                sigma_offset_angst=final_sigma_offset_k,
+                max_significants=options.adaptive.max_significants,
+                reconstruction_current_size=final_pass.current_size,
+                symmetry=options.symmetry.point_group,
+                engine_tuning=options.environment.engine,
+                scoring_overrides=options.environment.scoring,
+            ),
         )
+        complete = partial(
+            _final_half_score,
+            half=half,
+            translation_search_base=translation_search_base,
+            prepared=final_inputs,
+            projector_power_spectrum=projector.power_spectrum,
+            clock=final_half_clock,
+            dtype=scoring_dtype,
+        )
+        if defer_tomo:
+            return DeferredTomoHalf(job, complete)
+        return complete(job.score())
     else:
         # The final pass scores each half with its own priors on the grid rows it
         # actually uses; sealed rows apply only when the sealed grid is reused.
@@ -1072,19 +1093,35 @@ def score_final_half(
                 execution=final_pass.route.execution,
                 optics=final_inputs.optics,
             )
+    return _final_half_score(
+        final_result,
+        half=half,
+        translation_search_base=translation_search_base,
+        prepared=final_inputs,
+        projector_power_spectrum=projector.power_spectrum,
+        clock=final_half_clock,
+        dtype=scoring_dtype,
+    )
+
+
+def _final_half_score(
+    final_result, *, half, translation_search_base, prepared, projector_power_spectrum, clock, dtype
+) -> FinalHalfScore:
+    """A scored final half as :func:`score_final_half` returns it: its best translations in RELION's metadata
+    convention (the previous offset plus the shift)."""
+
     if final_result.best_pose_translations is not None:
         final_result.best_pose_translations = relion_metadata_translations(
             half.translations,
             final_result.best_pose_translations,
             own_pixel_factors=image_translation_factors(half.dataset),
-            dtype=scoring_dtype,
+            dtype=dtype,
         )
-
     return FinalHalfScore(
         half=half,
         result=final_result,
         translation_search_base=translation_search_base,
-        prepared=final_inputs,
-        projector_power_spectrum=projector.power_spectrum,
-        clock=final_half_clock,
+        prepared=prepared,
+        projector_power_spectrum=projector_power_spectrum,
+        clock=clock,
     )

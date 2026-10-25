@@ -86,7 +86,7 @@ for your account, pass `--run-root <directory>`. Budgets, contents and pass crit
 | `relax/vdam/` (momentum SGD in `vdam/sgd.py`), `relax/ppca_initial_model/` | InitialModel variants |
 | `relax/ppca_refinement/` | pose-marginal PPCA refinement |
 | `relax/sampling/`, `relax/fourier/`, `relax/projection/` | grids, symmetry, priors, oversampling and expected accuracy; Fourier windows, resolution and translation phases; projection and its adjoint |
-| `relax_cli/`, `relax/parallel/` | the `relax` console script, which starts one process per GPU of `--gpu 0:1` before anything imports `relax` (standard library only); the channel between the ranks; the halves another rank scores are `relax/refinement/remote_halves.py` |
+| `relax_cli/`, `relax/parallel/` | the `relax` console script, which starts one process per GPU of `--gpu 0:1` before anything imports `relax` (standard library only); the channel between the ranks and how subtomogram shards are cut (`parallel/shards.py`); the halves or shards other ranks score are `relax/refinement/remote_halves.py`, a shard's call `relax/steps/tomo_shards.py` |
 | `relax/runtime/`, `relax/io/`, `relax/numerics/`, `relax/types.py` | environment flags, memory and batch planning, compile cache; map and particle I/O; per-voxel Fourier shells, deterministic sums and RELION's random stream; shared records |
 | `relax/cuda/` | CUDA kernels and their FFI (`librelax_cuda.so`) |
 | `relax/diagnostics/`, `relax/relion_bind/` | capture and replay; the RELION binding (never imported by production code) |

@@ -470,7 +470,8 @@ def refine_single_volume(
     k_class_probe : the K-class E-step's diagnostics (``relax.classification.probes.KClassProbe``), which observe
         its passes and never change them; the commands build ``relax.diagnostics.k_class_diagnostics.KClassDiagnostics``
         (None: the ``NoProbe`` that observes nothing).
-    ranks : a multi-GPU run's ``RankLink`` (``relax.refinement.remote_halves``): rank 1 scores half 2 (None: one GPU).
+    ranks : a multi-GPU run's ``RankLink`` (``relax.refinement.remote_halves``): with two ranks rank 1 scores half 2,
+        with three or four every rank scores shards of both subtomogram halves (None: one GPU).
 
     Returns
     -------
@@ -568,10 +569,11 @@ def refine_single_volume(
     )
 
     follower_setup = mode.follower_scale_setup(options, source, halves, experiment_datasets)
-    # A multi-GPU run: the other ranks connect here and score the halves they own.
+    # A multi-GPU run: the other ranks connect here and score the halves (or shards of them) they are given.
     remote = None if ranks is None else remote_halves.accept_remote_halves(
         ranks, remote_halves.run_objects(ctx, options, experiment_datasets, history.local_profile_history),
         remote_halves.run_fingerprint(ctx, experiment_datasets),
+        tomographic=bool(ctx.tomo_halves), n_classes=int(options.k_class.n_classes),
     )
 
     if resume is None:

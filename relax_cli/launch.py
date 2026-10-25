@@ -62,6 +62,10 @@ def rank_environment(environ=None) -> RankEnvironment | None:
     )
 
 
+# The most ranks of one run: the GPUs of one node (relax.refinement.remote_halves).
+MAX_RANKS = 4
+
+
 def gpu_devices(value: str) -> tuple[str, ...]:
     """The device ids of RELION's ``--gpu`` value: ``"0:1"``, ``"0,1"`` or ``""`` (the default device).
 
@@ -136,6 +140,10 @@ def launch_ranks(argv, orig_argv, environ) -> int | None:
     if value is None:
         return None
     devices = gpu_devices(value)
+    if len(devices) > MAX_RANKS:
+        raise ValueError(
+            f"--gpu {value!r} lists {len(devices)} devices: a multi-GPU run takes at most {MAX_RANKS} GPUs of one node"
+        )
     if len(devices) <= 1:
         if devices and devices[0] != "0":
             environ["CUDA_VISIBLE_DEVICES"] = physical_device(devices[0], environ)

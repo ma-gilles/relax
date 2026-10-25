@@ -34,6 +34,7 @@ from relax.refinement.local_half import (
 )
 from relax.refinement.ports import DenseHalfScored, ExpectationProbe, NumberedHalfRecorded
 from relax.refinement.refinement_options import RefinementOptions
+from relax.refinement.remote_halves import half_results
 from relax.runtime.host_memory import return_freed_heap
 from relax.sampling.grids import TrialGrid, rotation_grid_size
 from relax.sampling.orientation_priors import (
@@ -52,7 +53,7 @@ from relax.steps.score_outputs import (
 )
 from relax.steps.scoring_policy import local_precision
 from relax.steps.tomo_half import TomoSampling, numbered_iteration_tomo_sampling, tomo_search_rotations
-from relax.steps.tomo_scoring import score_tomo_half_in_loop
+from relax.steps.tomo_shards import DeferredTomoHalf, TomoHalfJob
 
 if TYPE_CHECKING:
     from relax.refinement.setup_checks import RunContext
@@ -321,12 +322,6 @@ def finish_numbered_half(
     record_numbered_half(score_result, particle_half, recording)
 
 
-def _score_and_finish_half(score_half, finish_half, half_inputs, k) -> None:
-    """Score half ``k`` and finish it before the next half is scored, then return the heap its passes freed (:func:`~relax.runtime.host_memory.return_freed_heap`)."""
-    finish_half(half_inputs[k], score_half(half_inputs[k]))
-    return_freed_heap(f"half {k + 1}'s E-step")
-
-
 def run_numbered_halves(
     score_half,
     finish_half,
@@ -334,34 +329,29 @@ def run_numbered_halves(
     diagnostic_half_indices,
     significance: SignificanceStatistics,
     *,
-    remote_halves=None,
+    remote_halves,
 ) -> None:
     """Score the halves of a numbered iteration and close its expectation.
 
     For each half ``k`` of ``diagnostic_half_indices``: ``score_half(half_inputs[k])`` returns its score result
     and ``finish_half(half_inputs[k], result)`` publishes it at once, before the next half is scored (so half 0's
     finished accumulators can leave the device first). A run that scored a subset of the halves for a diagnostic
-    stops here. Then the deferred preprocess checks are drained (dropped when the halves
+    stops here. Each finished half returns the heap its passes freed
+    (:func:`~relax.runtime.host_memory.return_freed_heap`). Then the deferred preprocess checks are drained (dropped when the halves
     raise, :func:`relax.cuda.preprocess.expectation_relion_preprocess_checks`) and the halves' significant-sample
     counts combined; the caller marks the end of the expectation for its observer.
 
-    ``remote_halves`` (a multi-GPU run's :class:`~relax.refinement.remote_halves.RemoteHalves`, None on one GPU)
-    scores its halves on their ranks: their calls are sent first, and each result is published in its half's turn.
+    ``remote_halves`` (a multi-GPU run's ``RemoteHalves`` or ``ShardPool``, None on one GPU) scores halves on
+    other ranks (:func:`~relax.refinement.remote_halves.half_results`); each result is published in its half's turn.
     """
     from relax.cuda.preprocess import expectation_relion_preprocess_checks
 
-    run_half = partial(_score_and_finish_half, score_half, finish_half, half_inputs)
-    remote = () if remote_halves is None else tuple(k for k in diagnostic_half_indices if remote_halves.remote(k))
-    for k in remote:
-        remote_halves.submit(k, score_half, half_inputs[k])
+    calls = {k: (half_inputs[k],) for k in diagnostic_half_indices}
     # The deferred preprocess checks are read when the halves are done, and dropped if they raise.
     with expectation_relion_preprocess_checks():
-        for k in diagnostic_half_indices:
-            if k in remote:
-                finish_half(half_inputs[k], remote_halves.result(k))
-                return_freed_heap(f"half {k + 1}'s E-step")
-            else:
-                run_half(k)
+        for k, result in half_results(score_half, calls, remote_halves):
+            finish_half(half_inputs[k], result)
+            return_freed_heap(f"half {k + 1}'s E-step")
         if diagnostic_half_indices != (0, 1):
             raise RuntimeError(
                 "targeted half-only significance diagnostic returned without writing its "
@@ -406,7 +396,7 @@ def run_numbered_expectation(
     half_inputs: list,
     diagnostic_half_indices,
     history,
-    remote_halves=None,
+    remote_halves,
 ) -> NumberedExpectationResult:
     """Score both halves of a numbered iteration (step S3): the dense route's variant, the expectation phase
     shared by the halves, the subtomogram sampling, then each half scored and published (half 0's
@@ -662,13 +652,18 @@ def score_numbered_half(
     numbered_relion_iteration: int,
     probe: ExpectationProbe,
     k_class_probe: KClassProbe,
-) -> HalfScoreResult:
+    defer_tomo: bool = False,
+) -> HalfScoreResult | DeferredTomoHalf:
     """Build half-specific priors/batches and accumulate an empty, SPA or tomography half.
 
     Canonical pose grids and the applied translation base accompany the result. RELION's source-faithful
     powerClass normalisation (and with it the exact BPref operands) is on wherever RELION's particle order is
     preserved (``options.parity.preserve_bpref_particle_order``).
     Publication, accumulator offloading and post-score capture are ``finish_numbered_half``'s.
+
+    ``defer_tomo`` (a multi-GPU run's shards, :mod:`relax.steps.tomo_shards`): a subtomogram half returns its
+    scoring call unscored, as a ``DeferredTomoHalf`` whose ``complete`` turns the call's result into this
+    function's.
     """
     sampling = phase.sampling
     particle_half = half.data.particles
@@ -799,10 +794,8 @@ def score_numbered_half(
     if half.data.tilt_prior is not None and not tomo_halves:
         raise NotImplementedError("--sigma_tilt is implemented for subtomogram particles only")
     if tomo_halves:
-        score_result = score_tomo_half_in_loop(
-            half.data,
-            use_adaptive=phase.use_adaptive,
-            sampling=tomo_sampling,
+        job = TomoHalfJob(
+            data=half.data,
             local_rotations=tomo_search_rotations(
                 (
                     dict(
@@ -833,18 +826,27 @@ def score_numbered_half(
                 symmetry=symmetry,
                 engine_tuning=options.environment.engine,
             ),
-            rotation_log_prior=half.direction_priors.rotation_log_prior,
-            sigma_offset_angst=half.sigma_offset_angstrom,
-            max_significants=options.adaptive.max_significants,
-            reconstruction_current_size=model_support_size,
-            symmetry=symmetry,
-            class_log_priors=class_log_priors if k_class_enabled else None,
-            class_rotation_log_prior=half.direction_priors.class_rotation_log_prior,
             unit_seed_classes=seed_classes_k,
-            normalized_cc=phase.variant.score_mode == "normalized_cc",
-            engine_tuning=options.environment.engine,
-            scoring_overrides=options.environment.scoring,
+            arguments=dict(
+                use_adaptive=phase.use_adaptive,
+                sampling=tomo_sampling,
+                rotation_log_prior=half.direction_priors.rotation_log_prior,
+                sigma_offset_angst=half.sigma_offset_angstrom,
+                max_significants=options.adaptive.max_significants,
+                reconstruction_current_size=model_support_size,
+                symmetry=symmetry,
+                class_log_priors=class_log_priors if k_class_enabled else None,
+                class_rotation_log_prior=half.direction_priors.class_rotation_log_prior,
+                normalized_cc=phase.variant.score_mode == "normalized_cc",
+                engine_tuning=options.environment.engine,
+                scoring_overrides=options.environment.scoring,
+            ),
         )
+        if defer_tomo:
+            return DeferredTomoHalf(
+                job, partial(_with_translation_search_base, translation_search_base=translation_search_base)
+            )
+        score_result = job.score()
     elif use_local:
         local_optics = shape_class_scoring.prepare_optics(
             particle_half.dataset,
@@ -984,6 +986,12 @@ def score_numbered_half(
                 half=half.data, image_window_size=image_window_size, perturb_factor=options.parity.perturb_factor,
                 result=dense_result, use_float64_scoring=options.precision.use_float64_scoring,
             ))
+
+    return _with_translation_search_base(score_result, translation_search_base=translation_search_base)
+
+
+def _with_translation_search_base(score_result: HalfScoreResult, *, translation_search_base) -> HalfScoreResult:
+    """The scored half with the translation base its pose grid was applied to (``score_numbered_half``)."""
 
     score_result.translation_search_base = translation_search_base
     return score_result

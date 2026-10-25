@@ -171,7 +171,7 @@ def test_half_2_scored_through_the_channel_matches_the_one_gpu_run(monkeypatch, 
     one_gpu = run_tiny_refinement(monkeypatch, n_classes=n_classes)
     loops = []
 
-    def accept(link, objects, fingerprint):
+    def accept(link, objects, fingerprint, **run_kind):
         assert link.world == 2 and fingerprint["units"] == [5, 5]
         loops.append(LoopbackHalves(objects))
         return loops[-1]

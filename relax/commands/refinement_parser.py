@@ -39,9 +39,12 @@ class RetiredFlag(argparse.Action):
 def parse_refinement_args(argv=None):
     from relax.sampling.symmetry import canonicalize_rotational_symmetry
 
+    # No abbreviations: the `relax` launcher reads --gpu and --output from the command line by their full names
+    # before this parser exists (relax_cli.launch), so `--gp 0:1` must not reach a one-process run.
     parser = argparse.ArgumentParser(
         description="RELION-equivalent 3D auto-refine (relax refine, K=1) and 3D classification "
-        "(relax class3d, K>1). See docs/user_guide.md."
+        "(relax class3d, K>1). See docs/user_guide.md.",
+        allow_abbrev=False,
     )
     input_poses.add_initial_pose_source_argument(parser)
     parser.add_argument(

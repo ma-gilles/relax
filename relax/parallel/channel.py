@@ -30,6 +30,10 @@ class RankFailed(RuntimeError):
     """The other end of a rank connection closed or reported a failure."""
 
 
+class RankClosed(RankFailed):
+    """The other end closed the connection between two messages (a cut inside a message is a ``RankFailed``)."""
+
+
 def _restore_device_array(host: np.ndarray, weak_type: bool):
     import jax
     from jax._src.lax import lax as lax_internal
@@ -38,26 +42,37 @@ def _restore_device_array(host: np.ndarray, weak_type: bool):
     return lax_internal._convert_element_type(value, value.dtype, weak_type=True) if weak_type else value
 
 
+def _restore_host_array(host: np.ndarray, weak_type: bool):
+    return host
+
+
 class _Pickler(pickle.Pickler):
     def __init__(self, file, *, names_by_id: dict[int, str], buffer_callback):
+        import jax
+
         super().__init__(file, protocol=5, buffer_callback=buffer_callback)
         self._names_by_id = names_by_id
+        self._jax_array = jax.Array
 
     def persistent_id(self, obj):
         return self._names_by_id.get(id(obj))
 
     def reducer_override(self, obj):
-        import jax
-
-        if isinstance(obj, jax.Array):
+        if isinstance(obj, self._jax_array):
             return _restore_device_array, (np.asarray(obj), bool(getattr(obj, "weak_type", False)))
         return NotImplemented
 
 
 class _Unpickler(pickle.Unpickler):
-    def __init__(self, file, *, objects: dict[str, object], buffers):
+    def __init__(self, file, *, objects: dict[str, object], buffers, host_arrays: bool = False):
         super().__init__(file, buffers=buffers)
         self._objects = objects
+        self._host_arrays = host_arrays
+
+    def find_class(self, module, name):
+        if self._host_arrays and module == __name__ and name == "_restore_device_array":
+            return _restore_host_array
+        return super().find_class(module, name)
 
     def persistent_load(self, name):
         if name not in self._objects:
@@ -75,32 +90,47 @@ def encode(record, objects: dict[str, object]) -> list:
     return [stream.getvalue(), *(buffer.raw() for buffer in buffers)]
 
 
-def decode(frames: list, objects: dict[str, object]):
-    """The record of :func:`encode`'s frames, with run objects read from this rank's ``objects``."""
+def decode(frames: list, objects: dict[str, object], *, host_arrays: bool = False):
+    """The record of :func:`encode`'s frames, with run objects read from this rank's ``objects``.
+    ``host_arrays``: JAX arrays are read as NumPy arrays and left on the host."""
 
-    return _Unpickler(io.BytesIO(frames[0]), objects=objects, buffers=frames[1:]).load()
+    return _Unpickler(io.BytesIO(frames[0]), objects=objects, buffers=frames[1:], host_arrays=host_arrays).load()
 
 
-def send(connection: Connection, record, objects: dict[str, object]) -> None:
-    """Send one record: the frame count, then the frames."""
+def send_frames(connection: Connection, frames: list) -> None:
+    """Send encoded frames: their count, then each frame. Pickles nothing but the count, so a thread that only
+    moves frames runs no JAX."""
 
-    frames = encode(record, objects)
     connection.send(len(frames))
     for frame in frames:
         connection.send_bytes(frame)
 
 
-def receive(connection: Connection, objects: dict[str, object], *, peer: str):
-    """Receive one record from ``peer`` (named in errors). The buffers are writable copies."""
+def receive_frames(connection: Connection, *, peer: str) -> list:
+    """Receive one record's frames from ``peer`` (named in errors). The buffers are writable copies."""
 
     try:
         count = connection.recv()
-        frames = [
-            connection.recv_bytes() if index == 0 else bytearray(connection.recv_bytes()) for index in range(count)
-        ]
     except (EOFError, ConnectionError, OSError) as error:
-        raise RankFailed(f"the connection to {peer} closed ({type(error).__name__}): that rank stopped") from error
-    return decode(frames, objects)
+        raise RankClosed(f"the connection to {peer} closed ({type(error).__name__}): that rank stopped") from error
+    try:
+        return [connection.recv_bytes() if index == 0 else bytearray(connection.recv_bytes()) for index in range(count)]
+    except (EOFError, ConnectionError, OSError) as error:
+        raise RankFailed(
+            f"the connection to {peer} closed inside a message ({type(error).__name__}): that rank stopped"
+        ) from error
+
+
+def send(connection: Connection, record, objects: dict[str, object]) -> None:
+    """Send one record: the frame count, then the frames."""
+
+    send_frames(connection, encode(record, objects))
+
+
+def receive(connection: Connection, objects: dict[str, object], *, peer: str):
+    """Receive one record from ``peer`` (named in errors). The buffers are writable copies."""
+
+    return decode(receive_frames(connection, peer=peer), objects)
 
 
 def listen(address: str, authkey: bytes) -> Listener:

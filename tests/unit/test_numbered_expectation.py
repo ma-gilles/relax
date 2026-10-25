@@ -23,6 +23,7 @@ from relax.refinement.ports import NoProbe, ObserverExpectationProbe
 from relax.runtime.engine_tuning import EngineTuning
 from relax.sampling.grids import TrialGrid
 from relax.sampling.orientation_priors import HalfDirectionLogPriors
+from relax.steps import tomo_scoring
 from relax.steps.half_inputs import HalfScoringData, HalfSet
 from relax.steps.score_outputs import HalfScoreResult, PerHalfOutputs
 from relax.steps.tomo_half import TomoSampling
@@ -403,7 +404,7 @@ def test_tomography_seeding_uses_original_unit_rows_without_spa_optics(monkeypat
         searches.append(search)
         return None if search is None else rotations
 
-    monkeypatch.setattr(expectation, 'score_tomo_half_in_loop', score)
+    monkeypatch.setattr(tomo_scoring, 'score_tomo_half_in_loop', score)
     monkeypatch.setattr(expectation, 'tomo_search_rotations', search_rotations)
     monkeypatch.setattr(expectation.shape_class_scoring, 'prepare_optics', reject)
     monkeypatch.setattr(expectation, 'relion_half_translation_prior_inputs', reject)
@@ -490,6 +491,7 @@ def test_each_half_is_finished_right_after_it_is_scored():
     combined = []
     run_numbered_halves(
         score, finish, ("half 0", "half 1"), (0, 1), SimpleNamespace(combine=lambda: combined.append(1)),
+        remote_halves=None,
     )
     assert combined == [1]
     assert events == [

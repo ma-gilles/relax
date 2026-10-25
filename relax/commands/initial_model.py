@@ -357,9 +357,10 @@ def make_parser() -> argparse.ArgumentParser:
         "--gpu",
         dest="gpu_ids",
         default=DEFAULTS.gpu_ids,
-        help="Accepted for RELION command lines; the device comes from CUDA_VISIBLE_DEVICES and the value is not "
-        "recorded. A non-empty value (the default) sets CUDA_LAUNCH_BLOCKING from --deterministic-cuda; an empty "
-        "one leaves it as the environment has it",
+        help="Accepted for RELION command lines. InitialModel runs in one process on one GPU (from "
+        "CUDA_VISIBLE_DEVICES) whatever the list says: unlike relax refine and class3d, a list of devices does not "
+        "start one process per GPU, and the value is not recorded. A non-empty value (the default) sets "
+        "CUDA_LAUNCH_BLOCKING from --deterministic-cuda; an empty one leaves it as the environment has it",
     )
     parser.add_argument("--j", dest="nr_threads", type=_positive_int, default=1, help="Compatibility thread count")
     parser.add_argument("--nr-mpi", "--nr_mpi", dest="nr_mpi", type=_positive_int, default=1)

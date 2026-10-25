@@ -7,6 +7,7 @@ their existing casts and coarse-grid reductions.
 
 from dataclasses import dataclass, field
 
+import jax
 import jax.numpy as jnp
 import numpy as np
 from recovar import utils
@@ -348,3 +349,140 @@ def resolve_mstep_full_half_axis(per_half_axes, default_axis=-1):
     if any(axis != first for axis in present[1:]):
         raise RuntimeError(f"Per-half M-step full-half axes disagree: {present}")
     return first
+
+
+# How each field of a half's result joins when the half was scored as shards (disjoint particle subsets, see
+# merge_half_shards): "units" fields hold one row per particle and go back to the particles' places; "sum" fields
+# are additive over particles and are added in shard order; "equal" fields describe the pass and must agree;
+# "absent" fields are not produced by the routes that shard (subtomogram K=1) and must be None in every shard.
+HALF_RESULT_MERGE_RULES = {
+    "ha": "units",
+    "Ft_y": "sum",
+    "Ft_ctf": "sum",
+    "em_stats": "record",
+    "noise_stats": "record",
+    "best_pose_rotations": "units",
+    "best_pose_rotation_eulers": "units",
+    "best_pose_translations": "units",
+    "coarse_ha": "units",
+    "pose_rotations": "absent",
+    "pose_rotation_eulers": "absent",
+    "significant_counts": "units",
+    "profile_summary": "absent",
+    "mstep_full_half_axis": "equal",
+    "mstep_accumulator_shape": "equal",
+    "classes": "absent",
+    "translation_search_base": "absent",
+}
+RELION_STATS_MERGE_RULES = {
+    "log_evidence_per_image": "units",
+    "best_log_score_per_image": "units",
+    "max_posterior_per_image": "units",
+    "rotation_posterior_sums": "sum",
+}
+NOISE_STATS_MERGE_RULES = {
+    "wsum_sigma2_noise": "sum",
+    "wsum_img_power": "sum",
+    "wsum_sigma2_offset": "sum",
+    "sumw": "sum",
+    "wsum_noise_a2": "sum",
+    "wsum_noise_xa": "sum",
+    "wsum_norm_correction": "units",
+    "wsum_scale_correction_xa": "sum",
+    "wsum_scale_correction_aa": "sum",
+}
+
+
+def _merge_units(parts, shard_units, n_units: int, name: str):
+    """Rows of each shard back at its particles' places: ``shard_units[s]`` are shard ``s``'s particles."""
+
+    arrays = [np.asarray(part) for part in parts]
+    for array, units in zip(arrays, shard_units, strict=True):
+        if array.shape[0] != units.size:
+            raise ValueError(f"{name}: a shard of {units.size} particles returned {array.shape[0]} rows")
+    merged = np.empty((n_units,) + arrays[0].shape[1:], dtype=arrays[0].dtype)
+    filled = np.zeros(n_units, dtype=bool)
+    for array, units in zip(arrays, shard_units, strict=True):
+        merged[units] = array
+        filled[units] = True
+    if not filled.all():
+        raise ValueError(f"{name}: the shards do not cover the half's {n_units} particles")
+    return merged
+
+
+def _merge_sum(parts, name: str):
+    """The shards' additive sums, added in float64 in shard order and cast back to the shards' dtype once."""
+
+    arrays = [np.asarray(part) for part in parts]
+    if any(array.shape != arrays[0].shape or array.dtype != arrays[0].dtype for array in arrays[1:]):
+        raise ValueError(f"{name}: shards returned sums of different shapes or dtypes")
+    wide = np.complex128 if np.iscomplexobj(arrays[0]) else np.float64
+    total = np.zeros(arrays[0].shape, dtype=wide)
+    for array in arrays:
+        total += array
+    merged = total.astype(arrays[0].dtype)
+    if isinstance(parts[0], jax.Array):
+        return jnp.asarray(merged)
+    if isinstance(parts[0], (float, int, np.floating, np.integer)):
+        return type(parts[0])(merged)
+    return merged
+
+
+def _merge_field(rule, parts, shard_units, n_units: int, name: str):
+    if rule == "absent":
+        if any(part is not None for part in parts):
+            raise NotImplementedError(f"{name} has no shard merge: this route is not sharded")
+        return None
+    if all(part is None for part in parts):
+        return None
+    if any(part is None for part in parts):
+        raise ValueError(f"{name} is missing from some shards")
+    if rule == "units":
+        return _merge_units(parts, shard_units, n_units, name)
+    if rule == "sum":
+        return _merge_sum(parts, name)
+    if rule == "equal":
+        if any(part != parts[0] for part in parts[1:]):
+            raise ValueError(f"{name} differs between shards: {parts}")
+        return parts[0]
+    raise ValueError(f"unknown merge rule {rule!r} for {name}")
+
+
+def _merge_record(records, rules, shard_units, n_units: int, name: str):
+    fields = records[0]._fields
+    missing = set(fields) - set(rules)
+    if missing:
+        raise RuntimeError(f"{name} fields without a shard merge rule: {sorted(missing)}")
+    return type(records[0])(
+        **{
+            field: _merge_field(rules[field], [getattr(r, field) for r in records], shard_units, n_units, f"{name}.{field}")
+            for field in fields
+        }
+    )
+
+
+def merge_half_shards(results: list, shard_units: list, n_units: int) -> HalfScoreResult:
+    """One half's result from its shards' results, as if the half had been scored at once.
+
+    ``shard_units[s]`` are the particles (half-local unit indices) shard ``s`` scored, in the order of its rows;
+    together they cover the half's ``n_units`` particles once. Per-particle rows go back to their particles; the
+    additive sums (BPref accumulators, noise, offset and scale sums, rotation posterior sums) are added in float64
+    in shard order and cast to their dtype once. Only the subtomogram K=1 result fields are supported; a field of
+    another route raises.
+    """
+
+    units = [np.asarray(u, dtype=np.int64).reshape(-1) for u in shard_units]
+    names = {f.name for f in HalfScoreResult.__dataclass_fields__.values()}
+    if names - set(HALF_RESULT_MERGE_RULES):
+        raise RuntimeError(f"HalfScoreResult fields without a shard merge rule: {sorted(names - set(HALF_RESULT_MERGE_RULES))}")
+    if len(units) == 1 and np.array_equal(units[0], np.arange(n_units)):
+        return results[0]
+    merged = {}
+    for name, rule in HALF_RESULT_MERGE_RULES.items():
+        parts = [getattr(result, name) for result in results]
+        if rule == "record":
+            rules = RELION_STATS_MERGE_RULES if name == "em_stats" else NOISE_STATS_MERGE_RULES
+            merged[name] = _merge_record(parts, rules, units, n_units, name)
+        else:
+            merged[name] = _merge_field(rule, parts, units, n_units, name)
+    return HalfScoreResult(**merged)

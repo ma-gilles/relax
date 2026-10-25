@@ -675,6 +675,86 @@ def _flush_plan(
     return min(by_diff2, max(batch, power // batch * batch)), rescore_bytes, by_diff2, int(by_device)
 
 
+class CoarsePassPlan(NamedTuple):
+    """A coarse pass's batch shape and flushes (:func:`coarse_pass_plan`).
+
+    ``slots`` tilts and ``r_pad`` rotations per particle, ``p_pad`` particles of ``slot_block`` slots per GEMM
+    batch; a flush cuts ``flush_size`` particles (a frame-shared pass's particle groups; ``significance_batch``
+    otherwise) with ``rescore_bytes`` for its undecided rotations. ``frame_order`` is a frame-shared global pass's
+    particle order (its groups are ``flush_size`` particles of it in turn), None otherwise or when not asked for
+    (a pass asked for its plan, :class:`CoarsePlanUse`, fills it).
+    """
+
+    budget: CoarsePassBudget
+    slots: int
+    r_pad: int
+    p_pad: int
+    slot_block: int
+    significance_batch: int
+    flush_size: int
+    rescore_bytes: int
+    by_diff2: int
+    by_device: int
+    frame_order: np.ndarray | None = None
+
+    def batches(self, n_units: int) -> list:
+        """The pass's GEMM batches of its ``n_units`` particles: ``(units, R_pad, P_pad, slot_block)``, as
+        :func:`_coarse_batches` gives them."""
+
+        return [
+            (np.arange(start, min(start + self.p_pad, n_units)), self.r_pad, self.p_pad, self.slot_block)
+            for start in range(0, int(n_units), self.p_pad)
+        ]
+
+
+class CoarsePlanUse(NamedTuple):
+    """How a coarse pass takes its plan (:func:`particle_coarse_supports`): ``pinned`` is a given plan it scores with
+    (None: one sized for its particles); ``plan_only`` returns the plan, with its frame order, and scores nothing."""
+
+    pinned: CoarsePassPlan | None = None
+    plan_only: bool = False
+
+
+def coarse_pass_plan(
+    rotation_counts,
+    *,
+    slots: int,
+    n_classes: int,
+    n_trans: int,
+    n_score_pixels: int,
+    projection_bytes_per_pixel: int,
+    resident_bytes: int,
+    describe: str,
+) -> CoarsePassPlan:
+    """The batches and flushes of a coarse pass over particles with ``rotation_counts`` coarse rotations and at
+    most ``slots`` tilts each, from the device's free memory now (:func:`_coarse_pass_budget`, less
+    ``resident_bytes``), :func:`_coarse_batches` and :func:`_flush_plan`."""
+
+    budget = _coarse_pass_budget(resident_bytes)
+    batches = _coarse_batches(
+        rotation_counts,
+        n_slots=slots,
+        n_trans=n_trans,
+        n_pixels=n_score_pixels,
+        projection_bytes_per_pixel=projection_bytes_per_pixel,
+        budget_bytes=budget.batch,
+    )
+    r_pad, p_pad, slot_block = (batches[0][1], batches[0][2], batches[0][3]) if batches else (0, 1, 1)
+    significance_batch, rescore_bytes, by_diff2, by_device = _flush_plan(
+        n_classes * r_pad * n_trans * 4,
+        slots * (n_score_pixels * (8 + 4) + 4 + n_trans * 2 * 4),  # unshifted, weight, initial, phases
+        batch_particles=p_pad,
+        flush_bytes=budget.flush,
+        describe=f"{describe}, {slots} tilts, {n_classes} x {r_pad} rotations x {n_trans} translations",
+    )
+    # A flush holds whole batches, the first that reach significance_batch particles, and never more than the pass.
+    flush_size = min(-(-significance_batch // p_pad) * p_pad, len(rotation_counts))
+    return CoarsePassPlan(
+        budget, int(slots), int(r_pad), int(p_pad), int(slot_block), int(significance_batch), int(flush_size),
+        int(rescore_bytes), int(by_diff2), int(by_device),
+    )
+
+
 def _rescore_rows_per_call(particles: int, slots: int, n_trans: int, rescore_bytes: int, capacity: int) -> int:
     """Undecided rotations per particle scored again in one call, a power of two within ``rescore_bytes``.
 
@@ -1302,6 +1382,7 @@ def particle_coarse_supports(
     unit_rotation_ids=None,
     unit_rotation_log_priors=None,
     empty_classes=(),
+    plan_use: CoarsePlanUse = CoarsePlanUse(),
 ):
     """Each particle's coarse significant samples, ``rot * T + t`` int32 ids per unit, its coarse Pmax and its
     significant-sample count as RELION records it.
@@ -1334,6 +1415,11 @@ def particle_coarse_supports(
     (``pdf_class == 0``): they keep no sample.
     The count is RELION's ``filteredSize - thresholdIdx`` (acc_ml_optimiser_impl.h:3236): a sample tied with the
     cut weight below the cut's rank is significant but not counted.
+
+    ``plan_use`` (:class:`CoarsePlanUse`): ``plan_only`` returns the pass's :class:`CoarsePassPlan` (with its frame
+    order) and scores nothing; ``pinned`` scores with a given plan instead of one sized for these particles. A shard of a half
+    (:mod:`relax.steps.tomo_shards`) takes the half's plan, and its particles are whole groups of the half's frame
+    order, so each of its particles is cut as in the whole half's pass.
     """
 
     from relax.cuda.preprocess import deferred_relion_preprocess_checks
@@ -1401,46 +1487,55 @@ def particle_coarse_supports(
         )
         for k, class_projector in enumerate(class_projectors)
     ]
-    # One budget for the pass, less the full projectors the exact cut builds for each class on first use (complex64
-    # cubes kept for the pass, and one more cube and the cast half while one is built).
-    cube_bytes = 8 * int(np.prod(jax.eval_shape(relion_projector_half_to_texture_full, class_projectors[0]).shape))
-    budget = _coarse_pass_budget((n_classes + 1) * cube_bytes + 8 * int(np.prod(np.shape(class_projectors[0]))))
+    coarse_plan = plan_use.pinned
+    if coarse_plan is None:
+        # One budget for the pass, less the full projectors the exact cut builds for each class on first use
+        # (complex64 cubes kept for the pass, and one more cube and the cast half while one is built).
+        cube_bytes = 8 * int(np.prod(jax.eval_shape(relion_projector_half_to_texture_full, class_projectors[0]).shape))
+        pass_plan = coarse_pass_plan(
+            rotation_counts,
+            slots=slots,
+            n_classes=n_classes,
+            n_trans=n_coarse_trans,
+            n_score_pixels=int(layout.score_indices_np.size),
+            projection_bytes_per_pixel=_coarse_projection_bytes_per_pixel(
+                class_textures,
+                jnp.asarray(class_projectors[0]).dtype,
+                box_size=int(layout.image_shape[0]),
+                current_size=int(layout.current_size),
+                model_max_r=int(model_max_r),
+            ),
+            resident_bytes=(n_classes + 1) * cube_bytes + 8 * int(np.prod(np.shape(class_projectors[0]))),
+            describe=f"box {int(layout.image_shape[0])}, current size {int(layout.current_size)}",
+        )
+    else:
+        # A shard of a half takes the half's plan, so that its batches and flushes are the half's (the shard's own
+        # particles would size them otherwise: their tilts, their count).
+        if slots > coarse_plan.slots or (rotation_counts and max(rotation_counts) > coarse_plan.r_pad):
+            raise ValueError(
+                f"these particles need {slots} tilts and {max(rotation_counts, default=0)} rotations, more than the "
+                f"given plan's {coarse_plan.slots} and {coarse_plan.r_pad}"
+            )
+        pass_plan, slots = coarse_plan, coarse_plan.slots
+    if plan_use.plan_only:
+        frames = None if local or n_units == 0 else shared_frames(image_left, offsets)
+        return pass_plan._replace(frame_order=None if frames is None else frames.unit_order)
+    budget = pass_plan.budget
     block_images = max(1, budget.operand_block // operand_bytes_per_image)
-    batches = _coarse_batches(
-        rotation_counts,
-        n_slots=slots,
-        n_trans=n_coarse_trans,
-        n_pixels=int(layout.score_indices_np.size),
-        projection_bytes_per_pixel=_coarse_projection_bytes_per_pixel(
-            class_textures,
-            jnp.asarray(class_projectors[0]).dtype,
-            box_size=int(layout.image_shape[0]),
-            current_size=int(layout.current_size),
-            model_max_r=int(model_max_r),
-        ),
-        budget_bytes=budget.batch,
-    )
+    batches = pass_plan.batches(n_units)
     score_indices = jnp.asarray(layout.score_indices_np, dtype=jnp.int32)
-    r_pad_all = batches[0][1] if batches else 0
+    r_pad_all = pass_plan.r_pad
     # The significance of several batches' particles runs as one call, [P_sig, R_pad * T] values
     # within the batch budget; a particle's padded rotations carry a -inf prior and are never significant.
-    p_pad_all = batches[0][2] if batches else 1
+    p_pad_all = pass_plan.p_pad
     n_score_pixels = int(layout.score_indices_np.size)
-    significance_batch, rescore_bytes, by_diff2, by_device = _flush_plan(
-        n_classes * r_pad_all * n_coarse_trans * 4,
-        slots * (n_score_pixels * (8 + 4) + 4 + n_coarse_trans * 2 * 4),  # unshifted, weight, initial, phases
-        batch_particles=p_pad_all,
-        flush_bytes=budget.flush,
-        describe=(
-            f"box {int(layout.image_shape[0])}, current size {int(layout.current_size)}, {slots} tilts, "
-            f"{n_classes} x {r_pad_all} rotations x {n_coarse_trans} translations"
-        ),
+    significance_batch, rescore_bytes, flush_size = (
+        pass_plan.significance_batch, pass_plan.rescore_bytes, pass_plan.flush_size
     )
-    # A flush holds whole batches, the first that reach significance_batch particles, and never more than the pass.
-    flush_size = min(-(-significance_batch // p_pad_all) * p_pad_all, n_units)
     logger.info(
         "Coarse flushes of %d particles for %d (%d per coarse batch; bounds %d by the diff2 cap, %d by the device's "
-        "%.2f GiB flush budget)", flush_size, n_units, p_pad_all, by_diff2, by_device, budget.flush / 2**30,
+        "%.2f GiB flush budget)", flush_size, n_units, p_pad_all, pass_plan.by_diff2, pass_plan.by_device,
+        budget.flush / 2**30,
     )
     class_full = [None] * n_classes  # each class's full projector for the direct-square kernel, built on first use
     eulers_f32 = _exact_cut_eulers(coarse_eulers_deg, local=local)  # gathered on the device by the exact cut

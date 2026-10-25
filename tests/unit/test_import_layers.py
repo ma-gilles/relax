@@ -173,3 +173,24 @@ def test_the_upward_ratchet_sees_lazy_and_type_checking_imports():
     assert not _upward("relax.sampling", "relax.numerics.shells")
     assert _upward("relax.vdam.driver", "relax.refinement.ports")  # controller to controller
     assert not _upward("relax.commands.refine", "relax.command_line")  # one command band
+
+
+def test_relax_cli_is_imported_by_the_command_band_only():
+    """``relax_cli`` (the ``relax`` console script) sits outside the layers: it imports nothing of relax, so that it
+    can start a multi-GPU run's processes before JAX starts, and only the command band reads its launcher (the
+    rank environment and ``--gpu``'s devices). An import of it from below the command band would be an upward edge
+    this file's graph does not see."""
+
+    importers = set()
+    for path in sorted(ROOT.rglob("*.py")):
+        for node in ast.walk(ast.parse(path.read_text())):
+            names = (
+                [alias.name for alias in node.names]
+                if isinstance(node, ast.Import)
+                else [node.module or ""]
+                if isinstance(node, ast.ImportFrom) and node.level == 0
+                else []
+            )
+            if any(name == "relax_cli" or name.startswith("relax_cli.") for name in names):
+                importers.add(_package_of(_module_name(path)))
+    assert importers and importers <= {"commands"}, importers

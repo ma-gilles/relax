@@ -48,9 +48,13 @@ With large particle stacks on a network file system, pass `--scratch_dir` (node-
 the ids index `CUDA_VISIBLE_DEVICES`) relax runs one process per GPU and each scores one half set; rank 0
 runs the rest of the refinement and writes every output, and the other rank writes only its log, under
 `<output>/.rank1/`. The outputs are those of a one-GPU run up to GPU run-to-run noise. Request the second GPU
-and its host memory (each process holds its own copy of the particle tables) from the scheduler. A run with
+and its host memory (each process holds its own copy of the particle tables) from the scheduler. A K=1
+subtomogram refinement also runs on three or four devices of one node (`--gpu 0:1:2:3`): every process scores
+shards of both halves (sets of particles, the heaviest alone, handed out heaviest first) and rank 0 joins
+each half's shards. Each particle is scored as on one GPU; only the order of the half's sums changes. Single
+particles and Class3D are refused on more than two devices. A run with
 observers or captures (`--timing_dir`, saved intermediates, dump environment variables) or a RELION replay
-is refused on more than one GPU; more than two devices is not supported yet. Start a multi-GPU run with the
+is refused on more than one GPU. Start a multi-GPU run with the
 `relax` command (or `python -m relax_cli refine ...`): `python -m relax.commands.refine` refuses `--gpu` with two
 devices, because importing `relax` starts JAX on every visible GPU before the processes could be split. When one process fails, the
 other is stopped and the run exits non-zero.

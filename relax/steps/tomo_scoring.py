@@ -101,6 +101,7 @@ def score_tomo_half(
     coarse_cc_winners=None,
     engine_tuning: EngineTuning,
     scoring_overrides,
+    plan_use=None,
 ) -> TomoScoreResult:
     """RELION's adaptive two-pass E-step and M-step of subtomogram particles (global search); ``engine_tuning``
     is how the resident pass 2 executes (``EngineTuning``).
@@ -271,6 +272,8 @@ def score_tomo_half(
         first_halves, first_prior = seed_iteration_first_class(relion_projector_half, rotation_log_prior)
         coarse_halves, coarse_prior = first_halves[0], None if first_prior is None else first_prior[0]
     if normalized_cc:
+        if plan_use is not None:
+            raise NotImplementedError("the subtomogram --firstiter_cc iteration has no coarse pass plan")
         if n_classes != 1 or local_rotations is not None or symmetry != "C1":
             raise NotImplementedError("the subtomogram --firstiter_cc iteration is a K=1 global search in C1")
         winners = coarse_cc_winners
@@ -284,7 +287,7 @@ def score_tomo_half(
         significant_counts = np.ones(len(supports), dtype=np.int32)
     else:
         # RELION's count is the cut's rank, before the samples tied with the cut weight (particle_coarse_supports).
-        supports, _coarse_pmax, significant_counts = tomo_coarse.particle_coarse_supports(
+        coarse = tomo_coarse.particle_coarse_supports(
             half.images,
             unit_image_offsets=half.unit_image_offsets,
             image_projections=half.image_projections,
@@ -320,7 +323,11 @@ def score_tomo_half(
                     "empty_classes": () if unit_seed_classes is not None else empty_classes,
                 }
             ),
+            plan_use=tomo_coarse.CoarsePlanUse() if plan_use is None else plan_use,
         )
+        if plan_use is not None and plan_use.plan_only:
+            return coarse
+        supports, _coarse_pmax, significant_counts = coarse
     if unit_seed_classes is not None:
         supports = seed_iteration_supports(supports, unit_seed_classes, n_classes)
     tilt = tilt_pass_inputs(
@@ -710,6 +717,7 @@ def score_tomo_half_in_loop(
     normalized_cc: bool = False,
     engine_tuning: EngineTuning,
     scoring_overrides,
+    plan_use=None,
 ):
     """The refinement loop's E+M step for a tomo half: :func:`score_tomo_half` as a ``HalfScoreResult``
     (``engine_tuning``: ``RefinementEnvironment.engine``).
@@ -738,6 +746,10 @@ def score_tomo_half_in_loop(
     particle's own orientations and their prior is the whole orientation weight, so the direction priors and
     ``class_log_priors`` are not folded in; a class whose ``log pdf_class`` is ``-inf`` is skipped
     (:func:`score_tomo_half`). The class rotation sums come back on the whole grid of ``sampling.healpix_order``.
+
+    ``plan_use`` (``tomo_coarse.CoarsePlanUse``): ``plan_only`` returns the coarse pass's plan for these particles and
+    scores nothing; ``pinned`` scores with a given one (``tomo_coarse.particle_coarse_supports``; a shard takes its half's plan,
+    :mod:`relax.steps.tomo_shards`).
     """
 
     from relax.reconstruction.half_volume_mstep import relion_backprojector_volume_shape
@@ -842,7 +854,10 @@ def score_tomo_half_in_loop(
         normalized_cc=normalized_cc,
         engine_tuning=engine_tuning,
         scoring_overrides=scoring_overrides,
+        plan_use=plan_use,
     )
+    if plan_use is not None and plan_use.plan_only:
+        return result
     pass2 = result.pass2
     if n_classes > 1 and local_rotations is not None:
         # RELION adds a local search's weights to pdf_direction at the directions' own indices
