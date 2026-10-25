@@ -247,16 +247,10 @@ def test_gpu_projection_block_with_a_staged_texture_matches_the_per_call_block(m
             compute_relion_projector_projections_block(logical, _rotations(), capacity_texture=texture, **common)
 
 
-@pytest.mark.gpu
-def test_gpu_global_pass_texture_refilled_projects_the_per_call_windows(monkeypatch):
-    """The global resident pass's kept texture (projection_blocks.open_pass_capacity_texture with kept_only),
-    refilled with a second slab, gives the windowed score/recon rows the per-call staging gives for that slab;
-    a slab above the kept size gets no texture."""
-    from relax.fine_pass import projection_blocks
-    from relax.fine_pass.projection_blocks import (
-        compute_sparse_pass2_windowed_projections_block,
-        projection_window_union,
-    )
+def _global_pass_case():
+    """Two random slabs of one shape, ``open_pass_capacity_texture`` arguments of a global resident pass and the
+    windowed projection's arguments for them."""
+    from relax.fine_pass.projection_blocks import projection_window_union
 
     image_size, radius, pf = 32, 14, 2
     size = 2 * pf * radius + 3
@@ -282,6 +276,28 @@ def test_gpu_global_pass_texture_refilled_projects_the_per_call_windows(monkeypa
         mask_current_image_disk=False, projector_output_size=2 * radius,
         window_union=projection_window_union(score, recon, image_shape=(image_size, image_size), projector_output_size=2 * radius),
     )
+    return SimpleNamespace(first=first, second=second, radius=radius, pf=pf, open_kwargs=open_kwargs, common=common)
+
+
+def _assert_windows_match(got_windows, expected_windows):
+    assert np.count_nonzero(np.asarray(expected_windows[0])) > np.asarray(expected_windows[0]).size // 4
+    for got, expected in zip(got_windows, expected_windows, strict=True):
+        if expected is None:
+            assert got is None
+        else:
+            assert_matches(np.asarray(got), np.asarray(expected))
+
+
+@pytest.mark.gpu
+def test_gpu_global_pass_texture_refilled_projects_the_per_call_windows(monkeypatch):
+    """The global resident pass's kept texture (projection_blocks.open_pass_capacity_texture with kept_only),
+    refilled with a second slab, gives the windowed score/recon rows the per-call staging gives for that slab;
+    a slab above the kept size gets no texture."""
+    from relax.fine_pass import projection_blocks
+    from relax.fine_pass.projection_blocks import compute_sparse_pass2_windowed_projections_block
+
+    case = _global_pass_case()
+    first, second, open_kwargs, common = case.first, case.second, case.open_kwargs, case.common
     for class_index in list(projection_blocks.PASS_TEXTURES):
         projection_blocks.PASS_TEXTURES.pop(class_index).close()
     texture = projection_blocks.open_pass_capacity_texture(first, **open_kwargs)
@@ -292,15 +308,47 @@ def test_gpu_global_pass_texture_refilled_projects_the_per_call_windows(monkeypa
         None, _rotations(), relion_projector_half=second, relion_projector_capacity_texture=refilled, **common
     )
     per_call = compute_sparse_pass2_windowed_projections_block(None, _rotations(), relion_projector_half=second, **common)
-    assert np.count_nonzero(np.asarray(per_call[0])) > np.asarray(per_call[0]).size // 4
-    for got, expected in zip(staged, per_call, strict=True):
-        if expected is None:
-            assert got is None
-        else:
-            assert_matches(np.asarray(got), np.asarray(expected))
+    _assert_windows_match(staged, per_call)
     monkeypatch.setattr(projection_blocks, "KEPT_TEXTURE_MAX_BYTES", 0)
     assert projection_blocks.open_pass_capacity_texture(second, **open_kwargs) is None
     projection_blocks.PASS_TEXTURES.pop(0, texture).close()
+
+
+@pytest.mark.gpu
+def test_gpu_global_pass_projects_through_the_coarse_class_texture_of_its_slab_shape(monkeypatch):
+    """Where the class's coarse pass holds a texture of the slab's shape (projection_blocks.COARSE_TEXTURES), the
+    pass refills and returns that texture, whatever the slab's size, and closes and forgets a kept pass texture of
+    the class; given only the slab's geometry (the pass releases its device slab once the texture holds it), the
+    texture gives the windowed rows the per-call staging of the slab gives."""
+    from relax.fine_pass import projection_blocks
+    from relax.fine_pass.projection_blocks import compute_sparse_pass2_windowed_projections_block
+
+    case = _global_pass_case()
+    first, second, open_kwargs, common = case.first, case.second, case.open_kwargs, case.common
+    for class_index in list(projection_blocks.PASS_TEXTURES):
+        projection_blocks.PASS_TEXTURES.pop(class_index).close()
+    assert 0 not in projection_blocks.COARSE_TEXTURES
+    coarse = cuda_projector.RelionCapacityHalfTextureF32(first, case.radius, padding_factor=case.pf, reusable_staging=True)
+    kept = cuda_projector.RelionCapacityHalfTextureF32(first, case.radius, padding_factor=case.pf, reusable_staging=True)
+    projection_blocks.COARSE_TEXTURES[0] = (coarse, jnp.zeros((), jnp.float32))
+    projection_blocks.PASS_TEXTURES[0] = kept
+    staged = None
+    try:
+        # Above the kept size, the pass would stage a texture of its own per call (None) but for the coarse one.
+        monkeypatch.setattr(projection_blocks, "KEPT_TEXTURE_MAX_BYTES", 0)
+        texture = projection_blocks.open_pass_capacity_texture(second, **open_kwargs)
+        assert texture is coarse and projection_blocks.keeps_pass_texture(texture)
+        assert kept.closed and 0 not in projection_blocks.PASS_TEXTURES
+        staged = compute_sparse_pass2_windowed_projections_block(
+            None, _rotations(), relion_projector_half=jax.ShapeDtypeStruct(second.shape, second.dtype),
+            relion_projector_capacity_texture=texture, **common,
+        )
+        per_call = compute_sparse_pass2_windowed_projections_block(None, _rotations(), relion_projector_half=second, **common)
+        _assert_windows_match(staged, per_call)
+    finally:
+        projection_blocks.PASS_TEXTURES.pop(0, kept).close()
+        texture, _ = projection_blocks.COARSE_TEXTURES.pop(0)
+        texture.close_after(jnp.zeros((), jnp.float32) if staged is None else staged[0])
 
 
 @pytest.mark.gpu
