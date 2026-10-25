@@ -738,37 +738,13 @@ ffi::Error RelionCoarseDiff2CapacityTexturePerImageF32Impl(
     ffi::Result<ffi::AnyBuffer> output)
 {
     constexpr const char* name = "RelionCoarseDiff2CapacityTexturePerImageF32";
-    if (images.element_type() != ffi::DataType::C64 ||
-        rotations.element_type() != ffi::DataType::F32 ||
-        translation_angles.element_type() != ffi::DataType::F32 ||
-        weight.element_type() != ffi::DataType::F32 ||
-        initial_diff2.element_type() != ffi::DataType::F32 ||
-        full_to_compact.element_type() != ffi::DataType::S32 ||
-        output->element_type() != ffi::DataType::F32)
-        return ffi::Error::InvalidArgument(std::string(name) + ": operand dtypes");
+    ffi::Error validation = ValidateRelionCoarseDiff2PerImageF32Operands(
+        name, current_size, physical_image_size, model_max_r, padding_factor,
+        rotations, images, translation_angles, weight, initial_diff2, full_to_compact, output);
+    if (validation.failure()) return validation;
     const auto rotation_dims = rotations.dimensions();
     const auto image_dims = images.dimensions();
     const auto angle_dims = translation_angles.dimensions();
-    const auto weight_dims = weight.dimensions();
-    const auto initial_dims = initial_diff2.dimensions();
-    const auto lookup_dims = full_to_compact.dimensions();
-    const auto output_dims = output->dimensions();
-    if (image_dims.size() != 2 || image_dims[0] <= 0 || image_dims[1] <= 0 ||
-        rotation_dims.size() != 3 || rotation_dims[0] != image_dims[0] ||
-        rotation_dims[1] <= 0 || rotation_dims[2] != 6 ||
-        angle_dims.size() != 3 || angle_dims[0] != image_dims[0] ||
-        angle_dims[1] <= 0 || angle_dims[1] > kRelionCoarseDiff2BlockSize ||
-        angle_dims[2] != 2 ||
-        weight_dims.size() != 2 || weight_dims[0] != image_dims[0] ||
-        weight_dims[1] != image_dims[1] ||
-        initial_dims.size() != 1 || initial_dims[0] != image_dims[0] ||
-        lookup_dims.size() != 1 ||
-        lookup_dims[0] != current_size * (current_size / 2 + 1) ||
-        output_dims.size() != 3 || output_dims[0] != image_dims[0] ||
-        output_dims[1] != rotation_dims[1] || output_dims[2] != angle_dims[1] ||
-        current_size <= 0 || physical_image_size <= 0 || model_max_r <= 0 ||
-        padding_factor <= 0)
-        return ffi::Error::InvalidArgument(std::string(name) + ": inconsistent operand shapes or attributes");
 
     std::shared_ptr<CapacityRelionHalfTextureF32> owner;
     {

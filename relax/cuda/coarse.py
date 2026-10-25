@@ -462,6 +462,44 @@ def relion_coarse_diff2_projector_f32(
     )
 
 
+def _per_image_compact_rotations(
+    projector_full,
+    rotation_matrices,
+    images,
+    translation_angles,
+    weight,
+    initial_diff2,
+    full_to_compact,
+    *,
+    current_size: int,
+    physical_image_size: int,
+    model_max_r: int,
+):
+    """The per-image coarse calls' compact rotations ``[B, R, 6]``, after their pose checks and
+    :func:`_prepare_relion_coarse_diff2_projector_f32`'s (``projector_full`` None: a texture call, no cube)."""
+
+    n_images, n_rotations = int(rotation_matrices.shape[0]), int(rotation_matrices.shape[1])
+    if rotation_matrices.shape[2:] != (3, 3) or translation_angles.ndim != 3 or translation_angles.shape[2] != 2:
+        raise ValueError(
+            f"per-image poses are [B, R, 3, 3] and [B, T, 2], got {rotation_matrices.shape} {translation_angles.shape}"
+        )
+    if images.shape[0] != n_images or translation_angles.shape[0] != n_images:
+        raise ValueError("rotations, phases and images must have one entry per image")
+    compact_rotations, _ = _prepare_relion_coarse_diff2_projector_f32(
+        projector_full,
+        rotation_matrices.reshape(n_images * n_rotations, 3, 3),
+        images,
+        translation_angles[0],
+        weight,
+        initial_diff2,
+        full_to_compact,
+        current_size=current_size,
+        physical_image_size=physical_image_size,
+        model_max_r=model_max_r,
+    )
+    return compact_rotations.reshape(n_images, n_rotations, 6)
+
+
 @functools.partial(
     jax.jit,
     static_argnames=("current_size", "physical_image_size", "model_max_r", "padding_factor"),
@@ -488,18 +526,11 @@ def relion_coarse_diff2_projector_per_image_f32(
     arithmetic and lane reduction); the texture is staged once and all images run in one launch.
     """
 
-    n_images, n_rotations = int(rotation_matrices.shape[0]), int(rotation_matrices.shape[1])
-    if rotation_matrices.shape[2:] != (3, 3) or translation_angles.ndim != 3 or translation_angles.shape[2] != 2:
-        raise ValueError(
-            f"per-image poses are [B, R, 3, 3] and [B, T, 2], got {rotation_matrices.shape} {translation_angles.shape}"
-        )
-    if images.shape[0] != n_images or translation_angles.shape[0] != n_images:
-        raise ValueError("rotations, phases and images must have one entry per image")
-    compact_rotations, _ = _prepare_relion_coarse_diff2_projector_f32(
+    compact_rotations = _per_image_compact_rotations(
         projector_full,
-        rotation_matrices.reshape(n_images * n_rotations, 3, 3),
+        rotation_matrices,
         images,
-        translation_angles[0],
+        translation_angles,
         weight,
         initial_diff2,
         full_to_compact,
@@ -509,11 +540,11 @@ def relion_coarse_diff2_projector_per_image_f32(
     )
     return jax.ffi.ffi_call(
         library.TARGET_RELION_COARSE_DIFF2_PROJECTOR_PER_IMAGE_F32,
-        jax.ShapeDtypeStruct((n_images, n_rotations, int(translation_angles.shape[1])), jnp.float32),
+        jax.ShapeDtypeStruct(compact_rotations.shape[:2] + (int(translation_angles.shape[1]),), jnp.float32),
         vmap_method="sequential",
     )(
         projector_full,
-        compact_rotations.reshape(n_images, n_rotations, 6),
+        compact_rotations,
         images,
         translation_angles,
         weight,
@@ -549,13 +580,6 @@ def relion_coarse_diff2_capacity_texture_per_image_f32(
     A compiled caller captures the owner's handle, as the texture's own projections do.
     """
 
-    n_images, n_rotations = int(rotation_matrices.shape[0]), int(rotation_matrices.shape[1])
-    if rotation_matrices.shape[2:] != (3, 3) or translation_angles.ndim != 3 or translation_angles.shape[2] != 2:
-        raise ValueError(
-            f"per-image poses are [B, R, 3, 3] and [B, T, 2], got {rotation_matrices.shape} {translation_angles.shape}"
-        )
-    if images.shape[0] != n_images or translation_angles.shape[0] != n_images:
-        raise ValueError("rotations, phases and images must have one entry per image")
     if texture.closed:
         raise RuntimeError("the capacity texture is closed")
     if int(texture.padding_factor) != int(padding_factor) or int(texture.logical_r_max) != int(model_max_r):
@@ -563,11 +587,11 @@ def relion_coarse_diff2_capacity_texture_per_image_f32(
             f"the texture is staged at radius {texture.logical_r_max}, padding {texture.padding_factor}; the scores "
             f"need radius {model_max_r}, padding {padding_factor}"
         )
-    compact_rotations, _ = _prepare_relion_coarse_diff2_projector_f32(
+    compact_rotations = _per_image_compact_rotations(
         None,
-        rotation_matrices.reshape(n_images * n_rotations, 3, 3),
+        rotation_matrices,
         images,
-        translation_angles[0],
+        translation_angles,
         weight,
         initial_diff2,
         full_to_compact,
@@ -577,10 +601,10 @@ def relion_coarse_diff2_capacity_texture_per_image_f32(
     )
     return jax.ffi.ffi_call(
         library.TARGET_RELION_COARSE_DIFF2_CAPACITY_TEXTURE_PER_IMAGE_F32,
-        jax.ShapeDtypeStruct((n_images, n_rotations, int(translation_angles.shape[1])), jnp.float32),
+        jax.ShapeDtypeStruct(compact_rotations.shape[:2] + (int(translation_angles.shape[1]),), jnp.float32),
         vmap_method="sequential",
     )(
-        compact_rotations.reshape(n_images, n_rotations, 6),
+        compact_rotations,
         images,
         translation_angles,
         weight,

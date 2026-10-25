@@ -3174,6 +3174,57 @@ XLA_FFI_DEFINE_HANDLER_SYMBOL(
         .Ret<ffi::AnyBuffer>()
 );
 
+// The operand checks of the per-image coarse handlers, RelionCoarseDiff2ProjectorPerImageF32 and its capacity
+// texture form RelionCoarseDiff2CapacityTexturePerImageF32 (relion_capacity_texture.cuh), which differ only in
+// where the projector is read from; ``name`` prefixes the error.
+ffi::Error ValidateRelionCoarseDiff2PerImageF32Operands(
+    const char* name,
+    int64_t current_size,
+    int64_t physical_image_size,
+    int64_t model_max_r,
+    int64_t padding_factor,
+    ffi::AnyBuffer rotations,
+    ffi::AnyBuffer images,
+    ffi::AnyBuffer translation_angles,
+    ffi::AnyBuffer weight,
+    ffi::AnyBuffer initial_diff2,
+    ffi::AnyBuffer full_to_compact,
+    ffi::Result<ffi::AnyBuffer> output)
+{
+    if (images.element_type() != ffi::DataType::C64 ||
+        rotations.element_type() != ffi::DataType::F32 ||
+        translation_angles.element_type() != ffi::DataType::F32 ||
+        weight.element_type() != ffi::DataType::F32 ||
+        initial_diff2.element_type() != ffi::DataType::F32 ||
+        full_to_compact.element_type() != ffi::DataType::S32 ||
+        output->element_type() != ffi::DataType::F32)
+        return ffi::Error::InvalidArgument(std::string(name) + ": operand dtypes");
+    const auto rotation_dims = rotations.dimensions();
+    const auto image_dims = images.dimensions();
+    const auto angle_dims = translation_angles.dimensions();
+    const auto weight_dims = weight.dimensions();
+    const auto initial_dims = initial_diff2.dimensions();
+    const auto lookup_dims = full_to_compact.dimensions();
+    const auto output_dims = output->dimensions();
+    if (image_dims.size() != 2 || image_dims[0] <= 0 || image_dims[1] <= 0 ||
+        rotation_dims.size() != 3 || rotation_dims[0] != image_dims[0] ||
+        rotation_dims[1] <= 0 || rotation_dims[2] != 6 ||
+        angle_dims.size() != 3 || angle_dims[0] != image_dims[0] ||
+        angle_dims[1] <= 0 || angle_dims[1] > kRelionCoarseDiff2BlockSize ||
+        angle_dims[2] != 2 ||
+        weight_dims.size() != 2 || weight_dims[0] != image_dims[0] ||
+        weight_dims[1] != image_dims[1] ||
+        initial_dims.size() != 1 || initial_dims[0] != image_dims[0] ||
+        lookup_dims.size() != 1 ||
+        lookup_dims[0] != current_size * (current_size / 2 + 1) ||
+        output_dims.size() != 3 || output_dims[0] != image_dims[0] ||
+        output_dims[1] != rotation_dims[1] || output_dims[2] != angle_dims[1] ||
+        current_size <= 0 || physical_image_size <= 0 || model_max_r <= 0 ||
+        padding_factor <= 0)
+        return ffi::Error::InvalidArgument(std::string(name) + ": inconsistent operand shapes or attributes");
+    return ffi::Error::Success();
+}
+
 // The fused coarse projector with one pose set per image: image b scores its own rotations
 // rotations[b] [R, 6] and translation phases translation_angles[b] [T, 2] (a subtomogram's tilt
 // images, each with its own Aproj). One texture staging and one launch for every image of the
@@ -3194,44 +3245,21 @@ ffi::Error RelionCoarseDiff2ProjectorPerImageF32Impl(
     ffi::AnyBuffer full_to_compact,
     ffi::Result<ffi::AnyBuffer> output)
 {
-    if (projector_full.element_type() != ffi::DataType::C64 ||
-        images.element_type() != ffi::DataType::C64 ||
-        rotations.element_type() != ffi::DataType::F32 ||
-        translation_angles.element_type() != ffi::DataType::F32 ||
-        weight.element_type() != ffi::DataType::F32 ||
-        initial_diff2.element_type() != ffi::DataType::F32 ||
-        full_to_compact.element_type() != ffi::DataType::S32 ||
-        output->element_type() != ffi::DataType::F32)
-        return ffi::Error::InvalidArgument(
-            "RelionCoarseDiff2ProjectorPerImageF32: operand dtypes");
+    constexpr const char* name = "RelionCoarseDiff2ProjectorPerImageF32";
     const auto projector_dims = projector_full.dimensions();
+    if (projector_full.element_type() != ffi::DataType::C64)
+        return ffi::Error::InvalidArgument(std::string(name) + ": operand dtypes");
+    if (projector_dims.size() != 3 ||
+        projector_dims[0] != projector_dims[1] ||
+        projector_dims[1] != projector_dims[2])
+        return ffi::Error::InvalidArgument(std::string(name) + ": inconsistent operand shapes or attributes");
+    ffi::Error validation = ValidateRelionCoarseDiff2PerImageF32Operands(
+        name, current_size, physical_image_size, model_max_r, padding_factor,
+        rotations, images, translation_angles, weight, initial_diff2, full_to_compact, output);
+    if (validation.failure()) return validation;
     const auto rotation_dims = rotations.dimensions();
     const auto image_dims = images.dimensions();
     const auto angle_dims = translation_angles.dimensions();
-    const auto weight_dims = weight.dimensions();
-    const auto initial_dims = initial_diff2.dimensions();
-    const auto lookup_dims = full_to_compact.dimensions();
-    const auto output_dims = output->dimensions();
-    if (projector_dims.size() != 3 ||
-        projector_dims[0] != projector_dims[1] ||
-        projector_dims[1] != projector_dims[2] ||
-        image_dims.size() != 2 || image_dims[0] <= 0 || image_dims[1] <= 0 ||
-        rotation_dims.size() != 3 || rotation_dims[0] != image_dims[0] ||
-        rotation_dims[1] <= 0 || rotation_dims[2] != 6 ||
-        angle_dims.size() != 3 || angle_dims[0] != image_dims[0] ||
-        angle_dims[1] <= 0 || angle_dims[1] > kRelionCoarseDiff2BlockSize ||
-        angle_dims[2] != 2 ||
-        weight_dims.size() != 2 || weight_dims[0] != image_dims[0] ||
-        weight_dims[1] != image_dims[1] ||
-        initial_dims.size() != 1 || initial_dims[0] != image_dims[0] ||
-        lookup_dims.size() != 1 ||
-        lookup_dims[0] != current_size * (current_size / 2 + 1) ||
-        output_dims.size() != 3 || output_dims[0] != image_dims[0] ||
-        output_dims[1] != rotation_dims[1] || output_dims[2] != angle_dims[1] ||
-        current_size <= 0 || physical_image_size <= 0 || model_max_r <= 0 ||
-        padding_factor <= 0)
-        return ffi::Error::InvalidArgument(
-            "RelionCoarseDiff2ProjectorPerImageF32: inconsistent operand shapes or attributes");
 
     const cudaError_t err = launch_relion_coarse_diff2_projector_f32_impl<false, true, false, false, true>(
         stream,
