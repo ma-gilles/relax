@@ -1265,7 +1265,10 @@ def tilt_capacity_ladders(row_ladder, image_ladder, *, slot_capacity: int, min_r
 # fit it (a heavy tail of larger particles runs alone). Measured with that estimate at today's 512 class: EMPIAR-10499
 # hp7 6.9-7.0, EMPIAR-10491 bin-2 final 6.3-6.5; the real tilt-series case's tightest numbered passes (hp8) 8.3-9.0,
 # its hp7 ~18, its global passes and the tutorial far above. A pass below 8 gets the smallest class holding 16: 2048
-# rows for 10499 and the 10491 final (10499 it19 -16.7% with 2048, -7.4% with 1024; same-node H100 A/Bs).
+# rows for 10499 and the 10491 final (10499 it19 -16.7% with 2048, -7.4% with 1024; same-node H100 A/Bs). When that
+# class's streamed projections do not fit (box-256 finals: 504 KiB a rotation, 40.4 MiB a row at S = 41, against
+# ~21 GiB), the largest class that fits is added if it beats the largest one (relax#130: 512 rows, 2.9 -> 7.3
+# particles a chunk on the EMPIAR-10491 bin-1 final, 6.5 -> 15.8 on the real tilt-series case's final).
 TILT_MIN_PARTICLES_PER_CHUNK = 8
 TILT_TARGET_PARTICLES_PER_CHUNK = 16
 
@@ -1279,8 +1282,9 @@ def tilt_amortised_row_classes(
     The largest class holds ``class / mean_rows`` particles, ``mean_rows`` the mean row count of the particles
     (``row_offsets``) that fit it; particles without rows, and those past the class (they run alone), are left out.
     When that is fewer than ``min_particles``, the smallest power of two holding ``target_particles`` is added, if its
-    ``rows * S`` projections fit ``budget_bytes`` at ``row_bytes`` each and it is at most ``max_rows``; otherwise the
-    classes are kept. Returns ``(classes, mean_rows)``.
+    ``rows * S`` projections fit ``budget_bytes`` at ``row_bytes`` each and it is at most ``max_rows``. When it does
+    not fit, the largest power of two that does (at most ``max_rows``) is added instead, if it is larger than the
+    largest class (it then holds more particles); otherwise the classes are kept. Returns ``(classes, mean_rows)``.
     """
 
     classes = tuple(sorted(set(row_classes)))
@@ -1294,5 +1298,12 @@ def tilt_amortised_row_classes(
     rows = pow2_ceil(int(np.ceil(target_particles * mean_rows)))
     fits = budget_bytes is None or rows * max(slot_capacity, 1) * row_bytes <= budget_bytes
     if rows > max_rows or not fits:
-        return classes, mean_rows
+        # The largest power of two within the ladder's top and the budget, when it beats the largest class (relax#130:
+        # at box 256 the 16-particle class needs 40-80 GiB of streamed projections against ~21 GiB, while 512 rows fit).
+        limit = max_rows
+        if budget_bytes is not None:
+            limit = min(limit, int(budget_bytes // (max(slot_capacity, 1) * row_bytes)))
+        rows = pow2_floor(limit) if limit >= 1 else 0
+        if rows <= classes[-1]:
+            return classes, mean_rows
     return tuple(sorted(set(classes) | {rows})), mean_rows

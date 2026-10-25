@@ -183,11 +183,23 @@ def test_tilt_amortised_row_classes_add_a_class_only_when_chunks_hold_too_few_pa
     assert resident_tilts.tilt_amortised_row_classes((256, 512), _offsets(tail), **kw)[0] == (256, 512)
     # Particles without rows do not count.
     assert resident_tilts.tilt_amortised_row_classes((256, 512), _offsets([0] * 50 + [60] * 50), **kw)[0] == (256, 512)
-    # The new class must fit the budget and the ladder's top, else the classes stay.
+    # When the 16-particle class does not fit the budget, the largest power of two that fits is added if it beats the
+    # largest class: 2048 does not fit 1500 rows' projections, 1024 does (88 rows a particle: 5.8 -> 11.6 a chunk).
     small = dict(kw, budget_bytes=1500 * 41 * row_bytes)
-    assert resident_tilts.tilt_amortised_row_classes((256, 512), _offsets([88] * 100), **small)[0] == (256, 512)
+    assert resident_tilts.tilt_amortised_row_classes((256, 512), _offsets([88] * 100), **small)[0] == (256, 512, 1024)
+    # ... and nothing is added when the largest that fits is no larger than the largest class (budget or ladder top).
+    tight = dict(kw, budget_bytes=900 * 41 * row_bytes)
+    assert resident_tilts.tilt_amortised_row_classes((256, 512), _offsets([88] * 100), **tight)[0] == (256, 512)
     capped = dict(kw, max_rows=512)
     assert resident_tilts.tilt_amortised_row_classes((256, 512), _offsets([88] * 100), **capped)[0] == (256, 512)
+    # relax#130, box-256 finals (504 KiB a rotation, two stream copies, ~21 GiB): with only 256 rows, 2048 (EMPIAR-10491
+    # bin-1 final, 70.5 rows a particle) and 1024 (the real tilt-series case's final, 32.4) do not fit; 512 does.
+    box256 = dict(kw, row_bytes=2 * 504 * 1024)
+    for rows_each in (70, 32):
+        counts = [rows_each] * 50 + [rows_each + 1] * 50
+        assert resident_tilts.tilt_amortised_row_classes((256,), _offsets(counts), **box256)[0] == (256, 512)
+    # A fitting 16-particle class is still the one added (no fallback when it fits).
+    assert resident_tilts.tilt_amortised_row_classes((256,), _offsets([61] * 100), **kw)[0] == (256, 1024)
     assert resident_tilts.tilt_amortised_row_classes((256, 512), _offsets([]), **kw) == ((256, 512), 0.0)
 
 

@@ -1766,13 +1766,14 @@ def _resident_pass2(
             previous_largest = max(row_ladder_start)
             logger.info(
                 "Resident pass-2 tilt row classes %s -> %s: particles of %.0f rows on average fill a %d-row chunk with "
-                "%.1f particles (fewer than %d; the new class holds %d)",
+                "%.1f particles (fewer than %d; the new class holds %.1f, the target %d)",
                 ",".join(str(v) for v in row_ladder_start),
                 ",".join(str(v) for v in amortised_rows),
                 mean_particle_rows,
                 previous_largest,
                 previous_largest / mean_particle_rows,
                 TILT_MIN_PARTICLES_PER_CHUNK,
+                max(amortised_rows) / mean_particle_rows,
                 TILT_TARGET_PARTICLES_PER_CHUNK,
             )
         row_ladder_start = amortised_rows
