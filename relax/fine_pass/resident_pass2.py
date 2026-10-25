@@ -1814,6 +1814,7 @@ def _resident_pass2(
             ),
             row_capacity_ladder=row_ladder_start,
             override=engine_tuning.mstep_block_rows,
+            per_chunk=tilt is not None,
         )
         def plan_memory(lone_row_bytes, projection_factor, overflow_projection_factor=None, lone_block_rows=None):
             return resident_chunk_memory.plan_resident_chunk_memory(
@@ -1838,6 +1839,7 @@ def _resident_pass2(
                 max_image_rows=resident_chunk_memory.max_image_rows(tables.row_offsets),
                 lone_row_bytes=lone_row_bytes,
                 lone_block_rows=lone_block_rows,
+                per_chunk_block=tilt is not None,
                 **resident_chunk_memory.chunk_translated_tile_pixels(
                     unshifted_operands=unshifted_operands,
                     n_score_pixels=n_windowed if windowed_prepare else n_half_pixels,

@@ -387,6 +387,40 @@ def test_mstep_block_rows_divides_every_row_capacity():
     ) == 8
 
 
+def test_a_tilt_pass_sizes_its_mstep_block_per_chunk():
+    """The tilt pass's block is capped by its largest row class and MAX_TILT_MSTEP_BLOCK_ROWS, not its smallest;
+    each chunk takes the largest power of two dividing its own capacity, overflow chunks included."""
+
+    ladder = (256, 512, 2048, 8192)
+    block = resident_chunk_memory.resolve_mstep_block_rows(
+        n_recon_pixels=356, max_block_bytes=513124859, row_capacity_ladder=ladder, override=None, per_chunk=True,
+    )
+    assert block == 8192  # the budget alone would allow 16384 rows of 356 pixels
+    assert resident_chunk_memory.resolve_mstep_block_rows(
+        n_recon_pixels=4923, max_block_bytes=513124859, row_capacity_ladder=ladder, override=None, per_chunk=True,
+    ) == 2048  # 513 MB / (44 x 4923 B) = 2369 rows
+    assert resident_chunk_memory.resolve_mstep_block_rows(
+        n_recon_pixels=100, max_block_bytes=513124859, row_capacity_ladder=(65536, 131072), override=None,
+        per_chunk=True,
+    ) == resident_chunk_memory.MAX_TILT_MSTEP_BLOCK_ROWS
+    for capacity, expected in ((256, 256), (512, 512), (2048, 2048), (8192, 8192), (3 * 8192, 8192)):
+        chunk_block = resident_chunk_memory.chunk_mstep_block_rows(block, capacity)
+        assert chunk_block == expected and capacity % chunk_block == 0
+    assert resident_chunk_memory.chunk_mstep_block_rows(2048, 3 * 512) == 512
+
+
+def test_a_tilt_pass_plan_keeps_its_per_chunk_block_above_the_smallest_row_class():
+    """With ``per_chunk_block`` the planned block divides the largest row class, not the smallest; without it the
+    plan caps it by the smallest, as one block for every chunk must."""
+
+    kwargs = dict(
+        row_capacity_ladder=(256, 512, 2048, 8192), image_capacity_ladder=(32, 128), mstep_block_rows=8192,
+        row_bytes=4096, n_fine_trans=648, n_recon_pixels=356, budget_bytes=40 << 30, mstep_tile_pixels=0,
+    )
+    assert resident_chunk_memory.plan_resident_chunk_memory(**kwargs, per_chunk_block=True).mstep_block_rows == 8192
+    assert resident_chunk_memory.plan_resident_chunk_memory(**kwargs).mstep_block_rows == 256
+
+
 def test_image_capacity_ladder_is_capped_by_the_translation_tile_budget():
     ladder = resident_chunk_memory._cap_image_capacity_ladder(
         (32, 128, 512), n_fine_trans=100, n_recon_pixels=4324, max_tile_bytes=1_197_291_339

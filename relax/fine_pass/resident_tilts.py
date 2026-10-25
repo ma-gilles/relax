@@ -357,6 +357,7 @@ def run_tilt_chunk(
     """
 
     from relax.fine_pass import (
+        resident_chunk_memory,
         resident_chunk_posterior,
         resident_chunk_programs,
         resident_chunk_records,
@@ -470,6 +471,11 @@ def run_tilt_chunk(
         )
 
     stage_tables = block_tables(0, n_slots, (score_cache, recon_cache, recon_abs2_cache))
+    # The pass's M-step block, sized for this chunk (resident_chunk_memory.chunk_mstep_block_rows).
+    spec_kwargs = dict(
+        spec_kwargs,
+        mstep_block_rows=resident_chunk_memory.chunk_mstep_block_rows(spec_kwargs["mstep_block_rows"], chunk.row_capacity),
+    )
     spec = resident_chunk_programs.make_chunk_program_spec(
         row_capacity=chunk.row_capacity, image_capacity=image_capacity, n_fine_trans=n_fine_trans, **spec_kwargs
     )
@@ -503,7 +509,7 @@ def run_tilt_chunk(
             image_shape=image_shape,
             row_capacity=chunk.row_capacity,
             unit_capacity=unit_capacity,
-            block_rows=int(spec.mstep_block_rows),
+            block_rows=min(int(spec.mstep_block_rows), TILT_CC_BLOCK_ROWS),
             tile_budget_bytes=int(tile_budget_bytes),
         )
         posterior = resident_chunk_posterior.winner_take_all_posterior(
@@ -836,6 +842,13 @@ def run_tilt_chunk(
         spec=spec,
     )
     return tuple(Ft_y_out), tuple(Ft_ctf_out), stats
+
+
+# The --firstiter_cc scoring's row block (tilt_cc_scores): its per-translation tile holds (units + block rows) x score
+# pixels, so a larger block only shrinks the translation block and multiplies the translation loop. It keeps the block
+# the pass used before chunk-sized M-step blocks (resident_chunk_memory.chunk_mstep_block_rows): with 8192-row blocks
+# an EMPIAR-10499 --firstiter_cc first iteration ran its pass 2 8.5x slower.
+TILT_CC_BLOCK_ROWS = 256
 
 
 def tilt_cc_scores(

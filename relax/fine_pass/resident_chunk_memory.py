@@ -29,12 +29,19 @@ class ResidentPass2Plan:
     mstep_block_rows: int
 
 
+# A tilt chunk's M-step block is at most this many rows: the partial pair is added into the volumes every
+# ROW_PARTIAL_FLUSH_ROWS rows (blocks_per_flush), so a larger block would hold more rows per partial than relax#65
+# measured.
+MAX_TILT_MSTEP_BLOCK_ROWS = 32768
+
+
 def resolve_mstep_block_rows(
     *,
     n_recon_pixels: int,
     max_block_bytes: int,
     row_capacity_ladder: tuple,
     override: int | None,
+    per_chunk: bool = False,
 ) -> int:
     """Rows per pixel-axis block: a power of two dividing every row capacity (``override``:
     ``EngineTuning.mstep_block_rows``, already a positive power of two).
@@ -45,6 +52,12 @@ def resolve_mstep_block_rows(
     compact engine uses for its adjoint blocks keeps the transient comparable
     to the bucket this replaces; quantizing to a power of two keeps the traced
     pixel-axis program count at one per pixel count.
+
+    ``per_chunk`` (the tilt pass): the block is capped by the largest row capacity and
+    :data:`MAX_TILT_MSTEP_BLOCK_ROWS` instead of the smallest capacity, and each chunk takes
+    :func:`chunk_mstep_block_rows`, which divides its own capacity. Capped by the smallest capacity, a tilt
+    pass ran 256-row blocks in 8192-row chunks: launches of half a wave, ~1.16M M-step steps per half
+    (EMPIAR-10491 bin 2, iteration 1).
     """
 
     if override is not None:
@@ -52,11 +65,24 @@ def resolve_mstep_block_rows(
     else:
         bytes_per_row = max(int(n_recon_pixels), 1) * 44
         block = pow2_floor(max(int(max_block_bytes) // bytes_per_row, 1))
+    if per_chunk:
+        return max(min(block, pow2_floor(max(int(v) for v in row_capacity_ladder)), MAX_TILT_MSTEP_BLOCK_ROWS), 1)
     smallest = int(row_capacity_ladder[0])
     block = min(block, smallest)
     while block > 1 and smallest % block:
         block //= 2
     return max(block, 1)
+
+
+def chunk_mstep_block_rows(mstep_block_rows: int, row_capacity: int) -> int:
+    """A chunk's M-step block: the pass's (:func:`resolve_mstep_block_rows` with ``per_chunk``), a power of two at
+    most the chunk's row capacity, halved until it divides it (a power-of-two class, or a multiple of the largest
+    class past the classes)."""
+
+    block = max(min(int(mstep_block_rows), pow2_floor(max(int(row_capacity), 1))), 1)
+    while block > 1 and int(row_capacity) % block:
+        block //= 2
+    return block
 
 
 def _cap_image_capacity_ladder(
@@ -311,6 +337,7 @@ def plan_resident_chunk_memory(
     lone_block_rows: int | None = None,
     overflow_row_bytes: int | None = None,
     float32_posterior_buckets: bool = False,
+    per_chunk_block: bool = False,
 ) -> ResidentChunkMemoryPlan:
     """Shrink the three per-chunk classes until their sum fits one budget.
 
@@ -345,6 +372,8 @@ def plan_resident_chunk_memory(
     ``overflow_row_bytes`` (default ``row_bytes``) is
     that chunk's ``row_bytes`` when it differs from the row classes': a subtomogram particle past them projects
     its rows a smaller block of image slots at a time (resident_pass2, ``tilt_overflow_slot_block``).
+    ``per_chunk_block`` (a tilt pass, :func:`resolve_mstep_block_rows`): the planned block is each chunk's largest,
+    counted at the largest chunk, and divides the largest row class instead of every class.
     """
 
     rows = tuple(int(v) for v in row_capacity_ladder)
@@ -468,8 +497,11 @@ def plan_resident_chunk_memory(
                 images = images[:-1] if len(images) > 1 else (max(images) // 2,)
             else:
                 rows = rows[:-1] if len(rows) > 1 else (max(rows) // 2,)
-    block = min(block, min(rows))
-    while block > 1 and min(rows) % block:
+    # One block for every chunk divides the smallest row class; a per-chunk block (a tilt pass) only the largest's,
+    # and each chunk takes chunk_mstep_block_rows of it.
+    divided = max(rows) if per_chunk_block else min(rows)
+    block = min(block, divided)
+    while block > 1 and divided % block:
         block //= 2
     block = max(block, 1)
     # The overflow chunks' row capacities: multiples of the largest class (overflow_row_capacity).
