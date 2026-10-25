@@ -77,6 +77,24 @@ def tilt_chunk_image_capacity(unit_capacity: int, slot_capacity: int) -> int:
     return int(unit_capacity) * int(slot_capacity)
 
 
+def tilt_chunk_image_slot_bytes(*, operand_image_bytes: int, n_rect_pixels: int) -> int:
+    """Translation-free device bytes one image slot of a tilt chunk holds from its scoring through its M-step,
+    beside the chunk plan's held tiles.
+
+    :func:`run_tilt_chunk` gathers every slot's operands out of the resident ones
+    (``gather_resident_chunk_operands``): ``operand_image_bytes`` per image
+    (``resident_projections.resident_operand_image_size``), except that the stored Wavg rectangle comes out as
+    the translated rectangle and its atomic positions, which are the plan's held tile (``r + e`` pixels). The
+    slot also holds its unshifted Wavg window (``chunk_wavg_window``, complex64, ``r``) and the M-step carry's
+    float32 Wavg triplet (``3 r``). At box 320 that is ~3 MB a slot, 3.7 GiB of a 32-unit, 41-slot chunk
+    that was planned at 3.25 GiB without it (relax#127).
+    """
+
+    r = int(n_rect_pixels)
+    # The gathered operands less the stored rectangle (8 r), the Wavg window (8 r) and the carry's triplet (12 r).
+    return int(operand_image_bytes) - 8 * r + 8 * r + 12 * r
+
+
 def tilt_projection_slot_block(max_rows: int, *, slot_capacity: int, slot_row_bytes: int, budget_bytes) -> int:
     """Image slots whose projections of the largest particle's rows fit half the chunk budget at once.
 

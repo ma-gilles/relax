@@ -840,3 +840,33 @@ def test_tilt_mstep_census_logs_one_line_per_pass(caplog):
     assert [r.getMessage() for r in caplog.records] == [
         "Tilt M-step translation blocks: largest k 64, smallest block 8 translations, multi-block chunks 1/3"
     ]
+
+
+@pytest.mark.unit
+def test_tilt_chunk_plan_counts_every_slot_s_operands_beside_its_held_tiles():
+    """relax#127: a tilt chunk's units hold their slots' gathered operands, Wavg window and M-step carry
+    (tilt_chunk_image_slot_bytes) through the chunk. Counted, a box-320 plan that fit 32 units at 3.25 GiB of a
+    4.45 GiB budget without them shrinks its unit class until the chunk fits."""
+
+    from relax.fine_pass.resident_chunk_memory import plan_resident_chunk_memory, resident_chunk_bytes
+
+    gib = 1024**3
+    slots, p, r, e = 41, 40191, 51520, 40191
+    slot_bytes = resident_tilts.tilt_chunk_image_slot_bytes(operand_image_bytes=2_344_340, n_rect_pixels=r)
+    assert slot_bytes == 2_344_340 + 12 * r
+    kwargs = dict(
+        row_bytes=8 << 20, n_fine_trans=slots, n_recon_pixels=p, held_tile_pixels=r + e, mstep_tile_pixels=0,
+        rows_live_during_prepare=True, prepare_tile_pixels=r + e,
+    )
+    chunk = dict(row_capacity=256, image_capacity=32, mstep_block_rows=32)
+    held = slots * slot_bytes
+    assert resident_chunk_bytes(**chunk, **kwargs, held_image_bytes=held) == (
+        resident_chunk_bytes(**chunk, **kwargs) + 32 * held
+    )
+    plan = dict(row_capacity_ladder=(256,), image_capacity_ladder=(32,), mstep_block_rows=32,
+                budget_bytes=int(4.45 * gib))
+    uncounted = plan_resident_chunk_memory(**plan, **kwargs)
+    assert uncounted.image_capacity_ladder == (32,)
+    counted = plan_resident_chunk_memory(**plan, **kwargs, held_image_bytes=held)
+    assert counted.peak_bytes <= counted.budget_bytes < uncounted.peak_bytes + 32 * held
+    assert max(counted.image_capacity_ladder) < 32

@@ -239,9 +239,8 @@ class ResidentHalfOperands:
         return parts
 
 
-def resident_half_operand_bytes(
+def resident_operand_image_bytes(
     *,
-    n_images: int,
     n_score_pixels: int,
     n_recon_pixels: int,
     n_rect_pixels: int,
@@ -253,36 +252,39 @@ def resident_half_operand_bytes(
     norm_high_shell_bytes: int | None = None,
     premultiplied_ctf: bool = False,
 ) -> int:
-    """Host estimate of the resident operand bytes, before any device work.
+    """Host estimate of one image's resident operand bytes (one row of :func:`resident_half_operand_bytes`)."""
 
-    Used by the driver's admission check, so an over-budget half keeps the
-    per-chunk preparation rather than allocating and failing. The arrays are
-    stored at :func:`resident_image_capacity` rows, so that is what is counted.
-    """
-
-    n_images = resident_image_capacity(n_images)
     # The four per-image scalars are highres_Xi2, the norm high shell, the scale
     # and the group id. Only the norm term can be wider than the policy's real
     # dtype: source-faithful normalization accumulates it in float64.
     if norm_high_shell_bytes is None:
         norm_high_shell_bytes = real_bytes
     return int(
-        n_images
+        int(n_score_pixels) * (int(score_complex_bytes) + int(real_bytes))
+        + int(n_recon_pixels)
         * (
-            int(n_score_pixels) * (int(score_complex_bytes) + int(real_bytes))
-            + int(n_recon_pixels)
-            * (
-                2 * int(score_complex_bytes)
-                + (3 if premultiplied_ctf else 2) * int(real_bytes)
-                + int(rfloat_ctf_bytes)
-            )
-            + int(n_rect_pixels) * int(score_complex_bytes)
-            + int(n_noise_shells) * 8
-            + int(n_fine_trans) * int(real_bytes)
-            + 3 * int(real_bytes)
-            + int(norm_high_shell_bytes)
+            2 * int(score_complex_bytes)
+            + (3 if premultiplied_ctf else 2) * int(real_bytes)
+            + int(rfloat_ctf_bytes)
         )
+        + int(n_rect_pixels) * int(score_complex_bytes)
+        + int(n_noise_shells) * 8
+        + int(n_fine_trans) * int(real_bytes)
+        + 3 * int(real_bytes)
+        + int(norm_high_shell_bytes)
     )
+
+
+def resident_half_operand_bytes(*, n_images: int, **image_bytes_kwargs) -> int:
+    """Host estimate of the resident operand bytes, before any device work.
+
+    Used by the driver's admission check, so an over-budget half keeps the
+    per-chunk preparation rather than allocating and failing. The arrays are
+    stored at :func:`resident_image_capacity` rows, so that is what is counted
+    (:func:`resident_operand_image_bytes` per row).
+    """
+
+    return resident_image_capacity(n_images) * resident_operand_image_bytes(**image_bytes_kwargs)
 
 
 class ResidentOperandPresence(NamedTuple):

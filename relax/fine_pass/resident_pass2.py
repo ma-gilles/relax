@@ -1728,6 +1728,8 @@ def _resident_pass2(
         else gathered_row_pixels * np.dtype(precision_policy.score_complex_dtype).itemsize
     )
     tilt_slot_block = None
+    # Translation-free bytes each unit of a tilt chunk holds through the chunk (its slots' gathered operands).
+    tilt_held_image_bytes = 0
     # Set by plan_chunks: whether a tilt pass runs its over-budget particles in row blocks, and the block rows of
     # their lean form (resident_tilt_lone) when the full form does not fit either.
     tilt_lone_row_blocks = False
@@ -1739,6 +1741,7 @@ def _resident_pass2(
             plan_lean_lone_blocks,
             tilt_amortised_row_classes,
             tilt_capacity_ladders,
+            tilt_chunk_image_slot_bytes,
             tilt_lone_row_bytes,
             tilt_projection_slot_block,
         )
@@ -1792,6 +1795,19 @@ def _resident_pass2(
             slot_capacity=int(tilt.slot_capacity),
             slot_row_bytes=tilt_slot_row_bytes,
             budget_bytes=tilt_slot_budget_bytes,
+        )
+        tilt_held_image_bytes = int(tilt.slot_capacity) * tilt_chunk_image_slot_bytes(
+            operand_image_bytes=resident_projections.resident_operand_image_size(
+                n_windowed=n_windowed,
+                n_recon_windowed=n_recon_windowed,
+                n_rect=n_rect,
+                n_shells=n_shells,
+                n_fine_trans=n_fine_trans,
+                precision_policy=precision_policy,
+                resolved_spectrum_norm=resolved_spectrum_norm,
+                premultiplied_ctf=ctf_premultiplied_pass,
+            ),
+            n_rect_pixels=n_rect,
         )
     class_slot_block = tilt_slot_block
     row_projection_factor = (1 if tilt is None else int(tilt_slot_block)) * gathered_row_copies
@@ -1857,6 +1873,7 @@ def _resident_pass2(
                 lone_row_bytes=lone_row_bytes,
                 lone_block_rows=lone_block_rows,
                 per_chunk=per_chunk_mstep_blocks,
+                held_image_bytes=tilt_held_image_bytes,
                 **resident_chunk_memory.chunk_translated_tile_pixels(
                     unshifted_operands=unshifted_operands,
                     n_score_pixels=n_windowed if windowed_prepare else n_half_pixels,

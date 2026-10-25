@@ -20,7 +20,7 @@ from relax.fine_pass import resident_chunk_memory, resident_stable_windows
 from relax.fine_pass.adjoint import accumulate_adjoint_block_chunked
 from relax.fine_pass.policy import ResidentConfigurationUnsupported
 from relax.fine_pass.resident_operands import (
-    resident_half_operand_bytes,
+    resident_operand_image_bytes,
     resident_operands_max_bytes,
     resident_prepare_reserved_bytes,
 )
@@ -123,6 +123,36 @@ _STREAM_FREE_MEMORY_FRACTION = 0.5
 STREAM_PEAK_COPIES = 2
 
 
+def resident_operand_image_size(
+    *,
+    n_windowed,
+    n_recon_windowed,
+    n_rect,
+    n_shells,
+    n_fine_trans,
+    precision_policy,
+    resolved_spectrum_norm,
+    premultiplied_ctf=False,
+) -> int:
+    """One image's resident operand bytes at the pass's precision (:func:`resident_half_operand_sizes` per row)."""
+
+    _, norm_high_shell_dtype = relion_powerclass_noise_dtypes(
+        real_dtype=precision_policy.score_real_dtype,
+        source_faithful_spectrum_norm=resolved_spectrum_norm,
+    )
+    return resident_operand_image_bytes(
+        n_score_pixels=int(n_windowed),
+        n_recon_pixels=int(n_recon_windowed),
+        n_rect_pixels=int(n_rect),
+        n_noise_shells=int(n_shells),
+        n_fine_trans=int(n_fine_trans),
+        score_complex_bytes=np.dtype(precision_policy.score_complex_dtype).itemsize,
+        real_bytes=np.dtype(precision_policy.score_real_dtype).itemsize,
+        norm_high_shell_bytes=np.dtype(norm_high_shell_dtype).itemsize,
+        premultiplied_ctf=bool(premultiplied_ctf),
+    )
+
+
 def resident_half_operand_sizes(
     *,
     n_images,
@@ -144,21 +174,15 @@ def resident_half_operand_sizes(
     to what is left), hence the peak.
     """
 
-    _, norm_high_shell_dtype = relion_powerclass_noise_dtypes(
-        real_dtype=precision_policy.score_real_dtype,
-        source_faithful_spectrum_norm=resolved_spectrum_norm,
-    )
-    operand_bytes = resident_half_operand_bytes(
-        n_images=int(n_images),
-        n_score_pixels=int(n_windowed),
-        n_recon_pixels=int(n_recon_windowed),
-        n_rect_pixels=int(n_rect),
-        n_noise_shells=int(n_shells),
-        n_fine_trans=int(n_fine_trans),
-        score_complex_bytes=np.dtype(precision_policy.score_complex_dtype).itemsize,
-        real_bytes=np.dtype(precision_policy.score_real_dtype).itemsize,
-        norm_high_shell_bytes=np.dtype(norm_high_shell_dtype).itemsize,
-        premultiplied_ctf=bool(premultiplied_ctf),
+    operand_bytes = resident_image_capacity(int(n_images)) * resident_operand_image_size(
+        n_windowed=n_windowed,
+        n_recon_windowed=n_recon_windowed,
+        n_rect=n_rect,
+        n_shells=n_shells,
+        n_fine_trans=n_fine_trans,
+        precision_policy=precision_policy,
+        resolved_spectrum_norm=resolved_spectrum_norm,
+        premultiplied_ctf=premultiplied_ctf,
     )
     peak_bytes = operand_bytes + resident_image_capacity(int(n_images)) * max(
         int(n_windowed), int(n_recon_windowed), int(n_rect)

@@ -158,6 +158,7 @@ def resident_chunk_bytes(
     pipelined: bool = False,
     projection_transient_bytes: int = 0,
     float32_posterior_buckets: bool = False,
+    held_image_bytes: int = 0,
 ) -> int:
     """Device bytes one chunk holds at its peak, the larger of its two stages.
 
@@ -192,12 +193,17 @@ def resident_chunk_bytes(
     M-step block. A constant reserve of one full-half-spectrum call missed the
     texture crop held beside it: the EMPIAR-10202 final pass (current size 800)
     ran out of memory allocating the second 4 GiB array (bigbox case).
+
+    ``held_image_bytes`` are the translation-free bytes each image of the image class holds beside its held tiles:
+    a tilt chunk's image is a particle whose slots' gathered operands, Wavg window and M-step Wavg carry are
+    live from its scoring through its M-step (:func:`~relax.fine_pass.resident_tilts.tilt_chunk_image_slot_bytes`).
+    Uncounted, a box-320 tilt chunk planned at 3.25 GiB held ~5.3 GiB (relax#127).
     """
 
     t, p = max(int(n_fine_trans), 1), max(int(n_recon_pixels), 1)
     held = 3 * p if held_tile_pixels is None else int(held_tile_pixels)
     rows = int(row_capacity) * int(row_bytes)
-    tiles = int(image_capacity) * t * held * 8
+    tiles = int(image_capacity) * (t * held * 8 + int(held_image_bytes))
     mstep = int(mstep_block_rows) * _mstep_block_row_bytes(n_fine_trans, n_recon_pixels, mstep_tile_pixels)
     posterior_scratch = (
         posterior_translation_bucket_scratch_bytes(row_capacity, image_capacity, n_fine_trans)
@@ -330,6 +336,7 @@ def plan_resident_chunk_memory(
     mstep_tile_pixels: int | None = None,
     pipelined: bool = False,
     projection_transient_bytes: int = 0,
+    held_image_bytes: int = 0,
     fixed_bytes: int = 0,
     max_image_rows: int = 0,
     lone_row_bytes: int | None = None,
@@ -373,6 +380,7 @@ def plan_resident_chunk_memory(
     its rows a smaller block of image slots at a time (resident_pass2, ``tilt_overflow_slot_block``).
     ``per_chunk`` (a tilt pass, :func:`resolve_mstep_block_rows`): the planned block is each chunk's largest,
     counted at the largest chunk, and divides the largest row class instead of every class.
+    ``held_image_bytes`` (:func:`resident_chunk_bytes`) counts with the held tiles, which the image class shrinks.
     """
 
     rows = tuple(int(v) for v in row_capacity_ladder)
@@ -389,6 +397,7 @@ def plan_resident_chunk_memory(
         pipelined=pipelined,
         projection_transient_bytes=projection_transient_bytes,
         float32_posterior_buckets=float32_posterior_buckets,
+        held_image_bytes=held_image_bytes,
     )
     held_pixels = 3 * max(int(n_recon_pixels), 1) if held_tile_pixels is None else int(held_tile_pixels)
     projection = int(projection_transient_bytes)
@@ -456,7 +465,7 @@ def plan_resident_chunk_memory(
                     rows = rows[:-1]
                 continue
             rows_bytes = max(rows) * int(row_bytes)
-            held_bytes = max(images) * t * held_pixels * 8
+            held_bytes = max(images) * (t * held_pixels * 8 + int(held_image_bytes))
             prepare_bytes = max(images) * t * int(prepare_tile_pixels) * 8
             prepare_stage = prepare_bytes + (rows_bytes if rows_live_during_prepare else 0)
             # A pipelined loop holds the previous chunk's rows and held tiles

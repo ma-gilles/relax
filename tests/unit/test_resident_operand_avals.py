@@ -699,3 +699,52 @@ def test_the_backend_pairing_is_enforced_before_pass_2(monkeypatch, backend_name
             )),
             observer=RunObserver(), source=InputSource(),
         )
+
+
+@pytest.mark.gpu
+def test_a_tilt_slot_s_gathered_operands_are_its_operand_row_and_the_held_rectangle(
+    monkeypatch, custom_cuda_lib, gpu_device
+):
+    """relax#127: the chunk gather (gather_resident_chunk_operands) of one image holds the resident operand row
+    the byte estimate counts, with the stored Wavg rectangle replaced by the translated rectangle and its atomic
+    positions (the tilt plan's held tile, r + e pixels); tilt_chunk_image_slot_bytes counts the rest."""
+
+    import dataclasses
+    from functools import partial
+
+    from test_resident_operands import _gpu_case
+
+    from relax.fine_pass.resident_operands import gather_resident_chunk_operands, resident_operand_image_bytes
+    from relax.fine_pass.resident_tilts import tilt_chunk_image_slot_bytes
+
+    _gpu_case(monkeypatch, custom_cuda_lib)
+    shape_args = {k: v for k, v in SHAPE_ARGS.items() if k != "n_images"}
+    operands = _avals(norm_high_shell_dtype=jnp.float64)
+    arrays = {
+        field.name: getattr(operands, field.name)
+        for field in dataclasses.fields(operands)
+        if isinstance(getattr(operands, field.name), jax.ShapeDtypeStruct)
+    }
+    slots = np.asarray([0, 3, -1, 5, 2, -1], dtype=np.int32)
+    n_exact = 4
+    gather = partial(
+        gather_resident_chunk_operands,
+        image_slots=slots,
+        translation_angles=np.zeros((1, 2), np.float32),
+        rect_indices=np.arange(SHAPE_ARGS["n_rect_pixels"], dtype=np.int32),
+        exact_positions=np.arange(n_exact, dtype=np.int32),
+        image_shape=(16, 16),
+    )
+    with jax.default_device(gpu_device):
+        gathered = jax.eval_shape(lambda fields: gather(dataclasses.replace(operands, **fields)), arrays)
+    row = sum(
+        int(np.prod(value.shape)) * jnp.dtype(value.dtype).itemsize
+        for value in gathered.values()
+        if value is not None
+    ) // slots.size
+    r = SHAPE_ARGS["n_rect_pixels"]
+    operand_row = resident_operand_image_bytes(**shape_args, norm_high_shell_bytes=8)
+    assert row == operand_row - 8 * r + 8 * (r + n_exact)
+    assert tilt_chunk_image_slot_bytes(operand_image_bytes=operand_row, n_rect_pixels=r) == (
+        row - 8 * (r + n_exact) + 8 * r + 12 * r
+    )
