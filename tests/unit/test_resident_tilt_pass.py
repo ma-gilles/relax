@@ -441,7 +441,8 @@ def test_only_the_overflow_tilt_chunks_take_the_largest_particles_slot_block(mon
 
     The row class sits between the fixture's smallest and largest particle and a chunk past it fits one slot at a
     time: the row-class chunks keep both slots, the overflow chunks take one, and the pass is the one-block pass
-    (exact discrete state, maps and sums inside the repeat band).
+    (exact discrete state, maps and sums inside the repeat band). The overflow chunks also run at unit class 1, their
+    one particle's slots, not the regular chunks' class (relax#127).
     """
 
     from test_resident_k_class_pass2 import _k_class_args, _resident
@@ -458,7 +459,7 @@ def test_only_the_overflow_tilt_chunks_take_the_largest_particles_slot_block(mon
 
     def chunk(tilt_chunk, *a, **k):
         particle_rows.extend(np.diff(np.asarray(k["tables"].row_offsets)).tolist())
-        chunk_blocks.append((int(tilt_chunk.row_capacity), int(k["slot_block"])))
+        chunk_blocks.append((int(tilt_chunk.row_capacity), int(k["slot_block"]), int(tilt_chunk.image_capacity)))
         return real_chunk(tilt_chunk, *a, **k)
 
     monkeypatch.setattr(resident_tilts, "run_tilt_chunk", chunk)
@@ -477,8 +478,9 @@ def test_only_the_overflow_tilt_chunks_take_the_largest_particles_slot_block(mon
     )
     blocked = _resident(vdam, volumes, supports, priors)
 
-    assert {block for rows, block in chunk_blocks if rows <= row_class} == {2}
-    assert {block for rows, block in chunk_blocks if rows > row_class} == {1}
+    assert {block for rows, block, _ in chunk_blocks if rows <= row_class} == {2}
+    assert {block for rows, block, _ in chunk_blocks if rows > row_class} == {1}
+    assert {units for rows, _, units in chunk_blocks if rows > row_class} == {1}
     assert_matches(whole.per_class_hard_assignments, blocked.per_class_hard_assignments)
     for field in ("class_log_evidence_per_image", "class_best_log_score_per_image", "class_rotation_posterior_sums"):
         assert_matches(np.asarray(getattr(whole, field)), np.asarray(getattr(blocked, field)), err_msg=field)
@@ -917,6 +919,11 @@ def test_mstep_at_the_chunks_valid_units_is_the_unit_capacity_mstep(monkeypatch)
         return out
 
     monkeypatch.setattr(resident_tilts, "mstep_translation_blocks", two_capacity_translations)
+    # One row class that holds every particle: the fixture's particles run as one regular chunk below its unit class
+    # (past the row classes, a particle runs alone at unit class 1, where its valid units are the capacity).
+    monkeypatch.setattr(
+        resident_tilts, "tilt_capacity_ladders", lambda rows, images, **k: ((16384,), tuple(sorted(set(images))))
+    )
     runs = []
     for capacity_sized in (True, False):
         n_blocks.append(0)

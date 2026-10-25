@@ -1840,6 +1840,12 @@ def _resident_pass2(
                 ),
                 chunk_budget_bytes=chunk_budget_bytes,
             )
+        if tilt is not None:
+            # A particle past the row classes runs alone at the smallest unit class (plan_capacity_chunks), so the
+            # ladder holds class 1: at 32 units such a chunk carried 32 particles' slots for its one (box 320, 16 GB:
+            # most of 1,530 chunks, 1,312 image rows for 41, relax#127). Regular chunks still share the largest
+            # class the pass uses (share_image_capacity).
+            image_ladder = tuple(sorted({1, *(int(v) for v in image_ladder)}))
         mstep_block_rows = resident_chunk_memory.resolve_mstep_block_rows(
             n_recon_pixels=n_recon_windowed,
             max_block_bytes=max_adjoint_block_bytes_for_pass(
