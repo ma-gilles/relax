@@ -205,17 +205,18 @@ _COARSE_BATCH_BYTES = 2 << 30
 _SIGNIFICANCE_BATCH_BYTES = 512 << 20
 
 
-# Each class's projector texture, kept from pass to pass and refilled with the pass's projector: the compiled
-# coarse programs capture the texture's native handle, so a new texture per pass compiled every slot-block
-# program again (1,061 compiles, 220 s of a 200-iteration et09_box64 subtomogram run). The registry is
-# projection_blocks.COARSE_TEXTURES, where the pass 2 of a slab of the same shape finds and reuses the texture.
-
-
 def _coarse_capacity_texture(
     projector_half, layout: CoarseScoreLayout, *, model_max_r: int, padding_factor: int, class_index: int
 ):
     """The class's persistent projector texture, refilled with ``projector_half``, when the half-storage kernel
-    serves it, else ``None``."""
+    serves it, else ``None``.
+
+    The texture is kept from pass to pass and refilled with the pass's projector: the compiled coarse programs
+    capture its native handle, so a new texture per pass compiled every slot-block program again (1,061 compiles,
+    220 s of a 200-iteration et09_box64 subtomogram run). It is kept in ``projection_blocks.COARSE_TEXTURES``, as
+    ``(texture, a concrete result of its last coarse use)``, where the pass 2 of a slab of the same shape finds and
+    reuses it.
+    """
 
     from relax.projection.projection import relion_capacity_texture_serves
 
