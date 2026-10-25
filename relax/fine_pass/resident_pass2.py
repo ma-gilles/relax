@@ -1656,6 +1656,16 @@ def _resident_pass2(
             transient_projection_bytes / float(1024**3),
         )
 
+    # A class whose staged texture serves its projections (class_textures) projects from the texture alone from
+    # here on, which reads only the slab's geometry, so its device slab is released, as the local pass does
+    # (relax#127: the 1,016 MiB box-320 slab stayed beside a 16 GB tilt final pass's chunks, which then ran out of
+    # pool). The cache builders above project without the texture, so the slabs are kept until here.
+    projection_halves = [
+        half if texture is None else jax.ShapeDtypeStruct(half.shape, half.dtype)
+        for half, texture in zip(projection_halves, class_textures, strict=True)
+    ]
+    del class_projector_halves
+
     # ---- capacity plan ----------------------------------------------------
     # A chunk gathers one cached row per candidate: the union window's pixels
     # when the cache holds one (cached_block_projections), not the score
