@@ -43,6 +43,8 @@ KEPT_TEXTURE_MAX_BYTES = 1 << 30
 # whose slab has the coarse texture's shape refills and projects through that texture instead of staging its own
 # (open_pass_capacity_texture): two textures of a full-box slab, each with its staging, did not fit beside the pool
 # at a 16 GB final pass from box 288 (10491 bin 1 padded to box 320: CUDA error 2 creating the pass's texture).
+# It is a registry of its own, not PASS_TEXTURES, because its lifetime differs: kept at any slab size, with the
+# completion its refill waits for, and not closed by a pass's release of kept textures of another shape.
 COARSE_TEXTURES: dict = {}
 
 
