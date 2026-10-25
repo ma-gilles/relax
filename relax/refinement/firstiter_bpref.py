@@ -25,23 +25,22 @@ _AUTO_DEFERRED_FIRSTITER_BPREF_DEVICE_FRACTION = 0.500
 def _relion_firstiter_fused_bpref_enabled(
     *,
     requested: bool | None,
-    fresh_k1_guard: bool,
     winner_take_all: bool,
     preserve_bpref_particle_order: bool,
-    relion_exact_bpref_operands: bool,
     use_relion_x_half_mstep: bool,
     score_only: bool,
     first_numbered_iteration: bool,
 ) -> bool:
     """Route only fresh single-class firstiter BPref through its native kernel, in the run's first numbered
     iteration (``first_numbered_iteration``). ``requested`` is ``RefinementEnvironment.firstiter_fused_bpref``:
-    None takes the kernel wherever it is supported, False never, True refuses where it is not supported."""
+    None takes the kernel wherever it is supported, False never, True refuses where it is not supported.
+    ``preserve_bpref_particle_order`` (``options.parity.preserve_bpref_particle_order``) is the fresh K=1 guard: it
+    also selects RELION's exact BPref operands and source-faithful spectrum norm, so it is the one condition for
+    all three."""
 
     supported = bool(
-        fresh_k1_guard
+        preserve_bpref_particle_order
         and winner_take_all
-        and preserve_bpref_particle_order
-        and relion_exact_bpref_operands
         and use_relion_x_half_mstep
         and not score_only
         and first_numbered_iteration
@@ -205,14 +204,10 @@ def relion_firstiter_compact_batch_planning_decision(
         engine_tuning.finite_check != "off"
         or half.diagnostics_armed()
     )
-    fresh_k1_guard = bool(preserve_bpref_particle_order)
-    relion_exact_bpref_operands = fresh_k1_guard
     relion_firstiter_fused_bpref = _relion_firstiter_fused_bpref_enabled(
         requested=half.fused_request,
-        fresh_k1_guard=fresh_k1_guard,
         winner_take_all=winner_take_all,
         preserve_bpref_particle_order=preserve_bpref_particle_order,
-        relion_exact_bpref_operands=relion_exact_bpref_operands,
         use_relion_x_half_mstep=use_relion_x_half_mstep,
         score_only=False,
         first_numbered_iteration=half.iteration == 0,
