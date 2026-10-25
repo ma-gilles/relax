@@ -13,7 +13,7 @@
 #                             the tree lacks, or a pytest run that ends other than passed/failed (a crash, an OOM
 #                             kill, a timeout, a collection abort), fails the step
 #   clean <label>             the failure list of a tests run must be empty
-#   counts [BASE]             tests base BASE, then the head passes at least as many tests as the base (junit counts)
+#   counts [BASE]             tests base BASE, then every test the base passes the head passes (junit testcase ids)
 #                             unless REFACTOR_ACCEPT_COUNTS is the head's sha (the refactor tools set it from the
 #                             same hash-keyed acceptance as the harness: a sha256 of the head's tests/ diff)
 #   compare <label> <label>   the two failure lists must be identical (to compare a base by hand)
@@ -81,7 +81,9 @@ step_guard() {
 }
 step_tests() {
   local label=${1:?tests needs a label} rev=${2:?tests needs a revision} src=$S/snap_$1
-  rm -f "$S/logs/fail_$label.txt"  # a step that stops early leaves no failure list, so "clean" cannot read an old one
+  # A step that stops early leaves no failure list, junit report or counts, so "clean" and "counts" cannot read an
+  # old one.
+  rm -f "$S/logs/fail_$label.txt" "$S/logs/junit_$label.xml" "$S/logs/counts_$label.txt" "$S/logs/passed_$label.txt"
   # A real checkout: the launcher and guard tests run git (provenance, merge-base) in it.
   git -C "$W" worktree remove --force "$src" 2>/dev/null; rm -rf "$src"; git -C "$W" worktree prune
   git -C "$W" worktree add --detach "$src" "$rev" > /dev/null 2>&1 || return 2
@@ -107,16 +109,24 @@ step_tests() {
     "$PY" -m pytest $files -p no:cacheprovider --basetemp="$S/pytest_tmp_$label" --junitxml="$S/logs/junit_$label.xml" \
     -rfEs -v > "$S/logs/tests_$label.log" 2>&1; rc=$?
   grep -E "^(FAILED|ERROR) " "$S/logs/tests_$label.log" | sed 's/ - .*//' | sort > "$S/logs/fail_$label.txt"
-  # collected passed skipped failed, from the junit report (the "counts" step compares the head's with the base's).
-  "$PY" - "$S/logs/junit_$label.xml" > "$S/logs/counts_$label.txt" <<'PY' || rm -f "$S/logs/counts_$label.txt"
+  # collected passed skipped failed, and the ids of the passed tests, from the junit report (the "counts" step
+  # compares the head's with the base's).
+  "$PY" - "$S/logs/junit_$label.xml" "$S/logs/passed_$label.txt" > "$S/logs/counts_$label.txt" <<'PY' \
+    || rm -f "$S/logs/counts_$label.txt" "$S/logs/passed_$label.txt"
 import sys
 import xml.etree.ElementTree as ET
 
 root = ET.parse(sys.argv[1]).getroot()
-suites = [root] if root.tag == "testsuite" else list(root.iter("testsuite"))
-n = {k: sum(int(s.get(k, 0)) for s in suites) for k in ("tests", "failures", "errors", "skipped")}
-failed = n["failures"] + n["errors"]
-print(n["tests"], n["tests"] - failed - n["skipped"], n["skipped"], failed)
+cases = list(root.iter("testcase"))
+outcome = {}
+for case in cases:
+    bad = any(case.find(tag) is not None for tag in ("failure", "error"))
+    skipped = case.find("skipped") is not None
+    outcome[f"{case.get('classname')}::{case.get('name')}"] = "failed" if bad else "skipped" if skipped else "passed"
+passed = sorted(k for k, v in outcome.items() if v == "passed")
+with open(sys.argv[2], "w") as out:
+    out.write("".join(f"{k}\n" for k in passed))
+print(len(cases), len(passed), sum(v == "skipped" for v in outcome.values()), sum(v == "failed" for v in outcome.values()))
 PY
   echo "tests $label ($rev, $(echo "$files" | wc -l) files, all modules): rc=$rc $(tail -1 "$S/logs/tests_$label.log") -> $S/logs/fail_$label.txt"
   # pytest exits 0 (passed) or 1 (some failed: "clean" decides); anything else is a run that did not finish.
@@ -136,18 +146,23 @@ step_smell() {
   echo "$last -> $S/logs/smell_$T.txt (new findings: warning only)"; return 0
 }
 step_counts() {
-  # The base's tests under the same harness, then: the head passes at least as many tests as the base, unless the
-  # owner accepted the head's harness change (a deleted test, a narrowed collection).
-  local base=${1:-origin/main} h b head
-  step_tests base "$base"
+  # The base's tests under the same harness, then: every test the base passes is passed by the head (by junit
+  # testcase id), unless the owner accepted the head's tests/ diff (a deleted or renamed test, a narrowed
+  # collection). A base run that does not finish fails the step.
+  local base=${1:-origin/main} h b head lost
+  step_tests base "$base" || { echo "test counts: the base's tests did not run to a test outcome"; return 2; }
   h=$(cat "$S/logs/counts_head.txt" 2>/dev/null) || { echo "test counts: no head counts (run tests head HEAD first)"; return 2; }
   b=$(cat "$S/logs/counts_base.txt" 2>/dev/null) || { echo "test counts: no base counts"; return 2; }
+  [ -f "$S/logs/passed_head.txt" ] && [ -f "$S/logs/passed_base.txt" ] || { echo "test counts: no passed-test ids"; return 2; }
   set -- $h; local hc=$1 hp=$2 hs=$3; set -- $b; local bc=$1 bp=$2 bs=$3
   head=$(git -C "$W" rev-parse HEAD)
   echo "test counts (collected passed skipped): head $hc $hp $hs, base $bc $bp $bs"
-  [ "$hp" -ge "$bp" ] && return 0
-  if [ "${REFACTOR_ACCEPT_COUNTS:-}" = "$head" ]; then echo "test counts: head passes $((bp - hp)) fewer, accepted for $head"; return 0; fi
-  echo "test counts: the head passes $((bp - hp)) fewer tests than $base; the owner must accept it (REFACTOR_ACCEPT_COUNTS=$head)"
+  lost=$(LC_ALL=C comm -23 "$S/logs/passed_base.txt" "$S/logs/passed_head.txt")  # both sorted by code point
+  if [ -z "$lost" ]; then return 0; fi
+  echo "test counts: $(printf '%s\n' "$lost" | grep -c .) tests the base passes are missing or not passed on the head:"
+  printf '%s\n' "$lost" | head -20
+  if [ "${REFACTOR_ACCEPT_COUNTS:-}" = "$head" ]; then echo "test counts: accepted for $head"; return 0; fi
+  echo "test counts: the owner must accept the lost tests (REFACTOR_ACCEPT_COUNTS=$head)"
   return 1
 }
 step_harness() {

@@ -10,5 +10,7 @@
 ^scripts/(build_test_natives|run_em_fast_guard)\.sh$
 # The pytest configuration and collection: options, hooks, fixtures and shared helpers decide what runs.
 ^pyproject\.toml$
+(^|/)(pytest\.ini|tox\.ini|setup\.cfg)$
 (^|/)conftest\.py$
+(^|/)(sitecustomize|usercustomize)\.py$
 ^tests/helpers/

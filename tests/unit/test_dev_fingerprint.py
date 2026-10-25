@@ -2,6 +2,7 @@
 
 import ast
 import json
+import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -122,9 +123,9 @@ def test_an_engine_keyword_at_its_default_is_the_same_call_as_an_omitted_one():
     }
 
 
-def _engine_modules() -> list[Path]:
-    """The relax modules ``relax.classification.k_class`` imports, directly or through each other (function-level
-    imports included): the engine ``run_dense_k_class_em_adaptive`` and every module its callees live in."""
+def _engine_modules(roots=("relax.classification.k_class",)) -> list[Path]:
+    """The relax modules ``roots`` import, directly or through each other (function-level imports included); by
+    default the engine ``run_dense_k_class_em_adaptive`` and every module its callees live in."""
 
     root = Path(fingerprint_cli.REPO_ROOT)
 
@@ -135,7 +136,7 @@ def _engine_modules() -> list[Path]:
                 return candidate
         return None
 
-    seen, todo = set(), ["relax.classification.k_class"]
+    seen, todo = set(), list(roots)
     while todo:
         name = todo.pop()
         path = module_path(name)
@@ -194,20 +195,30 @@ def test_engine_keyword_defaults_match_the_engine():
 
 
 def test_retired_engine_keywords_are_read_by_no_engine():
-    """A RETIRED_ENGINE_KWARGS key leaves the stand-in digest whatever its value, which is safe only while no engine
-    module reads it: no module k_class imports names it (a parameter, a string key, an attribute), and it is not
-    also in ENGINE_KWARG_DEFAULTS."""
+    """A RETIRED_ENGINE_KWARGS key leaves every stand-in digest whatever its value, which is safe only while no engine
+    reads it:
+    - no module the two stand-in engines' code imports (k_class's run_dense_k_class_em_adaptive and the subtomogram
+      pass, relax.steps.tomo_scoring) names it as a parameter, a keyword, an attribute or a string key;
+    - no module under relax/ or relax_cli/ names it as a string (a dict key, a ``.get``, a dict forwarded with
+      ``**``): the option of the same name is an attribute and a keyword elsewhere, so only strings are refused
+      there, and a key computed at run time is beyond this check;
+    - none is also in ENGINE_KWARG_DEFAULTS."""
 
     assert not fingerprint.RETIRED_ENGINE_KWARGS & set(fingerprint.ENGINE_KWARG_DEFAULTS)
-    for path in _engine_modules():
+    root = Path(fingerprint_cli.REPO_ROOT)
+    engines = set(_engine_modules(("relax.classification.k_class", "relax.steps.tomo_scoring")))
+    assert root / "relax" / "steps" / "tomo_scoring.py" in engines
+    every = sorted((root / "relax").rglob("*.py")) + sorted((root / "relax_cli").rglob("*.py"))
+    for path in sorted(set(every) | engines):
         for node in ast.walk(ast.parse(path.read_text())):
-            names = (
-                {node.arg} if isinstance(node, ast.arg)
-                else {node.value} if isinstance(node, ast.Constant) and isinstance(node.value, str)
-                else {node.attr} if isinstance(node, ast.Attribute)
-                else {node.arg} if isinstance(node, ast.keyword) and node.arg
-                else set()
-            )
+            names = {node.value} if isinstance(node, ast.Constant) and isinstance(node.value, str) else set()
+            if path in engines:
+                names |= (
+                    {node.arg} if isinstance(node, ast.arg)
+                    else {node.attr} if isinstance(node, ast.Attribute)
+                    else {node.arg} if isinstance(node, ast.keyword) and node.arg
+                    else set()
+                )
             read = names & fingerprint.RETIRED_ENGINE_KWARGS
             assert not read, f"{path}:{getattr(node, 'lineno', '?')} reads retired engine keyword {sorted(read)}"
     kwargs = {key: True for key in fingerprint.RETIRED_ENGINE_KWARGS}
@@ -675,3 +686,34 @@ def test_diff_refuses_fingerprints_made_on_two_hosts(tmp_path, capsys):
     assert fingerprint.main(["diff", str(a), str(b)]) == 2
     b.write_text(json.dumps(_fingerprint(k1=_case({}))))
     assert fingerprint.main(["diff", str(a), str(b)]) == 0
+
+
+def test_one_tree_gives_one_fingerprint_from_two_locations(tmp_path):
+    """The fingerprint of a source tree does not depend on where the tree sits: a HEAD export beside the work
+    directory and a copy laid out like a selftest mutant (relax copied, tests and relax_cli linked) inside it give
+    the same fingerprint of a case whose operands carry run paths (main_k1_frozen_boundary)."""
+    import shutil
+    import subprocess
+    import sys
+
+    (tmp_path / "exports").mkdir()
+    source = fingerprint_cli.export_rev("HEAD", tmp_path / "exports")
+    work = tmp_path / "work"
+    copy = work / "mutant_copy"
+    copy.mkdir(parents=True)
+    shutil.copytree(source / "relax", copy / "relax")
+    for name in ("tests", "relax_cli"):
+        (copy / name).symlink_to(source / name)
+    script = Path(fingerprint_cli.REPO_ROOT, "scripts", "dev", "fingerprint.py")
+    env = {**os.environ, "PYTHONNOUSERSITE": "1", "JAX_PLATFORMS": "cpu", "CUDA_VISIBLE_DEVICES": ""}
+    outs = []
+    for tree, name in ((source, "beside"), (copy, "inside")):
+        out = tmp_path / f"{name}.json"
+        run = subprocess.run(
+            [sys.executable, str(script), "run", str(out), "main_k1_frozen_boundary", "--source", str(tree),
+             "--work-dir", str(work)],
+            env=env, capture_output=True, text=True,
+        )
+        assert run.returncode == 0, run.stdout[-2000:] + run.stderr[-2000:]
+        outs.append(json.loads(out.read_text())["cases"])
+    assert outs[0] == outs[1]
