@@ -504,21 +504,17 @@ def run_tilt_chunk(
             lambda start, stop: score_cache if whole is not None else project_block(start, stop)[0],
             slot_blocks,
             np.asarray(layout.slot_image_ids),
-            _unit_slot_images(layout, unit_capacity=unit_capacity, slot_capacity=n_slots),
             operands,
             image_angles,
             candidate_mask,
             row_is_valid,
-            rows.row_image_local,
             np.where(valid_images, np.asarray(layout.image_unit_local), unit_capacity),
             half_weights=base_tables.half_weights,
             full_to_compact=base_tables.full_to_compact,
             score_pixel_indices=score_pixel_indices,
             image_shape=image_shape,
-            row_capacity=chunk.row_capacity,
             unit_capacity=unit_capacity,
             block_rows=min(int(spec.mstep_block_rows), TILT_CC_BLOCK_ROWS),
-            tile_budget_bytes=int(tile_budget_bytes),
         )
         posterior = resident_chunk_posterior.winner_take_all_posterior(
             scored,
@@ -857,78 +853,57 @@ def tilt_cc_scores(
     block_score_cache,  # callable (start, stop) -> complex [(stop - start) * C_R, N], slots start:stop's projections
     slot_blocks,
     slot_image_ids,  # int [S, C_R] chunk image of each row per slot, -1 past its particle's images
-    unit_slot_images,  # int [S, C_U] chunk image of each unit's s-th image, -1 past its images
     operands,  # the chunk's normalized-CC operands: score_input, corr_img_score (CC weight), cc_half_batch_norm
     image_angles,  # float32 [C_B, T, 2] each image's phases
     candidate_mask,  # bool [C_R, T]
     row_is_valid,
-    row_unit_local,  # int32 [C_R]
     image_unit_local,  # int [C_B] each image's unit, C_U on padded images
     *,
     half_weights,
     full_to_compact,
     score_pixel_indices,
     image_shape,
-    row_capacity: int,
     unit_capacity: int,
     block_rows: int,
-    tile_budget_bytes: int,
 ):
     """The chunk's ``--firstiter_cc`` scores: each row's normalized CC summed over its particle's images.
 
     RELION's fine CC kernel adds ``-s / sqrt(s_cc)`` of every tilt image into the particle's diff2 in
-    ``img_id`` order (diff2.cuh cuda_kernel_diff2_CC_fine; no Xi2 offset, :1288). Per image slot, the
-    slot's images are translated with their own phases (RELION's score translation,
-    ``relion_translate_score_f32``) over the translations some row may take, in blocks that fit
-    ``tile_budget_bytes``, and each row is scored by the SPA reduction
-    (``relion_cuda_fine_normalized_cc_score``); the float32 running sum keeps the slot order. Each slot block
-    and translation block is one program (:func:`_tilt_cc_slot_block`, a scan over the slots).
+    ``img_id`` order (diff2.cuh cuda_kernel_diff2_CC_fine; no Xi2 offset, :1288). Per image slot, each row's
+    image is translated with its own phases (RELION's score translation, ``relion_translate_score_f32``) at the
+    row's candidate translations alone (``candidate_mask``; the four children of its particle's coarse winner)
+    and scored by the SPA reduction (``relion_cuda_fine_normalized_cc_score``); the float32 running sum keeps
+    the slot order. Each slot block is one program (:func:`_tilt_cc_slot_block`, a scan over the slots).
     ``min_diff2`` is the particle's ``0.5 |X_i|^2`` summed over its images (the SPA evidence offset).
     """
 
     from relax.fine_pass.resident_scoring import ResidentChunkScores
 
     slot_image_ids = np.asarray(slot_image_ids, dtype=np.int64)
-    unit_slot_images = np.asarray(unit_slot_images, dtype=np.int64)
     n_trans = int(candidate_mask.shape[1])
-    n_pixels = int(operands.score_input.shape[1])
-    kept = np.flatnonzero(np.any(np.asarray(candidate_mask & row_is_valid[:, None]), axis=0))
-    if kept.size == 0:
-        kept = np.zeros(1, dtype=np.int64)
-    # Translation blocks of a power-of-two width within the budget, the last one padded with the extra column
-    # n_trans of ``running`` (dropped at the end): one program per chunk shape and width, not per chunk.
-    per_translation = (int(unit_capacity) + int(block_rows)) * n_pixels * 8
-    t_block = min(pow2_floor(max(1, int(tile_budget_bytes) // max(per_translation, 1))), pow2_ceil(int(kept.size)))
-    padded = np.full(-(-kept.size // t_block) * t_block, n_trans, dtype=np.int64)
-    padded[: kept.size] = kept
-    pixels = jnp.asarray(score_pixel_indices, dtype=jnp.int32)
-    score_input = jnp.asarray(operands.score_input, dtype=jnp.complex64)
-    weight = jnp.asarray(operands.corr_img_score, dtype=jnp.float32)
-    row_unit = jnp.asarray(row_unit_local, dtype=jnp.int32)
-    angles = jnp.asarray(image_angles)
-    running = jnp.zeros((int(row_capacity), n_trans + 1), dtype=jnp.float32)
-    shape = tuple(int(n) for n in image_shape)
-    for t_start in range(0, padded.size, t_block):
-        index = padded[t_start : t_start + t_block]
-        block_angles = angles[:, jnp.asarray(np.where(index < n_trans, index, kept[0]), dtype=jnp.int32)]  # [C_B, T_b, 2]
-        for start, stop in slot_blocks:
-            running = _tilt_cc_slot_block(
-                running,
-                block_score_cache(start, stop),
-                jnp.asarray(unit_slot_images[start:stop], dtype=jnp.int32),
-                jnp.asarray(slot_image_ids[start:stop], dtype=jnp.int32),
-                score_input,
-                block_angles,
-                jnp.asarray(index, dtype=jnp.int32),
-                weight,
-                row_unit,
-                row_is_valid,
-                pixels,
-                half_weights,
-                full_to_compact,
-                image_shape=shape,
-                block_rows=int(block_rows),
-            )
+    # Each row's candidate translations, ascending, padded with column n_trans of ``running`` (dropped at the
+    # end) to a power-of-two count: one program per chunk shape and count, not per chunk.
+    mask = np.asarray(candidate_mask & row_is_valid[:, None])
+    n_candidates = pow2_ceil(int(mask.sum(axis=1).max(initial=0)), minimum=1)
+    order = np.argsort(~mask, axis=1, kind="stable")[:, :n_candidates]
+    row_translations = np.where(np.take_along_axis(mask, order, axis=1), order, n_trans).astype(np.int32)
+    running = jnp.zeros((int(mask.shape[0]), n_trans + 1), dtype=jnp.float32)
+    for start, stop in slot_blocks:
+        running = _tilt_cc_slot_block(
+            running,
+            block_score_cache(start, stop),
+            jnp.asarray(slot_image_ids[start:stop], dtype=jnp.int32),
+            jnp.asarray(row_translations),
+            jnp.asarray(operands.score_input, dtype=jnp.complex64),
+            jnp.asarray(image_angles),
+            jnp.asarray(operands.corr_img_score, dtype=jnp.float32),
+            row_is_valid,
+            jnp.asarray(score_pixel_indices, dtype=jnp.int32),
+            half_weights,
+            full_to_compact,
+            image_shape=tuple(int(n) for n in image_shape),
+            block_rows=int(block_rows),
+        )
     running = running[:, :n_trans]
     valid_cells = candidate_mask & row_is_valid[:, None]
     scores = jnp.where(valid_cells & jnp.isfinite(running), -running, -jnp.inf)
@@ -943,15 +918,13 @@ def tilt_cc_scores(
 
 @partial(jax.jit, static_argnames=("image_shape", "block_rows"))
 def _tilt_cc_slot_block(
-    running,  # float32 [C_R, T + 1] the earlier slots' and translation blocks' sum, column T the padding's
+    running,  # float32 [C_R, T + 1] the earlier slots' sum, column T the padding's
     projections,  # complex [S_b * C_R, N] the block's slots' projections, slot-major
-    unit_slot_images,  # int32 [S_b, C_U] chunk image of each unit's s-th image, -1 past its images
     slot_image_ids,  # int32 [S_b, C_R] chunk image of each row per slot, -1 past its particle's images
+    row_translations,  # int32 [C_R, K] each row's candidate translations, T on padding
     score_input,
-    block_angles,  # float32 [C_B, T_b, 2] each image's phases of the block's translations
-    index,  # int32 [T_b] the block's translations, T on padding
+    image_angles,  # float32 [C_B, T, 2] each image's phases
     weight,
-    row_unit,
     row_is_valid,
     pixels,
     half_weights,
@@ -960,46 +933,52 @@ def _tilt_cc_slot_block(
     image_shape,
     block_rows: int,
 ):
-    """:func:`tilt_cc_scores`' slots of one slot block and translation block, in slot order: one program.
+    """:func:`tilt_cc_scores`' slots of one slot block, in slot order: one program.
 
-    Per slot, the slot's images translated with their own phases (one launch) and each row's normalized CC
-    (``relion_cuda_fine_normalized_cc_score``) in blocks of ``block_rows``, added into ``running``.
+    Per slot and block of ``block_rows`` rows, each row's image at the row's candidate translations (one
+    launch) and the rows' normalized CC (``relion_cuda_fine_normalized_cc_score``), added into ``running``.
     """
 
     from relax.cuda import translate as cuda_translate
     from relax.fine_pass.scoring import relion_cuda_fine_normalized_cc_score
 
     row_capacity = int(slot_image_ids.shape[1])
-    n_index = int(index.shape[0])
+    n_trans = int(image_angles.shape[1])
+    n_candidates = int(row_translations.shape[1])
+    safe_translations = jnp.where(row_translations < n_trans, row_translations, 0)
+    rows = jnp.arange(row_capacity, dtype=jnp.int32)
     starts = jnp.arange(0, row_capacity, int(block_rows), dtype=jnp.int32)
 
     def add_slot(running, slot_inputs):
-        slot, units_images, image_ids = slot_inputs
-        safe = jnp.where(units_images >= 0, units_images, 0)
-        # [C_U, T_b, N]: the slot's images with their own phases, one launch.
-        tiles = cuda_translate.relion_translate_score_f32(
-            score_input[safe], block_angles[safe], pixels, image_shape
-        ).reshape(safe.shape[0], n_index, -1)
+        slot, image_ids = slot_inputs
         images = jnp.where(image_ids >= 0, image_ids, 0)
         has_image = (image_ids >= 0) & row_is_valid
         slot_projections = jax.lax.dynamic_slice_in_dim(projections, slot * row_capacity, row_capacity, axis=0)
 
         def block_cc(first):
-            rows = jax.lax.dynamic_slice_in_dim(row_unit, first, block_rows)
-            row_images = jax.lax.dynamic_slice_in_dim(images, first, block_rows)
+            block_images = jax.lax.dynamic_slice_in_dim(images, first, block_rows)
+            block_translations = jax.lax.dynamic_slice_in_dim(safe_translations, first, block_rows)
+            # [b, K, N]: each row's image at its own translations, with the image's phases, one launch.
+            tiles = cuda_translate.relion_translate_score_f32(
+                score_input[block_images],
+                image_angles[block_images[:, None], block_translations],
+                pixels,
+                image_shape,
+            ).reshape(block_rows, n_candidates, -1)
             return relion_cuda_fine_normalized_cc_score(
                 jax.lax.dynamic_slice_in_dim(slot_projections, first, block_rows)[:, None, :],
-                tiles[rows],
-                weight[row_images][:, None, :],
+                tiles,
+                weight[block_images][:, None, :],
                 half_weights,
                 full_to_compact,
             )
 
-        cc = jax.lax.map(block_cc, starts).reshape(row_capacity, n_index)
-        return running.at[:, index].add(jnp.where(has_image[:, None], -cc.astype(jnp.float32), jnp.float32(0.0))), None
+        cc = jax.lax.map(block_cc, starts).reshape(row_capacity, n_candidates)
+        contribution = jnp.where(has_image[:, None], -cc.astype(jnp.float32), jnp.float32(0.0))
+        return running.at[rows[:, None], row_translations].add(contribution), None
 
     slots = jnp.arange(slot_image_ids.shape[0], dtype=jnp.int32)
-    running, _ = jax.lax.scan(add_slot, running, (slots, unit_slot_images, slot_image_ids))
+    running, _ = jax.lax.scan(add_slot, running, (slots, slot_image_ids))
     return running
 
 
