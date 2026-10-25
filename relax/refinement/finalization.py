@@ -81,7 +81,7 @@ from relax.steps.scoring_policy import (
     local_precision,
 )
 from relax.steps.shape_class_scoring import OpticsSpec
-from relax.steps.tomo_half import local_tomo_sampling, tomo_search_rotations
+from relax.steps.tomo_half import local_tomo_sampling, tomo_half_search, tomo_search_rotations
 from relax.steps.tomo_shards import DeferredTomoHalf, TomoHalfJob
 
 if TYPE_CHECKING:
@@ -928,11 +928,10 @@ def score_final_half(
                 pass1_size=final_pass.route.sampling.coarse_image_window_size,
                 current_size=final_pass.current_size,
             )
-            tomo_final_search = dict(
-                previous_eulers_deg=half.rotation_eulers,
-                sigma_rot=final_pass.route.sampling.search.sigma_rot,
-                sigma_psi=final_pass.route.sampling.search.sigma_psi,
-                sigma_tilt_deg=0.0,
+            tomo_final_search = tomo_half_search(
+                half,
+                local_widths=(final_pass.route.sampling.search.sigma_rot, final_pass.route.sampling.search.sigma_psi),
+                tilt_prior=None,
             )
         else:
             tomo_final_sampling = local_tomo_sampling(
@@ -957,17 +956,7 @@ def score_final_half(
                     "sigma_tilt=%g deg",
                     final_pass.sampling.settings.grid_order, tilt_prior.sigma_deg,
                 )
-                tomo_final_search = dict(
-                    previous_eulers_deg=(
-                        np.zeros((half.dataset.n_units, 3), dtype=np.float64)
-                        if half.rotation_eulers is None
-                        else half.rotation_eulers
-                    ),
-                    sigma_rot=0.0,
-                    sigma_psi=0.0,
-                    sigma_tilt_deg=tilt_prior.sigma_deg,
-                    prior_tilt_deg=tilt_prior.centre_deg,
-                )
+                tomo_final_search = tomo_half_search(half, local_widths=None, tilt_prior=tilt_prior)
             else:
                 # No orientational prior (RELION's NOPRIOR): the global search of the numbered iterations,
                 # each orientation weighted by this half's direction distribution
