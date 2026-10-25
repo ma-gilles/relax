@@ -1666,7 +1666,8 @@ def _resident_pass2(
     # A row-blocked cache's gather holds the rows taken so far next to the next
     # block's (resident_scoring.cache_rows): two row copies instead of one.
     gathered_row_copies = 2 if isinstance(score_cache, tuple) else 1
-    row_ladder = engine_tuning.resident_row_capacities or _DEFAULT_ROW_CAPACITY_LADDER
+    configured_row_ladder = engine_tuning.resident_row_capacities or _DEFAULT_ROW_CAPACITY_LADDER
+    row_ladder = configured_row_ladder
     if stream_projections:
         row_ladder = resident_projections.stream_row_capacity_ladder(
             row_ladder,
@@ -1735,32 +1736,34 @@ def _resident_pass2(
         row_ladder_start, _ = tilt_capacity_ladders(
             row_ladder_start, (1,), slot_capacity=int(tilt.slot_capacity)
         )
-        # Too few particles per chunk at these classes: one larger class, from the unfiltered ladder's top and the
-        # streamed projections' budget (tilt_amortised_row_classes).
-        top_tilt_rows, _ = tilt_capacity_ladders(
-            engine_tuning.resident_row_capacities or _DEFAULT_ROW_CAPACITY_LADDER, (1,), slot_capacity=int(tilt.slot_capacity)
-        )
+        # Too few particles per chunk at these classes: one larger class, from the configured ladder's top and the
+        # streamed projections' budget (tilt_amortised_row_classes). A tilt pass always streams its projections
+        # (stream_projections above), so that budget is the one that capped row_ladder.
+        assert stream_projections, "a tilt pass streams its projections"
+        top_tilt_rows, _ = tilt_capacity_ladders(configured_row_ladder, (1,), slot_capacity=int(tilt.slot_capacity))
         amortised_rows, mean_particle_rows = tilt_amortised_row_classes(
             row_ladder_start,
             tables.row_offsets,
             slot_capacity=int(tilt.slot_capacity),
             row_bytes=projection_row_bytes,
             budget_bytes=stream_projection_budget_bytes,
-            max_rows=max(int(v) for v in top_tilt_rows),
+            max_rows=max(top_tilt_rows),
         )
-        if amortised_rows != tuple(int(v) for v in row_ladder_start):
+        if amortised_rows != tuple(row_ladder_start):
+            previous_largest = max(row_ladder_start)
             logger.info(
                 "Resident pass-2 tilt row classes %s -> %s: particles of %.0f rows on average fill a %d-row chunk with "
                 "%.1f particles (fewer than %d; the new class holds %d)",
-                ",".join(str(int(v)) for v in row_ladder_start),
+                ",".join(str(v) for v in row_ladder_start),
                 ",".join(str(v) for v in amortised_rows),
                 mean_particle_rows,
-                max(int(v) for v in row_ladder_start),
-                max(int(v) for v in row_ladder_start) / mean_particle_rows,
+                previous_largest,
+                previous_largest / mean_particle_rows,
                 TILT_MIN_PARTICLES_PER_CHUNK,
                 TILT_TARGET_PARTICLES_PER_CHUNK,
             )
         row_ladder_start = amortised_rows
+        largest_row_class = max(row_ladder_start)
         # A chunk whose rows' projections over all its images do not fit is projected, scored and
         # backprojected a block of image slots at a time (resident_tilts.run_tilt_chunk). A chunk of the row
         # classes takes the largest class's slot block; a particle past them (run alone) takes the largest
@@ -1769,7 +1772,7 @@ def _resident_pass2(
         tilt_slot_row_bytes = projection_row_bytes * gathered_row_copies
         tilt_slot_budget_bytes = resident_chunk_memory.resident_chunk_budget_bytes(reserved_bytes=reserved_operand_bytes)
         tilt_slot_block = tilt_projection_slot_block(
-            max(int(v) for v in row_ladder_start),
+            largest_row_class,
             slot_capacity=int(tilt.slot_capacity),
             slot_row_bytes=tilt_slot_row_bytes,
             budget_bytes=tilt_slot_budget_bytes,
@@ -1787,6 +1790,10 @@ def _resident_pass2(
     accumulator_bytes = resident_chunk_memory.resident_accumulator_bytes(
         int(np.prod(accumulator_shape)), recon_y_accum_dtype, recon_ctf_accum_dtype, n_slots=int(tables.n_slots)
     )
+
+    # A tilt pass sizes its M-step block for each chunk (resident_chunk_memory.chunk_mstep_block_rows): the pass's
+    # block and the plan's agree by this one flag.
+    per_chunk_mstep_blocks = tilt is not None
 
     def plan_chunks(unshifted_operands: bool):
         nonlocal tilt_slot_block, tilt_lone_row_blocks, tilt_lean_lone_rows
@@ -1814,7 +1821,7 @@ def _resident_pass2(
             ),
             row_capacity_ladder=row_ladder_start,
             override=engine_tuning.mstep_block_rows,
-            per_chunk=tilt is not None,
+            per_chunk=per_chunk_mstep_blocks,
         )
         def plan_memory(lone_row_bytes, projection_factor, overflow_projection_factor=None, lone_block_rows=None):
             return resident_chunk_memory.plan_resident_chunk_memory(
@@ -1839,7 +1846,7 @@ def _resident_pass2(
                 max_image_rows=resident_chunk_memory.max_image_rows(tables.row_offsets),
                 lone_row_bytes=lone_row_bytes,
                 lone_block_rows=lone_block_rows,
-                per_chunk_block=tilt is not None,
+                per_chunk=per_chunk_mstep_blocks,
                 **resident_chunk_memory.chunk_translated_tile_pixels(
                     unshifted_operands=unshifted_operands,
                     n_score_pixels=n_windowed if windowed_prepare else n_half_pixels,
@@ -1868,7 +1875,7 @@ def _resident_pass2(
                 # while every row keeps tilt_lone_row_bytes. The slot block is then sized for a block's rows,
                 # not for the particle's.
                 lone_slot_block = tilt_projection_slot_block(
-                    max(int(v) for v in row_ladder_start),
+                    largest_row_class,
                     slot_capacity=int(tilt.slot_capacity),
                     slot_row_bytes=tilt_slot_row_bytes,
                     budget_bytes=chunk_budget_bytes,
@@ -1895,7 +1902,7 @@ def _resident_pass2(
                         lone_rows=resident_chunk_memory.overflow_row_capacity(
                             resident_chunk_memory.max_image_rows(tables.row_offsets), row_ladder_start
                         ),
-                        largest_row_class=max(int(v) for v in row_ladder_start),
+                        largest_row_class=largest_row_class,
                         slot_capacity=int(tilt.slot_capacity),
                         slot_row_bytes=tilt_slot_row_bytes,
                         budget_bytes=chunk_budget_bytes,

@@ -99,6 +99,14 @@ def tilt_projection_slot_block(max_rows: int, *, slot_capacity: int, slot_row_by
 # the handler's raw weights and reconstruction (float32 each) and the candidate mask.
 _LEAN_LONE_CELL_BYTES = 3 * 4 + 1
 
+# The smallest tilt row class (tilt_capacity_ladders' min_rows).
+TILT_MIN_ROW_CLASS = 256
+# The --firstiter_cc scoring's row block (tilt_cc_scores) is that class, not the chunk's M-step block: its
+# per-translation tile holds (units + block rows) x score pixels, so a larger block only shrinks the translation block
+# and multiplies the translation loop (with 8192-row blocks an EMPIAR-10499 --firstiter_cc first iteration ran its
+# pass 2 8.5x slower). It is the block that scoring had while the M-step block was capped by the smallest class.
+TILT_CC_BLOCK_ROWS = TILT_MIN_ROW_CLASS
+
 
 def tilt_lone_row_bytes(n_fine_trans: int, *, slot_capacity: int, n_accumulators: int = 1, lean: bool = False) -> int:
     """Device bytes each row of a row-blocked lone particle keeps beyond its block (:func:`run_tilt_chunk`).
@@ -844,12 +852,6 @@ def run_tilt_chunk(
     return tuple(Ft_y_out), tuple(Ft_ctf_out), stats
 
 
-# The --firstiter_cc scoring's row block (tilt_cc_scores): its per-translation tile holds (units + block rows) x score
-# pixels, so a larger block only shrinks the translation block and multiplies the translation loop. It keeps the block
-# the pass used before chunk-sized M-step blocks (resident_chunk_memory.chunk_mstep_block_rows): with 8192-row blocks
-# an EMPIAR-10499 --firstiter_cc first iteration ran its pass 2 8.5x slower.
-TILT_CC_BLOCK_ROWS = 256
-
 
 def tilt_cc_scores(
     block_score_cache,  # callable (start, stop) -> complex [(stop - start) * C_R, N], slots start:stop's projections
@@ -1191,7 +1193,7 @@ def accumulate_tilt_chunk_terms(
     )
 
 
-def tilt_capacity_ladders(row_ladder, image_ladder, *, slot_capacity: int, min_rows: int = 256):
+def tilt_capacity_ladders(row_ladder, image_ladder, *, slot_capacity: int, min_rows: int = TILT_MIN_ROW_CLASS):
     """The row and unit capacity ladders of a tilt pass.
 
     A tilt chunk projects every row once per image slot (``S * C_R`` projections), so the SPA row ladder
@@ -1231,7 +1233,7 @@ def tilt_amortised_row_classes(
     classes are kept. Returns ``(classes, mean_rows)``.
     """
 
-    classes = tuple(sorted({int(r) for r in row_classes}))
+    classes = tuple(sorted(set(row_classes)))
     counts = np.diff(np.asarray(row_offsets, dtype=np.int64))
     counts = counts[(counts > 0) & (counts <= classes[-1])]
     if counts.size == 0:
@@ -1240,7 +1242,7 @@ def tilt_amortised_row_classes(
     if classes[-1] >= min_particles * mean_rows:
         return classes, mean_rows
     rows = pow2_ceil(int(np.ceil(target_particles * mean_rows)))
-    fits = budget_bytes is None or float(rows) * max(int(slot_capacity), 1) * float(row_bytes) <= float(budget_bytes)
-    if rows > int(max_rows) or not fits:
+    fits = budget_bytes is None or rows * max(slot_capacity, 1) * row_bytes <= budget_bytes
+    if rows > max_rows or not fits:
         return classes, mean_rows
     return tuple(sorted(set(classes) | {rows})), mean_rows
