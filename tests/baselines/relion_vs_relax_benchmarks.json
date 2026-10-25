@@ -24131,6 +24131,120 @@
      ]
     }
    }
+  },
+  {
+   "id": "empiar10491_apoferritin_10k_256_tomo_autorefine_o_b231835d",
+   "section": "real",
+   "table": "cryoet",
+   "label": "EMPIAR-10491 apoferritin (O, bin 1)",
+   "dataset": "EMPIAR-10491 human heavy-chain apoferritin tilt series (37 tilt series, 41 tilts at +-40 degrees, 0.7894 A): RELION 5.0.1 pipeline from the raw movies (MotionCorr, CTFFIND 4.1.13, 13 of 1,517 tilt images excluded, AreTomo 1.3.4, pytom-match-pick 0.11.1 picks), rlnTomoHand -1; 10,633 particles at bin 1 (box 256) as CTF-premultiplied 2D stacks (423,538 tilt images), re-extracted at the poses of a bin-2 RELION Refine3D. The maps are the mirror image of EMD-11603 (the tilt geometry's hand is inverted); relax and RELION read the same geometry",
+   "empiar_id": "EMPIAR-10491",
+   "particles": 10633,
+   "box": 256,
+   "pixel_size_A": 0.7894,
+   "symmetry": "O",
+   "classes": 1,
+   "workflow": "cryo-ET auto-refine K=1 (RELION 5 tomo Refine3D), local from the start: --auto_refine --split_random_halves --ios Extract/job014/optimisation_set.star --ref Reconstruct/job015/half1.mrc --trust_ref_size --ini_high 8 --pad 2 --ctf --particle_diameter 150 --flatten_solvent --zero_mask --oversampling 1 --healpix_order 4 --auto_local_healpix_order 4 --offset_range 5 --offset_step 2 --sym O --low_resol_join_halves 40 --norm --scale; seeds 1 and 2",
+   "relion_dependence": "standalone",
+   "status": "current",
+   "date": "2026-10-25",
+   "relion": {
+    "version": "quality: RELION 5.0.1 page build (relion_patched_coarsemag_bpd_20261006, relion-5.0.1-mpiscale-bpdouble-coarsemag), relion_refine_mpi 3 ranks (1 leader + 2 followers, --gpu 0:1) x 4 threads on two H100, seeds 1 and 2 (Refine3D/job020, job019); wall: stock RELION 5.0.1 module relion/5.0.1/gcc-11.5.0-gpu (sm_90 build), relion_refine_mpi 5 ranks (1 leader + 4 followers, --gpu 0:1:2:3) x 4 threads on four H100, seed 1 (Refine3D/job016). Stock and page build measured within 1% on speed (stock-vs-mpiscale same-node A/B, 2026-10-01)",
+    "reference_build": {
+     "path": "/scratch/gpfs/CRYOEM/gilleslab/em_work/relion_patched_coarsemag_bpd_20261006/relion-5.0.1-mpiscale-bpdouble-coarsemag/build/bin/relion_refine_mpi",
+     "sha256": "4cb6366501613c9f4f1bb11218cff8f7c2ad8294c74e4ce21fb20c335f9c804e"
+    },
+    "resolution_A": 5.94,
+    "resolution_definition": "relion_postprocess_unmasked",
+    "relion_reported_resolution_A": 6.12383,
+    "masked_resolution_A": null,
+    "wall_s": 9117,
+    "wall_definition": "stock-build timing reference: arm-script wall of relion_refine_mpi (WALL.json), end to end, cold, four H100 + 24 CPUs (5 ranks x 4 threads), job 16092234 (Refine3D/job016, seed 1)",
+    "gpu_model": "H100 80GB",
+    "gpu_count": 4,
+    "iterations": 15,
+    "jobs": [
+     "16154703",
+     "16154704",
+     "16092234"
+    ],
+    "masked_band_auc": null
+   },
+   "relax": {
+    "source_sha": "b231835d3a5d9b215b1fc9820a6f6738dc0a47b9",
+    "source_repo": "relax main b231835d (git worktree; shared env relax_env_recovar_1c8e99e, pixi.lock identical); natives copied from the b231835d smoke gate and checked against the worktree's native sources; production defaults, relax refine --gpu 0:1 (one process per H100, one half set each)",
+    "resolution_A": 5.94,
+    "resolution_definition": "relion_postprocess_unmasked",
+    "masked_resolution_A": null,
+    "wall_s": 4548,
+    "wall_definition": "seed 1: arm-script wall of relax refine --gpu 0:1 end to end (WALL.json), cold (arm-local empty JAX cache), two H100 + 12 CPUs, job 16173175",
+    "gpu_model": "H100 80GB",
+    "gpu_count": 2,
+    "iterations": 19,
+    "jobs": [
+     "16173175",
+     "16173176"
+    ],
+    "masked_band_auc": null
+   },
+   "gt": null,
+   "cross_engine": null,
+   "cross_engine_masked_band_auc": null,
+   "mask": null,
+   "time_ratio_relax_over_relion": 0.5,
+   "matched": "yes",
+   "matched_detail": {
+    "gpu_model": true,
+    "box": true,
+    "particles": true,
+    "schedule": true,
+    "flags": true,
+    "timing_controlled": true
+   },
+   "time_check": {
+    "a": "relax 2 H100 + 12 CPUs, relax refine --gpu 0:1 (one process per GPU, one half set each); RELION 4 H100 + 24 CPUs, relion_refine_mpi 5 ranks x 4 threads (1 leader + 4 followers, one GPU each; auto-refine with split halves needs MPI), the layout of the EMPIAR-10499 reference. Separate jobs and nodes, both cold. Not a matched GPU count: relax has half RELION's GPUs, so the comparison favours RELION",
+    "b": "relax main b231835d worktree with production defaults (no RELAX_* option set; only the library paths of the checked natives); no --scratch_dir or pre-read on either engine; no diagnostic, capture, replay or dump options",
+    "c": "arm-script walls (WALL.json), end to end, cold: start-up, compilation with an empty arm-local cache, all iterations and the final all-data iteration",
+    "d": "H100 80GB HBM3 for every arm (gpu.txt per arm; relax della-h21g3 for job 16173175, della-h20g3 for job 16173176; RELION della-h20g4 for job 16154703, della-h19g3 for job 16154704; the stock wall arm job 16092234 on della-h21g2)"
+   },
+   "quality_pass": true,
+   "quality_reason": "relion_postprocess unmasked FSC 0.143, two seeds per engine: relax s1/s2 5.94/5.77 A inside the page-build RELION band 5.77-5.94 A (s1/s2 5.94/5.77 A); with one soft sphere mask relax 5.77/5.61 vs RELION 5.77/5.77 A",
+   "null_reasons": {
+    "relion.masked_resolution_A": "no frozen mask is registered for this dataset; sphere-masked relion_postprocess values are in the notes",
+    "relax.masked_resolution_A": "no frozen mask is registered for this dataset; sphere-masked relion_postprocess values are in the notes",
+    "relion.masked_band_auc": "no frozen mask is registered for this dataset",
+    "relax.masked_band_auc": "no frozen mask is registered for this dataset",
+    "cross_engine_masked_band_auc": "no frozen mask is registered for this dataset",
+    "mask": "no frozen mask is registered for this dataset",
+    "gt": "no ground truth or published map of this processing: EMD-11603 (M, the full dataset) matches only the mirror of these maps, so the verdict is the two-seed half-map resolution band",
+    "cross_engine": "relax-vs-RELION map agreement per seed is in the notes (FSC-AUC of the means of the unfiltered halves)"
+   },
+   "evidence": {
+    "relion_quality_arms": [
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/empiar10491_apoferritin_tilt_20261022/relion/Refine3D/job020",
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/empiar10491_apoferritin_tilt_20261022/relion/Refine3D/job019"
+    ],
+    "relion_wall_arm": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/empiar10491_apoferritin_tilt_20261022/relion/Refine3D/job016",
+    "relax_arms": [
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_e10491_bin1_b231835d_20261024/arm_relax_bin1_2gpu_s1",
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/relax_e10491_bin1_b231835d_20261024/arm_relax_bin1_2gpu_s2"
+    ],
+    "analysis": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/empiar10491_apoferritin_tilt_20261022/analysis_bin1_row_20261025",
+    "mask": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/empiar10491_apoferritin_tilt_20261022/analysis_bin1_row_20261025/mask_sphere_r90_e10.mrc",
+    "scripts": [
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/empiar10491_apoferritin_tilt_20261022/relion/map_fsc.py",
+     "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/benchmark_evidence_20261003/em_work/empiar10491_apoferritin_tilt_20261022/relion/pose_compare.py"
+    ],
+    "data_project": "/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/empiar10491_apoferritin_tilt/relion (curated input fixture, moved unchanged from em_work on 2026-10-25: Extract/job014 particles, Tomograms/job006 tomograms, Reconstruct/job015 references; raw movies, mdocs and the job scripts alongside, README_KEEP.md)"
+   },
+   "notes": [
+    "Data: EMPIAR-10491 apoferritin tilt series processed with the RELION 5.0.1 pipeline from the raw movies. Pixel 0.7894 A (mdoc; EMPIAR lists 0.834 A); gain applied as stored; defocus handedness rlnTomoHand -1 (with +1 at bin 2 the half-map resolution did not improve: RELION 7.22 and 6.52 A over two seeds vs 6.52 A with -1, relax 6.74 vs 6.12 A). The reconstructions are the mirror image of EMD-11603 (FSC 0.143 against EMD-11603: 6.97 A mirrored vs 13.47 A as written), so EMD-11603 is not used as a reference; relax and RELION read the same tilt geometry. Bin 1 (box 256, 0.7894 A, Nyquist 1.58 A) was extracted at the poses of a bin-2 (box 128) RELION Refine3D, with the half-map references Reconstruct/job015 (each half reads its own, RELION's --ref half1 convention). 10,633 particles, 423,538 tilt images (about 40 per particle).",
+    "Verdict metric: relion_postprocess 5.0.1 unmasked FSC 0.143 of each run's final unfiltered half maps (definition c), two seeds per engine. relax main b231835d s1/s2: 5.94 / 5.77 A; page-build RELION s1 (job020) / s2 (job019): 5.94 / 5.77 A. With one soft sphere mask (radius 90 px, 10 px edge; not a registered frozen mask): relax 5.77 / 5.61 A, RELION 5.77 / 5.77 A. Shell 34 = 5.94 A and shell 35 = 5.77 A; unmasked FSC at shells 33-36, relax s1 .143/.178/.143/.095, s2 .202/.182/.171/.108; RELION s1 .183/.184/.133/.100, s2 .224/.183/.159/.107. Masked corrected FSC at shell 35: relax .157/.164, RELION .159/.163. Half-map FSC-AUC (unmasked, scripts/map_fsc.py): relax 0.2027/0.2026, RELION 0.2019/0.2039.",
+    "Map agreement (FSC-AUC of the means of the unfiltered halves, unmasked / sphere-masked): relax s1 vs RELION s1 0.8710 / 0.8956; relax s2 vs RELION s2 0.9153 / 0.9327; RELION s1 vs RELION s2 0.6298 / 0.6794; relax s1 vs relax s2 0.6214 / 0.6721. Poses at the last split iteration (O symmetry): relax vs same-seed RELION median 0.41 / 0.00 degrees, 1.1% / 1.0% above 15 degrees; RELION s1 vs s2 median 0.86 degrees, 9.1% above 15 degrees. Same-seed relax lands closer to RELION than RELION's two seeds land to each other.",
+    "Walls: not a matched GPU count. RELION ran on four H100 and relax on two, so the comparison favours RELION. the ratio is relax seed 1 on two H100 (4,548 s, 19 iterations + final) against stock RELION seed 1 on four H100 (Refine3D/job016, 9,117 s, 15 iterations + final), the 4-GPU layout of our other cryo-ET references. relax seed 2: 3,766 s (14 iterations + final); per-iteration times are alike, the difference is the sampling path (seed 1 steps to HEALPix order 6 at iteration 15, seed 2 at iteration 10), as in RELION's page seeds (job020 19 iterations, job019 14). The page-build RELION band arms ran on two H100 each (job020 23,200 s, job019 16,466 s) and are not the timing reference.",
+    "Earlier relax: on relax main da6742f0 (2026-10-23, one seed, 1 and 2 H100) the bin-1 runs gave 5.94 / 5.94 A (unmasked / sphere-masked), one shell behind the page band masked (masked FSC at shell 35 .130 and .124); the b231835d two-seed band no longer shows that gap. relax#124: both programs' own 'Final resolution' lines are RELION's updateCurrentResolution, which can sit several shells from the half-map FSC 0.143 (here relax 6.12 / 6.12 A, RELION 6.12 / 6.12 A), so the row reports the relion_postprocess values."
+   ],
+   "history": []
   }
  ],
  "initial_model_intro": [
