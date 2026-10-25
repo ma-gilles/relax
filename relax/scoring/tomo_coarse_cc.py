@@ -2,15 +2,20 @@
 
 ``particle_coarse_cc_winners`` scores each tilt image's coarse CC operands (``tilt_image_cc_coarse_operands``:
 the single-particle exact CC operands, without pre-shift or norm), sums them per particle and keeps the first
-maximum in RELION's orientation order: a winner by CC, with no significance and no memory budget, unlike the
-significance pass of ``tomo_coarse``, with which it shares no helper.
+maximum in RELION's orientation order: a winner by CC, with no significance, unlike the significance pass of
+``tomo_coarse``, with which it shares no helper. Particles are scored in flushes sized from the device's free
+memory (``_cc_flush_particles``), each image slot of a flush in one projection and one translation launch.
 """
 
 from __future__ import annotations
 
+import logging
+
 import jax
 import jax.numpy as jnp
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 
 def tilt_image_cc_coarse_operands(experiment_dataset, image_indices, window_indices, half_weights, *, scale_corrections=None):
@@ -81,6 +86,90 @@ def _add_tilt_image_cc_diff2(running_diff2, projections, shifted, pixel_weight):
     return jax.lax.fori_loop(0, 128, lambda _, acc: acc - contribution, running_diff2, unroll=True)
 
 
+@jax.jit
+def _add_flush_slot_cc_diff2(running_diff2, projections, shifted, pixel_weight, live):
+    """A flush's ``running_diff2`` ``[F, R, T]`` plus one image slot of each particle, where it has one (``live``):
+    :func:`_add_tilt_image_cc_diff2` per particle, in turn. ``projections`` ``[F R, N]`` and ``shifted``
+    ``[F T, N]`` are the slot images' projections and translated score windows; ``pixel_weight`` ``[F, N]``."""
+
+    n_flush, n_rot, n_trans = (int(n) for n in running_diff2.shape)
+    projections = jnp.asarray(projections, dtype=jnp.complex64).reshape(n_flush, n_rot, -1)
+    shifted = shifted.reshape(n_flush, n_trans, -1)
+
+    def add(particle):
+        running, projection, translated, weight, is_live = particle
+        return jnp.where(is_live, _add_tilt_image_cc_diff2(running, projection, translated, weight), running)
+
+    return jax.lax.map(add, (running_diff2, projections, shifted, pixel_weight, live))
+
+
+@jax.jit
+def _flush_cc_winners(running_diff2, relion_cells):
+    """Each flush particle's winning cell (the first maximum of ``-running_diff2`` in RELION's cell order
+    ``relion_cells``) and its score."""
+
+    scores = -running_diff2.reshape(running_diff2.shape[0], -1)
+    winners = relion_cells[jnp.argmax(scores[:, relion_cells], axis=1)]
+    return winners, jnp.take_along_axis(scores, winners[:, None], axis=1)[:, 0]
+
+
+# A flush's images are padded to a multiple of this count (with copies of its first image), so the operand and
+# rotation programs take a few image counts per pass, not one per flush.
+_CC_FLUSH_IMAGE_QUANTUM = 256
+
+# The share of the device's free memory a flush may take, and its cap. The share leaves room for the pool's
+# fragmentation: without preallocation each array must fit in one of the pool's regions (a 16 GB emulated 10491 CC
+# it1 ran out at 2.3 GiB with half its pool free).
+_CC_FLUSH_SHARE = 0.25
+_CC_FLUSH_MAX_BYTES = 8 << 30
+
+# The largest single array of a flush (one slot's projections, ``[F R, N]`` complex64), at most.
+_CC_FLUSH_MAX_ARRAY_BYTES = 512 << 20
+
+
+def _cc_flush_particles(
+    n_units: int, *, max_images: int, n_rot: int, n_trans: int, n_window: int, image_pixels: int, available_bytes
+) -> int:
+    """Particles per coarse CC flush: what ``_CC_FLUSH_SHARE`` of ``available_bytes`` (at most
+    ``_CC_FLUSH_MAX_BYTES``) holds, with one slot's projections within ``_CC_FLUSH_MAX_ARRAY_BYTES``; at least one.
+
+    Per particle a flush holds one slot's score-window projections ``[R, N]`` complex64 (and the texture's crop
+    they are gathered from), its running and new diff2 ``[R, T]``, and per image its rotation matrices, phases,
+    operands and the preparation's full images (``image_pixels`` each, a few float32 copies); one particle's GEMM
+    terms at a time (the window packed twice, ``|p|^2``, the cross and the contribution) are fixed.
+    """
+
+    per_particle = n_rot * (16 * n_window + 8 * n_trans) + max_images * (
+        36 * n_rot + 8 * n_trans + 12 * n_window + 16 * image_pixels
+    )
+    fixed = n_rot * (20 * n_window + 12 * n_trans) + (12 * n_window + 16 * image_pixels) * _CC_FLUSH_IMAGE_QUANTUM
+    budget = _CC_FLUSH_MAX_BYTES if available_bytes is None else min(
+        _CC_FLUSH_MAX_BYTES, _CC_FLUSH_SHARE * float(available_bytes)
+    )
+    largest = _CC_FLUSH_MAX_ARRAY_BYTES // (8 * n_rot * n_window)
+    return int(max(1, min(int(n_units), largest, (int(budget) - fixed) // per_particle)))
+
+
+def _cc_capacity_texture(relion_projector_half, *, r_max: int, padding_factor: int, coarse_size: int):
+    """The projector's texture staged once for the pass, where the half-storage kernel serves its projections
+    (the per-call route stages, synchronizes and frees one on every call), else ``None``."""
+
+    from relax.projection.projection import relion_capacity_texture_serves
+
+    projector_half = jnp.asarray(relion_projector_half)
+    if not relion_capacity_texture_serves(
+        projector_half,
+        r_max=int(r_max),
+        padding_factor=int(padding_factor),
+        projector_output_size=int(coarse_size),
+        relion_texture_interp=True,
+    ):
+        return None
+    from relax.cuda.projector import RelionCapacityHalfTextureF32
+
+    return RelionCapacityHalfTextureF32(projector_half, int(r_max), padding_factor=int(padding_factor))
+
+
 def particle_coarse_cc_winners(
     experiment_dataset,
     *,
@@ -149,50 +238,99 @@ def particle_coarse_cc_winners(
     # Cells in RELION's orientation-major order, so the first maximum is RELION's.
     relion_cells = (np.argsort(relion_rank, kind="stable")[:, None] * n_trans + np.arange(n_trans)[None, :]).reshape(-1)
     window_device = jnp.asarray(window)
-    n_units = int(offsets.size - 1)
+    counts = np.diff(offsets)
+    n_units = int(counts.size)
     winners = np.zeros(n_units, dtype=np.int64)
     best = np.zeros(n_units, dtype=np.float64)
-    for unit in range(n_units):
-        images = np.arange(offsets[unit], offsets[unit + 1])
-        unshifted, pixel_weight = tilt_image_cc_coarse_operands(
-            experiment_dataset,
-            images,
-            window,
-            half_weights,
-            scale_corrections=None if scale_corrections is None else np.asarray(scale_corrections)[images],
-        )
-        left, _applies = tomo_particles.relion_left_matrices(image_left[images])
-        rotations = np.asarray(
-            relion_adaptive_pass1_rotations(
-                coarse_eulers_deg, random_perturbation, angular_sampling_deg, left_matrices=left
-            ),
-            dtype=np.float32,
-        )
-        angles = tomo_particles.tilt_translation_angles(
-            coarse_translations_px, old[unit : unit + 1], image_projections[images], np.zeros(images.size, int), box_size
-        )
-        running = jnp.zeros((n_rot, n_trans), dtype=jnp.float32)
-        for slot in range(images.size):
-            projections, _ = compute_relion_projector_projections_block(
-                relion_projector_half,
-                jnp.asarray(rotations[slot]),
-                image_shape,
-                r_max=int(relion_projector_r_max),
-                padding_factor=int(padding_factor),
-                centered_rows=True,
-                dense_scale=True,
-                relion_texture_interp=True,
-                relion_kernel="coarse",
-                projector_output_size=int(coarse_size),
+    if n_units == 0:
+        return winners, best
+    from relax.runtime import memory_budget
+
+    flush = _cc_flush_particles(
+        n_units,
+        max_images=int(counts.max()),
+        n_rot=n_rot,
+        n_trans=n_trans,
+        n_window=int(window.size),
+        image_pixels=int(np.prod(image_shape)),
+        available_bytes=memory_budget.current_device_available_bytes(),
+    )
+    relion_cells_device = jnp.asarray(relion_cells, dtype=jnp.int32)
+    angles_shape = (n_trans, 2)
+    texture = _cc_capacity_texture(
+        relion_projector_half, r_max=relion_projector_r_max, padding_factor=padding_factor, coarse_size=coarse_size
+    )
+    logger.info(
+        "Coarse CC flushes of %d particles for %d (at most %d images each; projector texture %s)",
+        flush,
+        n_units,
+        int(counts.max()),
+        "staged once" if texture is not None else "per call",
+    )
+    try:
+        for first in range(0, n_units, flush):
+            units = np.arange(first, min(first + flush, n_units))
+            unit_counts = np.zeros(flush, dtype=np.int64)
+            unit_counts[: units.size] = counts[units]
+            first_local = np.concatenate([[0], np.cumsum(unit_counts)[:-1]])
+            n_images = int(unit_counts.sum())
+            padded = -(-n_images // _CC_FLUSH_IMAGE_QUANTUM) * _CC_FLUSH_IMAGE_QUANTUM
+            images = np.full(padded, offsets[units[0]], dtype=np.int64)
+            images[:n_images] = np.concatenate([np.arange(offsets[unit], offsets[unit + 1]) for unit in units])
+            image_unit = np.zeros(padded, dtype=np.int64)
+            image_unit[:n_images] = np.repeat(np.arange(units.size), counts[units])
+            unshifted, pixel_weight = tilt_image_cc_coarse_operands(
+                experiment_dataset,
+                images,
+                window,
+                half_weights,
+                scale_corrections=None if scale_corrections is None else np.asarray(scale_corrections)[images],
             )
-            shifted = cuda_translate.relion_translate_score_f32(
-                unshifted[slot : slot + 1], jnp.asarray(angles[slot], dtype=jnp.float32), window_device, image_shape
+            left, _applies = tomo_particles.relion_left_matrices(image_left[images])
+            rotations = jnp.asarray(
+                relion_adaptive_pass1_rotations(
+                    coarse_eulers_deg, random_perturbation, angular_sampling_deg, left_matrices=left
+                ),
+                dtype=jnp.float32,
             )
-            running = _add_tilt_image_cc_diff2(
-                running, jnp.asarray(projections, dtype=jnp.complex64)[:, window_device], shifted, pixel_weight[slot]
+            angles = jnp.asarray(
+                tomo_particles.tilt_translation_angles(
+                    coarse_translations_px, old[units], image_projections[images], image_unit, box_size
+                ),
+                dtype=jnp.float32,
             )
-        scores = -np.asarray(running, dtype=np.float32).reshape(-1)
-        position = int(np.argmax(scores[relion_cells]))
-        winners[unit] = int(relion_cells[position])
-        best[unit] = float(scores[winners[unit]])
+            if angles.shape[1:] != angles_shape:
+                raise ValueError(f"the tilt phases are {angles.shape[1:]}, not {angles_shape}")
+            running = jnp.zeros((flush, n_rot, n_trans), dtype=jnp.float32)
+            for slot in range(int(unit_counts.max())):
+                live = unit_counts > slot
+                # Each particle's slot image; a particle without one scores its first image, discarded.
+                local = jnp.asarray(np.where(live, first_local + slot, 0), dtype=jnp.int32)
+                projections, _ = compute_relion_projector_projections_block(
+                    relion_projector_half,
+                        rotations[local].reshape(-1, 3, 3),
+                    image_shape,
+                    r_max=int(relion_projector_r_max),
+                    padding_factor=int(padding_factor),
+                    centered_rows=True,
+                    dense_scale=True,
+                    relion_texture_interp=True,
+                    relion_kernel="coarse",
+                    projector_output_size=int(coarse_size),
+                    capacity_texture=texture,
+                    return_abs2=False,
+                    # The square score window is the texture's coarse-size crop, gathered from it (checked against
+                    # the crop) instead of from the zero-filled full image: the same values.
+                    pixel_indices=window,
+                )
+                shifted = cuda_translate.relion_translate_score_f32(
+                    unshifted[local], angles[local], window_device, image_shape
+                )
+                running = _add_flush_slot_cc_diff2(running, projections, shifted, pixel_weight[local], jnp.asarray(live))
+            flush_winners, flush_best = _flush_cc_winners(running, relion_cells_device)
+            winners[units] = np.asarray(flush_winners, dtype=np.int64)[: units.size]
+            best[units] = np.asarray(flush_best, dtype=np.float32)[: units.size].astype(np.float64)
+    finally:
+        if texture is not None:
+            texture.close()
     return winners, best
