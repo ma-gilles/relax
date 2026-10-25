@@ -121,3 +121,78 @@ def test_mstep_fixed_order_shell_sums_match_scatter_rule():
     np.testing.assert_allclose(got, ref, rtol=2e-6)
 
 
+
+
+def _per_shell_scan_lists(capacity, padding_factor, n_shells, *, clamp_to_last=False, rows=None):
+    """The lists by one grid scan per shell (relax ca30e2bb), the reference for the sorted construction."""
+    coord = np.arange(capacity, dtype=np.int64) - capacity // 2
+    y = coord if rows is None else coord[rows[0] : rows[1]]
+    x = np.arange(capacity // 2 + 1, dtype=np.int64)
+    r2 = coord[:, None, None] ** 2 + y[None, :, None] ** 2 + x[None, None, :] ** 2
+    shells = np.floor(np.sqrt(r2.astype(np.float64)) / float(padding_factor) + 0.5).astype(np.int64)
+    if clamp_to_last:
+        shells = np.minimum(shells, n_shells - 1)
+    shells = shells.reshape(-1)
+    return tuple(np.flatnonzero(shells == s).astype(np.int32) for s in range(n_shells))
+
+
+@pytest.mark.parametrize("clamp_to_last", [False, True])
+@pytest.mark.parametrize(
+    "capacity, padding_factor, n_shells, rows",
+    [
+        (11, 1, 6, None),
+        (19, 1, 9, None),  # M-step capacity of ori_size 16, padding 1
+        (20, 1, 9, None),  # even capacities
+        (64, 2, 17, None),
+        (35, 2, 9, (5, 30)),
+        (67, 2, 17, (0, 12)),
+        (131, 2, 33, (120, 131)),  # last, short chunk
+        (131, 2, 33, (40, 40)),  # empty chunk
+        (387, 2, 97, None),  # host window of box 192 at full radius
+        (1603, 2, 401, (800, 806)),  # a y-chunk of box 800's host build (padding 2, full radius)
+    ],
+)
+def test_static_shell_voxel_lists_equal_the_per_shell_scan(capacity, padding_factor, n_shells, rows, clamp_to_last):
+    lists = dr.static_shell_voxel_lists(capacity, padding_factor, n_shells, clamp_to_last=clamp_to_last, rows=rows)
+    reference = _per_shell_scan_lists(capacity, padding_factor, n_shells, clamp_to_last=clamp_to_last, rows=rows)
+    assert len(lists) == len(reference) == n_shells
+    for got, expected in zip(lists, reference):
+        assert got.dtype == np.int32
+        np.testing.assert_array_equal(got, expected)
+    assert dr.static_shell_voxel_lists(capacity, padding_factor, 0, clamp_to_last=clamp_to_last, rows=rows) == ()
+
+
+@pytest.mark.parametrize(
+    "ori_size, padding_factor, window_radius, cy",
+    [(16, 1, 8, None), (24, 2, 7, None), (32, 2, 16, 9)],  # the last one in y-chunks of 9 rows
+)
+def test_mask_and_shell_power_program_is_unchanged_by_the_sorted_lists(
+    monkeypatch, ori_size, padding_factor, window_radius, cy
+):
+    """The lists are trace-time constants: the lowered program must be the per-shell scan's, op for op."""
+    from relax.relion import relion_projector_setup as setup
+
+    monkeypatch.setenv(dr.DETERMINISTIC_REDUCTIONS_ENV, "1")
+    size = 2 * (padding_factor * window_radius + 1) + 1
+    rng = np.random.default_rng(11)
+    slab = rng.standard_normal((size, size, size // 2 + 1)) + 1j * rng.standard_normal((size, size, size // 2 + 1))
+    cy = size if cy is None else cy
+
+    def lower_and_run(lists_fn):
+        monkeypatch.setattr(setup, "static_shell_voxel_lists", lists_fn)
+        jax.clear_caches()
+        programs, outputs = [], []
+        for y0 in range(0, size, cy):
+            block = jnp.asarray(slab[:, y0 : y0 + cy])
+            kwargs = dict(ori_size=ori_size, padding_factor=padding_factor, size=size, y_start=y0)
+            programs.append(setup._mask_and_shell_power.lower(block, window_radius - 1, **kwargs).as_text())
+            outputs.append(setup._mask_and_shell_power(block, window_radius - 1, **kwargs))
+        return programs, outputs
+
+    sorted_programs, sorted_outputs = lower_and_run(dr.static_shell_voxel_lists)
+    scan_programs, scan_outputs = lower_and_run(_per_shell_scan_lists)
+    jax.clear_caches()
+    assert sorted_programs == scan_programs
+    for got, expected in zip(sorted_outputs, scan_outputs):
+        for got_array, expected_array in zip(got, expected):
+            assert_matches(np.asarray(got_array), np.asarray(expected_array))

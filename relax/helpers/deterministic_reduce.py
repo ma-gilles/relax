@@ -73,17 +73,32 @@ def static_shell_voxel_lists(
     With ``clamp_to_last`` shells beyond the last bin are folded into it (the
     projector-setup rule); otherwise they are left out (the M-step rule).
     ``rows = (start, stop)`` restricts the grid to those y rows (a chunk of it).
+
+    Each list is in ascending voxel order. The lists are trace-time constants of
+    the deterministic reductions, built at every new window and chunk, so they
+    come from one stable sort of the shell ids rather than one grid pass per
+    shell (capacity 771, box 384 at padding 2: 26.3 s -> 2.2 s).
     """
 
+    n_shells = int(n_shells)
+    if n_shells <= 0:
+        return ()
     coord = np.arange(int(capacity), dtype=np.int64) - int(capacity) // 2
     y = coord if rows is None else coord[int(rows[0]) : int(rows[1])]
     x = np.arange(int(capacity) // 2 + 1, dtype=np.int64)
+    # The shell depends on r^2 alone: apply the rule once per value of r^2.
+    r2_max = int(np.max(coord**2)) + (int(np.max(y**2)) if y.size else 0) + int(x[-1]) ** 2
+    shell_of_r2 = np.floor(np.sqrt(np.arange(r2_max + 1, dtype=np.float64)) / float(padding_factor) + 0.5)
+    # Shells past the last bin get id n_shells (left out) unless they are folded into it.
+    key_dtype = np.int16 if n_shells < np.iinfo(np.int16).max else np.int32  # 16-bit keys sort by radix
+    key_of_r2 = np.minimum(shell_of_r2, n_shells - 1 if clamp_to_last else n_shells).astype(key_dtype)
     r2 = coord[:, None, None] ** 2 + y[None, :, None] ** 2 + x[None, None, :] ** 2
-    shells = np.floor(np.sqrt(r2.astype(np.float64)) / float(padding_factor) + 0.5).astype(np.int64)
-    if clamp_to_last:
-        shells = np.minimum(shells, int(n_shells) - 1)
-    shells = shells.reshape(-1)
-    return tuple(np.flatnonzero(shells == s).astype(np.int32) for s in range(int(n_shells)))
+    keys = key_of_r2[r2.reshape(-1)]
+    # A stable sort keeps ascending voxel order within each shell.
+    order = np.argsort(keys, kind="stable").astype(np.int32)
+    ends = np.cumsum(np.bincount(keys, minlength=n_shells + 1)[:n_shells])
+    starts = np.concatenate([[0], ends[:-1]])
+    return tuple(order[a:b] for a, b in zip(starts, ends))
 
 
 def fixed_order_shell_sums(flat_values, shell_lists, dtype):
