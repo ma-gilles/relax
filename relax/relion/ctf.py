@@ -10,6 +10,7 @@ are preserved.
 from __future__ import annotations
 
 import functools
+import os
 from pathlib import Path
 
 import jax
@@ -21,6 +22,10 @@ from relax.io.batch_fetch import original_image_indices
 from relax.numerics.shells import shell_of_radius_sq
 
 _RELION_EXACT_CTF_SOURCE_CACHE: dict[tuple[str, tuple[int, int]], dict] = {}
+# Each source STAR path's resolved form, keyed by the path as given (and the working directory, for a relative one):
+# the CTF and aberration helpers ask for it on every image batch, and each resolve walks the path on the file system
+# (6-11 s of a coarse half's host time on a tilt-series case with 380k images).
+_RESOLVED_SOURCE_STARS: dict[tuple[str, str], Path] = {}
 
 
 def relion_tomo_damping(freq_sq, dose, bfactor_per_electron_dose=0.0):
@@ -93,7 +98,12 @@ def dataset_optics_source_star(experiment_dataset) -> Path | None:
             "optics table, and so its CTF-premultiplied, aberrated or magnified optics groups, are unknown; load it "
             "from a particle STAR"
         )
-    return Path(dataset_source).expanduser().resolve()
+    source = Path(dataset_source).expanduser()
+    key = ("" if source.is_absolute() else os.getcwd(), str(source))
+    resolved = _RESOLVED_SOURCE_STARS.get(key)
+    if resolved is None:
+        resolved = _RESOLVED_SOURCE_STARS[key] = source.resolve()
+    return resolved
 
 
 def _relion_exact_ctf_source_star(experiment_dataset) -> Path:

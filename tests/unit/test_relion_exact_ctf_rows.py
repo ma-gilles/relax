@@ -15,6 +15,7 @@ program differs only in the last unit of ``sin`` and ``exp``: measured at most 7
 and 5.8e-16 on the CPU backend, checked here at 1e-15 on whichever backend the test runs.
 """
 
+from pathlib import Path
 from types import SimpleNamespace
 
 import jax
@@ -429,3 +430,38 @@ def test_absent_ctf_columns_take_relions_defaults(empiar_10097, source, tmp_path
     star = _write_star(tmp_path / "particles.star", optics.assign(rlnCtfScalefactor=0.75), rows)
     ctf = relion_ctf.relion_fftw_ctf_rows(source(star), np.arange(4), (size, size))
     assert_matches(ctf, _relion_rows(star, rows.assign(rlnCtfScalefactor=0.75), np.arange(4), size), rtol=RTOL)
+
+
+def test_a_source_star_path_is_resolved_once(empiar_10097, source, tmp_path, monkeypatch):
+    """The source STAR's resolved path is kept per path as given: the coarse pass's odd-aberration rows and pass 2's
+    exact CTF rows ask for it on every image batch, and a resolve walks the file system. A relative path is kept
+    per working directory."""
+
+    from relax.relion import optics_aberrations
+
+    star, particles, _, size = empiar_10097
+    monkeypatch.setattr(relion_ctf, "_RESOLVED_SOURCE_STARS", {})
+    first, second = tmp_path / "a", tmp_path / "b"
+    for directory in (first, second):
+        directory.mkdir()
+        (directory / "link.star").symlink_to(star)
+    resolve, resolved = Path.resolve, []
+
+    def counted(self, *args, **kwargs):
+        resolved.append(self)
+        return resolve(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "resolve", counted)
+    dataset = source(first / "link.star")
+    dataset.image_shape = (size, size)
+    indices = np.arange(4)
+    for _ in range(3):
+        optics_aberrations.odd_demodulation_rows(dataset, indices)  # the coarse operands' demodulation
+        relion_ctf.relion_exact_ctf_half_from_source_star(dataset, indices, (size, size))  # pass 2's exact CTF
+    assert resolved == [Path(first / "link.star")]
+    assert relion_ctf.dataset_optics_source_star(dataset) == resolve(Path(star))
+    relative = SimpleNamespace(particles_file="link.star")
+    for directory in (first, second, first):
+        monkeypatch.chdir(directory)
+        assert relion_ctf.dataset_optics_source_star(relative) == resolve(Path(star))
+    assert len(resolved) == 3
