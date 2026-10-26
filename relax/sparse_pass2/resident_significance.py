@@ -666,6 +666,158 @@ def _ragged_gather(
     return child_ids[np.repeat(child_offsets[parents], child_counts) + within]
 
 
+# The device word table takes images whose stored cells fill at least this
+# fraction of their (rotation, word) table; sparser images stay on the host,
+# where the work is per stored cell rather than per table word.
+_DEVICE_WORDS_MIN_FILL = 0.25
+# One device call's word table and its id buffer, in 4-byte entries.
+_DEVICE_WORDS_TABLE = 1 << 24
+_DEVICE_WORDS_CELLS = 1 << 25
+
+_words_jitted = None
+
+
+def _words_program():
+    """The jitted bitset-word table of a group of images' stored cells, built once."""
+
+    global _words_jitted
+    if _words_jitted is None:
+        import jax
+        import jax.numpy as jnp
+
+        @partial(jax.jit, static_argnames=("n_slots", "n_coarse_rot", "n_coarse_trans", "n_words"))
+        def _words(ids, counts, *, n_slots, n_coarse_rot, n_coarse_trans, n_words):
+            # ``ids`` holds the group's cells image after image, padded to a
+            # power-of-two capacity; slot ``s`` owns the next ``counts[s]``.
+            # Padding scatters out of bounds (a positive sentinel, as in the
+            # compaction) and drops.
+            capacity = ids.shape[0]
+            slot = jnp.repeat(jnp.arange(n_slots, dtype=jnp.int32), counts, total_repeat_length=capacity)
+            rot = ids // jnp.int32(n_coarse_trans)
+            trans = ids - rot * jnp.int32(n_coarse_trans)
+            size = n_slots * n_coarse_rot * n_words
+            word = jnp.where(
+                jnp.arange(capacity, dtype=jnp.int32) < jnp.sum(counts),
+                (slot * jnp.int32(n_coarse_rot) + rot) * jnp.int32(n_words) + (trans >> 5),
+                jnp.int32(size),
+            )
+            bit = jnp.left_shift(jnp.uint32(1), (trans & 31).astype(jnp.uint32))
+            # A word's cells are distinct translations of one image and
+            # rotation: their integer sum is their OR, whatever the order.
+            return jnp.zeros((size,), dtype=jnp.uint32).at[word].add(bit, mode="drop")
+
+        _words_jitted = _words
+    return _words_jitted
+
+
+def _host_translation_words(csr: CoarseSignificanceCSR, images: np.ndarray):
+    """:func:`_translation_words` on the host, one pass over the stored cells."""
+
+    n_coarse_trans = int(csr.n_coarse_trans)
+    n_words = n_mask_words(n_coarse_trans)
+    counts = csr.counts().astype(np.int64)
+    take = np.zeros(csr.n_images, dtype=bool)
+    take[images] = True
+    cell_ids = csr.ids[np.repeat(take, counts)]
+    cell_rot = cell_ids // np.int32(n_coarse_trans)
+    cell_trans = cell_ids - cell_rot * np.int32(n_coarse_trans)
+    cell_bit = np.left_shift(np.uint32(1), (cell_trans & np.int32(31)).astype(np.uint32))
+    # (rotation, word) as one key: rotation * n_words + translation // 32.
+    cell_key = cell_rot * np.int32(n_words) + (cell_trans >> np.int32(5))
+    run_start = np.ones(cell_ids.size, dtype=bool)
+    np.not_equal(cell_key[1:], cell_key[:-1], out=run_start[1:])
+    image_counts = counts[images]
+    run_start[np.cumsum(image_counts)[:-1][image_counts[1:] > 0]] = True
+    first = np.flatnonzero(run_start)
+    bits = np.bitwise_or.reduceat(cell_bit, first) if first.size else np.zeros(0, dtype=np.uint32)
+    run_key = cell_key[first].astype(np.int64)
+    return np.repeat(images, image_counts)[first], run_key // n_words, run_key % n_words, bits
+
+
+def _device_translation_words(csr: CoarseSignificanceCSR, images: np.ndarray):
+    """:func:`_translation_words` through a word table built on the device.
+
+    Images go in groups bounded by ``_DEVICE_WORDS_TABLE`` table words and
+    ``_DEVICE_WORDS_CELLS`` cells; a group's table ``[images, rotations,
+    words]`` comes back to the host, whose nonzero words, in C order, are the
+    runs in their image-major, ascending order. Slot and id capacities are
+    powers of two, so a few programs serve every group.
+    """
+
+    import jax
+
+    n_coarse_rot, n_coarse_trans = int(csr.n_coarse_rot), int(csr.n_coarse_trans)
+    n_words = n_mask_words(n_coarse_trans)
+    table_words = n_coarse_rot * n_words
+    offsets = csr.offsets.astype(np.int64)
+    counts = np.diff(offsets)
+    groups, start, cells = [], 0, 0
+    for k, image in enumerate(images):
+        if k > start and (
+            cells + counts[image] > _DEVICE_WORDS_CELLS or (k - start + 1) * table_words > _DEVICE_WORDS_TABLE
+        ):
+            groups.append((start, k))
+            start, cells = k, 0
+        cells += int(counts[image])
+    if images.size:
+        groups.append((start, images.size))
+    parts = []
+    for start, stop in groups:
+        group = images[start:stop]
+        n_slots = 1 << (int(group.size) - 1).bit_length()
+        group_counts = np.zeros(n_slots, dtype=np.int32)
+        group_counts[: group.size] = counts[group]
+        if int(group[-1]) - int(group[0]) + 1 == group.size:  # consecutive images: their ids are one slice
+            group_ids = csr.ids[offsets[group[0]] : offsets[group[-1] + 1]]
+        else:
+            take = np.zeros(csr.n_images, dtype=bool)
+            take[group] = True
+            group_ids = csr.ids[np.repeat(take, counts)]
+        ids = np.zeros(csr_capacity_for_total(group_ids.size), dtype=np.int32)
+        ids[: group_ids.size] = group_ids
+        table = np.asarray(
+            jax.device_get(
+                _words_program()(
+                    ids, group_counts, n_slots=n_slots, n_coarse_rot=n_coarse_rot,
+                    n_coarse_trans=n_coarse_trans, n_words=n_words,
+                ),
+            ),
+        )
+        flat = np.flatnonzero(table)
+        slot, within = np.divmod(flat, table_words)
+        parts.append((group[slot], within // n_words, within % n_words, table[flat]))
+    if not parts:
+        return (np.zeros(0, np.int64),) * 3 + (np.zeros(0, np.uint32),)
+    return tuple(np.concatenate(field) for field in zip(*parts))
+
+
+def _translation_words(csr: CoarseSignificanceCSR, images: np.ndarray):
+    """The stored cells of ``images`` packed into bitset words, one per run of cells.
+
+    A run is the cells of one image, coarse rotation and bitset word: the ids
+    ascend inside an image, so each run is contiguous and its word is the OR
+    of its cells' translation bits (coarse translation k = bit k % 32 of word
+    k // 32). Returns ``(image, rotation, word, bits)`` per run, image-major
+    and ascending. Images whose cells fill a quarter of their word table or
+    more are packed on the device (:func:`_device_translation_words`), the
+    rest on the host; both give each image the same runs.
+    """
+
+    images = np.asarray(images, dtype=np.int64)
+    n_words = n_mask_words(int(csr.n_coarse_trans))
+    fill = csr.counts()[images].astype(np.float64) / float(int(csr.n_coarse_rot) * n_words)
+    dense = fill >= _DEVICE_WORDS_MIN_FILL
+    if not bool(dense.any()):
+        return _host_translation_words(csr, images)
+    if bool(dense.all()):
+        return _device_translation_words(csr, images)
+    parts = [_host_translation_words(csr, images[~dense]), _device_translation_words(csr, images[dense])]
+    merged = tuple(np.concatenate(field) for field in zip(*parts))
+    # Each image's runs come from one side; a stable sort by image interleaves them.
+    order = np.argsort(merged[0], kind="stable")
+    return tuple(field[order] for field in merged)
+
+
 def build_resident_candidate_tables_from_csr(
     csr: CoarseSignificanceCSR,
     *,
@@ -693,7 +845,9 @@ def build_resident_candidate_tables_from_csr(
     is validated against it field by field.  Nothing here materializes a dense
     mask, a per-image rotation-matrix block, or a per-image Python loop over
     the fine grid: every table is assembled with whole-array numpy over the
-    concatenated CSR.
+    concatenated CSR, and the translation bitsets of broad supports (tens of
+    millions of stored cells per pass early in a refinement) are packed on the
+    device (:func:`_translation_words`).
     """
 
     n_images = int(csr.n_images)
@@ -733,44 +887,18 @@ def build_resident_candidate_tables_from_csr(
         symmetry_label=symmetry_label,
     )
 
-    ids = csr.ids.astype(np.int64, copy=False)
-    all_cell_image = np.repeat(np.arange(n_images, dtype=np.int64), counts)
-    all_cell_rot = ids // n_coarse_trans
-    all_cell_trans = ids % n_coarse_trans
-    sparse_cell = np.isin(all_cell_image, sparse_images)
-    cell_image = all_cell_image[sparse_cell]
-    cell_rot = all_cell_rot[sparse_cell]
-    cell_trans = all_cell_trans[sparse_cell]
-
     # Sparse images: their parents are the runs of equal coarse rotation in
     # their ids, image-major and ascending, the same set and order as the host
-    # path's ``np.unique(coarse_rot)``.
-    if cell_rot.size:
-        parent_start = np.ones(cell_rot.size, dtype=bool)
-        parent_start[1:] = (cell_rot[1:] != cell_rot[:-1]) | (
-            cell_image[1:] != cell_image[:-1]
-        )
-        cell_parent = np.cumsum(parent_start) - 1
-        first_cell = np.flatnonzero(parent_start)
-    else:
-        cell_parent = np.zeros(0, dtype=np.int64)
-        first_cell = np.zeros(0, dtype=np.int64)
-    sparse_parent_rot = cell_rot[first_cell]
-    sparse_parent_image = cell_image[first_cell]
-    # One bitset per parent: exactly ``SparseCandidateMask.coarse_valid``
-    # packed bit by bit, coarse translation k = bit k % 32 of word k // 32.
+    # path's ``np.unique(coarse_rot)``. One bitset per parent: exactly
+    # ``SparseCandidateMask.coarse_valid`` packed bit by bit.
+    run_image, run_rot, run_word, run_bits = _translation_words(csr, sparse_images)
+    parent_start = np.ones(run_rot.size, dtype=bool)
+    parent_start[1:] = (run_rot[1:] != run_rot[:-1]) | (run_image[1:] != run_image[:-1])
+    run_parent = np.cumsum(parent_start) - 1
+    sparse_parent_rot = run_rot[parent_start]
+    sparse_parent_image = run_image[parent_start]
     sparse_parent_bits = np.zeros((sparse_parent_rot.size, n_words), dtype=np.uint32)
-    if cell_rot.size:
-        cell_word, cell_bit = translation_word_and_bit(cell_trans)
-        # A parent's cells are distinct translations, so their bits never
-        # overlap and OR equals the sum: one bincount instead of the unbuffered
-        # bitwise_or.at. A word's sum is below 2**32, exact in float64.
-        word_sums = np.bincount(
-            cell_parent * n_words + cell_word,
-            weights=cell_bit.astype(np.float64),
-            minlength=sparse_parent_bits.size,
-        )
-        sparse_parent_bits = word_sums.astype(np.uint32).reshape(sparse_parent_bits.shape)
+    sparse_parent_bits[run_parent, run_word] = run_bits
 
     # Full-support and complement-encoded images take the whole coarse
     # rotation grid as their parents, ascending, exactly as the host path's
@@ -780,15 +908,11 @@ def build_resident_candidate_tables_from_csr(
     grid_image = np.repeat(grid_images, n_coarse_rot)
     grid_bits = np.tile(all_translations_words(n_coarse_trans), (grid_rot.size, 1))
     if complement_images.size:
-        complement_cell = np.isin(all_cell_image, complement_images)
-        if bool(complement_cell.any()):
-            slot = np.searchsorted(grid_images, all_cell_image[complement_cell])
-            clear_word, clear_bit = translation_word_and_bit(all_cell_trans[complement_cell])
-            np.bitwise_and.at(
-                grid_bits,
-                (slot * n_coarse_rot + all_cell_rot[complement_cell], clear_word),
-                ~clear_bit,
-            )
+        # A complement-encoded image stores its excluded cells: clear them.
+        clear_image, clear_rot, clear_word, clear_bits = _translation_words(csr, complement_images)
+        slot_of_image = np.zeros(n_images, dtype=np.int64)
+        slot_of_image[grid_images] = np.arange(grid_images.size, dtype=np.int64)
+        grid_bits[slot_of_image[clear_image] * n_coarse_rot + clear_rot, clear_word] &= ~clear_bits
 
     # An image with no significant sample still carries one parent, coarse
     # rotation 0, and an all-false candidate mask, matching

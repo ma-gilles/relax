@@ -542,6 +542,99 @@ def test_tables_from_csr_match_the_host_path_without_a_rotation_prior():
     _assert_tables_equal(got, expected)
 
 
+
+def _broad_supports(n_images: int, n_coarse_rot: int, n_coarse_trans: int, seed: int) -> list[np.ndarray]:
+    """Broad early-iteration supports over a multi-word translation bitset.
+
+    Most images are dense (complement-encoded) or half the grid; supports are
+    blocks of consecutive cells, so runs cross bitset-word and rotation
+    boundaries; one image is full and one empty.
+    """
+
+    rng = np.random.default_rng(seed)
+    n_samples = n_coarse_rot * n_coarse_trans
+    supports = []
+    for image in range(n_images):
+        if image == 0:
+            supports.append(np.arange(n_samples, dtype=np.int32))
+            continue
+        if image == 1:
+            supports.append(np.zeros(0, dtype=np.int32))
+            continue
+        keep = np.zeros(n_samples, dtype=bool)
+        target = rng.uniform(0.05, 0.97) * n_samples
+        while keep.sum() < target:
+            start = int(rng.integers(0, n_samples))
+            keep[start : start + int(rng.integers(1, 3 * n_coarse_trans))] = True
+        supports.append(np.flatnonzero(keep).astype(np.int32))
+    return supports
+
+
+@pytest.mark.parametrize("execution_order", [False, True])
+@pytest.mark.parametrize("override", [False, True])
+def test_tables_from_csr_match_the_host_path_for_broad_multiword_supports(execution_order, override):
+    n_coarse_rot = N_COARSE_ROT if override else STD_N_COARSE_ROT
+    n_coarse_trans = 70  # three bitset words, the last one partial
+    fine_translation_parent = np.repeat(np.arange(n_coarse_trans, dtype=np.int32), 3)
+    n_samples = n_coarse_rot * n_coarse_trans
+    supports = _broad_supports(17, n_coarse_rot, n_coarse_trans, seed=5)
+    encoded = _encoded_supports(supports, n_samples)
+    assert sum(isinstance(e, ComplementSignificantSampleIndices) for e in encoded) >= 4
+    fine_rotations, fine_parent = _fine_rotation_override() if override else (None, None)
+    rotation_log_prior = np.linspace(-1.5, 0.5, n_coarse_rot, dtype=np.float32)
+    common = dict(
+        nside_level=STD_NSIDE_LEVEL,
+        oversampling_order=0 if override else STD_OVERSAMPLING,
+        n_fine_trans=fine_translation_parent.size,
+        fine_translation_parent=fine_translation_parent,
+        rotation_log_prior=rotation_log_prior,
+        random_perturbation=0.0,
+        relion_parent_execution_order=execution_order,
+        dtype=np.float32,
+    )
+    per_image_inputs = _prepare_per_image_pass2_inputs(
+        encoded,
+        n_coarse_rot=n_coarse_rot,
+        n_coarse_trans=n_coarse_trans,
+        fine_rotations_override=fine_rotations,
+        fine_rotation_parent_override=fine_parent,
+        **common,
+    )
+    expected = build_resident_candidate_tables(
+        per_image_inputs,
+        n_coarse_trans=n_coarse_trans,
+        n_fine_trans=fine_translation_parent.size,
+        fine_translation_parent=fine_translation_parent,
+    )
+    csr = _csr_from_supports(supports, n_coarse_rot=n_coarse_rot, n_coarse_trans=n_coarse_trans)
+    got = build_resident_candidate_tables_from_csr(csr, fine_rotation_parent_override=fine_parent, **common)
+    _assert_tables_equal(got, expected)
+    # Images 5-11 alone: a block whose neighbours' ids are not part of it.
+    block = build_resident_candidate_tables_from_csr(
+        csr.image_block(5, 12), fine_rotation_parent_override=fine_parent, **common
+    )
+    rows = slice(int(expected.row_offsets[5]), int(expected.row_offsets[12]))
+    np.testing.assert_array_equal(block.row_fine_rot, expected.row_fine_rot[rows])
+    bits = slice(int(expected.parent_offsets[5]), int(expected.parent_offsets[12]))
+    np.testing.assert_array_equal(block.parent_trans_bits, expected.parent_trans_bits[bits])
+
+
+@pytest.mark.parametrize("table_words", [1 << 24, 300])
+def test_device_and_host_translation_words_agree(monkeypatch, table_words):
+    """Both packers give every image the same runs; a small table budget splits the images into groups."""
+    from relax.sparse_pass2 import resident_significance as rs
+
+    monkeypatch.setattr(rs, "_DEVICE_WORDS_TABLE", table_words)
+    n_coarse_rot, n_coarse_trans = STD_N_COARSE_ROT, 70
+    supports = _broad_supports(13, n_coarse_rot, n_coarse_trans, seed=9)
+    csr = _csr_from_supports(supports, n_coarse_rot=n_coarse_rot, n_coarse_trans=n_coarse_trans)
+    images = np.arange(csr.n_images, dtype=np.int64)  # includes the empty image 1
+    host = rs._host_translation_words(csr, images)
+    device = rs._device_translation_words(csr, images)
+    for got, expected in zip(device, host):
+        np.testing.assert_array_equal(got, expected)
+    assert host[0].size > 0 and set(np.unique(host[0])) == set(np.flatnonzero(csr.counts()))
+
 def test_compaction_fills_an_exactly_full_capacity():
     """A total support equal to the id capacity must not be corrupted.
 
