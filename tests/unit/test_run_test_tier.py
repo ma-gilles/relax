@@ -535,13 +535,26 @@ def test_the_medium_sweep_runs_own_process_files_alone():
     assert set(files) == own and all(v == [f] for f, v in files.items())
 
 
-def test_a_group_of_one_file_processes_that_ran_no_test_fails():
-    items = run_test_tier.per_file_items("touched_gpu", ["tests/unit/a.py", "tests/unit/b.py"], "python", {})
-    assert all(i.all_skipped_ok and not i.required for i in items)
-    skipped = [{"name": i.name, "junit": {"tests": 2, "skipped": 2}} for i in items]
-    assert run_test_tier.groups_that_ran_nothing(items, skipped) == ["touched_gpu"]
-    skipped[1]["junit"] = {"tests": 2, "skipped": 1}
-    assert run_test_tier.groups_that_ran_nothing(items, skipped) == []
+def test_a_one_file_process_whose_tests_all_skip_fails_unless_listed(tmp_path, monkeypatch):
+    """A touched GPU file whose tests all skip ran nothing: its item fails, though another file's item ran tests,
+    unless the file is listed in tests/tiers/expected_all_skip_gpu_files.json."""
+    for name, body in (("skips.py", "pytest.skip('need --run-gpu')"), ("runs.py", "pass")):
+        (tmp_path / name).write_text(f"import pytest\n\ndef test_x():\n    {body}\n\ndef test_y():\n    {body}\n")
+    files = [str(tmp_path / "skips.py"), str(tmp_path / "runs.py")]
+    monkeypatch.setattr(run_test_tier, "_pytest", lambda py, *args: [py, "-m", "pytest", "-p", "no:cacheprovider", *args])
+    monkeypatch.setattr(run_test_tier, "expected_all_skip_files", lambda: set())
+    items = run_test_tier.per_file_items("touched_gpu", files, sys.executable, {})
+    assert not any(i.required or i.all_skipped_ok for i in items)
+    results = [run_test_tier.run_item(i, tmp_path / "run", tmp_path, None) for i in items]
+    assert [(r["junit"]["skipped"], r["status"]) for r in results] == [(2, "fail"), (0, "pass")]
+    monkeypatch.setattr(run_test_tier, "expected_all_skip_files", lambda: {files[0]})
+    listed = run_test_tier.per_file_items("touched_gpu", files, sys.executable, {})
+    assert [i.all_skipped_ok for i in listed] == [True, False]
+    assert run_test_tier.run_item(listed[0], tmp_path / "run_listed", tmp_path, None)["status"] == "pass"
+
+
+def test_the_expected_all_skip_list_names_gpu_test_files():
+    assert run_test_tier.expected_all_skip_files() <= set(run_test_tier.gpu_test_files(REPO_ROOT))
 
 
 def test_gpu_files_include_skipif_gated_resident_tests():

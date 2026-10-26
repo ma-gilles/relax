@@ -240,9 +240,7 @@ class Item:
     all_skipped_ok: bool = False
     env: dict[str, str] = field(default_factory=dict)
     after: list[str] = field(default_factory=list)  # items that must pass first
-    # Items run one file per process (per_file_items) form a group: the group fails when none of its items ran a
-    # test, as the one process they replace did.
-    group: str = ""
+    group: str = ""  # the items run one file per process (per_file_items) share their group's name
 
 
 # ----------------------------------------------------------------------------- plans
@@ -262,11 +260,18 @@ def own_process_files() -> set[str]:
     return set(json.loads((TIERS_DIR / "own_process_gpu_files.json").read_text())["files"])
 
 
+def expected_all_skip_files() -> set[str]:
+    """GPU test files whose tests all skip in a tier by design (tests/tiers/expected_all_skip_gpu_files.json)."""
+    return set(json.loads((TIERS_DIR / "expected_all_skip_gpu_files.json").read_text())["files"])
+
+
 def per_file_items(group: str, files: list[str], py: str, env: dict[str, str]) -> list[Item]:
     """One pytest process per file: the XLA pool a process grows never shrinks, so a GPU memory high-water or
     capacity test that passes alone ran out of memory after other files in a shared process (relax#131). Each
-    item may skip tests, even all of them; the group fails when none of its items ran one (cmd_run)."""
+    item may skip some tests; one that skips all of them ran nothing and fails, unless its file is listed in
+    tests/tiers/expected_all_skip_gpu_files.json (in one shared process the other files' tests hid it)."""
     seconds = _durations()
+    expected = expected_all_skip_files()
     return [
         Item(
             f"{group}__" + re.sub(r"[^A-Za-z0-9]+", "_", f.removeprefix("tests/").removesuffix(".py")).strip("_"),
@@ -274,7 +279,7 @@ def per_file_items(group: str, files: list[str], py: str, env: dict[str, str]) -
             True,
             seconds.get(f, 10),
             required=False,
-            all_skipped_ok=True,
+            all_skipped_ok=f in expected,
             env=dict(env),
             group=group,
         )
@@ -656,20 +661,6 @@ def run_item(item: Item, run_root: Path, src: Path, gpu: str | None) -> dict:
     return result
 
 
-def groups_that_ran_nothing(items: list[Item], results: list[dict]) -> list[str]:
-    """The groups of one-file processes (per_file_items) none of whose items ran a test: they fail the tier."""
-    by_name = {r["name"]: r for r in results}
-    groups: dict[str, list[dict]] = {}
-    for item in items:
-        if item.group:
-            groups.setdefault(item.group, []).append(by_name.get(item.name, {"junit": {}}))
-    return [
-        group
-        for group, members in sorted(groups.items())
-        if all(r["junit"].get("skipped", 0) >= r["junit"].get("tests", 0) for r in members)
-    ]
-
-
 def execute(items: list[Item], run_root: Path, src: Path, gpus: list[str]) -> list[dict]:
     """One worker process per GPU takes the longest ready GPU item; CPU items run in list order on
     their own worker. An item waits for the items in its ``after`` list and is not run (fails)
@@ -819,7 +810,6 @@ def cmd_run(args: argparse.Namespace) -> int:
     fsc = score_fsc(run_root, src) if spec["tier"] in ("smoke", "medium") else {}
     pinned = compare_pinned(run_root, src, spec["tier"], model) if fsc.get("status") == "reported" else {}
     failed = [r["name"] for r in results if r["status"] != "pass"]
-    failed += groups_that_ran_nothing(items, results)
     # A scoring or comparison that did not run is not a pass: the cases' FSC was never checked.
     if fsc.get("status") == "error":
         failed.append("fsc")
@@ -931,8 +921,9 @@ def freeze_source(run_root: Path) -> dict:
     }
 
 
-# Submission runs on a login or CPU node: its Python and the native build see no GPU, so none of them opens a CUDA
-# context on a device the node shares (physical GPU 0 of the development machine; relax G13).
+# Submission runs on a login or CPU node: the fixture check's Python sees no GPU, so it opens no CUDA context on a
+# device the node shares (physical GPU 0 of the development machine; relax G13). build_test_natives.sh hides the
+# GPU from the native build itself.
 NO_GPU_ENV = {"CUDA_VISIBLE_DEVICES": "", "JAX_PLATFORMS": "cpu"}
 
 
@@ -946,8 +937,7 @@ def verify_fixtures(tier: str, src: Path) -> None:
 
 def build_natives(run_root: Path, src: Path) -> Path:
     natives = run_root / "natives"
-    subprocess.run(["bash", str(src / "scripts" / "build_test_natives.sh"), str(natives)], check=True,
-                   env=dict(os.environ, **NO_GPU_ENV))
+    subprocess.run(["bash", str(src / "scripts" / "build_test_natives.sh"), str(natives)], check=True)
     return natives
 
 
