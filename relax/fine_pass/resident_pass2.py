@@ -1764,16 +1764,18 @@ def _resident_pass2(
         )
         if amortised_rows != tuple(row_ladder_start):
             previous_largest = max(row_ladder_start)
+            new_holds = max(amortised_rows) / mean_particle_rows
             logger.info(
                 "Resident pass-2 tilt row classes %s -> %s: particles of %.0f rows on average fill a %d-row chunk with "
-                "%.1f particles (fewer than %d; the new class holds %.1f, the target %d)",
+                "%.1f particles (fewer than %d; the new class holds %.1f, %s %d)",
                 ",".join(str(v) for v in row_ladder_start),
                 ",".join(str(v) for v in amortised_rows),
                 mean_particle_rows,
                 previous_largest,
                 previous_largest / mean_particle_rows,
                 TILT_MIN_PARTICLES_PER_CHUNK,
-                max(amortised_rows) / mean_particle_rows,
+                new_holds,
+                "the target" if new_holds >= TILT_TARGET_PARTICLES_PER_CHUNK else "the largest within the budget; the target",
                 TILT_TARGET_PARTICLES_PER_CHUNK,
             )
         row_ladder_start = amortised_rows
