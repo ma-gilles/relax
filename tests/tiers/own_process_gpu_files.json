@@ -1,0 +1,10 @@
+{
+ "note": "Test files whose GPU memory high-water or capacity checks hold only in a fresh pytest process: with XLA_PYTHON_CLIENT_PREALLOCATE=false the XLA pool grows across the files one process runs and never shrinks, so these fail after other GPU files and pass alone (relax#131; the unit suite with natives on one A100, Slurm 16212966 and 16220845). scripts/run_test_tier.py runs each listed file in its own process in the medium sweep (smoke runs every touched GPU file in its own process).",
+ "files": [
+  "tests/unit/test_class_stack_postprocess.py",
+  "tests/unit/test_initial_lowpass_host.py",
+  "tests/unit/test_projector_build_memory.py",
+  "tests/unit/test_relion_projector_capacity.py",
+  "tests/unit/test_wiener_pad_route.py"
+ ]
+}

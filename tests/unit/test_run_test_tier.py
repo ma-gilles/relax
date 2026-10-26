@@ -499,6 +499,51 @@ def test_smoke_always_runs_the_changes_own_gpu_test_files(monkeypatch):
     assert deferred == ["tests/unit/a.py", "tests/unit/b.py", "tests/unit/z.py"]
 
 
+def test_smoke_runs_each_touched_gpu_file_in_its_own_process(monkeypatch):
+    """relax#131: in one process the XLA pool the earlier files grew left a capacity test without memory."""
+    touched = ["tests/unit/test_relion_projector_capacity.py", "tests/unit/test_wiener_pad_route.py"]
+    monkeypatch.setattr(run_test_tier, "touched_gpu_tests", lambda src, changed: touched)
+    items = [i for i in run_test_tier.plan("smoke", REPO_ROOT, "HEAD") if i.group == "touched_gpu"]
+    assert [[a for a in i.argv if a.endswith(".py")] for i in items] == [[f] for f in touched]
+    assert all(i.gpu and "--require-natives" in i.argv and i.env["RELAX_RUN_CUDA_XHALF_TEST"] == "1" for i in items)
+
+
+def test_an_item_with_a_test_skipped_for_the_relion_binding_fails(tmp_path):
+    """Every tier passes --require-natives; a test still skipped for the binding did not run, so the item fails."""
+    reason = "the RELION binding relax.relion_bind._relion_bind_core is not built"
+    (tmp_path / "t.py").write_text(f"import pytest\n\ndef test_x():\n    pytest.skip({reason!r})\n\ndef test_y():\n    pass\n")
+    item = run_test_tier.Item(
+        "case", [sys.executable, "-m", "pytest", "-p", "no:cacheprovider", "-q", str(tmp_path / "t.py")], False, 1,
+        required=False,
+    )
+    result = run_test_tier.run_item(item, tmp_path / "run", tmp_path, None)
+    assert result["rc"] == 0 and result["status"] == "fail" and "RELION binding" in result["note"]
+    # A module's pytest.importorskip of the binding skips with its own message.
+    (tmp_path / "t.py").write_text(
+        "import pytest\n\npytest.importorskip('relax.relion_bind._relion_bind_core_absent')\n\ndef test_x():\n    pass\n"
+    )
+    result = run_test_tier.run_item(item, tmp_path / "run_importorskip", tmp_path, None)
+    assert result["status"] == "fail" and "RELION binding" in result["note"]
+    (tmp_path / "t.py").write_text("import pytest\n\ndef test_x():\n    pytest.skip('need --run-gpu')\n\ndef test_y():\n    pass\n")
+    assert run_test_tier.run_item(item, tmp_path / "run2", tmp_path, None)["status"] == "pass"
+
+
+def test_the_medium_sweep_runs_own_process_files_alone():
+    own = run_test_tier.own_process_files()
+    shards = [i for i in run_test_tier.plan("medium", REPO_ROOT, "HEAD") if i.name.startswith("unit_")]
+    files = {f: [a for a in i.argv if a.endswith(".py")] for i in shards for f in i.argv if f in own}
+    assert set(files) == own and all(v == [f] for f, v in files.items())
+
+
+def test_a_group_of_one_file_processes_that_ran_no_test_fails():
+    items = run_test_tier.per_file_items("touched_gpu", ["tests/unit/a.py", "tests/unit/b.py"], "python", {})
+    assert all(i.all_skipped_ok and not i.required for i in items)
+    skipped = [{"name": i.name, "junit": {"tests": 2, "skipped": 2}} for i in items]
+    assert run_test_tier.groups_that_ran_nothing(items, skipped) == ["touched_gpu"]
+    skipped[1]["junit"] = {"tests": 2, "skipped": 1}
+    assert run_test_tier.groups_that_ran_nothing(items, skipped) == []
+
+
 def test_gpu_files_include_skipif_gated_resident_tests():
     files = set(run_test_tier.gpu_test_files(REPO_ROOT))
     assert {"tests/unit/test_resident_pass2_driver.py", "tests/unit/test_resident_local_pass2.py"} <= files

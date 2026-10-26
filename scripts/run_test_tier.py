@@ -240,6 +240,9 @@ class Item:
     all_skipped_ok: bool = False
     env: dict[str, str] = field(default_factory=dict)
     after: list[str] = field(default_factory=list)  # items that must pass first
+    # Items run one file per process (per_file_items) form a group: the group fails when none of its items ran a
+    # test, as the one process they replace did.
+    group: str = ""
 
 
 # ----------------------------------------------------------------------------- plans
@@ -252,6 +255,31 @@ REQUIRE_NATIVES = "--require-natives"
 
 def _pytest(py: str, *args: str, flags=PARITY_FLAGS) -> list[str]:
     return [py, "-m", "pytest", "-p", "no:cacheprovider", "-v", "-s", REQUIRE_NATIVES, *flags, *args]
+
+
+def own_process_files() -> set[str]:
+    """Test files that run only in a pytest process of their own (tests/tiers/own_process_gpu_files.json)."""
+    return set(json.loads((TIERS_DIR / "own_process_gpu_files.json").read_text())["files"])
+
+
+def per_file_items(group: str, files: list[str], py: str, env: dict[str, str]) -> list[Item]:
+    """One pytest process per file: the XLA pool a process grows never shrinks, so a GPU memory high-water or
+    capacity test that passes alone ran out of memory after other files in a shared process (relax#131). Each
+    item may skip tests, even all of them; the group fails when none of its items ran one (cmd_run)."""
+    seconds = _durations()
+    return [
+        Item(
+            f"{group}__" + re.sub(r"[^A-Za-z0-9]+", "_", f.removeprefix("tests/").removesuffix(".py")).strip("_"),
+            _pytest(py, f),
+            True,
+            seconds.get(f, 10),
+            required=False,
+            all_skipped_ok=True,
+            env=dict(env),
+            group=group,
+        )
+        for f in files
+    ]
 
 
 def changed_paths(src: Path, base: str) -> list[str]:
@@ -374,6 +402,7 @@ def smoke_touched_split(
 def sweep_shards(src: Path, py: str) -> list[Item]:
     """The GPU unit sweep, packed into pytest processes of about SHARD_TARGET_S each."""
     seconds = _durations()
+    own = own_process_files()
     files = []
     for d in SWEEP_DIRS:
         files += [p.relative_to(src).as_posix() for p in sorted((src / d).rglob("test_*.py"))]
@@ -383,11 +412,11 @@ def sweep_shards(src: Path, py: str) -> list[Item]:
     loads: list[float] = []
     for f in files:
         cost = seconds.get(f, 10)
-        if cost >= SHARD_TARGET_S:
+        if cost >= SHARD_TARGET_S or f in own:
             shards.append([f])
             loads.append(cost)
             continue
-        open_shards = [i for i, s in enumerate(shards) if loads[i] + cost <= SHARD_TARGET_S]
+        open_shards = [i for i, s in enumerate(shards) if loads[i] + cost <= SHARD_TARGET_S and s[0] not in own]
         if open_shards:
             i = min(open_shards, key=lambda i: loads[i])
             shards[i].append(f)
@@ -448,18 +477,7 @@ def plan(tier: str, src: Path, base: str, run_root: Path | None = None) -> list[
         )
         if deferred:
             print(f"smoke budget: {len(deferred)} touched GPU file(s) deferred to the medium tier: {', '.join(deferred)}")
-        if touched:
-            seconds = _durations()
-            items.append(
-                Item(
-                    "touched_gpu_units",
-                    _pytest(py, *touched),
-                    True,
-                    sum(seconds.get(f, 10) for f in touched),
-                    required=False,
-                    env=sweep_opt_in_env(src),
-                )
-            )
+        items += per_file_items("touched_gpu", touched, py, sweep_opt_in_env(src))
         return items
     if tier == "medium":
         items = [guard, merge_units]
@@ -547,6 +565,21 @@ def long_plan(src: Path, py: str, run_root: Path | None) -> list[Item]:
 # ----------------------------------------------------------------------------- execution
 
 
+def _binding_skips(path: Path) -> int:
+    """Tests the junit report says were skipped because the RELION binding is not built: natives.SKIP_REASON
+    (tests/helpers/natives.py), or an importorskip of relax.relion_bind._relion_bind_core.
+    Every tier builds the natives and passes --require-natives, so such a skip means a test that needs the binding
+    did not run: the CPU gate skips these tests, and the medium sweep is where they run."""
+    if not path.exists():
+        return 0
+    return sum(
+        1
+        for case in ET.parse(path).getroot().iter("testcase")
+        for skip in case.findall("skipped")
+        if any(m in (skip.get("message") or "") + (skip.text or "") for m in ("RELION binding", "_relion_bind_core"))
+    )
+
+
 def _junit_counts(path: Path) -> dict[str, int]:
     if not path.exists():
         return {}
@@ -600,6 +633,9 @@ def run_item(item: Item, run_root: Path, src: Path, gpu: str | None) -> dict:
         status = "fail"  # a required case that did not execute is not a pass
     if status == "pass" and "pytest" in argv and not counts.get("tests"):
         status = "fail"
+    binding_skips = _binding_skips(out / "junit.xml")
+    if binding_skips:
+        status = "fail"
     all_skipped = counts.get("skipped", 0) >= counts.get("tests", 0) > 0
     if status == "pass" and "pytest" in argv and all_skipped and not item.all_skipped_ok:
         status = "fail"  # every test skipped: the item ran nothing
@@ -615,7 +651,23 @@ def run_item(item: Item, run_root: Path, src: Path, gpu: str | None) -> dict:
     }
     if audit_rc is not None:
         result["coarse_audit_rc"] = audit_rc
+    if binding_skips:
+        result["note"] = f"{binding_skips} test(s) skipped for the RELION binding under --require-natives"
     return result
+
+
+def groups_that_ran_nothing(items: list[Item], results: list[dict]) -> list[str]:
+    """The groups of one-file processes (per_file_items) none of whose items ran a test: they fail the tier."""
+    by_name = {r["name"]: r for r in results}
+    groups: dict[str, list[dict]] = {}
+    for item in items:
+        if item.group:
+            groups.setdefault(item.group, []).append(by_name.get(item.name, {"junit": {}}))
+    return [
+        group
+        for group, members in sorted(groups.items())
+        if all(r["junit"].get("skipped", 0) >= r["junit"].get("tests", 0) for r in members)
+    ]
 
 
 def execute(items: list[Item], run_root: Path, src: Path, gpus: list[str]) -> list[dict]:
@@ -767,6 +819,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     fsc = score_fsc(run_root, src) if spec["tier"] in ("smoke", "medium") else {}
     pinned = compare_pinned(run_root, src, spec["tier"], model) if fsc.get("status") == "reported" else {}
     failed = [r["name"] for r in results if r["status"] != "pass"]
+    failed += groups_that_ran_nothing(items, results)
     # A scoring or comparison that did not run is not a pass: the cases' FSC was never checked.
     if fsc.get("status") == "error":
         failed.append("fsc")
@@ -878,16 +931,23 @@ def freeze_source(run_root: Path) -> dict:
     }
 
 
+# Submission runs on a login or CPU node: its Python and the native build see no GPU, so none of them opens a CUDA
+# context on a device the node shares (physical GPU 0 of the development machine; relax G13).
+NO_GPU_ENV = {"CUDA_VISIBLE_DEVICES": "", "JAX_PLATFORMS": "cpu"}
+
+
 def verify_fixtures(tier: str, src: Path) -> None:
     py = str(src / ".pixi" / "envs" / "default" / "bin" / "python")
-    proc = subprocess.run([py, "tests/helpers/em_fixtures.py", *FIXTURE_SETS[tier]], cwd=src)
+    proc = subprocess.run([py, "tests/helpers/em_fixtures.py", *FIXTURE_SETS[tier]], cwd=src,
+                          env=dict(os.environ, **NO_GPU_ENV))
     if proc.returncode:
         raise SystemExit("fixture verification failed; the tier cannot run (missing or changed data)")
 
 
 def build_natives(run_root: Path, src: Path) -> Path:
     natives = run_root / "natives"
-    subprocess.run(["bash", str(src / "scripts" / "build_test_natives.sh"), str(natives)], check=True)
+    subprocess.run(["bash", str(src / "scripts" / "build_test_natives.sh"), str(natives)], check=True,
+                   env=dict(os.environ, **NO_GPU_ENV))
     return natives
 
 

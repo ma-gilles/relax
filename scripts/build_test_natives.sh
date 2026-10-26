@@ -30,6 +30,11 @@ OUT="$(cd "${OUT}" && pwd)"
 cd "${OUT}"
 unset PYTHONPATH PYTHONHOME CONDA_PREFIX VIRTUAL_ENV
 export PYTHONNOUSERSITE=1 RELION_SRC_DIR
+# No step needs a GPU, and `import recovar`, build_custom_cuda and relax/cuda/Makefile's `import jax.ffi` each
+# opened a CUDA context of about 427 MiB on every visible device, physical GPU 0 of a shared node included (relax
+# G13). The libraries match a visible-GPU build up to the build's own run-to-run byte differences (control job
+# 16237948).
+export CUDA_VISIBLE_DEVICES= JAX_PLATFORMS=cpu
 "${PY}" - <<'PY' || exit 2
 import sys
 
