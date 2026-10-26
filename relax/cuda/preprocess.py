@@ -228,22 +228,22 @@ def relion_preprocess_real_f32(
 _INVALID_IMAGE = "{count} image(s) had a non-finite pixel or a non-positive or non-finite soft-mask background"
 
 
-# The dataset images of the batch being preprocessed (relax.relion.image_preprocessing.prepare_batch_preprocess_operands).
-_RELION_PREPROCESS_BATCH_IMAGES: np.ndarray | None = None
+# The dataset images of the batch each thread is preprocessing (relax.relion.image_preprocessing.
+# prepare_batch_preprocess_operands): the tilt coarse pass prepares its next operand block on a worker thread.
+_RELION_PREPROCESS_BATCH_IMAGES = threading.local()
 
 
 def note_relion_preprocess_batch(image_indices) -> None:
-    """Name the dataset images of the next ``relion_preprocess_real_f32`` calls for their failure messages."""
+    """Name the dataset images of this thread's next ``relion_preprocess_real_f32`` calls for their failure messages."""
 
-    global _RELION_PREPROCESS_BATCH_IMAGES
-    _RELION_PREPROCESS_BATCH_IMAGES = None if image_indices is None else np.asarray(image_indices).reshape(-1)
+    _RELION_PREPROCESS_BATCH_IMAGES.images = None if image_indices is None else np.asarray(image_indices).reshape(-1)
 
 
 def _take_noted_batch(batch_size: int) -> np.ndarray | None:
     """The noted dataset images when they are this call's batch (one note serves one call), else None."""
 
-    global _RELION_PREPROCESS_BATCH_IMAGES
-    images, _RELION_PREPROCESS_BATCH_IMAGES = _RELION_PREPROCESS_BATCH_IMAGES, None
+    images = getattr(_RELION_PREPROCESS_BATCH_IMAGES, "images", None)
+    _RELION_PREPROCESS_BATCH_IMAGES.images = None
     return images if images is not None and images.size == batch_size else None
 
 
@@ -280,18 +280,22 @@ _RELION_PREPROCESS_PENDING_LIMIT = 1024
 class DeferredPreprocessChecks:
     """The soft-mask checks queued inside one :func:`deferred_relion_preprocess_checks` block.
 
-    ``at(label)`` names the batch the next preprocess calls belong to; the failure message lists
-    the labels of the batches that held an invalid image (the kernel reports a count per call, not
-    which images of the call).
+    ``at(label)`` names the batch the calling thread's next preprocess calls belong to (a worker thread that
+    prepares ahead names its own batches); the failure message lists the labels of the batches that held an
+    invalid image (the kernel reports a count per call, not which images of the call).
     """
 
     def __init__(self, where: str):
         self.where = str(where)
-        self.label = "unlabelled batch"
+        self._labels = threading.local()
         self.pending: list[tuple[str, np.ndarray | None, jax.Array]] = []
 
+    @property
+    def label(self) -> str:
+        return getattr(self._labels, "label", "unlabelled batch")
+
     def at(self, label: str) -> None:
-        self.label = str(label)
+        self._labels.label = str(label)
 
     def queue(self, invalid_count: jax.Array, batch_images: np.ndarray | None = None) -> None:
         self.pending.append((self.label, batch_images, _count_and_first(invalid_count)))
@@ -318,7 +322,8 @@ class DeferredPreprocessChecks:
         return len(pending)
 
 
-# Open :func:`deferred_relion_preprocess_checks` scopes, innermost last (the batch loops run on one thread).
+# Open :func:`deferred_relion_preprocess_checks` scopes, innermost last. The batch loops open them on one thread; a
+# worker thread preparing ahead for a loop (the tilt coarse pass's operand blocks) queues on the loop's scope.
 _RELION_PREPROCESS_DEFERRED_SCOPES: list[DeferredPreprocessChecks] = []
 
 

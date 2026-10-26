@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import heapq
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from functools import partial
 from typing import NamedTuple
@@ -797,6 +798,24 @@ def _put_rows(buffer, values, start):
     return jax.lax.dynamic_update_slice_in_dim(buffer, values.astype(buffer.dtype), start, axis=0)
 
 
+def _operand_block_ranges(offsets, batches, block_images: int) -> list:
+    """The image ranges ``(first, stop)`` of the operand blocks a slot-batch pass reads, in its order.
+
+    A batch whose images leave the current block starts a new block at its first image: ``block_images`` images of
+    whole particles, and at least the batch's own. The pass prepares each block ahead of the batches that read it.
+    """
+
+    offsets = np.asarray(offsets, dtype=np.int64)
+    ranges, current = [], None
+    for units, *_ in batches:
+        lo, hi = int(offsets[units[0]]), int(offsets[units[-1] + 1])
+        if current is None or lo < current[0] or hi > current[1]:
+            stop_unit = int(np.searchsorted(offsets, lo + int(block_images), side="right")) - 1
+            current = (lo, int(offsets[max(stop_unit, int(units[-1]) + 1)]))
+            ranges.append(current)
+    return ranges
+
+
 def _all_image_coarse_operands(
     experiment_dataset,
     image_start: int,
@@ -1452,27 +1471,41 @@ def particle_coarse_supports(
     slots = int(np.max(np.diff(offsets))) if n_units else 1
     # The tilt images' coarse operands, in fixed image batches (one preprocessing program), prepared for
     # a block of consecutive particles at a time (_COARSE_OPERAND_BLOCK_BYTES); the coarse batches are
-    # consecutive particles, so each batch reads one block.
+    # consecutive particles, so each batch reads one block (_operand_block_ranges). Each block is prepared on a
+    # worker thread while the batches of the one before it are scored: prepared on the main thread, its host work
+    # (~16 s per local EMPIAR-10499 half, py-spy) left the device idle between blocks (nsys).
     operand_bytes_per_image = int(layout.score_indices_np.size) * (8 + 4) + 4
     operand_block = None  # (first image, image stop, unshifted, weight, initial)
+    block_ranges, next_block = [], None  # the blocks still to be read, and the one being prepared: (range, future)
+
+    def prepare_block(lo, stop):
+        # Its preprocess checks are named by its own images (the label is the calling thread's).
+        preprocess_checks.at(f"dataset images {lo}-{stop - 1}")
+        return (lo, stop) + tuple(
+            _all_image_coarse_operands(
+                experiment_dataset,
+                lo,
+                stop,
+                layout,
+                noise_variance_half=noise_variance_half,
+                optics_group_ids=optics_group_ids,
+                scale_corrections=scale_corrections,
+            )
+        )
 
     def operands_for(units):
-        nonlocal operand_block
+        nonlocal operand_block, next_block
         lo, hi = int(offsets[units[0]]), int(offsets[units[-1] + 1])
         if operand_block is None or lo < operand_block[0] or hi > operand_block[1]:
             operand_block = None
-            stop_unit = int(np.searchsorted(offsets, lo + block_images, side="right")) - 1
-            stop = int(offsets[max(stop_unit, int(units[-1]) + 1)])
-            operand_block = (lo, stop) + tuple(
-                _all_image_coarse_operands(
-                    experiment_dataset,
-                    lo,
-                    stop,
-                    layout,
-                    noise_variance_half=noise_variance_half,
-                    optics_group_ids=optics_group_ids,
-                    scale_corrections=scale_corrections,
-                )
+            if next_block is None:  # the pass's first block
+                next_block = (block_ranges[0], block_preparation.submit(prepare_block, *block_ranges.pop(0)))
+            expected, prepared = next_block
+            operand_block = prepared.result()
+            if expected[0] > lo or hi > expected[1]:
+                raise RuntimeError(f"images {lo}-{hi} are not in the prepared operand block {expected}")
+            next_block = (
+                (block_ranges[0], block_preparation.submit(prepare_block, *block_ranges.pop(0))) if block_ranges else None
             )
         return operand_block
 
@@ -1521,7 +1554,8 @@ def particle_coarse_supports(
         frames = None if local or n_units == 0 else shared_frames(image_left, offsets)
         return pass_plan._replace(frame_order=None if frames is None else frames.unit_order)
     budget = pass_plan.budget
-    block_images = max(1, budget.operand_block // operand_bytes_per_image)
+    # Two blocks are alive while the next one is prepared: each takes half the operand block budget.
+    block_images = max(1, budget.operand_block // 2 // operand_bytes_per_image)
     batches = pass_plan.batches(n_units)
     score_indices = jnp.asarray(layout.score_indices_np, dtype=jnp.int32)
     r_pad_all = pass_plan.r_pad
@@ -1816,17 +1850,24 @@ def particle_coarse_supports(
                 n_scored += int(units.size) * n_classes * r_pad_all * n_coarse_trans
                 pending.append((units, diff2, error, n_valid, operands))
                 flush()
-        for units, r_pad, p_pad, slot_block in batches if plan is None else ():
-            preprocess_checks.at(f"particles {int(units[0])}-{int(units[-1])}")
-            diff2, error, n_valid, operands, last_total = _score_slot_batch(
-                units, tilt, operands_for, scorer, r_pad=r_pad, p_pad=p_pad, slots=slots, slot_block=slot_block,
-                slot_offsets=slot_offsets, unit_rotations=None if not local else [unit_rotations[unit] for unit in units],
-            )
-            n_scored += int(units.size) * n_classes * r_pad * n_coarse_trans
-            # The flush cuts these particles, and scores their undecided rotations again from these operands.
-            pending.append((units, diff2, error, n_valid, operands))
-            if sum(int(u.size) for u, *_ in pending) >= significance_batch:
-                flush()
+        block_ranges = _operand_block_ranges(offsets, batches if plan is None else (), block_images)
+        block_preparation = ThreadPoolExecutor(max_workers=1, thread_name_prefix="relax-coarse-operands")
+        try:
+            for units, r_pad, p_pad, slot_block in batches if plan is None else ():
+                diff2, error, n_valid, operands, last_total = _score_slot_batch(
+                    units, tilt, operands_for, scorer, r_pad=r_pad, p_pad=p_pad, slots=slots, slot_block=slot_block,
+                    slot_offsets=slot_offsets,
+                    unit_rotations=None if not local else [unit_rotations[unit] for unit in units],
+                )
+                n_scored += int(units.size) * n_classes * r_pad * n_coarse_trans
+                # The flush cuts these particles, and scores their undecided rotations again from these operands.
+                pending.append((units, diff2, error, n_valid, operands))
+                if sum(int(u.size) for u, *_ in pending) >= significance_batch:
+                    flush()
+        finally:
+            # A failed pass waits for the block being prepared (its checks queue on this pass's scope).
+            block_preparation.shutdown(wait=True, cancel_futures=True)
+        operand_block = next_block = None
         flush(last=True)
     if rescored:
         n_rows, n_particles = (int(sum(int(v) for v in column)) for column in zip(*rescored))

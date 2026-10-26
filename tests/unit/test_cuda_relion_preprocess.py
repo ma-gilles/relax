@@ -391,6 +391,31 @@ def test_relion_cuda_softmask_deferred_check_queues_and_fails_closed_on_drain(gp
     assert cuda_targets.pending_relion_preprocess_checks() == 0
 
 
+def test_a_deferred_checks_label_belongs_to_the_thread_that_set_it():
+    """A worker thread that prepares a pass's batches ahead (the tilt coarse operand blocks) names its own batches;
+    the pass's thread keeps its label, and both queue on the pass's checks."""
+
+    import threading
+
+    from relax.cuda import preprocess as cuda_preprocess
+
+    checks = cuda_preprocess.DeferredPreprocessChecks("test pass")
+    checks.at("particles 0-2")
+
+    def worker():
+        checks.at("dataset images 100-199")
+        checks.queue(jnp.zeros(2, jnp.int32))
+        cuda_preprocess.note_relion_preprocess_batch(np.arange(100, 104))
+
+    thread = threading.Thread(target=worker)
+    thread.start()
+    thread.join()
+    checks.queue(jnp.zeros(2, jnp.int32))
+    assert [label for label, _, _ in checks.pending] == ["dataset images 100-199", "particles 0-2"]
+    assert cuda_preprocess._take_noted_batch(4) is None  # the worker's note is its own
+    assert checks.raise_if_invalid() == 2
+
+
 def test_relion_cuda_softmask_deferred_check_drains_clean_batches(gpu_device):
     from relax.cuda import preprocess as cuda_preprocess
     from relax.cuda.preprocess import relion_preprocess_real_f32

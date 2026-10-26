@@ -388,6 +388,29 @@ def test_shared_frames_group_a_tomograms_particles_and_rank_frames_in_slot_order
     assert tomo_coarse.shared_frames(tomo_a[[0, 1, 1, 0]], [0, 2, 4]) is None
 
 
+def test_operand_blocks_are_read_in_turn_and_hold_each_batch():
+    """The slot-batch pass prepares its operand blocks one ahead of the batches that read them: each batch lies in
+    the block current when it is scored, a block starts at the first image of the batch that leaves the one before,
+    and it holds whole particles within the asked number of images, or the batch that needs more."""
+
+    rng = np.random.default_rng(5)
+    offsets = np.concatenate([[0], np.cumsum(rng.integers(1, 42, size=97))])
+    batches = [(np.arange(start, min(start + 3, 97)),) for start in range(0, 97, 3)]
+    ranges = tomo_coarse._operand_block_ranges(offsets, batches, block_images=200)
+    assert ranges[0][0] == 0 and ranges[-1][1] == offsets[-1]
+    current = iter(ranges)
+    block = next(current)
+    for (units,) in batches:
+        lo, hi = offsets[units[0]], offsets[units[-1] + 1]
+        if hi > block[1]:
+            block = next(current)
+            assert block[0] == lo and block[1] >= hi
+            assert block[1] - block[0] <= 200 or block[1] == hi  # whole particles, the batch at least
+        assert block[0] <= lo and hi <= block[1]
+    assert next(current, None) is None
+    assert tomo_coarse._operand_block_ranges(offsets, (), block_images=200) == []
+
+
 def test_coarse_batches_share_one_shape_within_the_budget():
     batches = tomo_coarse._coarse_batches(
         [130, 90, 200, 50, 70], n_slots=39, n_trans=81, budget_bytes=40 * 256 * 81 * 4 * 2
