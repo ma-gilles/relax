@@ -503,7 +503,7 @@ def test_smoke_runs_each_touched_gpu_file_in_its_own_process(monkeypatch):
     """relax#131: in one process the XLA pool the earlier files grew left a capacity test without memory."""
     touched = ["tests/unit/test_relion_projector_capacity.py", "tests/unit/test_wiener_pad_route.py"]
     monkeypatch.setattr(run_test_tier, "touched_gpu_tests", lambda src, changed: touched)
-    items = [i for i in run_test_tier.plan("smoke", REPO_ROOT, "HEAD") if i.group == "touched_gpu"]
+    items = [i for i in run_test_tier.plan("smoke", REPO_ROOT, "HEAD") if i.name.startswith("touched_gpu__")]
     assert [[a for a in i.argv if a.endswith(".py")] for i in items] == [[f] for f in touched]
     assert all(i.gpu and "--require-natives" in i.argv and i.env["RELAX_RUN_CUDA_XHALF_TEST"] == "1" for i in items)
 
@@ -553,8 +553,10 @@ def test_a_one_file_process_whose_tests_all_skip_fails_unless_listed(tmp_path, m
     assert run_test_tier.run_item(listed[0], tmp_path / "run_listed", tmp_path, None)["status"] == "pass"
 
 
-def test_the_expected_all_skip_list_names_gpu_test_files():
-    assert run_test_tier.expected_all_skip_files() <= set(run_test_tier.gpu_test_files(REPO_ROOT))
+def test_the_expected_all_skip_list_names_gpu_test_files_each_with_a_reason():
+    listed = json.loads((run_test_tier.TIERS_DIR / "expected_all_skip_gpu_files.json").read_text())["files"]
+    assert isinstance(listed, dict) and all(isinstance(r, str) and r.strip() for r in listed.values())
+    assert run_test_tier.expected_all_skip_files() == set(listed) <= set(run_test_tier.gpu_test_files(REPO_ROOT))
 
 
 def test_gpu_files_include_skipif_gated_resident_tests():

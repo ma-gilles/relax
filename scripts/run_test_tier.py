@@ -240,7 +240,6 @@ class Item:
     all_skipped_ok: bool = False
     env: dict[str, str] = field(default_factory=dict)
     after: list[str] = field(default_factory=list)  # items that must pass first
-    group: str = ""  # the items run one file per process (per_file_items) share their group's name
 
 
 # ----------------------------------------------------------------------------- plans
@@ -261,8 +260,9 @@ def own_process_files() -> set[str]:
 
 
 def expected_all_skip_files() -> set[str]:
-    """GPU test files whose tests all skip in a tier by design (tests/tiers/expected_all_skip_gpu_files.json)."""
-    return set(json.loads((TIERS_DIR / "expected_all_skip_gpu_files.json").read_text())["files"])
+    """GPU test files whose tests all skip in a tier by design: the keys of tests/tiers/expected_all_skip_gpu_files.json
+    "files", each mapped to the reason."""
+    return set(json.loads((TIERS_DIR / "expected_all_skip_gpu_files.json").read_text())["files"].keys())
 
 
 def per_file_items(group: str, files: list[str], py: str, env: dict[str, str]) -> list[Item]:
@@ -281,7 +281,6 @@ def per_file_items(group: str, files: list[str], py: str, env: dict[str, str]) -
             required=False,
             all_skipped_ok=f in expected,
             env=dict(env),
-            group=group,
         )
         for f in files
     ]
@@ -921,16 +920,13 @@ def freeze_source(run_root: Path) -> dict:
     }
 
 
-# Submission runs on a login or CPU node: the fixture check's Python sees no GPU, so it opens no CUDA context on a
-# device the node shares (physical GPU 0 of the development machine; relax G13). build_test_natives.sh hides the
-# GPU from the native build itself.
-NO_GPU_ENV = {"CUDA_VISIBLE_DEVICES": "", "JAX_PLATFORMS": "cpu"}
-
-
+# Submission runs on a login or CPU node, where no process may open a CUDA context on a device the node shares
+# (physical GPU 0 of the development machine; relax G13). Each process that imports jax or recovar hides the GPU
+# itself: fast_cases' collection, native_sources' import checks, build_test_natives.sh and the long tier's
+# completion setup script. The fixture check below imports neither.
 def verify_fixtures(tier: str, src: Path) -> None:
     py = str(src / ".pixi" / "envs" / "default" / "bin" / "python")
-    proc = subprocess.run([py, "tests/helpers/em_fixtures.py", *FIXTURE_SETS[tier]], cwd=src,
-                          env=dict(os.environ, **NO_GPU_ENV))
+    proc = subprocess.run([py, "tests/helpers/em_fixtures.py", *FIXTURE_SETS[tier]], cwd=src)
     if proc.returncode:
         raise SystemExit("fixture verification failed; the tier cannot run (missing or changed data)")
 

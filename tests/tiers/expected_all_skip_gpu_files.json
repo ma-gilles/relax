@@ -1,4 +1,4 @@
 {
- "note": "GPU test files whose every test skips in a tier by design. scripts/run_test_tier.py runs each touched GPU file in its own pytest process (per_file_items); a process whose tests all skip ran nothing and fails its item unless its file is listed here, each with the reason in this note.",
- "files": []
+ "note": "GPU test files whose every test skips in a tier by design. scripts/run_test_tier.py runs each touched GPU file in its own pytest process (per_file_items); a process whose tests all skip ran nothing and fails its item unless its file is listed here, as a key whose value is the reason.",
+ "files": {}
 }
