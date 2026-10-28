@@ -41,8 +41,11 @@ Priorities, in order: correctness, GPU performance, clarity.
 10. A structural change preserves casts, reduction order, JIT boundaries, required buffer lifetimes, serialized
     formats and scientific defaults. Commit correctness, performance and structure separately.
 11. Keep diffs focused: do not reformat untouched code; commit no data, binaries, run outputs or credentials.
-12. Merge bug fixes and qualified work to `main` yourself, often: rebase onto `origin/main`, pass the tier for
-    the change on the rebased commit, push as a fast-forward. Never force-push (CONTRIBUTING.md, "Landing").
+12. Merge bug fixes and qualified work to `main` yourself, often, and only through the shared landing tools
+    (owner, 2026-10-27): rebase onto `origin/main`; on that exact head pass `gate.sh --landing` and the smoke and
+    medium tiers (`tier.sh`), then `land_fp.sh`; push as a fast-forward. Your own smoke or A/B run does not
+    replace them. Never force-push (CONTRIBUTING.md, "Landing"; how-to:
+    `/scratch/gpfs/CRYOEM/gilleslab/em_work/refactor_deep2_20261008/tools/README.md`).
 13. Delegate to sub-agents only when the owner has allowed it; one writer per file (`relax/SUBAGENTS.md`).
 
 ## Commands
@@ -70,6 +73,7 @@ Priorities, in order: correctness, GPU performance, clarity.
 Each tier command freezes the checkout, verifies fixtures, builds the natives, runs as one Slurm job and writes
 `RECEIPT.json` in its run root. Only smoke may run on a local GPU. When the default run root is not writable
 for your account, pass `--run-root <directory>`. Budgets, contents and pass criteria: CONTRIBUTING.md.
+Landing on `main` takes more than the tier for the change: rule 12.
 
 ## Map
 

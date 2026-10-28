@@ -138,22 +138,30 @@ the H100 values.
 
 ## Landing
 
-RELAX `main` is the integration branch. Agents merge to it themselves.
+RELAX `main` is the integration branch. Agents merge to it themselves, and every push to `main` goes through
+the shared landing tools (owner, 2026-10-27) in
+`/scratch/gpfs/CRYOEM/gilleslab/em_work/refactor_deep2_20261008/tools/`;
+their `README.md` gives the order of the steps, the status files and each script's usage. A session's own
+smoke test or A/B run does not replace them.
 
 1. Rebase the branch onto current `origin/main`.
-2. Run the tier for the change on the rebased commit ([which tier](AGENTS.md#which-tier)).
-3. Push to `main` as a fast-forward. Never force-push.
+2. On that exact head, run the landing gate (`bash gate.sh --landing <head> <base> refinement,vdam` on a login
+   node) and the smoke and medium tiers (`sbatch tier.sh <head> --base <base> smoke medium`).
+3. When they pass, run `bash land_fp.sh <label> <head> <base>`, and push to `main` as a fast-forward only when
+   `status/<head sha>.land` is 0 with `base=` the current `origin/main`. Never force-push.
 4. Delete the branch, local and remote, unless the owner asked to keep it. If a branch is abandoned, say why
    in your report and delete it.
 
 - Land each qualified piece when its tier passes, not at the end of the task. List your unmerged commits
   (SHA, subject, what blocks each) in your report.
-- A rebase makes a new candidate that needs its tier again, with one exception: when every commit it moved
-  over changes only documents, tests or scripts (nothing under `relax/`, no native source, no pixi manifest or
-  lock), the CPU checks at the rebased head suffice.
-- Validate forward: when the candidate passed its GPU tier at the previous head, the rebase is conflict-free,
-  and main's new code commits touch neither the candidate's files nor its engine path, push after the CPU
-  checks at the rebased head, run the GPU tier afterwards, and fix forward if it fails.
+- A rebase makes a new head that needs the landing gate and smoke again. Its medium is needed again too, with
+  the two allowances of `land_fp.sh`: `--medium-from <pre-rebase head>` when that head's medium passed against
+  its gate's base, the rebased commits keep their patch ids, and the commits rebased over touch none of the
+  branch's files; `--no-medium` when the branch changes only Markdown at the top level or under `docs/`,
+  `scripts/dev/`, and the harness tests `tests/unit/test_dev_*.py`, `test_refactor_gate.py`,
+  `test_run_test_tier.py` and `test_smell_check.py`.
+- A gate, smoke or medium recorded under older tools does not count (its status line's `tool=` differs from the
+  current one); `land_fp.sh` says which to rerun.
 - Judge a candidate against its control by the gates in `tests/tiers/fsc_thresholds.json` and the noise
   envelope, never by bitwise equality.
 - When the owner asks for a pull request instead, start its description with the problem and the resulting
