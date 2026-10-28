@@ -22,12 +22,19 @@ from recovar.ppca.pose_accumulators import AugmentedPPCAStats
 from recovar.reconstruction.noise import make_radial_noise
 
 from relax.ppca_initial_model import checkpoint
-from relax.ppca_initial_model.initialization import bandlimit_and_mask, initialize, support_mask
+from relax.ppca_initial_model.initialization import bandlimit_and_mask, birth_loadings, initialize, support_mask
 from relax.ppca_initial_model.noise import update_noise
+from relax.ppca_initial_model.radius_rule import mean_data_vs_prior, next_radius, radius_for
 from relax.ppca_initial_model.sgd_update import metric_trace, momentum_step
 from relax.ppca_initial_model.state import State
 from relax.ppca_initial_model.tomo import TiltParticles, initialize_tilts, load_tilt_tile, tilt_tiles
-from relax.ppca_initial_model.update import coupled_direction, empty_moments, metric_floor, stochastic_update
+from relax.ppca_initial_model.update import (
+    Moments,
+    coupled_direction,
+    empty_moments,
+    metric_floor,
+    stochastic_update,
+)
 from relax.ppca_refinement.config import GeometryConfig, ScheduleConfig, ScoringConfig, SparsePass2Config
 from relax.ppca_refinement.dense_dataset import (
     DensePPCAEmbeddings,
@@ -252,6 +259,59 @@ def _curvature_trace(stats, p):
     return metric_trace(sum(s.lhs_tri for s in stats), p)
 
 
+def _active_columns(array, width):
+    """The leading ``width`` entries of the last axis of ``array`` (the mean and the active PCs); ``array`` itself
+    when it is that wide."""
+    return array if array.shape[-1] == width else array[..., :width]
+
+
+def _with_active_columns(full, part):
+    """``full`` with its leading columns replaced by ``part``; ``part`` itself when it is as wide as ``full``."""
+    return part if part.shape[-1] == full.shape[-1] else full.at[..., : part.shape[-1]].set(part)
+
+
+def _active_moments(moments, width):
+    """VDAM's moments of the mean and the active PCs: the first moments' leading columns, the per-frequency second
+    moments and flags as they are."""
+    return Moments(_active_columns(moments.first, width), moments.second, moments.initialized)
+
+
+def _with_active_moments(full, part):
+    """``full`` with the first moments of its leading columns replaced by those of ``part``, whose per-frequency
+    second moments and flags replace ``full``'s."""
+    return Moments(_with_active_columns(full.first, part.first), part.second, part.initialized)
+
+
+def _activate_pcs(state, config, iteration, *, volume_shape, diameter_px, radius, mask):
+    """``state`` at the start of ``iteration`` under ``config.pc_stages``.
+
+    The columns of PCs not yet active are zero, and each PC that joins at this iteration is born
+    (:func:`birth_loadings`) from a generator seeded by the run seed and the iteration, so a resumed run draws the
+    same loadings. The first PC also restarts the loadings' shared second moment, which no update has touched while
+    no loading was active. Without ``pc_stages`` the state is returned as it is.
+    """
+    active = config.active_pcs(iteration)
+    previous = config.active_pcs(iteration - 1) if iteration > 1 else active
+    if active == config.q and previous == config.q:
+        return state
+    theta = state.theta.at[:, 1 + active :].set(0)
+    moments = state.moments
+    if active > previous:
+        theta = birth_loadings(
+            theta,
+            list(range(1 + previous, 1 + active)),
+            volume_shape=volume_shape,
+            diameter_px=diameter_px,
+            radius=radius,
+            mask=mask,
+            scale=config.pc_birth_scale,
+            rng=np.random.default_rng([config.seed, iteration]),
+        )
+        if previous == 0 and moments is not None:
+            moments = dataclasses.replace(moments, second=moments.second.at[:, 1].set(1))
+    return dataclasses.replace(state, theta=theta, moments=moments)
+
+
 def _select_halves(rng, order, count, balanced):
     """Draw one fresh permutation, optionally stratified by stable pseudo-half ID."""
     shuffled = rng.permutation(order)
@@ -317,10 +377,11 @@ def pass1_image_size(order, dataset, current_size, diameter_ang):
 
 @full_float32
 def _expectation(dataset, state, config, ids, iteration, *, embeddings_only=False, diameter_ang=None):
-    radius, hp = config.stage(iteration)
+    hp = config.stage(iteration)[1]
     # full-box default projector excludes unpaired Nyquist, as existing PPCA.
-    radius = min(radius, dataset.grid_size // 2 - 1)
-    geometry = GeometryConfig(current_size=2 * radius, q=config.q, volume_domain="fourier_half")
+    radius = radius_for(config, state, iteration, dataset.grid_size)
+    active = config.active_pcs(iteration)
+    geometry = GeometryConfig(current_size=2 * radius, q=active, volume_domain="fourier_half")
     schedule = ScheduleConfig(image_batch_size=config.image_batch_size, rotation_block_size=config.rotation_block_size)
     scoring = ScoringConfig(relion_texture_interp=False, full_real_observation=True)
     rotations = _rotation_grid(hp)
@@ -347,7 +408,7 @@ def _expectation(dataset, state, config, ids, iteration, *, embeddings_only=Fals
     nvs = [np.asarray(make_radial_noise(row, dataset.image_shape), np.float32) for row in noise_rows]
     nv = nvs[0]
     common = dict(noise_variance=nv, geometry=geometry, schedule=schedule, scoring=scoring, image_indices=ids)
-    mu, W = state.theta[:, 0], state.theta[:, 1:]
+    mu, W = state.theta[:, 0], state.theta[:, 1 : 1 + active]
     if config.stream_coarse_recompute:
         # One artificial coarse parent represents the full coarse pose grid.
         # It keeps the shared full-row mask Bx1x1 instead of BxRxT. Each noise group has its
@@ -608,30 +669,43 @@ def run(
         selected, halves = _select_halves(rng, state.order, count, config.balanced_stochastic_halves)
         if any(len(ids) == 0 for ids in halves):
             raise ValueError("Selected batch has an empty pseudo-halfset")
+        radius = radius_for(config, state, iteration, dataset.grid_size)
+        state = _activate_pcs(
+            state,
+            config,
+            iteration,
+            volume_shape=dataset.volume_shape,
+            diameter_px=diameter_ang / dataset.voxel_size,
+            radius=radius,
+            mask=mask,
+        )
+        active = config.active_pcs(iteration)
         stats = expectation_groups(dataset, state, config, halves, iteration, diameter_ang=diameter_ang)
-        radius = min(config.stage(iteration)[0], dataset.grid_size // 2 - 1)
+        theta_in = _active_columns(state.theta, 1 + active)
         if config.optimizer == "momentum_sgd":
             _, proposed_momentum, diagnostics = momentum_step(
-                state.theta,
-                state.sgd_momentum,
+                theta_in,
+                _active_columns(state.sgd_momentum, 1 + active),
                 sum(result.residual_gradient for result in stats),
-                _curvature_trace(stats, config.q + 1),
+                _curvature_trace(stats, active + 1),
                 radii <= radius,
                 learning_rate=config.sgd_learning_rate,
                 floor=metric_floor(dataset.grid_size),
             )
             momentum = bandlimit_and_mask(proposed_momentum, dataset.volume_shape, radius, mask)
-            theta = bandlimit_and_mask(state.theta + proposed_momentum, dataset.volume_shape, radius, mask)
+            theta = bandlimit_and_mask(theta_in + proposed_momentum, dataset.volume_shape, radius, mask)
             moments = None
             metric_info = []
             diagnostics["velocity_l2_after_support"] = float(jnp.linalg.norm(momentum))
+            momentum = _with_active_columns(state.sgd_momentum, momentum)
+            theta = _with_active_columns(state.theta, theta)
         else:
             directions = []
             metric_info = []
             coverage = []
             # The update's own support: the rows bandlimit_and_mask keeps below.
             support = radii <= radius
-            diagonal = np.flatnonzero(np.equal(*np.triu_indices(config.q + 1)))  # packed diagonal entries
+            diagonal = np.flatnonzero(np.equal(*np.triu_indices(active + 1)))  # packed diagonal entries
             for half, result in enumerate(stats):
                 try:
                     direction, info = coupled_direction(
@@ -652,8 +726,8 @@ def run(
                 covered = jnp.sum(jnp.asarray(result.lhs_tri)[:, diagonal], axis=-1) > 0  # the metric's trace
                 coverage.append(covered & jnp.asarray(support))
             theta, moments, diagnostics = stochastic_update(
-                state.theta,
-                state.moments,
+                theta_in,
+                _active_moments(state.moments, 1 + active),
                 jnp.stack(directions),
                 jnp.stack(coverage),
                 shells,
@@ -662,6 +736,8 @@ def run(
                 image_size=dataset.grid_size,
             )
             theta = bandlimit_and_mask(theta, dataset.volume_shape, radius, mask)
+            theta = _with_active_columns(state.theta, theta)
+            moments = _with_active_moments(state.moments, moments)
             momentum = None
         numerator = sum(s.residual_num for s in stats)
         denominator = sum(s.residual_den for s in stats)
@@ -702,6 +778,15 @@ def run(
         if not bool(jnp.all(jnp.isfinite(theta))):
             raise ValueError("Nonfinite PPCA model")
         hp = config.stage(iteration)[1]
+        data_vs_prior = planned_radius = None
+        if config.radius_rule == "data_vs_prior":
+            # The reference this E-step used and half 0's mean weight, as RELION's updateSSNRarrays.
+            data_vs_prior = mean_data_vs_prior(
+                stats[0].lhs_tri[:, 0], theta_in[:, 0], dataset.volume_shape, fudge=fudge, radius=radius
+            )
+            planned_radius = next_radius(
+                data_vs_prior, radius=radius, grid_size=dataset.grid_size, incr_size=config.incr_size
+            )
         direction_ids = _direction_ids(hp)
         masses = sum(np.asarray(result.diagnostics["rotation_mass"]) for result in stats)
         direction_mass = np.bincount(direction_ids, weights=masses)
@@ -727,14 +812,14 @@ def run(
             direction_prior,
             hp,
             momentum,
+            planned_radius,
         )
-        seen = stage_tile_sizes.setdefault(config.stage(iteration), set())
+        stage_key = config.stage(iteration) if config.radius_rule == "stages" else (radius, hp)
+        seen = stage_tile_sizes.setdefault(stage_key, set())
         new_sizes = {size for s in stats for size in s.diagnostics.get("tile_sizes", ())} - seen
         if new_sizes:
             seen.update(new_sizes)
-            logger.info(
-                "stage %s compiles tile sizes %s (%d so far)", config.stage(iteration), sorted(new_sizes), len(seen)
-            )
+            logger.info("stage %s compiles tile sizes %s (%d so far)", stage_key, sorted(new_sizes), len(seen))
         diagnostics.update(
             {
                 "iteration": iteration,
@@ -742,6 +827,12 @@ def run(
                 "particle_ids": [s.original_image_ids for s in stats],
                 "half_counts": [s.n_images for s in stats],
                 "radius": radius,
+                **({"active_pcs": active} if config.pc_stages is not None else {}),
+                **(
+                    {"data_vs_prior": data_vs_prior, "next_radius": planned_radius}
+                    if planned_radius is not None
+                    else {}
+                ),
                 "healpix_order": config.stage(iteration)[1],
                 "gemm_precision": _gemm_precision_used(config),
                 "pass2_mass_floor": config.pass2_mass_floor,

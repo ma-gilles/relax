@@ -34,6 +34,32 @@ def add_args(parser):
     parser.add_argument("--iterations", type=int, default=200)
     parser.add_argument("--stages", help="JSON list of [first iteration, Fourier radius, HEALPix order]")
     parser.add_argument(
+        "--radius-rule",
+        choices=("stages", "data_vs_prior"),
+        default=Config().radius_rule,
+        help="the Fourier radius of each iteration: the --stages table's, or RELION's data_vs_prior rule for the mean "
+        "(the table's first radius starts the run, then the last shell where data_vs_prior stays at or above 1 plus "
+        "--incr-size shells, never decreasing; the table's HEALPix orders still apply)",
+    )
+    parser.add_argument(
+        "--incr-size",
+        type=int,
+        default=Config().incr_size,
+        help="RELION's --incr_size: shells beyond the data_vs_prior resolution that the data_vs_prior radius includes",
+    )
+    parser.add_argument(
+        "--pc-stages",
+        help="JSON list of [first iteration, PCs]: the PCs the model learns, from iteration 1 and ending at --q. "
+        "A PC joins at its stage as a small random loading; before it the model is the mean and the earlier PCs "
+        "(default: all --q PCs from the first update)",
+    )
+    parser.add_argument(
+        "--pc-birth-scale",
+        type=float,
+        default=Config().pc_birth_scale,
+        help="size of a new PC's loading relative to the mean map's standard deviation",
+    )
+    parser.add_argument(
         "--oversampling",
         type=int,
         default=0,
@@ -102,6 +128,15 @@ def add_args(parser):
         default=1e-10,
         help="pass 2 skips pose rows on which every image of a tile has less posterior mass (default 1e-10, "
         "applied when at most half the rows remain; 0: none skipped)",
+    )
+    parser.add_argument(
+        "--tau2-fudge",
+        type=float,
+        help="RELION's --tau2_fudge for the VDAM gate (default: 4 on the 4-step scheme, a fudge of 1 rising to 4)",
+    )
+    parser.add_argument(
+        "--tau2-fudge-scheme",
+        help="RELION's --tau2_fudge_scheme: plain, or <deflate>-step (default: <fudge>-step)",
     )
     parser.add_argument("--sgd-learning-rate", type=float, default=0.4)
     parser.add_argument("--resume")
@@ -375,6 +410,12 @@ def main(args=None):
         preread_images=args.ppca_preread_images,
         pass2_mass_floor=args.ppca_pass2_mass_floor,
         stages=tuple(tuple(stage) for stage in json.loads(args.stages)) if args.stages else Config().stages,
+        pc_stages=tuple(tuple(stage) for stage in json.loads(args.pc_stages)) if args.pc_stages else None,
+        pc_birth_scale=args.pc_birth_scale,
+        radius_rule=args.radius_rule,
+        incr_size=args.incr_size,
+        tau2_fudge=args.tau2_fudge,
+        tau2_fudge_scheme=args.tau2_fudge_scheme,
     )
     if (args.ios is None) == (args.particles is None):
         raise ValueError("Give either a particle STAR (--i) or an optimisation set (--ios)")

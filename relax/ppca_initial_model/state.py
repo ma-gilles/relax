@@ -20,3 +20,5 @@ class State:
     direction_prior: object = None
     direction_order: int = -1
     sgd_momentum: object = None
+    # Under the data_vs_prior radius rule, the Fourier radius of the next iteration; None under the stages table.
+    next_radius: int | None = None

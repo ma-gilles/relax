@@ -20,6 +20,24 @@ class Config:
     iterations: int = 200
     seed: int = 11
     stages: tuple = ((1, 4, 1), (61, 8, 2), (111, 16, 3), (161, 32, 3))
+    # The PCs the model learns, by iteration: ((first iteration, PCs), ...), the first entry at iteration 1, the counts
+    # not decreasing and the last equal to q. A PC joins at the start of its stage as a small random loading
+    # (initialization.birth_loadings) of size pc_birth_scale times the mean's standard deviation; until then its
+    # column is zero and the E-step and the update see only the active PCs. None learns all q PCs from the first
+    # update, seeded by the bootstrap.
+    pc_stages: tuple | None = None
+    pc_birth_scale: float = 0.1
+    # RELION's --tau2_fudge and --tau2_fudge_scheme (ml_optimiser.cpp updateTau2Fudge) for the VDAM gate; None takes
+    # the InitialModel defaults, a fudge of 4 on the scheme 4-step (1 at the start, 4 from the middle of the run).
+    # A fudge of 1 with the scheme plain keeps the gate at its strongest shrinkage throughout.
+    tau2_fudge: float | None = None
+    tau2_fudge_scheme: str | None = None
+    # The Fourier radius of each iteration. "stages": the stages table's. "data_vs_prior": RELION's InitialModel rule
+    # (relax/ppca_initial_model/radius_rule.py): the table's first radius at iteration 1, then the last shell where the
+    # mean's data_vs_prior stays at or above 1 plus incr_size shells (RELION's --incr_size), never decreasing. The
+    # table's HEALPix orders still apply; its later radii do not.
+    radius_rule: str = "stages"
+    incr_size: int = 10
     # Adaptive oversampling: 0 scores every stage's full pose grid; 1 runs the last stage with RELION's two passes
     # (each image's significant coarse samples, then their children; relax/ppca_refinement/oversampled_stream.py)
     # and the earlier stages dense (iteration_loop.oversampled_update).
@@ -84,6 +102,16 @@ class Config:
             raise ValueError("Adaptive oversampling runs on the streamed engine (stream_coarse_recompute)")
         if self.q > 2 and not self.stream_coarse_recompute:
             raise ValueError("Higher-rank InitialModel requires the streamed coarse recompute engine")
+        if self.pc_stages is not None:
+            self._validate_pc_stages()
+        if not np.isfinite(self.pc_birth_scale) or self.pc_birth_scale <= 0:
+            raise ValueError("pc_birth_scale must be finite and positive")
+        if self.radius_rule not in ("stages", "data_vs_prior"):
+            raise ValueError("The radius rule must be stages or data_vs_prior")
+        if isinstance(self.incr_size, bool) or not isinstance(self.incr_size, (int, np.integer)) or self.incr_size <= 0:
+            raise ValueError("incr_size must be a positive integer")
+        if self.radius_rule == "data_vs_prior" and self.optimizer != "vdam":
+            raise ValueError("The data_vs_prior radius is RELION's VDAM rule: it needs the vdam optimizer")
         if self.stochastic_batch_size is not None and self.stochastic_batch_size <= 0:
             raise ValueError("Stochastic batch size must be positive")
         if self.stochastic_all_iterations and self.stochastic_batch_size is None:
@@ -105,7 +133,7 @@ class Config:
             # The VDAM update multiplies the fudge into every gate, so such a run cannot produce a finite model.
             phases = compute_phase_lengths(self.iterations)
             unusable = [
-                i for i in range(1, self.iterations + 1) if not np.isfinite(compute_tau2_fudge(i, phases, True, 3))
+                i for i in range(1, self.iterations + 1) if not np.isfinite(self.tau2_fudge_at(i, phases))
             ]
             if unusable:
                 raise ValueError(
@@ -123,6 +151,42 @@ class Config:
             raise ValueError("Image preread must be auto, on or off")
         if not 0 <= self.pass2_mass_floor < 1:
             raise ValueError("The pass-2 mass floor must be in [0, 1)")
+
+    def _validate_pc_stages(self) -> None:
+        """Refuse a PC schedule that does not start at iteration 1, shrinks, does not end at q or is out of range."""
+        stages = self.pc_stages
+        if not stages or any(len(stage) != 2 for stage in stages):
+            raise ValueError("PC stages are (first iteration, PCs) pairs")
+        if any(isinstance(v, bool) or not isinstance(v, (int, np.integer)) for stage in stages for v in stage):
+            raise ValueError(f"PC stages must hold integers, got {stages}")
+        starts, counts = [s for s, _ in stages], [n for _, n in stages]
+        if starts[0] != 1 or any(a >= b for a, b in zip(starts, starts[1:])):
+            raise ValueError("PC stages must begin at iteration 1 and have increasing first iterations")
+        if starts[-1] > self.iterations:
+            raise ValueError(
+                f"The last PC stage starts at iteration {starts[-1]}, after the {self.iterations} iterations"
+            )
+        if counts[0] < 0 or any(a > b for a, b in zip(counts, counts[1:])) or counts[-1] != self.q:
+            raise ValueError(f"PC counts must not decrease, start at 0 or more and end at q = {self.q}, got {counts}")
+        if not self.stream_coarse_recompute:
+            raise ValueError("PC stages run on the streamed engine (stream_coarse_recompute)")
+
+    def tau2_fudge_at(self, iteration: int, phases) -> float:
+        """RELION's tau2 fudge at ``iteration`` of the VDAM schedule with ``phases`` under the run's options."""
+        return compute_tau2_fudge(
+            iteration,
+            phases,
+            True,
+            3,
+            tau2_fudge_arg=self.tau2_fudge,
+            tau2_fudge_scheme=self.tau2_fudge_scheme,
+        )
+
+    def active_pcs(self, iteration: int) -> int:
+        """The number of PCs the model learns at ``iteration``: all q without ``pc_stages``."""
+        if self.pc_stages is None:
+            return self.q
+        return next(count for start, count in reversed(self.pc_stages) if start <= iteration)
 
     def step_factor(self, iteration, n_images):
         """``min(1, count / scheduled count)``: the factor on VDAM's step for a batch below its own subset.
@@ -156,5 +220,5 @@ class Config:
         return (
             min(count, n_images),
             compute_stepsize(iteration, phases, True, 3),
-            compute_tau2_fudge(iteration, phases, True, 3),
+            self.tau2_fudge_at(iteration, phases),
         )

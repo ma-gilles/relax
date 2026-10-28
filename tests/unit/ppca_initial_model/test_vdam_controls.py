@@ -88,3 +88,33 @@ def test_vdam_refuses_iteration_counts_with_a_nan_tau2_fudge():
     for iterations in (1, 2, 3, 6, 7, 50, 200):
         config = Config(iterations=iterations)
         assert all(np.isfinite(config.schedule(it, 2000)[2]) for it in range(1, iterations + 1))
+
+
+def test_tau2_fudge_options_set_the_gate_schedule_and_default_to_relions_initial_model():
+    from relax.ppca_initial_model.config import Config
+    from relax.steps.sgd_schedule import compute_phase_lengths, compute_tau2_fudge
+
+    phases = compute_phase_lengths(600)
+    default = Config(iterations=600)
+    assert [default.schedule(i, 20_000)[2] for i in (1, 330, 600)] == [
+        compute_tau2_fudge(i, phases, True, 3) for i in (1, 330, 600)
+    ]
+    # RELION's default 4-step scheme rises from 1 to 4; a fudge of 1 stays at 1 on every iteration.
+    assert default.schedule(1, 20_000)[2] == pytest.approx(1.0) and default.schedule(600, 20_000)[2] == 4.0
+    pinned = Config(iterations=600, tau2_fudge=1.0)
+    assert all(pinned.schedule(i, 20_000)[2] == pytest.approx(1.0) for i in range(1, 601))
+    # A plain scheme holds the fudge at its value; a deflate of 2 starts at half of it.
+    assert all(
+        Config(iterations=600, tau2_fudge=3.0, tau2_fudge_scheme="plain").schedule(i, 20_000)[2] == 3.0
+        for i in (1, 300, 600)
+    )
+    assert Config(iterations=600, tau2_fudge=3.0, tau2_fudge_scheme="2-step").schedule(1, 20_000)[2] == pytest.approx(
+        1.5
+    )
+
+
+def test_an_invalid_tau2_fudge_scheme_is_refused():
+    from relax.ppca_initial_model.config import Config
+
+    with pytest.raises(ValueError, match="tau2_fudge_scheme"):
+        Config(iterations=200, tau2_fudge_scheme="fast")

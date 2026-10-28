@@ -180,6 +180,32 @@ def seed_model(rhs, lhs, volume_shape, voxel_size, diameter_ang, radius, rng):
     return theta
 
 
+@full_float32
+def birth_loadings(theta, columns, *, volume_shape, diameter_px, radius, mask, scale, rng):
+    """``theta`` with the loading columns ``columns`` (indices of its columns, 1 for the first PC) set to new PCs.
+
+    Each new loading is the seed's blob field (:func:`_blob_field`, positive minus half negative) modulated by the
+    current mean's magnitude and scaled to ``scale`` times the mean's standard deviation, then masked and band-limited
+    as the model is after every update (:func:`bandlimit_and_mask`). A loading of exactly zero is a fixed point of the
+    update, so a PC needs this seed to grow.
+    """
+    half_shape = ftu.volume_shape_to_half_volume_shape(volume_shape)
+    mean = np.asarray(ftu.get_idft3_real(theta[:, 0].reshape((1,) + half_shape), volume_shape), np.float32)[0]
+    target = np.float32(scale) * np.std(mean, dtype=np.float32)
+    fields = []
+    for _ in columns:
+        field = _blob_field(mean, diameter_px, rng) - np.float32(0.5) * _blob_field(mean, diameter_px, rng)
+        sd = np.std(field, dtype=np.float32)
+        if sd <= 0:
+            raise ValueError("The new PC's blob field is zero: the mean has no density at the blob centers")
+        fields.append(field * (target / sd))
+    spectra = ftu.get_dft3_real(np.stack(fields)).reshape(len(columns), -1).T
+    born = bandlimit_and_mask(spectra, volume_shape, radius, mask)
+    if not np.all(np.isfinite(np.asarray(born))) or np.any(np.linalg.norm(np.asarray(born), axis=0) == 0):
+        raise ValueError("A new PC must be finite and nonzero")
+    return theta.at[:, jnp.asarray(columns)].set(born)
+
+
 def _bootstrap_sign(volume, volume_shape) -> int:
     """-1 when the bootstrap density is negative where the particle is, else 1: RECOVAR's sign test
     (``recovar.commands.pipeline``, ``uninvert_data='automatic'``), the cubed density summed inside the sphere of
