@@ -2683,3 +2683,292 @@ frame offset. No SPA verdict moves.
 From October 5 `evaluate_arm.py` reports both metrics; cryo-ET pose comparisons quote
 the within-state median, and the global one for continuity.
 
+## 18. Adaptive schedule: design and first slices (October 27, 2026)
+
+The Fourier radius, the HEALPix order, the batch, the step, the fudge and the number of PCs are one hand-set
+table (`--stages`) plus VDAM's iteration fractions. A schedule that works on one fixture needs retuning on the
+next. The aim is a schedule whose pieces are determined by measured quantities, the way RELION's VDAM
+determines its resolution, and that coexists with `--stages`: the table stays the explicit, reproducible mode
+and the adaptive one becomes the default only after it is qualified. This section records what RELION does,
+what a run of the present code shows, and the slices built so far. The adaptive controller itself is not
+implemented.
+
+### 18.1 What RELION's VDAM fixes and what it measures
+
+RELION 5.0.1 (`f2c1a38`, `src/ml_optimiser.cpp` unless named):
+
+| Knob | RELION rule | Kind |
+| --- | --- | --- |
+| Phases | 30% initial, in-between, 20% final of the iterations | fraction of the run |
+| Batch | from 0.5% of N (200 to 5000) to 10% of N (1000 to 50000), linear over the in-between phase; all data on the last iteration (`updateSubsetSize`) | fraction of N |
+| Step | 0.9 to 0.5 sigmoid (`updateStepSize`) | fraction of the run |
+| Fudge | 1 to 4 sigmoid (`updateTau2Fudge`) | fraction of the run |
+| Resolution | the last shell with data_vs_prior at least 1, plus `incr_size` (10) shells, or plus 25% of Nyquist only when the mean Pmax exceeds 0.1 and the FSC is high at the limit (`updateCurrentResolution`, `updateImageSizeAndResolutionPointers`); `--grad_ini_resol` and `--grad_fin_resol` are parsed and never used | measured |
+| Angular sampling | fixed for InitialModel; in auto-refine refined when `360 / ceil(pi D / d)` is below the step, and no longer once the step is below 75% of the expected accuracy (`updateAngularSampling`) | measured |
+| Classes | all references identical in the initial phase, then one class added at least 4 iterations apart by copying the class of largest gradient error; a new class starts at half its parent's age (`MlOptimiser` class expansion, `MlModel::reset_class`) | event and measurement |
+| Gate | `snr = 2 fudge |F| / noise`, `f = snr / (1 + snr)` (`BackProjector::reconstructGrad`); the gate of section 3.3 and `relax/ppca_initial_model/update.py` | measured |
+
+The resolution of data_vs_prior grows with the accumulated weight, so a larger batch opens shells by itself.
+PPCA's table has no such coupling.
+
+### 18.2 What one run shows (slice 1)
+
+`scripts/analyze_ppca_schedule.py RUN_DIR` evaluates three criteria on a run's `iterations.jsonl` and changes
+nothing. The run: the eleven-state fixture `ppca_elevenstate20k_noise1_20261003` (20,000 particles, box 64 at
+6 A, diameter 288 A), `--q 1 --seed 11 --iterations 600 --optimizer vdam --stages "[[1,4,3],[200,8,3],[400,16,3]]"`,
+the fudge forced to 1 by a local edit of `relax/ppca_initial_model/config.py`, 4.7 GPU minutes.
+
+| Iteration | Radius | Batch | Pose entropy | Loading power | Mean power |
+| --- | --- | --- | --- | --- | --- |
+| 1 | 4 | 200 | 12.55 | 5.04e-3 | 1.16e-2 |
+| 10 | 4 | 200 | 12.89 | 4.22e-4 | 4.03e-3 |
+| 200 | 8 | 320 | 12.62 | 1.13e-3 | 8.56e-3 |
+| 399 | 8 | 1514 | 12.30 | 1.45e-3 | 1.01e-2 |
+| 450 | 16 | 1820 | 9.69 | 1.58e-3 | 1.18e-2 |
+| 500 | 16 | 2000 | 5.83 | 1.29e-3 | 1.62e-2 |
+| 600 | 16 | 20000 | 4.34 | 8.93e-4 | 1.77e-2 |
+
+- The poses commit only at radius 16: the entropy stays at 12.3 to 12.9 through iteration 400 and falls to 4.3
+  by 600. The seeded loading power falls twelvefold in the first 10 updates (the PCs start as noise), grows
+  while the poses are unresolved at radius 8, and falls 44% from iteration 450 to 600 while the mean power grows
+  50%.
+- The step is 0.9 at the start and 0.5 from about iteration 350; the batch is 2000 (10%) from iteration 480 and
+  all 20,000 only on iteration 600.
+- The mean gate is 0.94 to 0.97 on shells 0 to 4 at iteration 1 (200 particles) and at least 0.95 on every
+  active shell at iterations 100, 199 and 450 (shells 9 to 16 included at iteration 450); it is lower only on the
+  edge shell just after a radius change (0.90 at iteration 250, 0.885 at 399, 0.80 at 400). At iteration 600
+  (all data) it is 0.82 to 0.999 for the mean and 0.37 to 0.98 for the loadings. At tau = 0.9 the first shell
+  below the threshold lies at the radius or one shell below it at iterations 1, 100, 199, 399, 400 and 450, and
+  the edge falls to 5 at iteration 500 and 4 at iteration 600, once the poses have committed (entropy 5.8 and
+  4.3); at iteration 200, the first at radius 8, it is 3, because the new shells start with no signal. **A radius
+  rule "last shell whose gate is at least tau" therefore does not separate shells while the poses are
+  unresolved.** This agrees with both pseudo-halves being driven toward the same current model (the shared-model
+  bias of section 3.3), so that their agreement is not evidence that a shell is reliable; that reading is not
+  tested separately. The radius is to be taken from RELION's data_vs_prior, not from the gate.
+- The angular step the criteria ask for at the run's own radius, with D = 288 A and the heterogeneity constant
+  3.5 of `docs/development/ppca_optimizer_axes.md` section 3:
+
+| Shell | Resolution | RELION step, order | Heterogeneity step, order | Run used |
+| --- | --- | --- | --- | --- |
+| 4 | 96 A | 36.0 deg, 1 | 10.9 deg, 3 | 3 |
+| 8 | 48 A | 18.9 deg, 2 | 5.5 deg, 4 | 3 |
+| 16 | 24 A | 9.5 deg, 3 | 2.7 deg, 5 | 3 |
+
+RELION's own rule accepts order 3 at radius 16; the rule that keeps the PCs from absorbing pose error needs
+order 5, 3.5 times finer, because RELION does not face that failure. The expected-accuracy criterion
+(`relax/sampling/relion_expected_accuracy.py`) needs a RELION projector slab of the mean and is left to the slice
+that makes the order adaptive.
+
+### 18.3 The PC schedule (slice 2)
+
+`Config.pc_stages` (`--pc-stages "[[first iteration, PCs], ...]"`) sets the number of PCs `a(t)` the model
+learns at iteration `t`. It starts at iteration 1, does not decrease and ends at `q`; it needs the streamed
+engine, because the host-mask reference engine has no mean-only model.
+
+- The E-step and the update see the mean and the first `a(t)` loadings only (`_expectation`, `run` in
+  `relax/ppca_initial_model/iteration_loop.py`); the streamed engine runs a mean-only model (`q = 0`) as the
+  ordinary K = 1 model. The other columns are exactly zero, and the update writes only the active columns back.
+- A PC joining at iteration `t` is a new loading (`birth_loadings` in
+  `relax/ppca_initial_model/initialization.py`): the seed's blob field modulated by the current mean, scaled to
+  `pc_birth_scale` (0.1) times the mean's standard deviation, masked and band-limited as the model is after every
+  update. A loading of exactly zero is a fixed point of the update, so the seed is needed. The generator is
+  seeded by the run seed and `t`, so a resumed run draws the same loading; no state is added to a checkpoint.
+- Its first moments start at zero and follow the 0.9 / 0.1 moving average; the first PC also resets the
+  loadings' shared second moment to 1, which no update has changed while no loading was active.
+- Without `pc_stages` every code path is the one that ran before: `_activate_pcs` returns the state, the column
+  helpers return the arrays themselves, and a checkpoint written before the fields existed still resumes.
+- Checks (CPU): `tests/unit/ppca_initial_model/test_pc_schedule.py` (validation, birth, the mean-only
+  expectation against the mean block of a zero-loading expectation, an end-to-end run, and resume reaching the
+  model of the uninterrupted run); the fingerprint comparison against `origin/main` for the default path. The
+  mean-only model has not yet run on the GPU stream.
+
+The gate's fudge is an option as well: `Config.tau2_fudge` and `tau2_fudge_scheme` (`--tau2-fudge`,
+`--tau2-fudge-scheme`) are RELION's `--tau2_fudge` and `--tau2_fudge_scheme`, read by `compute_tau2_fudge` in
+`relax/steps/sgd_schedule.py`. Unset they give InitialModel's schedule (1 rising to 4 over the middle of the run);
+`--tau2-fudge 1` holds the fudge at 1, as the run of section 18.2 had it. A fudge scales `rho = 2 fudge |F| / nu`
+of section 3.3, so a smaller fudge shrinks more.
+
+### 18.4 First experiment: the PC schedule and the rotation grid (October 27, 2026)
+
+Setup. The fixture of section 18.2, `--q 1 --iterations 600 --optimizer vdam --tau2-fudge 1`, stages
+`[[1,4,3],[200,8,3],[400,16,3]]` unless the arm says otherwise, seeds 11 to 13, 20,000 particles. Each run's final
+all-particle embeddings are scored against the fixture labels by `scripts/analyze_ppca_latents.py`; the runs are
+the Snakemake workflow `scripts/ppca_schedule/` on the `cryoem` GPU partition (round 1: 12 jobs 16342725 to
+16342736; round 2: 15 jobs 16343619 to 16343633). Code: `origin/main` `cf1d5d19` with the uncommitted working
+tree (tracked diff sha256 `aa21d92e806f1bbebcd1350d4349d1a259c23df29f5dfe4acb31a0b7de3a3e1a`, the same in both
+rounds, and the untracked files of the snapshots' `PROVENANCE.txt`); natives `librelax_cuda.so` built from that
+tree (sources digest `dd975b89a00a592e2f2d2ca730baa1e0863b7202625ac167fe43567a5c60a90b`, job 16340282).
+
+| Arm | What differs | Between-state R^2, seeds 11 / 12 / 13 | Mean R^2 | Mean abs. rank correlation |
+| --- | --- | --- | --- | --- |
+| control | all PCs from the first update | .172 / .199 / .086 | .152 | .411 |
+| pc_at_200 | the PC joins at iteration 200 | .190 / .166 / .168 | .174 | .436 |
+| pc_at_400 | joins at 400 | .200 / .239 / .126 | .188 | .446 |
+| pc_at_480 | joins at 480 | .202 / .195 / .220 | .205 | .441 |
+| r8_control | stages end at radius 8 | .180 / .182 / .153 | .172 | .407 |
+| r8_pc_at_200 | radius 8, PC joins at 200 | .183 / .183 / .181 | .182 | .414 |
+| hp4_r16 | order 4 (3.75 degrees) in the radius-16 stage | .146 / .174 / .076 | .132 | .391 |
+| hp4_r16_pc_at_480 | order 4 in that stage, PC joins at 480 | .255 / .236 / .258 | .250 | .492 |
+
+- The control reproduces the owner's `ppca_z1` (seed 11, R^2 .1723 against .1727). A repeat of the control run
+  agrees with the first to three decimals on every seed (R^2 .172 / .199 / .086), so the noise that matters is the
+  seed, not the run.
+- The later the PC joins, the higher the mean R^2 (.174, .188, .205 for 200, 400, 480), and the worst control
+  seed (13, .086) is not reproduced by joining at 200 or 480.
+- Radius 8 against radius 16 (controls): .172 against .152, per seed +.008, -.017, +.067; not separated at three
+  seeds, but the radius-8 spread is narrower.
+- A finer grid alone does not help (.132 against .152; two of three seeds lower). With the PC joining at 480 it
+  gives the best arm, every seed above the order-3 arm of the same schedule (+.053, +.041, +.038) and above both
+  controls, and the three seeds agree within .02.
+- Reading, not tested: a PC that joins after the mean's poses have committed (at about iteration 480 here) can
+  use the finer grid, while a PC present from the start absorbs the error of the poses that are still unresolved
+  (section 18.2; `docs/development/ppca_optimizer_axes.md` section 3). Section 18.5 qualifies every comparison of
+  this table: all the order-3 radius-16 runs ended at a mean pose entropy of 4.3 to 4.6 (order 4: 6.0 to 6.2,
+  radius 8: 12.1), before the pose sharpening that precedes the separation of the states.
+- Limits: three seeds per arm, one fixture, one rank; the effects (.02 to .10 in R^2) are of the order of the
+  control's seed spread (.086 to .199); the scores are latent-space separation only (no pose error, no per-state
+  FSC); the mixture ARI stays at .02 and the nearest-neighbour accuracy at .11 for every arm, so they do not
+  discriminate at q = 1 with eleven states. Not run: order 5, other join iterations at order 4, more seeds, other
+  noise levels, a held-out fixture.
+
+### 18.5 Longer runs and several PCs (October 27, 2026)
+
+Setup. As section 18.4 (fixture, `--tau2-fudge 1`, stages `[[1,4,3],[200,8,3],[400,16,3]]`, seeds 11 to 13,
+`scripts/ppca_schedule/`, 15 jobs 16352100 to 16352114, 14 to 18 minutes each) with `--iterations 1200`; the PCs
+of the staggered arms join at the iterations in the arm name. The VDAM phases, the batch growth and the step are
+fractions of the run, so these are not the 600-iteration schedules stretched. Code: `origin/main` `cf1d5d19` with the
+uncommitted tree of `snapshots/round3` (tracked diff sha256 `6057e010ee28c2589831938b7866a208b46edfc23da511aff5004682013b2728`;
+the same library as section 18.4). A q = 3 smoke run (job 16351917) preceded them: the active PCs went 0, 1, 2, 3 at
+the requested iterations and the likelihood stayed finite.
+
+| Arm | q | PCs | Between-state R^2, seeds 11 / 12 / 13 | Mixture ARI (mean) | Nearest-neighbour accuracy (mean) |
+| --- | --- | --- | --- | --- | --- |
+| control, 600 iterations (18.4) | 1 | from the start | .172 / .199 / .086 | .017 | .110 |
+| long_q1_control | 1 | from the start | .747 / .751 / .742 | .108 | .209 |
+| long_q1_pc_at_480 | 1 | at 480 | .753 / .077 / .182 | .049 | .143 |
+| long_q3_control | 3 | from the start | .549 / .074 / .556 | .140 | .262 |
+| long_q3_every_120 | 3 | at 480, 600, 720 | .560 / .070 / .048 | .081 | .194 |
+| long_q3_every_240 | 3 | at 480, 720, 960 | .564 / .082 / .045 | .083 | .195 |
+
+Chance for the nearest-neighbour accuracy is .091 (the sum of squared state shares), and 0 for the ARI.
+
+- Every run ends in one of two states. Eight runs end at a mean pose entropy of 1.3 (maximum posterior .67): R^2
+  .742 to .753 for q = 1 (four runs) and .549 to .564 for q = 3 (four runs). Seven runs end at 2.6 to 2.9 (maximum
+  posterior .42 to .48): R^2 .045 to .182. No run lies between. In the first state the arms agree to .01, which is
+  less than the spread across seeds of any arm in section 18.4.
+- The entropy of a run falls in two steps. The first comes with the radius-16 stage (iteration 400): from 12.3 to
+  about 4.4 by iteration 600, in every run. The second is a sudden fall from 3 or above to 1.3 within 10 to 130
+  iterations, at an iteration that depends on the run: the first iteration below 2 is 795 to 1160 in the eight runs
+  of the first state, and no run of the second state reaches it. Those seven runs did fall below 3 (at 1070 to
+  1138) and stopped at 2.6 to 2.9. The 600-iteration runs of section 18.4 all stopped before this step (final
+  entropy 4.3 to 4.6 for order 3 at radius 16, 6.0 to 6.2 for order 4, 12.1 for the radius-8 runs, which never
+  commit their poses). Their R^2 differences therefore compare runs that had not yet separated the states, and the
+  join iteration, the radius and the grid were not tested on converged runs.
+- The iteration of the step does not depend on the join iteration or on the number of PCs that we can see. The
+  two q = 3 staggered arms of a seed share their first 479 iterations (the mean power agrees to five digits at
+  iteration 479) and cross entropy 3 within 2 iterations of each other (seed 11: 959 and 961; seed 12: 1074 and
+  1074; seed 13: 1088 and 1089) whether the second and third PC join at 600 and 720 or at 720 and 960. With the PCs
+  present from the start the crossings are at 1020, 1133, 959 (q = 1) and 1010, 1070, 874 (q = 3); with one PC
+  joining at 480 (q = 1) at 783, 1138, 1075. These are of the order of the spread between seeds. A run of another
+  q does not share the mean-only phase of the same seed: at iteration 1 the mean power of seed 11 is 1.19e-2 for
+  q = 1 and 9.2e-3 for q = 3, so the initialization depends on q and an arm with another q is another draw, not the
+  same run with fewer PCs. What triggers the step is not established.
+- Latents: in the first state the states lie in order along the first latent axis (the standard run plots of
+  `long_q1_pc_at_480` seed 11 and `long_q3_control` seed 11 show state 0 to 10 from left to right, and a curved
+  second axis for q = 3); in the second state the coordinate is a single peak with heavy tails and the states
+  overlap (the same plots for seed 12).
+- Three PCs split the R^2 as .34 / .15 / .07 over the principal axes of the latents (the same in every q = 3 run of
+  the first state, whatever the join iterations), so the second and third PC carry state information. R^2 is lower
+  than at q = 1 (.55 against .75) because it is a share of the variance of all coordinates; the mixture ARI and the
+  nearest-neighbour accuracy of the same runs are higher (.19 and .33 against .11 and .21, runs of the first state).
+  The true state maps have 49% of their variance on PC1 and 77% on the first three PCs at radius 16 (38% and 70% in
+  the full band; `scripts/plot_ppca_truth_pc.py`).
+- PCs that join late train like the others: the singular values of the loadings fall after the join (the loadings
+  born at 0.1 of the mean's spread shrink first) and regrow to .025 to .043 by the end of the run, against .027 to
+  .045 for the PCs present from the start; in the six q = 3 runs plotted (seeds 11 and 13) the posterior variance
+  per PC ends at .40 to .48, collapsed or not. In the five q = 3 runs of the second state the singular values of
+  the second and third PC were still growing by 16 to 27% over the last 120 iterations.
+- Limits: three seeds, one fixture; no run is longer than 1200 iterations, so it is not known whether the seven
+  runs of the second state would step later (the step is a property of the run's length through the schedule or of
+  the mean's resolution, untested); the scores are latent separation only, and `embeddings.npz` holds no poses, so
+  there is no pose-error metric or per-state FSC (required by `docs/development/ppca_reporting_standard.md`).
+  Figures: `long_scores.png`, `long_axes.png`, `long_pcs.png`, `long_entropy.png` (`scripts/plot_ppca_longer_runs.py`)
+  and the standard run plots for six of the fifteen runs, under `figures/round3/` of the run root.
+
+### 18.6 The data_vs_prior radius (slice 3, October 27, 2026)
+
+RELION's VDAM does not take its image size from a table. After each M-step it finds the last shell where the
+mean's `data_vs_prior` stays at or above 1 (`updateCurrentResolution`, floored at `--minres_map`, 5) and sets the
+next iteration's size to that shell plus `--incr_size` shells (`updateImageSizeAndResolutionPointers`, 10). The
+25%-of-the-box jump needs `has_high_fsc_at_limit`, which only auto-refine sets, so VDAM never takes it (the source
+is the pristine `f2c1a38`). `data_vs_prior(s)` is the shell average of the half-0 weight times the fudge times the
+reference power (section 3.4).
+
+`--radius-rule data_vs_prior` (`Config.radius_rule`; default `stages`, which is the table as before) applies that
+rule to the PPCA mean. The stages table then gives the first radius and the HEALPix orders only.
+
+- Weight: the mean-mean entry of the metric, `lhs_tri[:, 0]` of pseudo-halfset 0, divided by `metric_floor(N)`.
+  `metric_floor` is `0.5 / N^4`, the PPCA-unit value of RELION's BPref weight floor of 1 (`update.py`), so
+  `weight_relion = 2 N^4 weight_ppca`.
+- Prior: the power `|mean|^2 / N^4` of the reference the E-step used (raw FFT to RELION's frame,
+  `estep_common.relion_bpref_frame_scales`), averaged over the shell as RELION's tau2.
+- Shells beyond the radius in use are zero, so a radius can grow by at most `incr_size` shells per iteration.
+- Radius of iteration 1: the table's first radius; of iteration k + 1: `min(max(shell + incr_size, radius_k),
+  N / 2 - 1)`, `shell` from `resolution_from_data_vs_prior` (the scan and the `minres_map` floor of
+  `relax/reconstruction/resolution_criteria.py`).
+- Differences from RELION, all intended: the radius never decreases (the update zeroes the model outside it); it
+  stops one shell below Nyquist (the PPCA engine's limit); the reference power is the plain shell power of the mean
+  (no gridding correction, no padding) where RELION's comes from the corrected projector spectrum.
+- Code: `relax/ppca_initial_model/radius_rule.py`; the planned radius is `State.next_radius`, saved in the
+  checkpoint (`next_radius`; older checkpoints resume without it); `iterations.jsonl` gains `data_vs_prior` and
+  `next_radius` only under the rule; `--incr-size` is RELION's `--incr_size`. The VDAM optimizer only.
+- Tests: `tests/unit/ppca_initial_model/test_radius_rule.py` (options, formula against an independent shell
+  average, the floor-to-weight conversion, resume, and a CPU run whose radii and model survive a stop and resume).
+- Smoke (job 16355953, 60 iterations, `--stages [[1,4,3]]`): radius 4 at iteration 1, then 15 (shell 3 plus the
+  `minres_map` floor of 5 plus 10) for iterations 2 to 59, where `data_vs_prior` of shells 5 and above stays under 1
+  while the batch is 200 to 2,000 particles; on the all-data last iteration it is above 1 up to shell 12 and the
+  planned radius is 25.
+
+First experiment. The fixture and settings of section 18.5 (q = 1 unless stated, `--tau2-fudge 1`, order 3,
+seeds 11 to 13) with `--stages [[1,4,3]] --radius-rule data_vs_prior`: 9 jobs 16356078 to 16356086 (7 minutes for
+600 iterations, 19 to 28 for 1200), `snapshots/round4` (tracked diff sha256
+`814e339f5ab6f710b3733705d60ff071699f664df9cb1559576aba5b7fd828c5`, library as section 18.4). The stages-table
+columns are the runs of sections 18.4 and 18.5; the default path of this code is unchanged on the CPU
+fingerprint (`scripts/dev/ppca_fingerprint.py check origin/main`: the six new recorded config keys, the
+`next_radius` checkpoint entry and the source label are the only differences).
+
+| Arm | R^2, seeds 11 / 12 / 13 | First iteration with pose entropy below 8 / below 2 | Radius at the end |
+| --- | --- | --- | --- |
+| table, 600 iterations | .172 / .199 / .086 | 463, 463, 469 / none | 16 |
+| data_vs_prior, 600 iterations | .181 / .171 / .196 | 56, 55, 57 / none | 15 |
+| table, 1200 iterations | .747 / .751 / .742 | 446, 446, 446 / 1146, 1160, 1019 | 16 |
+| data_vs_prior, 1200 iterations | .777 / .760 / .786 | 56, 55, 57 / 608, 600, 691 | 29 |
+| table, 1200 iterations, q = 3 | .549 / .074 / .556 | 451, 452, 450 / 1053, none, 905 | 16 |
+| data_vs_prior, 1200 iterations, q = 3 | .507 / .509 / .503 | 63, 62, 59 / 534, 743, 757 | 29 |
+
+- The pose entropy first falls (below 8) 390 iterations earlier, at iteration 55 to 63 against 446 to 469. The rule
+  takes radius 15 from iteration 2 (shell 3 at most, floored at `minres_map` 5, plus 10), so the table's radius-4
+  and radius-8 stages, 400 iterations, are not needed on this fixture.
+- At 1200 iterations all six runs reach the second entropy step (section 18.5; below 2 at iteration 534 to 757,
+  against 905 to 1160 for the table, and one of the six table runs does not reach it). At 600 iterations no run of
+  either rule reaches it (entropy about 4.0 at iteration 600, R^2 .17 to .20 against .09 to .20): the rule does not
+  buy a shorter run.
+- The radius stays at 15 until the step, then rises from 15 to 25 in one iteration and to 28 or 29 within about 30
+  (q = 1: first at or above 16 at iteration 622, 606, 689, with the entropy below 2 at 608, 600, 691). The radius
+  growth and the entropy step coincide to about 15 iterations; which one drives the other is not tested.
+- Separation at the end: q = 1 R^2 .760 to .786 (mean .774) against .742 to .751 (.747), every seed above every
+  table seed, mixture ARI .119 against .108; q = 3 R^2 .503 to .509 against .549 and .556 for the two table runs
+  that reached the end state, mixture ARI .185 against .190, nearest-neighbour accuracy .333 against .327. The final
+  pose entropy (.34 to .39) is not comparable with the table's (1.3): the radius is 29 instead of 16.
+- Limits: one fixture, three seeds; the 15 is a consequence of RELION's two constants in shells (5 and 10) in a
+  box of 64, and what it is worth in a larger box is untested; `--incr-size` and the other fixtures are not run;
+  fudge 1 throughout (the default 1 to 4 schedule is not run); the GPU run-to-run exactness, resume, `--ios`,
+  `pc_stages` and oversampling with the rule are not run on the GPU; no pose error or per-state FSC.
+
+### 18.7 Next slices
+
+Slice 4 takes the order from `min(0.75 acc_rot, d / (kappa R))`, `kappa` calibrated once; slice 5 a per-PC age for
+the step and the fudge. Each is an opt-in option and is calibrated on a family of fixtures and then frozen, with
+the per-seed success rate (section 17's bad seeds) as the measure. Open from slice 3: what sets the iteration of
+the entropy step (the runs of 600 iterations do not reach it under either rule), and whether the radius floor of
+15 shells suits other box sizes.
