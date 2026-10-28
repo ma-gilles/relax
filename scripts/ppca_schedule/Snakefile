@@ -1,0 +1,166 @@
+# PPCA schedule experiments: does a mean-only start, with PCs joining later, separate the states better?
+#
+# Per arm and seed (config.yaml: `arms`, `seeds`), three stages:
+#   1. train_ppca     relax ppca_initial_model on the eleven-state fixture with the arm's schedule flags.   [GPU]
+#   2. score_latents  how well the final latents separate the true states (scripts/analyze_ppca_latents.py).
+#   3. summary_table  one row per arm and seed: the scores of every run.
+#
+# Outputs, under config `output_root`:
+#   <arm>/seed<seed>/     checkpoint_NNNN.npz, iterations.jsonl, run.json, embeddings.npz, latent_scores.json
+#   summary.tsv           the scores of every arm and seed
+#   logs/                 one log per rule, arm and seed
+#
+# Run from a frozen copy of the checkout (the jobs import the code at their start). --directory keeps Snakemake's
+# metadata and the Slurm logs beside the results; the target goes first, because --config takes what follows it:
+#   snakemake --snakefile <snapshot>/scripts/ppca_schedule/Snakefile --directory <dir> --profile slurm all \
+#       --config output_root=<dir> natives_dir=<natives> python=<python>
+
+import csv
+import json
+import os
+import re
+import shlex
+from pathlib import Path
+
+from snakemake.exceptions import WorkflowError
+
+
+configfile: os.path.join(workflow.basedir, "config.yaml")
+
+
+# ----------------------------------------------------------------------------------------------------------------
+# Settings
+# ----------------------------------------------------------------------------------------------------------------
+
+
+def required_path(key):
+    """A config entry that has no default, as a Path."""
+    if not config.get(key):
+        raise WorkflowError(f"set {key}: --config {key}=<path> (see config.yaml)")
+    return Path(config[key])
+
+
+REPO = Path(workflow.basedir).resolve().parents[1]
+PYTHON = config["python"] or str(REPO / ".pixi/envs/default/bin/python")
+OUTPUT_ROOT = required_path("output_root")
+NATIVES = required_path("natives_dir")
+FIXTURE = Path(config["fixture"])
+TRAIN = config["train"]
+ARMS = config["arms"]
+RUN_ARMS = config["only_arms"] or list(ARMS)
+SEEDS = config["seeds"]
+
+# The pinned environment only: no user site packages, none of the Python or conda variables the Snakemake
+# environment sets, this checkout on the import path, and the native library built from it for the GPU rule.
+CLEAN_ENV = f"env -u PYTHONHOME -u CONDA_PREFIX -u VIRTUAL_ENV PYTHONNOUSERSITE=1 PYTHONPATH={REPO}"
+RUN_ENV = f"{CLEAN_ENV} RELAX_CUDA_LIB={NATIVES}/librelax_cuda.so"
+
+
+def output_path(*parts):
+    """A path pattern under output_root; {arm} and {seed} stay wildcards."""
+    return str(OUTPUT_ROOT.joinpath(*parts))
+
+
+wildcard_constraints:
+    arm="|".join(map(re.escape, ARMS)),
+    seed=r"\d+",
+
+
+localrules:
+    all,
+    score_latents,
+    summary_table,
+
+
+rule all:
+    """Train and score every arm and seed, then write the summary table."""
+    input:
+        summary=output_path("summary.tsv"),
+
+
+# ----------------------------------------------------------------------------------------------------------------
+# Stage 1: training
+# ----------------------------------------------------------------------------------------------------------------
+
+
+rule train_ppca:
+    message:
+        "Training arm {wildcards.arm}, seed {wildcards.seed}"
+    input:
+        particles_star=FIXTURE / "training" / "particles.star",
+    output:
+        embeddings=output_path("{arm}", "seed{seed}", "embeddings.npz"),
+        iterations=output_path("{arm}", "seed{seed}", "iterations.jsonl"),
+    params:
+        env=RUN_ENV,
+        python=PYTHON,
+        diameter=config["particle_diameter_ang"],
+        train=TRAIN,
+        arm_args=lambda wildcards: " ".join(map(shlex.quote, map(str, ARMS[wildcards.arm]["args"]))),
+        run_dir=lambda wildcards, output: str(Path(output.embeddings).parent),
+    resources:
+        gpu=1,
+        runtime=lambda wildcards: ARMS[wildcards.arm].get("runtime_minutes", TRAIN["runtime_minutes"]),
+    log:
+        output_path("logs", "{arm}.seed{seed}.train.log"),
+    shell:
+        "{params.env} {params.python} -m relax.command_line ppca_initial_model "
+        "--i {input.particles_star} "
+        "--particle-diameter {params.diameter} "
+        "-o {params.run_dir} "
+        "--q {params.train[q]} "
+        "--seed {wildcards.seed} "
+        "--iterations {params.train[iterations]} "
+        "--stages {params.train[stages]:q} "
+        "--optimizer {params.train[optimizer]} "
+        "{params.arm_args} "
+        "> {log} 2>&1"
+
+
+# ----------------------------------------------------------------------------------------------------------------
+# Stage 2: scoring
+# ----------------------------------------------------------------------------------------------------------------
+
+
+rule score_latents:
+    message:
+        "Scoring the latents of arm {wildcards.arm}, seed {wildcards.seed}"
+    input:
+        embeddings=rules.train_ppca.output.embeddings,
+        truth=FIXTURE / "evaluation" / "truth.npz",
+        script=REPO / "scripts" / "analyze_ppca_latents.py",
+    output:
+        scores=output_path("{arm}", "seed{seed}", "latent_scores.json"),
+    params:
+        env=CLEAN_ENV,
+        python=PYTHON,
+        run_dir=lambda wildcards, input: str(Path(input.embeddings).parent),
+    log:
+        output_path("logs", "{arm}.seed{seed}.score.log"),
+    shell:
+        "{params.env} JAX_PLATFORMS=cpu {params.python} {input.script} {params.run_dir} "
+        "--truth {input.truth} "
+        "> {log} 2>&1"
+
+
+# ----------------------------------------------------------------------------------------------------------------
+# Stage 3: summary
+# ----------------------------------------------------------------------------------------------------------------
+
+
+rule summary_table:
+    message:
+        "Collecting the scores of every arm and seed"
+    input:
+        scores=expand(rules.score_latents.output.scores, arm=RUN_ARMS, seed=SEEDS),
+    output:
+        summary=output_path("summary.tsv"),
+    run:
+        rows = []
+        for path in input.scores:
+            arm, seed = Path(path).parent.parent.name, Path(path).parent.name.removeprefix("seed")
+            rows.append({"arm": arm, "seed": seed, **json.loads(Path(path).read_text())})
+        with open(output.summary, "w", newline="") as stream:
+            writer = csv.DictWriter(stream, fieldnames=list(rows[0]), delimiter="\t")
+            writer.writeheader()
+            writer.writerows(rows)

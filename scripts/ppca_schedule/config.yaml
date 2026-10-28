@@ -1,0 +1,80 @@
+# PPCA schedule experiments: paths, training settings, seeds and arms (read by the Snakefile).
+# Override any value on the command line, e.g. --config output_root=<dir> natives_dir=<dir>.
+
+# Directory that receives every run, score and the summary table. Required: it names a scratch directory of one
+# account, so there is no default.
+output_root: null
+
+# Directory holding librelax_cuda.so built from this checkout (`relax build_cuda --output <dir>/librelax_cuda.so`).
+# Required.
+natives_dir: null
+
+# Python of a relax pixi environment. null: <checkout>/.pixi/envs/default/bin/python.
+python: null
+
+# Curated eleven-state fixture: training/particles.star is what training reads, evaluation/truth.npz holds the
+# labels (evaluation only).
+fixture: /scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/ppca_elevenstate20k_noise1_20261003
+particle_diameter_ang: 288
+
+# relax ppca_initial_model settings shared by every arm.
+train:
+  q: 1
+  iterations: 600
+  stages: "[[1,4,3],[200,8,3],[400,16,3]]"   # [first iteration, Fourier radius, HEALPix order]
+  optimizer: vdam
+  runtime_minutes: 45                         # the Slurm request; a 600-iteration q=1 run takes about 5
+
+# One run per arm and seed. Seeds 11 to 13 are the fixture family's usual first three.
+seeds: [11, 12, 13]
+
+# Arms to run (null: every arm below). A list, e.g. --config only_arms=[control,r8_control].
+only_arms: null
+
+# One entry per arm; `args` is appended verbatim to the training command (a repeated flag wins over the shared
+# settings above) and `runtime_minutes` overrides the Slurm request.
+arms:
+  control:
+    args: ["--tau2-fudge", "1"]                 # all PCs from the first update, fudge 1 as the owner's runs
+  pc_at_200:
+    args: ["--tau2-fudge", "1", "--pc-stages", "[[1,0],[200,1]]"]
+  pc_at_400:
+    args: ["--tau2-fudge", "1", "--pc-stages", "[[1,0],[400,1]]"]
+  pc_at_480:
+    args: ["--tau2-fudge", "1", "--pc-stages", "[[1,0],[480,1]]"]
+  r8_control:                                   # the radius-8 end of the owner's comparison
+    args: ["--tau2-fudge", "1", "--stages", "[[1,4,3],[200,8,3]]"]
+  r8_pc_at_200:
+    args: ["--tau2-fudge", "1", "--stages", "[[1,4,3],[200,8,3]]", "--pc-stages", "[[1,0],[200,1]]"]
+  hp4_r16:                                      # radius 16 on an 8 times finer rotation grid (3.75 degrees)
+    args: ["--tau2-fudge", "1", "--stages", "[[1,4,3],[200,8,3],[400,16,4]]"]
+    runtime_minutes: 90
+  hp4_r16_pc_at_480:
+    args: ["--tau2-fudge", "1", "--stages", "[[1,4,3],[200,8,3],[400,16,4]]", "--pc-stages", "[[1,0],[480,1]]"]
+    runtime_minutes: 90
+  # Longer runs (1200 iterations, the same radius table) with up to three PCs joining one after another.
+  long_q1_control:
+    args: ["--tau2-fudge", "1", "--iterations", "1200"]
+    runtime_minutes: 90
+  long_q1_pc_at_480:
+    args: ["--tau2-fudge", "1", "--iterations", "1200", "--pc-stages", "[[1,0],[480,1]]"]
+    runtime_minutes: 90
+  long_q3_control:
+    args: ["--tau2-fudge", "1", "--iterations", "1200", "--q", "3"]
+    runtime_minutes: 240
+  long_q3_every_120:                            # first PC at 480, then one more every 120 iterations
+    args: ["--tau2-fudge", "1", "--iterations", "1200", "--q", "3", "--pc-stages", "[[1,0],[480,1],[600,2],[720,3]]"]
+    runtime_minutes: 240
+  long_q3_every_240:
+    args: ["--tau2-fudge", "1", "--iterations", "1200", "--q", "3", "--pc-stages", "[[1,0],[480,1],[720,2],[960,3]]"]
+    runtime_minutes: 240
+  # RELION's data_vs_prior radius (--radius-rule): the stages table gives only the first radius and the order.
+  dvp_600:
+    args: ["--tau2-fudge", "1", "--stages", "[[1,4,3]]", "--radius-rule", "data_vs_prior"]
+    runtime_minutes: 90
+  dvp_1200:
+    args: ["--tau2-fudge", "1", "--stages", "[[1,4,3]]", "--radius-rule", "data_vs_prior", "--iterations", "1200"]
+    runtime_minutes: 120
+  dvp_q3_1200:
+    args: ["--tau2-fudge", "1", "--stages", "[[1,4,3]]", "--radius-rule", "data_vs_prior", "--iterations", "1200", "--q", "3"]
+    runtime_minutes: 240
