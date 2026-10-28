@@ -1,22 +1,30 @@
-# Pose-prior benchmark: how well does relax refine learn the orientation prior on non-uniform data?
+# Pose-prior benchmark: how well does relax refine learn the orientation prior on non-uniform data, and how much
+# is a given prior worth to the refinement?
 #
-# Per scenario (config.yaml: `scenarios`), four stages:
+# Per scenario (config.yaml: `scenarios`) one dataset is simulated; each of its variants (config.yaml: `variants`)
+# refines it once:
 #   1. simulate_dataset  RECOVAR simulates a K=1 PDB fixture; its viewing directions form a polar cap of
 #                        preferred views (RECOVAR's Kent option) or are uniform (control).       [GPU]
-#   2. refine_k1         relax refine from the low-passed ground-truth map, a global search and no input
+#   2. write_fixed_prior (variants with a fixed prior) the prior file relax refine scores with.
+#   3. refine_k1         relax refine from the low-passed ground-truth map, a global search and no input
 #                        poses: --initial-pose-source none makes relax ignore the true angles and origins
-#                        that particles.star holds, and evaluate_run refuses a run that used them. [GPU]
-#   3. evaluate_run      half-map and ground-truth FSC resolution, and the accuracy of every iteration's
-#                        learned direction prior against the true viewing directions.
-#   4. orientation_distribution
-#                        angdist plots of the true angles and of the final estimated poses.
+#                        that particles.star holds, and evaluate_run refuses a run that used them. A variant
+#                        with a fixed prior scores every search with it (--fixed-direction-prior); the others
+#                        learn it as RELION does.                                                  [GPU]
+#   4. evaluate_run      half-map and ground-truth FSC resolution, the pose error, and the accuracy of every
+#                        iteration's learned direction prior against the true viewing directions.
+#   5. plot_*_angles     angdist plots of the true angles and of the final estimated poses.
+#   6. compare_variants  the variants of one scenario side by side.
 #
 # Outputs, under config `output_root`:
-#   <scenario>/dataset/     particles.star (true angles), particles.<box>.mrcs, reference_*_relion.mrc
-#   <scenario>/refine/      run_itNNN_* files, final_merged.mrc, final_half{1,2}_unfil.mrc
-#   <scenario>/evaluation/  metrics.json, prior_by_iteration.csv, fsc_curves.csv, summary.png,
-#                           angdist_true.png, angdist_estimated.png
-#   logs/                   one log per rule and scenario
+#   <scenario>/dataset/              particles.star (true angles), particles.<box>.mrcs, reference_*_relion.mrc,
+#                                    pose_distribution.json, angdist_true.png
+#   <scenario>/<variant>/            fixed_direction_prior.npy (fixed-prior variants)
+#   <scenario>/<variant>/refine/     run_itNNN_* files, final_merged.mrc, final_half{1,2}_unfil.mrc
+#   <scenario>/<variant>/evaluation/ metrics.json, prior_by_iteration.csv, fsc_by_iteration.csv, fsc_curves.csv,
+#                                    summary.png, angdist_estimated.png
+#   <scenario>/comparison/           variants.csv, variants.png
+#   logs/                            one log per rule, scenario and variant
 #
 # Run (the profile submits the GPU rules to Slurm). --directory keeps Snakemake's metadata and the Slurm logs
 # (<dir>/.snakemake) beside the results instead of in the checkout; a --configfile must be on a shared file system:
@@ -56,8 +64,12 @@ NATIVES = required_path("natives_dir")
 # angdist runs in the Snakemake environment (it is not part of the pixi environment).
 ANGDIST = config["angdist"] or str(Path(sys.executable).parent / "angdist")
 SCENARIOS = config["scenarios"]
+VARIANTS = config["variants"]
+FIXED_PRIOR_KINDS = ("truth", "uniform", "kent")
 SIMULATE_SCRIPT = str(BENCHMARK_DIR / "simulate_dataset.py")
+WRITE_PRIOR_SCRIPT = str(BENCHMARK_DIR / "write_fixed_prior.py")
 EVALUATE_SCRIPT = str(BENCHMARK_DIR / "evaluate_run.py")
+COMPARE_SCRIPT = str(BENCHMARK_DIR / "compare_variants.py")
 
 # The rules call the Python of the repository's pixi environment directly (no conda: directive).
 # The pinned environment only: no user site packages, none of the Python or conda variables the Snakemake
@@ -71,15 +83,42 @@ RUN_ENV = (
     f"RELAX_HOST_MATH_LIB={NATIVES}/librelax_host_math.so"
 )
 
+# Every (scenario, variant) refinement of the config.
+RUNS = [(scenario, variant) for scenario, entry in SCENARIOS.items() for variant in entry["variants"]]
+
+for scenario, entry in SCENARIOS.items():
+    unknown = [variant for variant in entry["variants"] if variant not in VARIANTS]
+    if unknown:
+        raise WorkflowError(f"scenario {scenario} lists variants {unknown} that config.yaml does not define")
+for variant, entry in VARIANTS.items():
+    if variant in ("dataset", "comparison"):
+        raise WorkflowError(f"variant name {variant!r} is a directory of the scenario")
+    if "fixed_prior" in entry and entry["fixed_prior"]["kind"] not in FIXED_PRIOR_KINDS:
+        raise WorkflowError(f"variant {variant}: fixed_prior.kind must be one of {FIXED_PRIOR_KINDS}")
+
 
 def output_path(*parts):
-    """A path pattern under output_root; {scenario} stays a wildcard."""
+    """A path pattern under output_root; {scenario} and {variant} stay wildcards."""
     return str(OUTPUT_ROOT.joinpath(*parts))
 
 
 def scenario_setting(scenario, section):
-    """The shared `dataset` or `refine` settings with the scenario's own overrides."""
+    """The shared `dataset` settings with the scenario's own overrides."""
     return {**config[section], **SCENARIOS[scenario].get(section, {})}
+
+
+def refine_setting(wildcards):
+    """The `refine` settings of a run: the shared ones with the scenario's and the variant's own overrides."""
+    return {
+        **config["refine"],
+        **SCENARIOS[wildcards.scenario].get("refine", {}),
+        **VARIANTS[wildcards.variant].get("refine", {}),
+    }
+
+
+def has_fixed_prior(variant):
+    """Whether a variant scores with a fixed direction prior."""
+    return "fixed_prior" in VARIANTS[variant]
 
 
 def pose_flags(wildcards):
@@ -93,21 +132,45 @@ def pose_flags(wildcards):
     )
 
 
+def fixed_prior_flags(wildcards):
+    """write_fixed_prior.py flags of the variant's fixed prior."""
+    prior = VARIANTS[wildcards.variant]["fixed_prior"]
+    if prior["kind"] == "kent":
+        return (
+            f"--kind kent --kappa {prior['kappa']} --beta {prior['beta']} "
+            f"--mu {' '.join(map(str, prior['mu']))} --mu0 {' '.join(map(str, prior['mu0']))}"
+        )
+    return f"--kind {prior['kind']}"
+
+
+def fixed_prior_input(wildcards):
+    """The prior file a run scores with: [] for a variant that learns its prior."""
+    if not has_fixed_prior(wildcards.variant):
+        return []
+    return output_path(wildcards.scenario, wildcards.variant, "fixed_direction_prior.npy")
+
+
 wildcard_constraints:
     scenario="|".join(map(re.escape, SCENARIOS)),
+    variant="|".join(map(re.escape, VARIANTS)),
 
 
 localrules:
     all,
+    write_fixed_prior,
     evaluate_run,
-    orientation_distribution,
+    plot_true_angles,
+    plot_estimated_angles,
+    compare_variants,
 
 
 rule all:
-    """Simulate, refine and evaluate every scenario of the config."""
+    """Simulate, refine and evaluate every scenario and variant of the config, and compare the variants."""
     input:
-        expand(output_path("{scenario}", "evaluation", "metrics.json"), scenario=SCENARIOS),
-        expand(output_path("{scenario}", "evaluation", "angdist_estimated.png"), scenario=SCENARIOS),
+        metrics=[output_path(s, v, "evaluation", "metrics.json") for s, v in RUNS],
+        estimated_angles=[output_path(s, v, "evaluation", "angdist_estimated.png") for s, v in RUNS],
+        true_angles=[output_path(s, "dataset", "angdist_true.png") for s in SCENARIOS],
+        comparison=[output_path(s, "comparison", "variants.png") for s in SCENARIOS],
 
 
 # ----------------------------------------------------------------------------------------------------------------
@@ -154,21 +217,45 @@ rule simulate_dataset:
 # ----------------------------------------------------------------------------------------------------------------
 
 
+rule write_fixed_prior:
+    message:
+        "Writing the fixed direction prior of {wildcards.scenario}/{wildcards.variant}"
+    input:
+        pose_distribution=rules.simulate_dataset.output.pose_distribution,
+        script=WRITE_PRIOR_SCRIPT,
+    output:
+        fixed_prior=output_path("{scenario}", "{variant}", "fixed_direction_prior.npy"),
+    params:
+        env=CLEAN_ENV,
+        python=PYTHON,
+        prior_flags=fixed_prior_flags,
+        order=lambda wildcards: refine_setting(wildcards)["max_healpix_order"],
+    log:
+        output_path("logs", "{scenario}.{variant}.fixed_prior.log"),
+    shell:
+        "{params.env} JAX_PLATFORMS=cpu {params.python} {input.script} "
+        "--poses-json {input.pose_distribution} "
+        "{params.prior_flags} "
+        "--order {params.order} "
+        "--out {output.fixed_prior} "
+        "> {log} 2>&1"
+
+
 rule refine_k1:
     message:
-        "Refining {wildcards.scenario} with relax refine (K=1, global search, no input poses)"
+        "Refining {wildcards.scenario}/{wildcards.variant} with relax refine (K=1, global search, no input poses)"
     input:
         particles_star=rules.simulate_dataset.output.particles_star,
         reference_init=rules.simulate_dataset.output.reference_init,
+        fixed_prior=fixed_prior_input,
     output:
-        final_merged=output_path("{scenario}", "refine", "final_merged.mrc"),
-        final_half1=output_path("{scenario}", "refine", "final_half1_unfil.mrc"),
-        final_half2=output_path("{scenario}", "refine", "final_half2_unfil.mrc"),
+        final_merged=output_path("{scenario}", "{variant}", "refine", "final_merged.mrc"),
+        final_half1=output_path("{scenario}", "{variant}", "refine", "final_half1_unfil.mrc"),
+        final_half2=output_path("{scenario}", "{variant}", "refine", "final_half2_unfil.mrc"),
     params:
-        settings=lambda wildcards: scenario_setting(wildcards.scenario, "refine"),
-        extra_args=lambda wildcards: " ".join(
-            map(shlex.quote, map(str, scenario_setting(wildcards.scenario, "refine")["extra_args"]))
-        ),
+        settings=refine_setting,
+        extra_args=lambda wildcards: " ".join(map(shlex.quote, map(str, refine_setting(wildcards)["extra_args"]))),
+        fixed_prior_flag=lambda wildcards, input: f"--fixed-direction-prior {input.fixed_prior}" if input.fixed_prior else "",
         env=RUN_ENV,
         python=PYTHON,
         dataset_dir=lambda wildcards, input: str(Path(input.particles_star).parent),
@@ -176,7 +263,7 @@ rule refine_k1:
     resources:
         gpu=1,
     log:
-        output_path("logs", "{scenario}.refine.log"),
+        output_path("logs", "{scenario}.{variant}.refine.log"),
     shell:
         "{params.env} {params.python} -m relax_cli refine "
         "--data_dir {params.dataset_dir} "
@@ -184,10 +271,12 @@ rule refine_k1:
         "--init_volume {input.reference_init} "
         "--init_resolution {params.settings[init_resolution]} "
         "--particle_diameter_ang {params.settings[particle_diameter_ang]} "
+        "--max_healpix_order {params.settings[max_healpix_order]} "
         "--sym C1 "
         "--seed {params.settings[seed]} "
         "--no-firstiter_cc "
         "--initial-pose-source none "
+        "{params.fixed_prior_flag} "
         "{params.extra_args} "
         "> {log} 2>&1"
 
@@ -199,7 +288,7 @@ rule refine_k1:
 
 rule evaluate_run:
     message:
-        "Evaluating {wildcards.scenario}: resolution and direction-prior accuracy"
+        "Evaluating {wildcards.scenario}/{wildcards.variant}: resolution and direction-prior accuracy"
     input:
         particles_star=rules.simulate_dataset.output.particles_star,
         reference_gt=rules.simulate_dataset.output.reference_gt,
@@ -208,10 +297,11 @@ rule evaluate_run:
         final_half2=rules.refine_k1.output.final_half2,
         script=EVALUATE_SCRIPT,
     output:
-        metrics=output_path("{scenario}", "evaluation", "metrics.json"),
-        prior_by_iteration=output_path("{scenario}", "evaluation", "prior_by_iteration.csv"),
-        fsc_curves=output_path("{scenario}", "evaluation", "fsc_curves.csv"),
-        summary_figure=output_path("{scenario}", "evaluation", "summary.png"),
+        metrics=output_path("{scenario}", "{variant}", "evaluation", "metrics.json"),
+        prior_by_iteration=output_path("{scenario}", "{variant}", "evaluation", "prior_by_iteration.csv"),
+        fsc_by_iteration=output_path("{scenario}", "{variant}", "evaluation", "fsc_by_iteration.csv"),
+        fsc_curves=output_path("{scenario}", "{variant}", "evaluation", "fsc_curves.csv"),
+        summary_figure=output_path("{scenario}", "{variant}", "evaluation", "summary.png"),
     params:
         env=CLEAN_ENV,
         python=PYTHON,
@@ -219,34 +309,82 @@ rule evaluate_run:
         run_dir=lambda wildcards, input: str(Path(input.final_merged).parent),
         out_dir=lambda wildcards, output: str(Path(output.metrics).parent),
     log:
-        output_path("logs", "{scenario}.evaluate.log"),
+        output_path("logs", "{scenario}.{variant}.evaluate.log"),
     shell:
         "{params.env} JAX_PLATFORMS=cpu {params.python} {input.script} "
         "--dataset-dir {params.dataset_dir} "
         "--run-dir {params.run_dir} "
         "--out-dir {params.out_dir} "
-        "--label {wildcards.scenario} "
+        "--label {wildcards.scenario}/{wildcards.variant} "
         "> {log} 2>&1"
 
 
-rule orientation_distribution:
+rule plot_true_angles:
     message:
-        "Plotting {wildcards.scenario}: orientation distribution of the true angles and the final estimated poses"
+        "Plotting {wildcards.scenario}: orientation distribution of the true angles"
     input:
         particles_star=rules.simulate_dataset.output.particles_star,
+    output:
+        true_angles=output_path("{scenario}", "dataset", "angdist_true.png"),
+    params:
+        angdist=ANGDIST,
+        title=lambda wildcards: f"{wildcards.scenario}: true angles (simulated)",
+    log:
+        output_path("logs", "{scenario}.angdist_true.log"),
+    shell:
+        "export MPLBACKEND=Agg; "
+        "{params.angdist} {input.particles_star} -t {params.title:q} -o {output.true_angles} > {log} 2>&1"
+
+
+rule plot_estimated_angles:
+    message:
+        "Plotting {wildcards.scenario}/{wildcards.variant}: orientation distribution of the final estimated poses"
+    input:
         final_merged=rules.refine_k1.output.final_merged,
     output:
-        true_angles=output_path("{scenario}", "evaluation", "angdist_true.png"),
-        estimated_poses=output_path("{scenario}", "evaluation", "angdist_estimated.png"),
+        estimated_angles=output_path("{scenario}", "{variant}", "evaluation", "angdist_estimated.png"),
     params:
         angdist=ANGDIST,
         run_dir=lambda wildcards, input: str(Path(input.final_merged).parent),
-        true_title=lambda wildcards: f"{wildcards.scenario}: true angles (simulated)",
     log:
-        output_path("logs", "{scenario}.angdist.log"),
+        output_path("logs", "{scenario}.{variant}.angdist_estimated.log"),
     shell:
         "export MPLBACKEND=Agg; "
         "final=$(ls {params.run_dir}/run_it*_data.star | sort | tail -n 1); "
-        "{params.angdist} {input.particles_star} -t {params.true_title:q} -o {output.true_angles} > {log} 2>&1; "
-        '{params.angdist} "$final" -t "{wildcards.scenario}: estimated poses, $(basename "$final")" '
-        "-o {output.estimated_poses} >> {log} 2>&1"
+        '{params.angdist} "$final" -t "{wildcards.scenario}/{wildcards.variant}: estimated poses, $(basename "$final")" '
+        "-o {output.estimated_angles} > {log} 2>&1"
+
+
+rule compare_variants:
+    message:
+        "Comparing the variants of {wildcards.scenario}"
+    input:
+        metrics=lambda wildcards: [
+            output_path(wildcards.scenario, v, "evaluation", "metrics.json") for v in SCENARIOS[wildcards.scenario]["variants"]
+        ],
+        fsc_curves=lambda wildcards: [
+            output_path(wildcards.scenario, v, "evaluation", "fsc_curves.csv") for v in SCENARIOS[wildcards.scenario]["variants"]
+        ],
+        fsc_by_iteration=lambda wildcards: [
+            output_path(wildcards.scenario, v, "evaluation", "fsc_by_iteration.csv")
+            for v in SCENARIOS[wildcards.scenario]["variants"]
+        ],
+        script=COMPARE_SCRIPT,
+    output:
+        table=output_path("{scenario}", "comparison", "variants.csv"),
+        figure=output_path("{scenario}", "comparison", "variants.png"),
+    params:
+        env=CLEAN_ENV,
+        python=PYTHON,
+        runs=lambda wildcards: " ".join(
+            f"{v}={output_path(wildcards.scenario, v, 'evaluation')}" for v in SCENARIOS[wildcards.scenario]["variants"]
+        ),
+        out_dir=lambda wildcards, output: str(Path(output.table).parent),
+    log:
+        output_path("logs", "{scenario}.compare.log"),
+    shell:
+        "{params.env} JAX_PLATFORMS=cpu {params.python} {input.script} "
+        "--runs {params.runs} "
+        "--out-dir {params.out_dir} "
+        "--label {wildcards.scenario} "
+        "> {log} 2>&1"

@@ -1,8 +1,8 @@
 # Pose-prior benchmark: paths, simulation recipe, refinement settings and scenarios (read by the Snakefile).
 # Override any value on the command line, e.g. --config output_root=<dir> natives_dir=<dir>.
 
-# Directory that receives every scenario's dataset, refinement and evaluation. Required: it names a scratch
-# directory of one account, so there is no default.
+# Directory that receives every scenario's dataset and each variant's refinement and evaluation. Required: it
+# names a scratch directory of one account, so there is no default.
 output_root: null
 
 # Native-library pack that refinement loads, built with `bash scripts/build_test_natives.sh <dir>`. Required.
@@ -16,10 +16,16 @@ angdist: null
 
 # Simulation recipe shared by every scenario: the canonical K=1 PDB fixture of
 # scripts/prepare_pdb_k1_relion_sanity_benchmark.py (5nrl atoms, white noise, total B-factor 80 A^2).
-# The 100k-particle, box-256 milestone fixture is n_images: 100000, grid_size: 256.
+# The defaults are the 100k-particle, box-256 milestone fixture.
 dataset:
-  n_images: 50000
-  grid_size: 128               # box in pixels; the voxel size is 4.25 * 128 / grid_size A
+  n_images: 100000
+  grid_size: 256               # box in pixels; the voxel size is 4.25 * 128 / grid_size A
+  # White-noise level. RECOVAR sets the noise variance to noise_level / 50000 and the particles are normalized to
+  # background std 1, so at a fixed box the image SNR is proportional to 1 / noise_level, and the SNR per pixel also
+  # falls with the box (over the particle disc, level 1: 0.0099 at box 128, 0.0021 at box 256). At 50k particles:
+  # box 128 level 1 saturates near Nyquist whatever the prior, level 2 separates the prior variants and level 3
+  # leaves the poses essentially random; box 256 level 1 keeps the median pose error of every variant but a wrong
+  # prior within 6 deg, and its maps reach 7 to 8 A at 50k particles and 5 to 6 A at 100k.
   noise_level: 1.0
   total_bfactor: 80.0          # A^2
   init_resolution_ang: 30.0    # low-pass of the ground-truth map that starts the refinement
@@ -30,10 +36,16 @@ refine:
   particle_diameter_ang: 450   # the map's density reaches about 220 A from the centre
   init_resolution: 30          # --ini_high, A
   seed: 1                      # --random_seed: half sets and sampling perturbation
+  # --max_healpix_order of every run and the HEALPix order of a fixed prior's file (relax asks for a fixed prior
+  # at most at the run's cap). Auto-refine stops at the order where it converges (4 to 6 at 50k particles, box 128,
+  # noise levels 1 to 3; 4 at box 256, noise level 1, and 4 to 5 with 100k particles), so a cap of 7 changes none
+  # of those runs; for other settings, compare the metrics' run.final_healpix_order with the cap.
+  max_healpix_order: 7
   extra_args: []               # appended verbatim to the relax refine command
 
-# One entry per scenario: its own dataset, refinement and evaluation. `poses` selects RECOVAR's pose generator;
-# optional `dataset:` and `refine:` entries override the shared settings above.
+# One entry per scenario: its own simulated dataset. `poses` selects RECOVAR's pose generator; `variants` lists
+# how the dataset is refined (the entries of `variants` below); optional `dataset:` and `refine:` entries override
+# the shared settings above.
 scenarios:
   # RECOVAR's Kent option draws the third COLUMN of each rotation matrix from a Kent distribution (mean direction
   # mu0, major axis mu) and the in-plane angle uniformly. RELION's viewing direction is the third ROW, so it is
@@ -43,6 +55,24 @@ scenarios:
   # RECOVAR's default kappa=10, beta=5 accepts 0.05% of the draws and fills most particles from an approximation.
   kent_cap:
     poses: {kind: kent, kappa: 8.0, beta: 2.0, mu: [1.0, 1.0, 0.0], mu0: [0.0, 0.0, 1.0]}
-  # Control: uniform viewing directions, where the true prior is flat.
+    variants: [learned, fixed_true, fixed_uniform, fixed_wrong_belt]
+  # Control: uniform viewing directions, where the true prior is flat (so a fixed uniform prior is the truth).
   uniform:
     poses: {kind: uniform}
+    variants: [learned, fixed_true]
+
+# How a dataset is refined. Without `fixed_prior` relax learns the prior as RELION does (and applies it in global
+# searches only). With it, every global search, local search and the final pass scores with the given prior
+# (relax refine --fixed-direction-prior), while the learned prior is still estimated, written and evaluated.
+# `fixed_prior.kind` is `truth` (the dataset's own viewing-direction distribution), `uniform`, or `kent` with
+# explicit kappa, beta, mu and mu0 (the simulator's parameterization); optional `refine:` entries override the
+# settings above.
+variants:
+  learned: {}
+  fixed_true:
+    fixed_prior: {kind: truth}
+  fixed_uniform:
+    fixed_prior: {kind: uniform}
+  # A confidently wrong prior: the cap's Kent shape moved to an equatorial belt.
+  fixed_wrong_belt:
+    fixed_prior: {kind: kent, kappa: 8.0, beta: 2.0, mu: [1.0, 1.0, 0.0], mu0: [0.0, 1.0, 0.0]}

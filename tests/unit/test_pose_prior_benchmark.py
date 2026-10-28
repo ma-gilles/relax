@@ -1,5 +1,7 @@
-"""The pose-prior benchmark's evaluator metrics and its simulator's Kent guard."""
+"""The pose-prior benchmark: evaluator metrics, the simulator's Kent guard, fixed priors and the variant comparison."""
 
+import csv
+import json
 import logging
 import math
 
@@ -7,9 +9,13 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
+from relax.parity.fixed_direction_prior import PROVENANCE_FILE, FixedDirectionPrior
 from relax.sampling.healpix import n_pixels, pixel_rot_tilt
+from scripts.pose_prior_benchmark import compare_variants as cmp
 from scripts.pose_prior_benchmark import evaluate_run as ev
 from scripts.pose_prior_benchmark import simulate_dataset as sim
+from scripts.pose_prior_benchmark import true_prior
+from scripts.pose_prior_benchmark import write_fixed_prior as wfp
 
 
 def _write_model_star(path, prior):
@@ -194,3 +200,158 @@ def test_pose_options_and_flag_checks():
         sim.parse_args(
             ["--output-dir", "x", "--n-images", "10", "--grid-size", "64", "--poses", "uniform", "--kappa", "8"]
         )
+
+
+# ---- fixed priors and the variant comparison ----
+
+
+def _prior_args(*flags):
+    return wfp.parse_args([*flags, "--order", "2", "--out", "unused.npy"])
+
+
+def _poses_json(tmp_path, poses):
+    path = tmp_path / "pose_distribution.json"
+    path.write_text(json.dumps(poses))
+    return str(path)
+
+
+def test_uniform_and_truth_priors_of_a_uniform_dataset_are_flat(tmp_path):
+    poses = _poses_json(tmp_path, {"poses": "uniform"})
+    for flags in (["--kind", "uniform"], ["--kind", "truth", "--poses-json", poses]):
+        assert_matches(wfp.fixed_prior(_prior_args(*flags)), np.full(n_pixels(2), 1.0 / n_pixels(2)))
+
+
+def test_truth_prior_is_the_datasets_population_and_a_kent_prior_the_explicit_one(tmp_path):
+    truth = wfp.fixed_prior(_prior_args("--kind", "truth", "--poses-json", _poses_json(tmp_path, CAP)))
+    assert_matches(truth, true_prior.population_prior(CAP, 2))
+    belt_flags = ["--kind", "kent", "--kappa", "8", "--beta", "2", "--mu", "1", "1", "0", "--mu0", "0", "1", "0"]
+    belt = wfp.fixed_prior(_prior_args(*belt_flags))
+    assert_matches(belt, true_prior.kent_population_prior(8.0, 2.0, [1.0, 1.0, 0.0], [0.0, 1.0, 0.0], 2))
+    assert 0.5 * np.abs(belt - truth).sum() > 0.9  # measured 0.92: an equatorial belt against a polar cap
+
+
+def test_fixed_prior_needs_the_flags_of_its_kind():
+    with pytest.raises(SystemExit, match="--poses-json"):
+        wfp.fixed_prior(_prior_args("--kind", "truth"))
+    with pytest.raises(SystemExit, match="--kappa, --beta, --mu, --mu0"):
+        wfp.fixed_prior(_prior_args("--kind", "kent"))
+
+
+def test_written_prior_is_one_relax_reads_at_the_requested_order(tmp_path):
+    out = tmp_path / "prior.npy"
+    wfp.main(["--kind", "truth", "--poses-json", _poses_json(tmp_path, CAP), "--order", "3", "--out", str(out)])
+    prior = FixedDirectionPrior.from_file(out)
+    assert prior.order == 3
+    assert_matches(prior.values, true_prior.population_prior(CAP, 3))
+
+
+def test_direction_prior_used_is_read_from_the_sidecar_relax_writes(tmp_path):
+    assert ev.read_direction_prior_used(tmp_path) == {"source": "learned"}
+    record = {"path": "/prior.npy", "sha256": "abc", "healpix_order": 7}
+    (tmp_path / PROVENANCE_FILE).write_text(json.dumps(record))
+    assert ev.read_direction_prior_used(tmp_path) == {"source": "fixed", **record}
+
+
+def _evaluation(tmp_path, name, *, source, auc, median, js_skill):
+    """A minimal evaluate_run output directory: the metrics and the FSC curve the comparison reads."""
+    directory = tmp_path / name
+    directory.mkdir()
+    pose = {"p90": 3 * median, "fraction_over_90": 0.01}
+    metrics = {
+        "run": {"n_iterations": 12, "final_healpix_order": 5, "direction_prior_used": {"source": source}},
+        "resolution": {
+            "box": 8,
+            "voxel_size_A": 2.0,
+            "reported": {"final_all_data_A": 9.5},
+            "gt_merged": {"auc": auc, "at_0.5": {"first_A": None}, "at_0.143": {"first_A": 6.0}},
+            "half_maps": {"auc": 0.6, "at_0.143": {"first_A": 7.0}},
+        },
+        "pose_direction_error_deg": {
+            "half1": {"median": median, **pose},
+            "half2": {"median": median + 1.0, **pose},
+        },
+        "prior_final": {"half1": {"js_bits": 0.1, "js_skill": js_skill}, "half2": {"js_bits": 0.3, "js_skill": None}},
+    }
+    (directory / "metrics.json").write_text(json.dumps(metrics))
+    with open(directory / "fsc_curves.csv", "w", newline="") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(["shell", "resolution_A", "half_maps", "gt_merged"])
+        for shell, fsc in enumerate([1.0, 0.9, 0.7, 0.4, 0.1]):
+            writer.writerow([shell, 8 * 2.0 / shell if shell else "inf", 1.0, fsc])
+    with open(directory / "fsc_by_iteration.csv", "w", newline="") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(["iteration", "healpix_order", "gt_auc"])
+        for iteration, order in enumerate([2, 2, 3, 3, 4], start=1):
+            writer.writerow([iteration, order, auc * iteration / 5])
+    return directory
+
+
+def test_variants_are_compared_in_a_table_and_a_figure(tmp_path):
+    learned = _evaluation(tmp_path, "learned", source="learned", auc=0.8, median=2.0, js_skill=0.9)
+    fixed = _evaluation(tmp_path, "fixed_true", source="fixed", auc=0.85, median=1.5, js_skill=0.9)
+    out = tmp_path / "out"
+    cmp.main(["--runs", f"learned={learned}", f"fixed_true={fixed}", "--out-dir", str(out), "--label", "test"])
+    with open(out / "variants.csv", newline="") as handle:
+        rows = {row["variant"]: row for row in csv.DictReader(handle)}
+    assert list(rows) == ["learned", "fixed_true"]
+    assert [rows[v]["direction_prior"] for v in rows] == ["learned", "fixed"]
+    assert_matches(float(rows["learned"]["pose_error_median_deg"]), 2.5)  # the mean of the two halves
+    assert_matches(float(rows["fixed_true"]["gt_fsc_auc"]), 0.85)
+    assert_matches(float(rows["learned"]["learned_prior_js_bits"]), 0.2)
+    assert rows["learned"]["gt_resolution_0.5_A"] == ""  # the curve never crossed
+    assert rows["learned"]["learned_prior_js_skill"] == ""  # one half has no skill (a uniform truth)
+    assert (out / "variants.png").stat().st_size > 0
+    iterations, orders, area = cmp.read_iteration_curve(learned)
+    assert_matches(iterations, np.arange(1, 6))
+    assert_matches(orders, np.array([2, 2, 3, 3, 4]))
+    assert_matches(area, 0.8 * np.arange(1, 6) / 5)
+    frequency, fsc = cmp.read_gt_curve(learned, json.loads((learned / "metrics.json").read_text()))
+    assert_matches(frequency, np.arange(5) / (8 * 2.0))
+    assert_matches(fsc, [1.0, 0.9, 0.7, 0.4, 0.1])
+
+
+def test_runs_are_label_equals_directory():
+    assert cmp.parse_runs(["a=/x", "b=/y"]) == {"a": cmp.Path("/x"), "b": cmp.Path("/y")}
+    with pytest.raises(SystemExit):
+        cmp.parse_runs(["no-separator"])
+
+
+# ---- the per-iteration trace ----
+
+
+def _noisy(gt, level, seed):
+    return gt + level * np.random.default_rng(seed).standard_normal(gt.shape)
+
+
+def test_fsc_by_iteration_scores_each_half_map_against_the_truth_and_the_other_half():
+    gt = np.random.default_rng(0).standard_normal((16, 16, 16))
+    maps = {1: (_noisy(gt, 3.0, 1), _noisy(gt, 3.0, 2)), 2: (_noisy(gt, 0.3, 3), _noisy(gt, 0.3, 4))}
+    rows = ev.fsc_by_iteration(gt, maps, {1: 2, 2: 3}, voxel=2.0, box=16)
+    assert [(r["iteration"], r["healpix_order"]) for r in rows] == [(1, 2), (2, 3)]
+    assert 0.0 < rows[0]["gt_auc"] < rows[1]["gt_auc"] <= 1.0  # a less noisy half map correlates better
+    assert_matches(rows[1]["gt_auc"], 0.5 * (rows[1]["gt_auc_half1"] + rows[1]["gt_auc_half2"]))
+    assert rows[1]["gt_resolution_0.5_half1_A"] is None  # the low-noise half map never drops below 0.5
+    assert rows[0]["gt_resolution_0.5_half1_A"] is not None
+    perfect = ev.fsc_by_iteration(gt, {1: (gt, gt)}, {1: 2}, voxel=2.0, box=16)
+    assert_matches(perfect[0]["gt_auc"], 1.0)
+    assert perfect[0]["half_map_resolution_0.143_A"] is None
+
+
+def test_iteration_table_is_written_with_empty_cells_for_a_crossing_that_never_happened(tmp_path):
+    rows = [
+        {"iteration": 1, "healpix_order": 2, "gt_auc": 0.4, "half_map_resolution_0.143_A": 12.0},
+        {"iteration": 2, "healpix_order": 3, "gt_auc": 0.5, "half_map_resolution_0.143_A": None},
+    ]
+    result = {
+        "metrics": {},
+        "rows": [{"iteration": 1, "half": 1}],
+        "iteration_rows": rows,
+        "curves": {"half_maps": np.ones(3)},
+        "box": 4,
+        "voxel": 2.0,
+    }
+    ev.write_tables(result, tmp_path)
+    with open(tmp_path / "fsc_by_iteration.csv", newline="") as handle:
+        written = list(csv.DictReader(handle))
+    assert [r["half_map_resolution_0.143_A"] for r in written] == ["12.0", ""]
+    assert [int(r["healpix_order"]) for r in written] == [2, 3]
