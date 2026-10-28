@@ -396,6 +396,17 @@ the old distribution and labeling it with the new order would incorrectly
 preserve learned directional preferences after a grid change. The file and
 explicit-override routes share this rule for K1 and K4.
 
+A fixed direction prior (`--fixed-direction-prior`, K=1, C1, single-particle, one GPU) is an intentional
+difference from that rule. [`FixedDirectionPriorSource`](../../relax/parity/fixed_direction_prior.py) hands the
+scorers, through `InputSource.direction_log_prior`, one prior on every rotation of the scoring grid of the
+expectation's HEALPix order (its file's, a coarser order by summing each direction's children) in every global
+search, every local search and the final pass, whatever the half and the iteration. A local search adds the
+log prior of each parent-grid rotation to the Gaussian direction and psi priors of every hypothesis of that
+rotation ([`LocalPriorSpec.direction_log_prior`](../../relax/refinement/local_half.py), the
+`rotation_log_prior` of [`build_local_hypothesis_layout`](../../relax/local_search/layout.py)), and a pass-2
+child inherits its parent's. The learned prior is still estimated and written to the model STARs; it is not fed
+back.
+
 The source Euler and matrix precision can also matter at score ties.
 
 For oversampling level `s`, `get_oversampled_rotation_grid_from_samples`

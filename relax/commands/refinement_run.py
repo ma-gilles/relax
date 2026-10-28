@@ -43,6 +43,7 @@ from relax.numerics.precision import DensePrecisionPolicy, use_float32_matmuls
 from relax.parallel import channel
 from relax.parity import (
     archive_provenance,
+    fixed_direction_prior,
     frozen_boundary_cli,
     initial_model_replay,
     oracle_admission,
@@ -1245,6 +1246,11 @@ def main(command=None):
         ),
         run_options,
     )
+    if args.fixed_direction_prior is not None:
+        source = fixed_direction_prior.FixedDirectionPriorSource.for_run(
+            args.fixed_direction_prior, source, run_options, tomographic=tomo_run, multi_gpu=ranks is not None
+        )
+        source.write_provenance(args.output)
     if ranks is not None:
         remote_halves.require_rank_route(observer, source)
     if ranks is not None and not ranks.is_leader:

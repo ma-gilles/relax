@@ -27,6 +27,7 @@ from dataclasses import dataclass
 from typing import Any, NamedTuple, Protocol
 
 from relax.refinement.refinement_options import RELION_INCR_SIZE
+from relax.sampling.orientation_priors import HalfDirectionLogPriors
 
 
 @dataclass
@@ -305,6 +306,14 @@ class InputSource:
     def scoring_rotation_ids(self, trial_grid, *, use_local: bool):
         """The rotation ids the scorer reads for ``trial_grid`` (None: the grid's own)."""
         return None
+
+    def direction_log_prior(
+        self, half_index: int, log_prior: HalfDirectionLogPriors, *, healpix_order: int, use_local: bool
+    ) -> HalfDirectionLogPriors:
+        """The direction log prior half ``half_index`` scores an expectation with, on the HEALPix grid of
+        ``healpix_order`` (a local search's parent order when ``use_local``); the native source returns the run's
+        own ``log_prior``, which a local search leaves empty as RELION's does."""
+        return log_prior
 
     def relion_run_directory(self, iteration: int):
         """The RELION run directory whose numbered STAR files supply iteration ``iteration``'s sampling (None:

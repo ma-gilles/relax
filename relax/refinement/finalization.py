@@ -438,7 +438,7 @@ def run_final_all_data(
     )
     final_outs = PerHalfOutputs()
     first_projector_power_spectrum = None
-    score_half = partial(score_final_half, ctx=ctx, options=options, follower_setup=follower_setup)
+    score_half = partial(score_final_half, ctx=ctx, options=options, follower_setup=follower_setup, source=source)
     # A multi-GPU run sends the halves another GPU owns first and publishes each in its turn.
     remote = () if remote_halves is None else tuple(half.index for half in halves if remote_halves.remote(half.index))
     for half in halves:
@@ -844,11 +844,18 @@ class FinalHalfScore:
 
 
 def score_final_half(
-    half: half_inputs.HalfSet, final_pass: FinalPass, *, ctx: "RunContext", options: RefinementOptions, follower_setup
+    half: half_inputs.HalfSet,
+    final_pass: FinalPass,
+    *,
+    ctx: "RunContext",
+    options: RefinementOptions,
+    follower_setup,
+    source: InputSource,
 ) -> FinalHalfScore:
     """Build one half's scoring projector and score the half on the final pass's route.
 
-    Each half's Projector::data lives only inside this call. The caller publishes the result.
+    Each half's Projector::data lives only inside this call. The caller publishes the result. The half's direction
+    log prior is the input source's (``InputSource.direction_log_prior``).
     """
     image_geometry = ctx.optics.image_geometry
     scoring_dtype = options.precision.rotation_real_dtype
@@ -1017,6 +1024,19 @@ def score_final_half(
             dtype=scoring_dtype,
             projection_scale=ctx.relion_projection_scale,
         )
+        final_inputs = replace(
+            final_inputs,
+            directions=source.direction_log_prior(
+                half.index,
+                final_inputs.directions,
+                healpix_order=(
+                    final_pass.route.sampling.search.parent_order
+                    if final_pass.use_local
+                    else final_pass.sampling.settings.grid_order
+                ),
+                use_local=final_pass.use_local,
+            ),
+        )
         scoring_half = HalfScoringData(
             particles=half,
             projector=projector,
@@ -1037,6 +1057,7 @@ def score_final_half(
                     current_sigma_offset_angstrom=final_sigma_offset_k,
                     translation_search_base=translation_search_base,
                     class_log_priors=final_pass.class_log_priors,
+                    direction_log_prior=final_inputs.directions.rotation_log_prior,
                 ),
                 batching=final_pass.route.batching,
                 execution=final_pass.route.execution,

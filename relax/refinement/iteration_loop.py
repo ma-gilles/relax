@@ -906,6 +906,10 @@ def refine_single_volume(
         )
         plan = replace(
             plan, scoring_rotation_ids=source.scoring_rotation_ids(plan.trial_grid, use_local=use_local),
+            direction_log_priors=[
+                source.direction_log_prior(i, p, healpix_order=plan.direction_prior_healpix_order, use_local=use_local)
+                for i, p in enumerate(plan.direction_log_priors)
+            ],
             coarse_angular_step_deg=None if coarse_image_plan is None else coarse_image_plan.angular_step_deg,
             coarse_cs=image_size_plans.adaptive_pass1_size(
                 coarse_image_plan, plan.sampling_plan.windows, carry.state, options,

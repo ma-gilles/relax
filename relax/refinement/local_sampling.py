@@ -349,7 +349,8 @@ class NumberedSamplingPlan:
 
     ``coarse_grids`` are the carried grids with the iteration's perturbed translations (the controller installs
     them); ``adaptive_pass1`` the adaptive pass-1 rotations and their device source (None where no pass 1 is
-    built); ``direction_log_priors`` each half's direction log priors at ``direction_prior_healpix_order``;
+    built); ``direction_log_priors`` each half's direction log priors at ``direction_prior_healpix_order`` (the
+    input source's, once the loop has installed them: empty in a local search natively);
     ``use_adaptive`` whether the halves take the two-pass adaptive route.
     """
 

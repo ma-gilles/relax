@@ -275,6 +275,14 @@ def parse_refinement_args(argv=None):
         "this directory. This is not an autonomous trajectory; omit it and use "
         "--perturb_seed for same-seed autonomous refinement.",
     )
+    parser.add_argument(
+        "--fixed-direction-prior",
+        default=None,
+        help="Diagnostic, K=1 C1 single-particle on one GPU: score every global and local search and the final "
+        "pass with the direction prior in this .npy (positive probabilities per HEALPix direction in NEST order, "
+        "summing to 1) instead of RELION's learned prior, which is still estimated and written but not used. "
+        "Requires --max_healpix_order of at most the file's order. Not combinable with a RELION replay.",
+    )
     for flag in ("--relion-projector-capture-dir", "--relion-projector-capture-manifest",
                  "--relion-projector-capture-iteration"):
         parser.add_argument(flag, action=RetiredFlag, feature="the captured RELION projector",

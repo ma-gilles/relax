@@ -214,10 +214,12 @@ def default_scoring_overrides(value) -> bool:
     return type(value).__name__ == "ScoringOverrides" and value == type(value)()
 
 
-# Record fields retired at their only value: a tree that still has the field carries that value, so it is not an
-# operand of the stand-ins (a retirement would otherwise reseed them and change every downstream output).
+# Record fields that hold one value on the default path: retired at that value (a tree that still has the field
+# carries it), or added with it (a tree from before has no field). Such a field is not an operand of the stand-ins
+# (a retirement or an addition would otherwise reseed them and change every downstream output).
 RETIRED_OPERAND_FIELDS = {
     "projection_relion_acc_double_floorf_quirk": False,  # RELAX_RELION_ACC_DOUBLE_FLOORF_QUIRK, retired 2026-10-15
+    "direction_log_prior": None,  # LocalPriorSpec, LocalSearchGridSpec: RELION's local search adds no direction prior
 }
 
 

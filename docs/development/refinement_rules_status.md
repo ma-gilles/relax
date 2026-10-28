@@ -95,6 +95,12 @@ Through the ports (`relax/refinement/ports.py`), chosen by the command:
   accumulator captures (`RELAX_BPREF_PREJOIN_DUMP_DIR`, `RELAX_BPREF_ACCUM_DUMP_DIR`), the noise-update terms
   (`RELAX_NOISE_DEBUG_DUMP_DIR`), the Class3D image-size and M-step dumps (`RELAX_KCLASS_DUMP_DIR`) and the
   pre-mask maps (`RELAX_PREMASK_DUMP_DIR`).
+- `InputSource.direction_log_prior` (`relax/parity/fixed_direction_prior.py`, `FixedDirectionPriorSource`, 2026-10-26):
+  `--fixed-direction-prior`, a diagnostic that scores every expectation of a K=1 C1 single-particle run on one
+  GPU (each global search, local search and the final pass) with a given direction prior instead of the learned
+  one, which is still estimated and written. The controller asks the source once per numbered iteration, in the
+  `replace` of the plan that installs the source's other choices, and once per half of the final pass
+  (`score_final_half`); the native source returns the run's own prior.
 - `InputSource` (`relax/parity/relion_replay_source.py`, `RelionReplay`): the numbered STAR replay
   (`--perturb_replay_relion_dir`), `--relion_init_dir`'s run_it000 slot and every other override slot, the
   cutoff, perturbation, optimiser and restart counters, the Class3D prior replay, the final pass's replayed

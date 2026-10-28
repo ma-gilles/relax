@@ -81,6 +81,9 @@ class LocalPriorSpec:
     # Class3D: the class log priors. A local search's weights carry no class prior, as RELION's, but a
     # class at -inf (pdf_class == 0) is left out of the search.
     class_log_priors: object | None = None
+    # K=1: the log prior of each rotation of the parent grid (``sampling.search.parent_order``), added to every
+    # local hypothesis of that rotation; None (RELION's local search) adds none.
+    direction_log_prior: object | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -363,7 +366,7 @@ def _build_local_adaptive_parent_layout(
         half.particles.dataset.voxel_size,
         grid_metadata=parent_grid_metadata,
         translation_prior_reference_translations=translation_prior_reference_translations,
-        rotation_log_prior=None,
+        rotation_log_prior=priors.direction_log_prior,
         rotation_grid_random_perturbation=sampling.perturbation,
         rotation_grid_angular_sampling_deg=relion_angular_sampling_deg(
             parent_order,
@@ -527,7 +530,8 @@ def _score_half_local_one_shape(
     # only when orientational_prior_mode == NOPRIOR. Local searches run through
     # PRIOR_ROTTILT_PSI and score the local direction/psi priors in the
     # hypothesis layout, so adding the learned global direction prior here
-    # biases both support selection and final weights.
+    # biases both support selection and final weights. A prior is added only
+    # when the input source supplies one (``priors.direction_log_prior``).
 
     reconstruction_current_size_for_engine = (
         sampling.image_window_size
@@ -624,6 +628,7 @@ def _score_half_local_one_shape(
             n_classes=n_classes,
             image_seed_classes=half.image_seed_classes if n_classes > 1 else None,
             empty_classes=empty_classes,
+            direction_log_prior=priors.direction_log_prior,
     )
     local_kernel = LocalSearchKernelPolicy(
             disc_type=execution.disc_type,
@@ -1003,6 +1008,8 @@ class LocalSearchGridSpec:
     image_seed_classes: object | None = None
     # Classes at zero weight (RELION's pdf_class == 0): not scored (drop_local_layout_classes).
     empty_classes: tuple = ()
+    # LocalPriorSpec.direction_log_prior, for a layout built from this spec rather than prebuilt (``pass2_layout``).
+    direction_log_prior: object | None = None
 
 
 def _run_local_search_iteration(
@@ -1070,7 +1077,7 @@ def _run_local_search_iteration(
             data.experiment_dataset.voxel_size,
             grid_metadata=local_grid_metadata,
             translation_prior_reference_translations=grid.translation_prior_reference_translations,
-            rotation_log_prior=None,
+            rotation_log_prior=grid.direction_log_prior,
             rotation_grid_random_perturbation=grid.rotation_grid_random_perturbation,
             rotation_grid_angular_sampling_deg=grid.rotation_grid_angular_sampling_deg,
             local_parent_oversampling_order=grid.local_parent_oversampling_order,

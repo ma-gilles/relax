@@ -249,7 +249,7 @@ def follower_scale_replay(n_iterations, n_followers=2):
 def run_tiny_refinement(
     monkeypatch, *, parity=None, n_classes=1, max_iter=2, engine_calls=None, schedule=None, init_volume=None,
     final_after_max_iter=True, converge_after=None, engine_noise_fields=None, observer=None, relion_replay=None,
-    **option_groups,
+    source_for=None, **option_groups,
 ):
     """Run the controller for ``max_iter`` numbered iterations and (K=1) the final all-data pass.
 
@@ -261,7 +261,8 @@ def run_tiny_refinement(
     run reaches its final pass. ``engine_noise_fields(n_images)`` adds ``NoiseStats`` fields to the
     stand-in engine's statistics. ``observer`` is the run's ``RunObserver`` (None: none). ``relion_replay`` is
     what the run replays (a ``RelionReplay``); the replay fields of ``parity``
-    (``perturb_replay_relion_dir``, ``perturb_replay_max_iter``, ...) are moved into it.
+    (``perturb_replay_relion_dir``, ``perturb_replay_max_iter``, ...) are moved into it. ``source_for(options)``
+    builds the run's input source instead (None: the replay's, or the native one).
     """
 
     from relax.parity.relion_replay_source import RelionReplay, RelionReplaySource
@@ -351,7 +352,7 @@ def run_tiny_refinement(
         options=options,
         observer=RunObserver() if observer is None else observer,
         # The input source the command chooses for these options.
-        source=RelionReplaySource.for_run(relion_replay, options),
+        source=RelionReplaySource.for_run(relion_replay, options) if source_for is None else source_for(options),
     )
 
 
