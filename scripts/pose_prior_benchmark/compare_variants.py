@@ -1,13 +1,14 @@
 #!/usr/bin/env python
 """Compare the refinement variants of one pose-prior benchmark scenario side by side.
 
-Each variant is one ``evaluate_run.py`` output directory (``metrics.json``, ``fsc_curves.csv`` and
-``fsc_by_iteration.csv``) of the same
+Each variant is one ``evaluate_run.py`` output directory (``metrics.json``, ``fsc_curves.csv``,
+``fsc_by_iteration.csv`` and ``pose_errors.npz``) of the same
 dataset. ``variants.csv`` has one row per variant: the prior that scored it, the iterations and final HEALPix order,
 the resolutions and area under the FSC curve against the ground truth and between the half maps, the pose
 direction error, and the final learned prior's accuracy. ``variants.png`` shows the ground-truth FSC curves, the
-FSC area, the pose error, the learned prior's divergence from the true prior and, per iteration, the half maps'
-FSC area to the truth (so runs that stop at different iterations or orders compare at equal iteration).
+FSC area, the distribution of the particles' direction errors, the learned prior's divergence from the true prior
+and, per iteration, the half maps' FSC area to the truth (so runs that stop at different iterations or orders
+compare at equal iteration).
 
 Run::
 
@@ -34,6 +35,10 @@ from scripts.pose_prior_benchmark.evaluate_run import HALVES, PALETTE  # noqa: E
 # One colour per variant in the order given (validated for colour-vision deficiency on the light surface).
 VARIANT_COLORS = ("#2a78d6", "#eb6834", "#2f9e6e", "#8a5cd6")
 GT_FSC_THRESHOLDS = (0.5, 0.143)
+POSE_ERROR_RANGE_DEG = (0.1, 180.0)  # the error axis; a smaller error counts in its first bin
+POSE_ERROR_BINS = 200
+POSE_ERROR_SMOOTHING_DECADES = 0.05
+GROSS_POSE_ERROR_DEG = 90.0
 COLUMNS = (
     "variant",
     "direction_prior",
@@ -115,6 +120,30 @@ def read_iteration_curve(evaluation_dir: Path) -> tuple[np.ndarray, np.ndarray, 
     )
 
 
+def read_pose_errors(evaluation_dir: Path) -> np.ndarray:
+    """Every particle's final direction error (degrees) of the run, both half sets, from ``pose_errors.npz``."""
+    with np.load(evaluation_dir / "pose_errors.npz", allow_pickle=False) as archive:
+        return np.concatenate([archive[f"half{half}"] for half in HALVES]).astype(np.float64)
+
+
+def error_density(errors: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """The density of ``errors`` (degrees) per decade on a log-spaced grid over ``POSE_ERROR_RANGE_DEG``.
+
+    Returns the grid (degrees) and the density, a Gaussian-smoothed histogram of log10(error) that integrates to 1
+    over log10(degrees); the ends reflect, so the mass at 0 and 180 degrees stays on the axis.
+    """
+    low, high = np.log10(POSE_ERROR_RANGE_DEG)
+    edges = np.linspace(low, high, POSE_ERROR_BINS + 1)
+    step = edges[1] - edges[0]
+    counts, _ = np.histogram(np.log10(np.clip(errors, POSE_ERROR_RANGE_DEG[0], POSE_ERROR_RANGE_DEG[1])), bins=edges)
+    reach = int(np.ceil(4 * POSE_ERROR_SMOOTHING_DECADES / step))
+    kernel = np.exp(-0.5 * (np.arange(-reach, reach + 1) * step / POSE_ERROR_SMOOTHING_DECADES) ** 2)
+    smooth = np.convolve(
+        np.pad(counts.astype(np.float64), reach, mode="symmetric"), kernel / kernel.sum(), mode="valid"
+    )
+    return 10 ** (0.5 * (edges[:-1] + edges[1:])), smooth / (errors.size * step)
+
+
 def write_table(rows: list[dict[str, Any]], path: Path) -> None:
     """Write ``rows`` as a CSV with the columns of ``COLUMNS`` (a value that never happened is empty)."""
     with open(path, "w", newline="") as handle:
@@ -139,11 +168,13 @@ def plot_comparison(
     rows: list[dict[str, Any]],
     curves: dict[str, tuple[np.ndarray, np.ndarray]],
     iteration_curves: dict[str, tuple[np.ndarray, np.ndarray, np.ndarray]],
+    pose_errors: dict[str, np.ndarray],
     label: str,
     path: Path,
 ) -> None:
-    """The comparison figure of ``rows`` (one per variant), their ground-truth FSC ``curves`` and their
-    per-iteration half-map FSC areas (``iteration_curves``: iterations, HEALPix orders, areas)."""
+    """The comparison figure of ``rows`` (one per variant), their ground-truth FSC ``curves``, their
+    per-iteration half-map FSC areas (``iteration_curves``: iterations, HEALPix orders, areas) and their
+    particles' direction errors (``pose_errors``, degrees)."""
     import matplotlib
 
     matplotlib.use("Agg")
@@ -178,7 +209,7 @@ def plot_comparison(
     ax.set_xlabel("spatial frequency (1/A)", color=PALETTE["ink2"])
     ax.set_ylabel("FSC", color=PALETTE["ink2"])
 
-    def bars(ax, key: str, title: str, ylabel: str) -> None:
+    def bars(ax, key: str, title: str, ylabel: str, title_pad: float = 6.0) -> None:
         style_axes(ax)
         values = [row[key] for row in rows]
         ax.bar(x, [np.nan if v is None else v for v in values], color=[colors[v] for v in variants], width=0.6)
@@ -186,7 +217,7 @@ def plot_comparison(
             if value is not None:
                 ax.text(position, value, f"{value:.3g}", ha="center", va="bottom", color=PALETTE["ink2"], fontsize=9)
         ax.set_xticks(x, labels)
-        ax.set_title(title, color=PALETTE["ink"])
+        ax.set_title(title, color=PALETTE["ink"], pad=title_pad)
         ax.set_ylabel(ylabel, color=PALETTE["ink2"])
         ax.margins(y=0.15)
 
@@ -194,24 +225,50 @@ def plot_comparison(
 
     ax = axes[1, 0]
     style_axes(ax)
-    for position, row in zip(x, rows):
-        median, p90 = row["pose_error_median_deg"], row["pose_error_p90_deg"]
-        ax.plot([position, position], [median, p90], color=colors[row["variant"]], linewidth=2)
-        ax.plot(position, median, "o", color=colors[row["variant"]], markersize=8)
-        ax.plot(
-            position, p90, "o", markerfacecolor=PALETTE["surface"], markeredgecolor=colors[row["variant"]], markersize=8
+    densities = {variant: error_density(pose_errors[variant]) for variant in variants}
+    half_width = 0.42 / max(density.max() for _, density in densities.values())
+    for position, variant in zip(x, variants):
+        grid, density = densities[variant]
+        errors = pose_errors[variant]
+        inside = (grid >= errors.min()) & (grid <= errors.max())
+        ax.fill_betweenx(
+            grid[inside],
+            position - half_width * density[inside],
+            position + half_width * density[inside],
+            facecolor=colors[variant],
+            edgecolor=colors[variant],
+            alpha=0.35,
+            linewidth=1.5,
         )
+        median, p90 = np.median(errors), np.percentile(errors, 90)
+        ax.plot(position, median, "o", color=colors[variant], markeredgecolor=PALETTE["surface"], markersize=8)
+        ax.plot(position, p90, "o", markerfacecolor=PALETTE["surface"], markeredgecolor=colors[variant], markersize=8)
+        ax.text(
+            position,
+            1.01,
+            f"{100 * np.mean(errors > GROSS_POSE_ERROR_DEG):.1f}% > {GROSS_POSE_ERROR_DEG:g}\N{DEGREE SIGN}",
+            transform=ax.get_xaxis_transform(),
+            ha="center",
+            va="bottom",
+            color=PALETTE["ink2"],
+            fontsize=8,
+        )
+    ax.axhline(GROSS_POSE_ERROR_DEG, color=PALETTE["reference"], linewidth=1, linestyle=":")
+    ax.set_yscale("log")
+    ax.set_ylim(POSE_ERROR_RANGE_DEG)
+    ax.yaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(lambda value, _: f"{value:g}"))
+    ax.yaxis.set_minor_formatter(matplotlib.ticker.NullFormatter())
     ax.set_xticks(x, labels)
     ax.set_xlim(-0.6, len(variants) - 0.4)
-    ax.set_title("Direction error of the final poses", color=PALETTE["ink"])
-    ax.set_ylabel("degrees", color=PALETTE["ink2"])
-    ax.margins(y=0.15)
+    ax.set_title("Distribution of the direction error of the final poses", color=PALETTE["ink"], pad=18)
+    ax.set_ylabel("degrees (log scale)", color=PALETTE["ink2"])
 
     bars(
         axes[1, 1],
         "learned_prior_js_bits",
         "Learned prior: divergence from the true prior",
         "JS (bits); fixed runs: estimated, not used",
+        title_pad=18,
     )
 
     style_axes(trace_ax)
@@ -264,9 +321,10 @@ def main(argv: list[str] | None = None) -> None:
     rows = [summary_row(variant, metrics[variant]) for variant in runs]
     curves = {variant: read_gt_curve(directory, metrics[variant]) for variant, directory in runs.items()}
     iteration_curves = {variant: read_iteration_curve(directory) for variant, directory in runs.items()}
+    pose_errors = {variant: read_pose_errors(directory) for variant, directory in runs.items()}
     args.out_dir.mkdir(parents=True, exist_ok=True)
     write_table(rows, args.out_dir / "variants.csv")
-    plot_comparison(rows, curves, iteration_curves, args.label, args.out_dir / "variants.png")
+    plot_comparison(rows, curves, iteration_curves, pose_errors, args.label, args.out_dir / "variants.png")
     for row in rows:
         print(
             f"{row['variant']}: {row['direction_prior']} prior, {row['iterations']} iterations, "

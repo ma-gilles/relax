@@ -301,6 +301,7 @@ rule evaluate_run:
         prior_by_iteration=output_path("{scenario}", "{variant}", "evaluation", "prior_by_iteration.csv"),
         fsc_by_iteration=output_path("{scenario}", "{variant}", "evaluation", "fsc_by_iteration.csv"),
         fsc_curves=output_path("{scenario}", "{variant}", "evaluation", "fsc_curves.csv"),
+        pose_errors=output_path("{scenario}", "{variant}", "evaluation", "pose_errors.npz"),
         summary_figure=output_path("{scenario}", "{variant}", "evaluation", "summary.png"),
     params:
         env=CLEAN_ENV,
@@ -368,6 +369,9 @@ rule compare_variants:
         fsc_by_iteration=lambda wildcards: [
             output_path(wildcards.scenario, v, "evaluation", "fsc_by_iteration.csv")
             for v in SCENARIOS[wildcards.scenario]["variants"]
+        ],
+        pose_errors=lambda wildcards: [
+            output_path(wildcards.scenario, v, "evaluation", "pose_errors.npz") for v in SCENARIOS[wildcards.scenario]["variants"]
         ],
         script=COMPARE_SCRIPT,
     output:

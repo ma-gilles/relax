@@ -253,7 +253,7 @@ def test_direction_prior_used_is_read_from_the_sidecar_relax_writes(tmp_path):
 
 
 def _evaluation(tmp_path, name, *, source, auc, median, js_skill):
-    """A minimal evaluate_run output directory: the metrics and the FSC curve the comparison reads."""
+    """A minimal evaluate_run output directory: the metrics, FSC curves and pose errors the comparison reads."""
     directory = tmp_path / name
     directory.mkdir()
     pose = {"p90": 3 * median, "fraction_over_90": 0.01}
@@ -283,6 +283,8 @@ def _evaluation(tmp_path, name, *, source, auc, median, js_skill):
         writer.writerow(["iteration", "healpix_order", "gt_auc"])
         for iteration, order in enumerate([2, 2, 3, 3, 4], start=1):
             writer.writerow([iteration, order, auc * iteration / 5])
+    errors = np.random.default_rng(0).lognormal(np.log(median), 1.0, size=(2, 200)).clip(max=180.0)
+    np.savez(directory / "pose_errors.npz", half1=errors[0].astype(np.float32), half2=errors[1].astype(np.float32))
     return directory
 
 
@@ -308,6 +310,27 @@ def test_variants_are_compared_in_a_table_and_a_figure(tmp_path):
     frequency, fsc = cmp.read_gt_curve(learned, json.loads((learned / "metrics.json").read_text()))
     assert_matches(frequency, np.arange(5) / (8 * 2.0))
     assert_matches(fsc, [1.0, 0.9, 0.7, 0.4, 0.1])
+
+
+def test_pose_errors_of_both_halves_are_read_in_order(tmp_path):
+    np.savez(tmp_path / "pose_errors.npz", half1=np.array([1.0, 2.0], np.float32), half2=np.array([3.0], np.float32))
+    assert_matches(cmp.read_pose_errors(tmp_path), np.array([1.0, 2.0, 3.0]))
+
+
+def test_error_density_integrates_to_one_and_peaks_at_the_typical_error():
+    errors = 5.0 * 10 ** np.random.default_rng(0).normal(0.0, 0.1, size=20000)
+    grid, density = cmp.error_density(errors)
+    assert np.all(np.diff(np.log10(grid)) > 0)
+    assert_matches(density.sum() * np.log10(grid[1] / grid[0]), 1.0)
+    assert abs(np.log10(grid[np.argmax(density)]) - np.log10(5.0)) < 0.05
+
+
+def test_error_density_keeps_the_mass_beyond_the_ends_of_the_axis():
+    low, high = cmp.POSE_ERROR_RANGE_DEG
+    grid, density = cmp.error_density(np.array([low / 10, high, high]))
+    step = np.log10(grid[1] / grid[0])
+    assert_matches(density.sum() * step, 1.0)
+    assert density[0] > 0 and density[-1] > density[0]
 
 
 def test_runs_are_label_equals_directory():
@@ -347,10 +370,14 @@ def test_iteration_table_is_written_with_empty_cells_for_a_crossing_that_never_h
         "rows": [{"iteration": 1, "half": 1}],
         "iteration_rows": rows,
         "curves": {"half_maps": np.ones(3)},
+        "pose_errors": {1: np.array([0.5, 3.0]), 2: np.array([170.0])},
         "box": 4,
         "voxel": 2.0,
     }
     ev.write_tables(result, tmp_path)
+    with np.load(tmp_path / "pose_errors.npz") as archive:
+        assert_matches(archive["half1"], np.array([0.5, 3.0]))
+        assert_matches(archive["half2"], np.array([170.0]))
     with open(tmp_path / "fsc_by_iteration.csv", newline="") as handle:
         written = list(csv.DictReader(handle))
     assert [r["half_map_resolution_0.143_A"] for r in written] == ["12.0", ""]

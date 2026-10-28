@@ -22,9 +22,10 @@ Run::
 
     python scripts/pose_prior_benchmark/evaluate_run.py --dataset-dir DATASET --run-dir REFINE --out-dir OUT
 
-``OUT`` receives ``metrics.json``, ``prior_by_iteration.csv``, ``fsc_by_iteration.csv``, ``fsc_curves.csv`` and ``summary.png`` (the FSC
-curves and every learned-prior metric per iteration). The orientation-distribution plots are made by the Snakefile with
-``angdist``.
+``OUT`` receives ``metrics.json``, ``prior_by_iteration.csv``, ``fsc_by_iteration.csv``, ``fsc_curves.csv``,
+``pose_errors.npz`` (every particle's final direction error, degrees, one array per half set) and ``summary.png`` (the
+FSC curves and every learned-prior metric per iteration). The orientation-distribution plots are made by the Snakefile
+with ``angdist``.
 """
 
 from __future__ import annotations
@@ -495,6 +496,7 @@ def evaluate(dataset_dir: Path, run_dir: Path) -> dict[str, Any]:
         "rows": rows,
         "iteration_rows": iteration_rows,
         "curves": curves,
+        "pose_errors": errors,
         "voxel": voxel,
         "box": box,
     }
@@ -514,8 +516,13 @@ def jsonable(value: Any) -> Any:
 
 
 def write_tables(result: dict[str, Any], out_dir: Path) -> None:
-    """Write ``metrics.json``, ``prior_by_iteration.csv``, ``fsc_by_iteration.csv`` and ``fsc_curves.csv``."""
+    """Write ``metrics.json``, ``prior_by_iteration.csv``, ``fsc_by_iteration.csv``, ``fsc_curves.csv`` and
+    ``pose_errors.npz``."""
     (out_dir / "metrics.json").write_text(json.dumps(jsonable(result["metrics"]), indent=2) + "\n")
+    np.savez_compressed(
+        out_dir / "pose_errors.npz",
+        **{f"half{half}": e.astype(np.float32) for half, e in result["pose_errors"].items()},
+    )
     rows = result["rows"]
     columns = list(dict.fromkeys(key for row in rows for key in row))
     with open(out_dir / "prior_by_iteration.csv", "w", newline="") as handle:
