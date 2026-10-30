@@ -6,6 +6,7 @@ Every update scores the full pose grid of its stage (no oversampling; section 14
 off, on the host-mask dense engine that serves as its float32 reference (q <= 2).
 """
 
+import concurrent.futures
 import dataclasses
 import functools
 import json
@@ -80,6 +81,46 @@ def _direction_ids(hp):
     direction_ids = grids.rotation_direction_ids(hp, rotation_index_order="relion")
     direction_ids.flags.writeable = False
     return direction_ids
+
+
+class _ModelLog:
+    """Appends the per-update lines of ``iterations.jsonl`` on one background thread, in update order.
+
+    A line's model diagnostics (singular values of the loadings, mean and loading power) come from a host copy
+    of that update's theta and the host SVD, about 0.1 s at box 128; on the thread they overlap the next update's
+    E-step. ``wait`` returns once every appended line is written (raising a writer's error); ``close`` also stops
+    the thread.
+    """
+
+    def __init__(self, path):
+        self.path = path
+        self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="ppca-log")
+        self.pending = []
+
+    def append(self, diagnostics, theta):
+        self.pending.append(self.executor.submit(self._write, diagnostics, theta))
+
+    def _write(self, diagnostics, theta):
+        theta_host = np.asarray(theta)
+        loadings = np.ascontiguousarray(theta_host[:, 1:])
+        diagnostics.update(
+            loading_singular_values=np.linalg.svd(loadings, compute_uv=False),
+            mean_power=float(np.sum(np.abs(np.ascontiguousarray(theta_host[:, 0])) ** 2)),
+            loading_power=float(np.sum(np.abs(loadings) ** 2)),
+        )
+        with open(self.path, "a") as stream:
+            stream.write(json.dumps(diagnostics, default=_json) + "\n")
+
+    def wait(self):
+        pending, self.pending = self.pending, []
+        for future in pending:
+            future.result()
+
+    def close(self):
+        try:
+            self.wait()
+        finally:
+            self.executor.shutdown(wait=True)
 
 
 # The statistics over the half volume, one array per tile: a group's sum is kept running (TileSums).
@@ -550,6 +591,7 @@ def run(
     radii = np.asarray(ftu.get_grid_of_radial_distances_real(dataset.volume_shape, rounded=False)).reshape(-1)
     end = config.iterations if stop_after is None else min(config.iterations, stop_after)
     stage_tile_sizes = {}  # compiled tile shapes seen per stage (radius, HEALPix order)
+    log = _ModelLog(output / "iterations.jsonl")
     for iteration in range(state.iteration + 1, end + 1):
         started = time.monotonic()
         count, step, fudge = config.schedule(iteration, dataset.n_images)
@@ -652,10 +694,8 @@ def run(
             or (momentum is not None and momentum.dtype != jnp.complex64)
         ):
             raise TypeError("Non-float32 production model/moments")
-        theta_host = np.asarray(theta)  # one copy for the finite check and the model diagnostics below
-        if not np.all(np.isfinite(theta_host)):
+        if not bool(jnp.all(jnp.isfinite(theta))):
             raise ValueError("Nonfinite PPCA model")
-        loadings_host = np.ascontiguousarray(theta_host[:, 1:])
         hp = config.stage(iteration)[1]
         direction_ids = _direction_ids(hp)
         masses = sum(np.asarray(result.diagnostics["rotation_mass"]) for result in stats)
@@ -707,9 +747,10 @@ def run(
                 "fudge": fudge,
                 "noise": noise,
                 "metric": metric_info,
-                "loading_singular_values": np.linalg.svd(loadings_host, compute_uv=False),
-                "mean_power": float(np.sum(np.abs(np.ascontiguousarray(theta_host[:, 0])) ** 2)),
-                "loading_power": float(np.sum(np.abs(loadings_host) ** 2)),
+                # Filled from the model by the log writer (_ModelLog).
+                "loading_singular_values": None,
+                "mean_power": None,
+                "loading_power": None,
                 "posterior": [
                     {
                         key: s.diagnostics.get(key)
@@ -746,14 +787,15 @@ def run(
             # The full angular prior is checkpointed in State. Large stochastic
             # sweeps can omit its per-update JSON duplicate without changing it.
             diagnostics.pop("direction_prior")
-        with open(output / "iterations.jsonl", "a") as stream:
-            stream.write(json.dumps(diagnostics, default=_json) + "\n")
+        log.append(diagnostics, theta)
         # A stop request ends the run after this iteration's checkpoint, whatever the checkpoint interval.
         stop = stop_file is not None and Path(stop_file).exists()
         if stop or iteration % config.checkpoint_interval == 0 or iteration == end:
+            log.wait()  # the checkpoint's iteration is logged first
             checkpoint.save(output / f"checkpoint_{iteration:04d}.npz", state, config, identity)
         if stop:
             break
+    log.close()
     if state.iteration == config.iterations and not config.skip_final_embeddings:
         ids = np.arange(dataset.n_images)
         final = expectation(
