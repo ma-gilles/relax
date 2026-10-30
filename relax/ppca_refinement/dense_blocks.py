@@ -84,6 +84,18 @@ def coerce_augmented_half_volumes(
 
     volume_shape = tuple(int(x) for x in volume_shape)
     half_size = int(np.prod(ftu.volume_shape_to_half_volume_shape(volume_shape)))
+    if (
+        volume_domain in ("auto", "fourier_half")
+        and isinstance(mu, jax.Array)
+        and isinstance(W, jax.Array)
+        and mu.size == half_size
+        and W.ndim == 2
+        and W.shape[0] == half_size
+        and (q is None or int(q) == W.shape[1])
+    ):
+        # Device half-Fourier model (the InitialModel's theta columns): stack it on the device, the values of the
+        # host round trip below without the copy.
+        return jnp.concatenate([mu.reshape(1, -1), W.T]).astype(jnp.complex64), int(W.shape[1])
     mu_half = _coerce_one_volume_to_half(mu, volume_shape, volume_domain=volume_domain)
     if W is None:
         q_resolved = 0 if q is None else int(q)

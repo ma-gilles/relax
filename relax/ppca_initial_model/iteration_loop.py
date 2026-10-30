@@ -18,7 +18,6 @@ import jax.numpy as jnp
 import numpy as np
 from recovar.core import fourier_transform_utils as ftu
 from recovar.ppca.pose_accumulators import AugmentedPPCAStats
-from recovar.ppca.triangular import unpack_tri_to_full
 from recovar.reconstruction.noise import make_radial_noise
 
 from relax.ppca_initial_model import checkpoint
@@ -585,6 +584,7 @@ def run(
             coverage = []
             # The update's own support: the rows bandlimit_and_mask keeps below.
             support = radii <= radius
+            diagonal = np.flatnonzero(np.equal(*np.triu_indices(config.q + 1)))  # packed diagonal entries
             for half, result in enumerate(stats):
                 try:
                     direction, info = coupled_direction(
@@ -602,7 +602,7 @@ def run(
                     raise
                 directions.append(direction)
                 metric_info.append(info)
-                covered = jnp.trace(unpack_tri_to_full(result.lhs_tri, config.q + 1), axis1=-2, axis2=-1) > 0
+                covered = jnp.sum(jnp.asarray(result.lhs_tri)[:, diagonal], axis=-1) > 0  # the metric's trace
                 coverage.append(covered & jnp.asarray(support))
             theta, moments, diagnostics = stochastic_update(
                 state.theta,
@@ -652,8 +652,10 @@ def run(
             or (momentum is not None and momentum.dtype != jnp.complex64)
         ):
             raise TypeError("Non-float32 production model/moments")
-        if not np.all(np.isfinite(np.asarray(theta))):
+        theta_host = np.asarray(theta)  # one copy for the finite check and the model diagnostics below
+        if not np.all(np.isfinite(theta_host)):
             raise ValueError("Nonfinite PPCA model")
+        loadings_host = np.ascontiguousarray(theta_host[:, 1:])
         hp = config.stage(iteration)[1]
         direction_ids = _direction_ids(hp)
         masses = sum(np.asarray(result.diagnostics["rotation_mass"]) for result in stats)
@@ -705,9 +707,9 @@ def run(
                 "fudge": fudge,
                 "noise": noise,
                 "metric": metric_info,
-                "loading_singular_values": np.linalg.svd(np.asarray(theta[:, 1:]), compute_uv=False),
-                "mean_power": float(np.sum(np.abs(np.asarray(theta[:, 0])) ** 2)),
-                "loading_power": float(np.sum(np.abs(np.asarray(theta[:, 1:])) ** 2)),
+                "loading_singular_values": np.linalg.svd(loadings_host, compute_uv=False),
+                "mean_power": float(np.sum(np.abs(np.ascontiguousarray(theta_host[:, 0])) ** 2)),
+                "loading_power": float(np.sum(np.abs(loadings_host) ** 2)),
                 "posterior": [
                     {
                         key: s.diagnostics.get(key)

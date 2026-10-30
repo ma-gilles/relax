@@ -5,6 +5,8 @@ of positive-minus-half-negative blob fields; q+1 fields map to one mean and
 q normalized Helmert contrasts. Native double bootstrap is not called.
 """
 
+import functools
+
 import jax.numpy as jnp
 import numpy as np
 from recovar import core
@@ -52,14 +54,19 @@ def support_mask(n, diameter_px, edge=5):
     return jnp.asarray(1.0 - soft_mask_weights((n, n, n), diameter_px / 2, edge), jnp.float32)
 
 
+@functools.lru_cache(maxsize=8)
+def _spherical_support(shape, radius):
+    """``(half volume, 1)`` float32 indicator of the frequencies within ``radius``; built once per stage."""
+    radii = ftu.get_grid_of_radial_distances_real(shape, rounded=False).reshape(-1)
+    return jnp.asarray((radii <= radius)[:, None], jnp.float32)
+
+
 def bandlimit_and_mask(theta, shape, radius, mask):
     """Common real-space mask and common spherical support for all channels."""
     half_shape = ftu.volume_shape_to_half_volume_shape(shape)
     real = ftu.get_idft3_real(theta.T.reshape((-1,) + half_shape), shape)
     spectrum = ftu.get_dft3_real(real * mask).reshape(theta.shape[1], -1).T
-    radii = ftu.get_grid_of_radial_distances_real(shape, rounded=False).reshape(-1)
-    active = radii <= radius
-    return spectrum * jnp.asarray(active[:, None], spectrum.real.dtype)
+    return spectrum * _spherical_support(tuple(int(n) for n in shape), radius).astype(spectrum.real.dtype)
 
 
 def _blob_field(amplitude, diameter, rng):
