@@ -12,6 +12,10 @@ natives_dir: null
 # Python of a relax pixi environment. null: <checkout>/.pixi/envs/default/bin/python.
 python: null
 
+# The owner's plotting script (latents by true state, volume projections, VDAM gates); it runs on the CPU and reads
+# a run's last checkpoint, embeddings.npz and iterations.jsonl.
+plot_script: /scratch/gpfs/CRYOEM/gilleslab/ry2228/data/ppca_scripts/plot_ppca_run.py
+
 # Curated eleven-state fixture: training/particles.star is what training reads, evaluation/truth.npz holds the
 # labels (evaluation only).
 fixture: /scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/ppca_elevenstate20k_noise1_20261003
@@ -32,41 +36,26 @@ seeds: [11, 12, 13]
 only_arms: null
 
 # One entry per arm; `args` is appended verbatim to the training command (a repeated flag wins over the shared
-# settings above) and `runtime_minutes` overrides the Slurm request.
+# settings above) and `runtime_minutes` overrides the Slurm request. The arms of rounds 1 to 3 that are no longer run
+# (a PC joining at 200, 400 or 480, staggered PCs, radius 8, HEALPix order 4 in the radius-16 stage) are in the history
+# of this file and their settings are in docs/math/vdam_ppca_algorithm.md, sections 18.4 and 18.5.
 arms:
-  control:
-    args: ["--tau2-fudge", "1"]                 # all PCs from the first update, fudge 1 as the owner's runs
-  pc_at_200:
-    args: ["--tau2-fudge", "1", "--pc-stages", "[[1,0],[200,1]]"]
-  pc_at_400:
-    args: ["--tau2-fudge", "1", "--pc-stages", "[[1,0],[400,1]]"]
-  pc_at_480:
-    args: ["--tau2-fudge", "1", "--pc-stages", "[[1,0],[480,1]]"]
-  r8_control:                                   # the radius-8 end of the owner's comparison
-    args: ["--tau2-fudge", "1", "--stages", "[[1,4,3],[200,8,3]]"]
-  r8_pc_at_200:
-    args: ["--tau2-fudge", "1", "--stages", "[[1,4,3],[200,8,3]]", "--pc-stages", "[[1,0],[200,1]]"]
-  hp4_r16:                                      # radius 16 on an 8 times finer rotation grid (3.75 degrees)
-    args: ["--tau2-fudge", "1", "--stages", "[[1,4,3],[200,8,3],[400,16,4]]"]
-    runtime_minutes: 90
-  hp4_r16_pc_at_480:
-    args: ["--tau2-fudge", "1", "--stages", "[[1,4,3],[200,8,3],[400,16,4]]", "--pc-stages", "[[1,0],[480,1]]"]
-    runtime_minutes: 90
-  # Longer runs (1200 iterations, the same radius table) with up to three PCs joining one after another.
+  # The stages table, fudge 1 as the owner's runs: radius 4, 8, 16 from iterations 1, 200, 400, HEALPix order 3.
+  control:                                      # 600 iterations
+    args: ["--tau2-fudge", "1"]
   long_q1_control:
     args: ["--tau2-fudge", "1", "--iterations", "1200"]
-    runtime_minutes: 90
-  long_q1_pc_at_480:
-    args: ["--tau2-fudge", "1", "--iterations", "1200", "--pc-stages", "[[1,0],[480,1]]"]
     runtime_minutes: 90
   long_q3_control:
     args: ["--tau2-fudge", "1", "--iterations", "1200", "--q", "3"]
     runtime_minutes: 240
-  long_q3_every_120:                            # first PC at 480, then one more every 120 iterations
-    args: ["--tau2-fudge", "1", "--iterations", "1200", "--q", "3", "--pc-stages", "[[1,0],[480,1],[600,2],[720,3]]"]
-    runtime_minutes: 240
-  long_q3_every_240:
-    args: ["--tau2-fudge", "1", "--iterations", "1200", "--q", "3", "--pc-stages", "[[1,0],[480,1],[720,2],[960,3]]"]
+  # The same table at 2400 iterations: VDAM's batch ramp and step decay stretch with --iterations. A checkpoint every
+  # 10 iterations (the last is always written) keeps these long runs at a tenth of the disk.
+  table_q1_2400:
+    args: ["--tau2-fudge", "1", "--iterations", "2400", "--checkpoint-interval", "10"]
+    runtime_minutes: 150
+  table_q3_2400:
+    args: ["--tau2-fudge", "1", "--iterations", "2400", "--q", "3", "--checkpoint-interval", "10"]
     runtime_minutes: 240
   # RELION's data_vs_prior radius (--radius-rule): the stages table gives only the first radius and the order.
   dvp_600:
@@ -78,3 +67,39 @@ arms:
   dvp_q3_1200:
     args: ["--tau2-fudge", "1", "--stages", "[[1,4,3]]", "--radius-rule", "data_vs_prior", "--iterations", "1200", "--q", "3"]
     runtime_minutes: 240
+  dvp_2400:
+    args: ["--tau2-fudge", "1", "--stages", "[[1,4,3]]", "--radius-rule", "data_vs_prior", "--iterations", "2400", "--checkpoint-interval", "10"]
+    runtime_minutes: 180
+  dvp_1200_incr5:                               # --incr-size 5 (RELION's is 10)
+    args: ["--tau2-fudge", "1", "--stages", "[[1,4,3]]", "--radius-rule", "data_vs_prior", "--incr-size", "5", "--iterations", "1200", "--checkpoint-interval", "10"]
+    runtime_minutes: 120
+  dvp_1200_incr20:
+    args: ["--tau2-fudge", "1", "--stages", "[[1,4,3]]", "--radius-rule", "data_vs_prior", "--incr-size", "20", "--iterations", "1200", "--checkpoint-interval", "10"]
+    runtime_minutes: 150
+  # InitialModel's own fudge schedule (no --tau2-fudge): 1 until 30% of the run, then up to 4 by about 42%.
+  long_q1_default_fudge:
+    args: ["--iterations", "1200", "--checkpoint-interval", "10"]
+    runtime_minutes: 90
+  dvp_1200_default_fudge:
+    args: ["--stages", "[[1,4,3]]", "--radius-rule", "data_vs_prior", "--iterations", "1200", "--checkpoint-interval", "10"]
+    runtime_minutes: 120
+  dvp_q3_1200_default_fudge:
+    args: ["--stages", "[[1,4,3]]", "--radius-rule", "data_vs_prior", "--iterations", "1200", "--q", "3", "--checkpoint-interval", "10"]
+    runtime_minutes: 240
+  # A finer HEALPix order from iteration 700, after the pose-entropy step of dvp_1200 (iteration 600 to 691). The
+  # table's radius of the second row is not read under data_vs_prior. Until iteration 699 the run is dvp_1200's.
+  # Order 5 is not an arm: at radius 29 and a batch of 2000 an iteration takes 190 s against 1.8 s at order 3.
+  dvp_1200_hp4_at_700:                          # order 4: 3.75 degrees
+    args: ["--tau2-fudge", "1", "--stages", "[[1,4,3],[700,4,4]]", "--radius-rule", "data_vs_prior", "--iterations", "1200", "--checkpoint-interval", "10"]
+    runtime_minutes: 360
+
+  # The accuracy order rule (docs/math/vdam_ppca_algorithm.md 4.1, 18.10): every 10 iterations the expected rotation
+  # accuracy of the PPCA model sets the next order (one finer while the angular step is at least 75% of it, up to
+  # --order-max); the final embedding pass takes the first order from there that is fine enough, up to
+  # --final-order-max. The table's first order starts the run; its later rows are not read.
+  acc_1200_start3:
+    args: ["--tau2-fudge", "1", "--stages", "[[1,4,3]]", "--radius-rule", "data_vs_prior", "--iterations", "1200", "--order-rule", "accuracy", "--order-max", "4", "--final-order-max", "5", "--checkpoint-interval", "10"]
+    runtime_minutes: 300
+  acc_1200_start1:                              # RELION's start order for InitialModel
+    args: ["--tau2-fudge", "1", "--stages", "[[1,4,1]]", "--radius-rule", "data_vs_prior", "--iterations", "1200", "--order-rule", "accuracy", "--order-max", "4", "--final-order-max", "5", "--checkpoint-interval", "10"]
+    runtime_minutes: 300

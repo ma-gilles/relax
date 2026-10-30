@@ -1,12 +1,16 @@
 # PPCA schedule experiments: does a mean-only start, with PCs joining later, separate the states better?
 #
-# Per arm and seed (config.yaml: `arms`, `seeds`), three stages:
+# Per arm and seed (config.yaml: `arms`, `seeds`), four stages:
 #   1. train_ppca     relax ppca_initial_model on the eleven-state fixture with the arm's schedule flags.   [GPU]
 #   2. score_latents  how well the final latents separate the true states (scripts/analyze_ppca_latents.py).
-#   3. summary_table  one row per arm and seed: the scores of every run.
+#   3. plot_run       the standard run figures: latents by true state, volume projections, VDAM gates
+#                     (the owner's plot_ppca_run.py, config `plot_script`).
+#   4. summary_table  one row per arm and seed: the scores of every run.
 #
 # Outputs, under config `output_root`:
 #   <arm>/seed<seed>/     checkpoint_NNNN.npz, iterations.jsonl, run.json, embeddings.npz, latent_scores.json
+#   <arm>/seed<seed>/plots/   pc_histogram.png (q = 1) or pc_scatter.png and pc_density.png (q > 1),
+#                         volume_projections.png, gates_spectrogram.png, latents_pc_ordered.npz
 #   summary.tsv           the scores of every arm and seed
 #   logs/                 one log per rule, arm and seed
 #
@@ -45,6 +49,7 @@ PYTHON = config["python"] or str(REPO / ".pixi/envs/default/bin/python")
 OUTPUT_ROOT = required_path("output_root")
 NATIVES = required_path("natives_dir")
 FIXTURE = Path(config["fixture"])
+PLOT_SCRIPT = Path(config["plot_script"])
 TRAIN = config["train"]
 ARMS = config["arms"]
 RUN_ARMS = config["only_arms"] or list(ARMS)
@@ -54,6 +59,12 @@ SEEDS = config["seeds"]
 # environment sets, this checkout on the import path, and the native library built from it for the GPU rule.
 CLEAN_ENV = f"env -u PYTHONHOME -u CONDA_PREFIX -u VIRTUAL_ENV PYTHONNOUSERSITE=1 PYTHONPATH={REPO}"
 RUN_ENV = f"{CLEAN_ENV} RELAX_CUDA_LIB={NATIVES}/librelax_cuda.so"
+
+
+def arm_q(arm):
+    """The number of PCs an arm trains: its own --q, else the shared one."""
+    args = [str(a) for a in ARMS[arm]["args"]]
+    return int(args[args.index("--q") + 1]) if "--q" in args else int(TRAIN["q"])
 
 
 def output_path(*parts):
@@ -69,13 +80,15 @@ wildcard_constraints:
 localrules:
     all,
     score_latents,
+    plot_run,
     summary_table,
 
 
 rule all:
-    """Train and score every arm and seed, then write the summary table."""
+    """Train, score and plot every arm and seed, then write the summary table."""
     input:
         summary=output_path("summary.tsv"),
+        plots=expand(output_path("{arm}", "seed{seed}", "plots", "volume_projections.png"), arm=RUN_ARMS, seed=SEEDS),
 
 
 # ----------------------------------------------------------------------------------------------------------------
@@ -144,7 +157,44 @@ rule score_latents:
 
 
 # ----------------------------------------------------------------------------------------------------------------
-# Stage 3: summary
+# Stage 3: figures
+# ----------------------------------------------------------------------------------------------------------------
+
+
+rule plot_run:
+    message:
+        "Plotting the latents, volumes and gates of arm {wildcards.arm}, seed {wildcards.seed}"
+    input:
+        embeddings=rules.train_ppca.output.embeddings,
+        iterations=rules.train_ppca.output.iterations,
+        truth=FIXTURE / "evaluation" / "truth.npz",
+        script=PLOT_SCRIPT,
+    output:
+        volumes=output_path("{arm}", "seed{seed}", "plots", "volume_projections.png"),
+        gates=output_path("{arm}", "seed{seed}", "plots", "gates_spectrogram.png"),
+        latents=output_path("{arm}", "seed{seed}", "plots", "latents_pc_ordered.npz"),
+    params:
+        env=CLEAN_ENV,
+        python=PYTHON,
+        n_pcs=lambda wildcards: arm_q(wildcards.arm),
+        script_dir=lambda wildcards, input: str(Path(input.script).parent),
+        run_dir=lambda wildcards, input: str(Path(input.embeddings).parent),
+        plots_dir=lambda wildcards, output: str(Path(output.volumes).parent),
+    log:
+        output_path("logs", "{arm}.seed{seed}.plot.log"),
+    shell:
+        "cd {params.script_dir} && "
+        "{params.env} JAX_PLATFORMS=cpu {params.python} {input.script} {params.run_dir} "
+        "--labels {input.truth} "
+        "--n-pcs {params.n_pcs} "
+        "--skip-umap "
+        "--gates "
+        "-o {params.plots_dir} "
+        "> {log} 2>&1"
+
+
+# ----------------------------------------------------------------------------------------------------------------
+# Stage 4: summary
 # ----------------------------------------------------------------------------------------------------------------
 
 
