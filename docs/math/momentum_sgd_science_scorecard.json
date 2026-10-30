@@ -7,7 +7,6 @@
   "posterior_semantics": "The metadata key class_posterior_sums_full denotes the full pass2 distribution AFTER significant coarse selection. It is not the global full coarse posterior over all candidates; discarded coarse mass was not saved. Reconstruction-retained mass is separate.",
   "source_files": {
     "r1": {
-      "path": "/scratch/gpfs/CRYOEM/gilleslab/em_work/cryosparc_sgd_coarse_20260928/analysis_full_r1/evaluation_pose_v4.json",
       "sha256": "70e20936fab8c3d0cc0604ff111250e4a9fbba999f653dcc18dcf3bdfb1db385",
       "source_head": "b7845eff31fe2b5166ae885be7161c7a721ec087",
       "evaluator_script_sha256": null,
@@ -16,7 +15,6 @@
       "original_evaluation_sha256": "39c30b69afa32a8701f4d2109cbc9d7ce270f84d2da5069a23c00dbbaf66739d"
     },
     "r2": {
-      "path": "/scratch/gpfs/CRYOEM/gilleslab/em_work/cryosparc_sgd_coarse_20260928/analysis_full_r2/evaluation_pose_v4.json",
       "sha256": "d6510def0d0ec550bcb7cdc468fa4e22b18355608ad7ceb92a22a64ea0d40a13",
       "source_head": "5023d91132241bb2c870c364045c8f7848686d88",
       "evaluator_script_sha256": "22b6994de1d64fdc30ee84c85f382e4b9916a8a2fcf4d829f4805d4a16658cc9",
@@ -25,7 +23,6 @@
       "original_evaluation_sha256": "ae81b0a6757ee46f8ff78bb71f7078d8931e0911db53a1381b1068e84dc0693f"
     },
     "r3": {
-      "path": "/scratch/gpfs/CRYOEM/gilleslab/em_work/cryosparc_sgd_coarse_20260928/analysis_full_r3/evaluation_pose_v4.json",
       "sha256": "e753bc57dd5904c37072df655053000268c4693c2c3f4620fee1fb07d4d8f96d",
       "source_head": "f81e815e33b160511526a580e48905bb3c8ae229",
       "evaluator_script_sha256": "57d5ec81ec7b121b46592c70db5cc9cb09427e515c3a7e4b8cc2ef5beff92a9c",
@@ -35,11 +32,9 @@
     }
   },
   "native_pose_proof": {
-    "path": "/scratch/gpfs/CRYOEM/gilleslab/em_work/cryosparc_sgd_coarse_20260928/analysis_pose_bridge/native_boundary.json",
     "sha256": "984f9d44f2c1822a1ab6aab9c083a20c58426cd702bc346446227a67b6a60aa1"
   },
   "separate_coarse_mass_diagnostic": {
-    "path": "/scratch/gpfs/CRYOEM/gilleslab/em_work/cryosparc_sgd_coarse_20260928/analysis_coarse_mass/mass.json",
     "sha256": "3cee4ed34bfbfaa8ebc6f383c822b1f3df36f60ac6b300c6bb9f06736ed980e5",
     "timing_scope": "separate instrumentation run; excluded from paired r3 timing"
   },
@@ -123,7 +118,7 @@
     {
       "round": "r1",
       "seed": 11,
-      "arm": "cryosparc_sgd",
+      "arm": "momentum_sgd",
       "checkpoint_iteration": 600,
       "source_head": "b7845eff31fe2b5166ae885be7161c7a721ec087",
       "source_diff_head_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
@@ -271,7 +266,7 @@
     {
       "round": "r1",
       "seed": 12,
-      "arm": "cryosparc_sgd",
+      "arm": "momentum_sgd",
       "checkpoint_iteration": 600,
       "source_head": "b7845eff31fe2b5166ae885be7161c7a721ec087",
       "source_diff_head_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
@@ -427,7 +422,7 @@
     {
       "round": "r2",
       "seed": 11,
-      "arm": "cryosparc_sgd",
+      "arm": "momentum_sgd",
       "checkpoint_iteration": 600,
       "source_head": "5023d91132241bb2c870c364045c8f7848686d88",
       "source_diff_head_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
@@ -591,7 +586,7 @@
     {
       "round": "r2",
       "seed": 12,
-      "arm": "cryosparc_sgd",
+      "arm": "momentum_sgd",
       "checkpoint_iteration": 600,
       "source_head": "5023d91132241bb2c870c364045c8f7848686d88",
       "source_diff_head_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
@@ -755,7 +750,7 @@
     {
       "round": "r3",
       "seed": 11,
-      "arm": "cryosparc_sgd",
+      "arm": "momentum_sgd",
       "checkpoint_iteration": 600,
       "source_head": "f81e815e33b160511526a580e48905bb3c8ae229",
       "source_diff_head_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
@@ -919,7 +914,7 @@
     {
       "round": "r3",
       "seed": 12,
-      "arm": "cryosparc_sgd",
+      "arm": "momentum_sgd",
       "checkpoint_iteration": 600,
       "source_head": "f81e815e33b160511526a580e48905bb3c8ae229",
       "source_diff_head_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",

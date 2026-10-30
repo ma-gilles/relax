@@ -38,13 +38,13 @@ def _write_reference_volumes(output_dir, grid_size):
 
     Two pairs of files are written:
 
-    * ``reference_init.mrc`` / ``reference_gt.mrc`` — recovar / cryoSPARC /
-      cryoDRGN axis convention. These are read by recovar via ``load_mrc``
+    * ``reference_init.mrc`` / ``reference_gt.mrc`` — recovar / cryoDRGN axis
+      convention. These are read by recovar via ``load_mrc``
       and used by recovar's refinement and FSC scripts.
 
     * ``reference_init_relion.mrc`` / ``reference_gt_relion.mrc`` — RELION
       axis convention (``write_relion_mrc``). RELION reads MRC files raw
-      and expects this frame; passing the cryosparc-frame file causes
+      and expects this frame; passing the recovar-frame file causes
       RELION to refine into the antipode basin (median pose error ~133°,
       see commit history around 2026-04-08). The RELION reference run
       must use ``--ref reference_init_relion.mrc``.

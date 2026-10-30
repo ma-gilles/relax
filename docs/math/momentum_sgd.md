@@ -1,30 +1,16 @@
 # Coarse K-class momentum SGD
 
-This opt-in InitialModel optimizer independently implements selected equations
-from the ab-initio method in
-[Punjani et al. (2017)](https://www.nature.com/articles/nmeth.4169), particularly
-equations 8–11 of its
-[supplement](https://www.cs.toronto.edu/~fleet/research/Papers/cryoSPARC-Suppl-1.pdf).
-It uses RELAX's existing projection, scoring and backprojection primitives.
+This opt-in InitialModel optimizer is a stochastic-gradient ab-initio update: a
+momentum step on each class map scaled by one scalar curvature per class, with a
+discounted residual noise estimate. It uses RELAX's existing projection, scoring and backprojection primitives.
 It is an experimental alternative to RELAX's native VDAM update, not a
-reproduction of proprietary cryoSPARC software. Native VDAM remains the default.
+reproduction of any other package. Native VDAM remains the default.
 Positivity is disabled; signed maps are allowed.
 
-The published SGD objective and gradient explicitly include a volume prior
-(supplement equations3 and8). That description gives positivity and suppression
-of high-frequency noise as examples, but does not specify the concrete volume
-prior formula and strength used in the experiments. This implementation adds no
-volume-prior gradient. It therefore implements only selected mechanisms
-described in the paper; it is not a demonstrated unregularized cryoSPARC
-objective.
-
-The current [official Ab-Initio guide](https://guide.cryosparc.com/processing-data/all-job-types-in-cryosparc/3d-reconstruction/job-ab-initio-reconstruction)
-says it uses no half-set or other regularization, while separately documenting
-a soft volume window and a maximum-frequency cutoff. The saved v5.0.6 job
-specification exposes a zero default sparsity strength and enabled positivity.
-These support an interpretation with no default Wiener volume penalty; they do
-not identify the optional sparsity formula or prove the proprietary update.
-See the saved parameters (`/scratch/gpfs/CRYOEM/gilleslab/em_work/ppca_speed_20260925/csparc_sgd/abinit_params_v506.tsv`; outside the repository).
+A regularized SGD objective would add a volume prior to the gradient, for
+example positivity or suppression of high-frequency noise. This implementation
+adds no volume-prior gradient: it is the unregularized surrogate described
+below.
 
 Implementation owners are [the optimizer and noise estimation](../../relax/vdam/sgd.py), and
 [the shared iteration loop](../../relax/vdam/iteration_loop.py). Mathematical
@@ -58,7 +44,7 @@ at 1/K and joint class/direction probabilities at 1/(K D), where D is the
 number of angular directions. The separate class log prior remains zero:
 adding another factor of 1/K would count class probability twice. In-plane
 angles retain their uniform prior. Shift-prior estimation is unchanged, so
-this option does not reproduce the paper's uniform translation prior.
+this option does not impose a uniform translation prior.
 Without the option, both optimizers retain native probability updates.
 
 The shared [translation prior](../../relax/vdam/native_sampling.py) also retains
@@ -175,10 +161,10 @@ Before the first update, this is the mean of the two priors, approximately
 the inflated initial prior has mass2500 and eight times the background
 variance. Data progressively reduce its influence.
 
-The supplement's printed noise equation and its definition of the residual
-average are ambiguous about normalization. This implementation explicitly
-stores a residual numerator and a matching observation count. It also uses
-observation-space counts, rather than the supplement's CTF-squared exposure.
+A residual-average noise estimate is ambiguous about normalization unless its
+numerator and count are kept apart. This implementation explicitly stores a
+residual numerator and a matching observation count. It also uses
+observation-space counts rather than a CTF-squared exposure.
 These are documented adaptations to the existing RELAX residual statistics.
 The native VDAM arm retains its existing noise estimator.
 

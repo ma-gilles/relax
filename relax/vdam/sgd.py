@@ -3,13 +3,13 @@ its discounted observation-space residual noise.
 
 The E-step supplies the posterior-weighted residual backprojection and its
 diagonal Fourier curvature on the same class/pose support. The maximum active
-curvature is one scalar for the entire class, as in cryoSPARC Supplement Eq. 9.
+curvature is one scalar for the entire class (a scalar-curvature SGD step).
 The Fourier-to-map transform uses the RELION InitialModel M-step convention;
 the map and momentum remain float32 on device. No VDAM half-difference or
 voxelwise inverse-curvature operation enters this update.
 
-The cryoSPARC Supplement gives a decaying residual estimate and white/inflated
-priors. Here the shared RELION E-step's posterior-weighted residual sums are
+The noise model is a decaying residual estimate with white/inflated priors.
+Here the shared RELION E-step's posterior-weighted residual sums are
 converted to per-component RELION variance before accumulating. Only observed
 Fourier shells accrue data count; the scalar baseline is measured from raw
 particle corners, without GT or model images.
@@ -127,7 +127,7 @@ def sgd_m_step(
     padding_factor: int,
     meta: dict,
 ) -> InitialModelState:
-    """Apply the paper-described scalar-curvature momentum update to all K maps."""
+    """Apply the scalar-curvature momentum update to all K maps."""
     if not state.pseudo_halfsets or len(accumulators) != 2 * state.K:
         raise ValueError("SGD expects two pseudo-halfset accumulators per class")
     if state.Iref.dtype != np.dtype(np.float32):

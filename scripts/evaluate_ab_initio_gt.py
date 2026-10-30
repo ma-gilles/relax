@@ -2,7 +2,7 @@
 """Evaluate ab-initio / InitialModel MRC outputs against a GT map.
 
 Native InitialModel writes RELION-frame MRCs, while benchmark GT maps are
-usually stored in recovar/cryoSPARC frame.  This script makes the frame choice
+usually stored in the recovar frame (the reference frame used by other tools).  This script makes the frame choice
 explicit and reports both raw and alignment-aware GT metrics.
 """
 

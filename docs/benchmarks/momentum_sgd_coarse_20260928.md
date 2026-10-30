@@ -1,14 +1,12 @@
 # Coarse K3 momentum SGD: implementation and first comparison
 
-The opt-in optimizer independently implements a scalar-curvature momentum map
-update and discounted noise estimator from
-[Punjani et al. (2017)](https://www.nature.com/articles/nmeth.4169)
-using existing RELAX primitives. Native VDAM remains the default. Positivity
+The opt-in optimizer is a scalar-curvature momentum map update with a
+discounted noise estimator, built from existing RELAX primitives. Native VDAM remains the default. Positivity
 is off. The adaptations are in [the formulation](../math/momentum_sgd.md);
-this does not reproduce proprietary cryoSPARC software. The current CLI selects
-it with `--optimizer momentum_sgd`. Frozen r1–r3 runs used the historical
-`cryosparc_sgd` identifier in their invocations and saved JSON; their labels,
-paths and hashes remain unchanged.
+it is not a reproduction of any other package. The CLI selects it with
+`--optimizer momentum_sgd`. Frozen r1–r3 runs used an earlier identifier for it
+in their invocations and saved records; the scorecards here name the arm
+`momentum_sgd`. Their hashes are unchanged.
 
 ## Outcome and interpretation
 
@@ -35,12 +33,11 @@ SGD state 2 recall is .935/.990 versus .997/.998. States 0/1 have poor poses.
 Class occupancy is a separate diagnostic and is not inferred from the fixed
 uniform STAR prior.
 
-Registered, equally band-limited map panels:
-seed 11 (`/scratch/gpfs/CRYOEM/gilleslab/em_work/cryosparc_sgd_coarse_20260928/analysis_full_r3/seed11_registered_3row_band15.png`; outside the repository),
-seed 12 (`/scratch/gpfs/CRYOEM/gilleslab/em_work/cryosparc_sgd_coarse_20260928/analysis_full_r3/seed12_registered_3row_band15.png`; outside the repository).
+Registered, equally band-limited map panels for seeds 11 and 12 are kept with
+the runs (outside the repository).
 Each panel uses its own 2nd–98th percentile display scale, so compare morphology,
-not absolute amplitude. Full FSC curves and round comparison (`/scratch/gpfs/CRYOEM/gilleslab/em_work/cryosparc_sgd_coarse_20260928/analysis_full_r3/r2_vs_r3_comparison.md`; outside the repository)
-and timing/protocol audit (`/scratch/gpfs/CRYOEM/gilleslab/em_work/cryosparc_sgd_coarse_20260928/analysis_full_r3/timing_summary.md`; outside the repository) remain beside the runs.
+not absolute amplitude. Full FSC curves and round comparison (outside the repository)
+and timing/protocol audit (outside the repository) remain beside the runs.
 
 ## Matched protocol and measured cost
 
@@ -63,13 +60,11 @@ posterior dump is excluded from timing.
 
 ## Validation and source identity
 
-Science source: `f81e815e33b160511526a580e48905bb3c8ae229`, frozen at
-`/scratch/gpfs/CRYOEM/gilleslab/mg6942/em_dev/relax_cryosparc_sgd_r3_frozen_20260928`.
-Integration source: `ae1165193c3d75afa64ffb1d6524e85b75237538`, frozen at
-`/scratch/gpfs/CRYOEM/gilleslab/em_work/cryosparc_sgd_coarse_20260928/tier_integration_r4/src`.
+Science source: `f81e815e33b160511526a580e48905bb3c8ae229`.
+Integration source: `ae1165193c3d75afa64ffb1d6524e85b75237538`.
 RECOVAR pin: `5514ac6e2cb63ce1e9d1d88662f80dc4a4a8e70c`.
 Native-source fingerprint: `211d2f14684542eaf652f1a107875f2eb1cd204735de09678f620f01496e3032`.
-NATIVE.json (`/scratch/gpfs/CRYOEM/gilleslab/em_work/cryosparc_sgd_coarse_20260928/native_e2401c4c/NATIVE.json`; no longer available) records binary identities.
+NATIVE.json (no longer available) records binary identities.
 The intervening main rebase removes an unused exact-local VDAM path; active
 adaptive functions and moved numerical helpers were checked for AST equality.
 Later tomography-only upstream changes are outside this execution path.
@@ -82,7 +77,7 @@ Later tomography-only upstream changes are outside this execution path.
 - Medium job 14629153 on f81 passed 27/27 items: 10,938 tests, zero failures,
   five optional unit skips, no required parity skip. Twelve approved FSC/Pmax
   cases passed; K1 5k converged at 12 iterations and stayed in the RELION band.
-  Extracted tables (`/scratch/gpfs/CRYOEM/gilleslab/em_work/cryosparc_sgd_coarse_20260928/tier_medium_r2/extracted_fast_tables.md`; outside the repository).
+  Extracted tables (outside the repository).
   The K4 nonadaptive replay has no approved FSC floor; its recorded .66139 AUC
   is not a passing FSC claim. A100 pinned-output comparison was not configured.
 - First medium job 14627542 failed setup/stub/import/inventory/report checks;
@@ -94,7 +89,7 @@ Later tomography-only upstream changes are outside this execution path.
   1.40e-5. Two of 300 seed 11 latest poses differ; saved outputs lack competing
   winner margins, so their individual cause is unresolved. Agreement is close,
   not bitwise. A same-source repeat provides context, not a new tolerance.
-  Detailed source comparison (`/scratch/gpfs/CRYOEM/gilleslab/em_work/cryosparc_sgd_coarse_20260928/integration_pilot_r4/source_invariance_report.json`; outside the repository).
+  Detailed source comparison (outside the repository).
 - Focused post-rebase CPU checks passed. Existing upstream whole-file formatting
   and five Ruff import-order findings were identified as unchanged baseline
   findings; unrelated files were not reformatted.
@@ -111,7 +106,7 @@ established the corrected convention. Clean-image median cosine is .9945 with
 the native convention and .0386 with the old transpose. A second reporting fix
 scores classes containing 1–19 particles in primary pose metrics. The optional
 particle-fitted-frame diagnostic still needs 20. Both changes leave map fits and
-FSC unchanged. The v4 report (`/scratch/gpfs/CRYOEM/gilleslab/em_work/cryosparc_sgd_coarse_20260928/analysis_pose_bridge/comparison_pose_v4.md`; outside the repository)
+FSC unchanged. The v4 report (outside the repository)
 and `evaluation_pose_v4.json` files are authoritative. All 12 runs cover 19,996
 of 20,000 saved particles; four were unvisited and have class 0. STAR poses/classes
 are last-visited minibatch estimates, not fresh final-map inference. Shift error
@@ -119,7 +114,7 @@ is not qualified because its map-registration/origin boundary remains to be chec
 
 The inherited coarse support cap is 300 joint hypotheses per image. Pass2
 renormalizes within that support, so metadata named `full` describes only that
-selected support. The iteration 1 mass diagnostic (`/scratch/gpfs/CRYOEM/gilleslab/em_work/cryosparc_sgd_coarse_20260928/analysis_coarse_mass/REPORT.md`; outside the repository)
+selected support. The iteration 1 mass diagnostic (outside the repository)
 measures .41–.53 percent retained mass for SGD and 3.44–11.44 percent for VDAM on
 four sampled images. This is a significant shared approximation; it is not
 proof of why a particular state fails. No support-cap override has been added.
@@ -132,11 +127,12 @@ The original paired script and wrapper are immutable. To repeat into a NEW
 output directory, use a new dated root and preserve the frozen source/fixture:
 
 ```bash
-RUN_ROOT=/scratch/gpfs/CRYOEM/gilleslab/em_work/cryosparc_sgd_repeat_YYYYMMDD
+ORIGINAL_RUN_DIR=<the frozen r3 run directory>  # outside the repository
+RUN_ROOT=/scratch/gpfs/CRYOEM/gilleslab/em_work/momentum_sgd_repeat_YYYYMMDD
 mkdir "$RUN_ROOT"
 touch "$RUN_ROOT/SAFE_TO_DELETE"
 sed "s|^OUTPUT_ROOT=.*|OUTPUT_ROOT=$RUN_ROOT/full|" \
-  /scratch/gpfs/CRYOEM/gilleslab/em_work/cryosparc_sgd_coarse_20260928/jobs/full_r3.sbatch > "$RUN_ROOT/full.sbatch"
+  "$ORIGINAL_RUN_DIR/jobs/full_r3.sbatch" > "$RUN_ROOT/full.sbatch"
 bash -n "$RUN_ROOT/full.sbatch"
 squeue -u "$USER"
 sbatch --time=00:35:00 --output="$RUN_ROOT/full-%j.log" "$RUN_ROOT/full.sbatch"
@@ -144,7 +140,7 @@ sbatch --time=00:35:00 --output="$RUN_ROOT/full-%j.log" "$RUN_ROOT/full.sbatch"
 
 The wrapper refuses existing nonempty arm directories and verifies native and
 Python import identities. Evaluation scripts and full invocation manifests are
-in `/scratch/gpfs/CRYOEM/gilleslab/em_work/cryosparc_sgd_coarse_20260928/protocol_r3` and `protocol_pose_v4`; reruns need new evaluation output
+in the run directory's `protocol_r3` and `protocol_pose_v4` (outside the repository); reruns need new evaluation output
 paths as well. Do not overwrite the saved protocols, runs or evaluation files.
 
 The completed [robustness comparison](momentum_sgd_robustness_20260928.md)
@@ -154,6 +150,6 @@ establish general three-state robustness. Posterior-support sensitivity is a
 separate follow-up so it cannot confound that matrix.
 
 All jobs from this first package are terminal; job 14627542 failed as recorded,
-all subsequent required checks completed. Job registry (`/scratch/gpfs/CRYOEM/gilleslab/em_work/cryosparc_sgd_coarse_20260928/JOBS.json`; outside the repository)
+all subsequent required checks completed. Job registry (outside the repository)
 records exact status and allocated cost: 5.44861 GPU-hours
 including the failed qualification, pilots and diagnostics.

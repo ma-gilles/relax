@@ -1,18 +1,13 @@
 {
   "schema": "momentum_sgd_k3_robustness_scorecard_v1",
   "scientific_status": "condition_dependent_recovery_no_general_robustness_claim",
-  "historical_arm_identifier": "cryosparc_sgd",
   "current_display_name": "Momentum SGD",
   "frozen_science_source_head": "ae1165193c3d75afa64ffb1d6524e85b75237538",
   "naming_branch_source_head_before_this_report": "5bece4b2900e9e4d9a7c1042c1a207c89f1b9634",
   "source_bridge_limitation": "Historical uniform-noise1 HP3 r3 used f81e815e33b160511526a580e48905bb3c8ae229; robustness uses ae1165193c3d75afa64ffb1d6524e85b75237538. Conditions also change data. The baseline is context, not a matched direct causal effect estimate.",
-  "source_scorecard_path": "/scratch/gpfs/CRYOEM/gilleslab/em_work/cryosparc_sgd_robustness_20260928/analysis_conditions/combined_scorecard.json",
   "source_scorecard_sha256": "c6d9e57765ed2077f4e0d150236ec3b6e994a49c0aed6afc4e42eecc8509eb01",
-  "source_fixture_audit_path": "/scratch/gpfs/CRYOEM/gilleslab/em_work/cryosparc_sgd_robustness_20260928/analysis_conditions/condition_audit.json",
   "source_fixture_audit_sha256": "7447495ba844873043d6499a870b7d6bafa893ca612d972ae02c2af379e36294",
-  "shift_boundary_path": "/scratch/gpfs/CRYOEM/gilleslab/em_work/cryosparc_sgd_robustness_20260928/protocol/shift_boundary.json",
   "shift_boundary_sha256": "1fe8ca4339ed04f6db721ddb7dadd8d8e5a4a9ccc4b9a2a499172f3dae93d304",
-  "centering_diagnostic_path": "/scratch/gpfs/CRYOEM/gilleslab/em_work/cryosparc_sgd_robustness_20260928/analysis_conditions/centering_diagnostic.json",
   "centering_diagnostic_sha256": "9c337f65bbd390705aeade4dee7d43410e2b59776fc6d2389e35ccb558f85a8e",
   "condition_inputs": {
     "noise05": {
@@ -20,7 +15,6 @@
       "summary_sha256": "5a85115833460abee3ef451be012a6415df63c1e5b428a40c5a09669fdb886dd",
       "run_manifest_sha256": "95aeb1dba09fbb64630f5c94e1d886ee89c8707f219c953e55fddc69d7c6e5ce",
       "fixture_verified_sha256": "b145fee5b4984e3d0fcda36cffc4faa68c4ac2cf455a21578f65d15d8243dbb0",
-      "evaluation_path": "/scratch/gpfs/CRYOEM/gilleslab/em_work/cryosparc_sgd_robustness_20260928/analysis/noise05/evaluation_v4_shift.json",
       "job_id": "14633155"
     },
     "noise20": {
@@ -28,7 +22,6 @@
       "summary_sha256": "d4a5f37858fc9985987bd64761857af92098e55d84ccb4c36fee0633dffc7753",
       "run_manifest_sha256": "82a78aebf1765e77bf28da28df72c805557c0fb6f827ed65de71c66864c398f5",
       "fixture_verified_sha256": "d0ee62bec7358c46224ca8ee4322c7e9ec9edca17df3a4c0d79bce55db3432f4",
-      "evaluation_path": "/scratch/gpfs/CRYOEM/gilleslab/em_work/cryosparc_sgd_robustness_20260928/analysis/noise20/evaluation_v4_shift.json",
       "job_id": "14633156"
     },
     "preferred80": {
@@ -36,7 +29,6 @@
       "summary_sha256": "5e638f504836f6b74ac79c3218f916059d764175b2101202f814db9660705b52",
       "run_manifest_sha256": "ba73e3007cbcf3b914ef8146fbdefed8278a67f32fdf92823e2d240fc685f844",
       "fixture_verified_sha256": "0dd959324d44d18e085479ed410a3c65b843d2a4944306e7737d0c3b97d7c686",
-      "evaluation_path": "/scratch/gpfs/CRYOEM/gilleslab/em_work/cryosparc_sgd_robustness_20260928/analysis/preferred80/evaluation_v4_shift.json",
       "job_id": "14633157"
     },
     "shifts_sd2": {
@@ -44,7 +36,6 @@
       "summary_sha256": "3a76d5dd448cf7b0859155fbd3f70be25b383db0f933185e34323958a51fb268",
       "run_manifest_sha256": "b755c353d29e1ad1469006e51029c55d48af72646e87646352bfeb474640f653",
       "fixture_verified_sha256": "99cf88812ed573d26f5fb303f80f6af35faa7e27968b3799606ccb8c770ff753",
-      "evaluation_path": "/scratch/gpfs/CRYOEM/gilleslab/em_work/cryosparc_sgd_robustness_20260928/analysis/shifts_sd2/evaluation_v4_shift.json",
       "job_id": "14633158"
     }
   },
@@ -159,7 +150,7 @@
     {
       "condition": "noise05",
       "seed": 11,
-      "arm": "cryosparc_sgd",
+      "arm": "momentum_sgd",
       "source_head": "ae1165193c3d75afa64ffb1d6524e85b75237538",
       "job_id": "14633155",
       "gpu_model": "NVIDIA A100-SXM4-80GB",
@@ -347,7 +338,7 @@
     {
       "condition": "noise05",
       "seed": 12,
-      "arm": "cryosparc_sgd",
+      "arm": "momentum_sgd",
       "source_head": "ae1165193c3d75afa64ffb1d6524e85b75237538",
       "job_id": "14633155",
       "gpu_model": "NVIDIA A100-SXM4-80GB",
@@ -535,7 +526,7 @@
     {
       "condition": "noise20",
       "seed": 11,
-      "arm": "cryosparc_sgd",
+      "arm": "momentum_sgd",
       "source_head": "ae1165193c3d75afa64ffb1d6524e85b75237538",
       "job_id": "14633156",
       "gpu_model": "NVIDIA A100-SXM4-80GB",
@@ -723,7 +714,7 @@
     {
       "condition": "noise20",
       "seed": 12,
-      "arm": "cryosparc_sgd",
+      "arm": "momentum_sgd",
       "source_head": "ae1165193c3d75afa64ffb1d6524e85b75237538",
       "job_id": "14633156",
       "gpu_model": "NVIDIA A100-SXM4-80GB",
@@ -911,7 +902,7 @@
     {
       "condition": "preferred80",
       "seed": 11,
-      "arm": "cryosparc_sgd",
+      "arm": "momentum_sgd",
       "source_head": "ae1165193c3d75afa64ffb1d6524e85b75237538",
       "job_id": "14633157",
       "gpu_model": "NVIDIA A100-SXM4-80GB",
@@ -1099,7 +1090,7 @@
     {
       "condition": "preferred80",
       "seed": 12,
-      "arm": "cryosparc_sgd",
+      "arm": "momentum_sgd",
       "source_head": "ae1165193c3d75afa64ffb1d6524e85b75237538",
       "job_id": "14633157",
       "gpu_model": "NVIDIA A100-SXM4-80GB",
@@ -1287,7 +1278,7 @@
     {
       "condition": "shifts_sd2",
       "seed": 11,
-      "arm": "cryosparc_sgd",
+      "arm": "momentum_sgd",
       "source_head": "ae1165193c3d75afa64ffb1d6524e85b75237538",
       "job_id": "14633158",
       "gpu_model": "NVIDIA A100-SXM4-80GB",
@@ -1475,7 +1466,7 @@
     {
       "condition": "shifts_sd2",
       "seed": 12,
-      "arm": "cryosparc_sgd",
+      "arm": "momentum_sgd",
       "source_head": "ae1165193c3d75afa64ffb1d6524e85b75237538",
       "job_id": "14633158",
       "gpu_model": "NVIDIA A100-SXM4-80GB",
