@@ -50,15 +50,16 @@ struct ProjectGeometry {
     float c0, c1, c2, max_r2;
 };
 
-// grid (ceil(F / 128), R), 128 threads; dynamic shared memory 128 * P float2.
+// grid (ceil(F / 128), R), 128 threads. Templated on P so a pixel's P components and their pair
+// products stay in registers.
 // vol (V, P) float2 voxel-major; rot (R, 6); pix (F,) windowed half-image pixels, -1 for padding.
 // planar (P, R, 2F): [Re | Im] per component and rotation. products (K, R, F) or null.
+template <int P>
 __global__ void __launch_bounds__(128) window_project_kernel(ProjectGeometry g, const float2* __restrict__ vol,
                                                              const float* __restrict__ rot,
-                                                             const int* __restrict__ pix, int P,
+                                                             const int* __restrict__ pix,
                                                              float* __restrict__ planar,
                                                              float* __restrict__ products) {
-    extern __shared__ float2 s_value[];  // [128][P]
     __shared__ float R[6];
     const int r = blockIdx.y;
     if (threadIdx.x < 6) R[threadIdx.x] = rot[6 * r + threadIdx.x];
@@ -66,7 +67,6 @@ __global__ void __launch_bounds__(128) window_project_kernel(ProjectGeometry g, 
     const int f = blockIdx.x * blockDim.x + threadIdx.x;
     if (f >= g.n_pix) return;
     const long F = g.n_pix;
-    float2* value = s_value + threadIdx.x * P;
     const int orig_pix = max(pix[f], 0);  // a negative index is padding: zero projection
     const int k0_idx = orig_pix / g.image_w, k1_idx = orig_pix % g.image_w;
     const float k0 = (float)(k0_idx - g.image_h / 2);
@@ -125,6 +125,8 @@ __global__ void __launch_bounds__(128) window_project_kernel(ProjectGeometry g, 
             }
         }
     }
+    float2 value[P];
+#pragma unroll
     for (int p = 0; p < P; p++) {
         float re = 0.f, im = 0.f;
         if (!zero) {
@@ -143,12 +145,41 @@ __global__ void __launch_bounds__(128) window_project_kernel(ProjectGeometry g, 
     }
     if (products == nullptr) return;
     int k = 0;
+#pragma unroll
     for (int i = 0; i < P; i++) {
         const float2 a = value[i];
+#pragma unroll
         for (int j = i; j < P; j++, k++) {
             const float2 b = value[j];
             products[((long)k * g.n_rot + r) * F + f] = a.x * b.x + a.y * b.y;
         }
+    }
+}
+
+// Largest basis size of the projector (q <= kMaxLatent).
+constexpr int kMaxBasis = kMaxLatent + 1;
+
+template <int P>
+cudaError_t launch_window_project(cudaStream_t stream, dim3 grid, ProjectGeometry g, const float2* vol,
+                                  const float* rot, const int* pix, float* planar, float* products) {
+    window_project_kernel<P><<<grid, 128, 0, stream>>>(g, vol, rot, pix, planar, products);
+    return cudaGetLastError();
+}
+
+inline cudaError_t dispatch_window_project(int P, cudaStream_t stream, dim3 grid, ProjectGeometry g,
+                                           const float2* vol, const float* rot, const int* pix, float* planar,
+                                           float* products) {
+    switch (P) {
+#define PPCA_PROJECT_CASE(N) \
+    case N:                  \
+        return launch_window_project<N>(stream, grid, g, vol, rot, pix, planar, products);
+        PPCA_PROJECT_CASE(1) PPCA_PROJECT_CASE(2) PPCA_PROJECT_CASE(3) PPCA_PROJECT_CASE(4) PPCA_PROJECT_CASE(5)
+        PPCA_PROJECT_CASE(6) PPCA_PROJECT_CASE(7) PPCA_PROJECT_CASE(8) PPCA_PROJECT_CASE(9) PPCA_PROJECT_CASE(10)
+        PPCA_PROJECT_CASE(11) PPCA_PROJECT_CASE(12) PPCA_PROJECT_CASE(13) PPCA_PROJECT_CASE(14) PPCA_PROJECT_CASE(15)
+        PPCA_PROJECT_CASE(16) PPCA_PROJECT_CASE(17)
+#undef PPCA_PROJECT_CASE
+        default:
+            return cudaErrorInvalidValue;
     }
 }
 
@@ -456,19 +487,14 @@ ffi::Error PpcaWindowProjectF32Impl(cudaStream_t stream, int64_t image_h, int64_
     g.c1 = (float)(N1 / 2);
     g.c2 = (float)(N2 / 2);
     g.max_r2 = max_r2_x4 >= 0 ? (float)max_r2_x4 / 4.f : -1.f;
+    if (P < 1 || P > s::kMaxBasis)
+        return ffi::Error::InvalidArgument("PpcaWindowProjectF32: basis size outside 1..17");
     if (R == 0 || F == 0) return ffi::Error::Success();
-    const size_t smem = (size_t)128 * P * sizeof(float2);
-    cudaError_t err = cudaFuncSetAttribute(s::window_project_kernel, cudaFuncAttributeMaxDynamicSharedMemorySize,
-                                           (int)smem);
-    if (err == cudaSuccess) {
-        dim3 grid((unsigned)((F + 127) / 128), (unsigned)R);
-        s::window_project_kernel<<<grid, 128, smem, stream>>>(
-            g, static_cast<const float2*>(volume.untyped_data()), static_cast<const float*>(rot.untyped_data()),
-            static_cast<const int*>(pixel_indices.untyped_data()), (int)P,
-            static_cast<float*>(planar->untyped_data()),
-            with_products ? static_cast<float*>(products->untyped_data()) : nullptr);
-        err = cudaGetLastError();
-    }
+    const cudaError_t err = s::dispatch_window_project(
+        (int)P, stream, dim3((unsigned)((F + 127) / 128), (unsigned)R), g,
+        static_cast<const float2*>(volume.untyped_data()), static_cast<const float*>(rot.untyped_data()),
+        static_cast<const int*>(pixel_indices.untyped_data()), static_cast<float*>(planar->untyped_data()),
+        with_products ? static_cast<float*>(products->untyped_data()) : nullptr);
     if (err != cudaSuccess) return ffi::Error::Internal(std::string("CUDA: ") + cudaGetErrorString(err));
     return ffi::Error::Success();
 }
