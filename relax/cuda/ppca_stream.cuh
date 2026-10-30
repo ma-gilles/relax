@@ -22,23 +22,32 @@ namespace ppca_stream {
 
 constexpr int kMaxLatent = 16;
 
+// Reductions over aligned groups of W lanes (W = 32: the whole warp); every lane of the warp calls them.
+template <int W = 32>
 __device__ __forceinline__ float warp_sum(float x) {
 #pragma unroll
-    for (int o = 16; o > 0; o >>= 1) x += __shfl_xor_sync(0xffffffffu, x, o);
+    for (int o = W / 2; o > 0; o >>= 1) x += __shfl_xor_sync(0xffffffffu, x, o);
     return x;
 }
 
+template <int W = 32>
 __device__ __forceinline__ float warp_max(float x) {
 #pragma unroll
-    for (int o = 16; o > 0; o >>= 1) x = fmaxf(x, __shfl_xor_sync(0xffffffffu, x, o));
+    for (int o = W / 2; o > 0; o >>= 1) x = fmaxf(x, __shfl_xor_sync(0xffffffffu, x, o));
     return x;
 }
 
+template <int W = 32>
 __device__ __forceinline__ int warp_min(int x) {
 #pragma unroll
-    for (int o = 16; o > 0; o >>= 1) x = min(x, __shfl_xor_sync(0xffffffffu, x, o));
+    for (int o = W / 2; o > 0; o >>= 1) x = min(x, __shfl_xor_sync(0xffffffffu, x, o));
     return x;
 }
+
+// Lanes per (rotation, image) pair in stages 2 and 3: the translations run across 16 lanes when there are at
+// most 16 of them (two pairs per warp), else across the warp. A pair's lanes beyond T hold zero sums, which the
+// first, 16-lane-apart steps of a 32-lane reduction add exactly, so both widths give the same values.
+inline int pair_lanes(int T) { return T <= 16 ? 16 : 32; }
 
 // ---------------------------------------------------------------------------------------------
 // 1. Windowed projection
@@ -211,12 +220,12 @@ __host__ __device__ constexpr int factor_stride() {
 // grid ceil(R * B / 128), 128 threads; warp w of block x handles the 32 pairs (r, b) = divmod(p, B),
 // p = (4 x + w) 32 + 0..31. Phase 1: each lane factors I + H of its own pair (Cholesky, log det,
 // covariance) and leaves the factor in shared memory, so no factor is computed twice. Phase 2:
-// for each of the 32 pairs in turn the lanes run over translations.
+// the warp's W-lane groups take the 32 pairs in turn (32 / W at once), their lanes over translations.
 // inner (P, R, ld): row (p, r) holds column b * T + t, padded to ld >= B * T (the GEMM's aligned
 // shift axis); gram (K, R, B) packed upper over P; start (1,) device row offset of the block.
 // score (cap, B, T), mean (Q, cap, B, T), cov (cap, B, tri(Q)), part_max / part_sum (cap, B),
 // part_arg (cap, B) are written at rows start .. start + R.
-template <int Q>
+template <int Q, int W>
 __global__ void __launch_bounds__(128) latent_epilogue_kernel(
     int R, int B, int T, int ld, int cap, const float* __restrict__ inner, const float* __restrict__ gram,
     PriorTables prior, const int* __restrict__ start_ptr, float* __restrict__ score, float* __restrict__ mean,
@@ -297,10 +306,15 @@ __global__ void __launch_bounds__(128) latent_epilogue_kernel(
         }
     }
     __syncwarp();
-    for (int slot = 0; slot < 32; slot++) {
+    const int group = lane / W, sublane = lane % W;
+    for (int first = 0; first < 32; first += 32 / W) {
+        const int slot = first + group;
         const long pair = pair0 + slot;
-        if (pair >= RB) break;
-        const int r = (int)(pair / B), b = (int)(pair % B);
+        // Both groups of a warp stay in the loop for the shuffles; a group past the last pair writes nothing.
+        if (pair0 + first >= RB) break;
+        const bool valid = pair < RB;
+        const long safe_pair = valid ? pair : pair0 + first;
+        const int r = (int)(safe_pair / B), b = (int)(safe_pair % B);
         const long out_pair = (long)(start + r) * B + b;
         const float* f = factors + slot * S;
         float L[Q > 0 ? Q : 1][Q > 0 ? Q : 1];
@@ -324,7 +338,7 @@ __global__ void __launch_bounds__(128) latent_epilogue_kernel(
         const long capB = (long)cap * B;
         float best = -INFINITY;
         int best_t = T;
-        for (int t = lane; t < T; t += 32) {
+        for (int t = sublane; t < T; t += W) {
             const long at = (long)r * ld + (long)b * T + t;
             const long stride = (long)R * ld;
             const float i0 = inner[at];
@@ -353,22 +367,22 @@ __global__ void __launch_bounds__(128) latent_epilogue_kernel(
     #pragma unroll
                     for (int k = i + 1; k < Q; k++) x = x - L[k][i] * z[k];
                     z[i] = x / L[i][i];
-                    mean[((long)i * capB + out_pair) * T + t] = z[i];
+                    if (valid) mean[((long)i * capB + out_pair) * T + t] = z[i];
                 }
             }
-            score[out_pair * T + t] = s;
+            if (valid) score[out_pair * T + t] = s;
             if (s > best) {
                 best = s;
                 best_t = t;
             }
         }
-        const float m = warp_max(best);
-        const int arg = warp_min(best == m ? best_t : T);
+        const float m = warp_max<W>(best);
+        const int arg = warp_min<W>(best == m ? best_t : T);
         float e = 0.f;
         if (m != -INFINITY)
-            for (int t = lane; t < T; t += 32) e += expf(score[out_pair * T + t] - m);
-        e = warp_sum(e);
-        if (lane == 0) {
+            for (int t = sublane; t < T; t += W) e += expf(score[out_pair * T + t] - m);
+        e = warp_sum<W>(e);
+        if (valid && sublane == 0) {
             part_max[out_pair] = m;
             part_arg[out_pair] = arg == T ? 0 : arg;
             part_sum[out_pair] = e;
@@ -539,12 +553,23 @@ struct LaunchEpilogue {
     static cudaError_t run(cudaStream_t stream, int R, int B, int T, int ld, int cap, const float* inner,
                            const float* gram, PriorTables prior, const int* start, float* score, float* mean,
                            float* cov, float* part_max, int* part_arg, float* part_sum) {
+        return pair_lanes(T) == 16
+                   ? launch<16>(stream, R, B, T, ld, cap, inner, gram, prior, start, score, mean, cov, part_max,
+                                part_arg, part_sum)
+                   : launch<32>(stream, R, B, T, ld, cap, inner, gram, prior, start, score, mean, cov, part_max,
+                                part_arg, part_sum);
+    }
+
+    template <int W>
+    static cudaError_t launch(cudaStream_t stream, int R, int B, int T, int ld, int cap, const float* inner,
+                              const float* gram, PriorTables prior, const int* start, float* score, float* mean,
+                              float* cov, float* part_max, int* part_arg, float* part_sum) {
         const long pairs = (long)R * B;
         const size_t smem = (size_t)4 * 32 * factor_stride<Q>() * sizeof(float);
-        cudaError_t err = cudaFuncSetAttribute(latent_epilogue_kernel<Q>, cudaFuncAttributeMaxDynamicSharedMemorySize,
-                                               (int)smem);
+        cudaError_t err = cudaFuncSetAttribute(latent_epilogue_kernel<Q, W>,
+                                               cudaFuncAttributeMaxDynamicSharedMemorySize, (int)smem);
         if (err != cudaSuccess) return err;
-        latent_epilogue_kernel<Q><<<(unsigned)((pairs + 127) / 128), 128, smem, stream>>>(
+        latent_epilogue_kernel<Q, W><<<(unsigned)((pairs + 127) / 128), 128, smem, stream>>>(
             R, B, T, ld, cap, inner, gram, prior, start, score, mean, cov, part_max, part_arg, part_sum);
         return cudaGetLastError();
     }
