@@ -523,9 +523,34 @@ def estimate_split_half_prior(
             log=log,
         )
 
-    # RELION calls BackProjector::updateSSNRarrays independently for each
-    # half-map BPref.  The gold-standard FSC is shared, but sigma2/tau2
-    # come from each half's own Fourier weight outside the joined shells.
+    return split_half_prior_from_fsc(
+        denominators,
+        current_iter_fsc,
+        settings,
+        current_size=current_size,
+        accumulator_shape=accumulator_shape,
+        full_half_axes=full_half_axes,
+        scoring_dtype=scoring_dtype,
+    )
+
+
+def split_half_prior_from_fsc(
+    denominators,
+    current_iter_fsc,
+    settings: ReconstructionSettings,
+    *,
+    current_size,
+    accumulator_shape,
+    full_half_axes,
+    scoring_dtype,
+) -> SplitHalfPrior:
+    """Each half's prior from the half-set FSC ``current_iter_fsc`` and its own Fourier weight.
+
+    RELION calls BackProjector::updateSSNRarrays independently for each
+    half-map BPref.  The gold-standard FSC is shared, but sigma2/tau2
+    come from each half's own Fourier weight outside the joined shells.
+    """
+
     tau2_update_details_per_half = []
     mean_signal_variance_per_half = []
     for half_idx, Ft_ctf_half in enumerate((denominators[0], denominators[1])):
