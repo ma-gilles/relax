@@ -84,8 +84,31 @@ def _segment_starts(counts: np.ndarray) -> np.ndarray:
     return starts
 
 
-def _dense_direction_dots(prior_dir_vecs, dir_vecs, rows):
-    return prior_dir_vecs[rows] @ dir_vecs.T
+def relion_euler_directions(rot_deg, tilt_deg) -> np.ndarray:
+    """``Euler_angles2direction`` (euler.cpp) of ``[N]`` ``(rot, tilt)`` in degrees, as RELION forms it in double."""
+
+    alpha = np.asarray(rot_deg, dtype=np.float64) * np.pi / 180.0
+    beta = np.asarray(tilt_deg, dtype=np.float64) * np.pi / 180.0
+    sin_beta = np.sin(beta)
+    return np.stack([np.cos(alpha) * sin_beta, np.sin(alpha) * sin_beta, np.cos(beta)], axis=-1)
+
+
+def _relion_nearest_direction_dots(prior_directions, grid_directions, rows):
+    """``dotProduct`` of each prior direction of ``rows`` with every grid direction, summed in RELION's order.
+
+    An image that keeps no direction keeps ``best_idir``, the first direction at the smallest angle
+    (healpix_sampling.cpp:790-795, a strict ``<`` in grid order). Directions symmetric about the prior are tied
+    there exactly (for example the two order-4 directions nearest a multi-body prior ``(0, 90)``, at tilts
+    ``90 -/+ 2.39``); the normalized matrix rows of the grid can split such a tie by one ulp, so the fallback
+    reads RELION's own directions and dot products.
+    """
+
+    prior = prior_directions[rows]
+    return (
+        prior[:, None, 0] * grid_directions[None, :, 0]
+        + prior[:, None, 1] * grid_directions[None, :, 1]
+        + prior[:, None, 2] * grid_directions[None, :, 2]
+    )
 
 
 class _SparseCandidates(NamedTuple):
@@ -349,6 +372,8 @@ def build_factorized_local_entries(
     if banded:
         dir_z_order = np.argsort(dir_vecs[:, 2], kind="stable").astype(np.int64)
         dir_z_sorted = dir_vecs[dir_z_order, 2]
+        relion_grid_directions = relion_euler_directions(grid_metadata["rot_deg"], grid_metadata["tilt_deg"])
+        relion_prior_directions = relion_euler_directions(prior_eulers[:, 0], prior_eulers[:, 1])
 
     for chunk_start in range(0, n_images, chunk_size):
         chunk_stop = min(n_images, chunk_start + chunk_size)
@@ -359,7 +384,11 @@ def build_factorized_local_entries(
             )
             # An image that keeps no candidate falls back to its nearest
             # direction, which needs its dense row.
-            dots = functools.partial(_dense_direction_dots, chunk_dirs, dir_vecs)
+            dots = functools.partial(
+                _relion_nearest_direction_dots,
+                relion_prior_directions[chunk_start:chunk_stop],
+                relion_grid_directions,
+            )
         elif sigma_rot_deg > 0.0:
             if symmetry_operators is None:
                 dots = prior_dir_vecs[chunk_start:chunk_stop] @ dir_vecs.T
