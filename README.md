@@ -45,6 +45,8 @@ Use [RECOVAR](https://ma-gilles.github.io/recovar/reference/api/simulation/) to 
 realistic datasets, and compare your modified algorithm with the original on the same data. Start
 small, check against the ground truth, and then try real datasets.
 
+The agent's step-by-step checklist for adding a feature is [docs/EXTENDING.md](docs/EXTENDING.md).
+
 ## Installation
 
 RELAX uses [pixi](https://pixi.sh) and currently needs Linux, a CUDA 12 GPU and toolkit, and a RELION 5
