@@ -593,7 +593,8 @@ def test_controller_statistics_do_not_depend_on_the_tile_size():
 
     rtol = 1e-5
     reference, order = statistics(3)
-    assert reference.diagnostics["tile_sizes"] == [3]
+    # GPU streams pad a full tile's image axis, so three images share the four-image bucket there.
+    assert reference.diagnostics["tile_sizes"] == [4 if jax.default_backend() == "gpu" else 3]
     for tile, sizes in ((1, [1]), (2, [1, 2]), (4, [4])):
         stats, tile_order = statistics(tile)
         assert stats.diagnostics["tile_sizes"] == sizes

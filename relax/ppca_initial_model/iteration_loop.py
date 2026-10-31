@@ -34,7 +34,7 @@ from relax.ppca_refinement.dense_dataset import (
     accumulate_dense_ppca_statistics,
     compute_dense_ppca_embeddings,
 )
-from relax.ppca_refinement.full_row_kernels import resolve_gemm_precision
+from relax.ppca_refinement.full_row_kernels import SHIFT_ALIGN, resolve_gemm_precision
 from relax.ppca_refinement.full_row_stream import (
     TracePPCAStats,
     accumulate_full_row_tiles,
@@ -405,7 +405,12 @@ def _expectation(dataset, state, config, ids, iteration, *, embeddings_only=Fals
             return max(owners.count(owner) for owner in set(owners)) if owners else 0
 
         tile_size = plan_tile_images(streams[0], config.image_batch_size, tiles_per_call=tiles_per_call)
-        streams = [stream._replace(tile_images=tile_size) for stream in streams]
+        # GPU streams pad a full tile's image axis with zero images to a multiple of SHIFT_ALIGN: the Gram and
+        # metric GEMMs, whose operands have one row or column per image, then run cuBLAS's aligned kernels
+        # (150 images: align1, about 1.6x slower). Padding images add exact zeros (drop_padding); the plan's
+        # fragmentation headroom covers the few extra images.
+        padded_size = -(-tile_size // SHIFT_ALIGN) * SHIFT_ALIGN if streams[0].static.cuda_kernels else tile_size
+        streams = [stream._replace(tile_images=padded_size) for stream in streams]
         if oversampled:
             fine_rotations, fine_translations = relion_child_grids(hp, translations, config.shift_step)
             streams = [
@@ -413,13 +418,13 @@ def _expectation(dataset, state, config, ids, iteration, *, embeddings_only=Fals
                     stream,
                     fine_rotations,
                     fine_translations,
-                    pass2=pass2._replace(tile_images=tile_size),
+                    pass2=pass2._replace(tile_images=padded_size),
                     adaptive_fraction=config.target_mass,
                     max_significant=config.max_significant,
                 )
                 for stream, pass2 in zip(streams, pass2_streams)
             ]
-            job_chunk = plan_job_chunk(streams[0], tile_size)
+            job_chunk = plan_job_chunk(streams[0], padded_size)
             streams = [stream._replace(job_chunk=job_chunk) for stream in streams]
             accumulate, embed = accumulate_oversampled_tiles, oversampled_tile_embeddings
         else:
