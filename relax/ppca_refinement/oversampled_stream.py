@@ -405,6 +405,7 @@ def _job_projections(arrays, tile, rows, static):
             volume_shape=static.volume_shape,
             max_r=static.projection_max_r,
             with_products=True,
+            basis_size=static.basis_size,
         )
         return planar.reshape(planar.shape[0], J, R_c, -1), products.reshape(products.shape[0], J, R_c, -1)
     proj = project(arrays, rotations, static)  # (P, J R_c K, F)

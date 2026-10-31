@@ -107,7 +107,7 @@ class StreamArrays(NamedTuple):
     """Device operands fixed for one expectation (model, grids, priors)."""
 
     augmented: jax.Array  # (P, half_volume) complex64 [mu, W_1..W_q]
-    augmented_voxel_major: jax.Array | None  # (half_volume, P) for the CUDA projector; None off GPU
+    augmented_voxel_major: jax.Array | None  # (half_volume, P rounded up to even) for the CUDA projector; None off GPU
     rotations: jax.Array  # (R + 1, 3, 3) float32 fine rotation grid and a sentinel row
     rotation_log_prior: jax.Array  # (R + 1,) float32
     translation_log_prior: jax.Array  # (T,) float32
@@ -449,6 +449,7 @@ def _score_block_cuda(arrays, tile, kept, start, rows, static):
         volume_shape=static.volume_shape,
         max_r=static.projection_max_r,
         with_products=True,
+        basis_size=static.basis_size,
     )
     # Rows are (rotation, frame) with the frame minor, so each rotation's frames are one GEMM row.
     R = rows.shape[0]
@@ -577,6 +578,7 @@ def scatter_moment_images(carry, arrays, static, rhs_parts, lhs_images, rotation
             volume_shape=static.volume_shape,
             max_r=static.projection_max_r,
             with_products=False,
+            basis_size=static.basis_size,
         )
         block, correction = ppca_moment_scatter_f32(
             lhs_images,

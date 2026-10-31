@@ -73,6 +73,13 @@ def ppca_moment_scatter_f32(
     )
 
 
+def voxel_major_volumes(volumes):
+    """``(P, V)`` half volumes as the window projector's voxel-major ``(V, P')``, ``P'`` the even of ``P`` and
+    ``P + 1`` (a zero last column), so every voxel's row is 16-byte aligned."""
+    volumes = jnp.asarray(volumes)
+    return jnp.pad(volumes.T, ((0, 0), (0, volumes.shape[0] % 2)))
+
+
 def ppca_window_project_f32(
     volume_voxel_major: jax.Array,
     pixel_indices: jax.Array,
@@ -82,10 +89,13 @@ def ppca_window_project_f32(
     volume_shape,
     max_r,
     with_products: bool,
+    basis_size: int | None = None,
 ) -> tuple[jax.Array, jax.Array]:
     """Windowed augmented projections of one rotation block, planar, with their packed pair products.
 
-    ``volume_voxel_major`` ``(V, P)`` complex64 holds the ``P`` half volumes voxel-major;
+    ``volume_voxel_major`` ``(V, P)`` complex64 holds the ``P`` half volumes voxel-major, or ``(V, P + 1)`` with a
+    zero last column (``basis_size`` ``P``; :func:`voxel_major_volumes`), whose 16-byte rows the kernel reads two
+    components at a time;
     ``pixel_indices`` ``(F,)`` window the half image (``-1`` pads: zero output); rotations ``(R, 3, 3)``. Returns
     ``(P, R, 2F)`` float32 with the real parts of each component's windowed projection, then its
     imaginary parts, and, with ``with_products``, ``(tri(P), R, F)`` ``Re(conj(A_i) A_j)`` for the
@@ -103,7 +113,8 @@ def ppca_window_project_f32(
         raise ValueError("ppca_window_project_f32 supports unit upsampling only")
     rot6 = cuda_backproject.rot_to_compact(jnp.asarray(rotation_matrices), jnp.float32)
     pixel_indices = jnp.asarray(pixel_indices, jnp.int32).reshape(-1)
-    P, R, F = volume_voxel_major.shape[1], rot6.shape[0], pixel_indices.shape[0]
+    P = volume_voxel_major.shape[1] if basis_size is None else int(basis_size)
+    R, F = rot6.shape[0], pixel_indices.shape[0]
     out_types = (
         jax.ShapeDtypeStruct((P, R, 2 * F), jnp.float32),
         jax.ShapeDtypeStruct((P * (P + 1) // 2, R, F) if with_products else (0,), jnp.float32),

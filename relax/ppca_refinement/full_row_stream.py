@@ -57,6 +57,7 @@ from recovar.core.slicing import decide_order
 from recovar.ppca.pose_accumulators import AugmentedPPCAStats
 from recovar.reconstruction import noise as noise_utils
 
+from relax.cuda.ppca import voxel_major_volumes
 from relax.fourier.half_spectrum import make_half_image_weights, make_shell_indices_half
 from relax.ppca_refinement.config import GeometryConfig, ScheduleConfig, ScoringConfig
 from relax.ppca_refinement.dense_blocks import prepare_dense_ppca_dataset_inputs, prepare_dense_ppca_image_batch
@@ -275,7 +276,7 @@ def _prepare_full_row_stream(
     cuda_kernels = device.platform == "gpu"
     arrays = StreamArrays(
         augmented=resolved.augmented_half_volumes,
-        augmented_voxel_major=jnp.asarray(resolved.augmented_half_volumes).T.copy() if cuda_kernels else None,
+        augmented_voxel_major=voxel_major_volumes(resolved.augmented_half_volumes) if cuda_kernels else None,
         gemm_window=_gemm_window(resolved.score_indices, resolved.image_shape) if cuda_kernels else None,
         rotations=jnp.asarray(np.concatenate([rotations, sentinel_rotation])),
         rotation_log_prior=jnp.asarray(np.append(np.asarray(rotation_log_prior, dtype=np.float32), np.float32(0))),

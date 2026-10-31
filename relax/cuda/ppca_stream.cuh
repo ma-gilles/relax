@@ -61,9 +61,11 @@ struct ProjectGeometry {
 
 // grid (ceil(F / 128), R), 128 threads. Templated on P so a pixel's P components and their pair
 // products stay in registers.
-// vol (V, P) float2 voxel-major; rot (R, 6); pix (F,) windowed half-image pixels, -1 for padding.
+// vol (V, S) float2 voxel-major, S = P or P + 1 (a zero padding column): with S even each voxel's row is
+// 16-byte aligned and is read two components per load; rot (R, 6); pix (F,) windowed half-image pixels, -1 for
+// padding.
 // planar (P, R, 2F): [Re | Im] per component and rotation. products (K, R, F) or null.
-template <int P>
+template <int P, int S>
 __global__ void __launch_bounds__(128) window_project_kernel(ProjectGeometry g, const float2* __restrict__ vol,
                                                              const float* __restrict__ rot,
                                                              const int* __restrict__ pix,
@@ -136,21 +138,39 @@ __global__ void __launch_bounds__(128) window_project_kernel(ProjectGeometry g, 
     }
     float2 value[P];
 #pragma unroll
-    for (int p = 0; p < P; p++) {
-        float re = 0.f, im = 0.f;
-        if (!zero) {
+    for (int p = 0; p < P; p++) value[p] = make_float2(0.f, 0.f);
+    if (!zero) {
+        // Each component sums its eight weighted neighbours in slot order t = 0..7, as one loop per component.
 #pragma unroll
-            for (int t = 0; t < 8; t++) {
-                float2 v = __ldg(&vol[(long)offset[t] * P + p]);
-                if (conj[t]) v.y = -v.y;
-                re += weight[t] * v.x;
-                im += weight[t] * v.y;
+        for (int t = 0; t < 8; t++) {
+            if constexpr (S % 2 == 0) {
+                const float4* row = reinterpret_cast<const float4*>(vol + (long)offset[t] * S);
+#pragma unroll
+                for (int p = 0; p < P; p += 2) {
+                    const float4 v = __ldg(&row[p / 2]);
+                    value[p].x += weight[t] * v.x;
+                    value[p].y += weight[t] * (conj[t] ? -v.y : v.y);
+                    if (p + 1 < P) {
+                        value[p + 1].x += weight[t] * v.z;
+                        value[p + 1].y += weight[t] * (conj[t] ? -v.w : v.w);
+                    }
+                }
+            } else {
+#pragma unroll
+                for (int p = 0; p < P; p++) {
+                    const float2 v = __ldg(&vol[(long)offset[t] * S + p]);
+                    value[p].x += weight[t] * v.x;
+                    value[p].y += weight[t] * (conj[t] ? -v.y : v.y);
+                }
             }
         }
+    }
+#pragma unroll
+    for (int p = 0; p < P; p++) {
+        const float re = value[p].x, im = value[p].y;
         const long row = ((long)p * g.n_rot + r) * 2 * F;
         planar[row + f] = re;
         planar[row + F + f] = im;
-        value[p] = make_float2(re, im);
     }
     if (products == nullptr) return;
     int k = 0;
@@ -169,19 +189,22 @@ __global__ void __launch_bounds__(128) window_project_kernel(ProjectGeometry g, 
 constexpr int kMaxBasis = kMaxLatent + 1;
 
 template <int P>
-cudaError_t launch_window_project(cudaStream_t stream, dim3 grid, ProjectGeometry g, const float2* vol,
+cudaError_t launch_window_project(cudaStream_t stream, dim3 grid, ProjectGeometry g, int stride, const float2* vol,
                                   const float* rot, const int* pix, float* planar, float* products) {
-    window_project_kernel<P><<<grid, 128, 0, stream>>>(g, vol, rot, pix, planar, products);
+    if (stride == P)
+        window_project_kernel<P, P><<<grid, 128, 0, stream>>>(g, vol, rot, pix, planar, products);
+    else
+        window_project_kernel<P, P + 1><<<grid, 128, 0, stream>>>(g, vol, rot, pix, planar, products);
     return cudaGetLastError();
 }
 
-inline cudaError_t dispatch_window_project(int P, cudaStream_t stream, dim3 grid, ProjectGeometry g,
+inline cudaError_t dispatch_window_project(int P, cudaStream_t stream, dim3 grid, ProjectGeometry g, int stride,
                                            const float2* vol, const float* rot, const int* pix, float* planar,
                                            float* products) {
     switch (P) {
 #define PPCA_PROJECT_CASE(N) \
     case N:                  \
-        return launch_window_project<N>(stream, grid, g, vol, rot, pix, planar, products);
+        return launch_window_project<N>(stream, grid, g, stride, vol, rot, pix, planar, products);
         PPCA_PROJECT_CASE(1) PPCA_PROJECT_CASE(2) PPCA_PROJECT_CASE(3) PPCA_PROJECT_CASE(4) PPCA_PROJECT_CASE(5)
         PPCA_PROJECT_CASE(6) PPCA_PROJECT_CASE(7) PPCA_PROJECT_CASE(8) PPCA_PROJECT_CASE(9) PPCA_PROJECT_CASE(10)
         PPCA_PROJECT_CASE(11) PPCA_PROJECT_CASE(12) PPCA_PROJECT_CASE(13) PPCA_PROJECT_CASE(14) PPCA_PROJECT_CASE(15)
@@ -482,9 +505,11 @@ ffi::Error PpcaWindowProjectF32Impl(cudaStream_t stream, int64_t image_h, int64_
     const auto pd = planar->dimensions(), kd = products->dimensions();
     if (vd.size() != 2 || qd.size() != 2 || id.size() != 1 || pd.size() != 3 || qd[1] != 6)
         return ffi::Error::InvalidArgument("PpcaWindowProjectF32: operand rank mismatch");
-    const int64_t V = vd[0], P = vd[1], R = qd[0], F = id[0], K = P * (P + 1) / 2;
-    if (V != N0 * N1 * (N2 / 2 + 1) || pd[0] != P || pd[1] != R || pd[2] != 2 * F)
-        return ffi::Error::InvalidArgument("PpcaWindowProjectF32: expected volume (V,P), planar (P,R,2F)");
+    // The basis size is the planar output's; the volume's rows hold it, or it and one zero padding column.
+    const int64_t V = vd[0], S = vd[1], P = pd[0], R = qd[0], F = id[0], K = P * (P + 1) / 2;
+    if (V != N0 * N1 * (N2 / 2 + 1) || (S != P && S != P + 1) || pd[1] != R || pd[2] != 2 * F)
+        return ffi::Error::InvalidArgument(
+            "PpcaWindowProjectF32: expected volume (V,P) or (V,P+1), planar (P,R,2F)");
     if (with_products ? (kd.size() != 3 || kd[0] != K || kd[1] != R || kd[2] != F) : (kd.size() != 1 || kd[0] != 0))
         return ffi::Error::InvalidArgument("PpcaWindowProjectF32: products must be (K,R,F), or (0,) without");
     s::ProjectGeometry g;
@@ -505,7 +530,7 @@ ffi::Error PpcaWindowProjectF32Impl(cudaStream_t stream, int64_t image_h, int64_
         return ffi::Error::InvalidArgument("PpcaWindowProjectF32: basis size outside 1..17");
     if (R == 0 || F == 0) return ffi::Error::Success();
     const cudaError_t err = s::dispatch_window_project(
-        (int)P, stream, dim3((unsigned)((F + 127) / 128), (unsigned)R), g,
+        (int)P, stream, dim3((unsigned)((F + 127) / 128), (unsigned)R), g, (int)S,
         static_cast<const float2*>(volume.untyped_data()), static_cast<const float*>(rot.untyped_data()),
         static_cast<const int*>(pixel_indices.untyped_data()), static_cast<float*>(planar->untyped_data()),
         with_products ? static_cast<float*>(products->untyped_data()) : nullptr);
