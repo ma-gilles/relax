@@ -45,3 +45,20 @@ def test_banded_cone_keeps_the_dense_supports(monkeypatch, order, sigma_rot_deg,
     np.testing.assert_array_equal(counts, dense[1])
     np.testing.assert_array_equal(ids, dense[2])
     assert_matches(log_priors, dense[3])
+
+
+def test_nearest_direction_fallback_breaks_exact_ties_in_relion_grid_order():
+    """With a prior narrower than the grid around ``(0, 90)`` RELION keeps one direction, ``best_idir``: the first
+    of the two order-4 directions at tilt ``90 -/+ 2.39``, which its own dot products tie exactly. That is the one
+    below the equator (tilt 92.39); the normalized matrix rows of the grid split the tie the other way by one ulp."""
+
+    grid = build_local_search_grid_metadata(4, symmetry="C1")
+    sigma = np.deg2rad(0.46875)
+    _, counts, ids, _ = direction_supports.build_factorized_local_entries(
+        np.array([[0.0, 90.0, 0.0]]), 4, sigma, sigma, grid, dtype=np.float32, sigma_tilt_deg=0.0,
+        engine_tuning=EngineTuning(),
+    )
+    directions = np.unique(np.asarray(ids) % int(grid["n_pixels"]))
+    assert int(counts[0]) == 1 and directions.size == 1
+    assert grid["rot_deg"][directions[0]] == 0.0
+    assert grid["tilt_deg"][directions[0]] > 90.0
