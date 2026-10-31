@@ -567,6 +567,8 @@ def solvent_corrected_fsc(numerators, denominators, settings, *, current_size, a
     the iteration in the log.
     """
 
+    from recovar.utils.helpers import recovar_volume_to_relion
+
     from relax.reconstruction.solvent_mask import solvent_corrected_fsc
 
     clock = Stopwatch()
@@ -577,12 +579,16 @@ def solvent_corrected_fsc(numerators, denominators, settings, *, current_size, a
         accumulator_volume_shape=accumulator_shape,
     )
     # RELION's getFSC sums the FFTW half spectrum halved along the map file's x axis, and the
-    # half-spectrum sum depends on which axis is halved; the maps and the mask return to the file's
-    # axis order (the transpose of the internal frame; relax.io.map_io).
+    # half-spectrum sum depends on which axis is halved; the maps return to the file's frame, the
+    # negated transpose of the internal frame (recovar_volume_to_relion, as relax.io.map_io writes
+    # them), and the mask, which has no sign, to its axis order. The sign matters: the randomised
+    # shells replace the phases and keep no sign, so a negated pair mixes them with the kept shells
+    # under the mask with the opposite sign and leaves RELION's curve by up to 5e-3.
     half1, half2 = (
-        np.transpose(
-            np.real(np.asarray(fourier_transform_utils.get_idft3(jnp.asarray(m).reshape(settings.volume_shape)))),
-            (2, 1, 0),
+        np.asarray(
+            recovar_volume_to_relion(
+                np.real(np.asarray(fourier_transform_utils.get_idft3(jnp.asarray(m).reshape(settings.volume_shape))))
+            )
         )
         for m in unregularised
     )

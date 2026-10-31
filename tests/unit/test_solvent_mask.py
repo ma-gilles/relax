@@ -265,3 +265,52 @@ def test_corrected_fsc_replays_relion_leader_stream(case, iterations, split_draw
         randomised += details["randomize_at"] > 0
         np.testing.assert_allclose(got[: expected.size], expected, rtol=0.0, atol=1e-6)
     assert randomised >= 2  # the stream carried across randomising iterations
+
+
+def test_k1_corrected_fsc_takes_the_halves_in_the_file_frame(monkeypatch):
+    """priors.solvent_corrected_fsc reconstructs internal-frame halves; RELION's curve needs them in the file
+    frame, the negated transpose. A negated pair gives the same unmasked and masked FSC but mixes the
+    randomised shells with the kept ones under the mask with the other sign: on these iterations it leaves
+    RELION's curve by 3e-3 to 5e-3."""
+    import logging
+    from types import SimpleNamespace
+
+    import starfile
+    from recovar.core import fourier_transform_utils
+    from recovar.utils.helpers import relion_volume_to_recovar
+
+    from relax.refinement import numbered_reconstruction, priors
+
+    root = fixture_dir("solvent_fsc_stream_relion_seed2") / "spa_seed2"
+    mask = _read_map(root / "solvent_ref_mask.mrc")
+    stream = relion_random.init_random_generator(2)
+    stream.rand_array(5000)  # the split's draws (PROVENANCE.json)
+    settings = SimpleNamespace(
+        volume_shape=mask.shape,
+        solvent_mask=np.transpose(mask, (2, 1, 0)),  # the internal frame (setup_checks._internal_solvent_mask)
+        solvent_phase_stream=stream,
+        box_size=mask.shape[0],
+        voxel_size=1.0,
+    )
+    for iteration in (1, 2, 3, 4):
+        stem = root / f"run_it{iteration:03d}"
+        halves = [
+            np.asarray(
+                fourier_transform_utils.get_dft3(relion_volume_to_recovar(_read_map(f"{stem}_{h}_class001_unfil.mrc")))
+            )
+            for h in ("half1", "half2")
+        ]
+        monkeypatch.setattr(numbered_reconstruction, "reconstruct_unregularized_k1_halfmaps", lambda *a, **k: halves)
+        model = starfile.read(f"{stem}_half1_model.star", always_dict=True)
+        expected = model["model_class_1"]["rlnGoldStandardFsc"].to_numpy(float)
+        got = priors.solvent_corrected_fsc(
+            None,
+            None,
+            settings,
+            current_size=int(model["model_general"]["rlnCurrentImageSize"]),
+            accumulator_shape=None,
+            label=f"iter-{iteration}",
+            like=np.zeros(expected.size),
+            log=logging.getLogger(__name__),
+        )
+        np.testing.assert_allclose(np.asarray(got, dtype=np.float64), expected, rtol=0.0, atol=1e-6)
