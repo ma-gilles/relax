@@ -5,6 +5,8 @@ requirements remain in the [EM contract](../../relax/AGENTS.md),
 [benchmark contract](benchmarks.md), [Della runbook](della.md) and
 [CUDA contract](https://github.com/ma-gilles/recovar/blob/dev2/recovar/cuda/CLAUDE.md).
 Current user instructions take precedence over these guides.
+The PPCA ab initio speed work of 2026-11 and its measurements are in
+[ppca_performance.md](ppca_performance.md).
 
 **Design goal:** deliver meaningful speed while keeping code easy to maintain
 and modify, including through agentic development. A human should be able to
