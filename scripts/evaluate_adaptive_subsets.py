@@ -1,0 +1,152 @@
+#!/usr/bin/env python
+"""Score an adaptive-subset run (``scripts.multibody_adaptive_subsets``) against the synthetic truth.
+
+    python -m scripts.evaluate_adaptive_subsets --run <out dir> --data <dataset dir> --truth-state 3 \\
+        [--multibody <MultiBody dir>] --json report.json --plot curve.png
+
+For every candidate bandwidth (``diagnostics/<prefix>000/estimates_half<h>_unfil/NNNN.mrc``) and for RECOVAR's
+selected maps (``<prefix>000_half<h>_unfil.mrc``): the FSC area, in the target body's mask, of each half map against
+the true target-body map (``body2_states/volNNNN.mrc`` of ``--truth-state``, or ``bodies/vol0001.mrc`` for a rigid
+body), moved to the body frame the candidates are in. RECOVAR's own criterion per candidate is its split-shell
+opposite-half error summed over every region and shell (``split_choice.pkl``), and its argmin is the single
+bandwidth it would choose for the whole body. With ``--multibody``, the all-particle candidate is also compared with
+that run's soft-posterior body map, a frame check: the two estimators differ but must agree in geometry.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import pickle
+from pathlib import Path
+
+import numpy as np
+
+from scripts.fsc_metrics import normalized_fsc_auc, shell_fsc
+
+
+def _read(path) -> np.ndarray:
+    """A volume RECOVAR wrote (``recovar.utils.write_mrc``), in the recovar frame."""
+    from recovar.utils.helpers import load_mrc
+
+    return np.asarray(load_mrc(str(path)), dtype=np.float64)
+
+
+def evaluate(run_dir: Path, data_dir: Path, truth_state: int | None, multibody: Path | None, prefix: str = "subset") -> dict:
+    from recovar.utils.helpers import load_relion_volume
+
+    from relax.multibody.bodies import read_bodies
+    from relax.multibody.subtraction import recovar_mask, relion_to_recovar_axes, translate_zero_fill
+
+    record = json.loads((run_dir / f"{prefix}_subsets.json").read_text())
+    target = int(record["target_body"]) - 1
+    motion = json.loads((data_dir / "body_motion.json").read_text())
+    body = read_bodies(data_dir / "bodies.star", pixel_size=float(motion["voxel_size"]))[target]
+    to_body = -relion_to_recovar_axes(body.com)
+    mask = translate_zero_fill(recovar_mask(body), to_body)
+    if truth_state is None:
+        truth_path = data_dir / "bodies" / f"vol{target:04d}.mrc"
+    else:
+        truth_path = data_dir / "body2_states" / f"vol{truth_state:04d}.mrc"
+    truth = translate_zero_fill(_read(truth_path), to_body)
+    # The region that changes between states: where the target state differs from the undeformed body (the
+    # deformation benchmark), dilated and softened; the body mask when there is no deformation.
+    region = mask
+    neutral_path = data_dir / "bodies" / f"vol{target:04d}.mrc"
+    if truth_state is not None and neutral_path.exists():
+        from scipy import ndimage
+
+        diff = np.abs(_read(truth_path) - _read(neutral_path))
+        if diff.max() > 0:
+            core = ndimage.binary_dilation(diff > 0.1 * diff.max(), iterations=3)
+            region = translate_zero_fill(ndimage.gaussian_filter(core.astype(np.float64), 1.5), to_body) * (mask > 0)
+
+    def score(volume, weight=None):
+        weight = mask if weight is None else weight
+        fsc = shell_fsc(volume * weight, truth * weight)
+        return float(normalized_fsc_auc(fsc))
+
+    diag = run_dir / "diagnostics" / f"{prefix}000"
+    n = len(record["thresholds"])
+    candidate_maps = [[_read(diag / f"estimates_half{h + 1}_unfil" / f"{k:04d}.mrc") for k in range(n)] for h in range(2)]
+    selected_maps = [_read(run_dir / f"{prefix}000_half{h + 1}_unfil.mrc") for h in range(2)]
+    candidates = [[score(m) for m in maps] for maps in candidate_maps]
+    selected = [score(m) for m in selected_maps]
+    region_candidates = np.mean([[score(m, region) for m in maps] for maps in candidate_maps], axis=0)
+    region_selected = float(np.mean([score(m, region) for m in selected_maps]))
+    errors = np.asarray(pickle.load(open(diag / "split_choice.pkl", "rb"))["ml_errors"], dtype=np.float64)
+    criterion = errors.reshape(errors.shape[0], -1).sum(axis=1)
+    mean_auc = np.mean(candidates, axis=0)
+    best = int(np.argmax(mean_auc))
+    chosen = int(np.argmin(criterion))
+    report = {
+        "run": str(run_dir), "truth": str(truth_path), "target_body": target + 1,
+        "thresholds": record["thresholds"], "counts_per_half": record["counts_per_half"],
+        "candidate_masked_auc": candidates, "selected_masked_auc": selected,
+        "criterion_total": criterion.tolist(),
+        "global_choice": chosen, "best_candidate": best,
+        "all_particle_auc": float(mean_auc[-1]), "narrow_core_auc": float(mean_auc[0]),
+        "best_auc": float(mean_auc[best]), "global_choice_auc": float(mean_auc[chosen]),
+        "local_selected_auc": float(np.mean(selected)),
+        "excess_error_global": float(mean_auc[best] - mean_auc[chosen]),
+        "excess_error_local": float(mean_auc[best] - np.mean(selected)),
+        "region_candidate_auc": region_candidates.tolist(), "region_selected_auc": region_selected,
+        "region_best_candidate": int(np.argmax(region_candidates)),
+        "region_global_choice_auc": float(region_candidates[chosen]),
+        "region_all_particle_auc": float(region_candidates[-1]), "region_narrow_core_auc": float(region_candidates[0]),
+        "region_best_auc": float(region_candidates.max()),
+    }
+    if multibody is not None:
+        posterior = translate_zero_fill(load_relion_volume(str(multibody / f"run_body{target + 1:03d}.mrc")), to_body)
+        endpoint = 0.5 * sum(_read(diag / f"estimates_half{h + 1}_unfil" / f"{n - 1:04d}.mrc") for h in range(2))
+        report["all_particle_vs_multibody_map_masked_auc"] = float(normalized_fsc_auc(shell_fsc(endpoint * mask, posterior * mask)))
+    return report
+
+
+def plot(report: dict, path: Path) -> None:
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    counts = np.sum(report["counts_per_half"], axis=0)
+    auc = np.mean(report["candidate_masked_auc"], axis=0)
+    criterion = np.asarray(report["criterion_total"])
+    fig, (top, bottom) = plt.subplots(2, 1, figsize=(6, 6), sharex=True)
+    top.plot(counts, 1.0 - auc, marker="o", ms=3, label="body mask")
+    if "region_candidate_auc" in report:
+        top.plot(counts, 1.0 - np.asarray(report["region_candidate_auc"]), marker="s", ms=3, label="changing region")
+    top.axvline(counts[report["best_candidate"]], ls=":", c="k", label="best in body (truth)")
+    top.axvline(counts[report["global_choice"]], ls="--", c="C3", label="RECOVAR global choice")
+    top.axhline(1.0 - report["local_selected_auc"], ls="-.", c="C2", label="RECOVAR local selection (body)")
+    if "region_candidate_auc" in report:
+        top.axvline(counts[report["region_best_candidate"]], ls=":", c="C1", label="best in region (truth)")
+        top.axhline(1.0 - report["region_selected_auc"], ls="-.", c="C1", label="RECOVAR local selection (region)")
+    top.set_ylabel("1 - masked FSC AUC vs truth")
+    top.legend(fontsize=8)
+    bottom.plot(counts, criterion - criterion.min(), marker="o", ms=3, c="C3")
+    bottom.set_ylabel("RECOVAR criterion (relative)")
+    bottom.set_xlabel("particles in subset (both halves)")
+    fig.tight_layout()
+    fig.savefig(path, dpi=120)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--run", required=True, type=Path)
+    parser.add_argument("--data", required=True, type=Path)
+    parser.add_argument("--truth-state", type=int, default=None)
+    parser.add_argument("--multibody", type=Path, default=None)
+    parser.add_argument("--json", type=Path, default=None)
+    parser.add_argument("--plot", type=Path, default=None)
+    args = parser.parse_args()
+    report = evaluate(args.run, args.data, args.truth_state, args.multibody)
+    print({k: v for k, v in report.items() if not isinstance(v, list)})
+    if args.json is not None:
+        args.json.write_text(json.dumps(report, indent=1))
+    if args.plot is not None:
+        plot(report, args.plot)
+
+
+if __name__ == "__main__":
+    main()
