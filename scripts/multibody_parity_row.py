@@ -4,6 +4,9 @@
     python -m scripts.multibody_parity_row --data <dataset> --relion <MultiBody dir> [<repeat dir> ...] \\
         --relax <relax dir> --json row.json
 
+Real data has no truth: pass ``--body_star`` (mask paths relative to ``--data``) and ``--pixel_size`` instead of a
+synthetic dataset's ``body_motion.json``, and the ground-truth columns are left out.
+
 Per body: the masked map FSC-AUC of relax's final ``run_body<BBB>.mrc`` against the first RELION run's, and of
 each RELION repeat against the first (the band); the masked ground-truth FSC-AUC and the median motion error of
 every run; the fraction of identical final body poses. Per run: the iterations, and the first iteration whose
@@ -49,16 +52,20 @@ def _masked_auc(a_path: Path, b_path: Path, mask: np.ndarray) -> float:
     return float(normalized_fsc_auc(shell_fsc(a * mask, b * mask)))
 
 
-def row(data: Path, relion_dirs: list[Path], relax_dir: Path) -> dict:
+def row(data: Path, relion_dirs: list[Path], relax_dir: Path, *, body_star: Path = None, pixel_size: float = None) -> dict:
     from relax.multibody.bodies import read_bodies
 
-    motion = json.loads((data / "body_motion.json").read_text())
-    bodies = read_bodies(data / "bodies.star", pixel_size=float(motion["voxel_size"]))
+    if body_star is None:
+        pixel_size = float(json.loads((data / "body_motion.json").read_text())["voxel_size"])
+        bodies = read_bodies(data / "bodies.star", pixel_size=pixel_size)
+    else:
+        bodies = read_bodies(body_star, pixel_size=pixel_size, paths_from=data)
     masks = [np.transpose(body.mask, (2, 1, 0)) for body in bodies]
     reference = relion_dirs[0]
     out = {"data": str(data), "relion": [str(d) for d in relion_dirs], "relax": str(relax_dir), "bodies": []}
-    gt = {str(d): evaluate(data, d, None) for d in [*relion_dirs, relax_dir]}
+    gt = {} if body_star is not None else {str(d): evaluate(data, d, None) for d in [*relion_dirs, relax_dir]}
     final = compare(reference, relax_dir, None)
+    repeats = [compare(reference, d, None) for d in relion_dirs[1:]]
     for b, mask in enumerate(masks):
         name = f"run_body{b + 1:03d}.mrc"
         out["bodies"].append({
@@ -66,6 +73,9 @@ def row(data: Path, relion_dirs: list[Path], relax_dir: Path) -> dict:
             "relax_vs_relion_masked_auc": _masked_auc(relax_dir / name, reference / name, mask),
             "relion_repeat_vs_relion_masked_auc": [_masked_auc(d / name, reference / name, mask) for d in relion_dirs[1:]],
             "identical_final_poses": final["bodies"][b]["fraction_same_pose"],
+            "relion_repeat_identical_final_poses": [r["bodies"][b]["fraction_same_pose"] for r in repeats],
+            "pose_angle_median_deg": final["bodies"][b]["pose_angle_deg"]["median"],
+            "relion_repeat_pose_angle_median_deg": [r["bodies"][b]["pose_angle_deg"]["median"] for r in repeats],
             "gt_masked_auc": {k: v["bodies"][b]["maps"][0]["masked"]["auc"] for k, v in gt.items()},
             "gt_motion_error_median_deg": {k: v["bodies"][b]["motion_error_deg"]["median"] for k, v in gt.items()},
         })
@@ -79,12 +89,17 @@ def main() -> None:
     parser.add_argument("--relion", required=True, type=Path, nargs="+")
     parser.add_argument("--relax", required=True, type=Path)
     parser.add_argument("--json", type=Path, default=None)
+    parser.add_argument("--body_star", type=Path, default=None, help="real data: the body STAR file")
+    parser.add_argument("--pixel_size", type=float, default=None, help="real data: Angstroms per pixel")
     args = parser.parse_args()
-    report = row(args.data, args.relion, args.relax)
+    report = row(args.data, args.relion, args.relax, body_star=args.body_star, pixel_size=args.pixel_size)
     for body in report["bodies"]:
         print(f"body {body['body']}: relax-vs-RELION masked AUC {body['relax_vs_relion_masked_auc']:.5f}; "
               f"RELION repeats {[round(v, 5) for v in body['relion_repeat_vs_relion_masked_auc']]}; "
-              f"identical poses {body['identical_final_poses']:.4f}; GT masked AUC "
+              f"identical poses {body['identical_final_poses']:.4f}, repeats "
+              f"{[round(v, 4) for v in body['relion_repeat_identical_final_poses']]}; median pose angle "
+              f"{body['pose_angle_median_deg']:.3f} deg, repeats "
+              f"{[round(v, 3) for v in body['relion_repeat_pose_angle_median_deg']]}; GT masked AUC "
               f"{[round(v, 4) for v in body['gt_masked_auc'].values()]}")
     for k, v in report["schedule"].items():
         print(f"schedule {Path(k).name}: {v}")
