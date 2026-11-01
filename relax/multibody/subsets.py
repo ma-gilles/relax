@@ -35,6 +35,7 @@ from recovar.core import fourier_transform_utils as ftu
 from recovar.utils.helpers import load_relion_volume
 
 from relax.multibody import geometry
+from relax.multibody.pose_neighborhoods import PoseFeatures, body_features
 from relax.multibody.subtraction import BodyPoses, dataset_with_images, subtracted_body_images
 
 logger = logging.getLogger(__name__)
@@ -143,6 +144,27 @@ def distances_to(scores: np.ndarray, components, target) -> np.ndarray:
 
     z = np.asarray(scores, dtype=np.float64)[:, list(components)]
     return np.linalg.norm(z - np.asarray(target, dtype=np.float64)[None, :], axis=1)
+
+
+def body_pose_features(run, result: MultibodyResult, target: int) -> PoseFeatures:
+    """The pose comparison terms of body ``target``, from that body's poses alone."""
+
+    particles = run.checkpoint.particles
+    consensus = geometry.consensus_matrices(particles[["rlnAngleRot", "rlnAngleTilt", "rlnAnglePsi"]].to_numpy(np.float64))
+    return body_features(
+        consensus, geometry.body_matrices(consensus, run.bodies[target], result.poses[target].eulers_deg), run.bodies[target],
+        particles[["rlnOriginXAngst", "rlnOriginYAngst"]].to_numpy(np.float64) / run.pixel_size,
+        result.poses[target].offsets_px, run.pixel_size,
+    )
+
+
+def target_row(names: np.ndarray, image_name: str) -> int:
+    """The row of the one particle called ``image_name``."""
+
+    rows = np.flatnonzero(np.asarray(names) == image_name)
+    if rows.size != 1:
+        raise ValueError(f"{image_name}: {rows.size} particles have this name")
+    return int(rows[0])
 
 
 def nested_thresholds(distances: np.ndarray, *, n_candidates: int, n_min_per_half: int, halves) -> np.ndarray:
