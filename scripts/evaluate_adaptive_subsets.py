@@ -5,9 +5,11 @@
         [--multibody <MultiBody dir>] --json report.json --plot curve.png
 
 For every candidate bandwidth (``diagnostics/<prefix>000/estimates_half<h>_unfil/NNNN.mrc``) and for RECOVAR's
-selected maps (``<prefix>000_half<h>_unfil.mrc``): the FSC area, in the target body's mask, of each half map against
-the true target-body map (``body2_states/volNNNN.mrc`` of ``--truth-state``, or ``bodies/vol0001.mrc`` for a rigid
-body), moved to the body frame the candidates are in. RECOVAR's own criterion per candidate is its split-shell
+selected maps (``<prefix>000_half<h>_unfil.mrc``): the FSC area and the mean squared error, in the target body's mask,
+of each half map against the true target-body map (``body2_states/volNNNN.mrc`` of ``--truth-state``, else the body
+alone at the dataset's mean pose, ``bodies_mean/``, or at the neutral pose, ``bodies/``), moved to the body frame the
+candidates are in. The truth is the simulator's own: ``synthetic_dataset.load_ground_truth_volumes`` applies the
+recorded volume scale and solvent/B-factor operator to the file, so the error compares matched amplitudes. RECOVAR's own criterion per candidate is its split-shell
 opposite-half error summed over every region and shell (``split_choice.pkl``), and its argmin is the single
 bandwidth it would choose for the whole body. With ``--multibody``, the all-particle candidate is also compared with
 that run's soft-posterior body map, a frame check: the two estimators differ but must agree in geometry.
@@ -32,7 +34,23 @@ def _read(path) -> np.ndarray:
     return np.asarray(load_mrc(str(path)), dtype=np.float64)
 
 
+def calibrated_truth(sim_info: dict, path_root: str, index: int, box: int) -> np.ndarray:
+    """Real volume ``index`` of the files ``<path_root>NNNN.mrc`` as the simulator projected it."""
+    import jax.numpy as jnp
+    from recovar.core import fourier_transform_utils as ftu
+    from recovar.simulation import synthetic_dataset
+
+    volumes = synthetic_dataset.load_ground_truth_volumes(sim_info, path_root)
+    return np.asarray(ftu.get_idft3(jnp.asarray(volumes[index]).reshape((box, box, box))).real, dtype=np.float64)
+
+
+def masked_mse(volume, truth, weight) -> float:
+    """``sum w^2 (v - t)^2 / sum w^2`` in the units of the maps."""
+    return float(np.sum((weight * (volume - truth)) ** 2) / np.sum(weight**2))
+
+
 def evaluate(run_dir: Path, data_dir: Path, truth_state: int | None, multibody: Path | None, prefix: str = "subset") -> dict:
+    from recovar import utils
     from recovar.utils.helpers import load_relion_volume
 
     from relax.multibody.bodies import read_bodies
@@ -44,15 +62,20 @@ def evaluate(run_dir: Path, data_dir: Path, truth_state: int | None, multibody: 
     body = read_bodies(data_dir / "bodies.star", pixel_size=float(motion["voxel_size"]))[target]
     to_body = -relion_to_recovar_axes(body.com)
     mask = translate_zero_fill(recovar_mask(body), to_body)
+    # The true body maps of a moving dataset are at its mean pose; bodies/ of the spliceosome sets is the unswung one.
+    folder = "bodies_mean" if (data_dir / "bodies_mean").is_dir() else "bodies"
+    sim_info = utils.pickle_load(data_dir / "simulation_info.pkl")
+    box = int(sim_info["grid_size"])
     if truth_state is None:
-        truth_path = data_dir / "bodies" / f"vol{target:04d}.mrc"
+        truth_root, truth_index = str(data_dir / folder / "vol"), target
     else:
-        truth_path = data_dir / "body2_states" / f"vol{truth_state:04d}.mrc"
-    truth = translate_zero_fill(_read(truth_path), to_body)
+        truth_root, truth_index = str(data_dir / "body2_states" / "vol"), truth_state
+    truth_path = Path(f"{truth_root}{truth_index:04d}.mrc")
+    truth = translate_zero_fill(calibrated_truth(sim_info, truth_root, truth_index, box), to_body)
     # The region that changes between states: where the target state differs from the undeformed body (the
     # deformation benchmark), dilated and softened; the body mask when there is no deformation.
     region = mask
-    neutral_path = data_dir / "bodies" / f"vol{target:04d}.mrc"
+    neutral_path = data_dir / folder / f"vol{target:04d}.mrc"
     if truth_state is not None and neutral_path.exists():
         from scipy import ndimage
 
@@ -74,6 +97,13 @@ def evaluate(run_dir: Path, data_dir: Path, truth_state: int | None, multibody: 
     selected = [score(m) for m in selected_maps]
     region_candidates = np.mean([[score(m, region) for m in maps] for maps in candidate_maps], axis=0)
     region_selected = float(np.mean([score(m, region) for m in selected_maps]))
+    mse = {
+        name: {
+            "candidates": np.mean([[masked_mse(m, truth, w) for m in maps] for maps in candidate_maps], axis=0).tolist(),
+            "selected": float(np.mean([masked_mse(m, truth, w) for m in selected_maps])),
+        }
+        for name, w in (("body", mask), ("region", region))
+    }
     errors = np.asarray(pickle.load(open(diag / "split_choice.pkl", "rb"))["ml_errors"], dtype=np.float64)
     criterion = errors.reshape(errors.shape[0], -1).sum(axis=1)
     mean_auc = np.mean(candidates, axis=0)
@@ -95,6 +125,9 @@ def evaluate(run_dir: Path, data_dir: Path, truth_state: int | None, multibody: 
         "region_global_choice_auc": float(region_candidates[chosen]),
         "region_all_particle_auc": float(region_candidates[-1]), "region_narrow_core_auc": float(region_candidates[0]),
         "region_best_auc": float(region_candidates.max()),
+        "masked_mse": mse, "truth_rms_in_body_mask": float(np.sqrt(masked_mse(truth, 0.0, mask))),
+        "fsc_region_selected_half1": np.asarray(shell_fsc(selected_maps[0] * region, truth * region)).tolist(),
+        "fsc_body_selected_half1": np.asarray(shell_fsc(selected_maps[0] * mask, truth * mask)).tolist(),
     }
     if multibody is not None:
         posterior = translate_zero_fill(load_relion_volume(str(multibody / f"run_body{target + 1:03d}.mrc")), to_body)
