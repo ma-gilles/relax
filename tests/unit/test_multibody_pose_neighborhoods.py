@@ -258,13 +258,13 @@ def two_body_run(rng, n=200):
     particles[["rlnOriginXAngst", "rlnOriginYAngst"]] = rng.uniform(-6.0, 6.0, size=(n, 2))
     run = SimpleNamespace(bodies=bodies, pixel_size=1.5, checkpoint=SimpleNamespace(particles=particles))
     poses = [BodyPoses(RESIDUAL_IDENTITY_EULER + rng.normal(size=(n, 3)) * 4.0, rng.normal(size=(n, 2))) for _ in bodies]
-    return run, SimpleNamespace(poses=poses)
+    return run, SimpleNamespace(poses=poses, alignment_offsets_px=None)
 
 
 def test_changing_another_body_changes_nothing_of_this_bodys_subsets():
     rng = np.random.default_rng(9)
     run, result = two_body_run(rng)
-    changed = SimpleNamespace(poses=[result.poses[0], BodyPoses(
+    changed = SimpleNamespace(alignment_offsets_px=None, poses=[result.poses[0], BodyPoses(
         result.poses[1].eulers_deg + rng.normal(size=(200, 3)) * 20.0, result.poses[1].offsets_px + rng.normal(size=(200, 2)) * 5.0
     )])
     halves = [np.arange(0, 200, 2), np.arange(1, 200, 2)]

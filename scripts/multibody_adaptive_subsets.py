@@ -22,41 +22,75 @@ from pathlib import Path
 import numpy as np
 
 
+def true_body_motions(record: dict, n_bodies: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Per state and body, the rotation ``[S, B, 3, 3]`` and translation ``[S, B, 3]`` (angstroms) about the pivot, in
+    the map frame: the table a benchmark records, or the plane-cut benchmark's stationary body 1 and twisting body 2."""
+    from scipy.spatial.transform import Rotation
+
+    pivot = np.asarray(record["pivot_angstrom_centered"], dtype=np.float64)
+    if "state_body_rotations" in record:
+        return np.asarray(record["state_body_rotations"]), np.asarray(record["state_body_translations"]), pivot
+    if n_bodies != 2:
+        raise ValueError("the plane-cut benchmark's motion is defined for two bodies")
+    angles = np.asarray(record["state_angles_deg"], dtype=np.float64)
+    twist = Rotation.from_rotvec(np.deg2rad(angles)[:, None] * np.asarray(record["twist_axis"])).as_matrix()
+    rotations = np.stack([np.tile(np.eye(3), (len(angles), 1, 1)), twist], axis=1)
+    return rotations, np.zeros((len(angles), 2, 3)), pivot
+
+
+def true_offsets(projected_px, consensus_offsets_px, position_px) -> tuple[np.ndarray, np.ndarray]:
+    """A body's nuisance and target-alignment offsets for its pivot at ``position_px`` in the raw image. A body is
+    placed as nuisance at ``p - o - f`` (``geometry.other_body_shifts``) but aligned as target by ``r + f`` with
+    ``r = ROUND(o - p)``, so the second differs by the fractional centring ``o - p - r``."""
+    from relax.multibody import geometry
+
+    integer = geometry.integer_image_shifts(consensus_offsets_px, projected_px)
+    return projected_px - consensus_offsets_px - position_px, -integer - position_px
+
+
 def oracle_result(run, result, data_dir: Path):
     """``result`` with every body's TRUE pose (a diagnostic): the residual that composes, with the run's consensus
-    pose, to the simulated particle pose times the body's true motion, and the offset that puts the body's centre
-    where the simulation put it (plane-cut benchmark: body 2 twists about ``twist_axis`` through the pivot)."""
+    pose, to the simulated particle pose times the body's true motion, and offsets that place it exactly."""
     from dataclasses import replace
 
     from recovar import utils
     from recovar.utils.helpers import R_to_relion
-    from scipy.spatial.transform import Rotation
 
     from relax.multibody import geometry
     from relax.multibody.bodies import A_ROT90
     from relax.multibody.subtraction import BodyPoses
 
     record = json.loads((data_dir / "body_motion.json").read_text())
-    sim = utils.pickle_load(data_dir / "simulation_info.pkl")
     names = np.asarray(run.checkpoint.particles["rlnImageName"])
     rows = np.asarray([int(n.split("@")[0]) - 1 for n in names])
-    true_rot = np.asarray(utils.pickle_load(data_dir / "poses.pkl")[0])[rows]  # RELION matrices
+    true_rot, true_trans = (np.asarray(v)[rows] for v in utils.pickle_load(data_dir / "poses.pkl"))
+    if np.max(np.abs(true_trans)) > 0:
+        raise NotImplementedError("the oracle assumes simulated images with zero translation")
     particles = run.checkpoint.particles
     consensus = geometry.consensus_matrices(particles[["rlnAngleRot", "rlnAngleTilt", "rlnAnglePsi"]].to_numpy(float))
-    cons_off = particles[["rlnOriginXAngst", "rlnOriginYAngst"]].to_numpy(float)
-    angles = np.asarray(record["state_angles_deg"], float)[np.asarray(sim["image_assignment"])[rows]]
-    axis, pivot = np.asarray(record["twist_axis"]), np.asarray(record["pivot_angstrom_centered"])
-    poses = []
+    origins = particles[["rlnOriginXAngst", "rlnOriginYAngst"]].to_numpy(float) / run.pixel_size
+    states = state_rows(data_dir, names)
+    rotations, translations, pivot = true_body_motions(record, len(run.bodies))
+    poses, alignment = [], []
     for b, body in enumerate(run.bodies):
-        M = np.tile(np.eye(3), (len(rows), 1, 1)) if b == 0 else Rotation.from_rotvec(np.deg2rad(angles)[:, None] * axis).as_matrix()
+        M = rotations[states, b]
         target = np.einsum("nij,njk->nik", true_rot, M)
         O = body.orientation
         residual = np.einsum("ij,jk,nlk,nlm,mo->nio", A_ROT90.T, O, consensus, target, O.T)
-        com = body.com * run.pixel_size
-        s_true = np.einsum("nij,nj->ni", true_rot, np.einsum("nij,nj->ni", M, (com - pivot)[None]) + pivot)[:, :2]
-        origin = np.einsum("nij,j->ni", consensus, com)[:, :2] - cons_off - s_true
-        poses.append(BodyPoses(eulers_deg=np.asarray(R_to_relion(residual, degrees=True)), offsets_px=origin / run.pixel_size))
-    return replace(result, poses=poses)
+        centre = np.einsum("nij,j->ni", M, body.com * run.pixel_size - pivot) + pivot + translations[states, b]
+        position = np.einsum("nij,nj->ni", true_rot, centre)[:, :2] / run.pixel_size
+        nuisance, aligned = true_offsets(geometry.projected_centers(consensus, body), origins, position)
+        poses.append(BodyPoses(eulers_deg=np.asarray(R_to_relion(residual, degrees=True)), offsets_px=nuisance))
+        alignment.append(aligned)
+    return replace(result, poses=poses, alignment_offsets_px=alignment)
+
+
+def state_rows(data_dir: Path, names: np.ndarray) -> np.ndarray:
+    """Each particle's simulated state."""
+    from recovar import utils
+
+    assignment = np.asarray(utils.pickle_load(data_dir / "simulation_info.pkl")["image_assignment"])
+    return assignment[np.asarray([int(name.split("@")[0]) - 1 for name in names])]
 
 
 def main() -> None:
@@ -64,10 +98,16 @@ def main() -> None:
     parser.add_argument("--consensus", required=True)
     parser.add_argument("--bodies", required=True, type=Path)
     parser.add_argument("--multibody", required=True, type=Path)
+    parser.add_argument("--neighborhood", choices=("pca", "pose"), default="pca",
+                        help="pca: distances in the pooled motion PCA; pose: the target body's depth-aware pose comparison")
+    parser.add_argument("--target-image", default=None, help="pose: rlnImageName of the target particle")
+    parser.add_argument("--depth-bound", type=float, default=None, help="pose: the missing-depth bound L_b, angstroms")
+    parser.add_argument("--ignore-group-scales", action="store_true",
+                        help="reconstruct although RELION's group scales are not one, when the true scale is known to be one")
     parser.add_argument("--pca", type=Path, default=None)
     parser.add_argument("--oracle-coordinates", type=Path, default=None, help="dataset dir: use the true twist (diagnostic)")
     parser.add_argument("--components", default="0", help="comma-separated 0-based PCA columns")
-    target = parser.add_mutually_exclusive_group(required=True)
+    target = parser.add_mutually_exclusive_group(required=False)
     target.add_argument("--target", default=None, help="comma-separated coordinates of the target point")
     target.add_argument("--target-quantile", type=float, default=None)
     parser.add_argument("--target-body", type=int, required=True, help="1-based body")
@@ -85,6 +125,7 @@ def main() -> None:
 
     from relax.commands.multibody import run_options
     from relax.multibody import subsets
+    from relax.multibody.pose_neighborhoods import compatibility_distance, snap_round_off
     from relax.multibody.refine import MultibodyCommand, start_from_consensus
 
     command = MultibodyCommand(
@@ -95,24 +136,31 @@ def main() -> None:
     result = subsets.read_multibody_result(args.multibody, run)
     if args.oracle_poses is not None:
         result = oracle_result(run, result, args.oracle_poses)
+    if not args.ignore_group_scales:
+        subsets.require_unit_group_scales(run)
     names = np.asarray(run.checkpoint.particles["rlnImageName"])
-    components = [int(c) for c in args.components.split(",")]
-    if args.oracle_coordinates is not None:
-        from recovar import utils
-
-        record = json.loads((args.oracle_coordinates / "body_motion.json").read_text())
-        assignment = np.asarray(utils.pickle_load(args.oracle_coordinates / "simulation_info.pkl")["image_assignment"])
-        rows = np.asarray([int(name.split("@")[0]) - 1 for name in names])
-        scores = np.asarray(record["state_angles_deg"], dtype=np.float64)[assignment[rows]][:, None]
-        components, source = [0], "oracle: true body-2 twist (deg) of each particle's simulated state"
+    if args.neighborhood == "pose":
+        target_row = subsets.target_row(names, args.target_image)
+        features = subsets.body_pose_features(run, result, args.target_body - 1)
+        length = max(args.depth_bound, np.sqrt(np.sum(features.shape_factors[0] ** 2)))
+        distances = snap_round_off(compatibility_distance(features, target_row, args.depth_bound), length)
+        components, source, z_star = [], f"pose neighborhood of {args.target_image}", np.zeros(0)
     else:
-        scores = subsets.read_flex_projections(args.pca, names)
-        source = str(args.pca)
-    if args.target is not None:
-        z_star = np.asarray([float(v) for v in args.target.split(",")])
-    else:
-        z_star = np.quantile(scores[:, components], args.target_quantile, axis=0)
-    distances = subsets.distances_to(scores, components, z_star)
+        components = [int(c) for c in args.components.split(",")]
+        if args.oracle_coordinates is not None:
+            record = json.loads((args.oracle_coordinates / "body_motion.json").read_text())
+            scores = np.asarray(record["state_angles_deg"], dtype=np.float64)[state_rows(args.oracle_coordinates, names)][:, None]
+            components, source = [0], "oracle: true body-2 twist (deg) of each particle's simulated state"
+        else:
+            scores = subsets.read_flex_projections(args.pca, names)
+            source = str(args.pca)
+        if args.target_image is not None:
+            z_star = scores[subsets.target_row(names, args.target_image), components]
+        elif args.target is not None:
+            z_star = np.asarray([float(v) for v in args.target.split(",")])
+        else:
+            z_star = np.quantile(scores[:, components], args.target_quantile, axis=0)
+        distances = subsets.distances_to(scores, components, z_star)
     thresholds = subsets.nested_thresholds(
         distances, n_candidates=args.n_candidates, n_min_per_half=args.n_min_per_half,
         halves=[run.halves[h].rows for h in range(2)],
@@ -121,7 +169,10 @@ def main() -> None:
         run, result, target=args.target_body - 1, distances=distances, thresholds=thresholds, output=args.out,
         metric=args.metric, maskrad_fraction=args.maskrad_fraction,
     )
-    record.update({"coordinates": source, "components": components, "target_point": z_star.tolist()})
+    record.update({
+        "coordinates": source, "components": components, "target_point": z_star.tolist(), "target_image": args.target_image,
+        "neighborhood": args.neighborhood, "depth_bound_angstrom": args.depth_bound, "ignore_group_scales": args.ignore_group_scales,
+    })
     if args.check_direct:
         dataset = subsets.fixed_pose_dataset(run, result, args.target_body - 1)
         record["direct_check_half1"] = subsets.check_cumulative_against_direct(

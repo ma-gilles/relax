@@ -21,6 +21,7 @@ from relax.multibody.bodies import A_ROT90
 from relax.multibody.pose_neighborhoods import body_pose_lines
 from relax.multibody.subtraction import relion_translate_2d
 from relax.relion.macros import relion_round_array
+from scripts.multibody_adaptive_subsets import true_offsets
 
 pytestmark = pytest.mark.unit
 
@@ -187,3 +188,13 @@ def test_negative_controls_miss_the_image(fixture):
     _, lifts, normals = body_pose_lines(fixture.B, fixture.B, PIVOT_PX, fixture.o, fixture.f, PIXEL)
     depths = np.sum(fixture.t * normals, axis=1, keepdims=True)
     assert np.max(np.linalg.norm(lifts + depths * normals - fixture.t, axis=1)) > 0.05
+
+
+def test_true_offsets_place_the_nuisance_and_align_the_target():
+    projected = np.array([[3.3, -1.2], [0.5, 7.7]])
+    origins = np.array([[0.4, 0.3], [-1.9, 2.1]])
+    position = np.array([[2.5, -1.1], [3.25, 0.5]])
+    nuisance, aligned = true_offsets(projected, origins, position)
+    np.testing.assert_allclose(projected - origins - nuisance, position)
+    np.testing.assert_allclose(-relion_round_array(origins - projected) - aligned, position)
+    assert np.max(np.abs(nuisance - aligned)) > 0.1
