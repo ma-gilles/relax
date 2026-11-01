@@ -182,6 +182,38 @@ classes in iteration 2, so a continuation from iteration 1 scores classes that a
 copies of one map and never seeds them, as RELION's continuation does; the run warns.
 Continue from iteration 2 or later.
 
+## Multi-body refinement (MultiBody)
+
+`relax multibody` runs RELION's multi-body refinement from a consensus auto-refine. It
+takes the command RELION's GUI writes for a MultiBody job:
+
+```bash
+relax multibody \
+  --continue Refine3D/job010/run_it018_optimiser.star \
+  --o MultiBody/relax/run \
+  --multibody_masks MultiBody/bodies.star \
+  --solvent_correct_fsc --reconstruct_subtracted_bodies \
+  --oversampling 1 --healpix_order 4 --auto_local_healpix_order 4 \
+  --offset_range 3 --offset_step 1.5
+```
+
+Run it from the directory `relion_refine` ran in (or pass `--relion_dir`): the paths in
+the consensus files resolve from there, and the mask paths of the body STAR from the body
+STAR's directory. The run writes RELION's files: `run_itNNN_half<h>_body<BBB>.mrc` per
+iteration, `run_itNNN_data.star` with one `images_body_<b>` table of residual poses per
+body, and, at convergence, `run_body<BBB>.mrc`, `run_half<h>_body<BBB>_unfil.mrc` and
+`run_data.star`.
+
+Supported (and compared with RELION for two and three bodies): bodies with disjoint or overlapping masks (the
+body STAR's `rlnBodyMaskName`,
+`rlnBodyRotateRelativeTo`, `rlnBodySigmaAngles`, `rlnBodySigmaOffsetAngst`), C1, one
+optics group, adaptive oversampling 1, and reconstruction from the subtracted images
+(`--reconstruct_subtracted_bodies`, the GUI default). Overlapping masks follow RELION: by default the overlap is
+removed from the other body's mask when it is subtracted; `--multibody_norm_overlap` divides the masks by their sum
+where they overlap. `--sigma_ang` sets the local-search width, as in `relion_refine`. Other cases stop with an
+error: symmetry, several optics groups, Blush. The run cannot be continued from
+its own files.
+
 ## Subtomogram auto-refine (RELION 5 tilt series)
 
 ```bash
