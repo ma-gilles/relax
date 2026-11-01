@@ -40,6 +40,7 @@ class Body:
     sigma_psi_deg: float
     sigma_offset_angstrom: float
     keep_fixed: bool
+    reference_path: Path | None = None  # rlnBodyReferenceName: the body's start map; None keeps the consensus half maps
 
 
 def relion_center_of_mass(volume: np.ndarray) -> np.ndarray:
@@ -85,13 +86,32 @@ def _mask_max_radius_angstrom(mask: np.ndarray, com_unrounded: np.ndarray, pixel
     return float(np.ceil(pixel_size * np.sqrt(float(max_d2))))
 
 
-def read_bodies(body_star: str | Path, *, pixel_size: float, norm_overlap: bool = False) -> list[Body]:
+def _sigma_offset_angstrom(row: dict) -> float:
+    """The body's offset prior width as ``MlModel::initialiseBodies`` stores it (ml_model.cpp:1262-1273).
+
+    RELION 5.0.1 reads the deprecated ``rlnBodySigmaOffset`` (pixels) into a local, converts it to Angstroms and
+    never stores it, so ``sigma_offset_bodies`` stays 0 (ml_model.cpp:49, :1182). A width of 0 flattens the offset
+    prior over the translation grid (acc_ml_optimiser_impl.h:3067-3085, relax
+    ``make_relion_translation_log_prior``). Reproduced: the default path follows RELION 5.0.1.
+    """
+
+    if "rlnBodySigmaOffsetAngst" in row:
+        return float(row["rlnBodySigmaOffsetAngst"])
+    if "rlnBodySigmaOffset" in row:
+        return 0.0
+    raise ValueError("the body STAR file needs a rlnBodySigmaOffsetAngst column for each body's offset prior")
+
+
+def read_bodies(
+    body_star: str | Path, *, pixel_size: float, norm_overlap: bool = False, paths_from: str | Path | None = None
+) -> list[Body]:
     """The bodies of a RELION body STAR file, set up as ``MlModel::initialiseBodies`` does.
 
     Supported columns: ``rlnBodyMaskName``, ``rlnBodyRotateRelativeTo``, ``rlnBodySigmaAngles`` (or
-    ``rlnBodySigmaTilt`` and ``rlnBodySigmaPsi``) and ``rlnBodySigmaOffsetAngst``. Mask paths are relative to the
-    STAR file's directory when not absolute (relion_refine resolves them from its working directory, which the
-    RELION command runs from). A body is kept fixed when all three prior widths are below 0.001.
+    ``rlnBodySigmaTilt`` and ``rlnBodySigmaPsi``), ``rlnBodySigmaOffsetAngst`` or the deprecated
+    ``rlnBodySigmaOffset`` (see :func:`_sigma_offset_angstrom`) and ``rlnBodyReferenceName``. Mask and reference paths
+    that are not absolute are relative to ``paths_from``, relion_refine's working directory; by default the STAR
+    file's directory. A body is kept fixed when all three prior widths are below 0.001.
     """
 
     body_star = Path(body_star)
@@ -99,13 +119,13 @@ def read_bodies(body_star: str | Path, *, pixel_size: float, norm_overlap: bool 
     if len(loops) != 1 or not isinstance(loops[0]["rlnBodyMaskName"], list):
         raise ValueError(f"{body_star}: expected one loop with rlnBodyMaskName")
     rows = [dict(zip(loops[0], values)) for values in zip(*loops[0].values())]
-    unsupported = {"rlnBodyRotateDirectionX", "rlnBodyReferenceName", "rlnBodySigmaOffset"} & set(rows[0])
+    unsupported = {"rlnBodyRotateDirectionX"} & set(rows[0])
     if unsupported:
         raise NotImplementedError(f"{body_star}: body STAR columns {sorted(unsupported)} are not supported")
+    root = body_star.parent if paths_from is None else Path(paths_from)
     masks, coms, coms_unrounded = [], [], []
     for row in rows:
-        path = Path(row["rlnBodyMaskName"])
-        path = path if path.is_absolute() else body_star.parent / path
+        path = root / row["rlnBodyMaskName"]  # an absolute name replaces root
         mask = np.asarray(mrcfile.read(str(path)), dtype=np.float64)
         if mask.ndim != 3 or mask.min() < 0.0 or mask.max() > 1.0:
             raise ValueError(f"{path}: a body mask is a 3D map with values in [0, 1]")
@@ -128,7 +148,8 @@ def read_bodies(body_star: str | Path, *, pixel_size: float, norm_overlap: bool 
             sigma_tilt = sigma_psi = float(row["rlnBodySigmaAngles"])
         else:
             sigma_tilt, sigma_psi = float(row["rlnBodySigmaTilt"]), float(row["rlnBodySigmaPsi"])
-        sigma_offset = float(row["rlnBodySigmaOffsetAngst"])
+        sigma_offset = _sigma_offset_angstrom(row)
+        reference = row.get("rlnBodyReferenceName", "None")
         bodies.append(Body(
             mask=masks[b],
             com=coms[b],
@@ -138,6 +159,7 @@ def read_bodies(body_star: str | Path, *, pixel_size: float, norm_overlap: bool 
             sigma_psi_deg=sigma_psi,
             sigma_offset_angstrom=sigma_offset,
             keep_fixed=sigma_tilt < 0.001 and sigma_psi < 0.001 and sigma_offset < 0.001,
+            reference_path=None if reference == "None" else root / reference,
         ))
     return bodies
 
