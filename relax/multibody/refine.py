@@ -19,8 +19,8 @@ branches:
 8. the hidden-variable changes over all refined bodies, and the resolution: the best over the bodies, which gains
    only when one body gains.
 
-Out of scope and refused: overlapping masks, more than one class or optics group, helical, subtomograms, CTF
-premultiplication, ``--reconstruct_subtracted_bodies`` off, a reference per body, Blush and SGD.
+Out of scope and refused: more than one class or optics group, helical, subtomograms, CTF premultiplication,
+``--reconstruct_subtracted_bodies`` off, Blush and SGD.
 """
 
 from __future__ import annotations
@@ -31,6 +31,7 @@ from pathlib import Path
 
 import jax.numpy as jnp
 import numpy as np
+import pandas as pd
 from recovar.core import fourier_transform_utils as ftu
 from recovar.utils.helpers import load_relion_volume
 
@@ -87,6 +88,8 @@ class MultibodyCommand:
     # --multibody_norm_overlap: overlapping masks are normalised where they sum above one, instead of RELION's
     # default extra projectors for the overlaps (relax.multibody.bodies.subtraction_masks).
     norm_overlap: bool = False
+    # --pad: None keeps the consensus's rlnPaddingFactor, as parseContinue does (ml_optimiser.cpp:413).
+    padding_factor: int | None = None
 
 
 @dataclass
@@ -178,6 +181,12 @@ def _require_supported(checkpoint: RelionCheckpoint, command: MultibodyCommand) 
     failed = [name for name, ok in checks.items() if not ok]
     if failed:
         raise NotImplementedError(f"relax multibody supports only: {', '.join(failed)}")
+    consensus_padding = float(model["rlnPaddingFactor"])
+    if consensus_padding not in (1.0, 2.0) or command.padding_factor not in (None, consensus_padding):
+        raise NotImplementedError(
+            f"relax multibody keeps the consensus padding factor, 1 or 2: rlnPaddingFactor {consensus_padding:g}, "
+            f"--pad {command.padding_factor}"
+        )
 
 
 def start_from_consensus(checkpoint_path, command: MultibodyCommand, options, *, output, relion_cwd=None):
@@ -196,16 +205,25 @@ def start_from_consensus(checkpoint_path, command: MultibodyCommand, options, *,
     models = checkpoint.models
     pixel_size = float(models[0].general["rlnPixelSize"])
     box_size = int(models[0].general["rlnOriginalImageSize"])
-    bodies = read_bodies(command.body_star, pixel_size=pixel_size, norm_overlap=command.norm_overlap)
+    bodies = read_bodies(
+        command.body_star, pixel_size=pixel_size, norm_overlap=command.norm_overlap, paths_from=relion_cwd
+    )
     if len(bodies) < 2:
         raise ValueError("a multi-body refinement needs at least two bodies")
 
     data_star = checkpoint.optimiser_star.parent.parent / general["rlnExperimentalDataStarFile"]
     dataset = load_dataset(
-        str(data_star), datadir=str(checkpoint.optimiser_star.parent.parent), lazy=False,
+        str(data_star), datadir=str(checkpoint.optimiser_star.parent.parent), lazy=True,
         dtype=np.complex64, absent_angles_zero=True,
     )
     particles = checkpoint.particles
+    # Experiment::read numbers the groups by first appearance of rlnGroupName and ignores rlnGroupNumber
+    # (exp_model.cpp:931-967); the model's scales are indexed by that number (ml_model.cpp:360).
+    group_numbers = (
+        pd.factorize(particles["rlnGroupName"])[0] + 1
+        if "rlnGroupName" in particles
+        else np.asarray(particles["rlnGroupNumber"], dtype=np.int64)
+    )
     subsets = np.asarray(particles["rlnRandomSubset"], dtype=np.int64)
     halves = []
     for h in range(2):
@@ -213,7 +231,7 @@ def start_from_consensus(checkpoint_path, command: MultibodyCommand, options, *,
         model = models[h]
         avg_norm = float(model.general["rlnNormCorrectionAverage"])
         norm = _floats(particles["rlnNormCorrection"])[rows]
-        scale = model.group_scale[np.asarray(particles["rlnGroupNumber"], dtype=np.int64)[rows] - 1]
+        scale = model.group_scale[group_numbers[rows] - 1]
         frames = ParticleFrames(
             consensus=geometry.consensus_matrices(
                 np.stack([_floats(particles[c])[rows] for c in ("rlnAngleRot", "rlnAngleTilt", "rlnAnglePsi")], axis=1)
@@ -222,10 +240,9 @@ def start_from_consensus(checkpoint_path, command: MultibodyCommand, options, *,
             / pixel_size,
             norm_factors=avg_norm / norm,
         )
-        groups = np.asarray(particles["rlnGroupNumber"], dtype=np.int64)
         halves.append(HalfParticles(
             index=h, rows=rows, frames=frames, image_corrections=(avg_norm / norm) * scale,
-            scale_corrections=scale, optics_group_ids=None, group_ids=groups[rows] - 1,
+            scale_corrections=scale, optics_group_ids=None, group_ids=group_numbers[rows] - 1,
             group_count=int(model.group_scale.size),
         ))
 
@@ -249,6 +266,8 @@ def start_from_consensus(checkpoint_path, command: MultibodyCommand, options, *,
         ),
         image_geometry, dataset.volume_shape, options.consistency,
     )
+    padding = int(float(models[0].general["rlnPaddingFactor"]))
+    settings = replace(settings, padding_factor=padding, projection_padding_factor=padding)
     random_seed = int(general["rlnRandomSeed"])
     # The consensus run's particle diameter sizes the pass-1 window (image_coarse_size); the reconstruction
     # settings above leave it out because RELION does not flatten the body maps.
@@ -273,11 +292,16 @@ def _initial_state(run: MultibodyRun) -> MultibodyState:
     frame = float(run.box_size) ** 4  # relax spectra are RELION's times ori_size**4 (run_files.py)
     n_particles = len(checkpoint.particles)
     half_maps = [_fourier(load_relion_volume(str(paths[0]))) for paths in checkpoint.half_map_paths]
+    body_references = [
+        None if body.reference_path is None else _fourier(load_relion_volume(str(body.reference_path)))
+        for body in run.bodies
+    ]
     class_shells = [model.class_shells[0] for model in models]
     tracks = [
         BodyTrack(
-            # Every body's stored reference starts as the consensus half map (initialiseBodies copies Iref[0]).
-            maps=[m.copy() for m in half_maps],
+            # Every body's stored reference starts as the consensus half map (initialiseBodies copies Iref[0]), or,
+            # in both halves, as its rlnBodyReferenceName map (ml_model.cpp:1343-1358).
+            maps=[(m if reference is None else reference).copy() for m in half_maps],
             data_vs_prior=class_shells[0]["rlnSsnrMap"].copy(),
             fsc=class_shells[0]["rlnGoldStandardFsc"].copy(),
             tau2=[shells["rlnReferenceTau2"] * frame for shells in class_shells],
@@ -289,7 +313,7 @@ def _initial_state(run: MultibodyRun) -> MultibodyState:
                 offsets_px=np.zeros((n_particles, 2)),
             ),
         )
-        for body in run.bodies
+        for body, reference in zip(run.bodies, body_references)
     ]
     # Reproduces RELION issue #7 (https://github.com/ma-gilles/relax/issues/7): the first follower (half 1, which
     # read the half-1 model) broadcasts its sigma2_noise to every rank after initialiseGeneral
@@ -695,7 +719,7 @@ def execute_iteration(state: MultibodyState, run: MultibodyRun, inputs: Iteratio
     for b in refined:
         pair = results[b]
         shapes = [r.mstep_accumulator_shape for r in pair if r.mstep_accumulator_shape is not None]
-        accumulator_shape = shapes[0] if shapes else tuple(2 * d for d in run.dataset.volume_shape)
+        accumulator_shape = shapes[0] if shapes else tuple(run.settings.padding_factor * d for d in run.dataset.volume_shape)
         body_mstep = maximize_body(
             run.bodies[b], [r.Ft_y for r in pair], [r.Ft_ctf for r in pair], run.settings,
             current_size=current_size, accumulator_shape=accumulator_shape,
@@ -786,7 +810,7 @@ def _final_maximization(state: MultibodyState, run: MultibodyRun, results, poses
         final = maximize_body_final(
             run.bodies[b], [r.Ft_y for r in pair], [r.Ft_ctf for r in pair], run.settings,
             current_size=current_size,
-            accumulator_shape=shapes[0] if shapes else tuple(2 * d for d in run.dataset.volume_shape),
+            accumulator_shape=shapes[0] if shapes else tuple(run.settings.padding_factor * d for d in run.dataset.volume_shape),
             full_half_axis=axes[0] if axes else -1,
             low_resolution_join_angstrom=run.low_resolution_join,
             current_resolution_angstrom=1.0 / state.current_resolution_inv,

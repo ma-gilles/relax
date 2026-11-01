@@ -416,8 +416,10 @@ def compute_relion_weight_shell_stats(
     full_size = int(np.prod(grid_shape))
     half_size = int(np.prod(half_grid_shape))
     weight_size = int(np.size(weight))
+    # A padded grid, or an unpadded one windowed to the current size (a multi-body run at --pad 1).
+    on_accumulator_grid = padding_factor > 1 or grid_shape != volume_shape
     force_host_shell_stats = (
-        padding_factor > 1 and weight_size in {full_size, half_size} and _shell_stats_on_host(weight_size)
+        on_accumulator_grid and weight_size in {full_size, half_size} and _shell_stats_on_host(weight_size)
     )
     weight_arr = np.asarray(weight).real if force_host_shell_stats else _real_float64(jnp.asarray(weight))
     native_layout = False
@@ -495,7 +497,7 @@ def compute_relion_weight_shell_stats(
             counts += np.bincount(block_labels, minlength=n_bins)
         return sums[:n_shells], counts.astype(np.float64)[:n_shells]
 
-    if padding_factor > 1 and not native_layout:
+    if on_accumulator_grid and not native_layout:
         if is_half_layout:
             radial_shape = half_grid_shape
             radial_fn = fourier_transform_utils.get_grid_of_radial_distances_real

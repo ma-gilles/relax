@@ -42,7 +42,6 @@ from relax.refinement.ports import ExpectationProbe
 from relax.refinement.refinement_options import LocalAdaptivePass2Support
 from relax.relion.geometry import (
     PROJECTION_PADDING_FACTOR,
-    RECONSTRUCTION_PADDING_FACTOR,
 )
 from relax.relion.optics_aberrations import (
     dataset_projection_magnification,
@@ -121,6 +120,8 @@ class LocalExecutionPolicy:
     engine_tuning: EngineTuning
     # The run's value-changing diagnostic overrides (RefinementEnvironment.scoring, read by the command).
     scoring_overrides: ScoringOverrides
+    # Projection and reconstruction padding: RELION's default, except a multi-body run from a --pad 1 consensus.
+    padding_factor: int = PROJECTION_PADDING_FACTOR
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -642,8 +643,8 @@ def _score_half_local_one_shape(
             disc_type=execution.disc_type,
             current_size=sampling.image_window_size,
             reconstruction_current_size=reconstruction_current_size_for_engine,
-            projection_padding_factor=PROJECTION_PADDING_FACTOR,
-            reconstruction_padding_factor=RECONSTRUCTION_PADDING_FACTOR,
+            projection_padding_factor=execution.padding_factor,
+            reconstruction_padding_factor=execution.padding_factor,
             square_window=RELION_FOURIER_WINDOW_SQUARE,
             half_spectrum_scoring=True,
             relion_projector_half=None if half.projector is None else half.projector.data,
@@ -875,7 +876,7 @@ def _score_half_local_one_shape(
     mstep_accumulator_shape = (
         relion_backprojector_volume_shape(
             half.particles.dataset.volume_shape,
-            RECONSTRUCTION_PADDING_FACTOR,
+            execution.padding_factor,
             # Images on another grid fill the backprojector at the reference model size.
             current_size=(
                 reconstruction_current_size_for_engine

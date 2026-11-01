@@ -25,7 +25,6 @@ from relax.reconstruction import regularization
 from relax.reconstruction.solvent_mask import solvent_corrected_fsc
 from relax.refinement import numbered_reconstruction
 from relax.refinement.priors import join_half_accumulators_at_low_resolution, split_half_prior_from_fsc
-from relax.relion.geometry import RECONSTRUCTION_PADDING_FACTOR
 
 
 def _real(map_ft, volume_shape) -> np.ndarray:
@@ -46,7 +45,7 @@ def _joined(numerators, denominators, settings, *, accumulator_shape, low_resolu
             accumulator_volume_shape=accumulator_shape,
             box_size=settings.box_size,
             voxel_size=settings.voxel_size,
-            padding_factor=RECONSTRUCTION_PADDING_FACTOR,
+            padding_factor=settings.padding_factor,
             low_resolution_angstrom=low_resolution_join_angstrom,
             pixel_resolutions=[],
             current_resolution=current_resolution_angstrom,
