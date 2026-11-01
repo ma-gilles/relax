@@ -26,6 +26,7 @@ LAYERS = (
     ("engines", ("reconstruction", "fine_pass", "scoring", "dense", "local_search", "ppca_refinement")),
     ("operations", ("classification", "star", "steps")),
     ("controllers", ("refinement", "vdam", "ppca_initial_model")),
+    ("refinement modes", ("multibody",)),
     ("adapters", ("diagnostics", "parity")),
     ("command", ("commands", "(top)")),
 )
