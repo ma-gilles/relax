@@ -44,6 +44,8 @@ _ADDED_CONFIG_DEFAULTS = {
     "sgd_step_scale": "trace",
     "noise_anneal_factor": 1.0,
     "noise_anneal_updates": 0,
+    "sgd_momentum": 0.9,
+    "vdam_second_moment": True,
 }
 
 

@@ -41,7 +41,7 @@ def gated_gradient(theta, gradient, diagonal, gate):
     return gate * gradient - (1 - gate) * diagonal * theta
 
 
-def momentum_step(theta, previous, gradient, trace, active, *, learning_rate, floor):
+def momentum_step(theta, previous, gradient, trace, active, *, learning_rate, floor, momentum=0.9):
     """Return an unprojected step and momentum in raw full-real FFT units.
 
     ``trace`` is the per-frequency trace of the augmented LHS metric
@@ -49,6 +49,8 @@ def momentum_step(theta, previous, gradient, trace, active, *, learning_rate, fl
     One scalar bounds every positive-semidefinite augmented block by its trace.
     Trace is invariant under rotations of the two loading coordinates; a
     diagonal maximum or separate loading scales would break that symmetry.
+    The velocity is ``momentum previous + (1 - momentum) learning_rate gradient / max trace``,
+    so ``momentum`` 0 is plain SGD and the steady step is ``learning_rate gradient / max trace`` at every value.
     The caller applies its common Fourier/solvent operation to both outputs.
     """
     theta = jnp.asarray(theta)
@@ -76,16 +78,19 @@ def momentum_step(theta, previous, gradient, trace, active, *, learning_rate, fl
     if bool(jnp.min(jnp.where(active, trace, 0.0)) < -32 * jnp.finfo(jnp.float32).eps * max_curvature):
         raise ValueError("Materially negative PPCA curvature trace")
     increment = jnp.where(active[:, None], gradient, 0) / max_curvature
+    carried = jnp.asarray(momentum, jnp.float32) * jnp.where(active[:, None], previous, 0)
     velocity = jnp.where(
         has_data,
-        jnp.asarray(0.9, jnp.float32) * jnp.where(active[:, None], previous, 0)
-        + jnp.asarray(0.1 * learning_rate, jnp.float32) * increment,
+        carried + jnp.asarray((1.0 - momentum) * learning_rate, jnp.float32) * increment,
         jnp.zeros_like(previous),
     )
     diagnostics = {
         "curvature_trace_max": float(trace_max),
         "curvature_scalar": float(max_curvature),
         "gradient_l2": float(jnp.linalg.norm(gradient)),
+        "momentum": float(momentum),
+        # The part of the velocity carried over from the previous update: 0 when the momentum is off.
+        "velocity_carried_l2": float(jnp.linalg.norm(carried)),
         "velocity_l2_before_projection": float(jnp.linalg.norm(velocity)),
         "active_frequency_count": int(jnp.sum(active)),
     }

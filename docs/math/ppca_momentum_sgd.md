@@ -68,6 +68,17 @@ valid gauge of \(z\sim N(0,I_2)\). Scaling or translating latent coordinates
 would change this fixed-prior model unless a separate prior transformation is
 specified. Implementation: [`sgd_update.py`](../../relax/ppca_initial_model/sgd_update.py)
 and [`iteration_loop.py`](../../relax/ppca_initial_model/iteration_loop.py).
+
+`--sgd-momentum B` generalises the velocity to \(v_t=Bv_{t-1}+(1-B)\,\eta\,G/c\)
+(default 0.9). At every \(B\) the steady step is \(\eta G/c\); `--sgd-momentum 0`
+is plain SGD, \(v_t=\eta G/c\). Each update records `momentum` and
+`velocity_carried_l2`, the norm of \(Bv_{t-1}\) on the active band, zero when the
+momentum is off.
+
+\(c\) sums the \(1+q\) diagonal channels, so it is about \(1+q\) times the curvature
+of one channel, and \(\eta\) should be compared across \(q\) as
+\(s=\eta/(1+q)\). The plain SGD runs use \(s=0.65\) and \(0.44\): `--sgd-learning-rate`
+3.25 and 2.2 at \(q=4\). The run warns above \(s=0.8\).
 The controller's opt-in `log_direction_prior=False` omits only the large
 per-update JSON copy of the angular prior; the state and checkpoints still
 retain it, and the optimizer update is unchanged.

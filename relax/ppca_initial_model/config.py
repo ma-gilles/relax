@@ -43,7 +43,13 @@ class Config:
     checkpoint_interval: int = 1
     skip_final_embeddings: bool = False
     optimizer: str = "vdam"
+    # The multiplier of G / c, with c the band maximum of the metric trace over all 1 + q channels: rates comparable
+    # across q are sgd_learning_rate / (1 + q) (docs/math/ppca_momentum_sgd.md).
     sgd_learning_rate: float = 0.4
+    # Momentum B of the velocity B v + (1 - B) sgd_learning_rate G / c; 0 is plain SGD.
+    sgd_momentum: float = 0.9
+    # VDAM divides its direction by the root of the half-set second moment; False keeps the rest of VDAM without it.
+    vdam_second_moment: bool = True
     # Momentum SGD variants (docs/development/ppca_optimizer_axes.md, "Gated momentum SGD"); the defaults are
     # the plain step. sgd_halfset_gate applies VDAM's half-set shell gate to the step (the direction
     # gate G - (1 - gate) diag(H) theta; the run then keeps VDAM's half-set moments as well).
@@ -126,6 +132,12 @@ class Config:
                 )
         if not np.isfinite(self.sgd_learning_rate) or self.sgd_learning_rate <= 0:
             raise ValueError("Momentum SGD learning rate must be finite and positive")
+        if not 0 <= self.sgd_momentum < 1:
+            raise ValueError("Momentum SGD momentum must be in [0, 1)")
+        if self.optimizer != "momentum_sgd" and self.sgd_momentum != 0.9:
+            raise ValueError("The SGD momentum is a momentum SGD option")
+        if self.optimizer != "vdam" and not self.vdam_second_moment:
+            raise ValueError("Turning off the second-moment scaling is a VDAM option")
         if self.sgd_step_scale not in ("trace", "exact_diagonal"):
             raise ValueError("Momentum SGD step scale must be trace or exact_diagonal")
         if self.optimizer != "momentum_sgd" and (self.sgd_halfset_gate or self.sgd_step_scale != "trace"):
