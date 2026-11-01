@@ -62,14 +62,18 @@ def physical_poses(level: np.ndarray, family: str):
     return Q, np.outer(level * MAX_TRANSLATION * translate, AXIS_TRANS)
 
 
-def simulate(family: str, seed: int, n: int = N_PARTICLES) -> dict:
+def simulate(family: str, seed: int, n: int = N_PARTICLES, *, continuous: bool = True) -> dict:
+    """Particles with a structural level in [-1, 1]: continuous, ``state`` being its bin of ``N_STATES``, or exactly
+    the bin centres, where one state's particles tie at zero score."""
     rng = np.random.default_rng(seed)
-    state = rng.integers(0, N_STATES, size=n)
-    other_state = rng.integers(0, N_STATES, size=n) if family == "independent" else state
-    levels = np.linspace(-1.0, 1.0, N_STATES)
+    centres = np.linspace(-1.0, 1.0, N_STATES)
+    draw = (lambda: rng.uniform(-1.0, 1.0, size=n)) if continuous else (lambda: centres[rng.integers(0, N_STATES, size=n)])
+    level = draw()
+    other_level = draw() if family == "independent" else level
+    state = np.argmin(np.abs(level[:, None] - centres), axis=1)
     motion = "mixed" if family == "independent" else family
-    Q, t = physical_poses(levels[state], motion)
-    Q2, t2 = physical_poses(levels[other_state], motion)
+    Q, t = physical_poses(level, motion)
+    Q2, t2 = physical_poses(other_level, motion)
     cameras = Rotation.random(n, random_state=rng).as_matrix()
     half = rng.integers(0, 2, size=n)
     return {"state": state, "Q": Q, "t": t, "Q2": Q2, "t2": t2, "cameras": cameras, "half": half, "family": family}
@@ -157,8 +161,8 @@ def targets_of(sim, seed=0):
     return [int(i) for s in (N_STATES // 2, 0) for i in np.flatnonzero(sim["state"] == s)[:6]]
 
 
-def study(family, *, bound_scale=1.0, shift_noise=0.0, rotation_noise_deg=0.0, seed=11) -> dict:
-    sim = simulate(family, seed)
+def study(family, *, bound_scale=1.0, shift_noise=0.0, rotation_noise_deg=0.0, seed=11, continuous=True) -> dict:
+    sim = simulate(family, seed, continuous=continuous)
     observed = observe(sim, shift_noise=shift_noise, rotation_noise_deg=rotation_noise_deg, seed=seed + 1)
     features = pose_features(*observed, BODY)
     scores = pooled_pca(sim, observed)
@@ -187,8 +191,8 @@ def study(family, *, bound_scale=1.0, shift_noise=0.0, rotation_noise_deg=0.0, s
 
 
 def permutation_check(family, seed=11) -> float:
-    """Largest change of same-state fraction when the particles are relabelled, candidate by candidate."""
-    sim = simulate(family, seed)
+    """Largest change of same-state fraction when the particles of a discrete, tied fixture are relabelled."""
+    sim = simulate(family, seed, continuous=False)
     observed = observe(sim)
     features = pose_features(*observed, BODY)
     bound = depth_bound(family)
@@ -288,6 +292,7 @@ def main() -> None:
     args = parser.parse_args()
     args.out.mkdir(parents=True, exist_ok=True)
     results = {f: study(f) for f in FAMILIES}
+    discrete = {f: study(f, continuous=False) for f in FAMILIES}
     wide = {f: study(f, bound_scale=2.0) for f in FAMILIES}
     noise_levels = [(0.0, 0.0), (1.0, 1.0), (2.0, 2.0), (4.0, 3.0)]
     noisy = {f: [study(f, shift_noise=s, rotation_noise_deg=r) for s, r in noise_levels] for f in ("mixed", "translation")}
@@ -300,7 +305,9 @@ def main() -> None:
         "max_rotation_deg": MAX_ROTATION_DEG, "max_translation_A": MAX_TRANSLATION, "pixel_A": PIXEL,
         "depth_bounds_A": {f: results[f]["bound"] for f in FAMILIES},
         "bound_hit_fraction_all_particles": {f: results[f]["bound_hit_all"] for f in FAMILIES},
-        "zero_tie_fraction": {f: results[f]["zero_ties"] for f in FAMILIES},
+        "zero_tie_fraction_continuous": {f: results[f]["zero_ties"] for f in FAMILIES},
+        "zero_tie_fraction_discrete": {f: discrete[f]["zero_ties"] for f in FAMILIES},
+        "discrete_same_state_near_1000": {f: {m: float(np.interp(1000, GRID, discrete[f]["curves"][m][:, 0])) for m in METHODS} for f in FAMILIES},
         "permutation_worst_same_state_change": permutation,
         "ambiguity": {k: {q: v[q] for q in ("zero_fraction_state0", "zero_fraction_state1")} for k, v in ambiguity.items()},
         "same_state_fraction_near_1000": {
@@ -311,9 +318,11 @@ def main() -> None:
         "noise_levels_A_deg": noise_levels,
         "noise_same_state_near_1000": {f: {m: [float(np.interp(1000, GRID, x["curves"][m][:, 0])) for x in noisy[f]] for m in METHODS} for f in noisy},
         "target_view_overlap_median": {f: float(np.median(views[f]["overlap"])) for f in FAMILIES},
+        "target_view_overlap_p10": {f: float(np.quantile(views[f]["overlap"], 0.1)) for f in FAMILIES},
         "target_view_same_state_range": {f: [float(views[f]["purity"].min()), float(views[f]["purity"].max())] for f in FAMILIES},
+        "target_view_median_oracle_range_A": {f: [float(views[f]["median_oracle"].min()), float(views[f]["median_oracle"].max())] for f in FAMILIES},
         "timing": cost,
-        "timing_conditions": {"dtype": "float64", "machine": platform.processor() or platform.machine(), "threads": "OMP_NUM_THREADS from the job",
+        "timing_conditions": {"dtype": "float64", "machine": next((l.split(":")[1].strip() for l in open("/proc/cpuinfo") if l.startswith("model name")), platform.machine()), "threads": "OMP_NUM_THREADS from the job",
                               "max_rss_gb": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1e6,
                               "includes": "NumPy arrays in memory; no transfers or file I/O"},
     }
@@ -362,6 +371,7 @@ def make_figures(out, results, wide, noisy, noise_levels, views, ambiguity, cost
         v = views[family]
         ax.plot(v["view_along_motion"], v["purity"], ".", color=COLORS["bounded"], label="same-state fraction, 600 kept")
         ax.plot(v["view_along_motion"], v["tie"], ".", color="#b23a48", label="exact-zero fraction")
+        ax.plot(v["view_along_motion"], v["median_oracle"] / 20.0, ".", color="#333333", label="median oracle distance / 20 A")
         ax.set(xlabel="|cos| target view with the motion axis", ylabel="fraction",
                title=f"target camera varied: median overlap {np.median(v['overlap']):.2f}", ylim=(-0.03, 1.05))
         ax.legend(frameon=False, fontsize=8)
