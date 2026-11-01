@@ -31,6 +31,9 @@ class LocalSearchData:
     scale_correction_data_vs_prior: object | None = None
     image_pre_shifts: object | None = None
     optics_group_ids: object | None = None
+    # [n_images, 2] pixels: each image's own translation, applied in Fourier space to its preprocessed (masked
+    # and unmasked) images before the translation search (a multi-body body's refined offset), or None.
+    image_translations: object | None = None
 
 
 @dataclass(frozen=True, kw_only=True)

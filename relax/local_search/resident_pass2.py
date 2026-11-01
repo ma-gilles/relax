@@ -663,6 +663,8 @@ def compute_local_search_resident(
         )
         if kernel.nyquist_column_counting != "relion":
             bucket_io_kwargs["nyquist_column_counting"] = kernel.nyquist_column_counting
+        if data.image_translations is not None:
+            bucket_io_kwargs["image_translations"] = np.asarray(data.image_translations, dtype=np.float64)
         if support.score_only:
             # RELION's pass 1 (the local adaptive parent probe): score, posterior and
             # significance only, no M-step and no accumulators. See resident_parent_probe.run_resident_parent_probe.
