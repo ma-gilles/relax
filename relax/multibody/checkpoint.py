@@ -4,7 +4,9 @@
 A multi-body refinement continues a consensus auto-refine (``relion_refine --continue <consensus optimiser>
 --multibody_masks ...``): every per-half model, the particle table and the half maps come from the consensus
 iteration. A multi-body checkpoint adds one ``images_body_<b>`` table per body to the data STAR and one map per body
-and half. Values stay as RELION wrote them; :mod:`relax.multibody.refine` converts units.
+and half. Values stay as RELION wrote them; :mod:`relax.multibody.refine` converts units. The model and optimiser STAR
+files of a consensus from before RELION 4 are read as RELION 5.0.1 reads them, into the current labels
+(:func:`_half_model`, :func:`read_relion_checkpoint`); their data STAR goes through ``relion_convert_star`` first.
 """
 
 from __future__ import annotations
@@ -54,9 +56,14 @@ def _floats(column) -> np.ndarray:
     return np.asarray([float(v) for v in column], dtype=np.float64)
 
 
-def _half_model(path: Path) -> HalfModel:
+def _half_model(path: Path, n_optics_in_data: int) -> HalfModel:
     blocks = read_star_blocks(path)
     general = {key: value for key, value in blocks["model_general"].items()}
+    # A model STAR from before RELION 4 has no optics groups: MlModel::read takes their number from the data STAR and
+    # copies the first group's noise spectrum into each (ml_model.cpp:153-158, :396-400).
+    is_pre4 = "rlnNrOpticsGroups" not in general
+    if is_pre4:
+        general["rlnNrOpticsGroups"] = str(n_optics_in_data)
     nr_bodies = int(general.get("rlnNrBodies", 1))
     if nr_bodies > 1:
         shells = [blocks[f"model_body_{b + 1}"] for b in range(nr_bodies)]
@@ -64,6 +71,11 @@ def _half_model(path: Path) -> HalfModel:
     else:
         shells = [blocks[f"model_class_{k + 1}"] for k in range(int(general["rlnNrClasses"]))]
         classes = blocks["model_classes"]
+    if "rlnAccuracyTranslationsAngst" not in classes:  # pixels until RELION 3.1 (ml_model.cpp:223-228)
+        classes = dict(classes)
+        classes["rlnAccuracyTranslationsAngst"] = [
+            str(float(value) * float(general["rlnPixelSize"])) for value in classes["rlnAccuracyTranslations"]
+        ]
     groups = blocks["model_groups"]
     n_optics = int(general["rlnNrOpticsGroups"])
     return HalfModel(
@@ -77,7 +89,10 @@ def _half_model(path: Path) -> HalfModel:
         },
         group_scale=_floats(groups["rlnGroupScaleCorrection"]),
         group_particles=_floats(groups["rlnGroupNrParticles"]),
-        sigma2_noise=[_floats(blocks[f"model_optics_group_{g + 1}"]["rlnSigma2Noise"]) for g in range(n_optics)],
+        sigma2_noise=[
+            _floats(blocks["model_group_1" if is_pre4 else f"model_optics_group_{g + 1}"]["rlnSigma2Noise"])
+            for g in range(n_optics)
+        ],
     )
 
 
@@ -102,15 +117,18 @@ def read_relion_checkpoint(optimiser_star, *, relion_cwd=None) -> RelionCheckpoi
     optimiser = read_star_blocks(optimiser_star)["optimiser_general"]
     if int(optimiser["rlnDoSplitRandomHalves"]) != 1:
         raise NotImplementedError("a multi-body refinement continues a split-half (auto-refine) run")
+    if "rlnOverallAccuracyTranslationsAngst" not in optimiser:
+        # MlOptimiser::read takes the older pixel value as Angstroms, unconverted (ml_optimiser.cpp:1497-1501).
+        optimiser = {**optimiser, "rlnOverallAccuracyTranslationsAngst": optimiser["rlnOverallAccuracyTranslations"]}
     model_paths = [
         _resolve(optimiser["rlnModelStarFile"], optimiser_star, relion_cwd),
         _resolve(optimiser["rlnModelStarFile2"], optimiser_star, relion_cwd),
     ]
-    models = [_half_model(path) for path in model_paths]
+    data = starfile.read(_resolve(optimiser["rlnExperimentalDataStarFile"], optimiser_star, relion_cwd), always_dict=True)
+    models = [_half_model(path, len(data["optics"])) for path in model_paths]
     sampling = read_star_blocks(_resolve(optimiser["rlnOrientSamplingStarFile"], optimiser_star, relion_cwd))[
         "sampling_general"
     ]
-    data = starfile.read(_resolve(optimiser["rlnExperimentalDataStarFile"], optimiser_star, relion_cwd), always_dict=True)
     nr_bodies = int(models[0].general.get("rlnNrBodies", 1))
     body_tables = [data[f"images_body_{b + 1}"] for b in range(nr_bodies)] if nr_bodies > 1 else []
     half_map_paths = [
