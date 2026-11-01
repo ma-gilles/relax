@@ -246,18 +246,19 @@ def target_body_images(run, result: MultibodyResult, target: int, half: int) -> 
     )
 
 
-def fixed_pose_dataset(run, result: MultibodyResult, target: int):
+def fixed_pose_dataset(run, result: MultibodyResult, target: int, *, images: np.ndarray | None = None, noise=None):
     """A RECOVAR dataset of body ``target``: every particle's subtracted image, its composed body pose (RELION's
     matrix, which is RECOVAR's) and refined body offset (RELION's origin, pixels), the consensus halves and the
     mean of the two halves' noise spectra. Images are norm-corrected and not masked (RELION reconstructs from the
-    unmasked image), in RELION's image transform."""
+    unmasked image), in RELION's image transform. A diagnostic can supply its own ``images`` and ``noise``."""
 
-    images = np.zeros((run.dataset.n_images, *run.dataset.image_shape), dtype=np.float32)
-    for half in range(2):
-        particles = run.halves[half]
-        # RELION's preprocessing multiplies each image by its norm factor; RECOVAR's reconstruction reads the
-        # images through the plain (unmasked, unshifted) RELION transform, so the factor is applied here.
-        images[particles.rows] = target_body_images(run, result, target, half) * particles.frames.norm_factors[:, None, None]
+    if images is None:
+        images = np.zeros((run.dataset.n_images, *run.dataset.image_shape), dtype=np.float32)
+        for half in range(2):
+            particles = run.halves[half]
+            # RELION's preprocessing multiplies each image by its norm factor; RECOVAR's reconstruction reads the
+            # images through the plain (unmasked, unshifted) RELION transform, so the factor is applied here.
+            images[particles.rows] = target_body_images(run, result, target, half) * particles.frames.norm_factors[:, None, None]
     dataset = dataset_with_images(
         run.dataset, images, mask_diameter_angstrom=4.0 * run.box_size * run.pixel_size
     )
@@ -271,13 +272,14 @@ def fixed_pose_dataset(run, result: MultibodyResult, target: int):
     alignment = None if result.alignment_offsets_px is None else result.alignment_offsets_px[target]
     dataset.translations = result.poses[target].offsets_px if alignment is None else alignment
     dataset.halfset_indices = [np.asarray(run.halves[h].rows, dtype=np.int64) for h in range(2)]
-    dataset.set_noise(0.5 * (result.noise_radial[0] + result.noise_radial[1]))
+    dataset.set_noise(0.5 * (result.noise_radial[0] + result.noise_radial[1]) if noise is None else noise)
     return dataset
 
 
 def adaptive_subsets(run, result: MultibodyResult, *, target: int, distances: np.ndarray, thresholds: np.ndarray,
                      output, prefix: str = "subset", metric: str = "locshellmost_likely", b_factor: float = 0.0,
-                     maskrad_fraction: float = 20.0, save_all_estimates: bool = True) -> dict:
+                     maskrad_fraction: float = 20.0, save_all_estimates: bool = True, images: np.ndarray | None = None,
+                     noise=None) -> dict:
     """Every hard-subset candidate of body ``target`` and RECOVAR's selected map, written under ``output``
     (``recovar.output.output_paths.VolumeOutputPaths(output, prefix, 0)``); returns the run record, also written
     to ``<output>/<prefix>_subsets.json``.
@@ -292,7 +294,7 @@ def adaptive_subsets(run, result: MultibodyResult, *, target: int, distances: np
     output = Path(output)
     output.mkdir(parents=True, exist_ok=True)
     locres = run.box_size * run.pixel_size / maskrad_fraction
-    dataset = fixed_pose_dataset(run, result, target)
+    dataset = fixed_pose_dataset(run, result, target, images=images, noise=noise)
     halves = [np.asarray(run.halves[h].rows) for h in range(2)]
     per_half = [np.asarray(distances, dtype=np.float64)[rows] for rows in halves]
     counts = [[int(np.sum(d <= t)) for t in thresholds] for d in per_half]

@@ -85,6 +85,52 @@ def oracle_result(run, result, data_dir: Path):
     return replace(result, poses=poses, alignment_offsets_px=alignment)
 
 
+def simulated_body_images(run, data_dir: Path) -> tuple[list, np.ndarray]:
+    """Each body's noiseless images as the simulator formed them (``component_body<b>/``, the recorded scale and
+    solvent operator, the true poses and the CTFs, consensus-table order), and the white noise variance per Fourier
+    pixel of what the real images leave after their sum. The simulator's per-image background division is not recorded;
+    it varies by under 1%."""
+    import copy
+
+    from recovar import utils
+    from recovar.simulation import simulator, synthetic_dataset
+
+    sim = utils.pickle_load(data_dir / "simulation_info.pkl")
+    names = np.asarray(run.checkpoint.particles["rlnImageName"])
+    rows = np.asarray([int(name.split("@")[0]) - 1 for name in names])
+    states = state_rows(data_dir, names)
+    true_rot = np.asarray(utils.pickle_load(data_dir / "poses.pkl")[0])[rows]
+    dataset = copy.copy(run.dataset)
+    dataset._metadata = copy.copy(run.dataset._metadata)
+    dataset.rotation_matrices, dataset.translations = true_rot, np.zeros((len(rows), 2))
+    box = dataset.grid_size
+    silent = np.zeros(box // 2 - 1)
+    ones = np.ones(len(rows))
+    components = []
+    for b in range(len(run.bodies)):
+        volumes = synthetic_dataset.load_ground_truth_volumes(sim, str(data_dir / f"component_body{b + 1}" / "vol"))
+        components.append(np.asarray(simulator.simulate_data(
+            dataset, volumes, silent, 200, states, ones, ones, seed=0, disc_type="cubic", noise_rng_batch_size=sim["simulation_noise_rng_batch_size"],
+        )))
+    raw = np.asarray(run.dataset.image_source.backend.source.get(np.arange(len(rows))))
+    residual = raw - sum(components)
+    return components, float(np.var(residual) * box * box)
+
+
+def exact_nuisance_images(run, data_dir: Path, target: int, components: list) -> np.ndarray:
+    """The target body's images with the simulated noiseless other bodies subtracted, then the integer shift."""
+    from relax.multibody import geometry
+    from relax.multibody.subtraction import relion_translate_2d
+
+    particles = run.checkpoint.particles
+    consensus = geometry.consensus_matrices(particles[["rlnAngleRot", "rlnAngleTilt", "rlnAnglePsi"]].to_numpy(float))
+    origins = particles[["rlnOriginXAngst", "rlnOriginYAngst"]].to_numpy(float) / run.pixel_size
+    integer = geometry.integer_image_shifts(origins, geometry.projected_centers(consensus, run.bodies[target])).astype(np.int64)
+    raw = np.asarray(run.dataset.image_source.backend.source.get(np.arange(run.dataset.n_images)))
+    others = sum(c for b, c in enumerate(components) if b != target)
+    return np.stack([relion_translate_2d(image, shift) for image, shift in zip(raw - others, integer)]).astype(np.float32)
+
+
 def state_rows(data_dir: Path, names: np.ndarray) -> np.ndarray:
     """Each particle's simulated state."""
     from recovar import utils
@@ -117,6 +163,10 @@ def main() -> None:
     parser.add_argument("--maskrad-fraction", type=float, default=20.0, help="RECOVAR's: local windows of box / fraction")
     parser.add_argument("--oracle-poses", type=Path, default=None,
                         help="dataset dir: reconstruct with the TRUE body poses (diagnostic; plane-cut benchmark)")
+    parser.add_argument("--exact-nuisance", type=Path, default=None,
+                        help="dataset dir: subtract the simulated noiseless other bodies (oracle diagnostic)")
+    parser.add_argument("--known-noise", type=Path, default=None,
+                        help="dataset dir: use the noise the images leave after the noiseless bodies (oracle diagnostic)")
     parser.add_argument("--out", required=True, type=Path)
     parser.add_argument("--check-direct", action="store_true",
                         help="also compare three cumulative candidates of half 1 with direct reconstructions")
@@ -165,10 +215,20 @@ def main() -> None:
         distances, n_candidates=args.n_candidates, n_min_per_half=args.n_min_per_half,
         halves=[run.halves[h].rows for h in range(2)],
     )
+    images, noise, measured = None, None, {}
+    data = args.exact_nuisance or args.known_noise
+    if data is not None:
+        components, white = simulated_body_images(run, data)
+        measured = {"white_noise_per_fourier_pixel": white, "image_variance": float(np.mean([np.var(c) for c in components]))}
+        if args.exact_nuisance is not None:
+            images = exact_nuisance_images(run, args.exact_nuisance, args.target_body - 1, components)
+        if args.known_noise is not None:
+            noise = np.full_like(result.noise_radial[0], white)
     record = subsets.adaptive_subsets(
         run, result, target=args.target_body - 1, distances=distances, thresholds=thresholds, output=args.out,
-        metric=args.metric, maskrad_fraction=args.maskrad_fraction,
+        metric=args.metric, maskrad_fraction=args.maskrad_fraction, images=images, noise=noise,
     )
+    record.update(measured)
     record.update({
         "coordinates": source, "components": components, "target_point": z_star.tolist(), "target_image": args.target_image,
         "neighborhood": args.neighborhood, "depth_bound_angstrom": args.depth_bound, "ignore_group_scales": args.ignore_group_scales,
