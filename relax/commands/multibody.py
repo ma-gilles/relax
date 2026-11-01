@@ -43,7 +43,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--sigma_ang", type=float, default=None,
                         help="degrees: the local-search width instead of the consensus run's, as relion_refine's")
     parser.add_argument("--relion_dir", default=None, help="the directory relion_refine ran in")
-    parser.add_argument("--pad", type=float, default=2.0, help="RELION's padding factor; only 2 is supported")
+    parser.add_argument("--pad", type=float, default=None,
+                        help="RELION's padding factor; it must equal the consensus's, the default")
     # RELION's execution options (I/O, threads, devices): they do not change the result, so they are accepted
     # and named in the log as having no effect. Any other flag is an error.
     for flag in EXECUTION_FLAGS:
@@ -87,8 +88,6 @@ def main(argv=None) -> None:
             "relax multibody reconstructs from the subtracted images only: pass --reconstruct_subtracted_bodies "
             "(the RELION GUI default; relion_refine's command-line default is off)"
         )
-    if args.pad != 2.0:
-        raise SystemExit(f"relax multibody supports --pad 2 only (got {args.pad:g})")
     output = Path(args.output)
     output_dir = output.parent if output.name == "run" else output
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -115,6 +114,7 @@ def main(argv=None) -> None:
         max_iter=args.max_iter,
         sigma_ang_deg=args.sigma_ang,
         norm_overlap=args.multibody_norm_overlap,
+        padding_factor=args.pad,
     )
     run, state = start_from_consensus(
         args.continue_optimiser_star, command, run_options(), output=output_dir, relion_cwd=args.relion_dir
