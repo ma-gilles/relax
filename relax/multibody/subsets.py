@@ -29,6 +29,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import jax.numpy as jnp
+import mrcfile
 import numpy as np
 import starfile
 from recovar.core import fourier_transform_utils as ftu
@@ -52,6 +53,10 @@ class MultibodyResult:
     poses: list  # BodyPoses per body, every particle
     body_maps: list  # [body][half]
     noise_radial: list  # per half
+    map_sources: tuple = ()  # the half-map files read, body by body
+    # A diagnostic's target-image offsets per body, when they are not the nuisance offsets of ``poses``: fitted poses
+    # use one offset for both, but a true pose places the nuisance at ``p - o - f`` and aligns the target at ``-r - f``.
+    alignment_offsets_px: list | None = None
 
 
 def _last_numbered_iteration(directory: Path) -> int:
@@ -82,6 +87,7 @@ def read_multibody_result(directory, run) -> MultibodyResult:
     data = starfile.read(directory / "run_data.star", always_dict=True)
     names = np.asarray(run.checkpoint.particles["rlnImageName"])
     order = _join_order(np.asarray(data["particles"]["rlnImageName"]), names, what=str(directory / "run_data.star"))
+    _check_binding(data, order, run, directory)
     poses = []
     for b in range(len(run.bodies)):
         table = data[f"images_body_{b + 1}"]
@@ -92,24 +98,62 @@ def read_multibody_result(directory, run) -> MultibodyResult:
     iteration = _last_numbered_iteration(directory)
 
     def latest(b, h):
-        # A body fixed before the end keeps its maps; outputs that skipped a fixed body's files hold them earlier.
+        # A body frozen before the end keeps its maps; outputs that skipped a frozen body's files hold them earlier.
         for it in range(iteration, -1, -1):
             path = directory / f"run_it{it:03d}_half{h + 1}_body{b + 1:03d}.mrc"
             if path.exists():
+                if it != iteration:
+                    logger.warning("body %d half %d: maps of iteration %d, the run's last is %d", b + 1, h + 1, it, iteration)
                 return path
         raise FileNotFoundError(f"{directory}: no half-{h + 1} map of body {b + 1}")
 
+    sources = tuple(tuple(latest(b, h) for h in range(2)) for b in range(len(run.bodies)))
     body_maps = [
-        [
-            np.asarray(ftu.get_dft3(jnp.asarray(load_relion_volume(str(latest(b, h))), dtype=jnp.float32)).reshape(-1))
-            for h in range(2)
-        ]
-        for b in range(len(run.bodies))
+        [np.asarray(ftu.get_dft3(jnp.asarray(load_relion_volume(str(path)), dtype=jnp.float32)).reshape(-1)) for path in paths]
+        for paths in sources
     ]
     return MultibodyResult(
         directory=directory, iteration=iteration, poses=poses, body_maps=body_maps,
-        noise_radial=_noise(directory, iteration, run.box_size),
+        noise_radial=_noise(directory, iteration, run.box_size), map_sources=sources,
     )
+
+
+def _check_binding(data: dict, order: np.ndarray, run, directory: Path) -> None:
+    """The multi-body run must continue this consensus, not merely share its image names: the same angles, origins
+    and halves particle by particle, the pixel size, one table per body and each body's mask."""
+
+    table = data["particles"].iloc[order]
+    consensus = run.checkpoint.particles
+    for column, tolerance in (("rlnAngleRot", 1e-3), ("rlnAngleTilt", 1e-3), ("rlnAnglePsi", 1e-3),
+                              ("rlnOriginXAngst", 1e-3), ("rlnOriginYAngst", 1e-3), ("rlnRandomSubset", 0)):
+        difference = np.abs(table[column].to_numpy(np.float64) - consensus[column].to_numpy(np.float64))
+        if column.startswith("rlnAngle"):  # angles are periodic
+            difference = np.minimum(difference, np.abs(difference - 360.0))
+        if np.max(difference) > tolerance:
+            raise ValueError(f"{directory}: {column} differs from the consensus by {np.max(difference)}")
+    pixel = float(data["optics"]["rlnImagePixelSize"].iloc[0])
+    if abs(pixel - run.pixel_size) > 1e-6 * pixel:
+        raise ValueError(f"{directory}: pixel size {pixel}, the consensus has {run.pixel_size}")
+    bodies = sorted(k for k in data if k.startswith("images_body_"))
+    if len(bodies) != len(run.bodies):
+        raise ValueError(f"{directory}: {len(bodies)} body tables, the body STAR file has {len(run.bodies)}")
+    for b, body in enumerate(run.bodies):
+        path = directory / f"run_body{b + 1:03d}_mask.mrc"
+        if path.exists():
+            written = np.asarray(mrcfile.read(str(path)), dtype=np.float64)
+            if np.max(np.abs(written - body.mask)) > 1e-5:
+                raise ValueError(f"{path} differs from body {b + 1}'s mask: run it with the same masks")
+
+
+def require_unit_group_scales(run) -> None:
+    """Refuse nonunit RELION group scales: the fixed-pose reconstruction applies norm factors only."""
+
+    scales = np.concatenate([np.asarray(run.halves[h].scale_corrections) for h in range(2)])
+    if np.max(np.abs(scales - 1.0)) > 1e-6:
+        raise ValueError(
+            f"group scales range over {scales.min():.3f}-{scales.max():.3f} and are not transferred to the fixed-pose "
+            "reconstruction; pass --ignore-group-scales only when the true scale is known to be one (a simulation)"
+        )
 
 
 def _join_order(source_names: np.ndarray, target_names: np.ndarray, *, what: str) -> np.ndarray:
@@ -151,10 +195,11 @@ def body_pose_features(run, result: MultibodyResult, target: int) -> PoseFeature
 
     particles = run.checkpoint.particles
     consensus = geometry.consensus_matrices(particles[["rlnAngleRot", "rlnAngleTilt", "rlnAnglePsi"]].to_numpy(np.float64))
+    alignment = None if result.alignment_offsets_px is None else result.alignment_offsets_px[target]
     return body_features(
         consensus, geometry.body_matrices(consensus, run.bodies[target], result.poses[target].eulers_deg), run.bodies[target],
         particles[["rlnOriginXAngst", "rlnOriginYAngst"]].to_numpy(np.float64) / run.pixel_size,
-        result.poses[target].offsets_px, run.pixel_size,
+        result.poses[target].offsets_px if alignment is None else alignment, run.pixel_size,
     )
 
 
@@ -223,7 +268,8 @@ def fixed_pose_dataset(run, result: MultibodyResult, target: int):
         particles[["rlnAngleRot", "rlnAngleTilt", "rlnAnglePsi"]].to_numpy(np.float64)
     )
     dataset.rotation_matrices = geometry.body_matrices(consensus, run.bodies[target], result.poses[target].eulers_deg)
-    dataset.translations = result.poses[target].offsets_px
+    alignment = None if result.alignment_offsets_px is None else result.alignment_offsets_px[target]
+    dataset.translations = result.poses[target].offsets_px if alignment is None else alignment
     dataset.halfset_indices = [np.asarray(run.halves[h].rows, dtype=np.int64) for h in range(2)]
     dataset.set_noise(0.5 * (result.noise_radial[0] + result.noise_radial[1]))
     return dataset
@@ -259,6 +305,7 @@ def adaptive_subsets(run, result: MultibodyResult, *, target: int, distances: np
         "frame": "body frame: centred on the body's centre of mass (relax.multibody.subtraction.stored_body_map "
                  "moves a map to the stored frame)",
         "noise": "mean of the two halves' radial noise spectra of the maps' iteration",
+        "map_sources": [[str(path) for path in paths] for paths in result.map_sources],
     }
     half = np.zeros(names.size, dtype=np.int8)
     half[halves[1]] = 1
