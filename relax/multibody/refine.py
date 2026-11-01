@@ -660,6 +660,8 @@ def execute_iteration(state: MultibodyState, run: MultibodyRun, inputs: Iteratio
         # Every body is fixed: RELION's expectation and maximisation return at once (ml_optimiser_mpi.cpp:1128-1136,
         # 2358-2365); the resolution is re-evaluated as usual.
         state = update_current_resolution(replace(state, iteration=iteration), run)
+        for b, track in enumerate(state.bodies):
+            run_files.write_fixed_body_maps(run.output, iteration, b, track.maps, run)
         run_files.write_iteration(run.output, iteration, state, run)
         return state, coarse_grids
 
@@ -714,6 +716,9 @@ def execute_iteration(state: MultibodyState, run: MultibodyRun, inputs: Iteratio
             poses=poses[b],
         )
         run_files.write_body_maps(run.output, iteration, b, body_mstep, run)
+    for b, track in enumerate(tracks):
+        if b not in refined:
+            run_files.write_fixed_body_maps(run.output, iteration, b, track.maps, run)
 
     # maximizationOtherParameters: the noise from every refined body's sums; norm, scales and sigma2_offset are
     # not updated in a multi-body refinement (ml_optimiser.cpp:5111-5121, 5219).

@@ -42,6 +42,16 @@ def write_body_maps(output, iteration: int, body_index: int, mstep, run) -> None
         write_map(f"{stem}_half{h + 1}_body{body_index + 1:03d}_unfil.mrc", mstep.unfiltered_maps[h], run.pixel_size)
 
 
+def write_fixed_body_maps(output, iteration: int, body_index: int, maps, run) -> None:
+    """A fixed body's half maps of a numbered iteration: unchanged, written as RELION writes every body's maps each
+    iteration (only a reconstructed body also has ``_unfil`` maps)."""
+
+    stem = _stem(Path(output), iteration)
+    Path(output).mkdir(parents=True, exist_ok=True)
+    for h in range(2):
+        write_map(f"{stem}_half{h + 1}_body{body_index + 1:03d}.mrc", _real(maps[h], run.dataset.volume_shape), run.pixel_size)
+
+
 def write_final_body_maps(output, body_index: int, final, run) -> None:
     """One body's joined map and unfiltered half maps of the last iteration."""
 
