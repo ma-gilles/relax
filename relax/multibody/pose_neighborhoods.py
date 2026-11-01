@@ -170,6 +170,13 @@ def compatibility_distance_and_bound_hits(features: PoseFeatures, target: int, d
     return np.sqrt(shape + translation), translation > free + 1e-12 * _dot(delta, delta)
 
 
+def snap_round_off(distances: np.ndarray, length: float) -> np.ndarray:
+    """``distances`` with values at most ``64 eps * length`` set to zero: exact ties that differ only by round-off of
+    a geometry of size ``length`` (angstroms) become true ties for ``d <= h``."""
+
+    return np.where(distances <= 64.0 * np.finfo(np.float64).eps * float(length), 0.0, distances)
+
+
 def zero_depth_distance(features: PoseFeatures, target: int) -> np.ndarray:
     """The Euclidean comparison of zero-depth lifts, a negative control: it treats a camera-dependent projection of
     the translation as a 3D position."""
