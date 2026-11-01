@@ -131,6 +131,15 @@ def exact_nuisance_images(run, data_dir: Path, target: int, components: list) ->
     return np.stack([relion_translate_2d(image, shift) for image, shift in zip(raw - others, integer)]).astype(np.float32)
 
 
+def require_unit_true_contrast(data_dir: Path) -> None:
+    """Group scales may be ignored only where the simulation says every image's true contrast is one."""
+    from recovar import utils
+
+    contrast = np.asarray(utils.pickle_load(data_dir / "simulation_info.pkl")["per_image_contrast"])
+    if np.max(np.abs(contrast - 1.0)) > 1e-6:
+        raise ValueError(f"{data_dir}: true contrast ranges over {contrast.min()}-{contrast.max()}, not one")
+
+
 def state_rows(data_dir: Path, names: np.ndarray) -> np.ndarray:
     """Each particle's simulated state."""
     from recovar import utils
@@ -148,8 +157,9 @@ def main() -> None:
                         help="pca: distances in the pooled motion PCA; pose: the target body's depth-aware pose comparison")
     parser.add_argument("--target-image", default=None, help="pose: rlnImageName of the target particle")
     parser.add_argument("--depth-bound", type=float, default=None, help="pose: the missing-depth bound L_b, angstroms")
-    parser.add_argument("--ignore-group-scales", action="store_true",
-                        help="reconstruct although RELION's group scales are not one, when the true scale is known to be one")
+    parser.add_argument("--ignore-group-scales", type=Path, default=None, metavar="DATASET",
+                        help="simulated data only: reconstruct although RELION's group scales are not one, after checking "
+                        "in DATASET's simulation_info.pkl that the true contrast is one")
     parser.add_argument("--pca", type=Path, default=None)
     parser.add_argument("--oracle-coordinates", type=Path, default=None, help="dataset dir: use the true twist (diagnostic)")
     parser.add_argument("--components", default="0", help="comma-separated 0-based PCA columns")
@@ -186,8 +196,10 @@ def main() -> None:
     result = subsets.read_multibody_result(args.multibody, run)
     if args.oracle_poses is not None:
         result = oracle_result(run, result, args.oracle_poses)
-    if not args.ignore_group_scales:
+    if args.ignore_group_scales is None:
         subsets.require_unit_group_scales(run)
+    else:
+        require_unit_true_contrast(args.ignore_group_scales)
     names = np.asarray(run.checkpoint.particles["rlnImageName"])
     if args.neighborhood == "pose":
         target_row = subsets.target_row(names, args.target_image)
@@ -231,7 +243,7 @@ def main() -> None:
     record.update(measured)
     record.update({
         "coordinates": source, "components": components, "target_point": z_star.tolist(), "target_image": args.target_image,
-        "neighborhood": args.neighborhood, "depth_bound_angstrom": args.depth_bound, "ignore_group_scales": args.ignore_group_scales,
+        "neighborhood": args.neighborhood, "depth_bound_angstrom": args.depth_bound, "ignore_group_scales": None if args.ignore_group_scales is None else str(args.ignore_group_scales),
     })
     if args.check_direct:
         dataset = subsets.fixed_pose_dataset(run, result, args.target_body - 1)

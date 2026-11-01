@@ -13,6 +13,7 @@ from recovar.core import fourier_transform_utils as ftu
 from recovar.core.geometry import translate_images
 from recovar.core.slicing import slice_volume
 from recovar.data_io.cryoem_dataset import load_dataset
+from recovar.utils import pickle_dump
 from recovar.utils.helpers import R_to_relion, relion_volume_to_recovar
 from scipy.spatial.transform import Rotation
 
@@ -21,7 +22,8 @@ from relax.multibody.bodies import A_ROT90
 from relax.multibody.pose_neighborhoods import body_pose_lines
 from relax.multibody.subtraction import relion_translate_2d
 from relax.relion.macros import relion_round_array
-from scripts.multibody_adaptive_subsets import true_offsets
+from relax.multibody.subsets import require_unit_group_scales
+from scripts.multibody_adaptive_subsets import require_unit_true_contrast, true_offsets
 
 pytestmark = pytest.mark.unit
 
@@ -198,3 +200,14 @@ def test_true_offsets_place_the_nuisance_and_align_the_target():
     np.testing.assert_allclose(projected - origins - nuisance, position)
     np.testing.assert_allclose(-relion_round_array(origins - projected) - aligned, position)
     assert np.max(np.abs(nuisance - aligned)) > 0.1
+
+
+def test_group_scales_are_refused_unless_a_simulation_shows_unit_contrast(tmp_path):
+    run = SimpleNamespace(halves=[SimpleNamespace(scale_corrections=np.array([1.0, 0.9])), SimpleNamespace(scale_corrections=np.ones(2))])
+    with pytest.raises(ValueError):
+        require_unit_group_scales(run)
+    pickle_dump({"per_image_contrast": np.ones(4)}, tmp_path / "simulation_info.pkl")
+    require_unit_true_contrast(tmp_path)
+    pickle_dump({"per_image_contrast": np.array([1.0, 0.8])}, tmp_path / "simulation_info.pkl")
+    with pytest.raises(ValueError):
+        require_unit_true_contrast(tmp_path)
