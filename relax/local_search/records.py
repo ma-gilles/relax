@@ -34,6 +34,15 @@ class LocalSearchData:
 
 
 @dataclass(frozen=True, kw_only=True)
+class BodyLocalSearchData(LocalSearchData):
+    """A multi-body body's pass: ``LocalSearchData`` with each image's own translation (``[n_images, 2]`` pixels,
+    the body's refined offset), applied in Fourier space to its preprocessed (masked and unmasked) images before the
+    translation search. A separate type, so that every other pass's record keeps its fields."""
+
+    image_translations: object
+
+
+@dataclass(frozen=True, kw_only=True)
 class LocalSearchKernelPolicy:
     """Numerical kernel, Fourier window, projector and optics choices."""
 

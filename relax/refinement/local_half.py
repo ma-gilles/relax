@@ -23,6 +23,7 @@ from relax.local_search.layout import (
     restrict_local_layout_classes,
 )
 from relax.local_search.records import (
+    BodyLocalSearchData,
     LocalSearchData,
     LocalSearchKernelPolicy,
     LocalSearchSupportPolicy,
@@ -81,6 +82,12 @@ class LocalPriorSpec:
     # Class3D: the class log priors. A local search's weights carry no class prior, as RELION's, but a
     # class at -inf (pdf_class == 0) is left out of the search.
     class_log_priors: object | None = None
+    # [n_images, 2] pixels: each image's own Fourier translation before the search (LocalSearchData), or None.
+    image_translations: object | None = None
+    # A multi-body body's search (relax.multibody.layout.BodySearch): ``parent_layout(layout)`` applies the body
+    # prior to the pass-1 parents and ``scored_rows(layout)`` composes the rows every pass scores. None: a
+    # whole-particle search.
+    body_search: object | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -592,7 +599,10 @@ def _score_half_local_one_shape(
             int(sampling.translations.shape[0]) * 4 ** int(sampling.search.oversampling_order),
         )
     # One pass's operands; the parent, denominator and final passes ``replace`` the fields they change.
-    local_data = LocalSearchData(
+    data_record = LocalSearchData if priors.image_translations is None else BodyLocalSearchData
+    body_translations = {} if priors.image_translations is None else {"image_translations": priors.image_translations}
+    local_data = data_record(
+            **body_translations,
             experiment_dataset=half.particles.dataset,
             mean=half.reference,
             noise_variance=half.noise_variance,
@@ -604,7 +614,10 @@ def _score_half_local_one_shape(
             image_pre_shifts=priors.translation_search_base,
             optics_group_ids=half.particles.optics_group_ids,
     )
-    local_grid = LocalSearchGridSpec(
+    grid_record = LocalSearchGridSpec if priors.body_search is None else BodyLocalSearchGridSpec
+    body_rows = {} if priors.body_search is None else {"scored_rows": priors.body_search.scored_rows}
+    local_grid = grid_record(
+            **body_rows,
             prior_rotations=half.particles.rotation_eulers,
             rotation_grid_rotations=sampling.rotations,
             healpix_order=sampling.search.healpix_order,
@@ -664,6 +677,8 @@ def _score_half_local_one_shape(
     )
     pass2 = LocalPass2Layouts(layout=None, significant_counts=None, denominator_layout=None)
     local_normalization_log_evidence = None
+    if priors.body_search is not None and int(sampling.search.oversampling_order) == 0:
+        raise NotImplementedError("a multi-body search runs with adaptive oversampling (--oversampling 1)")
     if int(sampling.search.oversampling_order) > 0:
         parent_layout, parent_order = _build_local_adaptive_parent_layout(
             half,
@@ -673,6 +688,8 @@ def _score_half_local_one_shape(
             parent_local_layout_dtype,
             execution.engine_tuning,
         )
+        if priors.body_search is not None:
+            parent_layout = priors.body_search.parent_layout(parent_layout)
         if n_classes > 1:
             # Class3D: pass 1 and pass 2 share the class-expanded parents, so the significant samples
             # carry their class into pass 2's support.
@@ -1005,6 +1022,15 @@ class LocalSearchGridSpec:
     empty_classes: tuple = ()
 
 
+@dataclass(frozen=True, kw_only=True)
+class BodyLocalSearchGridSpec(LocalSearchGridSpec):
+    """A multi-body body's grid: ``LocalSearchGridSpec`` with the body's row composition
+    (``LocalPriorSpec.body_search.scored_rows``), applied to every pass's layout after its rows are built. A
+    separate type, so that every other search's record keeps its fields."""
+
+    scored_rows: object
+
+
 def _run_local_search_iteration(
     data: LocalSearchData,
     grid: LocalSearchGridSpec,
@@ -1139,6 +1165,13 @@ def _run_local_search_iteration(
                 what="local M-step rows",
             ),
         )
+
+    # A body's rows are composed after the pass's own rows are built (RELION's MBL A MBR).
+    scored_rows = getattr(grid, "scored_rows", None)  # BodyLocalSearchGridSpec
+    if scored_rows is not None:
+        if kernel.projection_scale != 1.0 or magnification is not None:
+            raise NotImplementedError("a multi-body search needs images on the reference grid without magnification")
+        local_layout = scored_rows(local_layout)
 
     # A regular iteration at the full box hands current_size=None (full-box support;
     # MS2 box 512 it25); the resident driver scores RELION's radial
