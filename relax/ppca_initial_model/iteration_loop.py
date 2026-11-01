@@ -288,6 +288,34 @@ def _select_halves(rng, order, count, balanced):
     return selected, [selected[selected % 2 == half] for half in range(2)]
 
 
+# Above this sgd_learning_rate / (1 + q) the run warns (docs/math/ppca_momentum_sgd.md).
+MAX_SGD_RATE_PER_CHANNEL = 0.8
+
+
+def _update_rule(config):
+    """The run's update rule as configured, for the job log."""
+    if config.optimizer == "momentum_sgd":
+        rate = config.sgd_learning_rate
+        return (
+            f"momentum SGD, momentum {config.sgd_momentum:g} ({'on' if config.sgd_momentum else 'off'}), "
+            f"learning rate {rate:g} = {rate / (config.q + 1):.4g} (1 + q)"
+        )
+    return f"VDAM, second-moment scaling {'on' if config.vdam_second_moment else 'off'}"
+
+
+def _update_rule_measured(config, diagnostics):
+    """What the update computed that shows its rule, for the job log."""
+    if config.optimizer == "momentum_sgd":
+        return (
+            f"momentum {diagnostics['momentum']:g}, carried velocity L2 {diagnostics['velocity_carried_l2']:.4g} "
+            f"of {diagnostics['velocity_l2_before_projection']:.4g}"
+        )
+    return (
+        f"second-moment scaling {'on' if diagnostics['second_moment_scaling'] else 'off'}, direction divisor mean "
+        f"{diagnostics['direction_divisor_mean']}, second moment mean {diagnostics['second_moment_mean']}"
+    )
+
+
 def _gemm_precision_used(config):
     """The stream GEMM precision of this run's updates; the host-mask engine multiplies in fp32."""
     if not config.stream_coarse_recompute:
@@ -648,9 +676,16 @@ def run(
     shells = np.asarray(ftu.get_grid_of_radial_distances_real(dataset.volume_shape), np.int32).reshape(-1)
     radii = np.asarray(ftu.get_grid_of_radial_distances_real(dataset.volume_shape, rounded=False)).reshape(-1)
     end = config.iterations if stop_after is None else min(config.iterations, stop_after)
+    logger.info("update rule: %s", _update_rule(config))
+    if config.optimizer == "momentum_sgd" and config.sgd_learning_rate / (config.q + 1) > MAX_SGD_RATE_PER_CHANNEL:
+        logger.warning(
+            "SGD learning rate %g is above %g (1 + q) = %g",
+            config.sgd_learning_rate, MAX_SGD_RATE_PER_CHANNEL, MAX_SGD_RATE_PER_CHANNEL * (config.q + 1),
+        )
     stage_tile_sizes = {}  # compiled tile shapes seen per stage (radius, HEALPix order)
     log = _ModelLog(output / "iterations.jsonl")
-    for iteration in range(state.iteration + 1, end + 1):
+    state_start = state.iteration
+    for iteration in range(state_start + 1, end + 1):
         started = time.monotonic()
         count, step, fudge = config.schedule(iteration, dataset.n_images)
         step_factor = config.step_factor(iteration, dataset.n_images)
@@ -718,6 +753,7 @@ def run(
                 support,
                 learning_rate=config.sgd_learning_rate,
                 floor=metric_floor(dataset.grid_size),
+                momentum=config.sgd_momentum,
             )
             if config.sgd_halfset_gate:
                 diagnostics.update(gates.diagnostics())
@@ -734,6 +770,7 @@ def run(
                 step=step * step_factor,
                 fudge=fudge,
                 image_size=dataset.grid_size,
+                second_moment=config.vdam_second_moment,
             )
             theta = bandlimit_and_mask(theta, dataset.volume_shape, radius, mask)
             momentum = None
@@ -867,6 +904,11 @@ def run(
                 diagnostics.update(sgd_halfset_gate=config.sgd_halfset_gate, sgd_step_scale=config.sgd_step_scale)
         if config.noise_anneal_updates:
             diagnostics["noise_inflation"] = noise_inflation
+        if iteration == state_start + 1 or config.stage(iteration) != config.stage(iteration - 1):
+            logger.info(
+                "update %d, radius %d, HEALPix order %d: %s",
+                iteration, radius, config.stage(iteration)[1], _update_rule_measured(config, diagnostics),
+            )
         if not log_direction_prior:
             # The full angular prior is checkpointed in State. Large stochastic
             # sweeps can omit its per-update JSON duplicate without changing it.

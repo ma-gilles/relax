@@ -175,10 +175,12 @@ def shell_gates(theta, first, active, shells, *, fudge):
 
 
 @full_float32
-def stochastic_update(theta, moments, directions, coverage, shells, *, step, fudge, image_size):
+def stochastic_update(theta, moments, directions, coverage, shells, *, step, fudge, image_size, second_moment=True):
     """Simultaneous old-model update; one scalar adaptation/gate for all PCs.
 
     :func:`advance_moments`, then :func:`shell_gates` on the new first moments.
+    Without ``second_moment`` (``Config.vdam_second_moment``) the direction is not divided by the root of the
+    second moment; the moments and the gates advance the same.
     Caller handles solvent/Hermitian projection separately.
     """
     theta = jnp.asarray(theta)
@@ -186,9 +188,16 @@ def stochastic_update(theta, moments, directions, coverage, shells, *, step, fud
     first, second = moments.first, moments.second
     active = jnp.any(jnp.asarray(coverage, bool), axis=0)
     mean_first = (first[0] + first[1]) * 0.5
-    divisor = jnp.sqrt(second) + 1e-12
+    divisor = (jnp.sqrt(second) if second_moment else jnp.ones_like(second)) + 1e-12
     adapted = jnp.concatenate([mean_first[:, :1] / divisor[:, :1], mean_first[:, 1:] / divisor[:, 1:]], axis=-1)
     gates = shell_gates(theta, first, active, shells, fudge=fudge)
     gate = gates.per_frequency(shells, theta.shape[-1] - 1)
     updated = jnp.where(active[:, None], theta + step * (gate * adapted - (1 - gate) * theta), theta)
-    return updated, moments, gates.diagnostics()
+    active_count = jnp.maximum(jnp.sum(active), 1)
+    scaling = {
+        "second_moment_scaling": bool(second_moment),
+        # Over the active frequencies, (mean, loadings): the divisor the update used, 1 when the scaling is off.
+        "direction_divisor_mean": (jnp.sum(divisor * active[:, None], axis=0) / active_count).tolist(),
+        "second_moment_mean": (jnp.sum(second * active[:, None], axis=0) / active_count).tolist(),
+    }
+    return updated, moments, gates.diagnostics() | scaling
