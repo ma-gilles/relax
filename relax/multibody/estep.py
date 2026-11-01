@@ -35,6 +35,10 @@ from relax.steps.scoring_policy import local_precision
 from relax.steps.shape_class_scoring import OpticsSpec
 
 
+# Images subtracted at once: the prediction's phase table and projections of one batch stay well inside a GPU.
+SUBTRACTION_BATCH_IMAGES = 2048
+
+
 @dataclass(frozen=True)
 class HalfParticles:
     """One half's particles as the bodies read them, in the half's local order."""
@@ -88,11 +92,16 @@ def score_body_half(
 
     body = bodies[target]
     n = int(particles.rows.size)
-    images = np.zeros((dataset.n_images, *dataset.image_shape), dtype=np.float32)
-    images[particles.rows] = subtracted_body_images(
-        dataset.subset(particles.rows), np.arange(n), target, bodies, projectors, poses, particles.frames,
-        current_size=current_size, padding_factor=padding_factor,
-    )
+    images = np.zeros((dataset.n_images, *dataset.image_shape), dtype=np.float32)  # only this half's rows get pages
+    half_dataset, frames = dataset.subset(particles.rows), particles.frames
+    for start in range(0, n, SUBTRACTION_BATCH_IMAGES):
+        batch = np.arange(start, min(start + SUBTRACTION_BATCH_IMAGES, n))
+        images[particles.rows[batch]] = subtracted_body_images(
+            half_dataset, batch, target, bodies, projectors,
+            [BodyPoses(pose.eulers_deg[batch], pose.offsets_px[batch]) for pose in poses],
+            ParticleFrames(frames.consensus[batch], frames.offsets_px[batch], frames.norm_factors[batch]),
+            current_size=current_size, padding_factor=padding_factor,
+        )
     radius_px = geometry.body_mask_radius_px(body, offset_range_angstrom, dataset.voxel_size)
     body_dataset = dataset_with_images(
         dataset, images, mask_diameter_angstrom=2.0 * radius_px * float(dataset.voxel_size)
@@ -152,6 +161,7 @@ def score_body_half(
             firstiter_cc=False,
             engine_tuning=options.environment.engine,
             scoring_overrides=options.environment.scoring,
+            padding_factor=padding_factor,
         ),
         diagnostics=LocalDiagnosticPolicy(
             iteration=iteration,
