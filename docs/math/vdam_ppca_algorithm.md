@@ -3035,7 +3035,8 @@ fingerprint (`scripts/dev/ppca_fingerprint.py check origin/main`: the six new re
   buy a shorter run.
 - The radius stays at 15 until the step, then rises from 15 to 25 in one iteration and to 28 or 29 within about 30
   (q = 1: first at or above 16 at iteration 622, 606, 689, with the entropy below 2 at 608, 600, 691). The radius
-  growth and the entropy step coincide to about 15 iterations; which one drives the other is not tested.
+  growth and the entropy step coincide to about 15 iterations; section 18.7 shows that the radius neither causes
+  the step nor simply follows it.
 - Separation at the end: q = 1 R^2 .760 to .786 (mean .774) against .742 to .751 (.747), every seed above every
   table seed, mixture ARI .119 against .108; q = 3 R^2 .503 to .509 against .549 and .556 for the two table runs
   that reached the end state, mixture ARI .185 against .190, nearest-neighbour accuracy .333 against .327. The final
@@ -3045,10 +3046,437 @@ fingerprint (`scripts/dev/ppca_fingerprint.py check origin/main`: the six new re
   fudge 1 throughout (the default 1 to 4 schedule is not run); the GPU run-to-run exactness, resume, `--ios`,
   `pc_stages` and oversampling with the rule are not run on the GPU; no pose error or per-state FSC.
 
-### 18.7 Next slices
+### 18.7 What sets the pose-entropy step (round 5, October 28, 2026)
 
-Slice 4 takes the order from `min(0.75 acc_rot, d / (kappa R))`, `kappa` calibrated once; slice 5 a per-PC age for
-the step and the fudge. Each is an opt-in option and is calibrated on a family of fixtures and then frozen, with
-the per-seed success rate (section 17's bad seeds) as the measure. Open from slice 3: what sets the iteration of
-the entropy step (the runs of 600 iterations do not reach it under either rule), and whether the radius floor of
-15 shells suits other box sizes.
+Question: the second drop of the pose entropy (section 18.5; to about 1.3 at radius 16, about 0.4 at 29) decides
+the final quality, and its iteration ranges from 367 to 1160 across runs. Two ways to test whether the VDAM schedule
+sets it, both written down before the runs: VDAM builds its batch ramp (200 to 2,000 particles over iterations
+30% to 80% of the run) and its step decay (0.9 to 0.5, midpoint at 42% of the run) from `--iterations`, so 2400 iterations
+stretch the schedule by 2 (the runs coincide to iteration 360). If the schedule sets the step, it moves about
+2 times later; if the time since the radius opened sets it, it stays at about the same iteration.
+
+Runs: 15 jobs 16383950 to 16383964 (46 minutes in all), `snapshots/round5` (HEAD `50281fc8` plus the five arms of
+`scripts/ppca_schedule/config.yaml`; tracked diff sha256 `15344ae26b9e8b6bd198e88ee4a74b33b1f2a0f2ca8093f2edd610bb1acf6732`),
+`--checkpoint-interval 10` (the last checkpoint is always written; the scoring and plots read only that one).
+Table and figure: `scripts/plot_ppca_entropy_step.py` over rounds 3 to 5, `figures/round5/entropy_step.png` and
+`entropy_step_table.txt`; the plots of section 18.5's standard are in `figures/round5/ppca_run_plots/<arm>_seed<N>`.
+
+| Arm | R^2, seeds 11 / 12 / 13 | Entropy below 8 at | Below 2 at | Radius at least 15 from / at the end |
+| --- | --- | --- | --- | --- |
+| table, 1200 | .747 / .751 / .742 | 446, 446, 446 | 1146, 1160, 1019 | 400 / 16 |
+| table, 2400 | .721 / .709 / .705 | 446, 444, 444 | 1062, 1090, 753 | 400 / 16 |
+| table, 1200, q = 3 | .549 / .074 / .556 | 451, 452, 450 | 1053, none, 905 | 400 / 16 |
+| table, 2400, q = 3 | .539 / .526 / .550 | 452, 453, 450 | 1119, 958, 1130 | 400 / 16 |
+| data_vs_prior, 1200 | .777 / .760 / .786 | 56, 55, 57 | 608, 600, 691 | 2 / 29 |
+| data_vs_prior, 2400 | .742 / .742 / .766 | 56, 55, 57 | 731, 658, 762 | 2 / 29 |
+| data_vs_prior, 1200, increment 5 | .840 / .026 / .801 | 662, 721, 661 | 1025, none, 932 | 644, 705, 644 / 24, 15, 24 |
+| data_vs_prior, 1200, increment 20 | .745 / .767 / .778 | 44, 42, 44 | 647, 511, 367 | 2 / 31 |
+
+- The schedule is not the clock. Stretched 2 times, the step moves by a factor of .74 to 1.25 (table q = 1:
+  .93, .94, .74; table q = 3: 1.06, 1.25 and seed 12, which did not step in 1200 iterations, at 958;
+  data_vs_prior: 1.20, 1.10, 1.10), not 2. At 2400 iterations it happens with a batch of 200 to 815 and a VDAM step
+  of .56 to .90, against 920 to 2,000 and about .5 at 1200: neither the full batch nor the decayed step is needed.
+  All nine 2400-iteration runs step, by iteration 1130.
+- The radius does not cause the step. The table steps at the constant radius 16, and every data_vs_prior run of 2400
+  iterations steps at radius 15 (iteration 658 to 762) and then sits at entropy 1.7 to 2 for 330 to 440 iterations.
+  The fall to 0.4 to 0.7 comes with the radius: it opens from 15 to 25 at iteration 1105, 1083, 1094 (seeds 11 to
+  13), to 27 or 28 within 30 to 200 iterations, and to 29 by iteration 1650.
+- The radius does not simply follow the step either. It opens when `data_vs_prior` at the last shell inside the
+  radius (shell 15) reaches 1, and that value grows with the batch as well as with the mean's power. Seed 11 of
+  2400 iterations: shell 15 is .17 at batch 200 (iteration 400), .31 at batch 260, .70 at 470, .87 at 620, .98 at
+  770, and the radius opens at batch 778. Seed 11 of 1200: .53 at batch 800 (iteration 560), .84 at 920 (iteration
+  600, at the step), crossing 1 at batch 986. In the 1200 schedule the step and the batch ramp put the edge above
+  1 together; at 2400 they are 400 iterations apart. The batch and the mean's power change together in these runs,
+  so their shares are not separated.
+- The delay from the radius reaching 15 to the step is 288 to 760 iterations in every arm (table 1200: 619 to 760;
+  table 2400: 353, 662, 690; data_vs_prior: 598 to 689 at 1200 and 656 to 760 at 2400; increment 20: 365 to 645;
+  increment 5: 288 and 381, and more than 495 for seed 12), with a spread of up to 40% within an arm and no
+  consistent seed order. That fits a stochastic delay in iterations. The mechanism (for example, growth of the
+  shared model's asymmetry from a seed-dependent start) is not tested. The particles seen up to the step range
+  from 150 thousand to 1.1 million, so it is not an epoch count.
+- The radius floor sets the first dip, not the step. A floor of 10 shells (increment 5) keeps the radius at 10 for
+  about 620 iterations (it rises at batch about 1,000 to 1,200) and the first dip comes with 14 to 15 shells at
+  661 to 721; floor 15: 55; floor 25: 42 to 44. The step then comes 288 to 381 iterations after the radius reaches 15
+  (two runs); the third run reaches radius 15 at 705 and has not stepped at 1200 (entropy 3.17, R^2 .026), a
+  failure like the seven of section 18.5.
+- Running longer does not help the separation. At 2400 iterations R^2 is .705 to .721 against .742 to .751 (table,
+  q = 1; every seed lower), .742 to .766 against .760 to .786 (data_vs_prior), and .526 to .550 against .549 and
+  .556 (table, q = 3).
+- Final radius and separation. Among the data_vs_prior runs R^2 falls with the final radius: 24 (increment 5, two
+  seeds) .840 and .801; 29 (increment 10) .760 to .786; 31 (increment 20) .745 to .778. This agrees with the
+  observation that started section 18, but it rests on two seeds for radius 24, and its third seed failed; the
+  table's radius 16 (R^2 .742 to .751) does not follow the same line, so the radius is not the only factor.
+- Limits: one fixture, three seeds; the stretch is tested at 2 times only; no per-state FSC and no pose error (the
+  owner skipped pose metrics); the plots of the standard (latents, volumes, gates, without UMAP since labels exist)
+  are in `figures/round5/ppca_run_plots`.
+
+### 18.8 The default fudge schedule (round 6, October 29, 2026)
+
+Rounds 1 to 5 held the fudge at 1 (`--tau2-fudge 1`). InitialModel's own schedule (no flag) is 1 for the first 30%
+of the run and 4 from about 42% (at 1200 iterations: 2.5 at iteration 435, 4.0 from about 510). The one per-iteration
+`fudge` of `iteration_loop.py` feeds both the gate update and the radius rule, so the fudge also multiplies
+`data_vs_prior`. Predictions, written before the runs: the table at q = 1 reaches R^2 at or below .742 to .751, and the
+data_vs_prior radius opens at iteration 450 to 500 instead of 600 to 690.
+
+Runs: 9 jobs 16433475 to 16433483, `snapshots/round6` (HEAD `50281fc8`; tracked diff sha256
+`3345a74a72aef64969716e2ee3e5bc44b6468b0de0ea51c951a90b0a990f4039`), 1200 iterations, `--checkpoint-interval 10`,
+the fixture and seeds of section 18.7. The fudge-1 comparison runs are those of rounds 3 and 4.
+`scripts/plot_ppca_entropy_step.py --panels fudge`, `figures/round6/entropy_fudge.png`.
+
+| Arm | R^2, seeds 11 / 12 / 13 | Entropy below 2 at | Radius above 15 from | Final entropy |
+| --- | --- | --- | --- | --- |
+| table, fudge 1 | .747 / .751 / .742 | 1146, 1160, 1019 | 400 | 1.29, 1.32, 1.28 |
+| table, default fudge | .017 / .744 / .727 | none, 1129, 1058 | 400 | 3.10, 1.17, 1.16 |
+| data_vs_prior, fudge 1 | .777 / .760 / .786 | 608, 600, 691 | 622, 606, 689 | .38, .39, .39 |
+| data_vs_prior, default fudge | .719 / .726 / .708 | 510, 486, 525 | 459, 450, 459 | .27, .26, .33 |
+| data_vs_prior, q = 3, fudge 1 | .507 / .509 / .503 | 534, 743, 757 | 578, 741, 751 | .34, .37, .37 |
+| data_vs_prior, q = 3, default fudge | .457 / .031 / .047 | 460, 483, 486 | 447, 455, 455 | .21, .76, 1.82 |
+
+- The default fudge is not better in any of the nine pairs. data_vs_prior at q = 1 is lower on all three seeds
+  (by .034 to .078) and at q = 3 on all three (.457 against .507; two seeds collapse to .031 and .047). The table at
+  q = 1 is lower on the two seeds that step (by .007 and .015); its seed 11 has not stepped at iteration 1200
+  (entropy 3.10). Its fudge-1 twin stepped at 1146, 54 iterations before the end, so that miss is within the spread
+  of the delay of section 18.7 and is not attributed to the fudge.
+- The radius opens as predicted, at iteration 447 to 459 instead of 578 to 751, when the fudge rises (it is 2.5 at
+  435 and 3.9 by 500), and ends at the cap of 31 in all six default-fudge data_vs_prior runs instead of 29.
+- The order of events reverses. With fudge 1 the step and the radius opening coincide (within 15 iterations in
+  five of the six runs, 44 in one at q = 3). With the default fudge the radius opens first (iteration 447 to 459,
+  entropy about 5) and the step follows 13 to 66 iterations later (data_vs_prior q = 1: 486 to 525, 98 to 166
+  iterations earlier than with fudge 1). The fudge acts on the gate and on the radius at once, so this does not show that the radius opening
+  brings the step forward.
+- The model is less regularized. At q = 1 the final loading singular value is 1.1 to 1.4 times larger on the table
+  (.051 to .066 against .047) and 2.7 to 3.2 times larger on data_vs_prior (.125 to .148 against .046 to .047), and
+  the mean power 1.6 to 1.9 times larger on data_vs_prior. At q = 3 two seeds diverge: mean power 4.3 and 19.7
+  against .025 to .027, loading singular values .31 to 1.19 against .031 to .044; their entropy (.76 and 1.82)
+  stays above the end state's .37. The third seed is moderately inflated (.10 to .11, mean power .046). Why the
+  divergence happens in q = 3 only, at radius 30 to 31 and fudge 4, is not tested.
+- Consequence: keep `--tau2-fudge 1` for these runs. The default is not a safe setting for PPCA on this fixture,
+  which agrees with the observation that started section 18 (under-regularization). Whether a constant fudge between
+  1 and 4, or the schedule's shape alone, is responsible is not separated.
+- The run plots are in `round6/<arm>/seed<N>/plots`. At q = 1 (data_vs_prior, seed 11) the states still run in order
+  along PC1, as with fudge 1, with a wider coordinate (std 3.5e-4 against 2.1e-4). At q = 3 (seed 12, R^2 .031)
+  the top three PCs form one central blob, only the states 8 to 10 spread out, and the coordinate scale is five times
+  larger (PC1 std 9.5e-4), the diverged model's.
+- Limits: one fixture, three seeds; the table at q = 3 and the 2400-iteration runs are not repeated with the default
+  fudge; no per-state FSC and no pose error.
+
+### 18.9 HEALPix order 4 after the step (round 7, October 29, 2026)
+
+Slice 4 would raise the HEALPix order once the poses have settled. Before building a rule, one fixed switch tested
+whether the finer grid helps at all. Rule written before the runs: the baseline is data_vs_prior at 1200 iterations
+(R^2 .777 / .760 / .786); a gain of .02 or more on all three seeds builds the order rule, a smaller gain does not.
+Order 5 is not testable: its tile plan holds 43 images and one iteration takes 190 s at radius 29.
+
+Runs: 3 jobs 16434484 to 16434486 (1 h 26 min to 1 h 28 min), `snapshots/round7` (HEAD `50281fc8`; tracked diff
+sha256 `5c37f2695e923b2e7a2c122e5518b7c4aa9e91dbc5bdfcb43ecb7faef296a226`), the arm `dvp_1200_hp4_at_700`:
+`--tau2-fudge 1 --stages '[[1,4,3],[700,4,4]]' --radius-rule data_vs_prior --iterations 1200`, fixture and seeds of
+section 18.7. Before iteration 700 the run is the baseline's up to GPU run-to-run noise (entropy first below 8 and 3
+at the same iterations; below 2 at 608 / 600 / 697 against 608 / 600 / 691). The step comes before the switch in all
+three seeds (seed 13 by three iterations).
+`scripts/plot_ppca_entropy_step.py --panels order`, `figures/round7/entropy_order.png`, plots in
+`round7/dvp_1200_hp4_at_700/seed<N>/plots`.
+
+| Arm | R^2, seeds 11 / 12 / 13 | ARI | nn accuracy | Final entropy |
+| --- | --- | --- | --- | --- |
+| data_vs_prior, order 3 | .777 / .760 / .786 | .12 | .22 | .38, .39, .39 |
+| data_vs_prior, order 4 from iteration 700 | .909 / .909 / .907 | .23 | .31 | .59, .60, .60 |
+
+The rule is met (gains .132, .149, .121). The final embeddings are inferred at the stage of the last iteration, so the
+arm changes two things: the order the model trains at over iterations 700 to 1200 and the order of the embedding
+pass. They were separated with the saved models (jobs 16441637 and 16441888, `diag_embed_order/`): `checkpoint_1200`
+resumed with its recorded `stages` replaced, which runs no iteration and only the final embedding pass. Controls (each model re-inferred at its own order) reproduce the original embeddings, R^2
+equal to six digits and the coordinates to within 2e-4 of their standard deviation.
+
+| R^2, seeds 11 / 12 / 13 | inferred at order 3 | inferred at order 4 |
+| --- | --- | --- |
+| trained at order 3 throughout | .777 / .760 / .786 | .883 / .878 / .884 |
+| trained at order 4 from iteration 700 | .870 / .874 / .873 | .909 / .909 / .907 |
+
+- The embedding pass alone gives most of the gain: .098 to .118 on a model trained at order 3. It needs no change
+  to training and costs one pass (about a minute for 20,000 particles at order 4, start-up included).
+- Training at order 4 helps too: +.087 to +.114 when the embeddings are inferred at order 3, +.023 to +.031 when
+  they are inferred at order 4. The two do not add; either one gives 70 to 81% of the combined gain. Why they
+  overlap is not separated.
+- The finer grid does what it should: for the model trained at order 3 the best-pose log score, averaged over
+  particles and seeds, rises by 2.2 (-2060.1 to -2057.9) and the mean maximum posterior falls from .885 to .677.
+  That fits an order-3 grid too coarse for the posterior-mean latents; the mechanism is not tested.
+- The entropy is not a quality measure here. The order-4 runs end at .59 to .60 against .38 to .39: a
+  posterior of the same spread over eight times as many poses has a larger entropy, while R^2 is higher.
+- The PC1 histograms (seed 11; trained 4, inferred 4 and trained 3, inferred 4) keep the states in order along PC1,
+  and states 0 to 3 still overlap near -2e-4.
+- Limits: one fixture, three seeds, one switch iteration (700, after the step); the effect of switching earlier or
+  of order 5 is not tested. No per-state FSC and no pose error, so the gain is shown in the latents, not in the
+  poses. The re-inference runs have PC histograms and volume projections but no gate plot (no iterations).
+
+### 18.10 Slice 4: the accuracy-driven HEALPix order (October 29, 2026)
+
+Section 18.9 showed that a finer grid helps the final embeddings most. Slice 4 sets the order from the data: RELION's
+rule (`updateAngularSampling`, section 18.1) with the expected rotation accuracy `acc_rot` of the PPCA model, whose
+derivation is section 4.1. Opt-in, beside the table (`--order-rule accuracy`):
+
+- The table's first order starts the run; its later rows are not read (as for `--radius-rule data_vs_prior`).
+- Every `--accuracy-interval` (10) iterations, and in the last, `acc_rot` is estimated on the first 100 images of half
+  0 of the batch (RELION's first 100 of the subset), at the poses the E-step just found: the model the E-step used,
+  its window, weights and noise. The next iteration runs one order finer while the angular step of the current order
+  is at least 0.75 `acc_rot`, up to `--order-max` (4); the order never decreases. RELION's "no resolution gain" gate
+  is dropped: the accuracy already depends on the window.
+- The final embedding pass takes, from the last training order on, the first order whose step is below
+  `0.75 acc_rot`, up to `--final-order-max` (default `--order-max`).
+- `--accuracy-signal mean_only` reads the accuracy of the mean image alone (RELION's quantity under the engine's
+  noise and window) instead of the divergence; both are logged at every estimate (`pose_accuracy`: `acc_rot`,
+  `acc_rot_mean_only`, the mean, log-det and trace shares of the divergence at the crossing, `n_trials`;
+  `next_order`; `healpix_order` is the order of the iteration). Checkpoints carry `next_order`; an older checkpoint
+  resumes without one.
+- Single particles, exhaustive grids only (`--oversampling 0`, the streamed engine): the best pose per image comes from
+  the streamed E-step. Subtomograms keep the table. The order of an estimate that is not finite raises.
+
+Code: `relax/ppca_initial_model/pose_accuracy.py` (the divergence and the trials), `order_rule.py` (the rule),
+`iteration_loop.py`, `scripts/probe_ppca_pose_accuracy.py` (the estimate along saved checkpoints).
+
+**Checks** (`tests/unit/ppca_initial_model/test_pose_accuracy.py`, `test_order_rule.py`; CPU):
+
+- The `q x q` form equals the `n x n` divergence on independent spans for loading scales 0.05 to 300; the mean and
+  determinant terms equal twice the difference of the engine's `ell` on the noise-free mean image; the trace term is
+  the covariance change and vanishes for equal loadings; `q = 0` gives half the squared difference; the divergence is
+  invariant to `W -> WQ`, quadratic at small smooth changes, and every term finite at 300 times the loadings.
+- RELION's rotation schedule is reproduced (`_schedule(0)`), and its SNR is the engine's metric with no loadings to
+  rounding, on every pixel except the Nyquist column and the pixel `(0, N/2)`, which RELION counts twice (the check
+  that fixed the noise convention `nv = 2 sigma^2` and the Hermitian weights).
+- The grid's Euler angles reproduce its rotation matrices to `1e-7`, so a turned Euler angle gives the engine's frame.
+- On a 16-pixel dataset: the divergence scales as `1/noise` exactly, `KL(0.05 deg) / KL(0.10 deg)` lies in
+  `(0.2, 0.3)`, and a zero loading column gives the mean-only value.
+- The rule: one order per estimate, the cap, equality with the 75% share refines, the final pass descends to the first
+  fine-enough order; a run stopped at 4 and resumed ends at the orders and the model of the uninterrupted run; the
+  table's runs log no plan and are unchanged.
+
+**The estimate along the baseline's checkpoints** (job 16449981, `probe_acc/`, 3 seeds, `dvp_1200` at order 3 and
+`dvp_1200_hp4_at_700` at order 4, the same 100 particles every time; `snapshots/slice4`; predictions written before):
+
+| Model | Iteration | Radius | `acc_rot` (degrees) | Mean-only | Order the rule takes next |
+| --- | --- | --- | --- | --- | --- |
+| order 3 | 10 | 15 | 30.1 (none passes) | 30.1 | 3 |
+| order 3 | 100 | 15 | 9.5 / 10.4 / 10.1 | 9.5 / 10.4 / 10.1 | 4 / 3 / 3 |
+| order 3 | 200 to 550 | 15 | 8.3 to 8.9 | same | 4 |
+| order 3 | 700 | 29 / 29 / 26 | 4.5 / 4.6 / 5.5 | 4.5 / 4.7 / 5.8 | 4 |
+| order 3 | 1200 | 29 | 3.9 / 4.0 / 3.9 | 4.0 / 4.1 / 4.0 | 4; final pass 5 |
+| order 4 | 750 to 1200 | 29 | 3.1 to 3.5 | 3.2 to 3.6 | 5; final pass 5 |
+
+- The accuracy is a property of the model and the window: 8 to 10 degrees on the radius-15 plateau (iterations 100 to
+  600, entropy about 5), 4 to 5 degrees once the radius opens, 3.1 to 3.5 for the model trained at order 4. The
+  rule therefore takes order 4 from iteration 100 to 200 on, long before the entropy step (600 to 700): at radius 15
+  the 7.5 degree step of order 3 is not below `0.75 * 8.5 = 6.4`. The prediction "the order rises at or after the step"
+  is refuted. Whether a finer grid on the plateau helps or only costs is what round 8 measures (section 18.11).
+- The divergence and the mean-only accuracy differ by 0 to 6%, the divergence usually the smaller (largest: 7.37
+  against 7.74 at iteration 600, 5.45 against 5.75 at 700). At the crossing (the first step past 4.605, so the shares
+  add to about 5.2) of iterations 100, 600, 700 and 1200 of seeds 11 and 13 the mean term is 4.6 to 5.1, the trace term
+  0.02 to 0.57 and the log-det term under 0.01 in size. On this fixture the loadings are small next to the noise, as
+  predicted, and the covariance change adds up to about a tenth of the divergence; it makes the accuracy finer, not
+  coarser. Stronger heterogeneity is not tested.
+- For the final model the rule asks for order 5 (3.75 degrees is not below `0.75 * 3.9 = 2.9`; 1.875 is), for the order-4
+  model too (`0.75 * 3.1 = 2.3`).
+
+**Order 5 for the final pass** (job 16449967, seed 11, `diag_embed_order/`, the resume of section 18.9 with the order
+replaced by 5): the pass takes 10.5 to 11.7 minutes for 20,000 particles (not the 32 minutes extrapolated from a
+training iteration of 190 s, which also builds the statistics).
+
+| R^2, seed 11 | inferred at order 3 | order 4 | order 5 |
+| --- | --- | --- | --- |
+| trained at order 3 | .777 | .883 | .895 |
+| trained at order 4 from 700 | .870 | .909 | .916 |
+
+Order 5 adds .012 and .007 on top of order 4 (ARI .206 and .233, nearest-neighbour accuracy .291 and .319), against
+.106 and .039 for order 4 over order 3: the returns shrink, on one seed. The round-8 arms (`acc_1200_start3`,
+`acc_1200_start1`) cap the training at order 4 and the final pass at order 5, which is what the rule asks for; the
+order-4 final embeddings of the same runs follow from their `checkpoint_1200` by the resume of section 18.9.
+
+### 18.11 The accuracy-driven order against the hand-set switch (round 8, October 29, 2026)
+
+Arms `acc_1200_start3` and `acc_1200_start1`: `--tau2-fudge 1 --stages '[[1,4,3]]'` (or `'[[1,4,1]]'`)
+`--radius-rule data_vs_prior --iterations 1200 --order-rule accuracy --order-max 4 --final-order-max 5
+--checkpoint-interval 10`, fixture and seeds of section 18.7. They differ from `dvp_1200_hp4_at_700` (section 18.9) in
+the order rule (and, for the second arm, the start order): the training order comes from the accuracy (cap 4) and the
+final pass may take order 5.
+`snapshots/slice4_round8` (HEAD `50281fc8`; tracked diff sha256
+`3348265093e4af9567d08a49376004c5702dcf710da2b7bfada6f8600249cd76`); figure
+`figures/round8/entropy_acc.png` and table `figures/round8/acc_table.txt`
+(`scripts/plot_ppca_entropy_step.py --panels acc`), plots in `round8/<arm>/seed<N>/plots`.
+
+Provenance: jobs 16450316 to 16450321 (1 h 45 min to 1 h 54 min). Seeds 11 and 12 of `acc_1200_start3` and seed 12
+of `acc_1200_start1` are from them. Seed 11 of `acc_1200_start1` ran out of GPU memory in its order-5 final pass
+(after iteration 1200; job 16450317) and Snakemake removed its `iterations.jsonl`; a re-invocation from the wrong
+Snakefile then removed the outputs of both seed 13 runs. These three were trained again (jobs 16454139 to 16454141,
+1 h 40 min to 1 h 54 min). The original trainings' `checkpoint_1200` were kept and their order-5 final passes redone
+(jobs 16454062, 16457075; 9 to 12 minutes): the scores agree with the retrained runs (R^2 .916 against .916, .914
+against .914, .903 against .905; ARI .239 against .235, .230 against .232, .204 against .199). The out-of-memory did
+not repeat from the same checkpoint (same plan, 35.41 of 35.56 GiB counted on the 39.6 GiB device), so it is not
+particular to that model; at order 5 the planner's count is within 0.5% of its budget, which is not fixed here.
+
+| Arm | R^2, seeds 11 / 12 / 13 | ARI | PC1 order (Spearman) | nn accuracy |
+| --- | --- | --- | --- | --- |
+| data_vs_prior, order 3 | .777 / .760 / .786 | .12 | .80 / .79 / .81 | .22 |
+| order 4 from iteration 700 (hand-set) | .909 / .909 / .907 | .23 | .91 | .31 |
+| accuracy rule, start order 3 | .915 / .916 / .905 | .23 / .23 / .20 | .91 / .91 / .04 | .32 / .31 / .29 |
+| accuracy rule, start order 1 | .916 / .915 / .914 | .23 / .23 / .23 | .91 | .32 / .32 / .32 |
+
+- The order the rule chooses: order 4 at iteration 91 / 121 / 111 from start order 3 (the estimate at 90, 120, 110
+  finds the 7.5 degree step of order 3 not below `0.75 acc_rot`), and from start order 1 order 2 at 11, order 3 at
+  51 / 51 / 61 and order 4 at 71 / 71 / 81. All six final passes ran at order 5. `acc_rot` is 8.2 to 10.2 degrees at
+  iteration 100 and 7.4 to 8.2 at iterations 300 and 500, on the radius-15 plateau, where order 4 (3.75 degrees) is
+  already fine enough; once the radius opens it falls to 3.2 to 3.8 and is 3.2 to 3.4 at iteration 1200, where order 4
+  is too coarse (3.75 is not below `0.75 * 3.3 = 2.5`) and order 5 (1.875) is not. Training stayed at the cap, so the
+  rule's wish for order 5 shows only in the final pass.
+- The training at order 4 from iteration 100 gives what order 4 from 700 gives. With the final pass at order 4 the
+  same models score .908 / .909 / .893 (start order 3) and .909 / .908 / .906 (start order 1) (job 16457074; each pass
+  one minute), against .909 / .909 / .907. The order-5 final pass adds .007, .007, .012 and .007, .007, .008, which
+  accounts for the .006 to .007 by which the rule's runs exceed the hand-set arm (the folded seed below: -.002). The
+  gain over the order-3 baseline is .119 to .156 on every run. Starting at order 1 against 3 changes nothing in the score.
+- The finer grid on the plateau delays the entropy step. The first entropy below 2 is at 826 / 611 / 717 (start order
+  3) and 663 / 809 / 870 (start order 1), against 608 / 600 / 691 for the order-3 baseline and 608 / 600 / 697 for
+  the hand-set arm (delays of +11 to +218 iterations over the baseline). The radius first exceeds 15 at 816 / 603 / 707
+  and 654 / 794 / 858, against 622 / 606 / 689, so the plateau at radius 15 is longer by the same amounts. The score
+  does not suffer: the late-step runs reach .915 to .916. The entropy is about 7 at iteration 200 against 5.4 at
+  order 3, for the reason of section 18.9. Why the step is later is not tested.
+- Cost: a run takes 1 h 40 min to 1 h 54 min (the order-5 pass 9 to 12 minutes of it) against 1 h 26 min to 1 h 28 min
+  for order 4 from 700. The time of the later step (more iterations at a large batch after the radius opens) and of
+  the order-5 pass is not separated.
+- One run is a different solution: seed 13 of start order 3 puts the states in a folded order along PC1 (Spearman
+  .04; R^2 .905, ARI .199, nn .288). The PC1 histogram has states 0 and 1 at +0.7e-4, states 2 and 3 at -1e-4, states
+  4 to 8 at -2e-4 to -3e-4 and states 9 and 10 at +6.5e-4, and the PC1 volume has both signs where seed 12's has one.
+  It reproduces: the first training of that seed gives Spearman .046 (R^2 .903) from its `checkpoint_1200`, and the
+  retrained run .043 with the final pass at order 4. Of the 31 other runs of rounds 1 to 8 with R^2 above .7, none
+  has a Spearman below .5; the same seed at order 3 (`dvp_1200`) and under the hand-set switch (identical to
+  iteration 699) does not fold. Start
+  order 1 does not fold. The cause is not tested (one seed, one arm); R^2 between states does not see it.
+- Limits: one fixture, three seeds per arm; the training order is capped at 4 (order 5 costs 190 s per iteration, so
+  the rule's wish for it after the radius opens is not tested in training); `--accuracy-signal mean_only` is not
+  run, and the probe found it within 0 to 6% of the divergence on this fixture; no per-state FSC and no pose error;
+  the order-4 and lost-run passes have no gate plots.
+
+### 18.12 The recipe against the local schedule, under both optimizers (round 9, October 30, 2026)
+
+Setup and the checks that preceded the round; the results follow them.
+
+The group's PPCA recipe (`/scratch/gpfs/CRYOEM/gilleslab/em_work/ppca_recipe_snapshot_20261030/AGENT_BRIEF.md`) trains
+3000 updates of a fixed batch of 300 images (150 per pseudo-half), from a random start, with a table that raises the
+Fourier radius linearly (11 to 31 shells over updates 1 to 2500) and the HEALPix order with it (1, 2 from 126, 3 from
+1626), a search of +-2 px in 1 px steps, no oversampling and q = 10. Its two optimizers are VDAM without the adaptive
+step and plain SGD (step `2.4 G / c`, no momentum). This round puts that recipe against the radius rule of 18.6 and the
+order rule of 18.10, with both optimizers, on the eleven-state fixture (20,000 particles, box 64 at 6 A, where the
+recipe's own dataset has 100,000 IgG particles at the same box and pixel size; q = 10 is the full state space of eleven
+states).
+
+| Arm | Optimizer | Radius and HEALPix order |
+| --- | --- | --- |
+| `vdam_recipe` | `vdam` | the recipe's table |
+| `vdam_local` | `vdam` | `data_vs_prior` from radius 4; accuracy rule from order 1, order at most 4, final pass at most 4 |
+| `sgd_recipe` | `momentum_sgd`, learning rate 2.4 | the recipe's table |
+| `sgd_local` | `momentum_sgd`, learning rate 2.4 | as `vdam_local` |
+
+Everything else is shared: `--iterations 3000 --stochastic-batch-size 300 --stochastic-all-iterations
+--balanced-stochastic-halves --shift-range 2 --shift-step 1 --oversampling 0 --checkpoint-interval 50`, no
+`--tau2-fudge` (the recipe passes none, so InitialModel's own schedule applies: fudge 1 until 30% of the run and 4
+from about 42%), seeds 11 to 13.
+
+Differences from the recipe that the arms keep:
+
+- relax's `momentum_sgd` keeps a momentum of 0.9 (`velocity = 0.9 v + 0.1 lr G / c`); the recipe's plain SGD has none,
+  which its driver obtains by rescaling the step. Both take the step `lr G / c` in the steady state.
+- The recipe's VDAM schedule (step decay, fudge rise) is that of a 6000-update run stopped at update 3000, where the
+  fudge reaches 4 near update 2500 and the step starts to fall at 1800. Here `--iterations 3000` completes the schedule
+  inside the run: the fudge is 3.8 at update 1200 and 4 from about 1500, and the step applied falls from 0.9 at update
+  900 to 0.17 at 1500, 0.075 at 2400 and 0.0075 at 3000 (`Config.schedule` and `step_factor`). Momentum SGD has no
+  schedule (the learning rate is constant), and the fudge only enters its data_vs_prior radius. The recipe also drops
+  VDAM's adaptive step (`--vdam-ko noadapt`); its own ablation finds no change.
+- The final embedding pass of every run (all 20,000 particles, for the scores) takes the arm's last order: 3 for the
+  recipe arms, up to 4 for the local arms.
+
+The radius rule now runs under momentum SGD (18.6): the first run of it with that optimizer.
+
+Checks before the round (job 16488144, A100-SXM4-80GB, snapshot `snapshots/round9`, q = 10, batch 300):
+
+- Every arm trains 60 iterations and writes its embeddings. The local arms read radius 15 from iteration 2 (RELION's
+  minimum resolution plus the increment) and order 2 from iteration 11, under both optimizers.
+- Time per iteration: 0.2 to 0.3 s at order 1 and 2, 1.35 s at radius 31 and order 3 (the recipe's end), 13.6 s at
+  radius 29 and order 4 (the local arms' end). The final pass over the 20,000 particles takes under 1 minute at order 3
+  and about 4 minutes at order 4 (VDAM). At order 4 and radius 29 the tile plan counts 35.29 of 35.58 GiB (104 images per tile) and
+  the run completed.
+- Slurm requests: 180 minutes for the recipe arms (1.35 s times 3000 is 68 minutes); 900 for the local arms (13.6 s
+  times 3000 is 11.3 hours if the radius were 29 and the order 4 throughout; the radius starts at 15).
+
+Results (snapshot `snapshots/round9`, HEAD 4b12c5d3, diff sha256 `8b7daf56...`; training jobs 16489008 to 16489019, all
+COMPLETED; scores by `scripts/analyze_ppca_latents.py`, one value per seed 11, 12, 13):
+
+| Arm | R^2 | ARI | nn accuracy | first PC, rank corr. | final pose entropy | radius / order at the end |
+| --- | --- | --- | --- | --- | --- | --- |
+| `vdam_recipe` | .364 .366 .366 | .287 .284 .306 | .582 .580 .580 | .29 .06 .37 | .25 .33 .35 | 31 / 3 |
+| `vdam_local` | .541 .544 .546 | .557 .559 .465 | .688 .700 .692 | .47 .62 .26 | .37 .49 .42 | 31 / 4 |
+| `sgd_recipe` | .282 .043 .256 | .407 .039 .346 | .538 .185 .501 | .17 .19 .39 | .12 .44 .24 | 31 / 3 |
+| `sgd_local` | .011 .015 .023 | .014 .013 .019 | .115 .115 .123 | .04 .19 .00 | 3.76 4.86 3.74 | 15 / 4 |
+
+Chance for the nearest-neighbour accuracy is 1/11 = .09. The trajectories are in `round9/figures/recipe_trajectories.png`
+and the scores in `recipe_scores.png` (`scripts/plot_ppca_recipe_comparison.py`); every run has the standard figures
+(volume projections, PC scatter and density, latents; the VDAM runs also the gate spectrogram).
+
+- Under VDAM the local schedule beats the recipe on every score, and the seeds agree: R^2 .54 against .37, nn accuracy
+  .69 against .58, ARI .53 against .29 on average (the ARI spread within `vdam_local` is wider, .47 to .56). The final pose
+  entropy is similar (.37 to .49 against .25 to .35 for the recipe, a little higher), so the gain is not a sharper
+  posterior at the end. What differs
+  is the path: the local arm sits at order 4 from iteration 51 to 71 and at radius 15 until iteration 1060 to 1078, where
+  the radius rule opens it to 31 within about 80 iterations (the fudge is rising from 1 to 4 there, 18.8), and the pose
+  entropy falls below 2 at 1065 to 1082. The recipe reaches an entropy below 2 earlier (722 to 919) at a radius of 16 to
+  18, ends at order 3, and reaches radius 31 at iteration 2500.
+- `sgd_recipe` is unstable: seeds 11 and 13 separate the states (R^2 .28 and .26, nn accuracy .54 and .50) and seed 12 does
+  not (R^2 .04, nn accuracy .18) while its pose entropy ends at .44, like the other two. The recipe's brief reports the same
+  instability for plain SGD against a stable VDAM (median pose error over four seeds at noise 1: 5.3 to 11.9 degrees; at
+  noise 3 two seeds fail; AGENT_BRIEF.md, section 7), on its 100,000-particle dataset.
+- `sgd_local` fails on all three seeds (R^2 .01 to .02, nn accuracy .115 to .123, close to chance). Its radius stays at 15
+  for the 3000 iterations: the radius rule reads the mean's data_vs_prior, which is above 1 up to shell 4 at iteration
+  3000 (fudge 4: 2.5 at shell 3, 1.5 at shell 4, .36 at shell 5) and never reaches the opening that VDAM's mean gets from
+  the fudge rise. The SGD mean has about half the power of the VDAM mean at iteration 1000 (mean power .0125 against
+  .0211, one seed each) and is a blurred blob in the projections; its PCs are band-limited to radius 15 and look like noise. The pose
+  entropy stays at 3.7 to 4.9 and shows a spike at every order change (iterations 321 to 1211).
+- UMAP of the final latents (`umap.png`, `umap_embedding.npy` in each run's `plots/`; all 10 coordinates of
+  `latents_pc_ordered.npz`, random state 42, coloured by true state; `scripts/plot_ppca_umap.py`, the Snakefile rule
+  `plot_umap`; 12 Slurm CPU jobs 16644318 to 16644329, 1 to 1.5 minutes each, snapshot `round9_umap`, diff sha
+  `ce516b43...`). What the figures show, the same on all three seeds of an arm: `vdam_local` gives compact, separated
+  groups (0 with 1, 2 with 3, 4, 5, 6 with 7, 8, 9, 10; the three pairs overlap in every seed); `vdam_recipe` gives three
+  broad lobes with blurred borders (0, 1 and 3; 4, 6 and 7 with 5 and 8 at its edge; 9 and 10), where 9 lies on 10, 4 on 7
+  and 5 on 8; `sgd_recipe`
+  seeds 11 and 13 (R^2 .28, .26) give a chain ordered by state number (0 and 1, 3, 4 and 7, 5 and 8, 9, 10) with
+  overlapping neighbours, seed 12 (R^2 .04) one cloud with a weak state gradient; `sgd_local` gives one unstructured cloud
+  on every seed, the state medians in a short line near its middle. This agrees with the scores (R^2 .54 against .37,
+  nn accuracy .70 against .58 for VDAM) and adds the grouping of the states. It is not evidence of recovery by
+  itself (UMAP separates groups more than the latent distances do), and why the three pairs do not separate was not
+  tested. The embedding is bit-identical when the script is rerun on one machine but not across machines: a login-node
+  rerun of `vdam_local` seed 11 gives the same groups and agrees with the Slurm job's embedding in 79% of each
+  point's 15 nearest neighbours (median coordinate difference .21, largest 9.2). The cause (CPU, numba thread count) was not
+  tested; read the groups, not the exact positions.
+- Not established: why `sgd_local` fails. Two candidates fit what was measured and are not separated by it: the
+  radius that the rule keeps at 15 (the `sgd_recipe` runs, whose radius the table raises regardless, reach an entropy of .1
+  to .4), and the order that the accuracy rule raises under a blurred mean (the late order changes and their spikes). A
+  separating pair of arms is the SGD run with the recipe's radius and the accuracy order, and the SGD run with the
+  data_vs_prior radius and the recipe's order.
+- Cost: the iteration times sum to 0.6 h (`vdam_recipe`), 6.2 h (`vdam_local`), 0.4 h (`sgd_recipe`) and 2.0 to 2.6 h
+  (`sgd_local`), without the final pass; the Slurm wall time was 38 to 40 minutes, 6.5 h, 24 to 28 minutes and 2.3 to
+  2.9 h. The `vdam_local` Slurm request of 900 minutes was enough (391 to 397 minutes used). Each `iterations.jsonl` of an order-4
+  run holds the 294,912-value direction prior on every line, 8 to 20 GB per run, so the analysis scripts read it as a
+  stream.
+- Not qualified: no pose error against the truth was computed (the scorer reads the latents only), and the maps were not
+  compared with the truth (no FSC). The round is one fixture (20,000 particles, noise 1), three seeds, the default fudge
+  schedule (the constant fudge 1 variant is planned), and momentum SGD with momentum 0.9 rather than the recipe's plain
+  SGD. Executed: all 12 runs, scores, standard figures and UMAPs. Quality-accepted: none; performance-qualified: none.
+- `plot_run` failed for the six SGD runs in the first Snakemake invocation (the rule always passed `--gates`, and only
+  VDAM records gates), which stopped Snakemake's scheduling after the running jobs; the scores and VDAM plots were produced by a
+  second invocation of the same snapshot Snakefile, and the SGD figures by the rule's command without `--gates`. The
+  worktree Snakefile now passes `--gates` to the VDAM arms only.
+
+### 18.13 Next slices
+
+Slice 5 is a per-PC age for the step and the fudge. Each slice is an opt-in option and is calibrated on a family of
+fixtures and then frozen, with the per-seed success rate (section 17's bad seeds) as the measure. Open from slice 3: what delays the
+entropy step by 288 to 760 iterations after the radius reaches 15 (section 18.7 excludes the schedule, the batch, the
+step size and the radius; section 18.11 adds that a finer grid on the plateau delays it by up to 218 more), a stop rule that ends a run once the entropy has stepped and settled (the 2400-iteration
+runs spend more than half of the run after the step), whether a cap on the radius or a smaller increment separates
+the states better, and whether the radius floor of 15 shells suits other box sizes. Open from slice 4: the folded
+PC1 of seed 13 at start order 3, the planner's margin at order 5, and the divergence on a fixture with stronger
+heterogeneity.
