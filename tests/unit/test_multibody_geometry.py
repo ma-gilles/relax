@@ -296,3 +296,18 @@ def test_accuracy_trials_keep_relions_one_shuffle_and_seed_zero_order(monkeypatc
     monkeypatch.setattr(expected_accuracy, "relion_auto_refine_half_orders", fake_orders)
     np.testing.assert_array_equal(_accuracy_trial_order(rows, subsets, 7), [3, 0, 2, 1])
     assert calls == [(7, 1)]
+
+
+def test_image_size_rounds_the_resolution_shell(monkeypatch):
+    """getPixelFromResolution rounds: shell 60 of a 320 box at 1.699 A must not truncate to 59."""
+
+    from types import SimpleNamespace
+
+    from relax.multibody import refine
+
+    monkeypatch.setattr(refine, "compute_current_size_relion", lambda maxres, *args, **kwargs: maxres)
+    run = SimpleNamespace(box_size=320, pixel_size=1.699)
+    state = SimpleNamespace(
+        has_converged=False, current_resolution_inv=60 / (1.699 * 320), ave_pmax=0.9, has_high_fsc_at_limit=False, incr_size=10
+    )
+    assert refine.image_current_size(state, run) == 60

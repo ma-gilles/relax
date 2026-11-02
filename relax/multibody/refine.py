@@ -413,7 +413,7 @@ def image_current_size(state: MultibodyState, run: MultibodyRun) -> int:
 
     if state.has_converged:
         return run.box_size
-    maxres = int(state.current_resolution_inv * run.box_size * run.pixel_size)  # getPixelFromResolution
+    maxres = relion_round(state.current_resolution_inv * run.pixel_size * run.box_size)  # getPixelFromResolution
     return int(compute_current_size_relion(
         maxres, run.box_size, ave_Pmax=state.ave_pmax, has_high_fsc_at_limit=state.has_high_fsc_at_limit,
         incr_size=state.incr_size,
