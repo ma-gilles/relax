@@ -2033,7 +2033,7 @@ def _resident_pass2(
     if nyquist_column_counting != "relion":
         bucket_io_kwargs["nyquist_column_counting"] = nyquist_column_counting
     if image_translations is not None:
-        bucket_io_kwargs["image_translations"] = np.asarray(image_translations, dtype=np.float64)
+        bucket_io_kwargs["image_translations"] = image_translations
     if firstiter_cc and firstiter_cc_support != "relion":
         # Xi2 over the pixels the normalized CC counts (the score window's weights).
         bucket_io_kwargs["cc_power_weights"] = half_weights_windowed

@@ -22,12 +22,19 @@ from relax.fine_pass.bucket_io import prepare_bucket_io
 from relax.fine_pass.policy import ResidentConfigurationUnsupported
 from relax.fine_pass.resident_candidates import chunk_segment_offsets
 from relax.fine_pass.resident_scoring import (
+    _flat_rows_scores,
+    expand_local_chunk_mask_jnp,
     project_resident_live_rows,
     score_resident_projected_chunk,
     score_resident_projected_chunk_normalized_cc,
 )
-from relax.fine_pass.scoring import relion_powerclass_noise_terms
+from relax.fine_pass.scoring import (
+    relion_native_score_corr_img,
+    relion_powerclass_noise_terms,
+    to_relion_native_fine_units,
+)
 from relax.local_search import resident_local_chunk
+from relax.relion.optics_groups import noise_rows, pixel_rows
 from relax.local_search.resident_layout import (
     DEFAULT_ROW_CAPACITY_LADDER,
     materialize_local_chunk,
@@ -61,6 +68,7 @@ def _prepare_chunk_score_operands(
     current_size,
     source_faithful_spectrum_norm,
     normalized_cc=False,
+    native_units=False,
 ):
     """One probe chunk's score operands, from the same preparation as pass 2.
 
@@ -87,7 +95,7 @@ def _prepare_chunk_score_operands(
     )
     batch_norm = prepared[2]
     ctf2_over_nv_half = prepared[3]
-    processed_score_half_for_noise = prepared[6]
+    processed_score_half_for_noise = prepared[17]  # the image the power spectrum reads
     shifted_corrected_score_half = prepared[7]
     direct_score_input = prepared[8]
     if windowed_prepare:
@@ -97,10 +105,34 @@ def _prepare_chunk_score_operands(
         gather_score = jnp.asarray(score_window_indices, dtype=jnp.int32)
         score_input = direct_score_input[:, gather_score]
         corr_img_score = ctf2_over_nv_half[:, gather_score]
+    if native_units:
+        # RELION's units for its coarse kernel, as resident_chunk_inputs prepares them for the fine kernel.
+        native_corr_img = relion_native_score_corr_img(
+            pixel_rows(
+                noise_rows(
+                    bucket_io_kwargs["noise_variance_half"],
+                    bucket_io_kwargs.get("noise_optics_groups"),
+                    padded_fetched_indices,
+                )
+            ),
+            prepared[16],
+            image_shape,
+            (
+                jnp.asarray(prepared[14], dtype=jnp.float32)[:, None]
+                if bucket_io_kwargs["scale_corrections"] is not None
+                else None
+            ),
+            zero_dc=bool(bucket_io_kwargs["half_spectrum_scoring"]),
+        )
+        if score_window_indices is not None:
+            native_corr_img = native_corr_img[:, jnp.asarray(score_window_indices, dtype=jnp.int32)]
+        corr_img_score = native_corr_img.astype(corr_img_score.dtype)
+        score_input = to_relion_native_fine_units(score_input, int(np.prod(image_shape)))
+    image_translations = bucket_io_kwargs.get("image_translations")
     highres_xi2_half, _ = relion_powerclass_noise_terms(
         processed_score_half_for_noise,
         image_shape=image_shape,
-        current_size=current_size,
+        current_size=current_size if image_translations is None else image_translations.current_size,
         use_exact_relion_gaussian=True,
         accumulate_noise=False,
         source_faithful_spectrum_norm=source_faithful_spectrum_norm,
@@ -130,6 +162,60 @@ def _prepare_chunk_score_operands(
         operands["score_shifted_cc"] = take(tile)
         operands["cc_half_batch_norm"] = take(0.5 * jnp.reshape(batch_norm, (chunk.image_capacity,)).real)
     return operands
+
+
+def _coarse_kernel_scores(
+    host_chunk, ops, chunk, *, projector, half_weights, full_to_compact, translation_angles, n_fine_trans, current_size,
+    image_size, model_max_r, padding_factor,
+):
+    """The chunk's scores with RELION's coarse kernel instead of the fine one (``relion_coarse=True``).
+
+    Both sum the same terms, in a different order, so their float32 diff2 differ by a few units. RELION's pass 1 of a
+    local search is its coarse kernel, and at diff2 about 1000 those units decide cells on the adaptive cut. Each
+    image is scored at its own rows (:func:`relax.scoring.exact_cut.direct_rows_diff2`); a row's diff2 does not depend
+    on the other rows of the call.
+    """
+
+    from relax.fine_pass.scoring import relion_cuda_fine_pixel_weights
+    from relax.scoring.exact_cut import direct_rows_diff2
+
+    row_image = np.asarray(host_chunk["row_image_local"], dtype=np.int64)
+    n_valid_rows, n_images = int(host_chunk["n_valid_rows"]), int(host_chunk["n_valid_images"])
+    rotations = np.asarray(host_chunk["rotations"], dtype=np.float32)
+    counts = np.bincount(row_image[:n_valid_rows], minlength=n_images)
+    starts = np.concatenate([[0], np.cumsum(counts)[:-1]])
+    width = int(counts.max())
+    # A row's position within its image; an image with fewer rows repeats its first one.
+    position = np.minimum(np.arange(width)[None, :], np.maximum(counts[:, None] - 1, 0))
+    image_rows = rotations[starts[:, None] + position]
+    weights = relion_cuda_fine_pixel_weights(ops["corr_img_score"], jnp.asarray(half_weights)[None, :]).astype(jnp.float32)
+    diff2 = direct_rows_diff2(
+        projector,
+        jnp.asarray(image_rows)[:, None],
+        jnp.asarray(ops["score_input"][:n_images], dtype=jnp.complex64)[:, None],
+        weights[:n_images][:, None],
+        jnp.asarray(ops["highres_xi2_half"][:n_images], dtype=jnp.float32)[:, None],
+        jnp.broadcast_to(jnp.asarray(translation_angles, jnp.float32), (n_images, 1, n_fine_trans, 2)),
+        jnp.asarray(full_to_compact[: current_size * (current_size // 2 + 1)], dtype=jnp.int32),
+        current_size=current_size,
+        physical_image_size=image_size,
+        model_max_r=model_max_r,
+        padding_factor=padding_factor,
+    )
+    rows_raw = jnp.full((int(chunk.row_capacity), n_fine_trans), jnp.inf, dtype=jnp.float32)
+    row_in_image = np.arange(n_valid_rows) - starts[row_image[:n_valid_rows]]
+    rows_raw = rows_raw.at[:n_valid_rows].set(diff2[row_image[:n_valid_rows], row_in_image])
+    return _flat_rows_scores(
+        rows_raw,
+        jnp.asarray(row_image, dtype=jnp.int32),
+        jnp.asarray(host_chunk["row_log_prior"], dtype=jnp.float32),
+        ops["translation_prior"],
+        None if host_chunk["row_mask_bits"] is None else expand_local_chunk_mask_jnp(
+            jnp.asarray(host_chunk["row_mask_bits"], dtype=jnp.uint8), n_trans=n_fine_trans
+        ),
+        jnp.arange(int(chunk.row_capacity), dtype=jnp.int32) < n_valid_rows,
+        segment_capacity=int(chunk.image_capacity),
+    )
 
 
 def _probe_chunk_bytes(*, row_capacity: int, image_capacity: int, n_score_pixels: int, n_fine_trans: int,
@@ -181,6 +267,7 @@ def run_resident_parent_probe(
     firstiter_cc=False,
     window_union=None,
     class_projectors=None,
+    relion_coarse=False,
     engine_tuning,
 ) -> LocalEMResult:
     """RELION's local pass 1 (the adaptive parent probe) on the resident stages.
@@ -294,6 +381,7 @@ def run_resident_parent_probe(
             current_size=current_size,
             source_faithful_spectrum_norm=source_faithful_spectrum_norm,
             normalized_cc=bool(firstiter_cc),
+            native_units=bool(relion_coarse),
         )
         # Host rotations: the coarse kernel's wrapped-row check reads each
         # block's first rotation, which on a device array waits for the queue.
@@ -368,26 +456,40 @@ def run_resident_parent_probe(
             weights = winner.reshape(-1)
             mask = weights > 0
         else:
-            scored = score_resident_projected_chunk(
-                score_proj,
-                jnp.asarray(host_chunk["row_image_local"], dtype=jnp.int32),
-                jnp.asarray(host_chunk["row_log_prior"], dtype=jnp.float32),
-                None if host_chunk["row_mask_bits"] is None else jnp.asarray(host_chunk["row_mask_bits"], dtype=jnp.uint8),
-                jnp.asarray(host_chunk["n_valid_rows"], dtype=jnp.int32),
-                chunk_image_ids,
-                ops["score_input"],
-                ops["corr_img_score"],
-                ops["highres_xi2_half"],
-                ops["translation_prior"],
-                half_weights=half_weights,
-                translation_angles=translation_angles,
-                full_to_compact=full_to_compact,
-                logical_current_size=jnp.asarray(current_size, dtype=jnp.int32),
-                row_capacity=int(chunk.row_capacity),
-                image_capacity=chunk.image_capacity,
-                n_fine_trans=t,
-                n_score_pixels=int(n_score_pixels),
-            )
+            if relion_coarse:
+                scored = _coarse_kernel_scores(
+                    host_chunk, ops, chunk,
+                    projector=relion_projector_capacity_texture,
+                    half_weights=half_weights,
+                    full_to_compact=full_to_compact,
+                    translation_angles=translation_angles,
+                    n_fine_trans=t,
+                    current_size=int(current_size),
+                    image_size=1,  # the kernel multiplies the projector by -image_size^2: native units
+                    model_max_r=int(relion_projector_r_max),
+                    padding_factor=int(projection_padding_factor),
+                )
+            else:
+                scored = score_resident_projected_chunk(
+                    score_proj,
+                    jnp.asarray(host_chunk["row_image_local"], dtype=jnp.int32),
+                    jnp.asarray(host_chunk["row_log_prior"], dtype=jnp.float32),
+                    None if host_chunk["row_mask_bits"] is None else jnp.asarray(host_chunk["row_mask_bits"], dtype=jnp.uint8),
+                    jnp.asarray(host_chunk["n_valid_rows"], dtype=jnp.int32),
+                    chunk_image_ids,
+                    ops["score_input"],
+                    ops["corr_img_score"],
+                    ops["highres_xi2_half"],
+                    ops["translation_prior"],
+                    half_weights=half_weights,
+                    translation_angles=translation_angles,
+                    full_to_compact=full_to_compact,
+                    logical_current_size=jnp.asarray(current_size, dtype=jnp.int32),
+                    row_capacity=int(chunk.row_capacity),
+                    image_capacity=chunk.image_capacity,
+                    n_fine_trans=t,
+                    n_score_pixels=int(n_score_pixels),
+                )
             del score_proj, ops
             scores_flat = jnp.asarray(scored.scores, dtype=jnp.float32).reshape(-1)
             log_z = cuda_posterior.sparse_pass2_segmented_log_z_f64(

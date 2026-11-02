@@ -953,13 +953,13 @@ def prepare_resident_half_operands(
                 ).astype(jnp.float32)
 
             extra_arrays["image_power_shells"] = image_power_shells(
-                unshifted.processed_score_half_for_noise,
+                unshifted.processed_power_half,
                 noise_shell_indices_half,
                 shell_count=int(n_noise_shells),
             )
 
             highres_xi2_half, relion_norm_high_shell = relion_powerclass_noise_terms(
-                unshifted.processed_score_half_for_noise,
+                unshifted.processed_power_half,
                 image_shape=image_shape,
                 current_size=current_size,
                 use_exact_relion_gaussian=use_exact_relion_gaussian,

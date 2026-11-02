@@ -221,6 +221,58 @@ def other_body_prediction(
     return relion_half_to_real(total, image_shape)
 
 
+def relion_soft_mask_outside(images: np.ndarray, radius: float, width: float) -> np.ndarray:
+    """RELION ``softMaskOutsideMap`` on images ``[N, D, D]`` in double: a raised cosine from ``radius`` to ``radius +
+    width``, and outside it the average of the image under the complementary weights (mask.cpp)."""
+
+    size = images.shape[-1]
+    axis = np.arange(size, dtype=np.float64) - size // 2
+    r = np.sqrt(axis[:, None] ** 2 + axis[None, :] ** 2)
+    outside = np.where(r < radius, 0.0, np.where(r > radius + width, 1.0, 0.5 + 0.5 * np.cos(np.pi * (radius + width - r) / width)))
+    background = (images * outside).sum(axis=(-2, -1), keepdims=True) / outside.sum()
+    return images * (1.0 - outside) + background * outside
+
+
+def native_half_spectrum(real_images) -> jax.Array:
+    """:func:`relion_half_to_real`'s inverse in the units of relax's preprocessed images, the plain forward transform,
+    in double precision."""
+
+    centred = jnp.fft.fftshift(jnp.asarray(real_images, dtype=jnp.float64), axes=(-2, -1))
+    half = jnp.fft.fftshift(jnp.fft.rfft2(centred, axes=(-2, -1)), axes=(-2,))
+    return half.reshape(half.shape[0], -1)
+
+
+@dataclass(frozen=True)
+class BodyImagePrediction:
+    """The other bodies' prediction of a body's images, subtracted in RELION's order (what a body's ``image_translations`` carries):
+    from the preprocessed image in Fourier space in double, the masked prediction from the masked (scored) image and
+    the plain one from the unmasked (reconstructed) image (acc_ml_optimiser_impl.h:1388-1510)."""
+
+    translations: np.ndarray  # [n, 2] the refined offsets the images still take (pixels), by dataset image
+    prediction: object  # image_indices -> real images S [n, D, D], float64
+    mask_radius_px: float
+    mask_width_px: float
+    current_size: int  # the iteration's image size: RELION's Xi2 starts there in pass 1 as well
+
+    def __array__(self, dtype=None, copy=None):
+        return np.asarray(self.translations, dtype=dtype)
+
+    def __call__(self, image_indices) -> tuple:
+        real = np.asarray(self.prediction(image_indices), dtype=np.float64)
+        masked = relion_soft_mask_outside(real, self.mask_radius_px, self.mask_width_px)
+        return native_half_spectrum(masked), native_half_spectrum(real)
+
+
+def translated_body_images(dataset, image_indices, target: int, bodies: list[Body], frames: ParticleFrames) -> np.ndarray:
+    """The images ``image_indices`` of ``dataset`` translated by the integer ``r_target`` (float32 as read)."""
+
+    raw = np.asarray(dataset.image_source.backend.source.get(original_image_indices(dataset, image_indices)))
+    integer = geometry.integer_image_shifts(
+        frames.offsets_px, geometry.projected_centers(frames.consensus, bodies[target])
+    ).astype(np.int64)
+    return np.stack([relion_translate_2d(image, shift) for image, shift in zip(raw, integer)])
+
+
 def subtracted_body_images(
     dataset,
     image_indices,

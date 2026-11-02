@@ -456,6 +456,7 @@ def prepare_chunk_reconstruction_operands(
         direct_batch_scale_corrections,
         _direct_inverse_noise_half,
         direct_ctf_rfloat_half,
+        processed_power_half,
     ) = prepared
 
     gather_recon = jnp.asarray(recon_window_indices, dtype=jnp.int32)
@@ -530,7 +531,7 @@ def prepare_chunk_reconstruction_operands(
         score_input = to_relion_native_fine_units(score_input, int(np.prod(image_shape)))
 
     highres_xi2_half, relion_norm_high_shell = relion_powerclass_noise_terms(
-        processed_score_half_for_noise,
+        processed_power_half,
         image_shape=image_shape,
         current_size=current_size,
         use_exact_relion_gaussian=use_exact_relion_gaussian,

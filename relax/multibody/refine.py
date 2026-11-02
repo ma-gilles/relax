@@ -158,7 +158,7 @@ def _floats(column) -> np.ndarray:
 
 
 def _fourier(real) -> np.ndarray:
-    return np.asarray(ftu.get_dft3(jnp.asarray(np.asarray(real, dtype=np.float32))).reshape(-1))
+    return np.asarray(ftu.get_dft3(jnp.asarray(np.asarray(real, dtype=np.float64))).reshape(-1))
 
 
 def _padding_factor(checkpoint: RelionCheckpoint, command: MultibodyCommand) -> int:

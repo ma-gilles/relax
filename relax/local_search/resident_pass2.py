@@ -665,14 +665,17 @@ def compute_local_search_resident(
             bucket_io_kwargs["nyquist_column_counting"] = kernel.nyquist_column_counting
         image_translations = getattr(data, "image_translations", None)  # records.BodyLocalSearchData
         if image_translations is not None:
-            bucket_io_kwargs["image_translations"] = np.asarray(image_translations, dtype=np.float64)
+            bucket_io_kwargs["image_translations"] = image_translations
         if support.score_only:
             # RELION's pass 1 (the local adaptive parent probe): score, posterior and
             # significance only, no M-step and no accumulators. See resident_parent_probe.run_resident_parent_probe.
             return resident_parent_probe.run_resident_parent_probe(
                 tables=tables,
                 experiment_dataset=data.experiment_dataset,
-                bucket_io_kwargs=dict(bucket_io_kwargs, score_only=True),
+                bucket_io_kwargs=dict(
+                    bucket_io_kwargs, score_only=True,
+                    relion_exact_bpref_operands=image_translations is not None or bucket_io_kwargs["relion_exact_bpref_operands"],
+                ),
                 fine_translation_prior_2d=np.asarray(
                     tables.translation_log_prior, dtype=precision_policy.score_real_dtype
                 ),
@@ -689,6 +692,7 @@ def compute_local_search_resident(
                 relion_projector_r_max=projection_r_max,
                 relion_projector_capacity_texture=capacity_texture,
                 class_projectors=class_projectors,
+                relion_coarse=image_translations is not None,  # a multi-body body, as RELION's coarse kernel scores it
                 precision_policy=precision_policy,
                 n_fine_trans=n_fine_trans,
                 adaptive_fraction=float(support.adaptive_fraction),
