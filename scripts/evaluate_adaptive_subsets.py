@@ -49,9 +49,14 @@ def masked_mse(volume, truth, weight) -> float:
     return float(np.sum((weight * (volume - truth)) ** 2) / np.sum(weight**2))
 
 
-def evaluate(run_dir: Path, data_dir: Path, truth_state: int | None, multibody: Path | None, prefix: str = "subset") -> dict:
+def amplitude_slope(volume, truth, weight) -> float:
+    """Least-squares slope of the map on the truth in the mask: below one when the map's amplitude is low."""
+    return float(np.sum(weight**2 * volume * truth) / np.sum(weight**2 * truth**2))
+
+
+def truth_and_masks(run_dir: Path, data_dir: Path, truth_state: int | None, prefix: str = "subset") -> dict:
+    """The calibrated truth, body mask and changing region, all in the candidates' body frame, and the run's record."""
     from recovar import utils
-    from recovar.utils.helpers import load_relion_volume
 
     from relax.multibody.bodies import read_bodies
     from relax.multibody.subtraction import recovar_mask, relion_to_recovar_axes, translate_zero_fill
@@ -83,6 +88,17 @@ def evaluate(run_dir: Path, data_dir: Path, truth_state: int | None, multibody: 
         if diff.max() > 0:
             core = ndimage.binary_dilation(diff > 0.1 * diff.max(), iterations=3)
             region = translate_zero_fill(ndimage.gaussian_filter(core.astype(np.float64), 1.5), to_body) * (mask > 0)
+    return dict(record=record, target=target, to_body=to_body, truth=truth, truth_path=truth_path, mask=mask, region=region)
+
+
+def evaluate(run_dir: Path, data_dir: Path, truth_state: int | None, multibody: Path | None, prefix: str = "subset") -> dict:
+    from recovar.utils.helpers import load_relion_volume
+
+    from relax.multibody.subtraction import translate_zero_fill
+
+    frame = truth_and_masks(run_dir, data_dir, truth_state, prefix)
+    record, target, to_body, truth, truth_path, mask, region = (
+        frame[k] for k in ("record", "target", "to_body", "truth", "truth_path", "mask", "region"))
 
     def score(volume, weight=None):
         weight = mask if weight is None else weight
@@ -97,12 +113,13 @@ def evaluate(run_dir: Path, data_dir: Path, truth_state: int | None, multibody: 
     selected = [score(m) for m in selected_maps]
     region_candidates = np.mean([[score(m, region) for m in maps] for maps in candidate_maps], axis=0)
     region_selected = float(np.mean([score(m, region) for m in selected_maps]))
+    regions = (("body", mask), ("region", region))
     mse = {
         name: {
             "candidates": np.mean([[masked_mse(m, truth, w) for m in maps] for maps in candidate_maps], axis=0).tolist(),
             "selected": float(np.mean([masked_mse(m, truth, w) for m in selected_maps])),
         }
-        for name, w in (("body", mask), ("region", region))
+        for name, w in regions
     }
     errors = np.asarray(pickle.load(open(diag / "split_choice.pkl", "rb"))["ml_errors"], dtype=np.float64)
     criterion = errors.reshape(errors.shape[0], -1).sum(axis=1)
@@ -128,6 +145,22 @@ def evaluate(run_dir: Path, data_dir: Path, truth_state: int | None, multibody: 
         "masked_mse": mse, "truth_rms_in_body_mask": float(np.sqrt(masked_mse(truth, 0.0, mask))),
         "fsc_region_selected_half1": np.asarray(shell_fsc(selected_maps[0] * region, truth * region)).tolist(),
         "fsc_body_selected_half1": np.asarray(shell_fsc(selected_maps[0] * mask, truth * mask)).tolist(),
+    }
+    def half_fsc(maps, weight):
+        return np.mean([shell_fsc(m * weight, truth * weight) for m in maps], axis=0).tolist()
+
+    # FSC curves and amplitude slopes of the four maps every comparison reports; the best candidate is by masked MSE.
+    picks = {name: {"narrowest": 0, "all": n - 1, "best": int(np.argmin(mse[name]["candidates"]))} for name, _ in regions}
+    report["best_mse_candidate"] = {name: picks[name]["best"] for name in picks}
+    report["fsc_curves"] = {
+        name: {**{key: half_fsc([maps[k] for maps in candidate_maps], w) for key, k in picks[name].items()},
+               "selected": half_fsc(selected_maps, w)}
+        for name, w in regions
+    }
+    report["amplitude_slope"] = {
+        name: {"candidates": np.mean([[amplitude_slope(m, truth, w) for m in maps] for maps in candidate_maps], axis=0).tolist(),
+               "selected": float(np.mean([amplitude_slope(m, truth, w) for m in selected_maps]))}
+        for name, w in regions
     }
     if multibody is not None:
         posterior = translate_zero_fill(load_relion_volume(str(multibody / f"run_body{target + 1:03d}.mrc")), to_body)
