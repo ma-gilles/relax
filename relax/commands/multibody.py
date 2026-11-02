@@ -44,7 +44,7 @@ def build_parser() -> argparse.ArgumentParser:
                         help="degrees: the local-search width instead of the consensus run's, as relion_refine's")
     parser.add_argument("--relion_dir", default=None, help="the directory relion_refine ran in")
     parser.add_argument("--pad", type=float, default=None,
-                        help="RELION's padding factor; it must equal the consensus's, the default")
+                        help="RELION's padding factor, 1 or 2; the default is the consensus's")
     # RELION's execution options (I/O, threads, devices): they do not change the result, so they are accepted
     # and named in the log as having no effect. Any other flag is an error.
     for flag in EXECUTION_FLAGS:

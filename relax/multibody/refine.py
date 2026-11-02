@@ -88,7 +88,7 @@ class MultibodyCommand:
     # --multibody_norm_overlap: overlapping masks are normalised where they sum above one, instead of RELION's
     # default extra projectors for the overlaps (relax.multibody.bodies.subtraction_masks).
     norm_overlap: bool = False
-    # --pad: None keeps the consensus's rlnPaddingFactor, as parseContinue does (ml_optimiser.cpp:413).
+    # --pad: None keeps the consensus's rlnPaddingFactor (ml_optimiser.cpp:413).
     padding_factor: int | None = None
 
 
@@ -161,6 +161,13 @@ def _fourier(real) -> np.ndarray:
     return np.asarray(ftu.get_dft3(jnp.asarray(np.asarray(real, dtype=np.float32))).reshape(-1))
 
 
+def _padding_factor(checkpoint: RelionCheckpoint, command: MultibodyCommand) -> int:
+    """--pad, else the consensus's; the multi-body start may change it (parseContinue, ml_optimiser.cpp:413-424)."""
+
+    padding = command.padding_factor
+    return int(float(checkpoint.models[0].general["rlnPaddingFactor"]) if padding is None else padding)
+
+
 def _require_supported(checkpoint: RelionCheckpoint, command: MultibodyCommand) -> None:
     general = checkpoint.optimiser
     model = checkpoint.models[0].general
@@ -181,12 +188,8 @@ def _require_supported(checkpoint: RelionCheckpoint, command: MultibodyCommand) 
     failed = [name for name, ok in checks.items() if not ok]
     if failed:
         raise NotImplementedError(f"relax multibody supports only: {', '.join(failed)}")
-    consensus_padding = float(model["rlnPaddingFactor"])
-    if consensus_padding not in (1.0, 2.0) or command.padding_factor not in (None, consensus_padding):
-        raise NotImplementedError(
-            f"relax multibody keeps the consensus padding factor, 1 or 2: rlnPaddingFactor {consensus_padding:g}, "
-            f"--pad {command.padding_factor}"
-        )
+    if _padding_factor(checkpoint, command) not in (1, 2):
+        raise NotImplementedError("relax multibody supports padding factors 1 and 2")
 
 
 def start_from_consensus(checkpoint_path, command: MultibodyCommand, options, *, output, relion_cwd=None):
@@ -266,7 +269,7 @@ def start_from_consensus(checkpoint_path, command: MultibodyCommand, options, *,
         ),
         image_geometry, dataset.volume_shape, options.consistency,
     )
-    padding = int(float(models[0].general["rlnPaddingFactor"]))
+    padding = _padding_factor(checkpoint, command)
     settings = replace(settings, padding_factor=padding, projection_padding_factor=padding)
     random_seed = int(general["rlnRandomSeed"])
     # The consensus run's particle diameter sizes the pass-1 window (image_coarse_size); the reconstruction
