@@ -1,16 +1,18 @@
 # PPCA schedule experiments: does a mean-only start, with PCs joining later, separate the states better?
 #
-# Per arm and seed (config.yaml: `arms`, `seeds`), four stages:
+# Per arm and seed (config.yaml: `arms`, `seeds`), five stages:
 #   1. train_ppca     relax ppca_initial_model on the eleven-state fixture with the arm's schedule flags.   [GPU]
 #   2. score_latents  how well the final latents separate the true states (scripts/analyze_ppca_latents.py).
 #   3. plot_run       the standard run figures: latents by true state, volume projections, and the shell gates
 #                     of a VDAM run (the owner's plot_ppca_run.py, config `plot_script`).
-#   4. summary_table  one row per arm and seed: the scores of every run.
+#   4. plot_umap      UMAP of the final latents coloured by true state (scripts/plot_ppca_umap.py); arms with q >= 2.
+#   5. summary_table  one row per arm and seed: the scores of every run.
 #
 # Outputs, under config `output_root`:
 #   <arm>/seed<seed>/     checkpoint_NNNN.npz, iterations.jsonl, run.json, embeddings.npz, latent_scores.json
 #   <arm>/seed<seed>/plots/   pc_histogram.png (q = 1) or pc_scatter.png and pc_density.png (q > 1),
-#                         volume_projections.png, latents_pc_ordered.npz, gates_spectrogram.png (VDAM arms only)
+#                         volume_projections.png, latents_pc_ordered.npz, gates_spectrogram.png (VDAM arms only),
+#                         umap.png and umap_embedding.npy (q >= 2)
 #   summary.tsv           the scores of every arm and seed
 #   logs/                 one log per rule, arm and seed
 #
@@ -90,11 +92,15 @@ localrules:
     summary_table,
 
 
+UMAP_ARMS = [arm for arm in RUN_ARMS if arm_q(arm) >= 2]
+
+
 rule all:
     """Train, score and plot every arm and seed, then write the summary table."""
     input:
         summary=output_path("summary.tsv"),
         plots=expand(output_path("{arm}", "seed{seed}", "plots", "volume_projections.png"), arm=RUN_ARMS, seed=SEEDS),
+        umaps=expand(output_path("{arm}", "seed{seed}", "plots", "umap.png"), arm=UMAP_ARMS, seed=SEEDS),
 
 
 # ----------------------------------------------------------------------------------------------------------------
@@ -201,8 +207,34 @@ rule plot_run:
         "> {log} 2>&1"
 
 
+rule plot_umap:
+    message:
+        "UMAP of the latents of arm {wildcards.arm}, seed {wildcards.seed}"
+    input:
+        latents=rules.plot_run.output.latents,
+        truth=FIXTURE / "evaluation" / "truth.npz",
+        script=REPO / "scripts" / "plot_ppca_umap.py",
+    output:
+        umap=output_path("{arm}", "seed{seed}", "plots", "umap.png"),
+        embedding=output_path("{arm}", "seed{seed}", "plots", "umap_embedding.npy"),
+    params:
+        env=CLEAN_ENV,
+        python=PYTHON,
+        plots_dir=lambda wildcards, output: str(Path(output.umap).parent),
+    resources:
+        cpus_per_task=4,
+        mem="8G",
+        runtime=30,
+    log:
+        output_path("logs", "{arm}.seed{seed}.umap.log"),
+    shell:
+        "{params.env} {params.python} {input.script} {params.plots_dir} "
+        "--labels {input.truth} "
+        "> {log} 2>&1"
+
+
 # ----------------------------------------------------------------------------------------------------------------
-# Stage 4: summary
+# Stage 5: summary
 # ----------------------------------------------------------------------------------------------------------------
 
 
