@@ -476,10 +476,11 @@ def prepare_unshifted_bucket_operands(
         )
     else:
         processed_recon_half_raw = processed_score_half_raw
-    processed_power_half = processed_score_half_raw
+    unsubtracted_body_image = None
     if image_translations is not None:
         # A multi-body image (BodyImagePrediction): RELION takes the power spectrum, then subtracts the other bodies
         # and applies the refined offset in double, and casts to XFLOAT last.
+        unsubtracted_body_image = processed_score_half_raw
         output_dtype = processed_score_half_raw.dtype
         masked_prediction, plain_prediction = image_translations(image_indices)
         phases = half_translation_phase_table(
@@ -556,6 +557,8 @@ def prepare_unshifted_bucket_operands(
             jnp.zeros((), dtype=processed_score_half_raw.dtype),
             processed_score_half_raw,
         )
+
+    processed_power_half = processed_score_half_for_noise if unsubtracted_body_image is None else unsubtracted_body_image
 
     # Per-image image corrections follow the image-only convention (the removed dense engine's).
     if image_corrections is not None:
