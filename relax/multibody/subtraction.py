@@ -24,6 +24,7 @@ A future heterogeneous predictor of the other bodies would replace ``S_ib`` here
 from __future__ import annotations
 
 import copy
+import functools
 from dataclasses import dataclass
 
 import jax
@@ -198,17 +199,22 @@ def _cpu_projection_pixels(rows: np.ndarray, image_shape, size: int, r_max: int,
     output and with a rotated radius within ``r_max`` in double (projector.cpp:636-690). The accelerator rule of
     ``relion_project_half`` truncates that radius and so keeps a shell of pixels this one drops."""
 
-    labels = np.rint(np.asarray(relion_half_translation_lattice(tuple(image_shape)), dtype=np.float64) * image_shape[0])
+    labels = _frequency_labels(tuple(int(v) for v in image_shape))
     x, y = labels[:, 0], labels[:, 1]
     r_out = size // 2
     inside = (x >= 0) & (np.abs(y) <= r_out)
     inside[inside] &= x[inside] <= np.floor(np.sqrt(np.maximum(r_out * r_out - y[inside] ** 2, 0.0)))
     a = _relion_inverse_3x3(np.asarray(rows, dtype=np.float64)) * float(padding_factor)
+    r_ref = r_max * padding_factor
+    return _within_radius(jnp.asarray(a), jnp.asarray(x), jnp.asarray(y), jnp.asarray(inside), float(r_ref * r_ref))
+
+
+@jax.jit
+def _within_radius(a, x, y, inside, r2):
     xp = a[:, 0, 0, None] * x + a[:, 0, 1, None] * y
     yp = a[:, 1, 0, None] * x + a[:, 1, 1, None] * y
     zp = a[:, 2, 0, None] * x + a[:, 2, 1, None] * y
-    r_ref = r_max * padding_factor
-    return inside[None, :] & (xp * xp + yp * yp + zp * zp <= r_ref * r_ref)
+    return inside[None, :] & (xp * xp + yp * yp + zp * zp <= r2)
 
 
 def other_body_spectrum(
@@ -252,14 +258,14 @@ def other_body_spectrum(
             int(padding_factor),
             None,
         )
-        projection = projection * jnp.asarray(
-            _cpu_projection_pixels(rows, image_shape, current_size, int(projectors[other].r_max), int(padding_factor))
+        projection = projection * _cpu_projection_pixels(
+            rows, image_shape, current_size, int(projectors[other].r_max), int(padding_factor)
         )
         shifts = geometry.other_body_shifts(
             geometry.projected_centers(frames.consensus, body), frames.offsets_px, poses[other].offsets_px, integer
         )
         term = _shifted_ctf_prediction(
-            projection, ctf.astype(projection.real.dtype), jnp.asarray(exact_half_translation_phases(shifts, image_shape))
+            projection, ctf.astype(projection.real.dtype), exact_half_translation_phases(shifts, image_shape)
         )
         total = term if total is None else total + term
     if current_size > image_shape[0]:
@@ -289,13 +295,23 @@ def relion_soft_mask_outside(images: np.ndarray, radius: float, width: float) ->
     return images * (1.0 - outside) + background * outside
 
 
-def exact_half_translation_phases(shifts, image_shape) -> np.ndarray:
+@functools.lru_cache(maxsize=4)
+def _frequency_labels(image_shape) -> np.ndarray:
+    return np.rint(np.asarray(relion_half_translation_lattice(image_shape), dtype=np.float64) * image_shape[0])
+
+
+@functools.partial(jax.jit, static_argnames=("size",))
+def _phases_from_labels(shifts, labels, size: int):
+    return jnp.exp(-2j * jnp.pi * (shifts @ labels.T) / size)
+
+
+def exact_half_translation_phases(shifts, image_shape) -> jax.Array:
     """``half_translation_phase_table`` ``[n, P]`` from integer frequency labels, in double: the shared lattice is built
     in single precision, and its rounding stood 5e-7 from RELION's phases."""
 
     size = int(image_shape[0])
-    labels = np.rint(np.asarray(relion_half_translation_lattice(tuple(image_shape)), dtype=np.float64) * size)
-    return np.exp(-2j * np.pi * (np.asarray(shifts, dtype=np.float64) @ labels.T) / size)
+    labels = _frequency_labels(tuple(int(v) for v in image_shape))
+    return _phases_from_labels(jnp.asarray(shifts, dtype=jnp.float64), jnp.asarray(labels), size)
 
 
 def _host_half_to_real(spectrum: np.ndarray, shape) -> np.ndarray:
