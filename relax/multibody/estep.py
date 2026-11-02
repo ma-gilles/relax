@@ -18,7 +18,14 @@ import numpy as np
 from relax.multibody import geometry
 from relax.multibody.bodies import Body
 from relax.multibody.layout import BodySearch
-from relax.multibody.subtraction import BodyPoses, ParticleFrames, dataset_with_images, subtracted_body_images
+from relax.multibody.subtraction import (
+    BodyImagePrediction,
+    BodyPoses,
+    ParticleFrames,
+    dataset_with_images,
+    other_body_prediction,
+    translated_body_images,
+)
 from relax.refinement.local_half import (
     LocalBatchPolicy,
     LocalDiagnosticPolicy,
@@ -96,16 +103,30 @@ def score_body_half(
     half_dataset, frames = dataset.subset(particles.rows), particles.frames
     for start in range(0, n, SUBTRACTION_BATCH_IMAGES):
         batch = np.arange(start, min(start + SUBTRACTION_BATCH_IMAGES, n))
-        images[particles.rows[batch]] = subtracted_body_images(
-            half_dataset, batch, target, bodies, projectors,
-            [BodyPoses(pose.eulers_deg[batch], pose.offsets_px[batch]) for pose in poses],
+        images[particles.rows[batch]] = translated_body_images(
+            half_dataset, batch, target, bodies,
             ParticleFrames(frames.consensus[batch], frames.offsets_px[batch], frames.norm_factors[batch]),
-            current_size=current_size, padding_factor=padding_factor,
         )
     radius_px = geometry.body_mask_radius_px(body, offset_range_angstrom, dataset.voxel_size)
     body_dataset = dataset_with_images(
         dataset, images, mask_diameter_angstrom=2.0 * radius_px * float(dataset.voxel_size)
     ).subset(particles.rows)
+
+    def prediction(image_indices):
+        indices = np.asarray(image_indices).reshape(-1)
+        return other_body_prediction(
+            half_dataset, indices, target, bodies, projectors,
+            [BodyPoses(pose.eulers_deg[indices], pose.offsets_px[indices]) for pose in poses],
+            ParticleFrames(frames.consensus[indices], frames.offsets_px[indices], frames.norm_factors[indices]),
+            current_size=current_size, padding_factor=padding_factor,
+        )
+
+    pixel_size, _, width_mask_edge_px = dataset.image_source.backend._relion_image_mask_params
+    image_operations = BodyImagePrediction(
+        translations=np.asarray(poses[target].offsets_px, dtype=np.float64),
+        prediction=prediction, mask_radius_px=radius_px, mask_width_px=float(width_mask_edge_px),
+        current_size=int(current_size),
+    )
     half = HalfScoringData(
         particles=HalfSet(
             index=particles.index,
@@ -141,7 +162,7 @@ def score_body_half(
             trans_prior_center_for_engine=prior_inputs.engine_prior_center,
             current_sigma_offset_angstrom=body.sigma_offset_angstrom,
             translation_search_base=relion_translation_search_base(zero, dtype=options.precision.rotation_real_dtype),
-            image_translations=np.asarray(poses[target].offsets_px, dtype=np.float64),
+            image_translations=image_operations,
             body_search=BodySearch(body=body, left=left, right=right),
         ),
         batching=LocalBatchPolicy(max_significants=options.adaptive.max_significants),

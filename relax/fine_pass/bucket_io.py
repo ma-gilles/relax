@@ -290,6 +290,7 @@ class UnshiftedBucketOperands(NamedTuple):
     folded_normalized_cc_operands: object
     sparse_score_input_half: object
     processed_score_half_for_noise: object
+    processed_power_half: object  # the image RELION's power spectrum and Xi2 read: before a body's subtraction
     noise_variance_half: object
     # Backprojection operands. They are ``weighted_ctf_half`` and
     # ``ctf2_over_nv_recon_half`` themselves unless some image is
@@ -475,17 +476,23 @@ def prepare_unshifted_bucket_operands(
         )
     else:
         processed_recon_half_raw = processed_score_half_raw
+    processed_power_half = processed_score_half_raw
     if image_translations is not None:
+        # A multi-body image (BodyImagePrediction): RELION takes the power spectrum, then subtracts the other bodies
+        # and applies the refined offset in double, and casts to XFLOAT last.
+        output_dtype = processed_score_half_raw.dtype
+        masked_prediction, plain_prediction = image_translations(image_indices)
         phases = half_translation_phase_table(
             np.asarray(image_translations, dtype=np.float64)[np.asarray(image_indices).reshape(-1)],
             image_shape,
             dtype=jnp.float64,
-        ).astype(processed_score_half_raw.dtype)
-        translated_recon = processed_recon_half_raw is not processed_score_half_raw
-        processed_score_half_raw = processed_score_half_raw * phases
-        processed_recon_half_raw = (
-            processed_recon_half_raw * phases if translated_recon else processed_score_half_raw
         )
+        processed_score_half_raw = (
+            (processed_score_half_raw.astype(jnp.complex128) - masked_prediction) * phases
+        ).astype(output_dtype)
+        processed_recon_half_raw = (
+            (processed_recon_half_raw.astype(jnp.complex128) - plain_prediction) * phases
+        ).astype(output_dtype)
 
 
     if use_normalized_cc:
@@ -692,6 +699,7 @@ def prepare_unshifted_bucket_operands(
         folded_normalized_cc_operands=folded_normalized_cc_operands,
         sparse_score_input_half=sparse_score_input_half,
         processed_score_half_for_noise=processed_score_half_for_noise,
+        processed_power_half=processed_power_half,
         noise_variance_half=noise_variance_half,
         bpref_weighted_ctf_half=bpref_weighted_ctf_half,
         bpref_ctf2_over_nv_half=bpref_ctf2_over_nv_half,
@@ -829,6 +837,7 @@ def prepare_bucket_io(
         folded_normalized_cc_operands,
         sparse_score_input_half,
         processed_score_half_for_noise,
+        processed_power_half,
         noise_variance_half,
         bpref_weighted_ctf_half,
         _bpref_ctf2_over_nv_half,
@@ -1128,6 +1137,7 @@ def prepare_bucket_io(
         batch_scale_np,
         inverse_noise_half,
         ctf_half_rfloat,
+        processed_power_half,
     )
 
     if native_bpref_operand_check is None:

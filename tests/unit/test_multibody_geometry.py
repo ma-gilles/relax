@@ -335,3 +335,22 @@ def test_unfiltered_body_maps_use_the_current_size_support(monkeypatch):
         _body(), [0, 0], [0, 0], settings, current_size=244, accumulator_shape=(247,) * 3, phase_stream=None
     )
     assert seen == [244]
+
+
+def test_native_half_spectrum_inverts_relion_half_to_real():
+    from relax.multibody.subtraction import native_half_spectrum, relion_half_to_real
+
+    rng = np.random.default_rng(0)
+    image = rng.normal(size=(2, 8, 8))
+    half = native_half_spectrum(image) / 64.0
+    np.testing.assert_allclose(np.asarray(relion_half_to_real(half, (8, 8))), image, rtol=1e-5, atol=1e-5)
+
+
+def test_soft_mask_outside_keeps_the_inside_and_fills_the_average():
+    from relax.multibody.subtraction import relion_soft_mask_outside
+
+    image = np.ones((1, 16, 16))
+    image[0, 8, 8] = 5.0
+    masked = relion_soft_mask_outside(image, 3.0, 2.0)
+    assert masked[0, 8, 8] == 5.0
+    assert masked[0, 0, 0] == 1.0

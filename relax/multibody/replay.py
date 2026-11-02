@@ -18,8 +18,10 @@ from recovar.utils.helpers import load_relion_volume
 from relax.multibody import refine
 from relax.multibody.checkpoint import read_relion_checkpoint
 from relax.multibody.subtraction import BodyPoses
+from relax.reconstruction.solvent_mask import _fftw_shells
 from relax.refinement import noise_updates
 from relax.refinement.trial_grids import build_initial_coarse_grids
+from relax.relion.macros import relion_round
 from relax.sampling.perturbation import advance_relion_perturbation_from_seed
 
 
@@ -89,10 +91,38 @@ def _exact_perturbation(run: refine.MultibodyRun, iteration: int) -> float:
     return perturbation
 
 
+def relion_randomize_shells(stdout_log, box_size: int, pixel_size: float) -> list[int]:
+    """The ``randomize_at`` shell of each solvent-corrected FSC of a RELION run, in order, from its log."""
+
+    shells = []
+    for line in Path(stdout_log).read_text(errors="ignore").splitlines():
+        if "randomize phases beyond:" in line:
+            angstrom = float(line.split("beyond:")[1].split()[0])
+            shells.append(relion_round(box_size * pixel_size / angstrom))
+    return shells
+
+
+def advance_phase_stream(stream, shells, box_size: int) -> None:
+    """Put the leader's ``rand()`` stream past the FSCs already drawn: each one draws a value per FFTW half voxel at
+    ``|k| >= shell`` for each half map (:func:`relax.reconstruction.solvent_mask.randomize_phases_beyond`)."""
+
+    _, radius_sq = _fftw_shells(box_size)
+    for shell in shells:
+        stream.rand_array(2 * int(np.count_nonzero(radius_sq >= shell * shell)))
+
+
 def replay_iteration(run: refine.MultibodyRun, relion_dir, iteration: int) -> refine.MultibodyState:
     """relax's iteration ``iteration`` from RELION's state after ``iteration - 1`` and RELION's decisions for it."""
 
     relion_dir = Path(relion_dir)
+    log = relion_dir / "stdout.log"
+    if log.exists():
+        shells = relion_randomize_shells(log, run.box_size, run.pixel_size)
+        refined = [
+            sum(not track.keep_fixed for track in relion_multibody_state(run, relion_dir / f"run_it{k:03d}_optimiser.star").bodies)
+            for k in range(1, iteration)
+        ]
+        advance_phase_stream(run.phase_stream, shells[: sum(refined)], run.box_size)
     before = relion_multibody_state(run, relion_dir / f"run_it{iteration - 1:03d}_optimiser.star")
     after = relion_multibody_state(run, relion_dir / f"run_it{iteration:03d}_optimiser.star")
     perturbation = _exact_perturbation(run, iteration)
