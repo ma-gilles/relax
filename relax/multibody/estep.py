@@ -41,7 +41,6 @@ from relax.steps.score_outputs import HalfScoreResult
 from relax.steps.scoring_policy import local_precision
 from relax.steps.shape_class_scoring import OpticsSpec
 
-
 # Images subtracted at once: the prediction's phase table and projections of one batch stay well inside a GPU.
 SUBTRACTION_BATCH_IMAGES = 2048
 
