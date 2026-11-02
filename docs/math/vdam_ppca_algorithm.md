@@ -272,6 +272,82 @@ See the [existing refinement derivation](ppca_refinement.md) for its current
 implementation conventions. Its existence is not evidence of successful
 pose-free cold-start reconstruction.
 
+### 4.1 The expected log-likelihood loss of a wrong pose
+
+RELION sets its HEALPix order from the expected accuracy `acc_rot` (`calculateExpectedAngularErrors`, section 18.1):
+the rotation that, applied to the reference projection at an image's best pose, changes the projection by more than
+the noise allows. Under PPCA the image law at a pose also carries the heterogeneity, so the comparison is between two
+Gaussian laws and not between two images.
+
+With the notation above, the image law at pose `phi` after integrating `z` out is
+
+\[
+y_i\mid\phi\;\sim\;\mathcal N\!\left(m_\phi,\;V_\phi\right),
+\qquad m_\phi=A_{i\phi}\mu,
+\qquad V_\phi=\Sigma_i+B_\phi B_\phi^*,
+\qquad B_\phi=A_{i\phi}W .
+\]
+
+`V_phi` is at least `Sigma_i`, which is positive definite, so every `V_phi` is invertible and the loadings of two poses
+may span different subspaces without making anything infinite. The loss of reading an image drawn at `phi_0` at the
+pose `phi_1` is the expected log-likelihood ratio, the Kullback-Leibler divergence
+
+\[
+K(\phi_0\Vert\phi_1)=\mathbb E_{y\sim p(\cdot\mid\phi_0)}\!\left[\log\frac{p(y\mid\phi_0)}{p(y\mid\phi_1)}\right]
+=\tfrac12\Big[\operatorname{tr}(V_1^{-1}V_0)-n+\log\det V_1-\log\det V_0
++\delta^*V_1^{-1}\delta\Big],
+\qquad \delta=m_{\phi_0}-m_{\phi_1}.
+\]
+
+Woodbury on `V_1` and the determinant lemma, with `D=Sigma_i^{-1}`, `M_k=I_q+Re(B_k^*DB_k)` as in section 4, give
+`V_1^{-1}=D-DB_1M_1^{-1}B_1^*D` and `log det V_k = log det Sigma_i + log det M_k`. Three parts follow.
+
+1. The noise determinant is the same at both poses and cancels.
+2. Take the noise-free mean image `ybar=m_{phi_0}` as the image. Then `r=0` at `phi_0` and `r=delta` at `phi_1`, so the
+   engine's pose log-likelihood `ell` of section 4 is `-1/2 log det M_0` there and
+   `-1/2 {delta^* D delta - b^T M_1^{-1} b + log det M_1}`, `b=Re(B_1^*D delta)`, at `phi_1`. These are
+   `delta^*V_1^{-1}delta` and `log det M_1 - log det M_0`, the last two terms of `K`:
+
+   \[
+   \log\det M_1-\log\det M_0+\delta^*V_1^{-1}\delta=2\left[\ell(\bar y\mid\phi_0)-\ell(\bar y\mid\phi_1)\right].
+   \]
+
+3. The trace term needs one new `q x q` contraction, the cross-Gram `G_{01}=Re(B_0^*DB_1)`. With
+   `tr(V_1^{-1}Sigma_i)=n-q+tr M_1^{-1}` and
+   `tr(V_1^{-1}B_0B_0^*)=tr(M_0-I)-tr(M_1^{-1}G_{01}^TG_{01})`,
+
+   \[
+   \operatorname{tr}(V_1^{-1}V_0)-n=T=\operatorname{tr}M_0+\operatorname{tr}M_1^{-1}-2q-\operatorname{tr}\!\big(M_1^{-1}G_{01}^{T}G_{01}\big).
+   \]
+
+Together
+
+\[
+\boxed{\;2K(\phi_0\Vert\phi_1)=2\left[\ell(\bar y\mid\phi_0)-\ell(\bar y\mid\phi_1)\right]+T\;}
+\]
+
+`T` vanishes when `B_0=B_1`, and `M_k`, `M_1^{-1}` are the posterior precision and covariance of `z` the engine already
+forms. Facts used in the checks (`tests/unit/ppca_initial_model/test_pose_accuracy.py`):
+
+- `K` does not depend on the basis of `W` (`W -> WQ`, `Q` orthogonal, changes `B`, `M` and `G_{01}` by conjugation only).
+- `K >= 0`, and `K` is finite: with `V_1^{-1} <= D` one has
+  `K <= 1/2 [tr(M_0 - I) + log det M_1 - log det M_0 + delta^* D delta]`, so the span mismatch costs at most the
+  loading energy `tr(M_0-I)` of the reference pose plus the change of `log det M`.
+- With `q=0` (or `W=0`), `K = 1/2 delta^* D delta`. RELION's `calculateExpectedAngularErrors` sums
+  `|F_1-F_2|^2/(2 sigma^2)` over the non-redundant half plane with unit weights, where its `sigma^2` is half of the
+  mean power `E|F|^2` of a noise pixel; with `nv=E|F|^2` and the Hermitian weights of the real-image metric
+  (`2` off the self-conjugate columns `k_x=0` and `k_x=N/2`, `1` on them), the two agree to rounding except on the
+  Nyquist column of the cropped image and its pixel `(0, N/2)`, which RELION counts twice.
+- `K` is smooth in the pose and quadratic at small angles, so the first angle with `K` above a threshold is well defined.
+
+**Accuracy and the order rule.** For a trial image at its best pose `phi_0`, one Euler angle (`rot`, `tilt` or `psi`,
+in turn over the trials) is increased along RELION's step schedule (0.05 degrees up to 0.2, then 0.1, 0.2, 0.5, 1, 2
+and 5 degrees, to 30). The rotation error of the image is the first angle with `K > ln 100 = 4.60517`, RELION's
+`pvalue`; `acc_rot` is the mean over the trial images, and 30 degrees when no angle crosses. For a pure mean shift
+`K` is half the Mahalanobis distance, so the threshold keeps RELION's reading (a mean log-likelihood ratio of 100 to 1
+for the true pose); with a covariance change it is an evidence threshold and no longer a significance level.
+Slice 4 raises the HEALPix order while the angular step is at least `0.75 acc_rot` (section 18.10).
+
 ## 5. Derived coupled reconstruction statistics
 
 Write `Theta=[mu,W]`, `a=[1;z]`, and

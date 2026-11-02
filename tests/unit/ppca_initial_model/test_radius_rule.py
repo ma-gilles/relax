@@ -23,20 +23,20 @@ BOX = 8
 N_FREQ = BOX * BOX * (BOX // 2 + 1)
 
 
-def _write_star(root, count):
-    """A RELION particle STAR of ``count`` noise images of ``BOX`` pixels with one optics group."""
+def _write_star(root, count, box=BOX):
+    """A RELION particle STAR of ``count`` noise images of ``box`` pixels with one optics group."""
     import mrcfile
 
     from scripts.lib.ppca_training_star import write_training_star
 
     root.mkdir(parents=True, exist_ok=True)
-    images = np.random.default_rng(19).normal(size=(count, BOX, BOX)).astype(np.float32)
+    images = np.random.default_rng(19).normal(size=(count, box, box)).astype(np.float32)
     with mrcfile.new(root / "particles.mrcs", overwrite=True) as stack:
         stack.set_data(images)
         stack.voxel_size = 2
     ctf = np.tile([15000, 15000, 0, 300, 2.7, 0.07, 0], (count, 1))
     ctf[:, 0] += 100 * np.arange(count)
-    return write_training_star(root / "particles.star", "particles.mrcs", ctf, voxel_size=2, box=BOX)
+    return write_training_star(root / "particles.star", "particles.mrcs", ctf, voxel_size=2, box=box)
 
 
 def _state(radius=2, next_radius=None, iteration=0):
