@@ -18,13 +18,24 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 
+import jax
+import jax.numpy as jnp
 import numpy as np
 
-from relax.local_search.layout import LocalHypothesisLayout, _rotation_eulers_from_grid_metadata
+from relax.cuda.rotations import relion_make_scoring_rotations_left_f32
+from relax.local_search.layout import (
+    LocalHypothesisLayout,
+    _rotation_eulers_from_grid_metadata,
+    local_layout_host_rotations,
+)
 from relax.multibody.bodies import Body
+from relax.sampling.device_rotations import pass1_right_matrix
 from relax.sampling.grids import build_local_search_grid_metadata
+from relax.sampling.oversampled_grids import unique_nonnegative_ids
 
 SIGMA_CUTOFF = 3.0  # selectOrientationsWithNonZeroPriorProbability's sigma_cutoff in the multi-body call
+_DEVICE_ROWS_BLOCK_IMAGES = 256
+_DEVICE_ROWS_ORIENTATION_QUANTUM = 512
 
 
 def _log_gaussian1d(x, sigma):
@@ -104,21 +115,80 @@ def with_body_prior(layout: LocalHypothesisLayout, body: Body) -> LocalHypothesi
     return _take_rows(layout, keep, rotation_log_priors_flat=(priors + log_prior.astype(priors.dtype)))
 
 
-def with_body_rows(layout: LocalHypothesisLayout, left: np.ndarray, right: np.ndarray) -> LocalHypothesisLayout:
+def _device_parent_rows(layout: LocalHypothesisLayout, left: np.ndarray, right: np.ndarray) -> np.ndarray | None:
+    """The parents' rows as RELION's pass-1 plan builds them for a body, or None on the CPU.
+
+    ``AccProjectorPlan::setup`` hands ``L = MBL`` and ``R = perturbation MBR`` to ``make_eulers_3D``, which forms
+    ``L (A R)`` from the float Euler angles and inverts it, all in float32 on the device (acc_projector_plan_impl.h:
+    151-180, acc_ml_optimiser_impl.h:1589-1649). The last bits matter at --pad 1: a pixel with ``kx^2 + ky^2`` one
+    above the radius cut has a rotated float radius that truncates to either side of it, and a kept or dropped
+    pixel moves the score by a tenth or so (at --pad 2 the same pixel is always past the cut).
+    """
+
+    if jax.default_backend() != "gpu":
+        return None
+    healpix_order, random_perturbation, angular_sampling_deg = layout.id_rows_source
+    plan_right = pass1_right_matrix(random_perturbation, 0.0 if angular_sampling_deg is None else angular_sampling_deg)
+    plan_right = np.asarray(right, dtype=np.float64) if plan_right is None else plan_right @ np.asarray(right, np.float64)
+    ids = np.asarray(layout.rotation_ids_flat, dtype=np.int64).reshape(-1)
+    offsets = np.asarray(layout.rotation_offsets, dtype=np.int64)
+    metadata = build_local_search_grid_metadata(healpix_order, symmetry=layout.symmetry)
+    rows = np.empty((ids.size, 3, 3), dtype=np.float32)
+    # The kernel builds images x orientations, so one block's cross product stays small; the orientation count is
+    # padded so that the jitted call compiles for a few shapes.
+    for start in range(0, offsets.size - 1, _DEVICE_ROWS_BLOCK_IMAGES):
+        stop = min(start + _DEVICE_ROWS_BLOCK_IMAGES, offsets.size - 1)
+        first, last = offsets[start], offsets[stop]
+        if first == last:
+            continue
+        unique_ids, inverse = unique_nonnegative_ids(ids[first:last])
+        eulers = _rotation_eulers_from_grid_metadata(unique_ids, metadata, dtype=np.float32)
+        padded = np.zeros((-(-unique_ids.size // _DEVICE_ROWS_ORIENTATION_QUANTUM) * _DEVICE_ROWS_ORIENTATION_QUANTUM, 3), np.float32)
+        padded[: unique_ids.size] = eulers
+        built = np.asarray(
+            jax.device_get(
+                relion_make_scoring_rotations_left_f32(
+                    jnp.asarray(padded),
+                    jnp.asarray(plan_right, dtype=jnp.float32),
+                    jnp.asarray(np.asarray(left[start:stop], dtype=np.float32)),
+                )
+            )
+        )
+        row_image = np.repeat(np.arange(stop - start), np.diff(offsets[start : stop + 1]))
+        rows[first:last] = built[row_image, inverse]
+    return rows
+
+
+def with_body_rows(
+    layout: LocalHypothesisLayout, left: np.ndarray, right: np.ndarray, *, device_plan: bool = False
+) -> LocalHypothesisLayout:
     """The layout's scoring and M-step rows composed as ``left[i] R right`` for the rows of image ``i``
-    (``left`` ``[n_images, 3, 3]``, ``right`` ``[3, 3]``), in float64 and cast back."""
+    (``left`` ``[n_images, 3, 3]``, ``right`` ``[3, 3]``), and cast once to the rows' dtype.
+
+    With ``device_plan`` (the parents of a coarse pass in single precision) the scoring rows are the device's
+    (:func:`_device_parent_rows`). All other rows are host-built: ``L A R`` of the float64 matrices
+    (``generateEulerMatrices``, acc_helper_functions_impl.h:198-263), rebuilt because the layout's are already cast.
+    """
 
     counts = np.diff(np.asarray(layout.rotation_offsets, dtype=np.int64))
     row_left = np.repeat(np.asarray(left, dtype=np.float64), counts, axis=0)
+    right = np.asarray(right, dtype=np.float64)
+    rebuildable = layout.oversampled_rows or layout.id_rows_source is not None
 
-    def compose(rows):
+    def compose(rows, mstep: bool):
         if rows is None:
             return None
         rows = np.asarray(rows)
-        return (row_left @ rows.astype(np.float64) @ np.asarray(right, dtype=np.float64)).astype(rows.dtype)
+        host = local_layout_host_rotations(layout, mstep=mstep) if rebuildable else rows.astype(np.float64)
+        return (row_left @ host @ right).astype(rows.dtype)
 
+    device_rows = None
+    if device_plan and np.asarray(layout.rotations_flat).dtype == np.float32:
+        device_rows = _device_parent_rows(layout, left, right)
     return replace(
-        layout, rotations_flat=compose(layout.rotations_flat), mstep_rotations_flat=compose(layout.mstep_rotations_flat)
+        layout,
+        rotations_flat=compose(layout.rotations_flat, False) if device_rows is None else device_rows,
+        mstep_rotations_flat=compose(layout.mstep_rotations_flat, True),
     )
 
 
@@ -134,5 +204,5 @@ class BodySearch:
     def parent_layout(self, layout: LocalHypothesisLayout) -> LocalHypothesisLayout:
         return with_body_prior(layout, self.body)
 
-    def scored_rows(self, layout: LocalHypothesisLayout) -> LocalHypothesisLayout:
-        return with_body_rows(layout, self.left, self.right)
+    def scored_rows(self, layout: LocalHypothesisLayout, *, device_plan: bool = False) -> LocalHypothesisLayout:
+        return with_body_rows(layout, self.left, self.right, device_plan=device_plan)

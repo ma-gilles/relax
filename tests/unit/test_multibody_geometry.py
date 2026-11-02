@@ -2,15 +2,27 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
+import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
+import relax.multibody.layout as body_layout
+from relax.cuda.rotations import relion_make_scoring_rotations_left_f32
+from relax.local_search.layout import (
+    LocalHypothesisLayout,
+    _rotation_eulers_from_grid_metadata,
+    relion_mstep_rotations_from_eulers,
+)
 from relax.multibody import geometry
 from relax.multibody.bodies import A_ROT90, RESIDUAL_IDENTITY_EULER, Body, align_with_z, relion_center_of_mass
-from relax.multibody.layout import body_prior_log
+from relax.multibody.layout import body_prior_log, with_body_rows
 from relax.multibody.subtraction import relion_half_to_real, relion_translate_2d, translate_zero_fill
+from relax.sampling.device_rotations import pass1_right_matrix
+from relax.sampling.grids import build_local_search_grid_metadata
 from relax.sampling.healpix import euler_angles_to_matrix
 from relax.sampling.perturbation import advance_relion_perturbation_from_seed
 
@@ -193,3 +205,94 @@ def test_subtraction_masks_follow_relion_pointer_body_overlap():
     assert_matches(masks[1][0], a - a * b)
     normalised = subtraction_masks(bodies, norm_overlap=True)
     assert all(normalised[i][o] is bodies[o].mask for i in range(3) for o in range(3) if i != o)
+
+
+def _body_layout(**fields):
+    return LocalHypothesisLayout(
+        n_global_rotations=0, n_pixels=0, n_psi=0, rotation_offsets=np.array([0, 2, 5]),
+        rotation_ids_flat=np.array([0, 7, 7, 3, 0]), rotations_flat=np.zeros((5, 3, 3), np.float32),
+        rotation_log_priors_flat=np.zeros(5), rotation_counts=np.array([2, 3]),
+        translation_grid=np.zeros((1, 2)), translation_log_priors=np.zeros((2, 1)), **fields,
+    )
+
+
+def _body_left_right():
+    left = euler_angles_to_matrix(np.array([[11.0, 37.0, -5.0], [130.0, 62.0, 44.0]]))
+    return left, euler_angles_to_matrix(np.array([[23.0, 71.0, 9.0]]))[0]
+
+
+def test_host_body_rows_are_composed_from_float64_and_cast_once():
+    """RELION's fine and M-step rows are ``L A R`` of double matrices (generateEulerMatrices), not of cast ones."""
+
+    eulers = np.array([[1.25, 80.5, 3.75], [2.5, 91.0, -1.5], [3.0, 89.5, 0.25], [4.5, 90.5, 2.0], [5.5, 92.0, 1.0]])
+    host = relion_mstep_rotations_from_eulers(eulers, dtype=np.float64)
+    layout = _body_layout(oversampled_rows=True, source_eulers_flat=eulers, mstep_rotations_flat=host.astype(np.float32))
+    layout = replace(layout, rotations_flat=host.astype(np.float32))
+    left, right = _body_left_right()
+    rows = with_body_rows(layout, left, right)
+    expected = (np.repeat(left, [2, 3], axis=0) @ host @ right).astype(np.float32)
+    assert rows.rotations_flat.dtype == np.float32
+    np.testing.assert_array_equal(rows.rotations_flat, expected)
+    np.testing.assert_array_equal(rows.mstep_rotations_flat, expected)
+
+
+def test_coarse_body_rows_are_the_device_plan_of_each_image(monkeypatch):
+    """A body's pass-1 parents take ``L = MBL`` and ``R = perturbation MBR`` to make_eulers_3D, each image its own L."""
+
+    seen = {}
+
+    def fake_kernel(eulers, right, lefts):
+        seen["right"] = np.asarray(right)
+        eulers, lefts = np.asarray(eulers), np.asarray(lefts)
+        return np.einsum("bij,n->bnij", lefts, eulers[:, 0]) + eulers[:, 1][None, :, None, None]
+
+    monkeypatch.setattr(body_layout.jax, "default_backend", lambda: "gpu")
+    monkeypatch.setattr(body_layout, "relion_make_scoring_rotations_left_f32", fake_kernel)
+    monkeypatch.setattr(body_layout, "_DEVICE_ROWS_BLOCK_IMAGES", 1)
+    layout = _body_layout(id_rows_source=(1, 0.25, 15.0), mstep_rotations_flat=None)
+    left, right = _body_left_right()
+    rows = with_body_rows(layout, left, right, device_plan=True).rotations_flat
+    metadata = build_local_search_grid_metadata(1, symmetry="C1")
+    eulers = _rotation_eulers_from_grid_metadata(np.array([0, 7, 7, 3, 0]), metadata, dtype=np.float32)
+    image = np.array([0, 0, 1, 1, 1])
+    expected = np.einsum("nij,n->nij", left[image].astype(np.float32), eulers[:, 0]) + eulers[:, 1, None, None]
+    np.testing.assert_array_equal(rows, expected)
+    np.testing.assert_array_equal(
+        seen["right"],
+        (pass1_right_matrix(0.25, 15.0) @ right).astype(np.float32),
+    )
+
+
+@pytest.mark.gpu
+def test_coarse_body_rows_match_the_kernel_image_by_image():
+    if jax.default_backend() != "gpu":
+        pytest.skip("needs the CUDA kernel")
+    layout = _body_layout(id_rows_source=(1, 0.25, 15.0), mstep_rotations_flat=None)
+    left, right = _body_left_right()
+    rows = with_body_rows(layout, left, right, device_plan=True).rotations_flat
+    metadata = build_local_search_grid_metadata(1, symmetry="C1")
+    eulers = _rotation_eulers_from_grid_metadata(np.array([0, 7, 7, 3, 0]), metadata, dtype=np.float32)
+    plan_right = jnp.asarray(pass1_right_matrix(0.25, 15.0) @ right, dtype=jnp.float32)
+    for image, (start, stop) in enumerate(((0, 2), (2, 5))):
+        built = relion_make_scoring_rotations_left_f32(
+            jnp.asarray(eulers[start:stop]), plan_right, jnp.asarray(left[image : image + 1], dtype=jnp.float32)
+        )
+        np.testing.assert_array_equal(rows[start:stop], np.asarray(built)[0])
+
+
+def test_accuracy_trials_keep_relions_one_shuffle_and_seed_zero_order(monkeypatch):
+    from relax.multibody.refine import _accuracy_trial_order
+    from relax.sampling import expected_accuracy
+
+    subsets = np.array([1, 2, 1, 1, 2, 1])
+    rows = np.flatnonzero(subsets == 1)
+    np.testing.assert_array_equal(_accuracy_trial_order(rows, subsets, 0), np.arange(4))
+    calls = []
+
+    def fake_orders(random_subsets, seed, first_iteration):
+        calls.append((seed, first_iteration))
+        return np.array([5, 0, 3, 2]), np.array([1, 4])
+
+    monkeypatch.setattr(expected_accuracy, "relion_auto_refine_half_orders", fake_orders)
+    np.testing.assert_array_equal(_accuracy_trial_order(rows, subsets, 7), [3, 0, 2, 1])
+    assert calls == [(7, 1)]
