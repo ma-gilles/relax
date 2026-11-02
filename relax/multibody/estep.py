@@ -23,7 +23,7 @@ from relax.multibody.subtraction import (
     BodyPoses,
     ParticleFrames,
     dataset_with_images,
-    other_body_prediction,
+    other_body_spectrum,
     translated_body_images,
 )
 from relax.refinement.local_half import (
@@ -114,7 +114,7 @@ def score_body_half(
 
     def prediction(image_indices):
         indices = np.asarray(image_indices).reshape(-1)
-        return other_body_prediction(
+        return other_body_spectrum(
             half_dataset, indices, target, bodies, projectors,
             [BodyPoses(pose.eulers_deg[indices], pose.offsets_px[indices]) for pose in poses],
             ParticleFrames(frames.consensus[indices], frames.offsets_px[indices], frames.norm_factors[indices]),

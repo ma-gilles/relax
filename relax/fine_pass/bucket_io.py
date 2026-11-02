@@ -483,11 +483,7 @@ def prepare_unshifted_bucket_operands(
         unsubtracted_body_image = processed_score_half_raw
         output_dtype = processed_score_half_raw.dtype
         masked_prediction, plain_prediction = image_translations(image_indices)
-        phases = half_translation_phase_table(
-            np.asarray(image_translations, dtype=np.float64)[np.asarray(image_indices).reshape(-1)],
-            image_shape,
-            dtype=jnp.float64,
-        )
+        phases = image_translations.phases(image_indices)
         processed_score_half_raw = (
             (processed_score_half_raw.astype(jnp.complex128) - masked_prediction) * phases
         ).astype(output_dtype)
