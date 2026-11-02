@@ -311,3 +311,27 @@ def test_image_size_rounds_the_resolution_shell(monkeypatch):
         has_converged=False, current_resolution_inv=60 / (1.699 * 320), ave_pmax=0.9, has_high_fsc_at_limit=False, incr_size=10
     )
     assert refine.image_current_size(state, run) == 60
+
+
+def test_unfiltered_body_maps_use_the_current_size_support(monkeypatch):
+    """RELION's _unfil.mrc keeps voxels at exactly r_max (Projector::decenter, r2 <= max_r2); the accumulator's own
+    radius would drop them."""
+
+    from relax.multibody import mstep
+
+    seen = []
+
+    def fake_halves(numerators, denominators, settings, *, accumulator_volume_shape, current_size):
+        seen.append(current_size)
+        return [jnp.zeros(8) for _ in numerators]
+
+    monkeypatch.setattr(mstep.numbered_reconstruction, "reconstruct_unregularized_k1_halfmaps", fake_halves)
+    monkeypatch.setattr(mstep, "stored_body_map", lambda volume, body: volume)
+    monkeypatch.setattr(mstep, "_real", lambda volume, shape: volume)
+    monkeypatch.setattr(mstep, "recovar_volume_to_relion", lambda volume: volume)
+    monkeypatch.setattr(mstep, "solvent_corrected_fsc", lambda *a, **k: (None, {}))
+    settings = type("Settings", (), {"volume_shape": (2, 2, 2)})()
+    mstep.body_solvent_corrected_fsc(
+        _body(), [0, 0], [0, 0], settings, current_size=244, accumulator_shape=(247,) * 3, phase_stream=None
+    )
+    assert seen == [244]
