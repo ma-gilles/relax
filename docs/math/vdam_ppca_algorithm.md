@@ -2921,7 +2921,11 @@ rule to the PPCA mean. The stages table then gives the first radius and the HEAL
   (no gridding correction, no padding) where RELION's comes from the corrected projector spectrum.
 - Code: `relax/ppca_initial_model/radius_rule.py`; the planned radius is `State.next_radius`, saved in the
   checkpoint (`next_radius`; older checkpoints resume without it); `iterations.jsonl` gains `data_vs_prior` and
-  `next_radius` only under the rule; `--incr-size` is RELION's `--incr_size`. The VDAM optimizer only.
+  `next_radius` only under the rule; `--incr-size` is RELION's `--incr_size`. The rule runs under both optimizers:
+  momentum SGD's stream keeps the trace of the metric only, so under the rule it keeps the packed metric, whose
+  first entry is the weight above (the cost of VDAM's E-step; the step reads the trace of that metric as before).
+  The weight and the reference are the batch's, so the rule reads the same quantities whichever optimizer moves
+  the mean.
 - Tests: `tests/unit/ppca_initial_model/test_radius_rule.py` (options, formula against an independent shell
   average, the floor-to-weight conversion, resume, and a CPU run whose radii and model survive a stop and resume).
 - Smoke (job 16355953, 60 iterations, `--stages [[1,4,3]]`): radius 4 at iteration 1, then 15 (shell 3 plus the

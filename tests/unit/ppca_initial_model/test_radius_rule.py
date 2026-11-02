@@ -61,7 +61,6 @@ def _state(radius=2, next_radius=None, iteration=0):
         ({"radius_rule": "fixed"}, "stages or data_vs_prior"),
         ({"radius_rule": "data_vs_prior", "incr_size": 0}, "positive integer"),
         ({"radius_rule": "data_vs_prior", "incr_size": True}, "positive integer"),
-        ({"radius_rule": "data_vs_prior", "optimizer": "momentum_sgd"}, "vdam optimizer"),
     ],
 )
 def test_the_radius_rule_options_are_validated(options, message):
@@ -186,6 +185,18 @@ def test_a_data_vs_prior_run_logs_its_radii_and_resumes_to_the_same_radii_and_mo
     assert [row["radius"] for row in resumed] == [row["radius"] for row in log]
     with np.load(full / "checkpoint_0008.npz") as a, np.load(split / "checkpoint_0008.npz") as b:
         assert_matches(b["theta"], a["theta"])
+
+
+def test_momentum_sgd_follows_the_data_vs_prior_radius_too(monkeypatch, tmp_path):
+    """The momentum step keeps the packed metric under the rule (its mean entry is the rule's data) and the radii
+    are the VDAM run's: the first at the table's radius, the rest at the planned one."""
+    monkeypatch.setenv("SLURM_JOB_ID", "test")
+    star = _write_star(tmp_path / "data", 16)
+    options = ("--optimizer", "momentum_sgd", "--radius-rule", "data_vs_prior", "--incr-size", "1")
+    _run_command(star, tmp_path / "run", *options)
+    log = [json.loads(line) for line in open(tmp_path / "run" / "iterations.jsonl")]
+    assert [row["radius"] for row in log] == [2, 3, 3, 3, 3, 3, 3, 3]
+    assert all(len(row["data_vs_prior"]) == BOX // 2 + 1 and row["next_radius"] == 3 for row in log)
 
 
 def test_the_stages_rule_logs_no_data_vs_prior(monkeypatch, tmp_path):

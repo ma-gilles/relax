@@ -431,8 +431,9 @@ def _expectation(dataset, state, config, ids, iteration, *, embeddings_only=Fals
                     geometry=stream_geometry,
                     schedule=schedule,
                     scoring=scoring,
-                    # Momentum SGD reads only the metric trace (sgd_update.momentum_step).
-                    metric_trace_only=config.optimizer == "momentum_sgd",
+                    # Momentum SGD reads only the metric trace (sgd_update.momentum_step); the data_vs_prior radius
+                    # also reads the mean's own entry of the packed metric.
+                    metric_trace_only=config.optimizer == "momentum_sgd" and config.radius_rule == "stages",
                     gemm_precision=config.gemm_precision,
                     tile_loader=load_tilt_tile if tilts else None,
                     pass2_mass_floor=config.pass2_mass_floor,

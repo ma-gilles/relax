@@ -110,8 +110,6 @@ class Config:
             raise ValueError("The radius rule must be stages or data_vs_prior")
         if isinstance(self.incr_size, bool) or not isinstance(self.incr_size, (int, np.integer)) or self.incr_size <= 0:
             raise ValueError("incr_size must be a positive integer")
-        if self.radius_rule == "data_vs_prior" and self.optimizer != "vdam":
-            raise ValueError("The data_vs_prior radius is RELION's VDAM rule: it needs the vdam optimizer")
         if self.stochastic_batch_size is not None and self.stochastic_batch_size <= 0:
             raise ValueError("Stochastic batch size must be positive")
         if self.stochastic_all_iterations and self.stochastic_batch_size is None:
