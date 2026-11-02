@@ -242,25 +242,43 @@ def native_half_spectrum(real_images) -> jax.Array:
     return half.reshape(half.shape[0], -1)
 
 
-@dataclass(frozen=True)
 class BodyImagePrediction:
-    """The other bodies' prediction of a body's images, subtracted in RELION's order (what a body's ``image_translations`` carries):
-    from the preprocessed image in Fourier space in double, the masked prediction from the masked (scored) image and
-    the plain one from the unmasked (reconstructed) image (acc_ml_optimiser_impl.h:1388-1510)."""
+    """The other bodies' prediction of a body's images, subtracted in RELION's order (what a body's
+    ``image_translations`` carries): from the preprocessed image in Fourier space in double, the masked prediction from
+    the masked (scored) image and the plain one from the unmasked (reconstructed) image, each windowed to the current
+    size (acc_ml_optimiser_impl.h:1388-1510).
 
-    translations: np.ndarray  # [n, 2] the refined offsets the images still take (pixels), by dataset image
-    prediction: object  # image_indices -> real images S [n, D, D], float64
-    mask_radius_px: float
-    mask_width_px: float
-    current_size: int  # the iteration's image size: RELION's Xi2 starts there in pass 1 as well
+    Both are computed once, in batches, and kept on the host for the rectangle of the window, as complex128: the
+    probe and the fine pass read them by image.
+    """
+
+    def __init__(self, translations, prediction, *, n_images, image_shape, mask_radius_px, mask_width_px, current_size, batch_images):
+        self.translations = np.asarray(translations, dtype=np.float64)
+        self.current_size = int(current_size)
+        height, width = (int(v) for v in image_shape)
+        self._half_shape = (height, width // 2 + 1)
+        rows = np.abs(np.arange(height) - height // 2) <= self.current_size // 2
+        self._pixels = np.flatnonzero(np.outer(rows, np.arange(width // 2 + 1) <= self.current_size // 2).ravel())
+        self._masked = np.empty((n_images, self._pixels.size), dtype=np.complex128)
+        self._plain = np.empty_like(self._masked)
+        for start in range(0, n_images, batch_images):
+            batch = np.arange(start, min(start + batch_images, n_images))
+            real = np.asarray(prediction(batch), dtype=np.float64)
+            self._plain[batch] = np.asarray(native_half_spectrum(real))[:, self._pixels]
+            masked = relion_soft_mask_outside(real, mask_radius_px, mask_width_px)
+            self._masked[batch] = np.asarray(native_half_spectrum(masked))[:, self._pixels]
 
     def __array__(self, dtype=None, copy=None):
         return np.asarray(self.translations, dtype=dtype)
 
+    def _full(self, values) -> np.ndarray:
+        full = np.zeros((values.shape[0], self._half_shape[0] * self._half_shape[1]), dtype=np.complex128)
+        full[:, self._pixels] = values
+        return full
+
     def __call__(self, image_indices) -> tuple:
-        real = np.asarray(self.prediction(image_indices), dtype=np.float64)
-        masked = relion_soft_mask_outside(real, self.mask_radius_px, self.mask_width_px)
-        return native_half_spectrum(masked), native_half_spectrum(real)
+        indices = np.asarray(image_indices).reshape(-1)
+        return self._full(self._masked[indices]), self._full(self._plain[indices])
 
 
 def translated_body_images(dataset, image_indices, target: int, bodies: list[Body], frames: ParticleFrames) -> np.ndarray:
