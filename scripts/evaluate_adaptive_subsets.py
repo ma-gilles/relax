@@ -49,6 +49,15 @@ def masked_mse(volume, truth, weight) -> float:
     return float(np.sum((weight * (volume - truth)) ** 2) / np.sum(weight**2))
 
 
+def inside_nyquist_sphere(volume) -> np.ndarray:
+    """``volume`` with the Fourier corners beyond the Nyquist radius removed. The reconstruction stops at that radius,
+    while a truth map from atoms has power in the corners (about 11% here), which no reconstruction can match."""
+    n = volume.shape[0]
+    grid = np.meshgrid(*[np.fft.fftfreq(n)] * 2, np.fft.rfftfreq(n), indexing="ij")
+    radius = np.sqrt(sum(g**2 for g in grid)) * n
+    return np.fft.irfftn(np.fft.rfftn(volume) * (radius < n // 2), s=volume.shape)
+
+
 def amplitude_slope(volume, truth, weight) -> float:
     """Least-squares slope of the map on the truth in the mask: below one when the map's amplitude is low."""
     return float(np.sum(weight**2 * volume * truth) / np.sum(weight**2 * truth**2))
@@ -160,6 +169,16 @@ def evaluate(run_dir: Path, data_dir: Path, truth_state: int | None, multibody: 
     report["amplitude_slope"] = {
         name: {"candidates": np.mean([[amplitude_slope(m, truth, w) for m in maps] for maps in candidate_maps], axis=0).tolist(),
                "selected": float(np.mean([amplitude_slope(m, truth, w) for m in selected_maps]))}
+        for name, w in regions
+    }
+    # The same measures against the truth the reconstruction can reach; relative MSE divides by the truth's power in
+    # the mask, which removes the volume scale that differs between noise levels.
+    limited = inside_nyquist_sphere(truth)
+    report["nyquist_truth"] = {
+        name: {"relative_mse_candidates": (np.mean([[masked_mse(m, limited, w) for m in maps] for maps in candidate_maps], axis=0) / masked_mse(limited, 0.0, w)).tolist(),
+               "relative_mse_selected": float(np.mean([masked_mse(m, limited, w) for m in selected_maps]) / masked_mse(limited, 0.0, w)),
+               "slope_candidates": np.mean([[amplitude_slope(m, limited, w) for m in maps] for maps in candidate_maps], axis=0).tolist(),
+               "slope_selected": float(np.mean([amplitude_slope(m, limited, w) for m in selected_maps]))}
         for name, w in regions
     }
     if multibody is not None:

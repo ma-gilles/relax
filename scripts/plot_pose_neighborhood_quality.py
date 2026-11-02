@@ -5,7 +5,8 @@
 
 Reads each run's ``eval.json`` (``scripts.evaluate_adaptive_subsets``) and, for Figure 5, its maps. Every map is an
 unsharpened half-map average in the body frame; nothing is aligned or scaled to the truth. The signed differences are
-selected minus best single candidate and selected minus all particles, in masked MSE (negative: selected is better).
+selected minus best single candidate and selected minus all particles, in masked MSE against the truth inside the
+Nyquist sphere, divided by that truth's power in the mask, so noise levels compare (negative: selected is better).
 """
 
 from __future__ import annotations
@@ -37,14 +38,14 @@ def load(run: Path) -> dict | None:
 
 def summary(report: dict, name: str) -> dict:
     """Masked MSE and FSC-AUC of the four maps in one region, with the signed differences."""
-    mse = np.asarray(report["masked_mse"][name]["candidates"])
-    selected = report["masked_mse"][name]["selected"]
+    mse = np.asarray(report["nyquist_truth"][name]["relative_mse_candidates"])
+    selected = report["nyquist_truth"][name]["relative_mse_selected"]
     best = int(np.argmin(mse))
     return {
         "selected": selected, "best": float(mse[best]), "all": float(mse[-1]), "narrowest": float(mse[0]),
         "best_candidate": best, "best_count": int(np.sum(report["counts_per_half"], axis=0)[best]),
         "selected_minus_best": selected - float(mse[best]), "selected_minus_all": selected - float(mse[-1]),
-        "slope_all": report["amplitude_slope"][name]["candidates"][-1], "slope_selected": report["amplitude_slope"][name]["selected"],
+        "slope_all": report["nyquist_truth"][name]["slope_candidates"][-1], "slope_selected": report["nyquist_truth"][name]["slope_selected"],
         **{f"fsc_auc_{key}": float(normalized_fsc_auc(np.asarray(curve))) for key, curve in report["fsc_curves"][name].items()},
     }
 
@@ -71,9 +72,9 @@ def write_csv(rows: list[dict], path: Path) -> None:
 
 def draw_mse(ax, report, name, color, label):
     counts = np.sum(report["counts_per_half"], axis=0)
-    mse = np.asarray(report["masked_mse"][name]["candidates"])
+    mse = np.asarray(report["nyquist_truth"][name]["relative_mse_candidates"])
     ax.plot(counts, mse, c=color, marker="o", ms=2, lw=1, label=f"{label} candidates")
-    ax.axhline(report["masked_mse"][name]["selected"], c=color, ls="--", lw=1, label=f"{label} selected")
+    ax.axhline(report["nyquist_truth"][name]["relative_mse_selected"], c=color, ls="--", lw=1, label=f"{label} selected")
 
 
 def figure4(root: Path, rows, out: Path, stem: str, runs_of) -> dict:
@@ -101,12 +102,12 @@ def figure4(root: Path, rows, out: Path, stem: str, runs_of) -> dict:
                 axes[r, 2].plot(np.arange(len(curve)), curve, c=color, ls=style, lw=1, label=f"{label} {key}")
                 arrays[f"{dataset}_s{state}_{m}_{name}_fsc_{key}"] = np.asarray(curve)
             arrays[f"{dataset}_s{state}_{m}_counts"] = np.sum(report["counts_per_half"], axis=0)
-            arrays[f"{dataset}_s{state}_{m}_mse_body"] = np.asarray(report["masked_mse"]["body"]["candidates"])
-            arrays[f"{dataset}_s{state}_{m}_mse_{name}"] = np.asarray(report["masked_mse"][name]["candidates"])
+            arrays[f"{dataset}_s{state}_{m}_mse_body"] = np.asarray(report["nyquist_truth"]["body"]["relative_mse_candidates"])
+            arrays[f"{dataset}_s{state}_{m}_mse_{name}"] = np.asarray(report["nyquist_truth"][name]["relative_mse_candidates"])
         axes[r, 0].set_title(f"{title}: body mask", fontsize=9)
         axes[r, 1].set_title(f"{title}: {'changing region' if name == 'region' else 'no changing region, body mask'}", fontsize=9)
         axes[r, 2].set_title("FSC to truth, " + ("region" if name == "region" else "body"), fontsize=9)
-        axes[r, 0].set_ylabel("masked MSE")
+        axes[r, 0].set_ylabel("relative masked MSE")
         axes[r, 2].set_ylabel("FSC")
         axes[r, 2].set_ylim(-0.1, 1.02)
     for ax in axes[-1, :2]:
@@ -145,12 +146,12 @@ def figure5_panel(run: Path, dataset: Path, state: int) -> dict:
     """The maps of one run in a common frame, the slice through the changing region and the selector's choice."""
     import pickle
 
-    from scripts.evaluate_adaptive_subsets import _read, truth_and_masks
+    from scripts.evaluate_adaptive_subsets import _read, inside_nyquist_sphere, truth_and_masks
 
     frame = truth_and_masks(run, dataset, state)
     report = load(run)
     name = "region" if frame["region"] is not frame["mask"] else "body"
-    best = report["best_mse_candidate"][name]
+    best = int(np.argmin(report["nyquist_truth"][name]["relative_mse_candidates"]))
     n = len(report["thresholds"])
     diag = run / "diagnostics" / "subset000"
 
@@ -158,7 +159,7 @@ def figure5_panel(run: Path, dataset: Path, state: int) -> dict:
         return 0.5 * sum(_read(pattern.format(h=h)) for h in (1, 2))
 
     maps = {
-        "truth": frame["truth"],
+        "truth": inside_nyquist_sphere(frame["truth"]),
         "all": average(str(diag / f"estimates_half{{h}}_unfil/{n - 1:04d}.mrc")),
         f"best ({int(np.sum(report['counts_per_half'], axis=0)[best])})": average(str(diag / f"estimates_half{{h}}_unfil/{best:04d}.mrc")),
         "selected": average(str(run / "subset000_half{h}_unfil.mrc")),
