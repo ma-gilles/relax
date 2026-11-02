@@ -230,10 +230,10 @@ def main() -> None:
     images, noise, measured = None, None, {}
     data = args.exact_nuisance or args.known_noise
     if data is not None:
-        components, white = simulated_body_images(run, data)
-        measured = {"white_noise_per_fourier_pixel": white, "image_variance": float(np.mean([np.var(c) for c in components]))}
+        body_images, white = simulated_body_images(run, data)
+        measured = {"white_noise_per_fourier_pixel": white, "body_image_variances": [float(np.var(c)) for c in body_images]}
         if args.exact_nuisance is not None:
-            images = exact_nuisance_images(run, args.exact_nuisance, args.target_body - 1, components)
+            images = exact_nuisance_images(run, args.exact_nuisance, args.target_body - 1, body_images)
         if args.known_noise is not None:
             noise = np.full_like(result.noise_radial[0], white)
     record = subsets.adaptive_subsets(
@@ -246,7 +246,7 @@ def main() -> None:
         "neighborhood": args.neighborhood, "depth_bound_angstrom": args.depth_bound, "ignore_group_scales": None if args.ignore_group_scales is None else str(args.ignore_group_scales),
     })
     if args.check_direct:
-        dataset = subsets.fixed_pose_dataset(run, result, args.target_body - 1)
+        dataset = subsets.fixed_pose_dataset(run, result, args.target_body - 1, images=images, noise=noise)
         record["direct_check_half1"] = subsets.check_cumulative_against_direct(
             dataset, distances[np.asarray(run.halves[0].rows)], thresholds
         )
