@@ -34,12 +34,12 @@ from relax.fine_pass.scoring import (
     to_relion_native_fine_units,
 )
 from relax.local_search import resident_local_chunk
-from relax.relion.optics_groups import noise_rows, pixel_rows
 from relax.local_search.resident_layout import (
     DEFAULT_ROW_CAPACITY_LADDER,
     materialize_local_chunk,
     plan_local_capacity_chunks,
 )
+from relax.relion.optics_groups import noise_rows, pixel_rows
 from relax.types import LocalEMResult, make_relion_stats
 
 logger = logging.getLogger(__name__)

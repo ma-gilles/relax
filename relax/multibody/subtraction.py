@@ -29,8 +29,8 @@ from dataclasses import dataclass
 
 import jax
 import jax.numpy as jnp
-import scipy.fft
 import numpy as np
+import scipy.fft
 from recovar.core import fourier_transform_utils as ftu
 from recovar.data_io.cryoem_dataset import CryoEMDataset
 from recovar.data_io.image_loader import ImageLoader
@@ -43,7 +43,6 @@ from relax.multibody.bodies import Body
 from relax.projection.projection import project_relion_projector_half_spectrum_centered_rows
 from relax.relion.ctf import relion_exact_ctf_half_from_source_star
 from relax.steps.projector_preparation import PreparedProjector
-
 
 _FFT_WORKERS = 8
 
