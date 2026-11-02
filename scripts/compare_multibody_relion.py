@@ -78,6 +78,7 @@ def compare(relion_dir: Path, relax_dir: Path, iteration: int | None) -> dict:
             "pose_angle_deg": _summary(angles),
             "pose_offset_angstrom": _summary(offsets),
             "fraction_same_pose": float(np.mean((angles < 1e-3) & (offsets < 1e-3))),
+            "fraction_same_pose_01": float(np.mean((angles < 1e-2) & (offsets < 1e-2))),
             "relion_residual_angle_from_identity_deg": _summary(identity),
             "maps": [],
         }

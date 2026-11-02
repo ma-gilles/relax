@@ -74,6 +74,8 @@ def row(data: Path, relion_dirs: list[Path], relax_dir: Path, *, body_star: Path
             "relion_repeat_vs_relion_masked_auc": [_masked_auc(d / name, reference / name, mask) for d in relion_dirs[1:]],
             "identical_final_poses": final["bodies"][b]["fraction_same_pose"],
             "relion_repeat_identical_final_poses": [r["bodies"][b]["fraction_same_pose"] for r in repeats],
+            "identical_final_poses_01": final["bodies"][b]["fraction_same_pose_01"],
+            "relion_repeat_identical_final_poses_01": [r["bodies"][b]["fraction_same_pose_01"] for r in repeats],
             "pose_angle_median_deg": final["bodies"][b]["pose_angle_deg"]["median"],
             "relion_repeat_pose_angle_median_deg": [r["bodies"][b]["pose_angle_deg"]["median"] for r in repeats],
             "gt_masked_auc": {k: v["bodies"][b]["maps"][0]["masked"]["auc"] for k, v in gt.items()},
@@ -97,7 +99,9 @@ def main() -> None:
         print(f"body {body['body']}: relax-vs-RELION masked AUC {body['relax_vs_relion_masked_auc']:.5f}; "
               f"RELION repeats {[round(v, 5) for v in body['relion_repeat_vs_relion_masked_auc']]}; "
               f"identical poses {body['identical_final_poses']:.4f}, repeats "
-              f"{[round(v, 4) for v in body['relion_repeat_identical_final_poses']]}; median pose angle "
+              f"{[round(v, 4) for v in body['relion_repeat_identical_final_poses']]}; at .01 "
+              f"{body['identical_final_poses_01']:.4f}, repeats "
+              f"{[round(v, 4) for v in body['relion_repeat_identical_final_poses_01']]}; median pose angle "
               f"{body['pose_angle_median_deg']:.3f} deg, repeats "
               f"{[round(v, 3) for v in body['relion_repeat_pose_angle_median_deg']]}; GT masked AUC "
               f"{[round(v, 4) for v in body['gt_masked_auc'].values()]}")
