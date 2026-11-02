@@ -153,9 +153,9 @@ def main() -> None:
     parser.add_argument("--consensus", required=True)
     parser.add_argument("--bodies", required=True, type=Path)
     parser.add_argument("--multibody", required=True, type=Path)
-    parser.add_argument("--neighborhood", choices=("pca", "pose", "lowrank"), default="pca",
+    parser.add_argument("--neighborhood", choices=("pca", "pose", "lowrank", "rotation"), default="pca",
                         help="pca: distances in the pooled motion PCA; pose: the target body's depth-aware pose comparison; "
-                        "lowrank: distances along that body's depth-aware fitted motion")
+                        "lowrank: distances along that body's depth-aware fitted motion; rotation: the pose comparison's rotation term alone")
     parser.add_argument("--target-image", default=None, help="pose: rlnImageName of the target particle")
     parser.add_argument("--motion-rank", type=int, default=1, help="lowrank: the number of motion components")
     parser.add_argument("--depth-bound", type=float, default=None, help="pose: the missing-depth bound L_b, angstroms")
@@ -187,7 +187,7 @@ def main() -> None:
 
     from relax.commands.multibody import run_options
     from relax.multibody import subsets
-    from relax.multibody.pose_neighborhoods import compatibility_distance, fit_low_rank_motion, low_rank_distance, snap_round_off
+    from relax.multibody.pose_neighborhoods import compatibility_distance, fit_low_rank_motion, low_rank_distance, rotation_distance, snap_round_off
     from relax.multibody.refine import MultibodyCommand, start_from_consensus
 
     command = MultibodyCommand(
@@ -214,6 +214,12 @@ def main() -> None:
         features = subsets.body_pose_features(run, result, args.target_body - 1)
         distances = low_rank_distance(fit_low_rank_motion(features, args.motion_rank), target_row)
         components, source, z_star = [], f"rank {args.motion_rank} motion of body {args.target_body}, target {args.target_image}", np.zeros(0)
+    elif args.neighborhood == "rotation":
+        target_row = subsets.target_row(names, args.target_image)
+        features = subsets.body_pose_features(run, result, args.target_body - 1)
+        length = np.sqrt(np.sum(features.shape_factors[0] ** 2))
+        distances = snap_round_off(rotation_distance(features, target_row), length)
+        components, source, z_star = [], f"rotation term of {args.target_image}", np.zeros(0)
     else:
         components = [int(c) for c in args.components.split(",")]
         if args.oracle_coordinates is not None:

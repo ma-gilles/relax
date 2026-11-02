@@ -176,6 +176,13 @@ def compatibility_distance_and_bound_hits(features: PoseFeatures, target: int, d
     return np.sqrt(shape + translation), translation > free + 1e-12 * _dot(delta, delta)
 
 
+def rotation_distance(features: PoseFeatures, target: int) -> np.ndarray:
+    """The rotation term of the score alone, ``tr[(Q_i - Q_j) C (Q_i - Q_j)^T]^(1/2)``, angstroms, ``[N]``. It cannot
+    see a translation, so a motion that is only translation leaves every particle at distance zero."""
+
+    return np.sqrt(_target_terms(features, target)[0])
+
+
 def snap_round_off(distances: np.ndarray, length: float) -> np.ndarray:
     """``distances`` with values at most ``64 eps * length`` set to zero: exact ties that differ only by round-off of
     a geometry of size ``length`` (angstroms) become true ties for ``d <= h``."""

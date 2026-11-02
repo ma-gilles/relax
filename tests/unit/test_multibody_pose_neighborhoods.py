@@ -13,6 +13,7 @@ from relax.multibody.pose_neighborhoods import (
     fit_low_rank_motion,
     low_rank_distance,
     motion_summary,
+    rotation_distance,
     BodyMoments,
     body_pose_lines,
     compatibility_distance,
@@ -360,3 +361,17 @@ def test_motion_summary_reads_rotation_noise_back_per_axis():
     features = pose_features(rotations, lifts, normals, BodyMoments(np.zeros(3), 900.0 * np.eye(3)))
     summary = motion_summary(features, fit_low_rank_motion(features, 1), 900.0 * np.eye(3))
     np.testing.assert_allclose(summary["rotation_noise_deg_per_axis"], 2.0, rtol=0.1)
+
+
+def test_rotation_distance_is_the_score_with_translation_removed():
+    rng = np.random.default_rng(6)
+    level, rotations, lifts, normals = _line_motion(rng, n=200)
+    moved = pose_features(rotations, lifts, normals, MOMENTS)
+    still = pose_features(rotations, np.zeros_like(lifts) - rotations @ MOMENTS.centroid, normals, MOMENTS)
+    np.testing.assert_allclose(rotation_distance(moved, 3), compatibility_distance(still, 3, 0.0), atol=1e-10)
+
+
+def test_rotation_distance_cannot_see_a_pure_translation():
+    rng = np.random.default_rng(7)
+    level, rotations, lifts, normals = _line_motion(rng, n=200, rotation_deg=0.0)
+    np.testing.assert_allclose(rotation_distance(pose_features(rotations, lifts, normals, MOMENTS), 3), 0.0, atol=1e-12)
