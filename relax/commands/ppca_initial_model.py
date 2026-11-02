@@ -39,13 +39,46 @@ def add_args(parser):
         default=Config().radius_rule,
         help="the Fourier radius of each iteration: the --stages table's, or RELION's data_vs_prior rule for the mean "
         "(the table's first radius starts the run, then the last shell where data_vs_prior stays at or above 1 plus "
-        "--incr-size shells, never decreasing; the table's HEALPix orders still apply)",
+        "--incr-size shells, never decreasing; the HEALPix orders follow --order-rule)",
     )
     parser.add_argument(
         "--incr-size",
         type=int,
         default=Config().incr_size,
         help="RELION's --incr_size: shells beyond the data_vs_prior resolution that the data_vs_prior radius includes",
+    )
+    parser.add_argument(
+        "--order-rule",
+        choices=("stages", "accuracy"),
+        default=Config().order_rule,
+        help="the HEALPix order of each iteration: the --stages table's, or RELION's updateAngularSampling rule with the "
+        "expected rotation accuracy of the PPCA model (the table's first order starts the run; every "
+        "--accuracy-interval iterations one order finer while the angular step is at least 75%% of the accuracy, up to "
+        "--order-max; the table's later orders do not apply)",
+    )
+    parser.add_argument(
+        "--order-max",
+        type=int,
+        default=Config().order_max,
+        help="the finest HEALPix order of the training iterations under --order-rule accuracy",
+    )
+    parser.add_argument(
+        "--final-order-max",
+        type=int,
+        help="the finest order of the final embedding pass under --order-rule accuracy (default: --order-max)",
+    )
+    parser.add_argument(
+        "--accuracy-interval",
+        type=int,
+        default=Config().accuracy_interval,
+        help="iterations between estimates of the expected rotation accuracy under --order-rule accuracy",
+    )
+    parser.add_argument(
+        "--accuracy-signal",
+        choices=("divergence", "mean_only"),
+        default=Config().accuracy_signal,
+        help="the accuracy --order-rule accuracy reads: the divergence between the PPCA image laws of two poses, or the "
+        "mean image alone (RELION's quantity)",
     )
     parser.add_argument(
         "--pc-stages",
@@ -414,6 +447,11 @@ def main(args=None):
         pc_birth_scale=args.pc_birth_scale,
         radius_rule=args.radius_rule,
         incr_size=args.incr_size,
+        order_rule=args.order_rule,
+        order_max=args.order_max,
+        final_order_max=args.final_order_max,
+        accuracy_interval=args.accuracy_interval,
+        accuracy_signal=args.accuracy_signal,
         tau2_fudge=args.tau2_fudge,
         tau2_fudge_scheme=args.tau2_fudge_scheme,
     )

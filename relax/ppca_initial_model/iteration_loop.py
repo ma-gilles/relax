@@ -24,6 +24,8 @@ from recovar.reconstruction.noise import make_radial_noise
 from relax.ppca_initial_model import checkpoint
 from relax.ppca_initial_model.initialization import bandlimit_and_mask, birth_loadings, initialize, support_mask
 from relax.ppca_initial_model.noise import update_noise
+from relax.ppca_initial_model.order_rule import final_order, next_order, order_for
+from relax.ppca_initial_model.pose_accuracy import N_TRIALS, expected_rotation_accuracy
 from relax.ppca_initial_model.radius_rule import mean_data_vs_prior, next_radius, radius_for
 from relax.ppca_initial_model.sgd_update import metric_trace, momentum_step
 from relax.ppca_initial_model.state import State
@@ -377,7 +379,7 @@ def pass1_image_size(order, dataset, current_size, diameter_ang):
 
 @full_float32
 def _expectation(dataset, state, config, ids, iteration, *, embeddings_only=False, diameter_ang=None):
-    hp = config.stage(iteration)[1]
+    hp = order_for(config, state, iteration)
     # full-box default projector excludes unpaired Nyquist, as existing PPCA.
     radius = radius_for(config, state, iteration, dataset.grid_size)
     active = config.active_pcs(iteration)
@@ -564,6 +566,11 @@ def _expectation(dataset, state, config, ids, iteration, *, embeddings_only=Fals
                     "supported_image_rows": sum(part.diagnostics["supported_image_rows"] for part in group_parts),
                 }
             )
+            if config.order_rule == "accuracy":
+                # Each image's best pose on the order's grid, in the order of ``original_image_ids``.
+                stats.diagnostics["best_rotation_idx"] = np.concatenate(
+                    [part.diagnostics["best_rotation_idx"] for part in group_parts]
+                )
             if oversampled:
                 stats.diagnostics["oversampling"] = {
                     "order": config.oversampling,
@@ -614,6 +621,8 @@ def run(
 ):
     output = Path(output)
     output.mkdir(parents=True, exist_ok=True)
+    if config.order_rule == "accuracy" and isinstance(dataset, TiltParticles):
+        raise ValueError("The accuracy order rule estimates single-particle poses; subtomograms use the stages table")
     resumed_precision = None
     resumed_source = None
     if resume:
@@ -671,6 +680,7 @@ def run(
         if any(len(ids) == 0 for ids in halves):
             raise ValueError("Selected batch has an empty pseudo-halfset")
         radius = radius_for(config, state, iteration, dataset.grid_size)
+        order = order_for(config, state, iteration)
         state = _activate_pcs(
             state,
             config,
@@ -778,7 +788,25 @@ def run(
             raise TypeError("Non-float32 production model/moments")
         if not bool(jnp.all(jnp.isfinite(theta))):
             raise ValueError("Nonfinite PPCA model")
-        hp = config.stage(iteration)[1]
+        hp = order
+        planned_order = accuracy = None
+        if config.order_rule == "accuracy":
+            planned_order = order
+            if iteration % config.accuracy_interval == 0 or iteration == config.iterations:
+                # The model this E-step used, at the best poses of half 0's first images.
+                ids = np.asarray(stats[0].original_image_ids)[:N_TRIALS]
+                eulers = grids.get_relion_hidden_rotation_grid(order, matrices=False)[
+                    stats[0].diagnostics["best_rotation_idx"][: len(ids)]
+                ]
+                accuracy = expected_rotation_accuracy(
+                    dataset, theta_in, state.noise, ids=ids, eulers_deg=eulers, radius=radius, active_pcs=active
+                )
+                acc_rot = accuracy.acc_rot if config.accuracy_signal == "divergence" else accuracy.acc_rot_mean_only
+                planned_order = (
+                    final_order(order, acc_rot, final_order_max=config.final_order_max or config.order_max)
+                    if iteration == config.iterations
+                    else next_order(order, acc_rot, order_max=config.order_max)
+                )
         data_vs_prior = planned_radius = None
         if config.radius_rule == "data_vs_prior":
             # The reference this E-step used and half 0's mean weight, as RELION's updateSSNRarrays.
@@ -814,8 +842,11 @@ def run(
             hp,
             momentum,
             planned_radius,
+            planned_order,
         )
-        stage_key = config.stage(iteration) if config.radius_rule == "stages" else (radius, hp)
+        stage_key = (
+            config.stage(iteration) if config.radius_rule == config.order_rule == "stages" else (radius, hp)
+        )
         seen = stage_tile_sizes.setdefault(stage_key, set())
         new_sizes = {size for s in stats for size in s.diagnostics.get("tile_sizes", ())} - seen
         if new_sizes:
@@ -834,7 +865,26 @@ def run(
                     if planned_radius is not None
                     else {}
                 ),
-                "healpix_order": config.stage(iteration)[1],
+                **(
+                    {
+                        "next_order": planned_order,
+                        **(
+                            {
+                                "pose_accuracy": {
+                                    "acc_rot": accuracy.acc_rot,
+                                    "acc_rot_mean_only": accuracy.acc_rot_mean_only,
+                                    "terms_at_error": accuracy.terms,
+                                    "n_trials": accuracy.n_trials,
+                                }
+                            }
+                            if accuracy is not None
+                            else {}
+                        ),
+                    }
+                    if planned_order is not None
+                    else {}
+                ),
+                "healpix_order": hp,
                 "gemm_precision": _gemm_precision_used(config),
                 "pass2_mass_floor": config.pass2_mass_floor,
                 **({"resumed_from_gemm_precision": resumed_precision} if resumed_precision else {}),

@@ -22,3 +22,6 @@ class State:
     sgd_momentum: object = None
     # Under the data_vs_prior radius rule, the Fourier radius of the next iteration; None under the stages table.
     next_radius: int | None = None
+    # Under the accuracy order rule, the HEALPix order of the next E-step (the final embeddings after the last
+    # iteration); None under the stages table.
+    next_order: int | None = None

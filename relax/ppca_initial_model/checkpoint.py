@@ -39,7 +39,9 @@ _RETIRED_CONFIG_DEFAULTS = {
 # Model settings added later and their defaults: a checkpoint written before a setting existed holds the model its
 # default gives, so the setting at that default is no part of the identity.
 _ADDED_CONFIG_DEFAULTS = {"max_significant": 100, "pc_stages": None, "pc_birth_scale": 0.1,
-    "tau2_fudge": None, "tau2_fudge_scheme": None, "radius_rule": "stages", "incr_size": 10}
+    "tau2_fudge": None, "tau2_fudge_scheme": None, "radius_rule": "stages", "incr_size": 10,
+    "order_rule": "stages", "order_max": 4, "final_order_max": None, "accuracy_interval": 10,
+    "accuracy_signal": "divergence"}
 
 
 def _identity_config(config_dict):
@@ -87,6 +89,7 @@ def save(path, state, config, identity):
         "initialization": state.initialization,
         "direction_order": state.direction_order,
         "next_radius": state.next_radius,
+        "next_order": state.next_order,
     }
     temporary = path.with_suffix(".tmp")
     arrays = {"theta": np.asarray(state.theta)}
@@ -154,4 +157,5 @@ def load(path, config, identity):
             meta["direction_order"],
             momentum,
             meta.get("next_radius"),
+            meta.get("next_order"),
         )

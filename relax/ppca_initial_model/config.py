@@ -35,9 +35,21 @@ class Config:
     # The Fourier radius of each iteration. "stages": the stages table's. "data_vs_prior": RELION's InitialModel rule
     # (relax/ppca_initial_model/radius_rule.py): the table's first radius at iteration 1, then the last shell where the
     # mean's data_vs_prior stays at or above 1 plus incr_size shells (RELION's --incr_size), never decreasing. The
-    # table's HEALPix orders still apply; its later radii do not.
+    # table's later radii do not apply; the HEALPix orders follow order_rule.
     radius_rule: str = "stages"
     incr_size: int = 10
+    # The HEALPix order of each iteration. "stages": the stages table's. "accuracy": RELION's updateAngularSampling
+    # rule with the expected rotation accuracy of the PPCA model (relax/ppca_initial_model/order_rule.py): the table's
+    # first order at iteration 1, then, every accuracy_interval iterations, one order finer while the angular step is
+    # at least 75% of the accuracy, up to order_max. The final embedding pass takes the first order from there that is
+    # fine enough, up to final_order_max (None: order_max). The table's later orders do not apply.
+    order_rule: str = "stages"
+    order_max: int = 4
+    final_order_max: int | None = None
+    accuracy_interval: int = 10
+    # The accuracy the order rule reads: "divergence" (the PPCA image laws of the two poses, doc section 4.1) or
+    # "mean_only" (the mean image alone, RELION's quantity under the engine's noise and window).
+    accuracy_signal: str = "divergence"
     # Adaptive oversampling: 0 scores every stage's full pose grid; 1 runs the last stage with RELION's two passes
     # (each image's significant coarse samples, then their children; relax/ppca_refinement/oversampled_stream.py)
     # and the earlier stages dense (iteration_loop.oversampled_update).
@@ -110,6 +122,7 @@ class Config:
             raise ValueError("The radius rule must be stages or data_vs_prior")
         if isinstance(self.incr_size, bool) or not isinstance(self.incr_size, (int, np.integer)) or self.incr_size <= 0:
             raise ValueError("incr_size must be a positive integer")
+        self._validate_order_rule()
         if self.stochastic_batch_size is not None and self.stochastic_batch_size <= 0:
             raise ValueError("Stochastic batch size must be positive")
         if self.stochastic_all_iterations and self.stochastic_batch_size is None:
@@ -149,6 +162,29 @@ class Config:
             raise ValueError("Image preread must be auto, on or off")
         if not 0 <= self.pass2_mass_floor < 1:
             raise ValueError("The pass-2 mass floor must be in [0, 1)")
+
+    def _validate_order_rule(self) -> None:
+        """Refuse an order rule other than the table or the accuracy rule, or an accuracy rule it cannot run."""
+        if self.order_rule not in ("stages", "accuracy"):
+            raise ValueError("The order rule must be stages or accuracy")
+        if self.order_rule == "stages":
+            return
+        if self.accuracy_signal not in ("divergence", "mean_only"):
+            raise ValueError("The accuracy signal must be divergence or mean_only")
+        for name in ("order_max", "accuracy_interval"):
+            value = getattr(self, name)
+            if isinstance(value, bool) or not isinstance(value, (int, np.integer)) or value <= 0:
+                raise ValueError(f"{name} must be a positive integer")
+        if self.order_max < self.stages[0][2]:
+            raise ValueError(f"order_max {self.order_max} is below the first stage's order {self.stages[0][2]}")
+        if self.final_order_max is not None and (
+            isinstance(self.final_order_max, bool)
+            or not isinstance(self.final_order_max, (int, np.integer))
+            or self.final_order_max < self.order_max
+        ):
+            raise ValueError("final_order_max must be an integer of at least order_max")
+        if self.oversampling or not self.stream_coarse_recompute:
+            raise ValueError("The accuracy order rule needs the streamed engine without oversampling")
 
     def _validate_pc_stages(self) -> None:
         """Refuse a PC schedule that does not start at iteration 1, shrinks, does not end at q or is out of range."""
