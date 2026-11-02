@@ -466,7 +466,7 @@ def run_resident_parent_probe(
                     n_fine_trans=t,
                     current_size=int(current_size),
                     image_size=1,  # the kernel multiplies the projector by -image_size^2: native units
-                    model_max_r=int(relion_projector_r_max),
+                    model_max_r=int(relion_projector_capacity_texture.logical_r_max),
                     padding_factor=int(projection_padding_factor),
                 )
             else:
