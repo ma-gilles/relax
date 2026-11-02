@@ -23,6 +23,21 @@ gets the outputs below. A table of numbers alone is not a result.
   manifests and ZIP archives. Include partial and failed runs. Put a compact table with plot links (a Markdown page with image paths, not HTML) on
   the dataset's results page and link it from the synthetic and real-data index.
 
+## Required baseline: homogeneous refinement, then fixed-pose RECOVAR (owner rule, 2026-11-02)
+
+Every dataset used to test PPCA ab initio gets this baseline once, so a run can be judged against what the
+ordinary homogeneous route achieves on the same images. It uses no truth.
+
+1. **Ab initio.** Homogeneous `relax initial_model`, K = 1, from a random start.
+2. **Refinement.** `relax refine` from that map, with the pose search capped at the angular grid the PPCA run
+   ends on: `--max_healpix_order` equal to the PPCA run's last HEALPix order, plus its oversampling. Use the same
+   grid limit for every PPCA run compared with this baseline, and record it.
+3. **Poses.** Score the refined poses with the same pose metric as the PPCA run.
+4. **Heterogeneity.** Run RECOVAR at those fixed poses, with the same q as the PPCA run, and report the same metrics.
+
+Report the baseline as a row next to the PPCA rows, with the job IDs, wall time and GPU model. A PPCA result is
+useful only if it improves on this row or costs less. If a dataset has no such row, say so.
+
 ## Interpretation
 
 Ground truth is for evaluation only. Plot sharpness, spectral power and UMAP clusters on their own do
