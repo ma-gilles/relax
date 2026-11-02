@@ -351,12 +351,14 @@ def reconstruct_unregularized_k1_halfmaps(
     settings: ReconstructionSettings,
     *,
     accumulator_volume_shape=None,
+    current_size=None,
 ) -> list:
-    """Reconstruct each K=1 half from its own unregularized accumulator."""
+    """Reconstruct each K=1 half from its own unregularized accumulator. ``current_size`` applies RELION's support
+    (``Projector::decenter`` keeps ``r2 <= max_r2``); None takes the accumulator's own radius, without its edge."""
 
     return [
         settings.reconstruct(
-            Ft_ctf_half, Ft_y_half, tau=None, current_size=None, accumulator_volume_shape=accumulator_volume_shape
+            Ft_ctf_half, Ft_y_half, tau=None, current_size=current_size, accumulator_volume_shape=accumulator_volume_shape
         )
         for Ft_ctf_half, Ft_y_half in zip(Ft_ctf_per_half, Ft_y_per_half)
     ]

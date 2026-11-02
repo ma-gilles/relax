@@ -60,7 +60,7 @@ def body_solvent_corrected_fsc(body: Body, numerators, denominators, settings, *
     those maps (RELION's ``_unfil.mrc``, recovar frame) and the correction's details."""
 
     unregularised = numbered_reconstruction.reconstruct_unregularized_k1_halfmaps(
-        numerators, denominators, settings, accumulator_volume_shape=accumulator_shape
+        numerators, denominators, settings, accumulator_volume_shape=accumulator_shape, current_size=current_size
     )
     unfiltered = [stored_body_map(_real(m, settings.volume_shape), body) for m in unregularised]
     # RELION's FSC reads the maps as its files hold them (relax.io.map_io: transposed and negated), where the body
@@ -162,7 +162,7 @@ def maximize_body_final(
     unfiltered = [
         stored_body_map(_real(m, settings.volume_shape), body)
         for m in numbered_reconstruction.reconstruct_unregularized_k1_halfmaps(
-            numerators, denominators, settings, accumulator_volume_shape=accumulator_shape
+            numerators, denominators, settings, accumulator_volume_shape=accumulator_shape, current_size=current_size
         )
     ]
     numerators, denominators = _joined(

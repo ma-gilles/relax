@@ -118,7 +118,7 @@ def test_unregularized_reconstruction_variants_expose_dependencies():
 
     assert tuple(inspect.signature(numbered_reconstruction_module.reconstruct_unregularized_k1_halfmaps).parameters) == (
         "Ft_y_per_half", "Ft_ctf_per_half", "settings",
-        "accumulator_volume_shape",
+        "accumulator_volume_shape", "current_size",
     )
     assert tuple(inspect.signature(numbered_reconstruction_module.reconstruct_unregularized_class_means).parameters) == (
         "Ft_y_combined", "Ft_ctf_combined", "settings", "n_classes",
