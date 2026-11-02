@@ -27,6 +27,8 @@ def main() -> None:
     parser.add_argument("--auto_local_healpix_order", type=int, default=4)
     parser.add_argument("--offset_range", type=float, default=3.0)
     parser.add_argument("--offset_step", type=float, default=1.5)
+    parser.add_argument("--pad", type=int, default=None, help="RELION's --pad, when it changed the consensus padding")
+    parser.add_argument("--relion_dir", default=None, help="the directory RELION ran in (its relative star paths)")
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 
@@ -37,9 +39,9 @@ def main() -> None:
     command = MultibodyCommand(
         body_star=args.bodies, healpix_order=args.healpix_order, auto_local_healpix_order=args.auto_local_healpix_order,
         offset_range_px=args.offset_range, offset_step_px=args.offset_step, oversampling=1,
-        reconstruct_subtracted_bodies=True, max_iter=args.iteration,
+        reconstruct_subtracted_bodies=True, max_iter=args.iteration, padding_factor=args.pad,
     )
-    run, _ = start_from_consensus(args.consensus, command, run_options(), output=args.out)
+    run, _ = start_from_consensus(args.consensus, command, run_options(), output=args.out, relion_cwd=args.relion_dir)
     replay_iteration(run, args.relion, args.iteration)
 
 
