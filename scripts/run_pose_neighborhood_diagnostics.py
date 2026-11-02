@@ -5,8 +5,11 @@
 
 A two-body simulator draws viewing directions independently of structural state. The score sees true rotations and
 projected shifts, never a depth. Compared: the bounded score, the free-depth score (diagnostic), zero-depth Euclidean
-distance (negative control), pooled PCA of both bodies with its first two components (predeclared), and the true
-full-pose distance (labelled oracle). All numbers are angstroms and degrees.
+distance (negative control), a simplified pooled PCA of both bodies with its first two components (predeclared), and
+the true full-pose distance (labelled oracle). All numbers are angstroms and degrees. The simplification: this table
+has five unweighted numbers per body with the shift in the camera frame. RELION's (``flex_analyser.cpp``) has six,
+rot, tilt, psi and the 3D offset ``(Aori Abody)^-1 (-offset)``, weighted by ``norm_pca``. The reconstruction experiments
+use RELION's table itself, from ``relion_flex_analyse``.
 """
 
 from __future__ import annotations
@@ -40,8 +43,8 @@ N_PARTICLES = 6000
 N_CANDIDATES = 20
 N_MIN_PER_HALF = 50
 FAMILIES = ("rotation", "translation", "mixed", "independent")
-METHODS = ("bounded", "free", "zero-depth", "pooled PCA", "oracle")
-COLORS = {"bounded": "#2a6f97", "free": "#e0a030", "zero-depth": "#b23a48", "pooled PCA": "#6a4c93", "oracle": "#333333"}
+METHODS = ("bounded", "free", "zero-depth", "simplified pooled PCA", "oracle")
+COLORS = {"bounded": "#2a6f97", "free": "#e0a030", "zero-depth": "#b23a48", "simplified pooled PCA": "#6a4c93", "oracle": "#333333"}
 AXIS_ROT = np.array([0.3, 0.9, 0.3]) / np.linalg.norm([0.3, 0.9, 0.3])
 AXIS_TRANS = np.array([1.0, 0.0, 0.0])
 BODY = BodyMoments(np.array([8.0, -4.0, 3.0]), np.diag([900.0, 400.0, 100.0]))
@@ -102,8 +105,8 @@ def oracle_distance(sim, target: int) -> np.ndarray:
 
 
 def pooled_pca(sim, observed) -> np.ndarray:
-    """First two unwhitened components of both bodies' residual rotations and in-plane shifts (RELION's flex analysis
-    has this form: every body's motion in one table)."""
+    """First two unwhitened components of both bodies' residual rotations and camera-frame shifts: every body's motion
+    in one table as in RELION's flex analysis, but not its six weighted numbers per body (module docstring)."""
     Q, _, _ = observed
     cameras = sim["cameras"]
     table = [Rotation.from_matrix(Q).as_rotvec(degrees=True), np.einsum("nij,nj->ni", cameras, sim["t"])[:, :2],
@@ -121,7 +124,7 @@ def method_distances(sim, observed, features, scores, target, bound) -> dict:
         "bounded": snap_round_off(d, length),
         "free": snap_round_off(compatibility_distance(features, target, None), length),
         "zero-depth": zero_depth_distance(features, target),
-        "pooled PCA": np.linalg.norm(scores - scores[target], axis=1),
+        "simplified pooled PCA": np.linalg.norm(scores - scores[target], axis=1),
         "oracle": snap_round_off(oracle_distance(sim, target), length),
         "_hits": hits,
     }
