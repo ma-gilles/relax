@@ -3,14 +3,14 @@
 # Per arm and seed (config.yaml: `arms`, `seeds`), four stages:
 #   1. train_ppca     relax ppca_initial_model on the eleven-state fixture with the arm's schedule flags.   [GPU]
 #   2. score_latents  how well the final latents separate the true states (scripts/analyze_ppca_latents.py).
-#   3. plot_run       the standard run figures: latents by true state, volume projections, VDAM gates
-#                     (the owner's plot_ppca_run.py, config `plot_script`).
+#   3. plot_run       the standard run figures: latents by true state, volume projections, and the shell gates
+#                     of a VDAM run (the owner's plot_ppca_run.py, config `plot_script`).
 #   4. summary_table  one row per arm and seed: the scores of every run.
 #
 # Outputs, under config `output_root`:
 #   <arm>/seed<seed>/     checkpoint_NNNN.npz, iterations.jsonl, run.json, embeddings.npz, latent_scores.json
 #   <arm>/seed<seed>/plots/   pc_histogram.png (q = 1) or pc_scatter.png and pc_density.png (q > 1),
-#                         volume_projections.png, gates_spectrogram.png, latents_pc_ordered.npz
+#                         volume_projections.png, latents_pc_ordered.npz, gates_spectrogram.png (VDAM arms only)
 #   summary.tsv           the scores of every arm and seed
 #   logs/                 one log per rule, arm and seed
 #
@@ -67,6 +67,12 @@ def arm_q(arm):
     return int(args[args.index("--q") + 1]) if "--q" in args else int(TRAIN["q"])
 
 
+def arm_optimizer(arm):
+    """The optimizer an arm trains with: its own --optimizer, else the shared one."""
+    args = [str(a) for a in ARMS[arm]["args"]]
+    return args[args.index("--optimizer") + 1] if "--optimizer" in args else str(TRAIN["optimizer"])
+
+
 def output_path(*parts):
     """A path pattern under output_root; {arm} and {seed} stay wildcards."""
     return str(OUTPUT_ROOT.joinpath(*parts))
@@ -109,6 +115,7 @@ rule train_ppca:
         python=PYTHON,
         diameter=config["particle_diameter_ang"],
         train=TRAIN,
+        train_args=" ".join(map(shlex.quote, map(str, TRAIN["args"]))),
         arm_args=lambda wildcards: " ".join(map(shlex.quote, map(str, ARMS[wildcards.arm]["args"]))),
         run_dir=lambda wildcards, output: str(Path(output.embeddings).parent),
     resources:
@@ -126,6 +133,7 @@ rule train_ppca:
         "--iterations {params.train[iterations]} "
         "--stages {params.train[stages]:q} "
         "--optimizer {params.train[optimizer]} "
+        "{params.train_args} "
         "{params.arm_args} "
         "> {log} 2>&1"
 
@@ -171,12 +179,12 @@ rule plot_run:
         script=PLOT_SCRIPT,
     output:
         volumes=output_path("{arm}", "seed{seed}", "plots", "volume_projections.png"),
-        gates=output_path("{arm}", "seed{seed}", "plots", "gates_spectrogram.png"),
         latents=output_path("{arm}", "seed{seed}", "plots", "latents_pc_ordered.npz"),
     params:
         env=CLEAN_ENV,
         python=PYTHON,
         n_pcs=lambda wildcards: arm_q(wildcards.arm),
+        gates=lambda wildcards: "--gates " if arm_optimizer(wildcards.arm) == "vdam" else "",
         script_dir=lambda wildcards, input: str(Path(input.script).parent),
         run_dir=lambda wildcards, input: str(Path(input.embeddings).parent),
         plots_dir=lambda wildcards, output: str(Path(output.volumes).parent),
@@ -188,7 +196,7 @@ rule plot_run:
         "--labels {input.truth} "
         "--n-pcs {params.n_pcs} "
         "--skip-umap "
-        "--gates "
+        "{params.gates}"
         "-o {params.plots_dir} "
         "> {log} 2>&1"
 
