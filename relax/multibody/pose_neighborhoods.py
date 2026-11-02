@@ -21,6 +21,12 @@ Particle ``i`` of a multi-body run (``relax.multibody.geometry``): with consensu
     u_i = A_i^T (s_ix, s_iy, 0)  n_i = A_i^T (0, 0, 1)
 
 so the body's pivot lies at ``-r_i - f_i`` in the raw image, a displacement ``s_i`` from where the consensus puts it.
+
+The pairwise score sees two particles only, so a depth left free can stay ambiguous for every pair. The population
+resolves it: a body's motion is fitted from all particles as ``y_i = mu + W l_i`` with ``k`` orthonormal components,
+where ``y_i = (F_i, a_i)`` and each particle's depth is projected out, ``P_i = diag(I, I - n_i n_i^T)``, minimising
+``sum ||P_i (y_i - mu - W l_i)||^2``. Particles are then compared at ``|l_i - l_j|``, in angstroms. This is a motion
+model, so different states that the model does not separate get the same ``l``.
 """
 
 from __future__ import annotations
@@ -183,3 +189,108 @@ def zero_depth_distance(features: PoseFeatures, target: int) -> np.ndarray:
 
     shape, delta, _ = _target_terms(features, target)
     return np.sqrt(shape + _dot(delta, delta))
+
+
+@dataclass(frozen=True)
+class LowRankMotion:
+    """One body's fitted motion over ``N`` particles: ``y_i = mean + components l_i`` (module docstring)."""
+
+    mean: np.ndarray  # [12]
+    components: np.ndarray  # [12, k], orthonormal, by falling variance of the scores
+    scores: np.ndarray  # [N, k], angstroms
+    objective: np.ndarray  # [iterations + 1], the mean squared residual after each iteration
+
+
+def _depth_projected(values: np.ndarray, normals: np.ndarray) -> np.ndarray:
+    """``P_i values_i`` of ``[N, 12]`` values: the last three coordinates lose their part along ``n_i``."""
+
+    out = values.copy()
+    out[:, 9:] -= _dot(values[:, 9:], normals)[:, None] * normals
+    return out
+
+
+def _motion_scores(residual: np.ndarray, components: np.ndarray, normals: np.ndarray) -> np.ndarray:
+    """Each particle's least-squares scores given the components."""
+
+    along = normals @ components[9:]  # [N, k]
+    gram = components.T @ components - along[:, :, None] * along[:, None, :]
+    right = residual @ components - along * _dot(residual[:, 9:], normals)[:, None]
+    # A view along the whole motion leaves no signal: the tiny ridge sends that score to the mean.
+    ridge = 1e-9 * np.eye(components.shape[1])
+    return np.linalg.solve(gram + ridge, right[:, :, None])[:, :, 0]
+
+
+def _motion_update(coordinates: np.ndarray, scores: np.ndarray, normals: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """The mean and components given the scores: ordinary regression for the shape coordinates, and the normal
+    equations of the depth-projected regression for the translation."""
+
+    design = np.hstack([scores, np.ones((len(scores), 1))])  # [N, k + 1]
+    size = design.shape[1]
+    solved = np.zeros((12, size))
+    solved[:9] = np.linalg.lstsq(design, coordinates[:, :9], rcond=None)[0].T
+    projection = np.eye(3) - normals[:, :, None] * normals[:, None, :]
+    outer = design[:, :, None] * design[:, None, :]
+    normal_matrix = np.einsum("nab,nij->aibj", outer, projection, optimize=True).reshape(3 * size, 3 * size)
+    right = np.einsum("nij,nj,na->ai", projection, coordinates[:, 9:], design, optimize=True).reshape(-1)
+    solved[9:] = np.linalg.lstsq(normal_matrix, right, rcond=None)[0].reshape(size, 3).T
+    return solved[:, -1], solved[:, :-1]
+
+
+def fit_low_rank_motion(features: PoseFeatures, rank: int, iterations: int = 30) -> LowRankMotion:
+    """The rank ``rank`` motion of one body, by alternating scores and components from the depth-projected PCA."""
+
+    coordinates = np.hstack([features.shape_factors.reshape(len(features.points), -1), features.points])
+    normals = features.normals
+    mean = coordinates.mean(axis=0)
+    projected = _depth_projected(coordinates - mean, normals)
+    components = np.linalg.svd(projected, full_matrices=False)[2][:rank].T
+    objective = []
+
+    def error(mean, components, scores):
+        return float(np.mean(np.sum(_depth_projected(coordinates - mean - scores @ components.T, normals) ** 2, axis=1)))
+
+    scores = _motion_scores(coordinates - mean, components, normals)
+    objective.append(error(mean, components, scores))
+    for _ in range(iterations):
+        mean, components = _motion_update(coordinates, scores, normals)
+        scores = _motion_scores(coordinates - mean, components, normals)
+        objective.append(error(mean, components, scores))
+    # The gauge: orthonormal components, centred scores, by falling variance. It leaves the fit unchanged.
+    mean = mean + components @ scores.mean(axis=0)
+    centred = scores - scores.mean(axis=0)
+    left, values, right = np.linalg.svd(components @ centred.T @ centred @ components.T, hermitian=True)
+    basis = left[:, :rank]
+    return LowRankMotion(mean, basis, (centred @ components.T) @ basis, np.asarray(objective))
+
+
+def low_rank_distance(motion: LowRankMotion, target: int) -> np.ndarray:
+    """``|l_i - l_target|`` of every particle, angstroms, ``[N]``."""
+
+    difference = motion.scores - motion.scores[target]
+    return np.sqrt(np.sum(difference * difference, axis=1))
+
+
+def motion_summary(features: PoseFeatures, motion: LowRankMotion, covariance: np.ndarray) -> dict:
+    """How much of the fitted motion is rotation and how much translation, and the pose noise the fit leaves, without
+    truth: per rotation axis in degrees, and per observed image direction in angstroms. Each particle's score absorbs
+    part of its own noise, so the residuals are divided by the freedom they keep (their leverage is taken away). A
+    rotation error ``theta`` costs ``theta^2 (2/3) tr C`` on average over axes. Unmodelled real motion counts as noise."""
+
+    coordinates = np.hstack([features.shape_factors.reshape(len(features.points), -1), features.points])
+    fitted = motion.scores @ motion.components.T
+    rotation, translation = float(np.mean(np.sum(fitted[:, :9] ** 2, axis=1))), float(np.mean(np.sum(fitted[:, 9:] ** 2, axis=1)))
+    residual = _depth_projected(coordinates - motion.mean - fitted, features.normals)
+    components = motion.components
+    along = features.normals @ components[9:]
+    inverse = np.linalg.inv(components.T @ components - along[:, :, None] * along[:, None, :] + 1e-9 * np.eye(components.shape[1]))
+    rotation_block = components[:9].T @ components[:9]
+    translation_block = components[9:].T @ components[9:] - along[:, :, None] * along[:, None, :]
+    rotation_leverage = np.mean(np.einsum("nab,ba->n", inverse, rotation_block))
+    translation_leverage = np.mean(np.einsum("nab,nba->n", inverse, translation_block))
+    shape = float(np.mean(np.sum(residual[:, :9] ** 2, axis=1))) / max(1.0 - rotation_leverage / 3.0, 1e-9)
+    return {
+        "rotation_share_of_motion": rotation / (rotation + translation),
+        "motion_rms_angstrom": float(np.sqrt(rotation + translation)),
+        "rotation_noise_deg_per_axis": float(np.rad2deg(np.sqrt(shape / (2.0 / 3.0 * np.trace(covariance)) / 3.0))),
+        "translation_noise_angstrom_per_direction": float(np.sqrt(np.mean(np.sum(residual[:, 9:] ** 2, axis=1)) / max(2.0 - translation_leverage, 1e-9))),
+    }

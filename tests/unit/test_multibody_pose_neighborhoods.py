@@ -10,6 +10,9 @@ from scipy.spatial.transform import Rotation
 
 from relax.multibody.bodies import RESIDUAL_IDENTITY_EULER
 from relax.multibody.pose_neighborhoods import (
+    fit_low_rank_motion,
+    low_rank_distance,
+    motion_summary,
     BodyMoments,
     body_pose_lines,
     compatibility_distance,
@@ -282,3 +285,78 @@ def test_target_row_refuses_an_ambiguous_name():
     assert target_row(np.array(["a", "b"]), "b") == 1
     with pytest.raises(ValueError):
         target_row(np.array(["a", "a"]), "a")
+
+
+def _line_motion(rng, n=2000, rotation_deg=10.0, translation=8.0):
+    """A body moving along one known line of rotation and translation, each particle seen from a random view."""
+    level = rng.uniform(-1.0, 1.0, n)
+    axis = np.array([0.3, 0.9, 0.3]) / np.linalg.norm([0.3, 0.9, 0.3])
+    rotations = Rotation.from_rotvec(np.outer(level * np.deg2rad(rotation_deg), axis)).as_matrix()
+    displacement = np.outer(level * translation, [1.0, 0.0, 0.0])
+    normals = Rotation.random(n, random_state=rng).as_matrix()[:, :, 2]
+    lifts = displacement - np.sum(displacement * normals, axis=1)[:, None] * normals
+    return level, rotations, lifts, normals
+
+
+MOMENTS = BodyMoments(np.array([3.0, -2.0, 1.0]), np.diag([900.0, 400.0, 100.0]))
+
+
+def test_low_rank_motion_recovers_a_pure_translation_from_depth_lines():
+    rng = np.random.default_rng(0)
+    level, rotations, lifts, normals = _line_motion(rng, rotation_deg=0.0)
+    motion = fit_low_rank_motion(pose_features(rotations, lifts, normals, MOMENTS), 1)
+    assert abs(np.corrcoef(motion.scores[:, 0], level)[0, 1]) > 0.999
+    assert motion.objective[-1] < 1e-3 * motion.objective[0] + 1e-8
+
+
+def test_low_rank_motion_fit_never_gets_worse():
+    rng = np.random.default_rng(1)
+    level, rotations, lifts, normals = _line_motion(rng)
+    lifts = lifts + rng.normal(size=lifts.shape) * 2.0
+    lifts = lifts - np.sum(lifts * normals, axis=1)[:, None] * normals
+    motion = fit_low_rank_motion(pose_features(rotations, lifts, normals, MOMENTS), 2)
+    assert np.all(np.diff(motion.objective) <= 1e-9 * motion.objective[0])
+    np.testing.assert_allclose(motion.components.T @ motion.components, np.eye(2), atol=1e-10)
+    np.testing.assert_allclose(motion.scores.mean(axis=0), 0.0, atol=1e-8)
+
+
+def test_low_rank_score_of_one_physical_pose_does_not_depend_on_the_view():
+    rng = np.random.default_rng(2)
+    level, rotations, lifts, normals = _line_motion(rng)
+    level[:50] = 0.4
+    tied = Rotation.from_rotvec(np.outer(level[:50] * np.deg2rad(10.0), np.array([0.3, 0.9, 0.3]) / np.linalg.norm([0.3, 0.9, 0.3])))
+    rotations[:50] = tied.as_matrix()
+    displacement = np.outer(level[:50] * 8.0, [1.0, 0.0, 0.0])
+    lifts[:50] = displacement - np.sum(displacement * normals[:50], axis=1)[:, None] * normals[:50]
+    motion = fit_low_rank_motion(pose_features(rotations, lifts, normals, MOMENTS), 1)
+    assert np.ptp(motion.scores[:50, 0]) < 1e-3 * np.ptp(motion.scores[:, 0])
+
+
+def test_low_rank_motion_follows_the_particles_when_they_are_reordered():
+    rng = np.random.default_rng(3)
+    level, rotations, lifts, normals = _line_motion(rng, n=500)
+    order = rng.permutation(500)
+    first = fit_low_rank_motion(pose_features(rotations, lifts, normals, MOMENTS), 1)
+    second = fit_low_rank_motion(pose_features(rotations[order], lifts[order], normals[order], MOMENTS), 1)
+    np.testing.assert_allclose(low_rank_distance(first, 7)[order], low_rank_distance(second, int(np.argsort(order)[7])), atol=1e-6)
+
+
+def test_motion_summary_splits_rotation_from_translation_and_reads_the_noise_back():
+    rng = np.random.default_rng(4)
+    level, rotations, lifts, normals = _line_motion(rng, n=4000, rotation_deg=0.0)
+    noise = rng.normal(size=lifts.shape) * 1.5
+    lifts = lifts + noise - np.sum(noise * normals, axis=1)[:, None] * normals
+    features = pose_features(rotations, lifts, normals, MOMENTS)
+    summary = motion_summary(features, fit_low_rank_motion(features, 1), MOMENTS.covariance)
+    assert summary["rotation_share_of_motion"] < 1e-6
+    assert summary["rotation_noise_deg_per_axis"] < 1e-6
+    np.testing.assert_allclose(summary["translation_noise_angstrom_per_direction"], 1.5, rtol=0.05)
+
+
+def test_motion_summary_reads_rotation_noise_back_per_axis():
+    rng = np.random.default_rng(5)
+    level, rotations, lifts, normals = _line_motion(rng, n=4000, translation=0.0)
+    rotations = Rotation.from_rotvec(np.deg2rad(2.0) * rng.normal(size=(4000, 3))).as_matrix() @ rotations
+    features = pose_features(rotations, lifts, normals, BodyMoments(np.zeros(3), 900.0 * np.eye(3)))
+    summary = motion_summary(features, fit_low_rank_motion(features, 1), 900.0 * np.eye(3))
+    np.testing.assert_allclose(summary["rotation_noise_deg_per_axis"], 2.0, rtol=0.1)
