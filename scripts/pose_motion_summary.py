@@ -27,7 +27,12 @@ def against_truth(fitted, true) -> dict:
     delta = fitted.points - true.points
     delta = delta - np.sum(delta * fitted.normals, axis=1, keepdims=True) * fitted.normals
     delta = delta - delta.mean(axis=0)
+    error = error - np.median(error, axis=0)
+    in_plane = np.einsum("nij,nj->ni", np.linalg.svd(fitted.normals[:, None], full_matrices=True)[2][:, 1:], delta)
     return {
+        "rotation_error_robust_deg_per_axis": float(np.rad2deg(1.4826 * np.median(np.abs(error)))),
+        "translation_error_robust_angstrom_per_direction": float(1.4826 * np.median(np.abs(in_plane))),
+        "fraction_rotation_error_over_5_deg": float(np.mean(np.linalg.norm(error, axis=1) > np.deg2rad(5.0))),
         "rotation_error_deg_per_axis": float(np.rad2deg(np.sqrt(np.mean(np.sum((error - error.mean(axis=0)) ** 2, axis=1)) / 3.0))),
         "translation_error_angstrom_per_direction": float(np.sqrt(np.mean(np.sum(delta**2, axis=1)) / 2.0)),
     }
