@@ -7,7 +7,9 @@ Five families of one body's motion, from a level in [-1, 1] in 9 bins: three lin
 branch (a stem that splits at level 0; a state is a bin and, past the split, a path). Views are random and independent
 of state. Reported: the same-state fraction of the 100, 300 and 1000 kept particles for the bounded score, the rank 1
 and chosen-rank motion, bounded as a filter then motion ordering, and the true level (oracle). The rank comes from a
-truth-free check: the visible residual of each rank against the noise estimate of rank 4.
+truth-free check: the visible residual of each rank against the noise estimate of rank 4. That predeclared check
+fails (it picks rank 3-4 on lines too, since high ranks absorb noise), so a second check, chosen after seeing it and so
+exploratory, is also reported: rank 2 when the rotation noise estimate falls by more than 5% from rank 1 to 2, else 1.
 """
 
 from __future__ import annotations
@@ -25,6 +27,7 @@ from relax.multibody.pose_neighborhoods import (
     fit_low_rank_motion,
     low_rank_distance,
     motion_summary,
+    rotation_distance,
     pose_features,
 )
 
@@ -82,6 +85,13 @@ def choose_rank(noises: list[dict]) -> int:
     return len(noises)
 
 
+def exploratory_rank(noises: list[dict]) -> int:
+    """Rank 2 when a second component takes more than 5% off the rotation residual: a line's rotation residual is
+    noise, which a second component barely reduces. A curve made of translation alone would not show here."""
+    first, second = noises[0]["rotation_noise_deg_per_axis"], noises[1]["rotation_noise_deg_per_axis"]
+    return 2 if second < 0.95 * first else 1
+
+
 def same_state(order: np.ndarray, state: np.ndarray, target: int, kept: int) -> float:
     return float(np.mean(state[order[:kept]] == state[target]))
 
@@ -95,9 +105,10 @@ def targets(sim: dict, per_state: int = 4) -> list[int]:
     return [int(i) for s in picks for i in np.flatnonzero(state == s)[:per_state]]
 
 
-def fractions(sim: dict, motions: list, rank: int) -> dict:
+def fractions(sim: dict, motions: list, rank: int, second_rank: int) -> dict:
     state, features, bound = sim["state"], sim["features"], sim["bound"]
-    out = {name: [] for name in ("bounded", "rank1", "chosen rank", "filter then motion", "oracle")}
+    out = {name: [] for name in ("bounded", "rotation only", "rank1", "rank2", "chosen rank", "filter then motion",
+                                                    "exploratory rank", "filter then exploratory rank", "oracle")}
     oracle = np.stack([sim["level"], sim["path"] * 2.0 * (sim["level"] >= 0)], axis=1)
     for target in targets(sim):
         bounded = np.argsort(compatibility_distance(features, target, bound), kind="stable")
@@ -105,11 +116,16 @@ def fractions(sim: dict, motions: list, rank: int) -> dict:
         out["bounded"].append([same_state(bounded, state, target, n) for n in KEPT])
         out["rank1"].append([same_state(np.argsort(low_rank_distance(motions[0], target), kind="stable"), state, target, n) for n in KEPT])
         out["chosen rank"].append([same_state(np.argsort(chosen, kind="stable"), state, target, n) for n in KEPT])
-        combined = []
-        for n in KEPT:
-            filtered = bounded[: 3 * n]
-            combined.append(same_state(filtered[np.argsort(chosen[filtered], kind="stable")], state, target, n))
-        out["filter then motion"].append(combined)
+        out["rotation only"].append([same_state(np.argsort(rotation_distance(features, target), kind="stable"), state, target, n) for n in KEPT])
+        out["rank2"].append([same_state(np.argsort(low_rank_distance(motions[1], target), kind="stable"), state, target, n) for n in KEPT])
+        second = low_rank_distance(motions[second_rank - 1], target)
+        out["exploratory rank"].append([same_state(np.argsort(second, kind="stable"), state, target, n) for n in KEPT])
+
+        def filter_then(distance):
+            return [same_state(bounded[: 3 * n][np.argsort(distance[bounded[: 3 * n]], kind="stable")], state, target, n) for n in KEPT]
+
+        out["filter then motion"].append(filter_then(chosen))
+        out["filter then exploratory rank"].append(filter_then(second))
         truth = np.linalg.norm(oracle - oracle[target], axis=1)
         out["oracle"].append([same_state(np.argsort(truth, kind="stable"), state, target, n) for n in KEPT])
     return {name: np.mean(values, axis=0) for name, values in out.items()}
@@ -123,16 +139,17 @@ def main() -> None:
     report = []
     for family in FAMILIES:
         for shift_noise, angle_noise in NOISE:
-            ranks, noises_by_seed, tables = [], [], []
+            ranks, second_ranks, noises_by_seed, tables = [], [], [], []
             for seed in range(args.seeds):
                 sim = simulate(family, shift_noise, angle_noise, seed)
                 motions = [fit_low_rank_motion(sim["features"], k) for k in range(1, MAX_RANK + 1)]
                 noises = [motion_summary(sim["features"], m, MOMENTS.covariance) for m in motions]
                 ranks.append(choose_rank(noises))
+                second_ranks.append(exploratory_rank(noises))
                 noises_by_seed.append([[n["rotation_noise_deg_per_axis"], n["translation_noise_angstrom_per_direction"]] for n in noises])
-                tables.append(fractions(sim, motions, ranks[-1]))
+                tables.append(fractions(sim, motions, ranks[-1], second_ranks[-1]))
             mean = {name: np.mean([t[name] for t in tables], axis=0).round(3).tolist() for name in tables[0]}
-            entry = dict(family=family, shift_noise=shift_noise, angle_noise=angle_noise, ranks=ranks,
+            entry = dict(family=family, shift_noise=shift_noise, angle_noise=angle_noise, ranks=ranks, exploratory_ranks=second_ranks,
                          noise_by_rank_deg_angstrom=np.mean(noises_by_seed, axis=0).round(3).tolist(), fractions=mean)
             report.append(entry)
             print(json.dumps(entry), flush=True)
