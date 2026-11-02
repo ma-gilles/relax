@@ -20,6 +20,7 @@ from relax.multibody.checkpoint import read_relion_checkpoint
 from relax.multibody.subtraction import BodyPoses
 from relax.refinement import noise_updates
 from relax.refinement.trial_grids import build_initial_coarse_grids
+from relax.sampling.perturbation import advance_relion_perturbation_from_seed
 
 
 def relion_multibody_state(run: refine.MultibodyRun, optimiser_star) -> refine.MultibodyState:
@@ -78,23 +79,39 @@ def relion_multibody_state(run: refine.MultibodyRun, optimiser_star) -> refine.M
     )
 
 
+def _exact_perturbation(run: refine.MultibodyRun, iteration: int) -> float:
+    """The iteration's perturbation at full precision. RELION's star holds 6 digits, and at --pad 1 the last bits of
+    the rows it builds decide which pixels are scored (:func:`relax.multibody.layout._device_parent_rows`)."""
+
+    perturbation = refine._initial_state(run).perturbation
+    for k in range(1, iteration + 1):
+        perturbation = advance_relion_perturbation_from_seed(perturbation, run.perturb_factor, seed=run.random_seed + k)
+    return perturbation
+
+
 def replay_iteration(run: refine.MultibodyRun, relion_dir, iteration: int) -> refine.MultibodyState:
     """relax's iteration ``iteration`` from RELION's state after ``iteration - 1`` and RELION's decisions for it."""
 
     relion_dir = Path(relion_dir)
     before = relion_multibody_state(run, relion_dir / f"run_it{iteration - 1:03d}_optimiser.star")
     after = relion_multibody_state(run, relion_dir / f"run_it{iteration:03d}_optimiser.star")
+    perturbation = _exact_perturbation(run, iteration)
+    if not np.isclose(perturbation, after.perturbation, rtol=0.0, atol=1e-4):
+        raise ValueError(f"perturbation {perturbation} does not reproduce RELION's {after.perturbation}")
+    start = refine._initial_state(run).sampling
+    # The star rounds the offset grid too; before RELION first narrows it, the start's exact values apply.
+    same_grid = np.isclose(after.sampling.translation_range, start.translation_range, rtol=1e-5)
     state = replace(
         before,
         sampling=replace(
             before.sampling,
             healpix_order=after.sampling.healpix_order,
-            translation_range=after.sampling.translation_range,
-            translation_step=after.sampling.translation_step,
+            translation_range=start.translation_range if same_grid else after.sampling.translation_range,
+            translation_step=start.translation_step if same_grid else after.sampling.translation_step,
             sigma_rot=after.sampling.sigma_rot,
             sigma_psi=after.sampling.sigma_psi,
         ),
-        perturbation=after.perturbation,
+        perturbation=perturbation,
         current_size=after.current_size,
         bodies=[replace(track, keep_fixed=done.keep_fixed) for track, done in zip(before.bodies, after.bodies)],
     )
