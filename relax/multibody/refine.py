@@ -542,18 +542,25 @@ def target_projector_sets(body_maps, run: MultibodyRun, half: int, current_size:
     return sets
 
 
-def _expected_accuracy(state: MultibodyState, run: MultibodyRun, references_half1, current_size: int, iteration: int):
+def _accuracy_trial_order(rows: np.ndarray, random_subsets, random_seed: int) -> np.ndarray:
+    """Half 1's particles (positions in ``rows``) in RELION's order. ``relion_refine`` skips the shuffle with seed 0
+    (iterate, ml_optimiser_mpi.cpp) and otherwise shuffles once per process, at its first iteration: the ``randomised``
+    flag of ``Experiment::randomiseParticlesOrder`` keeps that order for the whole run (exp_model.cpp:406-412)."""
+
+    if random_seed == 0:
+        return np.arange(rows.size)
+    from relax.sampling.expected_accuracy import relion_auto_refine_half_orders
+
+    subsets = np.asarray(random_subsets, dtype=np.int64)
+    return np.searchsorted(rows, relion_auto_refine_half_orders(subsets, random_seed, 1)[0])
+
+
+def _expected_accuracy(state: MultibodyState, run: MultibodyRun, references_half1, current_size: int):
     """``calculateExpectedAngularErrors`` on half 1: every body's masked centred map at the consensus poses of the
-    first 100 particles of half 1 in RELION's order of this iteration."""
+    first 100 particles of half 1 in RELION's order."""
 
     half = run.halves[0]
-    if run.random_seed == 0:
-        order = np.arange(half.rows.size)  # relion_refine skips the shuffle with seed 0 (iterate, ml_optimiser_mpi.cpp)
-    else:
-        from relax.sampling.expected_accuracy import relion_auto_refine_half_orders
-
-        subsets = np.asarray(run.checkpoint.particles["rlnRandomSubset"], dtype=np.int64)
-        order = np.searchsorted(half.rows, relion_auto_refine_half_orders(subsets, run.random_seed, iteration)[0])
+    order = _accuracy_trial_order(half.rows, run.checkpoint.particles["rlnRandomSubset"], run.random_seed)
     eulers = np.stack(
         [_floats(run.checkpoint.particles[c])[half.rows] for c in ("rlnAngleRot", "rlnAngleTilt", "rlnAnglePsi")], axis=1
     )
@@ -570,7 +577,7 @@ def _expected_accuracy(state: MultibodyState, run: MultibodyRun, references_half
         padding_factor=run.settings.projection_padding_factor,
         sigma2_fudge=1.0,
         random_seed=run.random_seed,
-        random_seed_particle_ids=half.rows[order],
+        random_seed_particle_ids=half.rows,  # by half position: the estimator reads them at the trials
         do_ctf_correction=run.do_ctf_correction,
         device_memory_override=run.options.environment.engine.device_memory_bytes,
         stable_window_quantum=run.options.environment.engine.stable_window_quantum,
@@ -641,7 +648,7 @@ def plan_iteration(state: MultibodyState, run: MultibodyRun):
     current_size = image_current_size(state, run)
     inputs = body_projectors(state, run, iteration, current_size, state.sampling.healpix_order)
     # calculateExpectedAngularErrors with the projectors of half 1.
-    accuracy = _expected_accuracy(state, run, inputs.references[0], current_size, iteration)
+    accuracy = _expected_accuracy(state, run, inputs.references[0], current_size)
     tracks = [
         replace(track, acc_rot=float(accuracy.acc_rot_per_class[b]), acc_trans=float(accuracy.acc_trans_per_class_angstrom[b]))
         for b, track in enumerate(state.bodies)

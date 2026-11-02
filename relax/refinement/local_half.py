@@ -1172,7 +1172,9 @@ def _run_local_search_iteration(
     if scored_rows is not None:
         if kernel.projection_scale != 1.0 or magnification is not None:
             raise NotImplementedError("a multi-body search needs images on the reference grid without magnification")
-        local_layout = scored_rows(local_layout)
+        local_layout = scored_rows(
+            local_layout, device_plan=coarse_plan_rows is not None and not kernel.use_float64_scoring
+        )
 
     # A regular iteration at the full box hands current_size=None (full-box support;
     # MS2 box 512 it25); the resident driver scores RELION's radial
