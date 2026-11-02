@@ -132,6 +132,10 @@ def prepare(args) -> None:
         centre = body.com * voxel - pivot
         moved = np.einsum("sij,j->si", rotations[:, b], centre) + pivot + translations[:, b]
         displacement.append(float(np.max(np.linalg.norm(moved - body.com * voxel, axis=1))))
+    if args.noise_seed:
+        # generate_simulated_dataset fixes simulate_data's noise seed at 0; views, states and CTFs follow --seed alone.
+        simulate = simulator.simulate_data
+        simulator.simulate_data = lambda *a, seed=0, **k: simulate(*a, seed=args.noise_seed, **k)
     atomic, bfactor = resolve_total_bfactor(solvent_contrast.kwargs_from_cli_args(args), baked_in=0.0, source="5nrl body atoms (B 0)")
     simulator.generate_synthetic_dataset(
         str(out), voxel, str(out / "states" / "vol"), args.n_images, grid_size=D,
@@ -148,7 +152,7 @@ def prepare(args) -> None:
         "max_pivot_displacement_angstrom": displacement,
         "depth_bounds_angstrom": [1.25 * max(t, voxel) for t in displacement],
         "lobe_atoms": int(lobe.sum()), "voxel_size": voxel, "grid_size": D, "n_images": args.n_images,
-        "noise_level": args.noise_level, "seed": args.seed, "bfactor": bfactor,
+        "noise_level": args.noise_level, "seed": args.seed, "noise_seed": args.noise_seed, "bfactor": bfactor,
         "max_twist_deg": args.max_twist, "max_shift_angstrom": args.max_shift, "max_nuisance_twist_deg": args.max_nuisance,
         "max_deformation_deg": args.max_deformation, "mask_atom_radius": args.mask_atom_radius,
         "mask_soft_px": args.mask_soft_px, "body_sigma_angles": args.body_sigma_angles,
@@ -180,6 +184,7 @@ def main() -> None:
     parser.add_argument("--init-resolution-ang", type=float, default=30.0)
     parser.add_argument("--volume-radius", type=float, default=0.9)
     parser.add_argument("--seed", type=int, default=17)
+    parser.add_argument("--noise-seed", type=int, default=0, help="noise realisation, with the same views and states")
     solvent_contrast.add_cli_arguments(parser, enabled_by_default=True)
     prepare(parser.parse_args())
 
