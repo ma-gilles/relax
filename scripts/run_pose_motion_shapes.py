@@ -72,7 +72,7 @@ def simulate(family: str, shift_noise: float, angle_noise: float, seed: int) -> 
     rotations = (Rotation.from_rotvec(np.deg2rad(angle_noise) * rng.normal(size=(N, 3))) * Rotation.from_rotvec(rotvec)).as_matrix()
     bound = 1.25 * max(float(np.max(np.linalg.norm(translation, axis=1))), 4.25)
     features = pose_features(rotations, lifts, cameras[:, 2], MOMENTS)
-    return dict(features=features, level=level, path=path, state=state, bound=bound)
+    return dict(features=features, level=level, path=path, state=state, bound=bound, translation=translation)
 
 
 def choose_rank(noises: list[dict]) -> int:
