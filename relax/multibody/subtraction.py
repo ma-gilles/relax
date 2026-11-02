@@ -28,19 +28,23 @@ from dataclasses import dataclass
 
 import jax
 import jax.numpy as jnp
+import scipy.fft
 import numpy as np
 from recovar.core import fourier_transform_utils as ftu
 from recovar.data_io.cryoem_dataset import CryoEMDataset
 from recovar.data_io.image_loader import ImageLoader
 from recovar.data_io.image_sources import BackendImageSource
 
-from relax.fourier.preprocessing import half_translation_phase_table
+from relax.fourier.preprocessing import relion_half_translation_lattice
 from relax.io.batch_fetch import original_image_indices
 from relax.multibody import geometry
 from relax.multibody.bodies import Body
 from relax.projection.projection import project_relion_projector_half_spectrum_centered_rows
 from relax.relion.ctf import relion_exact_ctf_half_from_source_star
 from relax.steps.projector_preparation import PreparedProjector
+
+
+_FFT_WORKERS = 8
 
 
 class ArrayImageLoader(ImageLoader):
@@ -169,7 +173,45 @@ def _shifted_ctf_prediction(projection, ctf, phases):
     return projection * ctf * phases
 
 
-def other_body_prediction(
+def _relion_inverse_3x3(m: np.ndarray) -> np.ndarray:
+    """``Matrix2D::inv`` of ``[n, 3, 3]`` matrices: the adjugate divided by the determinant, RELION's terms in its order."""
+
+    m00, m01, m02 = m[:, 0, 0], m[:, 0, 1], m[:, 0, 2]
+    m10, m11, m12 = m[:, 1, 0], m[:, 1, 1], m[:, 1, 2]
+    m20, m21, m22 = m[:, 2, 0], m[:, 2, 1], m[:, 2, 2]
+    t = np.empty_like(m)
+    t[:, 0, 0] = m22 * m11 - m21 * m12
+    t[:, 0, 1] = -(m22 * m01 - m21 * m02)
+    t[:, 0, 2] = m12 * m01 - m11 * m02
+    t[:, 1, 0] = -(m22 * m10 - m20 * m12)
+    t[:, 1, 1] = m22 * m00 - m20 * m02
+    t[:, 1, 2] = -(m12 * m00 - m10 * m02)
+    t[:, 2, 0] = m21 * m10 - m20 * m11
+    t[:, 2, 1] = -(m21 * m00 - m20 * m01)
+    t[:, 2, 2] = m11 * m00 - m10 * m01
+    det = m00 * t[:, 0, 0] + m10 * t[:, 0, 1] + m20 * t[:, 0, 2]
+    return t / det[:, None, None]
+
+
+def _cpu_projection_pixels(rows: np.ndarray, image_shape, size: int, r_max: int, padding_factor: int) -> np.ndarray:
+    """Which pixels RELION's CPU ``get2DFourierTransform`` fills, ``[n, P]``: inside ``x <= FLOOR(sqrt(r^2 - y^2))`` of the
+    output and with a rotated radius within ``r_max`` in double (projector.cpp:636-690). The accelerator rule of
+    ``relion_project_half`` truncates that radius and so keeps a shell of pixels this one drops."""
+
+    labels = np.rint(np.asarray(relion_half_translation_lattice(tuple(image_shape)), dtype=np.float64) * image_shape[0])
+    x, y = labels[:, 0], labels[:, 1]
+    r_out = size // 2
+    inside = (x >= 0) & (np.abs(y) <= r_out)
+    inside[inside] &= x[inside] <= np.floor(np.sqrt(np.maximum(r_out * r_out - y[inside] ** 2, 0.0)))
+    a = _relion_inverse_3x3(np.asarray(rows, dtype=np.float64)) * float(padding_factor)
+    xp = a[:, 0, 0, None] * x + a[:, 0, 1, None] * y
+    yp = a[:, 1, 0, None] * x + a[:, 1, 1, None] * y
+    zp = a[:, 2, 0, None] * x + a[:, 2, 1, None] * y
+    r_ref = r_max * padding_factor
+    return inside[None, :] & (xp * xp + yp * yp + zp * zp <= r_ref * r_ref)
+
+
+def other_body_spectrum(
     dataset,
     image_indices,
     target: int,
@@ -181,8 +223,9 @@ def other_body_prediction(
     current_size: int,
     padding_factor: int,
 ) -> jax.Array:
-    """The real images ``S`` ``[n, D, D]`` RELION subtracts from body ``target``'s images: the other bodies projected at
-    their composed poses, moved to their place in the image translated by ``r_target`` and CTF-modulated.
+    """The half spectra ``[n, P]`` (centred packed layout, RELION's units) of what RELION subtracts from body ``target``'s
+    images: the other bodies projected at their composed poses, moved to their place in the image translated by
+    ``r_target`` and CTF-modulated.
 
     ``poses``, ``frames`` and ``projectors`` are per body (the projectors of this half's maps, the bodies' masked
     centred maps at ``current_size``); ``poses[b]`` and ``frames`` index the same particles as ``image_indices``.
@@ -209,16 +252,29 @@ def other_body_prediction(
             int(padding_factor),
             None,
         )
+        projection = projection * jnp.asarray(
+            _cpu_projection_pixels(rows, image_shape, current_size, int(projectors[other].r_max), int(padding_factor))
+        )
         shifts = geometry.other_body_shifts(
             geometry.projected_centers(frames.consensus, body), frames.offsets_px, poses[other].offsets_px, integer
         )
         term = _shifted_ctf_prediction(
-            projection, ctf.astype(projection.real.dtype), half_translation_phase_table(shifts, image_shape, dtype=jnp.float64)
+            projection, ctf.astype(projection.real.dtype), jnp.asarray(exact_half_translation_phases(shifts, image_shape))
         )
         total = term if total is None else total + term
     if current_size > image_shape[0]:
         raise ValueError(f"current size {current_size} exceeds the box {image_shape[0]}")
-    return relion_half_to_real(total, image_shape)
+    return total
+
+
+def other_body_prediction(dataset, image_indices, target, bodies, projectors, poses, frames, *, current_size, padding_factor):
+    """The real images ``S`` ``[n, D, D]`` of :func:`other_body_spectrum`."""
+
+    total = other_body_spectrum(
+        dataset, image_indices, target, bodies, projectors, poses, frames,
+        current_size=current_size, padding_factor=padding_factor,
+    )
+    return relion_half_to_real(total, tuple(int(v) for v in dataset.image_shape))
 
 
 def relion_soft_mask_outside(images: np.ndarray, radius: float, width: float) -> np.ndarray:
@@ -233,12 +289,29 @@ def relion_soft_mask_outside(images: np.ndarray, radius: float, width: float) ->
     return images * (1.0 - outside) + background * outside
 
 
-def native_half_spectrum(real_images) -> jax.Array:
-    """:func:`relion_half_to_real`'s inverse in the units of relax's preprocessed images, the plain forward transform,
-    in double precision."""
+def exact_half_translation_phases(shifts, image_shape) -> np.ndarray:
+    """``half_translation_phase_table`` ``[n, P]`` from integer frequency labels, in double: the shared lattice is built
+    in single precision, and its rounding stood 5e-7 from RELION's phases."""
 
-    centred = jnp.fft.fftshift(jnp.asarray(real_images, dtype=jnp.float64), axes=(-2, -1))
-    half = jnp.fft.fftshift(jnp.fft.rfft2(centred, axes=(-2, -1)), axes=(-2,))
+    size = int(image_shape[0])
+    labels = np.rint(np.asarray(relion_half_translation_lattice(tuple(image_shape)), dtype=np.float64) * size)
+    return np.exp(-2j * np.pi * (np.asarray(shifts, dtype=np.float64) @ labels.T) / size)
+
+
+def _host_half_to_real(spectrum: np.ndarray, shape) -> np.ndarray:
+    """:func:`relion_half_to_real` on the host in double (the device FFT left 5e-7 of RELION's double transforms)."""
+
+    half = spectrum.reshape(-1, shape[0], shape[1] // 2 + 1)
+    real = scipy.fft.irfft2(np.fft.ifftshift(half, axes=(-2,)), s=shape, axes=(-2, -1), workers=_FFT_WORKERS)
+    return np.fft.ifftshift(real, axes=(-2, -1)) * (shape[0] * shape[1])
+
+
+def native_half_spectrum(real_images) -> np.ndarray:
+    """:func:`relion_half_to_real`'s inverse in the units of relax's preprocessed images, the plain forward transform,
+    on the host in double."""
+
+    centred = np.fft.fftshift(np.asarray(real_images, dtype=np.float64), axes=(-2, -1))
+    half = np.fft.fftshift(scipy.fft.rfft2(centred, axes=(-2, -1), workers=_FFT_WORKERS), axes=(-2,))
     return half.reshape(half.shape[0], -1)
 
 
@@ -257,19 +330,30 @@ class BodyImagePrediction:
         self.current_size = int(current_size)
         height, width = (int(v) for v in image_shape)
         self._half_shape = (height, width // 2 + 1)
-        rows = np.abs(np.arange(height) - height // 2) <= self.current_size // 2
+        # RELION's window of an even size holds the row +size/2 and not -size/2 (FOR_ALL_ELEMENTS_IN_FFTW_TRANSFORM).
+        labels = np.arange(height) - height // 2
+        rows = (labels > -(self.current_size // 2)) & (labels <= self.current_size // 2)
         self._pixels = np.flatnonzero(np.outer(rows, np.arange(width // 2 + 1) <= self.current_size // 2).ravel())
         self._masked = np.empty((n_images, self._pixels.size), dtype=np.complex128)
         self._plain = np.empty_like(self._masked)
         for start in range(0, n_images, batch_images):
             batch = np.arange(start, min(start + batch_images, n_images))
-            real = np.asarray(prediction(batch), dtype=np.float64)
-            self._plain[batch] = np.asarray(native_half_spectrum(real))[:, self._pixels]
+            spectrum = np.asarray(prediction(batch), dtype=np.complex128)
+            self._plain[batch] = spectrum[:, self._pixels] * (height * width)
+            windowed = np.zeros_like(spectrum)
+            windowed[:, self._pixels] = spectrum[:, self._pixels]
+            real = _host_half_to_real(windowed, (height, width))
             masked = relion_soft_mask_outside(real, mask_radius_px, mask_width_px)
-            self._masked[batch] = np.asarray(native_half_spectrum(masked))[:, self._pixels]
+            self._masked[batch] = native_half_spectrum(masked)[:, self._pixels]
 
     def __array__(self, dtype=None, copy=None):
         return np.asarray(self.translations, dtype=dtype)
+
+    def phases(self, image_indices) -> np.ndarray:
+        """The refined offsets' phases of these images."""
+
+        indices = np.asarray(image_indices).reshape(-1)
+        return exact_half_translation_phases(self.translations[indices], self._half_shape[0:1] * 2)
 
     def _full(self, values) -> np.ndarray:
         full = np.zeros((values.shape[0], self._half_shape[0] * self._half_shape[1]), dtype=np.complex128)
