@@ -19,7 +19,7 @@ from relax.local_search.layout import (
 )
 from relax.multibody import geometry
 from relax.multibody.bodies import A_ROT90, RESIDUAL_IDENTITY_EULER, Body, align_with_z, relion_center_of_mass
-from relax.multibody.layout import body_prior_log, with_body_rows
+from relax.multibody.layout import body_prior_log, relion_sample_order, with_body_rows
 from relax.multibody.subtraction import relion_half_to_real, relion_translate_2d, translate_zero_fill
 from relax.sampling.device_rotations import pass1_right_matrix
 from relax.sampling.grids import build_local_search_grid_metadata
@@ -372,3 +372,25 @@ def test_total_fourier_coverage_is_relion_cube_average():
     expected = (1.0 + 26 * 0.5) / 27
     assert abs(relion_total_fourier_coverage([9.0, 5.0, 2.0, 0.5], coverage) - expected) < 1e-12
     assert relion_total_fourier_coverage([9.0, 5.0], None) == 1.0
+
+
+def test_pass2_rows_follow_relion_sample_order():
+    # Order-0 C1 grid: 12 directions x 6 psi, parents numbered psi * 12 + direction. RELION loops direction, then
+    # psi, then the children, so an exact tie keeps the same winner as RELION's first maximum.
+    parents = np.array([0 * 12 + 5, 1 * 12 + 2, 0 * 12 + 2, 3 * 12 + 0, 0 * 12 + 1])
+    per_image = [[0, 1, 2], [3, 4]]
+    children = 2
+    rows = np.concatenate([np.repeat(parents[ids], children) for ids in per_image])
+    n = rows.size
+    layout = LocalHypothesisLayout(
+        n_global_rotations=72, n_pixels=48, n_psi=12,
+        rotation_offsets=np.array([0, 6, n]), rotation_ids_flat=np.arange(n), rotations_flat=np.zeros((n, 3, 3)),
+        rotation_log_priors_flat=np.zeros(n), rotation_counts=np.array([6, n - 6]),
+        translation_grid=np.zeros((1, 2)), translation_log_priors=np.zeros((2, 1)),
+        rotation_posterior_ids_flat=rows, oversampled_rows=True,
+    )
+    ordered = relion_sample_order(layout)
+    direction, psi = ordered.rotation_posterior_ids_flat % 12, ordered.rotation_posterior_ids_flat // 12
+    assert np.array_equal(direction * 6 + psi, [12, 12, 13, 13, 30, 30, 3, 3, 6, 6])
+    assert np.array_equal(ordered.rotation_ids_flat, [4, 5, 2, 3, 0, 1, 6, 7, 8, 9])  # children keep their order
+    assert np.array_equal(ordered.rotation_offsets, layout.rotation_offsets)

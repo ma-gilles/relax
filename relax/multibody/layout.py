@@ -205,4 +205,27 @@ class BodySearch:
         return with_body_prior(layout, self.body)
 
     def scored_rows(self, layout: LocalHypothesisLayout, *, device_plan: bool = False) -> LocalHypothesisLayout:
-        return with_body_rows(layout, self.left, self.right, device_plan=device_plan)
+        return with_body_rows(relion_sample_order(layout), self.left, self.right, device_plan=device_plan)
+
+
+def relion_sample_order(layout: LocalHypothesisLayout) -> LocalHypothesisLayout:
+    """An oversampled layout with each image's rows in RELION's fine-sample order: parents by direction, then
+    in-plane angle (``for idir ... for ipsi ... for iover_rot``, acc_helper_functions_impl.h:285-299), children in
+    their existing order. The layout numbers a parent ``psi * n_pixels + direction``, so its rows run psi-major.
+    The order decides which sample wins an exact float32 tie (RELION keeps the first maximum)."""
+
+    if not layout.oversampled_rows or layout.rotation_posterior_ids_flat is None:
+        return layout
+    n_global = int(layout.n_global_rotations)
+    nside = int(round((n_global / 72.0) ** (1.0 / 3.0)))
+    n_pixels, n_psi = 12 * nside * nside, 6 * nside
+    if n_pixels * n_psi != n_global:
+        raise NotImplementedError("RELION sample order needs the C1 HEALPix x psi grid")
+    parents = np.asarray(layout.rotation_posterior_ids_flat, dtype=np.int64)
+    counts = np.diff(np.asarray(layout.rotation_offsets, dtype=np.int64))
+    row_image = np.repeat(np.arange(counts.shape[0], dtype=np.int64), counts)
+    key = (parents % n_pixels) * n_psi + parents // n_pixels
+    order = np.lexsort((np.arange(parents.shape[0]), key, row_image))
+    if np.array_equal(order, np.arange(parents.shape[0])):
+        return layout
+    return _take_rows(layout, order)
