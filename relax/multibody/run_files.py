@@ -88,6 +88,18 @@ def write_data(path, state, run) -> None:
     )
 
 
+def relion_estimated_resolution(data_vs_prior, box_size: int, pixel_size: float) -> float:
+    """A body's ``rlnEstimatedResolution`` in Angstrom: the last shell, from DC, before its data_vs_prior first
+    drops below 1 (``MlModel::calculateTotalFourierCoverage``, ml_model.cpp:1645-1657); infinite at shell 0."""
+
+    maxres = 0
+    for ires, value in enumerate(np.asarray(data_vs_prior, dtype=np.float64).reshape(-1)):
+        if value < 1.0:
+            break
+        maxres = ires
+    return float("inf") if maxres == 0 else float(box_size) * float(pixel_size) / maxres
+
+
 def write_iteration(output, iteration: int, state, run, *, final: bool = False) -> None:
     """The data and model STAR files of an iteration (``final``: the last one, without an iteration number)."""
 
@@ -182,7 +194,9 @@ def write_relion_model(output, state, run) -> None:
         "rlnClassDistribution": [1.0] * len(state.bodies),
         "rlnAccuracyRotations": [t.acc_rot for t in state.bodies],
         "rlnAccuracyTranslationsAngst": [t.acc_trans for t in state.bodies],
-        "rlnEstimatedResolution": [1.0 / state.current_resolution_inv] * len(state.bodies),
+        "rlnEstimatedResolution": [
+            relion_estimated_resolution(t.data_vs_prior, run.box_size, run.pixel_size) for t in state.bodies
+        ],
         "rlnOverallFourierCompleteness": [1.0] * len(state.bodies),
         "rlnBodyRotateDirectionX": [float(body.orientation[2, 0]) for body in run.bodies],
         "rlnBodyRotateDirectionY": [float(body.orientation[2, 1]) for body in run.bodies],

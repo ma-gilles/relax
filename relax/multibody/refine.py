@@ -826,7 +826,12 @@ def _final_maximization(state: MultibodyState, run: MultibodyRun, results, poses
             current_resolution_angstrom=1.0 / state.current_resolution_inv,
             phase_stream=run.phase_stream, scoring_dtype=run.options.precision.rotation_real_dtype,
         )
-        tracks[b] = replace(tracks[b], maps=[final.map, final.map], fsc=final.fsc, poses=poses[b])
+        # The joined reconstruction's SSNR and prior, as RELION's last model.star writes them.
+        tracks[b] = replace(
+            tracks[b], maps=[final.map, final.map], fsc=final.fsc, poses=poses[b],
+            data_vs_prior=np.asarray(final.details["ssnr_shells"], dtype=np.float64),
+            tau2=[np.asarray(final.details["prior_shells"], dtype=np.float64)] * 2,
+        )
         run_files.write_final_body_maps(run.output, b, final, run)
     state = replace(state, iteration=state.iteration + 1, bodies=tracks)
     run_files.write_iteration(run.output, state.iteration, state, run, final=True)

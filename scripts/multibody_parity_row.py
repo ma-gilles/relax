@@ -82,7 +82,16 @@ def row(data: Path, relion_dirs: list[Path], relax_dir: Path, *, body_star: Path
             "gt_motion_error_median_deg": {k: v["bodies"][b]["motion_error_deg"]["median"] for k, v in gt.items()},
         })
     out["schedule"] = {str(d): _schedule(reference, d) for d in [*relion_dirs[1:], relax_dir]}
+    out["estimated_resolution"] = {str(d): _estimated_resolution(d) for d in [*relion_dirs, relax_dir]}
     return out
+
+
+def _estimated_resolution(run_dir: Path) -> list:
+    """Each body's rlnEstimatedResolution (Angstrom) in a run's final model.star."""
+    import starfile
+
+    return [float(v) for v in starfile.read(run_dir / "run_model.star", always_dict=True)["model_bodies"][
+        "rlnEstimatedResolution"]]
 
 
 def main() -> None:
@@ -107,6 +116,8 @@ def main() -> None:
               f"{[round(v, 4) for v in body['gt_masked_auc'].values()]}")
     for k, v in report["schedule"].items():
         print(f"schedule {Path(k).name}: {v}")
+    for k, v in report["estimated_resolution"].items():
+        print(f"estimated resolution per body {Path(k).name}: {[round(r, 4) for r in v]}")
     if args.json is not None:
         args.json.write_text(json.dumps(report, indent=1))
 

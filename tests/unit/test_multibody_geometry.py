@@ -354,3 +354,11 @@ def test_soft_mask_outside_keeps_the_inside_and_fills_the_average():
     masked = relion_soft_mask_outside(image, 3.0, 2.0)
     assert masked[0, 8, 8] == 5.0
     assert masked[0, 0, 0] == 1.0
+
+
+def test_estimated_resolution_is_relion_per_body_rule():
+    from relax.multibody.run_files import relion_estimated_resolution
+
+    # The last shell from DC before data_vs_prior first drops below 1; later rises do not count.
+    assert relion_estimated_resolution([9.0, 5.0, 2.0, 1.0, 0.5, 3.0], 320, 1.699) == 320 * 1.699 / 3
+    assert relion_estimated_resolution([9.0, 0.5, 2.0], 320, 1.699) == float("inf")
