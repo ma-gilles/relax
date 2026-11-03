@@ -36,7 +36,8 @@ def density_positions(points: np.ndarray, normals: np.ndarray, width: float) -> 
     centre = lines_point(points, normals)
     relative = points - centre
     in_plane = relative - np.sum(relative * normals, axis=1, keepdims=True) * normals
-    radius = float(np.quantile(np.linalg.norm(in_plane, axis=1), 0.999)) + 3.0 * width
+    # The grid holds the bulk: at high noise a few misaligned particles lie far off and would make it enormous.
+    radius = float(np.quantile(np.linalg.norm(in_plane, axis=1), 0.95)) + 3.0 * width + STEP
     axis = np.arange(-radius, radius + STEP, STEP, dtype=np.float32)
     grid = np.stack(np.meshgrid(axis, axis, axis, indexing="ij"), axis=-1).reshape(-1, 3)
     grid = grid[np.sum(grid**2, axis=1) <= radius**2]
@@ -53,7 +54,11 @@ def density_positions(points: np.ndarray, normals: np.ndarray, width: float) -> 
         density = posterior.mean(axis=0)
     posterior = likelihood * density
     posterior /= posterior.sum(axis=1, keepdims=True) + 1e-30
-    return np.asarray(posterior @ grid, dtype=np.float64) + centre, {"grid_points": len(grid), "radius_angstrom": radius, "width_angstrom": width}
+    positions = np.asarray(posterior @ grid, dtype=np.float64)
+    # A line that misses the grid has no posterior: it stays at its nearest point to the centre, so it stays far away.
+    outside = posterior.sum(axis=1) < 0.5
+    positions[outside] = in_plane[outside]
+    return positions + centre, {"grid_points": len(grid), "radius_angstrom": radius, "width_angstrom": width, "lines_off_grid": int(outside.sum())}
 
 
 def neighbour_depth_positions(features, covariance: np.ndarray, neighbours: int, rounds: int = DEPTH_ROUNDS) -> np.ndarray:
