@@ -123,8 +123,8 @@ def score_body_half(
     pixel_size, _, width_mask_edge_px = dataset.image_source.backend._relion_image_mask_params
     image_operations = BodyImagePrediction(
         np.asarray(poses[target].offsets_px, dtype=np.float64), prediction,
-        n_images=n, image_shape=dataset.image_shape, mask_radius_px=radius_px, mask_width_px=float(width_mask_edge_px),
-        current_size=current_size, batch_images=SUBTRACTION_BATCH_IMAGES,
+        image_shape=dataset.image_shape, mask_radius_px=radius_px, mask_width_px=float(width_mask_edge_px),
+        current_size=current_size,
     )
     half = HalfScoringData(
         particles=HalfSet(
