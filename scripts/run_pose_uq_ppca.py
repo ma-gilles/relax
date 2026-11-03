@@ -1060,7 +1060,7 @@ def main() -> None:
         a.add_argument("--seed", type=int, default=20261102)
         a.add_argument("--realizations", type=int, default=16)
         a.add_argument("--clean", choices=("model", "component"), default="model")
-        a.add_argument("--floors", type=float, nargs="+", help="embed: the tau^2 floor grid (A^2); default FLOORS")
+        a.add_argument("--floors", help="embed: the tau^2 floor grid, comma separated (A^2); default FLOORS")
         a.add_argument("--input", type=Path, help="embed: where the fixture stage wrote its tables; default --out")
         a.add_argument("--nuisance", choices=("estimated", "exact"), default="estimated")
         a.add_argument("dataset")
@@ -1069,7 +1069,7 @@ def main() -> None:
     args.input = args.input or args.out
     if args.floors:
         global FLOORS
-        FLOORS = tuple(args.floors)
+        FLOORS = tuple(float(v) for v in args.floors.split(","))
     logging.basicConfig(level=logging.WARNING)
     args.function(args)
 
