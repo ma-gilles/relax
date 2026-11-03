@@ -100,6 +100,28 @@ def relion_estimated_resolution(data_vs_prior, box_size: int, pixel_size: float)
     return float("inf") if maxres == 0 else float(box_size) * float(pixel_size) / maxres
 
 
+def relion_total_fourier_coverage(data_vs_prior, coverage) -> float:
+    """A body's ``rlnOverallFourierCompleteness``: its per-shell coverage averaged over the voxels of a cube of side
+    ``2 maxres - 1`` within radius ``maxres`` (``int`` of the distance), with ``maxres`` the estimated-resolution
+    shell (``MlModel::calculateTotalFourierCoverage``, ml_model.cpp:1644-1672). 1.0 before any coverage exists."""
+
+    if coverage is None:
+        return 1.0
+    coverage = np.asarray(coverage, dtype=np.float64).reshape(-1)
+    maxres = 0
+    for ires, value in enumerate(np.asarray(data_vs_prior, dtype=np.float64).reshape(-1)):
+        if value < 1.0:
+            break
+        maxres = ires
+    window = 2 * maxres - 1
+    if window <= 0:
+        return 0.0
+    axis = np.arange(-(window // 2), window - window // 2)
+    r = np.sqrt((axis[:, None, None] ** 2 + axis[None, :, None] ** 2 + axis[None, None, :] ** 2).astype(np.float64))
+    r = r.astype(np.int64)[r.astype(np.int64) <= maxres]
+    return float(np.pad(coverage, (0, max(0, maxres + 1 - coverage.size)))[r].sum() / r.size)
+
+
 def write_iteration(output, iteration: int, state, run, *, final: bool = False) -> None:
     """The data and model STAR files of an iteration (``final``: the last one, without an iteration number)."""
 
@@ -130,10 +152,19 @@ def _write_model_summary(stem, state, run) -> None:
         "rlnAccuracyRotations": [t.acc_rot for t in state.bodies],
         "rlnAccuracyTranslationsAngst": [t.acc_trans for t in state.bodies],
         "rlnBodyKeepFixed": [int(t.keep_fixed) for t in state.bodies],
+        "rlnEstimatedResolution": [
+            relion_estimated_resolution(t.data_vs_prior, run.box_size, run.pixel_size) for t in state.bodies
+        ],
+        "rlnOverallFourierCompleteness": [
+            relion_total_fourier_coverage(t.data_vs_prior, t.fourier_coverage) for t in state.bodies
+        ],
     })}
     for b, track in enumerate(state.bodies):
         table = {"rlnSpectralIndex": shells, "rlnResolution": shells / (run.box_size * run.pixel_size)}
-        for label, values in (("rlnSsnrMap", track.data_vs_prior), ("rlnGoldStandardFsc", track.fsc)):
+        coverage = np.ones(n_shells) if track.fourier_coverage is None else track.fourier_coverage
+        for label, values in (
+            ("rlnSsnrMap", track.data_vs_prior), ("rlnGoldStandardFsc", track.fsc), ("rlnFourierCompleteness", coverage),
+        ):
             values = np.asarray(values, dtype=np.float64).reshape(-1)
             table[label] = np.pad(values, (0, max(0, n_shells - values.size)))[:n_shells]
         for h in range(2):
@@ -197,7 +228,9 @@ def write_relion_model(output, state, run) -> None:
         "rlnEstimatedResolution": [
             relion_estimated_resolution(t.data_vs_prior, run.box_size, run.pixel_size) for t in state.bodies
         ],
-        "rlnOverallFourierCompleteness": [1.0] * len(state.bodies),
+        "rlnOverallFourierCompleteness": [
+            relion_total_fourier_coverage(t.data_vs_prior, t.fourier_coverage) for t in state.bodies
+        ],
         "rlnBodyRotateDirectionX": [float(body.orientation[2, 0]) for body in run.bodies],
         "rlnBodyRotateDirectionY": [float(body.orientation[2, 1]) for body in run.bodies],
         "rlnBodyRotateDirectionZ": [float(body.orientation[2, 2]) for body in run.bodies],
@@ -214,7 +247,7 @@ def write_relion_model(output, state, run) -> None:
             "rlnSpectralIndex": shells, "rlnResolution": resolution,
             "rlnAngstromResolution": np.where(shells > 0, 1.0 / np.maximum(resolution, 1e-12), 999.0),
             "rlnSsnrMap": padded(track.data_vs_prior), "rlnGoldStandardFsc": padded(track.fsc),
-            "rlnFourierCompleteness": np.ones(n_shells), "rlnReferenceSigma2": np.zeros(n_shells),
+            "rlnFourierCompleteness": np.ones(n_shells) if track.fourier_coverage is None else padded(track.fourier_coverage), "rlnReferenceSigma2": np.zeros(n_shells),
             "rlnReferenceTau2": tau2, "rlnSpectralOrientabilityContribution": np.zeros(n_shells),
         })
     blocks["model_groups"] = template["model_groups"]

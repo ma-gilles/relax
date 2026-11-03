@@ -84,6 +84,7 @@ class BodyMaximization:
     fsc: np.ndarray
     prior: object  # relax.refinement.priors.SplitHalfPrior
     fsc_details: dict
+    fourier_coverage: np.ndarray | None = None  # half 1, per shell (rlnFourierCompleteness)
 
 
 def maximize_body(
@@ -126,7 +127,14 @@ def maximize_body(
         this_iteration=this_iteration, accumulator_volume_shape=accumulator_shape,
     )
     maps = [_fourier(stored_body_map(_real(m, settings.volume_shape), body)) for m in body_frame_maps]
-    return BodyMaximization(maps=maps, unfiltered_maps=unfiltered, fsc=np.asarray(fsc), prior=prior, fsc_details=details)
+    coverage = fourier_coverage(
+        denominators[0], prior.shells_per_half[0], settings,
+        current_size=current_size, accumulator_shape=accumulator_shape, full_half_axis=full_half_axes[0],
+    )
+    return BodyMaximization(
+        maps=maps, unfiltered_maps=unfiltered, fsc=np.asarray(fsc), prior=prior, fsc_details=details,
+        fourier_coverage=coverage,
+    )
 
 
 @dataclass(frozen=True)
@@ -138,6 +146,36 @@ class BodyFinalMaps:
     unfiltered_maps: list
     fsc: np.ndarray
     details: dict
+    fourier_coverage: np.ndarray | None = None  # the joined weights, per shell
+
+
+def fourier_coverage(weight, tau2_shells, settings, *, current_size: int, accumulator_shape, full_half_axis) -> np.ndarray:
+    """Per shell, the fraction of a reconstruction's Fourier voxels whose data-to-prior ratio
+    ``weight * pad^3 * tau2_fudge * tau2`` is at least 1 (``BackProjector::updateSSNRarrays``,
+    backprojector.cpp:1263-1331, with the FSC-based tau2 it has just set). The voxels and their shells are those
+    :func:`relax.reconstruction.regularization.compute_relion_weight_shell_stats` averages the weight over."""
+
+    pad = int(settings.padding_factor)
+    volume_shape = tuple(int(v) for v in settings.volume_shape)
+    grid = volume_shape if accumulator_shape is None else tuple(int(v) for v in accumulator_shape)
+    if pad > 1 and accumulator_shape is None:
+        grid = tuple(pad * v for v in volume_shape)
+    values = np.asarray(weight).real.reshape(-1).astype(np.float64)
+    half = values.size != int(np.prod(grid))
+    radial = (ftu.get_grid_of_radial_distances_real if half else ftu.get_grid_of_radial_distances)(
+        grid, scaled=False, frequency_shift=0, rounded=False
+    )
+    shells = np.minimum(np.floor(np.asarray(radial, dtype=np.float64).reshape(-1) / pad + 0.5).astype(np.int64),
+                        volume_shape[0] // 2)
+    tau2 = np.asarray(tau2_shells, dtype=np.float64).reshape(-1)
+    tau2 = np.pad(tau2, (0, max(0, volume_shape[0] // 2 + 1 - tau2.size)))[shells]
+    covered = ((tau2 > 0) & (values * float(pad) ** 3 * float(settings.tau2_fudge) * tau2 >= 1.0)).astype(np.float64)
+    stats = regularization.compute_relion_weight_shell_stats(
+        covered, volume_shape, padding_factor=pad, r_max=current_size // 2,
+        full_half_axis=-1 if full_half_axis is None else int(full_half_axis), accumulator_volume_shape=accumulator_shape,
+        shell_pair_counting=settings.shell_pair_counting,
+    )
+    return np.asarray(stats["avg_weight_shells"], dtype=np.float64)
 
 
 def maximize_body_final(
@@ -189,4 +227,8 @@ def maximize_body_final(
         unfiltered_maps=unfiltered,
         fsc=np.asarray(fsc),
         details=details,
+        fourier_coverage=fourier_coverage(
+            denominators[0] + denominators[1], details["prior_shells"], settings,
+            current_size=current_size, accumulator_shape=accumulator_shape, full_half_axis=full_half_axis,
+        ),
     )

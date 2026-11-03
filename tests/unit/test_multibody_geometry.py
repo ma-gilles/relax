@@ -362,3 +362,13 @@ def test_estimated_resolution_is_relion_per_body_rule():
     # The last shell from DC before data_vs_prior first drops below 1; later rises do not count.
     assert relion_estimated_resolution([9.0, 5.0, 2.0, 1.0, 0.5, 3.0], 320, 1.699) == 320 * 1.699 / 3
     assert relion_estimated_resolution([9.0, 0.5, 2.0], 320, 1.699) == float("inf")
+
+
+def test_total_fourier_coverage_is_relion_cube_average():
+    from relax.multibody.run_files import relion_total_fourier_coverage
+
+    # maxres 2: the 3x3x3 cube within radius 2 is all 27 voxels: 1 at r=0, 6 at r=1, 20 at int(r) 1 (sqrt 2, 3).
+    coverage = [1.0, 0.5, 0.25]
+    expected = (1.0 + 26 * 0.5) / 27
+    assert abs(relion_total_fourier_coverage([9.0, 5.0, 2.0, 0.5], coverage) - expected) < 1e-12
+    assert relion_total_fourier_coverage([9.0, 5.0], None) == 1.0

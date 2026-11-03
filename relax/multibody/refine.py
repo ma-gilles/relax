@@ -105,6 +105,7 @@ class BodyTrack:
     acc_trans: float
     keep_fixed: bool
     poses: BodyPoses
+    fourier_coverage: np.ndarray | None = None  # half 1 per shell; None until a maximisation sets it
 
 
 @dataclass
@@ -747,7 +748,7 @@ def execute_iteration(state: MultibodyState, run: MultibodyRun, inputs: Iteratio
             tracks[b], maps=body_mstep.maps, fsc=body_mstep.fsc,
             data_vs_prior=np.asarray(details[0]["ssnr_shells"], dtype=np.float64),
             tau2=[np.asarray(d["prior_shells"], dtype=np.float64) for d in details],
-            poses=poses[b],
+            poses=poses[b], fourier_coverage=body_mstep.fourier_coverage,
         )
         run_files.write_body_maps(run.output, iteration, b, body_mstep, run)
     for b, track in enumerate(tracks):
@@ -831,6 +832,7 @@ def _final_maximization(state: MultibodyState, run: MultibodyRun, results, poses
             tracks[b], maps=[final.map, final.map], fsc=final.fsc, poses=poses[b],
             data_vs_prior=np.asarray(final.details["ssnr_shells"], dtype=np.float64),
             tau2=[np.asarray(final.details["prior_shells"], dtype=np.float64)] * 2,
+            fourier_coverage=final.fourier_coverage,
         )
         run_files.write_final_body_maps(run.output, b, final, run)
     state = replace(state, iteration=state.iteration + 1, bodies=tracks)
