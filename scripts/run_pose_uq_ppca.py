@@ -696,6 +696,57 @@ def cross_body_tests(tables: list, fits: list, seed: int) -> dict:
                 pose_error_correlation_image_level=matrix.tolist(), n=int(keep.sum()))
 
 
+def molecular_error(table: dict, true_rotations: np.ndarray) -> np.ndarray:
+    """``[n_usable, 3]`` molecular-frame rotation error (radians) of Q = A^T B against the true motion, after a constant
+    rotation on both sides and a median (truth-side gauge)."""
+    from relax.multibody.pose_uq import log_so3
+
+    usable = table["usable"]
+    fitted, truth = table["rotations"][usable], true_rotations[usable]
+    left, right = np.eye(3), np.eye(3)
+    for _ in range(20):
+        u, _, vt = np.linalg.svd(np.sum(fitted @ right.T @ np.swapaxes(truth, 1, 2), axis=0))
+        left = u @ np.diag([1, 1, np.linalg.det(u @ vt)]) @ vt
+        u, _, vt = np.linalg.svd(np.sum(np.swapaxes(truth, 1, 2) @ left.T @ fitted, axis=0))
+        right = u @ np.diag([1, 1, np.linalg.det(u @ vt)]) @ vt
+    error = log_so3(fitted @ np.swapaxes(left @ truth @ right, 1, 2))
+    return error - np.median(error, axis=0)
+
+
+def twist(args) -> None:
+    """Is the molecular-frame error the consensus following the body motions? Per axis, its correlation with each true
+    state variable and the error left after a linear fit on all of them (with intercept)."""
+    data = args.root / args.dataset
+    run, _ = load_run(data, args.out)
+    labels = fixture_labels(run, data)
+    states = labels["record"]["states"]
+    variables = {k: np.asarray([s[k] for s in states], dtype=float)[labels["states"]] for k in ("body1_twist", "body2_twist", "body2_shift", "deformation", "level")}
+    report = {}
+    arrays = {}
+    for b in range(len(run.bodies)):
+        merged = dict(np.load(args.input / f"uq_{args.dataset}_body{b + 1}_estimated.npz"))
+        table = pose_table(run, merged, b)
+        _, _, true_Q = true_observations(run, data, labels, b, table["root"])
+        error = np.rad2deg(molecular_error(table, true_Q))
+        usable = table["usable"]
+        values = {k: v[usable] for k, v in variables.items() if np.var(v) > 0}
+        design = np.column_stack([np.ones(int(usable.sum()))] + list(values.values()))
+        fitted = design @ np.linalg.lstsq(design, error, rcond=None)[0]
+        residual = error - fitted
+        robust = lambda x: (1.4826 * np.median(np.abs(x - np.median(x, axis=0)), axis=0)).round(3).tolist()
+        report[str(b + 1)] = dict(
+            n=int(usable.sum()), variables=list(values), correlation={k: [float(np.corrcoef(error[:, a], v)[0, 1]) for a in range(3)] for k, v in values.items()},
+            r2_per_axis=[float(1 - residual[:, a].var() / error[:, a].var()) for a in range(3)], robust_error_deg=robust(error), robust_residual_deg=robust(residual),
+            sd_error_deg=error.std(axis=0).round(3).tolist(), sd_residual_deg=residual.std(axis=0).round(3).tolist(),
+            mean_error_by_body1_twist={str(t): error[values["body1_twist"] == t].mean(axis=0).round(3).tolist() for t in np.unique(values.get("body1_twist", [0.0]))} if "body1_twist" in values else None,
+        )
+        arrays[f"body{b + 1}_error_deg"], arrays[f"body{b + 1}_usable"] = error, usable
+    arrays.update({k: v for k, v in variables.items()})
+    np.savez_compressed(args.out / f"twist_{args.dataset}.npz", **arrays)
+    (args.out / f"twist_{args.dataset}.json").write_text(json.dumps(report, indent=1))
+    print(json.dumps(report, indent=1), flush=True)
+
+
 def consensus_gap(table: dict, true_rotations: np.ndarray) -> dict:
     """The uncertainty S covers the camera-level pose. Against the molecular-frame rotation Q = A^T B it can only cover
     the part free of consensus error: the 3D rotation error against S's block, before and after a median gauge."""
@@ -843,7 +894,7 @@ def embed(args) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(dest="stage", required=True)
-    for name, function in (("audit", audit), ("synthetic", synthetic), ("fixture", fixture_uq), ("embed", embed), ("noise", noise_check), ("sandwich", sandwich), ("gap", gap)):
+    for name, function in (("audit", audit), ("synthetic", synthetic), ("fixture", fixture_uq), ("embed", embed), ("noise", noise_check), ("sandwich", sandwich), ("gap", gap), ("twist", twist)):
         a = sub.add_parser(name)
         a.set_defaults(function=function)
         a.add_argument("--root", required=True, type=Path)
