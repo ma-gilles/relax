@@ -91,7 +91,8 @@ def calibration(results: Path, out: Path) -> None:
     ax[0].axhline(np.mean(component["observed_hessian"]["z_robust_sd"]), color=VIOLET, lw=1.5, ls=":", label="true body + Gaussian noise")
     ax[0].set_xticks(x, [k for k, _ in rows])
     ax[0].set(xlabel="case and body", ylabel="robust sd of error / predicted sd", title="calibration of the image-level pose\n(1 = calibrated)")
-    ax[0].legend(fontsize=7, loc="upper left")
+    ax[0].set_ylim(0, 2.9)
+    ax[0].legend(fontsize=7, loc="upper left", ncol=2)
     m = np.load(results / "full/uq_caseC_5k_body2_estimated.npz")
     error = m["error_analysis"]
     error = error - np.median(error, axis=0)
@@ -295,7 +296,8 @@ def curves(results: Path, root: Path, out: Path) -> None:
                     colour, ls = styles[label]
                     ax[row, i].plot(sizes, cm[key], color=colour, ls=ls, label=label)
                 truth = e["curves"][f"{body}_true"][state]["curves_mean_first_20"]
-                ax[row, i].plot(sizes, truth["joint q10 whole latent, true poses"], color=INK, ls="--", lw=1.4, label="joint PPCA, true poses")
+                ax[row, i].plot(sizes, truth["joint q10 whole latent, true poses"], color=INK, ls="--", lw=1.4, label="joint PPCA whole latent, true poses")
+                ax[row, i].plot(sizes, truth["joint q10 decoded body, true poses"], color=MUTED, ls="-", lw=1.2, label="joint PPCA decoded body, true poses")
                 ax[row, i].plot(sizes, cm["perfect"], color=INK, ls=":", lw=1.4, label="perfect")
                 if state in m3:
                     existing = {k: v for k, v in m3[state]["curves_mean_first_20"].items() if k != "perfect"}
