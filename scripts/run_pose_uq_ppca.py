@@ -1,0 +1,414 @@
+#!/usr/bin/env python
+"""Per-body pose uncertainty and projected PPCA embeddings of a finished multi-body run.
+
+    python -m scripts.run_pose_uq_ppca <audit|synthetic|fixture> --root <pose_neighborhoods> --out <dir> <dataset>
+
+"""
+
+from __future__ import annotations
+
+import argparse
+import glob
+import json
+import logging
+import time
+from dataclasses import replace
+from pathlib import Path
+
+import numpy as np
+
+
+def load_run(data: Path, out: Path):
+    from relax.commands.multibody import run_options
+    from relax.multibody import subsets
+    from relax.multibody.refine import MultibodyCommand, start_from_consensus
+
+    consensus = sorted(glob.glob(str(data / "relion_consensus/run_it*_optimiser.star")))[-1]
+    command = MultibodyCommand(body_star=data / "bodies.star", healpix_order=4, auto_local_healpix_order=4, offset_range_px=3.0,
+                               offset_step_px=1.5, oversampling=1, reconstruct_subtracted_bodies=True, max_iter=0)
+    run, _ = start_from_consensus(consensus, command, run_options(), output=out / f"unused_{data.name}")
+    return run, subsets.read_multibody_result(data / "relion_multibody", run)
+
+
+def final_offset_range_angstrom(data: Path, result) -> float:
+    import starfile
+
+    table = starfile.read(data / "relion_multibody" / f"run_it{result.iteration:03d}_sampling.star", always_dict=True)
+    return float(table["sampling_general"]["rlnOffsetRange"])
+
+
+def body_operands(run, result, target: int, half: int, rows, *, offset_range_angstrom: float, images=None, current_size=None):
+    """:class:`relax.multibody.pose_uq.BodyOperands` of ``rows`` (positions in the half) through RELAX's own subtraction
+    and native preprocessing. ``images`` ``[half n, D, D]`` replaces the subtracted images of the whole half."""
+    import jax.numpy as jnp
+    from recovar.core.configs import ForwardModelConfig
+    from recovar.reconstruction import noise as noise_utils
+
+    from relax.fine_pass.bucket_io import prepare_unshifted_bucket_operands
+    from relax.io.batch_fetch import fetch_indexed_batch
+    from relax.fourier.fourier_window import make_fourier_window_spec
+    from relax.fourier.preprocessing import relion_half_translation_lattice
+    from relax.multibody import geometry, subsets
+    from relax.multibody.pose_uq import BodyOperands
+    from relax.multibody.refine import half_projectors
+    from relax.multibody.subtraction import dataset_with_images
+    from relax.refinement.noise_updates import noise_model_from_shells
+
+    particles = run.halves[half]
+    rows = np.asarray(rows)
+    if images is None:
+        images = subsets.target_body_images(run, result, target, half)
+    current_size = run.box_size if current_size is None else current_size
+    full = np.zeros((run.dataset.n_images, *run.dataset.image_shape), dtype=np.float32)
+    table_rows = particles.rows[rows]
+    full[table_rows] = images[rows]
+    radius_px = geometry.body_mask_radius_px(run.bodies[target], offset_range_angstrom, run.dataset.voxel_size)
+    dataset = dataset_with_images(run.dataset, full, mask_diameter_angstrom=2.0 * radius_px * float(run.dataset.voxel_size)).subset(table_rows)
+    shape = tuple(dataset.image_shape)
+    n_half = shape[0] * (shape[1] // 2 + 1)
+    window = np.asarray(make_fourier_window_spec(shape, current_size, n_half, window_at_box=True).score_indices_np)
+    noise = noise_utils.to_batched_half_pixel_noise(
+        jnp.asarray(noise_model_from_shells(result.noise_radial, shape).variance_per_half[half]), shape
+    ).squeeze()
+    poses = result.poses[target]
+    offsets = poses.offsets_px if result.alignment_offsets_px is None else result.alignment_offsets_px[target]
+    n = rows.size
+    config = ForwardModelConfig.from_dataset(dataset, disc_type="linear_interp", process_fn=dataset.process_images)
+    batch, ctf_params, _ = fetch_indexed_batch(dataset, np.arange(n))
+    unshifted = prepare_unshifted_bucket_operands(
+        dataset, jnp.asarray(batch), ctf_params, np.arange(n), noise_variance_half=noise, config=config, finite_check_mode="off",
+        score_with_masked_images=True, image_corrections=particles.image_corrections[rows],
+        scale_corrections=particles.scale_corrections[rows], image_pre_shifts=None, use_float64_scoring=False,
+        return_direct_scoring_io=True, score_only=False, score_mode="gaussian", window_indices=jnp.asarray(window),
+        relion_exact_bpref_operands=True, image_translations=np.asarray(offsets[table_rows], dtype=np.float64),
+    )
+    fft = float(np.prod(shape))
+    Y = jnp.asarray(unshifted.processed_score_half_raw, dtype=jnp.complex128)[:, window] / fft
+    # relax's exact CTF rows carry the opposite of RELION's sign, and relax's maps too; the prediction Y is compared
+    # with is RELION's: its CTF times the projector's data.
+    ctf = -jnp.asarray(unshifted.ctf_half_rfloat, dtype=jnp.float64)[:, window] * jnp.asarray(particles.scale_corrections[rows])[:, None]
+    from relax.fourier.half_spectrum import make_scoring_half_image_weights, make_shell_indices_half
+
+    inverse = fft**2 / jnp.asarray(np.asarray(noise).reshape(1, -1), dtype=jnp.float64)
+    inverse = jnp.where(jnp.asarray(make_shell_indices_half(shape)) == 0, 0.0, inverse)
+    inverse = (inverse * jnp.asarray(make_scoring_half_image_weights(shape, relion_half_sum=True), dtype=jnp.float64))[:, window]
+    _, projectors = half_projectors(result.body_maps, run, half, current_size)
+    projector = projectors[target]
+    volume = jnp.asarray(projector.data, dtype=jnp.complex128)
+    volume = volume[0] if volume.ndim == 4 else volume
+    lattice = jnp.asarray(relion_half_translation_lattice(shape), dtype=jnp.float64)[window]
+    consensus = particles.frames.consensus[rows]
+    cameras = geometry.body_matrices(consensus, run.bodies[target], poses.eulers_deg[table_rows])
+    ops = BodyOperands(
+        volume=volume, r_max=int(projector.r_max), padding_factor=int(run.settings.projection_padding_factor),
+        image_shape=shape, window=window, lattice=lattice, pixel_size=float(run.pixel_size), image=Y, ctf=ctf,
+        weight=inverse * jnp.ones((n, 1)), cameras=cameras, consensus=consensus,
+    )
+    return ops, unshifted, projector, noise
+
+
+def subset(ops, rows):
+    import jax.numpy as jnp
+
+    rows = np.asarray(rows)
+    index = jnp.asarray(rows)
+    return replace(ops, image=ops.image[index], ctf=ops.ctf[index], weight=ops.weight[index], cameras=ops.cameras[rows], consensus=ops.consensus[rows])
+
+
+def polish_all(ops, batch: int = 128, **kwargs):
+    """:func:`relax.multibody.pose_uq.polish` in batches; returns the fields as a dict of arrays."""
+    from dataclasses import asdict
+
+    from relax.multibody import pose_uq
+
+    n = len(ops.cameras)
+    parts = [asdict(pose_uq.polish(subset(ops, np.arange(s, min(s + batch, n))), **kwargs)) for s in range(0, n, batch)]
+    return {k: np.concatenate([p[k] for p in parts]) for k in parts[0]}
+
+
+def true_pose(run, result, data: Path, target: int):
+    """Every particle's true camera and native target offset (the simulation's, independent of consensus error)."""
+    from relax.multibody import geometry
+    from scripts.multibody_adaptive_subsets import oracle_result
+
+    truth = oracle_result(run, result, data)
+    particles = run.checkpoint.particles
+    consensus = geometry.consensus_matrices(particles[["rlnAngleRot", "rlnAngleTilt", "rlnAnglePsi"]].to_numpy(float))
+    return geometry.body_matrices(consensus, run.bodies[target], truth.poses[target].eulers_deg), truth.alignment_offsets_px[target], truth
+
+
+def pose_errors(cameras, offsets_px, true_cameras, true_offsets_px, consensus, pixel_size):
+    """Local-parameter error ``[n, 5]`` of a pose from the truth: molecular-frame rotation vector, physical shift."""
+    from relax.multibody.pose_uq import log_so3
+
+    vectors = log_so3(cameras @ np.swapaxes(true_cameras, 1, 2))
+    omega = np.einsum("nji,nj->ni", consensus, vectors)
+    return np.concatenate([omega, pixel_size * (np.asarray(true_offsets_px) - np.asarray(offsets_px))], axis=1)
+
+
+def remove_gauge(error, consensus):
+    """The map frame of a run differs from the simulation's by one rigid motion: a constant rotation and a constant 3D
+    translation, seen through each camera. Removed robustly (truth-side evaluation only). Returns the error and gauge."""
+    omega = np.median(error[:, :3], axis=0)
+    P = consensus[:, :2, :]
+    design = P.reshape(-1, 3)
+    target = error[:, 3:].reshape(-1)
+    keep = np.ones(target.size, dtype=bool)
+    for _ in range(5):
+        translation = np.linalg.lstsq(design[keep], target[keep], rcond=None)[0]
+        residual = target - design @ translation
+        keep = np.abs(residual) < 3.0 * 1.4826 * np.median(np.abs(residual))
+    out = error.copy()
+    out[:, :3] -= omega
+    out[:, 3:] -= np.einsum("nij,j->ni", P, translation)
+    return out, dict(omega_deg=np.rad2deg(omega).tolist(), translation_angstrom=translation.tolist())
+
+
+CHI2_5 = {0.5: 4.3515, 0.9: 9.2364, 0.95: 11.0705, 0.99: 15.0863}
+
+
+def calibration(error, covariance) -> dict:
+    """Coverage of the 5D error ellipsoids and coordinate z scores against a chi-square with five degrees of freedom."""
+    solved = np.linalg.solve(covariance, error[:, :, None])[:, :, 0]
+    chi2 = np.sum(error * solved, axis=1)
+    standard = error / np.sqrt(np.diagonal(covariance, axis1=1, axis2=2))
+    return dict(
+        n=len(error), mean_chi2_over_5=float(chi2.mean() / 5.0), median_chi2_over_median=float(np.median(chi2) / CHI2_5[0.5]),
+        ellipsoid_coverage={str(p): float(np.mean(chi2 < v)) for p, v in CHI2_5.items()},
+        z_sd=[float(v) for v in standard.std(axis=0)], z_robust_sd=[float(v) for v in 1.4826 * np.median(np.abs(standard - np.median(standard, axis=0)), axis=0)],
+        z_mean=[float(v) for v in standard.mean(axis=0)],
+    )
+
+
+def audit(args) -> None:
+    """Figure group 1 arrays: native score agreement, finite-difference convergence, sections against quadratics."""
+    import jax.numpy as jnp
+
+    from relax.cuda import fine as cuda_fine
+    from relax.fine_pass.scoring import relion_cuda_fine_full_to_compact_lookup, relion_native_score_corr_img, to_relion_native_fine_units
+    from relax.multibody import pose_uq
+    from relax.projection.projection import project_relion_projector_half_spectrum_centered_rows_at_indices as project
+
+    data = args.root / args.dataset
+    run, result = load_run(data, args.out)
+    offset_range = final_offset_range_angstrom(data, result)
+    n = args.particles
+    ops, unshifted, projector, noise = body_operands(run, result, args.body, 0, np.arange(n), offset_range_angstrom=offset_range)
+    report = dict(dataset=args.dataset, body=args.body + 1, particles=n, box=run.box_size, pixel_size=run.pixel_size, iteration=result.iteration,
+                  offset_range_angstrom=offset_range, padding=run.settings.projection_padding_factor, window_pixels=int(ops.window.size), r_max=ops.r_max,
+                  map_sources=[[str(p) for p in pair] for pair in result.map_sources])
+    continuous = np.asarray(pose_uq.scores(ops, np.zeros((n, 1, 5))))[:, 0]
+    shape, fft, window = ops.image_shape, int(np.prod(ops.image_shape)), jnp.asarray(ops.window)
+    corr = relion_native_score_corr_img(jnp.asarray(np.asarray(noise).reshape(1, -1)), unshifted.ctf_half_rfloat, shape,
+                                        jnp.asarray(run.halves[0].scale_corrections[:n], dtype=jnp.float32)[:, None], zero_dc=True)[:, window]
+    corr = corr * jnp.asarray(ops.weight[0] > 0, dtype=corr.dtype)
+    y = to_relion_native_fine_units(jnp.asarray(unshifted.sparse_score_input_half)[:, window], fft)
+    data32 = jnp.asarray(projector.data, dtype=jnp.complex64)
+    data32 = data32[0] if data32.ndim == 4 else data32
+    ref = project(data32, jnp.asarray(ops.cameras), shape, ops.r_max, ops.padding_factor, None, window).astype(jnp.complex64)
+    lookup = jnp.asarray(relion_cuda_fine_full_to_compact_lookup(shape, run.box_size, ops.window))
+    native = np.asarray(cuda_fine.relion_fine_diff2_rectangular_f32(-ref[:, None], y[:, None], corr.astype(jnp.float32), lookup))[:, 0, 0]
+    report["native_vs_continuous_max_relative"] = float(np.max(np.abs(native / continuous - 1.0)))
+    report["per_pixel_mean_score"] = float(np.mean(continuous) / float(np.sum(ops.weight[0] > 0)))
+
+    # Moving the model and moving the image: same score, by construction of |phase| = 1, checked in the code path.
+    rng = np.random.default_rng(1)
+    shifts = np.zeros((n, 5))
+    shifts[:, 3:] = rng.normal(0.0, 1.0, (n, 2))
+    model_moved = np.asarray(pose_uq.scores(ops, shifts[:, None]))[:, 0]
+    image_moved = np.asarray(pose_uq.scores(pose_uq.recentred(ops, shifts), np.zeros((n, 1, 5))))[:, 0]
+    report["model_vs_image_shift_max_relative"] = float(np.max(np.abs(model_moved / image_moved - 1.0)))
+    # Native translation: the phase of relax's own image_translations.
+    moved = replace(result, poses=[replace(p, offsets_px=p.offsets_px.copy()) for p in result.poses])
+    rows = run.halves[0].rows[:n]
+    moved.poses[args.body].offsets_px[rows] -= shifts[:, 3:] / run.pixel_size
+    native_moved = np.asarray(pose_uq.scores(body_operands(run, moved, args.body, 0, np.arange(n), offset_range_angstrom=offset_range, images=_subtracted(run, result, args.body))[0], np.zeros((n, 1, 5))))[:, 0]
+    report["native_translation_vs_local_max_relative"] = float(np.max(np.abs(native_moved / model_moved - 1.0)))
+
+    fisher = pose_uq.expected_fisher(ops)
+    whiten = pose_uq.whitening(fisher)
+    steps = np.array([0.01, 0.03, 0.1, 0.3, 0.6, 1.0, 1.5, 2.0, 3.0])
+    gradients, hessians = [], []
+    for step in steps:
+        _, g, h = pose_uq.local_derivatives(ops, whiten, float(step))
+        gradients.append(g)
+        hessians.append(h)
+    gradients, hessians = np.stack(gradients), np.stack(hessians)
+    # Directional finite differences along independent random whitened directions, for the record of step dependence.
+    directions = rng.standard_normal((n, 5))
+    directions /= np.linalg.norm(directions, axis=1, keepdims=True)
+    theta = np.einsum("nij,nj->ni", whiten, directions)
+    grid = np.array([-3, -2, -1.5, -1, -.5, -.25, 0, .25, .5, 1, 1.5, 2, 3], dtype=np.float64)
+    fine = np.linspace(-0.12, 0.12, 241)  # a sweep of about one interpolation cell at the outer radius
+    sections = np.asarray(pose_uq.scores(ops, grid[None, :, None] * theta[:, None]))
+    ripple = np.asarray(pose_uq.scores(ops, fine[None, :, None] * theta[:, None]))
+    local = pose_uq.polish(ops)
+    report["polish"] = dict(stored_minus_analysis_median=float(np.median(local.score_stored - local.score_analysis)),
+                            status_counts=np.bincount(local.status).tolist())
+    args.out.mkdir(parents=True, exist_ok=True)
+    np.savez_compressed(args.out / f"audit_{args.dataset}_body{args.body + 1}.npz", native=native, continuous=continuous, steps=steps, gradients=gradients,
+                        hessians=hessians, grid=grid, sections=sections, fine=fine, ripple=ripple, directions=directions, fisher=fisher, whiten=whiten,
+                        whitened_eigenvalues=local.whitened_eigenvalues, fit_ratio=local.fit_ratio)
+    (args.out / f"audit_{args.dataset}_body{args.body + 1}.json").write_text(json.dumps(report, indent=1))
+    print(json.dumps(report, indent=1), flush=True)
+
+
+def _subtracted(run, result, target):
+    from relax.multibody import subsets
+
+    return subsets.target_body_images(run, result, target, 0)
+
+
+def synthetic(args) -> None:
+    """Stage C, first arm: independent noise realizations of the same poses. The image is exactly the model's
+    prediction plus Gaussian noise at the weights the score assumes, so nuisance, noise, map and interpolation are all
+    known; cameras and CTFs are the fixture's, the scales varied, the pixel size nonunit."""
+    import jax
+    import jax.numpy as jnp
+
+    from relax.multibody import pose_uq
+
+    data = args.root / args.dataset
+    run, result = load_run(data, args.out)
+    offset_range = final_offset_range_angstrom(data, result)
+    n = args.particles
+    ops, *_ = body_operands(run, result, args.body, 0, np.arange(n), offset_range_angstrom=offset_range)
+    rng = np.random.default_rng(args.seed)
+    scale = rng.uniform(0.8, 1.2, n)
+    ops = replace(ops, ctf=ops.ctf * jnp.asarray(scale)[:, None])
+    if args.signal != 1.0:
+        ops = replace(ops, ctf=ops.ctf * args.signal)
+    # Fix every realization's truth by moving each particle a random fraction of a sampling step off the stored pose.
+    clean = pose_uq.predictions(ops)
+    weight = np.asarray(ops.weight)
+    results = []
+    for r in range(args.realizations):
+        key = jax.random.PRNGKey(args.seed + 1000 + r)
+        a, b = jax.random.normal(key, (2, *clean.shape), dtype=jnp.float64)
+        noise = (a + 1j * b) / jnp.sqrt(jnp.where(ops.weight > 0, ops.weight, 1.0)) * (ops.weight > 0)
+        results.append(polish_all(replace(ops, image=clean + noise), batch=args.batch))
+        print("realization", r, flush=True)
+    stack = {k: np.stack([x[k] for x in results]) for k in ("correction", "hessian", "fisher", "status", "whitened_eigenvalues", "last_step", "fit_ratio")}
+    np.savez_compressed(args.out / f"synthetic_{args.dataset}_body{args.body + 1}_signal{args.signal:g}.npz", scale=scale, **stack)
+    error = stack["correction"].reshape(-1, 5)
+    keep = stack["status"].reshape(-1) == 0
+    hessian = stack["hessian"].reshape(-1, 5, 5)
+    fisher = stack["fisher"].reshape(-1, 5, 5)
+    report = dict(dataset=args.dataset, body=args.body + 1, particles=n, realizations=args.realizations, signal=args.signal,
+                  qualified_fraction=float(keep.mean()), status_counts=np.bincount(stack["status"].reshape(-1)).tolist(),
+                  observed_hessian=calibration(error[keep], np.linalg.inv(hessian[keep])), expected_fisher=calibration(error[keep], np.linalg.inv(fisher[keep])),
+                  all_expected_fisher=calibration(error, np.linalg.inv(fisher)))
+    empirical = np.stack([np.cov(stack["correction"][:, i].T) for i in range(n)])
+    predicted = np.mean(np.linalg.inv(fisher).reshape(args.realizations, n, 5, 5), axis=0)
+    report["empirical_over_predicted_variance_median"] = np.median(np.diagonal(empirical, axis1=1, axis2=2) / np.diagonal(predicted, axis1=1, axis2=2), axis=0).tolist()
+    (args.out / f"synthetic_{args.dataset}_body{args.body + 1}_signal{args.signal:g}.json").write_text(json.dumps(report, indent=1))
+    print(json.dumps(report, indent=1), flush=True)
+
+
+def fixture_uq(args) -> None:
+    """Stage C second arm and stage D input: the local analysis of a fixture's particles, against the simulated truth.
+
+    ``--nuisance estimated`` subtracts the half maps at fitted poses (what a real data set allows), ``exact`` subtracts
+    the noiseless simulated other body. Both keep each image's original noise and the run's estimated noise spectrum."""
+    from relax.multibody import geometry, subsets
+    from relax.multibody.pose_uq import covariance_from_hessian
+    from scripts.multibody_adaptive_subsets import exact_nuisance_images, require_unit_true_contrast, simulated_body_images
+
+    data = args.root / args.dataset
+    run, result = load_run(data, args.out)
+    offset_range = final_offset_range_angstrom(data, result)
+    body = run.bodies[args.body]
+    true_cameras, true_offsets, _ = true_pose(run, result, data, args.body)
+    exact = None
+    if args.nuisance == "exact":
+        require_unit_true_contrast(data)
+        components, _ = simulated_body_images(run, data)
+        exact = exact_nuisance_images(run, data, args.body, components)
+    out = {}
+    for half in range(2):
+        particles = run.halves[half]
+        count = particles.rows.size if args.particles is None else min(args.particles, particles.rows.size)
+        images = None if exact is None else exact[particles.rows]
+        started = time.time()
+        ops, *_ = body_operands(run, result, args.body, half, np.arange(count), offset_range_angstrom=offset_range, images=images)
+        prepared = time.time()
+        local = polish_all(ops, batch=args.batch)
+        finished = time.time()
+        table = particles.rows[:count]
+        offsets = result.poses[args.body].offsets_px[table]
+        analysis = offsets - local["correction"][:, 3:] / run.pixel_size
+        local["table_rows"], local["half"] = table, np.full(count, half)
+        local["stored_cameras"] = ops.cameras
+        local["consensus"] = ops.consensus
+        local["stored_offsets_px"], local["analysis_offsets_px"] = offsets, analysis
+        local["error_stored"] = pose_errors(ops.cameras, offsets, true_cameras[table], true_offsets[table], ops.consensus, run.pixel_size)
+        local["error_analysis"] = pose_errors(local["cameras"], analysis, true_cameras[table], true_offsets[table], ops.consensus, run.pixel_size)
+        local["signal_power"] = np.asarray(_signal_power(ops))
+        local["seconds"] = np.full(count, (finished - prepared) / count)
+        out.setdefault("prepare_seconds", []).append(prepared - started)
+        out.setdefault("polish_seconds", []).append(finished - prepared)
+        out.setdefault("parts", []).append(local)
+    merged = {k: np.concatenate([p[k] for p in out["parts"]]) for k in out["parts"][0]}
+    name = f"uq_{args.dataset}_body{args.body + 1}_{args.nuisance}"
+    np.savez_compressed(args.out / f"{name}.npz", **merged)
+    report = fixture_report(merged, args)
+    report.update(prepare_seconds=out["prepare_seconds"], polish_seconds=out["polish_seconds"])
+    (args.out / f"{name}.json").write_text(json.dumps(report, indent=1))
+    print(json.dumps(report, indent=1), flush=True)
+
+
+def _signal_power(ops):
+    import jax.numpy as jnp
+
+    from relax.multibody import pose_uq
+
+    clean = pose_uq.predictions(ops)
+    return jnp.sum(ops.weight * jnp.abs(clean) ** 2, axis=1)
+
+
+def fixture_report(merged: dict, args) -> dict:
+    consensus = merged["consensus"]
+    report = dict(dataset=args.dataset, body=args.body + 1, nuisance=args.nuisance, n=len(consensus),
+                  status_counts=np.bincount(merged["status"]).tolist(), qualified=float(np.mean(merged["status"] == 0)),
+                  median_score_drop=float(np.median(merged["score_stored"] - merged["score_analysis"])),
+                  median_correction_deg=float(np.rad2deg(np.median(np.linalg.norm(merged["correction"][:, :3], axis=1)))),
+                  median_correction_angstrom=float(np.median(np.linalg.norm(merged["correction"][:, 3:], axis=1))))
+    keep = merged["status"] == 0
+    hessian, fisher = merged["hessian"], merged["fisher"]
+    predicted = np.linalg.inv(fisher)
+    report["predicted_sd_median"] = dict(rotation_deg=np.rad2deg(np.median(np.sqrt(np.diagonal(predicted, axis1=1, axis2=2)[:, :3]), axis=0)).tolist(),
+                                         shift_angstrom=np.median(np.sqrt(np.diagonal(predicted, axis1=1, axis2=2)[:, 3:]), axis=0).tolist())
+    for name in ("error_stored", "error_analysis"):
+        error, gauge = remove_gauge(merged[name], consensus)
+        gross = np.linalg.norm(error[:, :3], axis=1) > np.deg2rad(5.0)
+        robust = 1.4826 * np.median(np.abs(error), axis=0)
+        report[name] = dict(gauge=gauge, gross_over_5deg=float(gross.mean()), robust_sd_rotation_deg=np.rad2deg(robust[:3]).tolist(), robust_sd_shift_angstrom=robust[3:].tolist(),
+                            observed_hessian_qualified=calibration(error[keep], np.linalg.inv(hessian[keep])),
+                            expected_fisher_all=calibration(error, predicted), expected_fisher_not_gross=calibration(error[~gross], predicted[~gross]))
+    return report
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    sub = parser.add_subparsers(dest="stage", required=True)
+    for name, function in (("audit", audit), ("synthetic", synthetic), ("fixture", fixture_uq)):
+        a = sub.add_parser(name)
+        a.set_defaults(function=function)
+        a.add_argument("--root", required=True, type=Path)
+        a.add_argument("--out", required=True, type=Path)
+        a.add_argument("--body", type=int, default=1)
+        a.add_argument("--particles", type=int, default=None if name == "fixture" else 64)
+        a.add_argument("--batch", type=int, default=128)
+        a.add_argument("--seed", type=int, default=20261102)
+        a.add_argument("--realizations", type=int, default=16)
+        a.add_argument("--signal", type=float, default=1.0)
+        a.add_argument("--nuisance", choices=("estimated", "exact"), default="estimated")
+        a.add_argument("dataset")
+    args = parser.parse_args()
+    args.out.mkdir(parents=True, exist_ok=True)
+    logging.basicConfig(level=logging.WARNING)
+    args.function(args)
+
+
+if __name__ == "__main__":
+    main()
