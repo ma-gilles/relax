@@ -43,6 +43,7 @@ from relax.projection.projection import project_relion_projector_half_spectrum_c
 from relax.relion.ctf import relion_exact_ctf_half_from_source_star
 from relax.steps.projector_preparation import PreparedProjector
 
+
 class ArrayImageLoader(ImageLoader):
     """Real particle images held in memory, ``[N, D, D]`` float32, in the dataset's original order."""
 
