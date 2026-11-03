@@ -421,7 +421,7 @@ def pose_table(run, merged: dict, target: int, *, use_stored: bool = False) -> d
 
 
 RANKS = (2, 4, 6, 10)
-FLOORS = (1e-4, 1e-3, 1e-2, 1e-1)
+FLOORS = (1e-3, 1e-2, 1e-1)
 
 
 def held_out(fit, y, P, R) -> dict:
@@ -498,91 +498,191 @@ def target_curves(scores_of, labels, states, names, dataset: str) -> dict:
     return report
 
 
-def embed(args) -> None:
-    """Stage D: the UQ table, rank 10 and control fits, MAP coordinates, and the neighborhood curves."""
-    from relax.multibody import pose_ppca as pp
+def joint_table(tables: list) -> dict:
+    """All bodies at once: features concatenated, ``R_i`` block diagonal (independent body errors given the consensus)."""
+    n, bodies = len(tables[0]["y"]), len(tables)
+    R = np.zeros((n, 11 * bodies, 11 * bodies))
+    for b, t in enumerate(tables):
+        R[:, 11 * b : 11 * (b + 1), 11 * b : 11 * (b + 1)] = t["R"]
+    return dict(y=np.concatenate([t["y"] for t in tables], axis=1), P=tables[0]["P"], R=R, usable=np.all([t["usable"] for t in tables], axis=0))
+
+
+def true_observations(run, data: Path, labels: dict, target: int, root: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """``(y, P, Q)`` of a body from the simulated motion and cameras: no consensus error, no pose error."""
+    from recovar import utils
+
     from relax.multibody import pose_uq as uq
     from relax.multibody.pose_neighborhoods import mask_moments
     from scripts.run_pose_ordering_comparison import true_camera_features
 
-    data = args.root / args.dataset
-    run, result = load_run(data, args.out)
-    name = f"uq_{args.dataset}_body{args.body + 1}_estimated"
-    merged = dict(np.load(args.out / f"{name}.npz"))
-    table = pose_table(run, merged, args.body)
-    labels = fixture_labels(run, data)
-    fitted = fit_body(table, args.seed)
-    report = dict(dataset=args.dataset, body=args.body + 1, n=len(table["y"]), usable=int(table["usable"].sum()), best_floor={str(k): v for k, v in fitted["best_floor"].items()}, sweep=fitted["sweep"])
+    features = true_camera_features(run, data, labels["record"], target, labels["states"], labels["names"])
+    moments = mask_moments(run.bodies[target].mask, run.bodies[target].com, run.pixel_size)
+    values, vectors = np.linalg.eigh(moments.covariance)
+    Q = features.shape_factors @ ((vectors / np.sqrt(values)) @ vectors.T)
+    rows = np.asarray([int(n.split("@")[0]) - 1 for n in labels["names"]])
+    P = uq.camera_projection(np.asarray(utils.pickle_load(data / "poses.pkl")[0])[rows])
+    return np.concatenate([(Q @ root).reshape(-1, 9), np.einsum("nij,nj->ni", P, features.points)], axis=1), P, Q
+
+
+def explained(coordinates: np.ndarray, truth: np.ndarray, usable: np.ndarray) -> float:
+    """R^2 of a linear prediction of a true scalar from coordinates, on the usable particles (evaluation only)."""
+    x = coordinates[usable] - coordinates[usable].mean(axis=0)
+    t = truth[usable] - truth[usable].mean()
+    if np.var(t) == 0.0:
+        return float("nan")
+    return float(1.0 - np.sum((t - x @ np.linalg.lstsq(x, t, rcond=None)[0]) ** 2) / np.sum(t**2))
+
+
+def cross_body_tests(tables: list, fits: list, seed: int) -> dict:
+    """Do the two bodies' errors correlate? Truth free: canonical correlations of the per-body PPCA residuals' first
+    five whitened coordinates, against a permutation of body 2. With truth: the 5 x 5 correlation of the pose errors."""
+    from relax.multibody import pose_ppca as pp
+
+    keep = tables[0]["usable"] & tables[1]["usable"]
+    parts = []
+    for table, fit in zip(tables, fits):
+        posterior = pp.latent_posterior(table["y"][keep], table["P"][keep], table["R"][keep], fit)
+        A = pp.operators(table["P"][keep])
+        parts.append(table["y"][keep] - np.einsum("nij,nj->ni", A, posterior.structured_mean))
+
+    def canonical(a, b):
+        a, b = a - a.mean(axis=0), b - b.mean(axis=0)
+        ua = np.linalg.svd(a, full_matrices=False)[0][:, :6]
+        ub = np.linalg.svd(b, full_matrices=False)[0][:, :6]
+        return np.linalg.svd(ua.T @ ub, compute_uv=False)
+
+    # Rotation-feature residuals: they read the same molecular frame in both bodies, so a shared consensus error shows.
+    observed = canonical(parts[0][:, :9], parts[1][:, :9])
+    null = np.stack([canonical(parts[0][:, :9], parts[1][np.random.default_rng(seed + k).permutation(len(parts[1]))][:, :9]) for k in range(20)])
+    errors = []
+    for table in tables:
+        error, _ = remove_gauge(table["fields"]["error_analysis"], table["fields"]["consensus"])
+        errors.append(error[keep])
+    gross = (np.linalg.norm(errors[0][:, :3], axis=1) < np.deg2rad(5.0)) & (np.linalg.norm(errors[1][:, :3], axis=1) < np.deg2rad(5.0))
+    matrix = np.corrcoef(errors[0][gross].T, errors[1][gross].T)[:5, 5:]
+    # Cross-covariance relative to the diagonal R the block model assumes zero.
+    return dict(residual_canonical_correlations=observed.tolist(), permuted_mean=null.mean(axis=0).tolist(), permuted_max=null.max(axis=0).tolist(),
+                pose_error_correlation_image_level=matrix.tolist(), n=int(keep.sum()))
+
+
+def consensus_gap(table: dict, true_rotations: np.ndarray) -> dict:
+    """The uncertainty S covers the camera-level pose. Against the molecular-frame rotation Q = A^T B it can only cover
+    the part free of consensus error: the 3D rotation error against S's block, before and after a median gauge."""
+    from relax.multibody.pose_uq import log_so3
+
     usable = table["usable"]
-    arrays = dict(table_rows=table["fields"]["table_rows"], half=table["fields"]["half"], status=table["fields"]["status"], image_names=labels["names"],
-                  P=table["P"], y=table["y"], S=table["S"], R=table["R"], stored_cameras=table["fields"]["stored_cameras"], analysis_cameras=table["fields"]["cameras"],
-                  stored_offsets_px=table["fields"]["stored_offsets_px"], analysis_offsets_px=table["fields"]["analysis_offsets_px"], training=fitted["training"], validation=fitted["validation"],
-                  level=labels["level"], states=labels["states"], labels=labels["labels"], body1=labels["body1"], covariance=table["covariance"], centroid=table["centroid"], root=table["root"])
-    orderings = {}
+    error = log_so3(table["rotations"][usable] @ np.swapaxes(true_rotations[usable], 1, 2))
+    error = error - np.median(error, axis=0)
+    S = table["S"][usable][:, :3, :3]
+    chi2 = np.sum(error * np.linalg.solve(S, error[:, :, None])[:, :, 0], axis=1)
+    camera = remove_gauge(table["fields"]["error_analysis"], table["fields"]["consensus"])[0][usable, :3]
+    camera_chi2 = np.sum(camera * np.linalg.solve(S, camera[:, :, None])[:, :, 0], axis=1)
+    return dict(molecular_frame_median_chi2_over_2p37=float(np.median(chi2) / 2.366), molecular_frame_robust_error_deg=np.rad2deg(1.4826 * np.median(np.abs(error), axis=0)).tolist(),
+                molecular_frame_coverage_90=float(np.mean(chi2 < 6.2514)), camera_median_chi2_over_2p37=float(np.median(camera_chi2) / 2.366),
+                camera_robust_error_deg=np.rad2deg(1.4826 * np.median(np.abs(camera), axis=0)).tolist(), camera_coverage_90=float(np.mean(camera_chi2 < 6.2514)),
+                predicted_sd_deg=np.rad2deg(np.sqrt(np.median(np.diagonal(S, axis1=1, axis2=2), axis=0))).tolist())
+
+
+def embed(args) -> None:
+    """Stage D: per-body controls and the joint fit, MAP coordinates, neighborhood curves, and the assumption tests."""
+    from relax.multibody import pose_ppca as pp
+    from relax.multibody import pose_uq as uq
+
+    data = args.root / args.dataset
+    run, _ = load_run(data, args.out)
+    merged = [dict(np.load(args.input / f"uq_{args.dataset}_body{b + 1}_estimated.npz")) for b in range(len(run.bodies))]
+    tables = [pose_table(run, m, b) for b, m in enumerate(merged)]
+    labels = fixture_labels(run, data)
+    joint = joint_table(tables)
+    truth_values = dict(body2_level=labels["level"], body1_twist=np.asarray([s["body1_twist"] for s in labels["record"]["states"]])[labels["states"]])
+    report = dict(dataset=args.dataset, n=len(joint["y"]), usable_per_body=[int(t["usable"].sum()) for t in tables], usable_joint=int(joint["usable"].sum()),
+                  floors=list(FLOORS), ranks=list(RANKS), per_body={}, curves={}, explained={})
+    arrays = dict(table_rows=tables[0]["fields"]["table_rows"], half=tables[0]["fields"]["half"], image_names=labels["names"], P=joint["P"], y=joint["y"], R=joint["R"],
+                  level=labels["level"], states=labels["states"], labels=labels["labels"], body1=labels["body1"], body1_twist=truth_values["body1_twist"])
+    per_body_fits = []
+    orderings = {0: {}, 1: {}}
+    for b, table in enumerate(tables):
+        started = time.time()
+        fitted = fit_body(table, args.seed)
+        best = fitted["fits"][(10, fitted["best_floor"][10])]
+        per_body_fits.append(best)
+        report["per_body"][str(b + 1)] = dict(sweep=fitted["sweep"], best_floor={str(k): v for k, v in fitted["best_floor"].items()}, seconds=time.time() - started, consensus_gap=None)
+        usable = table["usable"]
+        posterior = pp.latent_posterior(table["y"][usable], table["P"][usable], table["R"][usable], best)
+        principal = np.full((len(usable), 10), np.nan)
+        principal[usable] = posterior.principal(best)[0]
+        orderings[b]["per-body PPCA q10"] = principal
+        report["explained"][f"per_body_{b + 1}"] = {k: explained(principal, v, usable) for k, v in truth_values.items()}
+        arrays.update({f"body{b + 1}_{k}": v for k, v in dict(
+            status=table["fields"]["status"], S=table["S"], stored_cameras=table["fields"]["stored_cameras"], analysis_cameras=table["fields"]["cameras"], stored_offsets_px=table["fields"]["stored_offsets_px"],
+            analysis_offsets_px=table["fields"]["analysis_offsets_px"], W=best.W, mean=best.mean, tau2=best.tau2, principal=principal, latent_covariance=posterior.covariance,
+            signal_power=table["fields"]["signal_power"], pca=zero_depth_pca(table, 10)).items()})
+        orderings[b]["zero-depth PCA 10"] = arrays[f"body{b + 1}_pca"]
+        true_y, true_P, true_Q = true_observations(run, data, labels, b, table["root"])
+        report["per_body"][str(b + 1)]["consensus_gap"] = consensus_gap(table, true_Q)
+        table["true_y"], table["true_P"] = true_y, true_P
+        # Finite-angle check of the propagated covariance on a sample.
+        sample = np.flatnonzero(usable)[:: max(1, int(usable.sum()) // 200)]
+        bias, spread = uq.finite_angle_moments(table["rotations"][sample], table["shifts"][sample], table["P"][sample], table["root"], table["centroid"], table["S"][sample], seed=args.seed)
+        R = table["R"][sample]
+        left = np.linalg.svd(uq.feature_jacobian(table["rotations"][sample], table["P"][sample], table["root"], table["centroid"]), full_matrices=True)[0]
+        tangent, normal = left[:, :, :5], left[:, :, 5:]
+        report["per_body"][str(b + 1)]["finite_angle"] = dict(
+            tangent_variance_ratio_median=float(np.median(np.trace(np.swapaxes(tangent, 1, 2) @ spread @ tangent, axis1=1, axis2=2) / np.trace(np.swapaxes(tangent, 1, 2) @ R @ tangent, axis1=1, axis2=2))),
+            normal_variance_median=float(np.median(np.trace(np.swapaxes(normal, 1, 2) @ spread @ normal, axis1=1, axis2=2))), tangent_variance_median=float(np.median(np.trace(R, axis1=1, axis2=2))),
+            bias_norm_median=float(np.median(np.linalg.norm(bias, axis=1))), bias_normal_median=float(np.median(np.linalg.norm(np.einsum("nji,nj->ni", normal, bias), axis=1))))
+        arrays.update({f"body{b + 1}_finite_{k}": v for k, v in dict(bias=bias, spread=spread, R=R, sample=sample).items()})
+    report["cross_body"] = cross_body_tests(tables, per_body_fits, args.seed)
+    print(json.dumps(report["cross_body"]), flush=True)
+
+    started = time.time()
+    fitted = fit_body(joint, args.seed)
+    report["joint"] = dict(sweep=fitted["sweep"], best_floor={str(k): v for k, v in fitted["best_floor"].items()}, seconds=time.time() - started)
+    usable = joint["usable"]
+    decoded = {}
     for rank in RANKS:
         fit = fitted["fits"][(rank, fitted["best_floor"][rank])]
-        posterior = pp.latent_posterior(table["y"][usable], table["P"][usable], table["R"][usable], fit)
-        check = np.linalg.inv(np.eye(rank) + posterior.information)
-        report.setdefault("posterior_identity_max", {})[str(rank)] = float(np.max(np.abs(check - posterior.covariance)))
-        coordinates, covariance = posterior.principal(fit)
-        z = np.full((len(usable), rank), np.nan)
+        posterior = pp.latent_posterior(joint["y"][usable], joint["P"][usable], joint["R"][usable], fit)
         principal = np.full((len(usable), rank), np.nan)
-        principal[usable], z[usable] = coordinates, posterior.z_map
-        if rank in (4, 10):
-            orderings[f"PPCA q{rank} principal"] = lambda r, p=principal: np.nan_to_num(np.linalg.norm(p - p[r], axis=1), nan=np.inf)
-            orderings[f"PPCA q{rank} z"] = lambda r, p=z: np.nan_to_num(np.linalg.norm(p - p[r], axis=1), nan=np.inf)
+        z = np.full((len(usable), rank), np.nan)
+        principal[usable], z[usable] = posterior.principal(fit)[0], posterior.z_map
+        report["joint"].setdefault("posterior_identity_max", {})[str(rank)] = float(np.max(np.abs(np.linalg.inv(np.eye(rank) + posterior.information) - posterior.covariance)))
+        for b in (0, 1):
+            orderings[b][f"joint q{rank} whole latent"] = principal
+            orderings[b][f"joint q{rank} decoded body {b + 1}"] = z @ fit.body_rows(b).T
+            decoded[(rank, b)] = z @ fit.body_rows(b).T
+            report["explained"][f"joint_q{rank}_decoded_body{b + 1}"] = {k: explained(decoded[(rank, b)], v, usable) for k, v in truth_values.items()}
+        report["explained"][f"joint_q{rank}_whole"] = {k: explained(principal, v, usable) for k, v in truth_values.items()}
+        amplitudes = np.linalg.norm(fit.W[:12], axis=0), np.linalg.norm(fit.W[12:], axis=0)
+        report["joint"].setdefault("column_body_amplitudes", {})[str(rank)] = [a.tolist() for a in amplitudes]
+        report["joint"].setdefault("latent_truth_correlation", {})[str(rank)] = {k: [float(np.corrcoef(principal[usable, c], v[usable])[0, 1]) if np.var(v) > 0 else None for c in range(rank)] for k, v in truth_values.items()}
         if rank == 10:
-            arrays.update(mean=fit.mean, W=fit.W, tau2=fit.tau2, floor=fit.floor, amplitudes=fit.amplitudes, log_likelihood=fit.log_likelihood,
-                          z_map=z, principal=principal, latent_covariance=posterior.covariance, principal_covariance=covariance, information=posterior.information,
-                          linear=posterior.linear, psi=posterior.psi, structured_mean=posterior.structured_mean, feature_mean=posterior.feature_mean)
-    pca = zero_depth_pca(table, 10)
-    orderings["zero-depth PCA 10"] = lambda r, p=pca: np.linalg.norm(p - p[r], axis=1)
-    pooled = table["fields"]["signal_power"]
-    arrays["pca"], arrays["signal_power"] = pca, pooled
-    # Controls with the fitted model's machinery: the same features with no pose error, and with no UQ.
-    no_uq = pp.fit_projected_ppca(table["y"][usable], table["P"][usable], np.zeros((int(usable.sum()), 11, 11)), 10, floor=0.01, tolerance=1e-6)
-    posterior = pp.latent_posterior(table["y"][usable], table["P"][usable], np.zeros((int(usable.sum()), 11, 11)), no_uq)
-    plain = np.full((len(usable), 10), np.nan)
-    plain[usable] = posterior.principal(no_uq)[0]
-    orderings["projected PPCA q10, no UQ"] = lambda r, p=plain: np.nan_to_num(np.linalg.norm(p - p[r], axis=1), nan=np.inf)
-    arrays["no_uq_principal"] = plain
-    curves = target_curves(lambda r: {k: f(r) for k, f in orderings.items()}, labels["labels"], labels["states"], labels["names"], args.dataset)
-    moments = mask_moments(run.bodies[args.body].mask, run.bodies[args.body].com, run.pixel_size)
-    true_features = true_camera_features(run, data, labels["record"], args.body, labels["states"], labels["names"])
-    values, vectors = np.linalg.eigh(moments.covariance)
-    root_inverse = (vectors / np.sqrt(values)) @ vectors.T
-    true_rotations = true_features.shape_factors @ root_inverse
-    from recovar import utils
+            arrays.update(joint_mean=fit.mean, joint_W=fit.W, joint_tau2=fit.tau2, joint_floor=fit.floor, joint_log_likelihood=fit.log_likelihood, joint_z_map=z, joint_principal=principal,
+                          joint_latent_covariance=posterior.covariance, joint_principal_covariance=posterior.principal(fit)[1], joint_information=posterior.information, joint_linear=posterior.linear,
+                          joint_psi=posterior.psi, joint_structured_mean=posterior.structured_mean, joint_feature_mean=posterior.feature_mean, joint_amplitudes=fit.amplitudes, joint_usable=usable)
 
-    rows = np.asarray([int(n.split("@")[0]) - 1 for n in labels["names"]])
-    true_camera = np.asarray(utils.pickle_load(data / "poses.pkl")[0])[rows]
-    true_P = uq.camera_projection(true_camera)
-    true_y = np.concatenate([(true_rotations @ table["root"]).reshape(-1, 9), np.einsum("nij,nj->ni", true_P, true_features.points)], axis=1)
-    perfect = pp.fit_projected_ppca(true_y, true_P, np.zeros((len(true_y), 11, 11)), 10, floor=1e-4, tolerance=1e-6)
-    perfect_z = pp.latent_posterior(true_y, true_P, np.zeros((len(true_y), 11, 11)), perfect)
-    true_coordinates = perfect_z.principal(perfect)[0]
-    arrays["true_principal"] = true_coordinates
-    report["true_pose_amplitudes"] = perfect.amplitudes.tolist()
-    curves_true = target_curves(lambda r: {"PPCA q10 principal, true poses": np.linalg.norm(true_coordinates - true_coordinates[r], axis=1)}, labels["labels"], labels["states"], labels["names"], args.dataset)
-    report["curves"], report["curves_true_poses"] = curves, curves_true
-    # Finite-angle check of the propagated covariance on a sample.
-    sample = np.flatnonzero(usable)[:: max(1, int(usable.sum()) // 200)]
-    S, y_rot, y_shift = table["S"][sample], table["rotations"][sample], table["shifts"][sample]
-    bias, spread = uq.finite_angle_moments(y_rot, y_shift, table["P"][sample], table["root"], table["centroid"], S, seed=args.seed)
-    R = table["R"][sample]
-    U = np.linalg.svd(uq.feature_jacobian(y_rot, table["P"][sample], table["root"], table["centroid"]), full_matrices=True)[0]
-    tangent, normal = U[:, :, :5], U[:, :, 5:]
-    report["finite_angle"] = dict(
-        tangent_variance_ratio_median=float(np.median(np.trace(np.swapaxes(tangent, 1, 2) @ spread @ tangent, axis1=1, axis2=2) / np.trace(np.swapaxes(tangent, 1, 2) @ R @ tangent, axis1=1, axis2=2))),
-        normal_variance_median=float(np.median(np.trace(np.swapaxes(normal, 1, 2) @ spread @ normal, axis1=1, axis2=2))),
-        tangent_variance_median=float(np.median(np.trace(R, axis1=1, axis2=2))),
-        bias_norm_median=float(np.median(np.linalg.norm(bias, axis=1))), bias_normal_median=float(np.median(np.linalg.norm(np.einsum("nji,nj->ni", normal, bias), axis=1))),
-    )
-    arrays.update(finite_bias=bias, finite_spread=spread, finite_R=R, finite_sample=sample)
-    out = f"embed_{args.dataset}_body{args.body + 1}"
+    # The perfect-pose control: the joint model on true features.
+    true_y = np.concatenate([t["true_y"] for t in tables], axis=1)
+    true_P = tables[0]["true_P"]
+    zero = np.zeros((len(true_y), 22, 22))
+    perfect = pp.fit_projected_ppca(true_y, true_P, zero, 10, floor=1e-4, tolerance=1e-6)
+    posterior = pp.latent_posterior(true_y, true_P, zero, perfect)
+    perfect_z = posterior.z_map
+    report["true_pose_joint"] = dict(amplitudes=perfect.amplitudes.tolist(), tau2=perfect.tau2)
+    arrays["true_joint_principal"] = posterior.principal(perfect)[0]
+    true_orderings = {b: {"joint q10 decoded body, true poses": perfect_z @ perfect.body_rows(b).T, "joint q10 whole latent, true poses": arrays["true_joint_principal"]} for b in (0, 1)}
+
+    def distances(coordinates: dict, target: int) -> dict:
+        return {k: np.nan_to_num(np.linalg.norm(v - v[target], axis=1), nan=np.inf) for k, v in coordinates.items()}
+
+    state_labels = {1: labels["labels"], 0: labels["body1"]}
+    for b in (0, 1):
+        report["curves"][str(b + 1)] = target_curves(lambda r: distances(orderings[b], r), state_labels[b], labels["states"], labels["names"], args.dataset)
+        report["curves"][f"{b + 1}_true"] = target_curves(lambda r: distances(true_orderings[b], r), state_labels[b], labels["states"], labels["names"], args.dataset)
+    out = f"embed_{args.dataset}"
     np.savez_compressed(args.out / f"{out}.npz", **arrays)
     (args.out / f"{out}.json").write_text(json.dumps(report, indent=1, default=float))
-    print(json.dumps({k: v for k, v in report.items() if k not in ("sweep", "curves", "curves_true_poses")}, indent=1, default=float), flush=True)
+    print(json.dumps({k: report[k] for k in ("usable_per_body", "usable_joint", "explained", "cross_body")}, indent=1, default=float), flush=True)
 
 
 def main() -> None:
@@ -599,10 +699,12 @@ def main() -> None:
         a.add_argument("--seed", type=int, default=20261102)
         a.add_argument("--realizations", type=int, default=16)
         a.add_argument("--signal", type=float, default=1.0)
+        a.add_argument("--input", type=Path, help="embed: where the fixture stage wrote its tables; default --out")
         a.add_argument("--nuisance", choices=("estimated", "exact"), default="estimated")
         a.add_argument("dataset")
     args = parser.parse_args()
     args.out.mkdir(parents=True, exist_ok=True)
+    args.input = args.input or args.out
     logging.basicConfig(level=logging.WARNING)
     args.function(args)
 
