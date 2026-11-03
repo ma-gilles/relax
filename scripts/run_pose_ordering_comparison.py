@@ -20,6 +20,7 @@ import numpy as np
 
 STEP, MIN_WIDTH, KEPT = 1.5, 0.75, (50, 100, 300, 1000)
 EM_ITERATIONS = 25
+DEPTH_NEIGHBOURS, DEPTH_ROUNDS = (10, 30, 100), 10
 TARGETS = {"caseA_5k": ((13, 1002), (1, 1)), "caseB_5k": ((13, 1002), (1, 1)), "caseC_5k": ((13, 1002), (1, 1)),
            "caseD_5k": ((40, 1002), (37, 1000))}
 TARGETS_10K = ((13, 1023), (1, 1037))
@@ -55,6 +56,26 @@ def density_positions(points: np.ndarray, normals: np.ndarray, width: float) -> 
     return np.asarray(posterior @ grid, dtype=np.float64) + centre, {"grid_points": len(grid), "radius_angstrom": radius, "width_angstrom": width}
 
 
+def neighbour_depth_positions(features, covariance: np.ndarray, neighbours: int, rounds: int = DEPTH_ROUNDS) -> np.ndarray:
+    """Every particle starts at depth 0 on its line. Each round it moves to the depth nearest the mean position of its
+    K nearest particles in position and rotation, the rotation vector scaled to angstroms."""
+    from scipy.spatial import cKDTree
+    from scipy.spatial.transform import Rotation
+
+    relative = features.shape_factors @ np.linalg.inv(features.shape_factors[0])
+    rotation = Rotation.from_matrix(relative).as_rotvec() * np.sqrt(np.trace(covariance))
+    normals = features.normals
+    origin = features.points - np.mean(features.points, axis=0)
+    origin = origin - np.sum(origin * normals, axis=1, keepdims=True) * normals
+    positions = origin.copy()
+    for _ in range(rounds):
+        coordinates = np.hstack([positions, rotation])
+        nearest = cKDTree(coordinates).query(coordinates, k=neighbours + 1, workers=-1)[1][:, 1:]
+        mean = positions[nearest].mean(axis=1)
+        positions = origin + np.sum((mean - origin) * normals, axis=1, keepdims=True) * normals
+    return positions
+
+
 def rotation_tied_shift(features, motion) -> np.ndarray:
     """The rank 1 motion's translation as its rotation part predicts it, ``[N, 3]``."""
     shape = motion.components[:9, 0]
@@ -80,9 +101,16 @@ def orderings(features, pc1_scores, bound: float, target: int, densities: dict) 
 
 def score_target(scores: dict, labels: np.ndarray, target: int, kept: tuple) -> dict:
     same = labels == labels[target]
-    table = {name: [float(np.mean(same[np.argsort(s, kind="stable")[:n]])) for n in kept] for name, s in scores.items()}
+    table = {}
+    for name, s in scores.items():
+        hits = np.cumsum(same[np.argsort(s, kind="stable")])
+        table[name] = [float(hits[n - 1] / n) for n in kept]
     table["perfect"] = [min(1.0, float(same.sum()) / n) for n in kept]
     return table
+
+
+def curve_sizes(n: int) -> np.ndarray:
+    return np.unique(np.geomspace(20, n, 30).round().astype(np.int64))
 
 
 def overlap(scores: dict, kept: int = 300) -> dict:
@@ -115,7 +143,10 @@ def body_block(features, covariance, relax_motion) -> dict:
     width = max(noise["translation_noise_angstrom_per_direction"], MIN_WIDTH)
     density, info = density_positions(features.points, features.normals, width)
     tied = density_positions(features.points - rotation_tied_shift(features, motions[0]), features.normals, width)[0]
-    return dict(features=features, motions=motions, noise=noise, info=info, densities={"density": density, "density without tied shift": tied})
+    positions = {"density": density, "density without tied shift": tied}
+    for k in DEPTH_NEIGHBOURS:
+        positions[f"neighbour depth K{k}"] = neighbour_depth_positions(features, covariance, k)
+    return dict(features=features, motions=motions, noise=noise, info=info, densities=positions)
 
 
 def main() -> None:
@@ -169,12 +200,19 @@ def main() -> None:
                 kept = tuple(sorted({*KEPT, size}))
                 scores = orderings(block, pc, float(record["depth_bounds_angstrom"][body]), row, block["densities"])
                 nearby = np.flatnonzero(states == states[row])[:20]
-                repeats = [score_target(orderings(block, pc, float(record["depth_bounds_angstrom"][body]), int(r), block["densities"]), labels, int(r), kept) for r in nearby]
+                sizes = curve_sizes(len(names))
+                repeats, curves = [], []
+                for r in nearby:
+                    others = orderings(block, pc, float(record["depth_bounds_angstrom"][body]), int(r), block["densities"])
+                    repeats.append(score_target(others, labels, int(r), kept))
+                    curves.append(score_target(others, labels, int(r), tuple(sizes.tolist())))
                 target_entry = dict(
                     state=state, image=image, state_size=size, kept=list(kept),
                     same_state=score_target(scores, labels, row, kept),
                     same_state_mean_first_20={k: np.mean([r[k] for r in repeats], axis=0).round(3).tolist() for k in repeats[0]},
                     overlap_at_300=overlap(scores),
+                    curve_sizes=sizes.tolist(),
+                    curves_mean_first_20={k: np.mean([c[k] for c in curves], axis=0).round(3).tolist() for k in curves[0]},
                 )
                 if body == 0:
                     target_entry["same_body1_state"] = score_target(scores, body1, row, kept)
