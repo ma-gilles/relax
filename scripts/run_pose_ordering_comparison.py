@@ -90,6 +90,24 @@ def overlap(scores: dict, kept: int = 300) -> dict:
     return {f"{a} | {b}": round(len(sets[a] & sets[b]) / len(sets[a] | sets[b]), 3) for a in sets for b in sets if a < b}
 
 
+def true_camera_features(run, data: Path, record: dict, body: int, states: np.ndarray, names: np.ndarray):
+    """The body's simulated motion seen through the simulated cameras, so no consensus error enters."""
+    from recovar import utils
+
+    from relax.multibody.pose_neighborhoods import mask_moments, pose_features
+    from scripts.multibody_adaptive_subsets import true_body_motions
+
+    rows = np.asarray([int(n.split("@")[0]) - 1 for n in names])
+    cameras = np.asarray(utils.pickle_load(data / "poses.pkl")[0])[rows]
+    rotations, translations, pivot = true_body_motions(record, len(run.bodies))
+    motion = rotations[states, body]
+    centre = run.bodies[body].com * run.pixel_size
+    moved = np.einsum("nij,j->ni", motion, centre - pivot) + pivot + translations[states, body] - centre
+    normals = np.swapaxes(cameras, 1, 2)[:, :, 2]
+    lifts = moved - np.sum(moved * normals, axis=1, keepdims=True) * normals
+    return pose_features(motion, lifts, normals, mask_moments(run.bodies[body].mask, run.bodies[body].com, run.pixel_size))
+
+
 def body_block(features, covariance, relax_motion) -> dict:
     fit, summary = relax_motion["fit"], relax_motion["summary"]
     motions = [fit(features, 1), fit(features, 2)]
@@ -139,8 +157,10 @@ def main() -> None:
         jobs.append((0, (declared[0],)))
     for body, targets in jobs:
         covariance = mask_moments(run.bodies[body].mask, run.bodies[body].com, run.pixel_size).covariance
-        for source, poses in (("fitted", result), ("true", truth)):
-            block = body_block(subsets.body_pose_features(run, poses, body), covariance, fit)
+        for source, features in (("fitted", subsets.body_pose_features(run, result, body)),
+                                 ("true body pose, fitted consensus", subsets.body_pose_features(run, truth, body)),
+                                 ("true body pose, true camera", true_camera_features(run, data, record, body, states, names))):
+            block = body_block(features, covariance, fit)
             entry = dict(noise=block["noise"], density=block["info"], targets={})
             for state, image in targets:
                 row = subsets.target_row(names, f"{image}@particles.128.mrcs")
@@ -164,10 +184,12 @@ def main() -> None:
                 from scipy.spatial.transform import Rotation
 
                 relative = block["features"].shape_factors @ np.linalg.inv(block["features"].shape_factors[0])
-                plots[f"{source}_rotation_vectors_deg"] = Rotation.from_matrix(relative).as_rotvec(degrees=True)
-                plots[f"{source}_density_positions"] = block["densities"]["density"]
-                plots[f"{source}_points"], plots[f"{source}_normals"] = block["features"].points, block["features"].normals
-        plots["level"] = level
+                source_key = source.replace(" ", "_").replace(",", "")
+                plots[f"{source_key}_rotation_vectors_deg"] = Rotation.from_matrix(relative).as_rotvec(degrees=True)
+                plots[f"{source_key}_rank1_scores"] = block["motions"][0].scores[:, 0]
+                plots[f"{source_key}_density_positions"] = block["densities"]["density"]
+                plots[f"{source_key}_points"], plots[f"{source_key}_normals"] = block["features"].points, block["features"].normals
+        plots["level"], plots["body1_twist"], plots["pc1"] = level, np.asarray([s["body1_twist"] for s in table])[states], pc1
     (args.out / f"orderings_{args.dataset}.json").write_text(json.dumps(report, indent=1))
     np.savez_compressed(args.out / f"orderings_{args.dataset}_arrays.npz", **plots)
 
