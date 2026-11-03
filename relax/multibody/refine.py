@@ -840,12 +840,19 @@ def _final_maximization(state: MultibodyState, run: MultibodyRun, results, poses
     return state
 
 
-def refine(run: MultibodyRun, state: MultibodyState) -> MultibodyState:
-    """Iterate until RELION's convergence and its last, halves-joined iteration (or ``max_iter``)."""
+def refine(
+    run: MultibodyRun, state: MultibodyState, *, write_start: bool = True, update_at_start: bool = True
+) -> MultibodyState:
+    """Iterate until RELION's convergence and its last, halves-joined iteration (or ``max_iter``). A continuation
+    (``write_start=False``, :mod:`relax.multibody.resume`) starts from a written iteration's state and does not
+    write it again; an exact resume (``update_at_start=False``) skips the resolution update the iteration already
+    made."""
 
-    run_files.write_iteration(run.output, 0, state, run)
+    if write_start:
+        run_files.write_iteration(run.output, 0, state, run)
     # iterate() starts with updateCurrentResolution (ml_optimiser_mpi.cpp:3854).
-    state = update_current_resolution(state, run)
+    if update_at_start:
+        state = update_current_resolution(state, run)
     coarse_grids = build_initial_coarse_grids(
         state.sampling.healpix_order, None, translation_range=state.sampling.translation_range,
         translation_step=state.sampling.translation_step, n_classes=1, voxel_size=run.pixel_size,
