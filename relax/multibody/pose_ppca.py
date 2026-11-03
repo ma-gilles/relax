@@ -17,11 +17,16 @@ Everything is host NumPy float64, the fitter's only path: ``R_i`` is rank defici
 conditioned by ``tau^2`` and single precision would not resolve it. No volume machinery is involved. Arrays are
 ``y [N, D]``, ``P [N, D - 9, 3]``, ``R [N, D, D]``; ``D = 11`` in use and ``D = 12`` (``P`` the identity) is the fully
 observed reduction.
+
+All bodies at once: ``x = [x_1 .. x_B]``, ``y = [y_1 .. y_B]``, ``A_i = blockdiag(A_i1 .. A_iB)`` (one camera per particle),
+``R_i = blockdiag(R_i1 .. R_iB)``, so ``D = 11 B`` and one ``W [12 B, q]``. The block ``R_i`` assumes the bodies' pose errors
+are independent given the consensus; consensus error is shared, so that assumption has to be tested on the data. A
+single ``tau^2`` covers all features. ``body_distance`` decodes a latent difference for one body alone.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 
 import numpy as np
 
@@ -32,7 +37,7 @@ BATCH = 20000
 
 @dataclass(frozen=True)
 class PPCAFit:
-    """A fitted model: ``W [12, q]`` with orthogonal columns in descending norm and a fixed sign, the first column of
+    """A fitted model: ``W [12 B, q]`` with orthogonal columns in descending norm and a fixed sign, the first column of
     the gauge (:func:`canonical_gauge`)."""
 
     mean: np.ndarray
@@ -62,7 +67,15 @@ class PPCAFit:
 
     @property
     def covariance(self) -> np.ndarray:
-        return self.W @ self.W.T + self.tau2 * np.eye(FEATURES)
+        return self.W @ self.W.T + self.tau2 * np.eye(len(self.mean))
+
+    @property
+    def bodies(self) -> int:
+        return len(self.mean) // FEATURES
+
+    def body_rows(self, body: int) -> np.ndarray:
+        """``W_b [12, q]``, the rows of body ``body``."""
+        return self.W[FEATURES * body : FEATURES * (body + 1)]
 
 
 @dataclass(frozen=True)
@@ -77,8 +90,8 @@ class LatentPosterior:
     information: np.ndarray  # [N, q, q] I_i = W^T A_i^T Psi_i^-1 A_i W
     linear: np.ndarray  # [N, q] h_i = W^T A_i^T Psi_i^-1 (y_i - A_i mu)
     psi: np.ndarray  # [N, D, D] Psi_i = tau^2 A_i A_i^T + R_i
-    structured_mean: np.ndarray  # [N, 12] mu + W z_map
-    feature_mean: np.ndarray  # [N, 12] b_i, the complete-feature posterior mean; differs from structured_mean for tau > 0
+    structured_mean: np.ndarray  # [N, 12 B] mu + W z_map
+    feature_mean: np.ndarray  # [N, 12 B] b_i, the complete-feature posterior mean; differs from structured_mean for tau > 0
 
     def principal(self, fit: PPCAFit) -> tuple[np.ndarray, np.ndarray]:
         """Physical principal coordinates ``amplitudes * z_map`` (angstroms) and their posterior covariance. Euclidean
@@ -87,14 +100,23 @@ class LatentPosterior:
         return self.z_map * amplitudes, self.covariance * amplitudes[None, :, None] * amplitudes[None, None, :]
 
 
-def operators(P: np.ndarray) -> np.ndarray:
-    """``A_i = blockdiag(I_9, P_i)`` of a batch, ``[n, D, 12]``. Build per batch: never keep them for all particles."""
+def operators(P: np.ndarray, bodies: int = 1) -> np.ndarray:
+    """``A_i`` of a batch, ``[n, D, 12 B]``, one ``blockdiag(I_9, P_i)`` per body. Build per batch: never keep them for
+    all particles."""
     P = np.asarray(P, dtype=np.float64)
     n, rows = P.shape[:2]
-    A = np.zeros((n, ROTATION_FEATURES + rows, FEATURES))
-    A[:, np.arange(ROTATION_FEATURES), np.arange(ROTATION_FEATURES)] = 1.0
-    A[:, ROTATION_FEATURES:, ROTATION_FEATURES:] = P
+    block = ROTATION_FEATURES + rows
+    A = np.zeros((n, block * bodies, FEATURES * bodies))
+    for b in range(bodies):
+        row, column = block * b, FEATURES * b
+        index = np.arange(ROTATION_FEATURES)
+        A[:, row + index, column + index] = 1.0
+        A[:, row + ROTATION_FEATURES : row + block, column + ROTATION_FEATURES : column + FEATURES] = P
     return A
+
+
+def _body_count(y: np.ndarray, P: np.ndarray) -> int:
+    return y.shape[1] // (ROTATION_FEATURES + P.shape[1])
 
 
 def _batches(n: int):
@@ -122,8 +144,9 @@ def per_particle_log_likelihood(y, P, R, mean, covariance) -> np.ndarray:
     """``log N(y_i; A_i mean, A_i covariance A_i^T + R_i)`` of every particle."""
     y, R = np.asarray(y, dtype=np.float64), np.asarray(R, dtype=np.float64)
     out = np.empty(len(y))
+    bodies = _body_count(y, P)
     for b in _batches(len(y)):
-        A = operators(P[b])
+        A = operators(P[b], bodies)
         T = A @ covariance @ np.swapaxes(A, 1, 2) + R[b]
         solve, logdet = _spd_solver(T)
         out[b] = _batch_log_likelihood(y[b] - A @ mean, solve, logdet)
@@ -132,10 +155,10 @@ def per_particle_log_likelihood(y, P, R, mean, covariance) -> np.ndarray:
 
 def _moments(y, P, R, mean, covariance):
     """One E-step: the new mean, the expected scatter about it, and the observed log likelihood."""
-    n = len(y)
-    shift_sum, scatter, log_likelihood = np.zeros(FEATURES), np.zeros((FEATURES, FEATURES)), 0.0
+    n, bodies, ambient = len(y), _body_count(y, P), len(mean)
+    shift_sum, scatter, log_likelihood = np.zeros(ambient), np.zeros((ambient, ambient)), 0.0
     for b in _batches(n):
-        A = operators(P[b])
+        A = operators(P[b], bodies)
         covariance_At = covariance @ np.swapaxes(A, 1, 2)
         solve, logdet = _spd_solver(A @ covariance_At + R[b])
         residual = y[b] - A @ mean
@@ -167,7 +190,10 @@ def canonical_gauge(W: np.ndarray) -> np.ndarray:
 def _initial(y, P, rank: int, floor: float, seed: int | None) -> tuple[np.ndarray, np.ndarray, float]:
     """The zero-depth lift's mean and scatter, an initialisation only: its depth is not a measurement. ``seed`` rotates
     the start to test for local optima."""
-    lifted = np.concatenate([y[:, :ROTATION_FEATURES], np.einsum("nji,nj->ni", P, y[:, ROTATION_FEATURES:])], axis=1)
+    lifted = np.concatenate([
+        np.concatenate([part[:, :ROTATION_FEATURES], np.einsum("nji,nj->ni", P, part[:, ROTATION_FEATURES:])], axis=1)
+        for part in np.split(y, _body_count(y, P), axis=1)
+    ], axis=1)
     mean = lifted.mean(axis=0)
     W, tau2 = maximize_covariance(np.cov(lifted.T), rank, floor)
     if seed is not None:
@@ -188,7 +214,7 @@ def fit_projected_ppca(y, P, R, rank: int, *, floor: float, max_iterations: int 
     mean, W, tau2 = _initial(y, P, rank, floor, seed)
     trace, converged = [], False
     for _ in range(max_iterations):
-        new_mean, scatter, log_likelihood = _moments(y, P, R, mean, W @ W.T + tau2 * np.eye(FEATURES))
+        new_mean, scatter, log_likelihood = _moments(y, P, R, mean, W @ W.T + tau2 * np.eye(len(mean)))
         if trace and log_likelihood < trace[-1] - 1e-7 * abs(trace[-1]):
             raise ArithmeticError(f"EM decreased the likelihood from {trace[-1]} to {log_likelihood}")
         if trace and abs(log_likelihood - trace[-1]) < tolerance * len(y):
@@ -208,14 +234,14 @@ def log_likelihood(y, P, R, fit: PPCAFit) -> float:
 def latent_posterior(y, P, R, fit: PPCAFit) -> LatentPosterior:
     """The latent posterior of every particle through ``T_i`` (module docstring)."""
     y, P, R = (np.asarray(v, dtype=np.float64) for v in (y, P, R))
-    n, q, dim = len(y), fit.rank, y.shape[1]
+    n, q, dim, ambient = len(y), fit.rank, y.shape[1], len(fit.mean)
     out = dict(
         z_map=np.empty((n, q)), covariance=np.empty((n, q, q)), information=np.empty((n, q, q)), linear=np.empty((n, q)),
-        psi=np.empty((n, dim, dim)), structured_mean=np.empty((n, FEATURES)), feature_mean=np.empty((n, FEATURES)),
+        psi=np.empty((n, dim, dim)), structured_mean=np.empty((n, ambient)), feature_mean=np.empty((n, ambient)),
     )
     covariance = fit.covariance
     for b in _batches(n):
-        A = operators(P[b])
+        A = operators(P[b], fit.bodies)
         At = np.swapaxes(A, 1, 2)
         AW = A @ fit.W
         residual = (y[b] - A @ fit.mean)[:, :, None]
@@ -242,7 +268,7 @@ def withheld_prediction(y, P, R, fit: PPCAFit, coordinate: int) -> tuple[np.ndar
     mean, variance = np.empty(len(y)), np.empty(len(y))
     covariance = fit.covariance
     for b in _batches(len(y)):
-        A = operators(P[b])
+        A = operators(P[b], fit.bodies)
         T = A @ covariance @ np.swapaxes(A, 1, 2) + R[b]
         residual = y[b] - A @ fit.mean
         solve, _ = _spd_solver(T[:, keep[:, None], keep])
@@ -253,6 +279,6 @@ def withheld_prediction(y, P, R, fit: PPCAFit, coordinate: int) -> tuple[np.ndar
     return mean, variance
 
 
-def with_floor(fit: PPCAFit, floor: float) -> PPCAFit:
-    """``fit`` read with another declared floor, for reporting."""
-    return replace(fit, floor=float(floor))
+def body_distance(fit: PPCAFit, z: np.ndarray, body: int, target: int) -> np.ndarray:
+    """``||W_b (z_i - z_target)||`` of every particle: the decoded distance of one body alone, angstroms."""
+    return np.linalg.norm((z - z[target]) @ fit.body_rows(body).T, axis=1)

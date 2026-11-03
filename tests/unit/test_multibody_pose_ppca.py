@@ -221,3 +221,66 @@ def test_shrinkage_records_keep_gain_distinct_from_posterior_covariance():
     # With an informative prior the gain is below one: the posterior covariance is not the noise of z_map.
     noise_of_map = gain @ post.covariance
     assert np.all(np.trace(noise_of_map, axis1=1, axis2=2) < np.trace(post.covariance, axis1=1, axis2=2))
+
+
+def joint_case(seed=8, n=5000, q=4):
+    """Two bodies seen through one camera per particle, block noise, latents shared and body-specific."""
+    rng = np.random.default_rng(seed)
+    W = rng.standard_normal((24, q)) * np.linspace(3.0, 1.0, q)
+    W[12:, 0] = 0.0  # the first latent moves body 1 alone
+    W = pp.canonical_gauge(W)
+    mean = rng.standard_normal(24)
+    z = rng.standard_normal((n, q))
+    x = mean + z @ W.T + 0.1 * rng.standard_normal((n, 24))
+    P = cameras(rng, n)
+    roots = rng.standard_normal((n, 11, 5)) * 0.3
+    block = roots @ np.swapaxes(roots, 1, 2)
+    R = np.zeros((n, 22, 22))
+    R[:, :11, :11] = block
+    R[:, 11:, 11:] = block[::-1]
+    A = pp.operators(P, 2)
+    y = np.einsum("nij,nj->ni", A, x) + np.einsum("nij,nj->ni", np.linalg.cholesky(R + 1e-12 * np.eye(22)), rng.standard_normal((n, 22)))
+    return dict(y=y, P=P, R=R, W=W, mean=mean, tau2=0.01, z=z)
+
+
+def test_joint_operator_is_one_block_per_body():
+    P = cameras(np.random.default_rng(1), 3)
+    A = pp.operators(P, 2)
+    assert A.shape == (3, 22, 24)
+    assert_matches(A[:, :11, :12], pp.operators(P), rtol=1e-13)
+    assert_matches(A[:, 11:, 12:], pp.operators(P), rtol=1e-13)
+    assert np.all(A[:, :11, 12:] == 0.0) and np.all(A[:, 11:, :12] == 0.0)
+
+
+def test_joint_fit_recovers_the_covariance_and_is_monotone():
+    case = joint_case()
+    fit = pp.fit_projected_ppca(case["y"], case["P"], case["R"], 4, floor=1e-5, tolerance=1e-7)
+    assert fit.bodies == 2 and fit.W.shape == (24, 4)
+    assert np.all(np.diff(fit.log_likelihood) > -1e-6 * np.abs(fit.log_likelihood[1:]))
+    truth = case["W"] @ case["W"].T + case["tau2"] * np.eye(24)
+    assert np.linalg.norm(fit.covariance - truth) / np.linalg.norm(truth) < 0.05
+
+
+def test_uncoupled_bodies_factor_into_the_per_body_likelihoods():
+    """With no shared latent the joint marginal is the sum of the two bodies' own marginals."""
+    case = joint_case(n=200)
+    first, second = truth_fit(linear_case(seed=1, n=200)), truth_fit(linear_case(seed=2, n=200))
+    mean = np.concatenate([first.mean, second.mean])
+    covariance = np.block([[first.covariance, np.zeros((12, 12))], [np.zeros((12, 12)), second.covariance]])
+    joint = pp.per_particle_log_likelihood(case["y"], case["P"], case["R"], mean, covariance)
+    apart = pp.per_particle_log_likelihood(case["y"][:, :11], case["P"], case["R"][:, :11, :11], first.mean, first.covariance)
+    apart = apart + pp.per_particle_log_likelihood(case["y"][:, 11:], case["P"], case["R"][:, 11:, 11:], second.mean, second.covariance)
+    assert_matches(joint, apart, rtol=1e-11)
+
+
+def test_body_distance_decodes_one_body_alone():
+    case = joint_case(n=100)
+    W = np.zeros((24, 2))
+    W[0, 0] = 2.0
+    W[12, 1] = 3.0
+    fit = pp.PPCAFit(np.zeros(24), W, 0.01, 1e-6, np.zeros(1), True)
+    z = np.random.default_rng(1).standard_normal((100, 2))
+    assert_matches(pp.body_distance(fit, z, 0, 3), 2.0 * np.abs(z[:, 0] - z[3, 0]), rtol=1e-12)
+    assert_matches(pp.body_distance(fit, z, 1, 3), 3.0 * np.abs(z[:, 1] - z[3, 1]), rtol=1e-12)
+    post = pp.latent_posterior(case["y"], case["P"], case["R"], pp.PPCAFit(case["mean"], case["W"], 0.01, 1e-6, np.zeros(1), True))
+    assert post.structured_mean.shape == (100, 24) and post.psi.shape == (100, 22, 22)

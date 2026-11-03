@@ -388,10 +388,207 @@ def fixture_report(merged: dict, args) -> dict:
     return report
 
 
+def pose_table(run, merged: dict, target: int, *, use_stored: bool = False) -> dict:
+    """The observation table of a body in particle-table order: ``y``, ``P``, ``S``, ``R`` and the records around them."""
+    from relax.multibody import geometry
+    from relax.multibody import pose_uq as uq
+    from relax.multibody.pose_neighborhoods import mask_moments
+
+    order = np.argsort(merged["table_rows"])
+    sorted_fields = {k: v[order] for k, v in merged.items()}
+    body = run.bodies[target]
+    moments = mask_moments(body.mask, body.com, run.pixel_size)
+    root = uq.covariance_root(moments.covariance)
+    consensus = sorted_fields["consensus"]
+    cameras = sorted_fields["stored_cameras" if use_stored else "cameras"]
+    offsets = sorted_fields["stored_offsets_px" if use_stored else "analysis_offsets_px"]
+    particles = run.checkpoint.particles
+    origins = particles[["rlnOriginXAngst", "rlnOriginYAngst"]].to_numpy(float)[sorted_fields["table_rows"]] / run.pixel_size
+    projected = geometry.projected_centers(consensus, body)
+    fractional = origins - projected - geometry.integer_image_shifts(origins, projected)
+    shifts = run.pixel_size * (fractional - offsets)
+    rotations = np.swapaxes(consensus, 1, 2) @ cameras
+    P = uq.camera_projection(consensus)
+    y = uq.observed_features(rotations, shifts, P, root, moments.centroid)
+    hessian = sorted_fields["hessian"]
+    usable = sorted_fields["status"] == 0
+    S = np.full_like(hessian, np.nan)
+    S[usable] = uq.covariance_from_hessian(hessian[usable])
+    R = np.full((len(y), 11, 11), np.nan)
+    R[usable] = uq.propagate(uq.feature_jacobian(rotations[usable], P[usable], root, moments.centroid), S[usable])
+    return dict(fields=sorted_fields, y=y, P=P, S=S, R=R, usable=usable, rotations=rotations, shifts=shifts, root=root, centroid=moments.centroid,
+                covariance=moments.covariance)
+
+
+RANKS = (2, 4, 6, 10)
+FLOORS = (1e-4, 1e-3, 1e-2, 1e-1)
+
+
+def held_out(fit, y, P, R) -> dict:
+    from relax.multibody import pose_ppca as pp
+
+    report = dict(log_likelihood_per_particle=pp.log_likelihood(y, P, R, fit) / len(y))
+    for name, coordinate in (("shift_x", 9), ("shift_y", 10)):
+        mean, variance = pp.withheld_prediction(y, P, R, fit, coordinate)
+        residual = y[:, coordinate] - mean
+        baseline = y[:, coordinate] - (pp.operators(P) @ fit.mean)[:, coordinate]
+        report[name] = dict(rmse=float(np.sqrt(np.mean(residual**2))), robust_rmse=float(1.4826 * np.median(np.abs(residual))),
+                            mean_only_robust_rmse=float(1.4826 * np.median(np.abs(baseline))),
+                            z_sd=float(np.std(residual / np.sqrt(variance))), z_robust_sd=float(1.4826 * np.median(np.abs(residual / np.sqrt(variance)))))
+    return report
+
+
+def fit_body(table: dict, seed: int) -> dict:
+    """Ranks and floors on the fit split, floor chosen by held-out likelihood alone: truth plays no part."""
+    from relax.multibody import pose_ppca as pp
+
+    usable = np.flatnonzero(table["usable"])
+    rng = np.random.default_rng(seed)
+    permuted = rng.permutation(usable)
+    validation, training = np.sort(permuted[: len(usable) // 5]), np.sort(permuted[len(usable) // 5 :])
+    y, P, R = table["y"], table["P"], table["R"]
+    sweep, fits = {}, {}
+    for rank in RANKS:
+        for floor in FLOORS:
+            started = time.time()
+            fit = pp.fit_projected_ppca(y[training], P[training], R[training], rank, floor=floor, tolerance=1e-6)
+            fits[(rank, floor)] = fit
+            sweep[f"q{rank}_floor{floor:g}"] = dict(
+                rank=rank, floor=floor, tau2=fit.tau2, at_floor=fit.tau2_at_floor, effective_rank=fit.effective_rank, iterations=len(fit.log_likelihood),
+                converged=fit.converged, seconds=time.time() - started, amplitudes=fit.amplitudes.tolist(),
+                train_per_particle=fit.log_likelihood[-1] / len(training), validation=held_out(fit, y[validation], P[validation], R[validation]),
+            )
+            print(f"q={rank} floor={floor:g} tau2={fit.tau2:.4g} it={len(fit.log_likelihood)} val={sweep[f'q{rank}_floor{floor:g}']['validation']['log_likelihood_per_particle']:.3f}", flush=True)
+    best = {rank: max((f for f in FLOORS), key=lambda f: sweep[f"q{rank}_floor{f:g}"]["validation"]["log_likelihood_per_particle"]) for rank in RANKS}
+    return dict(sweep=sweep, fits=fits, best_floor=best, training=training, validation=validation)
+
+
+def zero_depth_pca(table: dict, rank: int) -> np.ndarray:
+    """Ordinary PCA of the matrix features with depth filled by zero, the baseline: principal coordinates ``[N, rank]``."""
+    lifted = np.concatenate([table["y"][:, :9], np.einsum("nji,nj->ni", table["P"], table["y"][:, 9:])], axis=1)
+    centred = lifted - lifted.mean(axis=0)
+    _, values, right = np.linalg.svd(centred[table["usable"]], full_matrices=False)
+    return centred @ right[:rank].T
+
+
+def fixture_labels(run, data: Path) -> dict:
+    from scripts.multibody_adaptive_subsets import state_rows
+
+    record = json.loads((data / "body_motion.json").read_text())
+    names = np.asarray(run.checkpoint.particles["rlnImageName"])
+    states = state_rows(data, names)
+    table = record["states"]
+    body2 = np.asarray([(s["body2_twist"], s["body2_shift"], s["deformation"]) for s in table])
+    return dict(names=names, states=states, record=record, level=np.asarray([s["level"] for s in table])[states], labels=np.unique(body2, axis=0, return_inverse=True)[1].ravel()[states],
+                body1=np.unique(np.asarray([s["body1_twist"] for s in table]), return_inverse=True)[1].ravel()[states])
+
+
+def target_curves(scores_of, labels, states, names, dataset: str) -> dict:
+    """The fixture's target curves of an ordering, as ``run_pose_ordering_comparison`` scores them."""
+    from relax.multibody import subsets
+    from scripts.run_pose_ordering_comparison import TARGETS, TARGETS_10K, curve_sizes, score_target
+
+    report = {}
+    for state, image in TARGETS.get(dataset, TARGETS_10K):
+        row = subsets.target_row(names, f"{image}@particles.128.mrcs")
+        nearby = np.flatnonzero(states == states[row])[:20]
+        sizes = curve_sizes(len(names))
+        curves = [score_target(scores_of(int(r)), labels, int(r), tuple(sizes.tolist())) for r in nearby]
+        report[str(state)] = dict(curve_sizes=sizes.tolist(), curves_mean_first_20={k: np.mean([c[k] for c in curves], axis=0).round(4).tolist() for k in curves[0]})
+    return report
+
+
+def embed(args) -> None:
+    """Stage D: the UQ table, rank 10 and control fits, MAP coordinates, and the neighborhood curves."""
+    from relax.multibody import pose_ppca as pp
+    from relax.multibody import pose_uq as uq
+    from relax.multibody.pose_neighborhoods import mask_moments
+    from scripts.run_pose_ordering_comparison import true_camera_features
+
+    data = args.root / args.dataset
+    run, result = load_run(data, args.out)
+    name = f"uq_{args.dataset}_body{args.body + 1}_estimated"
+    merged = dict(np.load(args.out / f"{name}.npz"))
+    table = pose_table(run, merged, args.body)
+    labels = fixture_labels(run, data)
+    fitted = fit_body(table, args.seed)
+    report = dict(dataset=args.dataset, body=args.body + 1, n=len(table["y"]), usable=int(table["usable"].sum()), best_floor={str(k): v for k, v in fitted["best_floor"].items()}, sweep=fitted["sweep"])
+    usable = table["usable"]
+    arrays = dict(table_rows=table["fields"]["table_rows"], half=table["fields"]["half"], status=table["fields"]["status"], image_names=labels["names"],
+                  P=table["P"], y=table["y"], S=table["S"], R=table["R"], stored_cameras=table["fields"]["stored_cameras"], analysis_cameras=table["fields"]["cameras"],
+                  stored_offsets_px=table["fields"]["stored_offsets_px"], analysis_offsets_px=table["fields"]["analysis_offsets_px"], training=fitted["training"], validation=fitted["validation"],
+                  level=labels["level"], states=labels["states"], labels=labels["labels"], body1=labels["body1"], covariance=table["covariance"], centroid=table["centroid"], root=table["root"])
+    orderings = {}
+    for rank in RANKS:
+        fit = fitted["fits"][(rank, fitted["best_floor"][rank])]
+        posterior = pp.latent_posterior(table["y"][usable], table["P"][usable], table["R"][usable], fit)
+        check = np.linalg.inv(np.eye(rank) + posterior.information)
+        report.setdefault("posterior_identity_max", {})[str(rank)] = float(np.max(np.abs(check - posterior.covariance)))
+        coordinates, covariance = posterior.principal(fit)
+        z = np.full((len(usable), rank), np.nan)
+        principal = np.full((len(usable), rank), np.nan)
+        principal[usable], z[usable] = coordinates, posterior.z_map
+        if rank in (4, 10):
+            orderings[f"PPCA q{rank} principal"] = lambda r, p=principal: np.nan_to_num(np.linalg.norm(p - p[r], axis=1), nan=np.inf)
+            orderings[f"PPCA q{rank} z"] = lambda r, p=z: np.nan_to_num(np.linalg.norm(p - p[r], axis=1), nan=np.inf)
+        if rank == 10:
+            arrays.update(mean=fit.mean, W=fit.W, tau2=fit.tau2, floor=fit.floor, amplitudes=fit.amplitudes, log_likelihood=fit.log_likelihood,
+                          z_map=z, principal=principal, latent_covariance=posterior.covariance, principal_covariance=covariance, information=posterior.information,
+                          linear=posterior.linear, psi=posterior.psi, structured_mean=posterior.structured_mean, feature_mean=posterior.feature_mean)
+    pca = zero_depth_pca(table, 10)
+    orderings["zero-depth PCA 10"] = lambda r, p=pca: np.linalg.norm(p - p[r], axis=1)
+    pooled = table["fields"]["signal_power"]
+    arrays["pca"], arrays["signal_power"] = pca, pooled
+    # Controls with the fitted model's machinery: the same features with no pose error, and with no UQ.
+    no_uq = pp.fit_projected_ppca(table["y"][usable], table["P"][usable], np.zeros((int(usable.sum()), 11, 11)), 10, floor=0.01, tolerance=1e-6)
+    posterior = pp.latent_posterior(table["y"][usable], table["P"][usable], np.zeros((int(usable.sum()), 11, 11)), no_uq)
+    plain = np.full((len(usable), 10), np.nan)
+    plain[usable] = posterior.principal(no_uq)[0]
+    orderings["projected PPCA q10, no UQ"] = lambda r, p=plain: np.nan_to_num(np.linalg.norm(p - p[r], axis=1), nan=np.inf)
+    arrays["no_uq_principal"] = plain
+    curves = target_curves(lambda r: {k: f(r) for k, f in orderings.items()}, labels["labels"], labels["states"], labels["names"], args.dataset)
+    moments = mask_moments(run.bodies[args.body].mask, run.bodies[args.body].com, run.pixel_size)
+    true_features = true_camera_features(run, data, labels["record"], args.body, labels["states"], labels["names"])
+    values, vectors = np.linalg.eigh(moments.covariance)
+    root_inverse = (vectors / np.sqrt(values)) @ vectors.T
+    true_rotations = true_features.shape_factors @ root_inverse
+    from recovar import utils
+
+    rows = np.asarray([int(n.split("@")[0]) - 1 for n in labels["names"]])
+    true_camera = np.asarray(utils.pickle_load(data / "poses.pkl")[0])[rows]
+    true_P = uq.camera_projection(true_camera)
+    true_y = np.concatenate([(true_rotations @ table["root"]).reshape(-1, 9), np.einsum("nij,nj->ni", true_P, true_features.points)], axis=1)
+    perfect = pp.fit_projected_ppca(true_y, true_P, np.zeros((len(true_y), 11, 11)), 10, floor=1e-4, tolerance=1e-6)
+    perfect_z = pp.latent_posterior(true_y, true_P, np.zeros((len(true_y), 11, 11)), perfect)
+    true_coordinates = perfect_z.principal(perfect)[0]
+    arrays["true_principal"] = true_coordinates
+    report["true_pose_amplitudes"] = perfect.amplitudes.tolist()
+    curves_true = target_curves(lambda r: {"PPCA q10 principal, true poses": np.linalg.norm(true_coordinates - true_coordinates[r], axis=1)}, labels["labels"], labels["states"], labels["names"], args.dataset)
+    report["curves"], report["curves_true_poses"] = curves, curves_true
+    # Finite-angle check of the propagated covariance on a sample.
+    sample = np.flatnonzero(usable)[:: max(1, int(usable.sum()) // 200)]
+    S, y_rot, y_shift = table["S"][sample], table["rotations"][sample], table["shifts"][sample]
+    bias, spread = uq.finite_angle_moments(y_rot, y_shift, table["P"][sample], table["root"], table["centroid"], S, seed=args.seed)
+    R = table["R"][sample]
+    U = np.linalg.svd(uq.feature_jacobian(y_rot, table["P"][sample], table["root"], table["centroid"]), full_matrices=True)[0]
+    tangent, normal = U[:, :, :5], U[:, :, 5:]
+    report["finite_angle"] = dict(
+        tangent_variance_ratio_median=float(np.median(np.trace(np.swapaxes(tangent, 1, 2) @ spread @ tangent, axis1=1, axis2=2) / np.trace(np.swapaxes(tangent, 1, 2) @ R @ tangent, axis1=1, axis2=2))),
+        normal_variance_median=float(np.median(np.trace(np.swapaxes(normal, 1, 2) @ spread @ normal, axis1=1, axis2=2))),
+        tangent_variance_median=float(np.median(np.trace(R, axis1=1, axis2=2))),
+        bias_norm_median=float(np.median(np.linalg.norm(bias, axis=1))), bias_normal_median=float(np.median(np.linalg.norm(np.einsum("nji,nj->ni", normal, bias), axis=1))),
+    )
+    arrays.update(finite_bias=bias, finite_spread=spread, finite_R=R, finite_sample=sample)
+    out = f"embed_{args.dataset}_body{args.body + 1}"
+    np.savez_compressed(args.out / f"{out}.npz", **arrays)
+    (args.out / f"{out}.json").write_text(json.dumps(report, indent=1, default=float))
+    print(json.dumps({k: v for k, v in report.items() if k not in ("sweep", "curves", "curves_true_poses")}, indent=1, default=float), flush=True)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(dest="stage", required=True)
-    for name, function in (("audit", audit), ("synthetic", synthetic), ("fixture", fixture_uq)):
+    for name, function in (("audit", audit), ("synthetic", synthetic), ("fixture", fixture_uq), ("embed", embed)):
         a = sub.add_parser(name)
         a.set_defaults(function=function)
         a.add_argument("--root", required=True, type=Path)

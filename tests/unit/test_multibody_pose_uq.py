@@ -114,7 +114,7 @@ def test_observed_hessian_equals_fisher_at_a_noiseless_optimum():
     fisher = uq.expected_fisher(target)
     whiten = uq.whitening(fisher)
     _, gradient, hessian = uq.local_derivatives(target, whiten, 0.5)
-    # Whitened units, so one means one standard deviation. Measured 0.0014 and 0.05: interpolation-cell asymmetry.
+    # Whitened units, so one means one standard deviation. The gradient bound was measured at 0.0014: interpolation-cell asymmetry.
     assert np.max(np.abs(gradient)) < 0.01
     assert np.max(np.abs(hessian - np.eye(5))) < 0.1
 
