@@ -52,6 +52,27 @@ def scores(predicted, truth, normal, P, direction) -> dict:
                 in_plane_true_sd_per_direction=float(np.sqrt(np.mean(np.sum(plane_true**2, axis=1)) / 2.0)), thirds=thirds)
 
 
+def rotation_scores(predicted9: np.ndarray, truth9: np.ndarray) -> dict:
+    """Rotation features vec(Q L) (A, the body's RMS displacement units) as deviations from their means: RMSE per
+    particle over the nine entries, and the mean-only baseline."""
+    keep = np.all(np.isfinite(predicted9), axis=1)
+    p = predicted9[keep] - predicted9[keep].mean(axis=0)
+    t = truth9[keep] - truth9[keep].mean(axis=0)
+    return dict(rmse=float(np.sqrt(np.mean(np.sum((p - t) ** 2, axis=1)))), mean_only_rmse=float(np.sqrt(np.mean(np.sum(t**2, axis=1)))),
+                correlation=float(np.sum(p * t) / np.sqrt(np.sum(p * p) * np.sum(t * t))))
+
+
+def two_sided_gauge(fitted: np.ndarray, truth: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Constant rotations with fitted ~ left @ truth @ right (Procrustes, alternating)."""
+    left, right = np.eye(3), np.eye(3)
+    for _ in range(20):
+        u, _, vt = np.linalg.svd(np.sum(fitted @ right.T @ np.swapaxes(truth, 1, 2), axis=0))
+        left = u @ np.diag([1, 1, np.linalg.det(u @ vt)]) @ vt
+        u, _, vt = np.linalg.svd(np.sum(np.swapaxes(truth, 1, 2) @ left.T @ fitted, axis=0))
+        right = u @ np.diag([1, 1, np.linalg.det(u @ vt)]) @ vt
+    return left, right
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--results", required=True, type=Path)
@@ -103,6 +124,14 @@ def main() -> None:
     G = u @ np.diag([1.0, 1.0, np.linalg.det(u @ vt)]) @ vt
     usable_body = [(embed[f"body{b + 1}_status"] == 0) & np.all(np.isfinite(R[:, 11 * b : 11 * b + 11, 11 * b : 11 * b + 11].reshape(len(R), -1)), axis=1) for b in range(2)]
     usable_joint = usable_body[0] & usable_body[1]
+    # Rotation-feature truth in the run's frame: the fitted rotations Q = A^T B against the true motions, with constant
+    # rotations on both sides (the frame and body-orientation conventions); the per-particle consensus bias stays.
+    fitted_Q = [np.linalg.solve(roots[b].T, y[:, 11 * b : 11 * b + 9].reshape(-1, 3, 3).transpose(0, 2, 1)).transpose(0, 2, 1) for b in range(2)]
+    true_rot_fitted_frame = []
+    for b in range(2):
+        keep = usable_body[b]
+        left, right = two_sided_gauge(fitted_Q[b][keep], true_Q[b][keep])
+        true_rot_fitted_frame.append(((left @ true_Q[b] @ right) @ roots[b]).reshape(-1, 9))
 
     def aligned(b, keep):
         """True centroid of body b in the run's frame: G, then a constant fitted on the observed in-plane coordinates."""
@@ -141,12 +170,16 @@ def main() -> None:
                 for b in bodies_scored:
                     column = 12 * b + 9 if arm == "joint" else 9
                     predicted = mean[:, column : column + 3]
+                    head = 12 * b if arm == "joint" else 0
                     if poses == "true":
                         truth, view, proj = centroids[b], true_normal, true_P
+                        rotation_truth = (true_Q[b] @ roots[b]).reshape(-1, 9)
                     else:
                         truth, view, proj = aligned(b, keep), normal, P
+                        rotation_truth = true_rot_fitted_frame[b]
                     entry = dict(poses=poses, arm=arm, body=b + 1, rank=rank, floor=floor, tau2=fit.tau2, iterations=len(fit.log_likelihood),
                                  converged=fit.converged, seconds=time.time() - started,
+                                 rotation_features=rotation_scores(mean[:, head : head + 9], rotation_truth),
                                  **scores(predicted, truth, view, proj, direction(truth[keep])))
                     report["rows"].append(entry)
                     print(poses, arm, b + 1, rank, floor, round(entry["depth"]["correlation"], 3), round(entry["depth"]["rmse"], 3),
