@@ -394,3 +394,19 @@ def test_pass2_rows_follow_relion_sample_order():
     assert np.array_equal(direction * 6 + psi, [12, 12, 13, 13, 30, 30, 3, 3, 6, 6])
     assert np.array_equal(ordered.rotation_ids_flat, [4, 5, 2, 3, 0, 1, 6, 7, 8, 9])  # children keep their order
     assert np.array_equal(ordered.rotation_offsets, layout.rotation_offsets)
+
+
+def test_resume_reads_relax_and_relion_optimiser_blocks(tmp_path):
+    import pandas as pd
+    import starfile
+
+    from relax.multibody.resume import _general
+
+    relax_star = tmp_path / "run_it005_optimiser.star"
+    starfile.write({"optimiser_general": pd.DataFrame({"rlnCurrentIteration": [5], "rlnSamplingPerturbInstance": [0.25]})},
+                   relax_star)
+    relion_star = tmp_path / "relion_optimiser.star"
+    relion_star.write_text("\ndata_optimiser_general\n\n_rlnCurrentIteration 5\n_rlnSamplingPerturbInstance 0.25\n")
+    for path in (relax_star, relion_star):
+        table = _general(path)
+        assert int(table["rlnCurrentIteration"]) == 5 and float(table["rlnSamplingPerturbInstance"]) == 0.25

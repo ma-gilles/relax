@@ -43,6 +43,16 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--sigma_ang", type=float, default=None,
                         help="degrees: the local-search width instead of the consensus run's, as relion_refine's")
     parser.add_argument("--relion_dir", default=None, help="the directory relion_refine ran in")
+    parser.add_argument(
+        "--continue_iteration", default=None,
+        help="a multi-body iteration's run_itNNN_optimiser.star (relax's or RELION's) to continue from, as "
+        "relion_refine --continue does; --continue still names the consensus, with the run's other options",
+    )
+    parser.add_argument(
+        "--continue_as_uninterrupted", action="store_true",
+        help="with --continue_iteration: resume the run the files came from (its noise, sampling steps and rand() "
+        "stream) instead of relion_refine --continue's restart",
+    )
     parser.add_argument("--pad", type=float, default=None,
                         help="RELION's padding factor, 1 or 2; the default is the consensus's")
     # RELION's execution options (I/O, threads, devices): they do not change the result, so they are accepted
@@ -119,7 +129,12 @@ def main(argv=None) -> None:
     run, state = start_from_consensus(
         args.continue_optimiser_star, command, run_options(), output=output_dir, relion_cwd=args.relion_dir
     )
-    refine(run, state)
+    if args.continue_iteration is not None:
+        from relax.multibody.resume import continue_refinement
+
+        continue_refinement(run, args.continue_iteration, as_uninterrupted=args.continue_as_uninterrupted)
+    else:
+        refine(run, state)
 
 
 if __name__ == "__main__":

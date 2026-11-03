@@ -197,6 +197,16 @@ def _write_optimiser(stem, iteration: int, state, run) -> None:
         "rlnIncrementImageSize": [state.incr_size],
         "rlnHasHighFscAtResolLimit": [int(state.has_high_fsc_at_limit)],
         "rlnHasConverged": [int(state.has_converged)],
+        # What a continuation needs beyond the above (relax.multibody.resume), as RELION's optimiser and model hold.
+        "rlnBestResolutionThusFar": [state.best_resol_thus_far],
+        "rlnSmallestChangesOrientations": [sampling.smallest_changes_optimal_orientations],
+        "rlnSmallestChangesOffsets": [sampling.smallest_changes_optimal_offsets_angstrom],
+        "rlnSmallestChangesClasses": [sampling.smallest_changes_optimal_classes],
+        "rlnSigmaPriorRotAngle": [float(np.rad2deg(sampling.sigma_rot))],
+        "rlnSigmaPriorPsiAngle": [float(np.rad2deg(sampling.sigma_psi))],
+        "rlnPreviousResolution": [sampling.previous_resolution],
+        # The leader's rand() draws so far (the FSCs' phase randomisation): an exact resume continues the stream.
+        "rlnRelaxPhaseDraws": [int(getattr(run.phase_stream, "draws", -1))],
     })}, f"{stem}_optimiser.star", overwrite=True, float_format="%.8g")
 
 
