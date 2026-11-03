@@ -562,7 +562,7 @@ def held_out(fit, y, P, R) -> dict:
     return report
 
 
-def fit_body(table: dict, seed: int) -> dict:
+def fit_body(table: dict, seed: int, ranks=None, floors=None) -> dict:
     """Ranks and floors on the fit split, floor chosen by held-out likelihood alone: truth plays no part."""
     from relax.multibody import pose_ppca as pp
 
@@ -571,9 +571,10 @@ def fit_body(table: dict, seed: int) -> dict:
     permuted = rng.permutation(usable)
     validation, training = np.sort(permuted[: len(usable) // 5]), np.sort(permuted[len(usable) // 5 :])
     y, P, R = table["y"], table["P"], table["R"]
+    ranks, floors = ranks or RANKS, floors or FLOORS
     sweep, fits = {}, {}
-    for rank in RANKS:
-        for floor in FLOORS:
+    for rank in ranks:
+        for floor in floors:
             started = time.time()
             fit = pp.fit_projected_ppca(y[training], P[training], R[training], rank, floor=floor, tolerance=1e-6)
             fits[(rank, floor)] = fit
@@ -590,7 +591,7 @@ def fit_body(table: dict, seed: int) -> dict:
         validation = sweep[f"q{rank}_floor{floor:g}"]["validation"]
         return float(np.mean([v["robust_rmse"] for k, v in validation.items() if "shift" in k]))
 
-    best = {rank: min(sorted(FLOORS, reverse=True), key=lambda f: round(shift_error(rank, f), 4)) for rank in RANKS}
+    best = {rank: min(sorted(floors, reverse=True), key=lambda f: round(shift_error(rank, f), 4)) for rank in ranks}
     return dict(sweep=sweep, fits=fits, best_floor=best, training=training, validation=validation)
 
 
@@ -711,6 +712,95 @@ def molecular_error(table: dict, true_rotations: np.ndarray) -> np.ndarray:
         right = u @ np.diag([1, 1, np.linalg.det(u @ vt)]) @ vt
     error = log_so3(fitted @ np.swapaxes(left @ truth @ right, 1, 2))
     return error - np.median(error, axis=0)
+
+
+def relative_observations(Q1, Q2, s1, s2, P, root2, centroid2, pivot_offset):
+    """Body 2 in body 1's frame, observed: ``[vec(Q1^T Q2 L2), s2 - s1 + P (Q2 m2 + p2 - p1)]`` with the depth direction
+    of the relative translation ``Q1^T n``, so the observation operator is ``P Q1``. A shared consensus rotation
+    ``E`` (``Q_b -> E Q_b``, ``P -> P E^T``) cancels from both parts. Returns ``(y [n, 11], P_rel [n, 2, 3])``."""
+    from relax.multibody import pose_uq as uq
+
+    rotations = np.swapaxes(Q1, 1, 2) @ Q2
+    head = (rotations @ root2).reshape(len(Q1), 9)
+    tail = s2 - s1 + np.einsum("nij,nj->ni", P, np.einsum("nij,j->ni", Q2, centroid2) + pivot_offset)
+    return np.concatenate([head, tail], axis=1), P @ Q1
+
+
+def relative(args) -> None:
+    """The relative-pose arm: projected PPCA of body 2 in body 1's frame, with ``R`` propagated from both bodies' local
+    covariances (independent given the consensus, by finite differences of the exact map), scored by the same
+    neighbourhood curves on body 2's state; with true poses as the reference."""
+    import jax.numpy as jnp
+
+    from relax.multibody import pose_ppca as pp
+    from relax.multibody import pose_uq as uq
+    from scripts.run_pose_ordering_comparison import true_camera_features
+
+    data = args.root / args.dataset
+    run, _ = load_run(data, args.out)
+    labels = fixture_labels(run, data)
+    tables = [pose_table(run, dict(np.load(args.input / f"uq_{args.dataset}_body{b + 1}_estimated.npz")), b) for b in range(2)]
+    pivot_offset = (run.bodies[1].com - run.bodies[0].com) * run.pixel_size
+    usable = tables[0]["usable"] & tables[1]["usable"]
+    Q1, Q2, s1, s2, P = tables[0]["rotations"], tables[1]["rotations"], tables[0]["shifts"], tables[1]["shifts"], tables[0]["P"]
+    y, P_rel = relative_observations(Q1, Q2, s1, s2, P, tables[1]["root"], tables[1]["centroid"], pivot_offset)
+    # The 11 x 10 Jacobian in (theta_1, theta_2) by central differences of the exact map.
+    h = np.array([1e-5] * 3 + [1e-4] * 2)
+    J = np.zeros((len(y), 11, 10))
+    for body in range(2):
+        for k in range(5):
+            out = []
+            for sign in (1.0, -1.0):
+                theta = np.zeros((len(y), 5))
+                theta[:, k] = sign * h[k]
+                turn = np.asarray(uq.exp_so3(jnp.asarray(theta[:, :3])))
+                q = [Q1, Q2]
+                sh = [s1, s2]
+                q[body] = turn @ q[body]
+                sh[body] = sh[body] + theta[:, 3:]
+                out.append(relative_observations(q[0], q[1], sh[0], sh[1], P, tables[1]["root"], tables[1]["centroid"], pivot_offset)[0])
+            J[:, :, 5 * body + k] = (out[0] - out[1]) / (2.0 * h[k])
+    S = np.zeros((len(y), 10, 10))
+    S[:, :5, :5], S[:, 5:, 5:] = np.nan_to_num(tables[0]["S"]), np.nan_to_num(tables[1]["S"])
+    R = J @ S @ np.swapaxes(J, 1, 2)
+    table = dict(y=y, P=P_rel, R=R, usable=usable)
+    # Rank 10 alone, and floors from 1e-3: the 1e-4 floor took about 3000 EM iterations without changing the
+    # withheld-shift choice on any per-body fit.
+    fitted = fit_body(table, args.seed, ranks=(10,), floors=(1e-3, 1e-2, 1e-1))
+    rank = 10
+    fit = fitted["fits"][(rank, fitted["best_floor"][rank])]
+    posterior = pp.latent_posterior(y[usable], P_rel[usable], R[usable], fit)
+    principal = np.full((len(y), rank), np.nan)
+    principal[usable] = posterior.principal(fit)[0]
+    # True poses: the simulated motions through the true cameras.
+    rows = np.asarray([int(n.split("@")[0]) - 1 for n in labels["names"]])
+    from recovar import utils
+
+    cameras = np.asarray(utils.pickle_load(data / "poses.pkl")[0])[rows]
+    true_P = uq.camera_projection(cameras)
+    true = []
+    for b in range(2):
+        features = true_camera_features(run, data, labels["record"], b, labels["states"], labels["names"])
+        _, _, Q = true_observations(run, data, labels, b, tables[b]["root"])
+        moved = features.points - Q @ tables[b]["centroid"]
+        true.append((Q, np.einsum("nij,nj->ni", true_P, moved)))
+    true_y, true_P_rel = relative_observations(true[0][0], true[1][0], true[0][1], true[1][1], true_P, tables[1]["root"], tables[1]["centroid"], pivot_offset)
+    zero = np.zeros((len(true_y), 11, 11))
+    perfect = pp.fit_projected_ppca(true_y, true_P_rel, zero, rank, floor=1e-4, tolerance=1e-6)
+    true_principal = pp.latent_posterior(true_y, true_P_rel, zero, perfect).principal(perfect)[0]
+
+    def distances(coordinates, target):
+        return {k: np.nan_to_num(np.linalg.norm(v - v[target], axis=1), nan=np.inf) for k, v in coordinates.items()}
+
+    curves = target_curves(lambda r: distances({"relative PPCA q10": principal}, r), labels["labels"], labels["states"], labels["names"], args.dataset)
+    curves_true = target_curves(lambda r: distances({"relative PPCA q10, true poses": true_principal}, r), labels["labels"], labels["states"], labels["names"], args.dataset)
+    twist1 = np.asarray([s["body1_twist"] for s in labels["record"]["states"]])[labels["states"]]
+    report = dict(dataset=args.dataset, usable=int(usable.sum()), best_floor={str(k): v for k, v in fitted["best_floor"].items()}, sweep=fitted["sweep"],
+                  curves=curves, curves_true=curves_true, explained=dict(fitted={k: explained(principal, v, usable) for k, v in dict(body2_level=labels["level"], body1_twist=twist1).items()},
+                  true={k: explained(true_principal, v, np.ones(len(v), bool)) for k, v in dict(body2_level=labels["level"], body1_twist=twist1).items()}))
+    np.savez_compressed(args.out / f"relative_{args.dataset}.npz", y=y, P=P_rel, R=R, usable=usable, principal=principal, true_principal=true_principal, W=fit.W, mean=fit.mean, tau2=fit.tau2, amplitudes=fit.amplitudes)
+    (args.out / f"relative_{args.dataset}.json").write_text(json.dumps(report, indent=1, default=float))
+    print(json.dumps(dict(usable=report["usable"], best_floor=report["best_floor"], explained=report["explained"]), indent=1), flush=True)
 
 
 def twist(args) -> None:
@@ -894,7 +984,7 @@ def embed(args) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(dest="stage", required=True)
-    for name, function in (("audit", audit), ("synthetic", synthetic), ("fixture", fixture_uq), ("embed", embed), ("noise", noise_check), ("sandwich", sandwich), ("gap", gap), ("twist", twist)):
+    for name, function in (("audit", audit), ("synthetic", synthetic), ("fixture", fixture_uq), ("embed", embed), ("noise", noise_check), ("sandwich", sandwich), ("gap", gap), ("twist", twist), ("relative", relative)):
         a = sub.add_parser(name)
         a.set_defaults(function=function)
         a.add_argument("--root", required=True, type=Path)
