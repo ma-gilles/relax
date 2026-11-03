@@ -803,6 +803,71 @@ def relative(args) -> None:
     print(json.dumps(dict(usable=report["usable"], best_floor=report["best_floor"], explained=report["explained"]), indent=1), flush=True)
 
 
+def cost(args) -> None:
+    """Separate timings of image preparation, the gradient/Hessian polish, feature propagation, the PPCA fit and the
+    posterior, on ``--particles`` of a fixture's half 1 (each timed twice: the first call includes compilation), and the
+    fitter alone on a synthetic 100k pose table (not an image-Hessian benchmark)."""
+    import resource
+
+    import jax
+
+    from relax.multibody import pose_ppca as pp
+    from relax.multibody import pose_uq as uq
+    from relax.multibody.pose_neighborhoods import mask_moments
+
+    data = args.root / args.dataset
+    run, result = load_run(data, args.out)
+    offset_range = final_offset_range_angstrom(data, result)
+    n = min(args.particles, run.halves[0].rows.size)
+    report = dict(dataset=args.dataset, particles=n, device=str(jax.devices()[0].device_kind), precision="float64 local score (diagnostic); native float32 preparation",
+                  batch=args.batch, polish_iterations=uq.POLISH_ITERATIONS, stencil_points=len(uq.central_design()))
+    for attempt in ("first (with compilation)", "second"):
+        timings = {}
+        t = time.time()
+        from relax.multibody import subsets
+
+        subsets_images = subsets.target_body_images(run, result, args.body, 0)
+        timings["subtraction_s"] = time.time() - t
+        t = time.time()
+        ops, *_ = body_operands(run, result, args.body, 0, np.arange(n), offset_range_angstrom=offset_range, images=subsets_images)
+        jax.block_until_ready(ops.image)
+        timings["preparation_s"] = time.time() - t
+        t = time.time()
+        local = polish_all(ops, batch=args.batch)
+        timings["gradient_hessian_polish_s"] = time.time() - t
+        body = run.bodies[args.body]
+        moments = mask_moments(body.mask, body.com, run.pixel_size)
+        root = uq.covariance_root(moments.covariance)
+        t = time.time()
+        Q = np.swapaxes(ops.consensus, 1, 2) @ local["cameras"]
+        P = uq.camera_projection(ops.consensus)
+        S = uq.covariance_from_hessian(local["hessian"][local["status"] == 0])
+        R = uq.propagate(uq.feature_jacobian(Q[local["status"] == 0], P[local["status"] == 0], root, moments.centroid), S)
+        timings["feature_propagation_s"] = time.time() - t
+        report[attempt] = timings
+        print(attempt, timings, flush=True)
+    stats = jax.devices()[0].memory_stats() or {}
+    report["device_peak_bytes"] = stats.get("peak_bytes_in_use")
+    report["host_peak_rss_gb"] = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1e6
+    # The fitter at 1k, 10k and 100k on a synthetic pose table with rank-5 R (shape of the fixture's).
+    rng = np.random.default_rng(args.seed)
+    fitter = {}
+    for size in (1000, 10000, 100000):
+        index = rng.integers(0, len(R), size)
+        y = np.einsum("nij,nj->ni", pp.operators(P[local["status"] == 0][index]), rng.standard_normal((size, 12)) @ np.diag(np.linspace(3, 0.3, 12)))
+        t = time.time()
+        fit = pp.fit_projected_ppca(y, P[local["status"] == 0][index], R[index], 10, floor=1e-2, tolerance=1e-6)
+        fit_s = time.time() - t
+        t = time.time()
+        pp.latent_posterior(y, P[local["status"] == 0][index], R[index], fit)
+        fitter[str(size)] = dict(fit_s=fit_s, iterations=len(fit.log_likelihood), seconds_per_iteration=fit_s / len(fit.log_likelihood), posterior_s=time.time() - t)
+        print(size, fitter[str(size)], flush=True)
+    report["ppca_fitter_float64_numpy_host"] = fitter
+    report["host_peak_rss_gb"] = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1e6
+    (args.out / f"cost_{args.dataset}_{n}.json").write_text(json.dumps(report, indent=1))
+    print(json.dumps(report, indent=1), flush=True)
+
+
 def twist(args) -> None:
     """Is the molecular-frame error the consensus following the body motions? Per axis, its correlation with each true
     state variable and the error left after a linear fit on all of them (with intercept)."""
@@ -984,7 +1049,7 @@ def embed(args) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(dest="stage", required=True)
-    for name, function in (("audit", audit), ("synthetic", synthetic), ("fixture", fixture_uq), ("embed", embed), ("noise", noise_check), ("sandwich", sandwich), ("gap", gap), ("twist", twist), ("relative", relative)):
+    for name, function in (("audit", audit), ("synthetic", synthetic), ("fixture", fixture_uq), ("embed", embed), ("noise", noise_check), ("sandwich", sandwich), ("gap", gap), ("twist", twist), ("relative", relative), ("cost", cost)):
         a = sub.add_parser(name)
         a.set_defaults(function=function)
         a.add_argument("--root", required=True, type=Path)
