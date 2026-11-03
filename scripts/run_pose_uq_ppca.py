@@ -702,7 +702,16 @@ def consensus_gap(table: dict, true_rotations: np.ndarray) -> dict:
     from relax.multibody.pose_uq import log_so3
 
     usable = table["usable"]
-    error = log_so3(table["rotations"][usable] @ np.swapaxes(true_rotations[usable], 1, 2))
+    fitted, truth = table["rotations"][usable], true_rotations[usable]
+    # The run's map frame and body orientation differ from the simulation's by constant rotations on both sides,
+    # Q_fit ~ C_l Q_true C_r; a median of log(Q_fit Q_true^T) removes only a left constant (truth-side gauge).
+    left, right = np.eye(3), np.eye(3)
+    for _ in range(20):
+        u, _, vt = np.linalg.svd(np.sum(fitted @ right.T @ np.swapaxes(truth, 1, 2), axis=0))
+        left = u @ np.diag([1, 1, np.linalg.det(u @ vt)]) @ vt
+        u, _, vt = np.linalg.svd(np.sum(np.swapaxes(truth, 1, 2) @ left.T @ fitted, axis=0))
+        right = u @ np.diag([1, 1, np.linalg.det(u @ vt)]) @ vt
+    error = log_so3(fitted @ np.swapaxes(left @ truth @ right, 1, 2))
     error = error - np.median(error, axis=0)
     S = table["S"][usable][:, :3, :3]
     chi2 = np.sum(error * np.linalg.solve(S, error[:, :, None])[:, :, 0], axis=1)
@@ -712,6 +721,21 @@ def consensus_gap(table: dict, true_rotations: np.ndarray) -> dict:
                 molecular_frame_coverage_90=float(np.mean(chi2 < 6.2514)), camera_median_chi2_over_2p37=float(np.median(camera_chi2) / 2.366),
                 camera_robust_error_deg=np.rad2deg(1.4826 * np.median(np.abs(camera), axis=0)).tolist(), camera_coverage_90=float(np.mean(camera_chi2 < 6.2514)),
                 predicted_sd_deg=np.rad2deg(np.sqrt(np.median(np.diagonal(S, axis1=1, axis2=2), axis=0))).tolist())
+
+
+def gap(args) -> None:
+    """The consensus-error measurement alone, from the fixture tables: no PPCA."""
+    data = args.root / args.dataset
+    run, _ = load_run(data, args.out)
+    labels = fixture_labels(run, data)
+    report = {}
+    for b in range(len(run.bodies)):
+        merged = dict(np.load(args.input / f"uq_{args.dataset}_body{b + 1}_estimated.npz"))
+        table = pose_table(run, merged, b)
+        _, _, true_Q = true_observations(run, data, labels, b, table["root"])
+        report[str(b + 1)] = consensus_gap(table, true_Q)
+    (args.out / f"gap_{args.dataset}.json").write_text(json.dumps(report, indent=1))
+    print(json.dumps(report, indent=1), flush=True)
 
 
 def embed(args) -> None:
@@ -819,7 +843,7 @@ def embed(args) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(dest="stage", required=True)
-    for name, function in (("audit", audit), ("synthetic", synthetic), ("fixture", fixture_uq), ("embed", embed), ("noise", noise_check), ("sandwich", sandwich)):
+    for name, function in (("audit", audit), ("synthetic", synthetic), ("fixture", fixture_uq), ("embed", embed), ("noise", noise_check), ("sandwich", sandwich), ("gap", gap)):
         a = sub.add_parser(name)
         a.set_defaults(function=function)
         a.add_argument("--root", required=True, type=Path)
