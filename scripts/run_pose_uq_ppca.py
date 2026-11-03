@@ -260,27 +260,43 @@ def _subtracted(run, result, target):
 
 
 def synthetic(args) -> None:
-    """Stage C, first arm: independent noise realizations of the same poses. The image is exactly the model's
-    prediction plus Gaussian noise at the weights the score assumes, so nuisance, noise, map and interpolation are all
-    known; cameras and CTFs are the fixture's, the scales varied, the pixel size nonunit."""
+    """Stage C, independent noise realizations of the same poses, Gaussian noise at the weights the score assumes.
+
+    ``--clean model``: the image is the score's own prediction at the stored pose, so map, nuisance, noise and
+    interpolation are all exact (cameras and CTFs the fixture's, scales varied, pixel size nonunit). ``--clean
+    component``: the image is the simulator's noiseless body (true state volume, true pose, its own interpolation)
+    through the same preparation, scored against the run's half map, with errors against the true pose: what map error
+    and body deformation add when the noise is still exactly the assumed one."""
     import jax
     import jax.numpy as jnp
 
     from relax.multibody import pose_uq
+    from relax.multibody.subtraction import relion_translate_2d
+    from relax.multibody import geometry
+    from scripts.multibody_adaptive_subsets import simulated_body_images
 
     data = args.root / args.dataset
     run, result = load_run(data, args.out)
     offset_range = final_offset_range_angstrom(data, result)
     n = args.particles
-    ops, *_ = body_operands(run, result, args.body, 0, np.arange(n), offset_range_angstrom=offset_range)
+    images = None
+    if args.clean == "component":
+        components, _ = simulated_body_images(run, data)
+        particles = run.checkpoint.particles
+        consensus = geometry.consensus_matrices(particles[["rlnAngleRot", "rlnAngleTilt", "rlnAnglePsi"]].to_numpy(float))
+        origins = particles[["rlnOriginXAngst", "rlnOriginYAngst"]].to_numpy(float) / run.pixel_size
+        integer = geometry.integer_image_shifts(origins, geometry.projected_centers(consensus, run.bodies[args.body])).astype(np.int64)
+        rows = run.halves[0].rows
+        images = np.stack([relion_translate_2d(components[args.body][r], integer[r]) for r in rows]).astype(np.float32)
+    ops, *_ = body_operands(run, result, args.body, 0, np.arange(n), offset_range_angstrom=offset_range, images=images)
     rng = np.random.default_rng(args.seed)
-    scale = rng.uniform(0.8, 1.2, n)
-    ops = replace(ops, ctf=ops.ctf * jnp.asarray(scale)[:, None])
-    if args.signal != 1.0:
-        ops = replace(ops, ctf=ops.ctf * args.signal)
-    # Fix every realization's truth by moving each particle a random fraction of a sampling step off the stored pose.
-    clean = pose_uq.predictions(ops)
-    weight = np.asarray(ops.weight)
+    scale = np.ones(n)
+    if args.clean == "model":
+        scale = rng.uniform(0.8, 1.2, n)
+        ops = replace(ops, ctf=ops.ctf * jnp.asarray(scale)[:, None])
+        clean = pose_uq.predictions(ops)
+    else:
+        clean = ops.image
     results = []
     for r in range(args.realizations):
         key = jax.random.PRNGKey(args.seed + 1000 + r)
@@ -288,20 +304,127 @@ def synthetic(args) -> None:
         noise = (a + 1j * b) / jnp.sqrt(jnp.where(ops.weight > 0, ops.weight, 1.0)) * (ops.weight > 0)
         results.append(polish_all(replace(ops, image=clean + noise), batch=args.batch))
         print("realization", r, flush=True)
-    stack = {k: np.stack([x[k] for x in results]) for k in ("correction", "hessian", "fisher", "status", "whitened_eigenvalues", "last_step", "fit_ratio")}
-    np.savez_compressed(args.out / f"synthetic_{args.dataset}_body{args.body + 1}_signal{args.signal:g}.npz", scale=scale, **stack)
-    error = stack["correction"].reshape(-1, 5)
+    stack = {k: np.stack([x[k] for x in results]) for k in ("correction", "hessian", "fisher", "status", "whitened_eigenvalues", "last_step", "fit_ratio", "cameras")}
+    if args.clean == "component":
+        true_cameras, true_offsets, _ = true_pose(run, result, data, args.body)
+        table = run.halves[0].rows[:n]
+        offsets = result.poses[args.body].offsets_px[table]
+        errors = []
+        for k in range(args.realizations):
+            analysis = offsets - stack["correction"][k][:, 3:] / run.pixel_size
+            errors.append(pose_errors(stack["cameras"][k], analysis, true_cameras[table], true_offsets[table], ops.consensus, run.pixel_size))
+        flat, gauge = remove_gauge(np.concatenate(errors), np.tile(ops.consensus, (args.realizations, 1, 1)))
+        stack["error"] = flat.reshape(args.realizations, n, 5)
+    else:
+        stack["error"], gauge = stack["correction"], None
+    name = f"synthetic_{args.dataset}_body{args.body + 1}_{args.clean}"
+    np.savez_compressed(args.out / f"{name}.npz", scale=scale, **stack)
+    error = stack["error"].reshape(-1, 5)
     keep = stack["status"].reshape(-1) == 0
     hessian = stack["hessian"].reshape(-1, 5, 5)
     fisher = stack["fisher"].reshape(-1, 5, 5)
-    report = dict(dataset=args.dataset, body=args.body + 1, particles=n, realizations=args.realizations, signal=args.signal,
+    report = dict(dataset=args.dataset, body=args.body + 1, clean=args.clean, particles=n, realizations=args.realizations, gauge=gauge,
                   qualified_fraction=float(keep.mean()), status_counts=np.bincount(stack["status"].reshape(-1)).tolist(),
                   observed_hessian=calibration(error[keep], np.linalg.inv(hessian[keep])), expected_fisher=calibration(error[keep], np.linalg.inv(fisher[keep])),
                   all_expected_fisher=calibration(error, np.linalg.inv(fisher)))
-    empirical = np.stack([np.cov(stack["correction"][:, i].T) for i in range(n)])
+    # Spread about each particle's own mean over realizations against the prediction: the noise part alone; the
+    # mean offset per particle is the model (map, deformation) part.
+    centred = stack["error"] - stack["error"].mean(axis=0)
     predicted = np.mean(np.linalg.inv(fisher).reshape(args.realizations, n, 5, 5), axis=0)
-    report["empirical_over_predicted_variance_median"] = np.median(np.diagonal(empirical, axis1=1, axis2=2) / np.diagonal(predicted, axis1=1, axis2=2), axis=0).tolist()
-    (args.out / f"synthetic_{args.dataset}_body{args.body + 1}_signal{args.signal:g}.json").write_text(json.dumps(report, indent=1))
+    spread = np.einsum("rni,rnj->nij", centred, centred) / (args.realizations - 1)
+    report["within_particle_over_predicted_variance_median"] = np.median(np.diagonal(spread, axis1=1, axis2=2) / np.diagonal(predicted, axis1=1, axis2=2), axis=0).tolist()
+    bias = stack["error"].mean(axis=0)
+    report["particle_mean_error_over_predicted_sd_rms"] = np.sqrt(np.mean(bias**2 / np.diagonal(predicted, axis1=1, axis2=2), axis=0)).tolist()
+    (args.out / f"{name}.json").write_text(json.dumps(report, indent=1))
+    print(json.dumps(report, indent=1), flush=True)
+
+
+def noise_check(args) -> None:
+    """Is the score's noise model the fixture's noise? The simulated noise alone (raw image minus every noiseless
+    body), through the same preparation and mask: per-shell ``mean w |N|^2 / 2`` (one when the weights are right), and
+    the correlation of neighbouring Fourier pixels the diagonal model sets to zero."""
+    import jax.numpy as jnp
+
+    from relax.multibody import geometry
+    from relax.multibody.subtraction import relion_translate_2d
+    from scripts.multibody_adaptive_subsets import simulated_body_images
+
+    data = args.root / args.dataset
+    run, result = load_run(data, args.out)
+    offset_range = final_offset_range_angstrom(data, result)
+    components, _ = simulated_body_images(run, data)
+    particles = run.checkpoint.particles
+    consensus = geometry.consensus_matrices(particles[["rlnAngleRot", "rlnAngleTilt", "rlnAnglePsi"]].to_numpy(float))
+    origins = particles[["rlnOriginXAngst", "rlnOriginYAngst"]].to_numpy(float) / run.pixel_size
+    integer = geometry.integer_image_shifts(origins, geometry.projected_centers(consensus, run.bodies[args.body])).astype(np.int64)
+    raw = np.asarray(run.dataset.image_source.backend.source.get(np.arange(run.dataset.n_images)))
+    rows = run.halves[0].rows
+    n = args.particles
+    noise = np.stack([relion_translate_2d(raw[r] - sum(c[r] for c in components), integer[r]) for r in rows]).astype(np.float32)
+    report = {}
+    # The widest RELION mask the box holds, against the body's own mask.
+    widest = (run.box_size / 2 - run.width_mask_edge - 1) * run.pixel_size - run.bodies[args.body].max_radius_angstrom
+    for label, offset in (("body mask", offset_range), ("box mask", widest)):
+        ops, *_ = body_operands(run, result, args.body, 0, np.arange(n), offset_range_angstrom=offset, images=noise)
+        w = np.asarray(ops.weight)
+        power = np.asarray(jnp.abs(ops.image) ** 2) * w / 2.0
+        lattice = np.asarray(ops.lattice)
+        radius = np.sqrt(np.sum(lattice**2, axis=1)) * run.box_size
+        shells = np.minimum(radius.astype(int), run.box_size // 2)
+        valid = w[0] > 0
+        per_shell = [float(power[:, (shells == k) & valid].mean()) if np.any((shells == k) & valid) else None for k in range(run.box_size // 2 + 1)]
+        report[label] = dict(mean=float(power[:, valid].mean()), per_shell=per_shell)
+    (args.out / f"noise_{args.dataset}_body{args.body + 1}.json").write_text(json.dumps(report, indent=1))
+    print(json.dumps({k: dict(mean=v["mean"], shells_every_8=v["per_shell"][::8]) for k, v in report.items()}, indent=1), flush=True)
+
+
+def sandwich(args) -> None:
+    """The sandwich covariance ``H^-1 G H^-1`` with ``G`` the score-gradient covariance of white real-space noise
+    through the native preparation (mask included), by Monte Carlo, at the analysis poses of an earlier ``fixture``
+    run, and its calibration against the same truth errors. ``--noise-variance`` is the raw per-pixel variance; the
+    default reads it from the fixture's own simulated noise (a real data set would take it from RELION's spectrum
+    divided by the consensus mask's mean square, the ratio the noise check measures)."""
+    import jax
+    import jax.numpy as jnp
+
+    from relax.multibody import geometry, pose_uq
+    from relax.multibody.subtraction import relion_translate_2d
+    from scripts.multibody_adaptive_subsets import simulated_body_images
+
+    data = args.root / args.dataset
+    run, result = load_run(data, args.out)
+    offset_range = final_offset_range_angstrom(data, result)
+    merged = dict(np.load(args.input / f"uq_{args.dataset}_body{args.body + 1}_estimated.npz"))
+    first = merged["half"] == 0
+    n = int(first.sum()) if args.particles is None else min(args.particles, int(first.sum()))
+    components, _ = simulated_body_images(run, data)
+    raw = np.asarray(run.dataset.image_source.backend.source.get(run.halves[0].rows[:n]))
+    variance = float(np.var(raw - sum(c[run.halves[0].rows[:n]] for c in components)))
+    ops, *_ = body_operands(run, result, args.body, 0, np.arange(n), offset_range_angstrom=offset_range)
+    ops = pose_uq.recentred(ops, merged["correction"][first][:n])
+    J = pose_uq.prediction_jacobian(ops)
+    rng = np.random.default_rng(args.seed)
+    draws = []
+    for k in range(args.realizations):
+        white = (rng.standard_normal((run.halves[0].rows.size, run.box_size, run.box_size)) * np.sqrt(variance)).astype(np.float32)
+        noise_ops, *_ = body_operands(run, result, args.body, 0, np.arange(n), offset_range_angstrom=offset_range, images=white)
+        # The fixed-frame prediction and the analysis-pose translation: the noise image needs the same phase.
+        noise = noise_ops.image * pose_uq.translation_phases(-jnp.asarray(merged["correction"][first][:n, 3:]) / ops.pixel_size, ops.lattice)
+        draws.append(pose_uq.score_gradient_of_noise(J, ops.weight, noise))
+    draws = np.stack(draws)
+    G = np.einsum("kna,knb->nab", draws, draws) / len(draws)
+    H, F = merged["hessian"][first][:n], merged["fisher"][first][:n]
+    Hinv = np.linalg.inv(H)
+    sandwich_cov = Hinv @ G @ Hinv
+    error, gauge = remove_gauge(merged["error_analysis"], merged["consensus"])
+    error = error[first][:n]
+    keep = merged["status"][first][:n] == 0
+    report = dict(dataset=args.dataset, body=args.body + 1, n=n, draws=args.realizations, raw_noise_variance=variance,
+                  G_over_F_trace_median=float(np.median(np.trace(G, axis1=1, axis2=2) / np.trace(F, axis1=1, axis2=2))),
+                  G_over_F_eigen_median=np.median(np.linalg.eigvalsh(np.linalg.solve(np.linalg.cholesky(F), np.swapaxes(np.linalg.solve(np.linalg.cholesky(F), G), 1, 2))), axis=0).tolist(),
+                  raw_hessian=calibration(error[keep], Hinv[keep]), sandwich=calibration(error[keep], sandwich_cov[keep]))
+    np.savez_compressed(args.out / f"sandwich_{args.dataset}_body{args.body + 1}.npz", G=G, sandwich=sandwich_cov, error=error, keep=keep)
+    (args.out / f"sandwich_{args.dataset}_body{args.body + 1}.json").write_text(json.dumps(report, indent=1))
     print(json.dumps(report, indent=1), flush=True)
 
 
@@ -421,17 +544,18 @@ def pose_table(run, merged: dict, target: int, *, use_stored: bool = False) -> d
 
 
 RANKS = (2, 4, 6, 10)
-FLOORS = (1e-3, 1e-2, 1e-1)
+FLOORS = (1e-4, 1e-3, 1e-2, 1e-1)
 
 
 def held_out(fit, y, P, R) -> dict:
     from relax.multibody import pose_ppca as pp
 
     report = dict(log_likelihood_per_particle=pp.log_likelihood(y, P, R, fit) / len(y))
-    for name, coordinate in (("shift_x", 9), ("shift_y", 10)):
+    shifts = [(f"body{b + 1}_shift_{axis}", 11 * b + 9 + k) for b in range(fit.bodies) for k, axis in enumerate("xy")]
+    for name, coordinate in shifts:
         mean, variance = pp.withheld_prediction(y, P, R, fit, coordinate)
         residual = y[:, coordinate] - mean
-        baseline = y[:, coordinate] - (pp.operators(P) @ fit.mean)[:, coordinate]
+        baseline = y[:, coordinate] - (pp.operators(P, fit.bodies) @ fit.mean)[:, coordinate]
         report[name] = dict(rmse=float(np.sqrt(np.mean(residual**2))), robust_rmse=float(1.4826 * np.median(np.abs(residual))),
                             mean_only_robust_rmse=float(1.4826 * np.median(np.abs(baseline))),
                             z_sd=float(np.std(residual / np.sqrt(variance))), z_robust_sd=float(1.4826 * np.median(np.abs(residual / np.sqrt(variance)))))
@@ -459,7 +583,14 @@ def fit_body(table: dict, seed: int) -> dict:
                 train_per_particle=fit.log_likelihood[-1] / len(training), validation=held_out(fit, y[validation], P[validation], R[validation]),
             )
             print(f"q={rank} floor={floor:g} tau2={fit.tau2:.4g} it={len(fit.log_likelihood)} val={sweep[f'q{rank}_floor{floor:g}']['validation']['log_likelihood_per_particle']:.3f}", flush=True)
-    best = {rank: max((f for f in FLOORS), key=lambda f: sweep[f"q{rank}_floor{f:g}"]["validation"]["log_likelihood_per_particle"]) for rank in RANKS}
+    # The validation likelihood rises without limit as the floor falls: fitted rotation features lie on SO(3), so the
+    # six normal directions R leaves empty are explained by tau alone. The floor is therefore chosen by the withheld
+    # shift prediction on the validation split (truth free), the depth-relevant quantity; ties go to the larger floor.
+    def shift_error(rank, floor):
+        validation = sweep[f"q{rank}_floor{floor:g}"]["validation"]
+        return float(np.mean([v["robust_rmse"] for k, v in validation.items() if "shift" in k]))
+
+    best = {rank: min(sorted(FLOORS, reverse=True), key=lambda f: round(shift_error(rank, f), 4)) for rank in RANKS}
     return dict(sweep=sweep, fits=fits, best_floor=best, training=training, validation=validation)
 
 
@@ -688,7 +819,7 @@ def embed(args) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(dest="stage", required=True)
-    for name, function in (("audit", audit), ("synthetic", synthetic), ("fixture", fixture_uq), ("embed", embed)):
+    for name, function in (("audit", audit), ("synthetic", synthetic), ("fixture", fixture_uq), ("embed", embed), ("noise", noise_check), ("sandwich", sandwich)):
         a = sub.add_parser(name)
         a.set_defaults(function=function)
         a.add_argument("--root", required=True, type=Path)
@@ -698,7 +829,7 @@ def main() -> None:
         a.add_argument("--batch", type=int, default=128)
         a.add_argument("--seed", type=int, default=20261102)
         a.add_argument("--realizations", type=int, default=16)
-        a.add_argument("--signal", type=float, default=1.0)
+        a.add_argument("--clean", choices=("model", "component"), default="model")
         a.add_argument("--input", type=Path, help="embed: where the fixture stage wrote its tables; default --out")
         a.add_argument("--nuisance", choices=("estimated", "exact"), default="estimated")
         a.add_argument("dataset")

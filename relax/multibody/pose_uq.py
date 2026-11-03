@@ -38,7 +38,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from relax.fourier.preprocessing import relion_half_translation_lattice, translation_phases
+from relax.fourier.preprocessing import translation_phases
 from relax.projection.projection import project_relion_projector_half_spectrum_centered_rows_at_indices
 
 PARAMETERS = 5
@@ -52,7 +52,7 @@ STATUS_NOT_POSITIVE = 1  # H has a nonpositive eigenvalue
 STATUS_FLAT = 2  # H has a direction much flatter than F: its uncertainty is not local
 STATUS_NOT_STATIONARY = 4  # the polished point is still not stationary
 STATUS_POOR_QUADRATIC = 8  # the score leaves the quadratic within FIT_CHECK standard deviations
-STATUS_TRUST_LIMITED = 16  # the polish hit its trust radius: a competing mode is possible
+STATUS_TRUST_LIMITED = 16  # the last polish step still hit its trust radius: a competing mode is possible
 FLAT_EIGENVALUE = 0.1  # relative to F, the smallest eigenvalue of H in the whitened frame
 STATIONARY_STEP = 0.25  # the last Newton step, standard deviations
 QUADRATIC_RATIO = (0.5, 1.5)  # actual over predicted score rise, at FIT_CHECK
@@ -159,6 +159,21 @@ def _prediction_jacobian(volume, cameras, consensus, ctf, lattice, window, pixel
 def _weighted_gram(J, weight):
     weighted = J * weight[..., None]
     return jnp.einsum("npa,npb->nab", J.conj(), weighted).real
+
+
+def prediction_jacobian(ops: BodyOperands) -> jax.Array:
+    """``J [n, P, 5]`` at the stored pose."""
+    return _prediction_jacobian(
+        ops.volume, jnp.asarray(ops.cameras), jnp.asarray(ops.consensus), ops.ctf, ops.lattice, jnp.asarray(ops.window),
+        jnp.asarray(ops.pixel_size), image_shape=ops.image_shape, r_max=ops.r_max, padding_factor=ops.padding_factor,
+    )
+
+
+def score_gradient_of_noise(J: jax.Array, weight: jax.Array, noise: jax.Array) -> np.ndarray:
+    """The gradient ``-Re(J^H W N)`` ``[n, 5]`` a prepared noise image ``N`` adds to the score at the true pose. Its
+    covariance over noise draws is the middle of the sandwich ``H^-1 G H^-1``; ``G = F`` only for independent
+    Fourier pixels at the weights, which a soft real-space mask breaks."""
+    return -np.asarray(jnp.einsum("npa,np->na", J.conj(), weight * noise).real)
 
 
 def expected_fisher(ops: BodyOperands) -> np.ndarray:
@@ -271,7 +286,7 @@ def polish(ops: BodyOperands, *, iterations: int = POLISH_ITERATIONS, step: floa
         theta = np.einsum("nij,nj->ni", whiten, move)
         trial = np.asarray(scores(current, theta[:, None]))[:, 0]
         accept = trial < value
-        limited |= capped & accept
+        limited = capped & accept  # a capped step early on is a start far from the optimum; only the last one counts
         theta = theta * accept[:, None]
         current = recentred(current, theta)
         correction = _compose(ops, correction, theta)
