@@ -144,8 +144,10 @@ def _relax_state(run: refine.MultibodyRun, optimiser_star: Path, optimiser: dict
         current_changes_optimal_offsets_angstrom=float(optimiser["rlnChangesOptimalOffsets"]),
         smallest_changes_optimal_orientations=smallest["rlnSmallestChangesOrientations"],
         smallest_changes_optimal_offsets_angstrom=smallest["rlnSmallestChangesOffsets"],
+        # Files from before relax wrote it: a multi-body iteration's class changes are 0, so after iteration 1 the
+        # smallest is min(start, round(0)) = 0 (refine.py); the start value would fail every "small changes" test.
         smallest_changes_optimal_classes=float(
-            optimiser.get("rlnSmallestChangesClasses", sampling0.smallest_changes_optimal_classes)
+            optimiser.get("rlnSmallestChangesClasses", sampling0.smallest_changes_optimal_classes if iteration < 1 else 0.0)
         ),
         acc_rot=float(optimiser["rlnOverallAccuracyRotations"]),
         acc_trans=float(optimiser["rlnOverallAccuracyTranslationsAngst"]),
