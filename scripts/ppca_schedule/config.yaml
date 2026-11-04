@@ -43,7 +43,8 @@ seeds: [11, 12, 13]
 only_arms: null
 
 # One entry per arm; `args` is appended verbatim to the training command (a repeated flag wins over the shared
-# settings above) and `runtime_minutes` overrides the Slurm request. The arms of rounds 1 to 8 (the stages table, the
+# settings above), `runtime_minutes` overrides the Slurm request and `init_truth_mean: true` starts the mean from the
+# fixture's ground truth. The arms of rounds 1 to 8 (the stages table, the
 # data_vs_prior radius, the accuracy order, constant fudge 1, q = 1 and 3) are in the history of this file; their settings
 # and results are in docs/math/vdam_ppca_algorithm.md, sections 18.4 to 18.11 (round 9: 18.12).
 #
@@ -54,6 +55,9 @@ only_arms: null
 # Nothing else differs: no --tau2-fudge, so InitialModel's own fudge schedule applies to both, as in the recipe.
 # vdam: RELION's VDAM gradient optimizer. momentum_sgd: relax's scalar-curvature SGD with momentum 0.9 and the recipe's
 # learning rate 2.4 (the recipe's own "plain SGD" has momentum 0, which relax does not offer).
+# Rounds 9 to 12 ran the first SGD's single curvature scalar (snapshots before round13_runs); round 13 split it into the
+# mean's and the loadings'. Every momentum_sgd arm names its --sgd-loading-scale (1 for rounds 9 to 13); one that names
+# none takes the default, 1/16.
 arms:
   vdam_recipe:
     args: ["--optimizer", "vdam"]
@@ -62,8 +66,82 @@ arms:
            "--order-rule", "accuracy", "--order-max", "4", "--final-order-max", "4"]
     runtime_minutes: 900                        # 13.6 s per iteration at radius 29, order 4
   sgd_recipe:
-    args: ["--optimizer", "momentum_sgd", "--sgd-learning-rate", "2.4"]
+    args: ["--optimizer", "momentum_sgd", "--sgd-learning-rate", "2.4", "--sgd-loading-scale", "1"]
   sgd_local:
-    args: ["--optimizer", "momentum_sgd", "--sgd-learning-rate", "2.4", "--stages", "[[1,4,1]]",
+    args: ["--optimizer", "momentum_sgd", "--sgd-learning-rate", "2.4", "--sgd-loading-scale", "1", "--stages", "[[1,4,1]]",
            "--radius-rule", "data_vs_prior", "--order-rule", "accuracy", "--order-max", "4", "--final-order-max", "4"]
+    runtime_minutes: 900
+  # Round 10: the two SGD arms of round 9 with the mean started from the ground truth (init_truth_mean: the
+  # count-weighted mean of the fixture's state maps, scripts/write_ppca_truth_mean.py, as --init-mean-map). The loadings
+  # keep the seed's values and nothing else differs. Tests whether SGD fails for want of reaching the mean.
+  sgd_recipe_truth_mean:
+    init_truth_mean: true
+    args: ["--optimizer", "momentum_sgd", "--sgd-learning-rate", "2.4", "--sgd-loading-scale", "1"]
+  sgd_local_truth_mean:
+    init_truth_mean: true
+    args: ["--optimizer", "momentum_sgd", "--sgd-learning-rate", "2.4", "--sgd-loading-scale", "1", "--stages", "[[1,4,1]]",
+           "--radius-rule", "data_vs_prior", "--order-rule", "accuracy", "--order-max", "4", "--final-order-max", "4"]
+    runtime_minutes: 900                        # up to 13.6 s per iteration once the radius is 29 at order 4
+  # Round 11: sgd_local with the order rule reading the accuracy of the mean image alone (--accuracy-signal mean_only)
+  # instead of the divergence, whose trace term the loadings drive under SGD (round 9 and 10 pose_accuracy figures).
+  sgd_local_mean_only:
+    args: ["--optimizer", "momentum_sgd", "--sgd-learning-rate", "2.4", "--sgd-loading-scale", "1", "--stages", "[[1,4,1]]",
+           "--radius-rule", "data_vs_prior", "--order-rule", "accuracy", "--accuracy-signal", "mean_only",
+           "--order-max", "4", "--final-order-max", "4"]
+    runtime_minutes: 900
+  # Round 12: does the loadings' presence erode a correct mean, or is the mean's own SGD update the problem? The erosion
+  # arms start the mean from the ground truth at a fixed radius 15 and order 3 (the accuracy rule only logs the estimate:
+  # --order-max 3), so the poses are anchored through shell 15 from iteration 1; 1500 iterations. erosion_q10 has all PCs
+  # from the start, erosion_mean_only none, erosion_pc500 lets them join at iteration 500. The three erosion_q10_* arms
+  # change only the step (learning rate 0.6 or 0.15) or the batch (1200 images). sgd_local_pc0 is sgd_local with no PC
+  # for the whole run (the PCs join at the last iteration).
+  erosion_q10:
+    init_truth_mean: true
+    args: ["--optimizer", "momentum_sgd", "--sgd-learning-rate", "2.4", "--sgd-loading-scale", "1", "--iterations", "1500", "--stages", "[[1,15,3]]",
+           "--order-rule", "accuracy", "--accuracy-signal", "mean_only", "--order-max", "3", "--final-order-max", "3"]
+  erosion_mean_only:
+    init_truth_mean: true
+    args: ["--optimizer", "momentum_sgd", "--sgd-learning-rate", "2.4", "--sgd-loading-scale", "1", "--iterations", "1500", "--stages", "[[1,15,3]]",
+           "--order-rule", "accuracy", "--accuracy-signal", "mean_only", "--order-max", "3", "--final-order-max", "3",
+           "--pc-stages", "[[1,0],[1500,10]]"]
+  erosion_pc500:
+    init_truth_mean: true
+    args: ["--optimizer", "momentum_sgd", "--sgd-learning-rate", "2.4", "--sgd-loading-scale", "1", "--iterations", "1500", "--stages", "[[1,15,3]]",
+           "--order-rule", "accuracy", "--accuracy-signal", "mean_only", "--order-max", "3", "--final-order-max", "3",
+           "--pc-stages", "[[1,0],[500,10]]"]
+  erosion_q10_lr0p6:
+    init_truth_mean: true
+    args: ["--optimizer", "momentum_sgd", "--sgd-learning-rate", "0.6", "--sgd-loading-scale", "1", "--iterations", "1500", "--stages", "[[1,15,3]]",
+           "--order-rule", "accuracy", "--accuracy-signal", "mean_only", "--order-max", "3", "--final-order-max", "3"]
+  erosion_q10_lr0p15:
+    init_truth_mean: true
+    args: ["--optimizer", "momentum_sgd", "--sgd-learning-rate", "0.15", "--sgd-loading-scale", "1", "--iterations", "1500", "--stages", "[[1,15,3]]",
+           "--order-rule", "accuracy", "--accuracy-signal", "mean_only", "--order-max", "3", "--final-order-max", "3"]
+  erosion_q10_batch1200:
+    init_truth_mean: true
+    args: ["--optimizer", "momentum_sgd", "--sgd-learning-rate", "2.4", "--sgd-loading-scale", "1", "--stochastic-batch-size", "1200",
+           "--iterations", "1500", "--stages", "[[1,15,3]]", "--order-rule", "accuracy", "--accuracy-signal", "mean_only",
+           "--order-max", "3", "--final-order-max", "3"]
+  sgd_local_pc0:
+    args: ["--optimizer", "momentum_sgd", "--sgd-learning-rate", "2.4", "--sgd-loading-scale", "1", "--stages", "[[1,4,1]]",
+           "--radius-rule", "data_vs_prior", "--order-rule", "accuracy", "--order-max", "4", "--final-order-max", "4",
+           "--pc-stages", "[[1,0],[3000,10]]"]
+    runtime_minutes: 900
+  # Round 14: sgd_local with the loading columns' learning rate cut to 1/4, 1/16 and 1/64 of the mean's
+  # (--sgd-loading-scale; the mean's stays 2.4). Tests whether the loadings' step is too large (they grow past the
+  # truth's power and VDAM's) or too small.
+  sgd_local_load0p25:
+    args: ["--optimizer", "momentum_sgd", "--sgd-learning-rate", "2.4", "--sgd-loading-scale", "0.25",
+           "--stages", "[[1,4,1]]", "--radius-rule", "data_vs_prior", "--order-rule", "accuracy", "--order-max", "4",
+           "--final-order-max", "4"]
+    runtime_minutes: 900
+  sgd_local_load0p0625:
+    args: ["--optimizer", "momentum_sgd", "--sgd-learning-rate", "2.4", "--sgd-loading-scale", "0.0625",
+           "--stages", "[[1,4,1]]", "--radius-rule", "data_vs_prior", "--order-rule", "accuracy", "--order-max", "4",
+           "--final-order-max", "4"]
+    runtime_minutes: 900
+  sgd_local_load0p0156:
+    args: ["--optimizer", "momentum_sgd", "--sgd-learning-rate", "2.4", "--sgd-loading-scale", "0.015625",
+           "--stages", "[[1,4,1]]", "--radius-rule", "data_vs_prior", "--order-rule", "accuracy", "--order-max", "4",
+           "--final-order-max", "4"]
     runtime_minutes: 900

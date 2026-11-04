@@ -1,18 +1,27 @@
 # PPCA schedule experiments: does a mean-only start, with PCs joining later, separate the states better?
 #
-# Per arm and seed (config.yaml: `arms`, `seeds`), five stages:
+# Per arm and seed (config.yaml: `arms`, `seeds`), six stages:
 #   1. train_ppca     relax ppca_initial_model on the eleven-state fixture with the arm's schedule flags.   [GPU]
 #   2. score_latents  how well the final latents separate the true states (scripts/analyze_ppca_latents.py).
 #   3. plot_run       the standard run figures: latents by true state, volume projections, and the shell gates
 #                     of a VDAM run (the owner's plot_ppca_run.py, config `plot_script`).
 #   4. plot_umap      UMAP of the final latents coloured by true state (scripts/plot_ppca_umap.py); arms with q >= 2.
-#   5. summary_table  one row per arm and seed: the scores of every run.
+#   5. plot_pose_accuracy  the expected rotation accuracy (acc_rot, acc_rot_mean_only) along the run
+#                     (scripts/plot_ppca_pose_accuracy.py); only arms with --order-rule accuracy, the others make no estimate.
+#   6. plot_mean_vs_truth  the run's mean against the ground-truth mean by shell and band of shells, with the loadings'
+#                     power (scripts/plot_ppca_mean_vs_truth.py); only arms with `init_truth_mean`, whose frame it shares.
+#   7. summary_table  one row per arm and seed: the scores of every run.
+# An arm with `init_truth_mean: true` starts its mean from the fixture's ground truth instead of the random seed's
+# (truth_mean_map, scripts/write_ppca_truth_mean.py, which sets the map's sign from the data; relax ppca_initial_model
+# --init-mean-map).
 #
 # Outputs, under config `output_root`:
 #   <arm>/seed<seed>/     checkpoint_NNNN.npz, iterations.jsonl, run.json, embeddings.npz, latent_scores.json
 #   <arm>/seed<seed>/plots/   pc_histogram.png (q = 1) or pc_scatter.png and pc_density.png (q > 1),
 #                         volume_projections.png, latents_pc_ordered.npz, gates_spectrogram.png (VDAM arms only),
-#                         umap.png and umap_embedding.npy (q >= 2)
+#                         umap.png and umap_embedding.npy (q >= 2), pose_accuracy.png and .json (--order-rule accuracy),
+#                         mean_vs_truth.png and .json (init_truth_mean)
+#   truth_mean.mrc        the ground-truth mean map (only when an arm starts from it)
 #   summary.tsv           the scores of every arm and seed
 #   logs/                 one log per rule, arm and seed
 #
@@ -56,6 +65,7 @@ TRAIN = config["train"]
 ARMS = config["arms"]
 RUN_ARMS = config["only_arms"] or list(ARMS)
 SEEDS = config["seeds"]
+TRUTH_MEAN = OUTPUT_ROOT / "truth_mean.mrc"
 
 # The pinned environment only: no user site packages, none of the Python or conda variables the Snakemake
 # environment sets, this checkout on the import path, and the native library built from it for the GPU rule.
@@ -73,6 +83,12 @@ def arm_optimizer(arm):
     """The optimizer an arm trains with: its own --optimizer, else the shared one."""
     args = [str(a) for a in ARMS[arm]["args"]]
     return args[args.index("--optimizer") + 1] if "--optimizer" in args else str(TRAIN["optimizer"])
+
+
+def arm_order_rule(arm):
+    """The rule that sets an arm's HEALPix order: its own --order-rule, else the stages table."""
+    args = [str(a) for a in ARMS[arm]["args"]]
+    return args[args.index("--order-rule") + 1] if "--order-rule" in args else "stages"
 
 
 def output_path(*parts):
@@ -93,6 +109,8 @@ localrules:
 
 
 UMAP_ARMS = [arm for arm in RUN_ARMS if arm_q(arm) >= 2]
+ACCURACY_ARMS = [arm for arm in RUN_ARMS if arm_order_rule(arm) == "accuracy"]
+TRUTH_MEAN_ARMS = [arm for arm in RUN_ARMS if ARMS[arm].get("init_truth_mean")]
 
 
 rule all:
@@ -101,6 +119,12 @@ rule all:
         summary=output_path("summary.tsv"),
         plots=expand(output_path("{arm}", "seed{seed}", "plots", "volume_projections.png"), arm=RUN_ARMS, seed=SEEDS),
         umaps=expand(output_path("{arm}", "seed{seed}", "plots", "umap.png"), arm=UMAP_ARMS, seed=SEEDS),
+        accuracies=expand(
+            output_path("{arm}", "seed{seed}", "plots", "pose_accuracy.png"), arm=ACCURACY_ARMS, seed=SEEDS
+        ),
+        means=expand(
+            output_path("{arm}", "seed{seed}", "plots", "mean_vs_truth.png"), arm=TRUTH_MEAN_ARMS, seed=SEEDS
+        ),
 
 
 # ----------------------------------------------------------------------------------------------------------------
@@ -108,11 +132,38 @@ rule all:
 # ----------------------------------------------------------------------------------------------------------------
 
 
+rule truth_mean_map:
+    message:
+        "Writing the ground-truth mean of the fixture as a map"
+    input:
+        script=REPO / "scripts" / "write_ppca_truth_mean.py",
+        manifest=FIXTURE / "evaluation" / "manifest.json",
+        truth=FIXTURE / "evaluation" / "truth.npz",
+        particles_star=FIXTURE / "training" / "particles.star",
+    output:
+        truth_mean=TRUTH_MEAN,
+    params:
+        env=CLEAN_ENV,
+        python=PYTHON,
+        fixture=FIXTURE,
+    resources:
+        cpus_per_task=4,
+        mem="8G",
+        runtime=20,
+    log:
+        output_path("logs", "truth_mean_map.log"),
+    shell:
+        "{params.env} JAX_PLATFORMS=cpu {params.python} {input.script} {params.fixture} "
+        "-o {output.truth_mean} "
+        "> {log} 2>&1"
+
+
 rule train_ppca:
     message:
         "Training arm {wildcards.arm}, seed {wildcards.seed}"
     input:
         particles_star=FIXTURE / "training" / "particles.star",
+        truth_mean=lambda wildcards: [TRUTH_MEAN] if ARMS[wildcards.arm].get("init_truth_mean") else [],
     output:
         embeddings=output_path("{arm}", "seed{seed}", "embeddings.npz"),
         iterations=output_path("{arm}", "seed{seed}", "iterations.jsonl"),
@@ -123,6 +174,7 @@ rule train_ppca:
         train=TRAIN,
         train_args=" ".join(map(shlex.quote, map(str, TRAIN["args"]))),
         arm_args=lambda wildcards: " ".join(map(shlex.quote, map(str, ARMS[wildcards.arm]["args"]))),
+        init_mean=lambda wildcards, input: f"--init-mean-map {input.truth_mean[0]}" if input.truth_mean else "",
         run_dir=lambda wildcards, output: str(Path(output.embeddings).parent),
     resources:
         gpu=1,
@@ -141,6 +193,7 @@ rule train_ppca:
         "--optimizer {params.train[optimizer]} "
         "{params.train_args} "
         "{params.arm_args} "
+        "{params.init_mean} "
         "> {log} 2>&1"
 
 
@@ -233,8 +286,62 @@ rule plot_umap:
         "> {log} 2>&1"
 
 
+rule plot_pose_accuracy:
+    message:
+        "Expected rotation accuracy of arm {wildcards.arm}, seed {wildcards.seed}"
+    input:
+        iterations=rules.train_ppca.output.iterations,
+        script=REPO / "scripts" / "plot_ppca_pose_accuracy.py",
+    output:
+        figure=output_path("{arm}", "seed{seed}", "plots", "pose_accuracy.png"),
+        table=output_path("{arm}", "seed{seed}", "plots", "pose_accuracy.json"),
+    params:
+        env=CLEAN_ENV,
+        python=PYTHON,
+        run_dir=lambda wildcards, input: str(Path(input.iterations).parent),
+        plots_dir=lambda wildcards, output: str(Path(output.figure).parent),
+    resources:
+        cpus_per_task=1,
+        mem="4G",
+        runtime=30,
+    log:
+        output_path("logs", "{arm}.seed{seed}.pose_accuracy.log"),
+    shell:
+        "{params.env} JAX_PLATFORMS=cpu {params.python} {input.script} {params.run_dir} "
+        "-o {params.plots_dir} "
+        "> {log} 2>&1"
+
+
+rule plot_mean_vs_truth:
+    message:
+        "Mean against the ground-truth mean, arm {wildcards.arm}, seed {wildcards.seed}"
+    input:
+        iterations=rules.train_ppca.output.iterations,
+        truth_mean=TRUTH_MEAN,
+        script=REPO / "scripts" / "plot_ppca_mean_vs_truth.py",
+    output:
+        figure=output_path("{arm}", "seed{seed}", "plots", "mean_vs_truth.png"),
+        table=output_path("{arm}", "seed{seed}", "plots", "mean_vs_truth.json"),
+    params:
+        env=CLEAN_ENV,
+        python=PYTHON,
+        run_dir=lambda wildcards, input: str(Path(input.iterations).parent),
+        plots_dir=lambda wildcards, output: str(Path(output.figure).parent),
+    resources:
+        cpus_per_task=1,
+        mem="8G",
+        runtime=30,
+    log:
+        output_path("logs", "{arm}.seed{seed}.mean_vs_truth.log"),
+    shell:
+        "{params.env} JAX_PLATFORMS=cpu {params.python} {input.script} {params.run_dir} "
+        "--truth-map {input.truth_mean} "
+        "-o {params.plots_dir} "
+        "> {log} 2>&1"
+
+
 # ----------------------------------------------------------------------------------------------------------------
-# Stage 5: summary
+# Stage 7: summary
 # ----------------------------------------------------------------------------------------------------------------
 
 
