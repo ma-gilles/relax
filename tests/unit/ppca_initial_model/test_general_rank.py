@@ -143,10 +143,10 @@ def test_momentum_rank_reference_and_dtype(q):
     theta = (rng.normal(size=(F, p)) + 1j * rng.normal(size=(F, p))).astype(np.complex64)
     gradient = (rng.normal(size=(F, p)) + 1j * rng.normal(size=(F, p))).astype(np.complex64)
     old = theta * np.float32(0.01)
-    out, velocity, _ = momentum_step(
-        theta, old, gradient, np.trace(h, axis1=-2, axis2=-1), np.ones(F, bool), learning_rate=1.2, floor=0.1
-    )
-    expected = np.float32(0.9) * old + np.float32(0.12) * gradient / np.max(np.trace(h, axis1=-2, axis2=-1))
+    curvature = np.stack([h[:, 0, 0], np.trace(h[:, 1:, 1:], axis1=-2, axis2=-1)], axis=-1)
+    out, velocity, _ = momentum_step(theta, old, gradient, curvature, np.ones(F, bool), learning_rate=1.2, floor=0.1)
+    scale = np.concatenate([curvature[:, 0].max(keepdims=True), np.full(q, curvature[:, 1].max())])
+    expected = np.float32(0.9) * old + np.float32(0.12) * gradient / scale
     np.testing.assert_allclose(velocity, expected, atol=2e-7, rtol=2e-6)
     np.testing.assert_allclose(out, theta + expected, atol=2e-7, rtol=2e-6)
     assert out.dtype == velocity.dtype == jnp.complex64

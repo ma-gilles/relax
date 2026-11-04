@@ -30,32 +30,53 @@ and the accumulation owner is
 
 Let \(G_f=G_{0f}+G_{1f}\), \(H_f=H_{0f}+H_{1f}\), and let \(S\) be the current
 Fourier band. In the existing unnormalized full-real FFT/total-coefficient
-noise units, the optimizer uses one scalar
+noise units, the optimizer uses one scalar for the mean column and one for the
+loading columns
 
 \[
-c=\max\left(\frac{0.5}{N^4},\ \max_{f\in S}\operatorname{tr}H_f\right),\qquad
-v_t=0.9v_{t-1}+0.1\,\eta\,G/c,\qquad \eta=\texttt{sgd_learning_rate}.
+c_\mu=\max\left(\frac{0.5}{N^4},\ \max_{f\in S}(H_f)_{00}\right),\qquad
+c_W=\max\left(\frac{0.5}{N^4},\ \max_{f\in S}\sum_{k\ge1}(H_f)_{kk}\right),
+\]
+\[
+v_t=0.9v_{t-1}+0.1\,\eta\,s_a\,G/c_a,\qquad \eta=\texttt{sgd_learning_rate},
 \]
 
-Only active Fourier frequencies receive the new gradient. A zero-curvature
-batch produces no velocity. The trace is a cheap conservative eigenvalue
-bound for a positive-semidefinite 3×3 block and is invariant when the two
-loading coordinates are rotated by an orthogonal matrix. It is **not** an
-exact Hessian, and `c` is not a global Lipschitz constant for the projected
+with \(a=\mu\) for the mean column and \(a=W\) for every loading column;
+\(s_\mu=1\) and \(s_W=\texttt{sgd\_loading\_scale}\) (default 1/16), the loading
+columns' learning rate relative to the mean's, the same for every loading
+column so that loading rotations still commute with the step. Only
+active Fourier frequencies receive the new gradient. A group with zero
+curvature produces no velocity. \((H_f)_{00}\) is the weight
+\(\sum\gamma\,\mathrm{CTF}^2/\sigma^2\) of an ordinary reconstruction, so the
+mean steps as it does in a model without loadings; one scalar over all channels
+(\(\operatorname{tr}H_f\)) divides the mean's step by about \(1+q\) once the
+posterior latent second moment is near its prior. The trace of the loading block is a cheap conservative eigenvalue
+bound for that positive-semidefinite block and is invariant when the loading
+coordinates are rotated by an orthogonal matrix; a diagonal maximum or
+separate scales per loading would break that symmetry. The two scalars are
+**not** a joint bound on the augmented block, whose cross entries (the
+posterior latent means) couple the mean to the loadings. Neither is an exact
+Hessian, and neither is a global Lipschitz constant for the projected
 likelihood. A duplicated minibatch doubles both \(G\) and \(H\), leaving the
 normalized new-gradient term unchanged. The zero-start first step is 0.1 of
 the normalized learning-rate step, with no bias correction. There is no
 split-half disagreement gate, second-moment adaptation, explicit map prior,
 class occupancy factor, positivity clamp or posterior rewhitening.
 
-Only \(\operatorname{tr}H_f\) is read, so the streamed full-row engine forms
-just that channel for momentum SGD: each pose's LHS images are summed over the
-diagonal of the packed block and backprojected once, instead of backprojecting
-all \((q+1)(q+2)/2\) packed channels. The backprojection is linear per
-channel, so this is the same trace up to float32 summation order. The result is
-[`TracePPCAStats`](../../relax/ppca_refinement/full_row_stream.py)
-(`metric_trace`, no `lhs_tri`); other statistics paths pass their packed metric
-through [`metric_trace`](../../relax/ppca_initial_model/sgd_update.py).
+The default \(s_W=1/16\) was chosen at \(q=10\) on the eleven-state fixture with the
+`data_vs_prior` radius and the accuracy order (seeds 11 to 13). The between-state \(R^2\) of the
+latents was .08 to .10 at \(s_W=1\), .10 to .42 at 1/4, .47 to .48 at 1/16 and .58 at 1/64
+(VDAM .54). At 1/64 the loadings hold under a tenth of the truth mean's power at shells 5 to 31,
+while at 1/16 they are still growing at iteration 3000 and every seed agrees. The loading trace divides each loading
+column's step by about \(q\), so the value is calibrated at \(q=10\).
+
+The controller reads \((H_f)_{00}\) and \(\sum_{k\ge1}(H_f)_{kk}\) from the
+packed metric `lhs_tri` of every statistics path
+([`metric_curvature`](../../relax/ppca_initial_model/sgd_update.py)). The
+streamed engine's trace-only option
+([`TracePPCAStats`](../../relax/ppca_refinement/full_row_stream.py), the single
+channel \(\sum_k(H_f)_{kk}\)) cannot give them, and the controller does not
+request it; the streams backproject all \((q+1)(q+2)/2\) packed channels.
 
 The controller applies the existing common real-space solvent mask and
 Fourier bandlimit once to the proposed velocity for storage, and once to the

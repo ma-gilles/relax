@@ -36,12 +36,12 @@ _RETIRED_CONFIG_DEFAULTS = {
     "contrast_estimate": False, "contrast_prior_sd": 0.3, "contrast_range": [0.5, 2.0], "fine_image_tile_size": 1,
 }
 
-# Model settings added later and their defaults: a checkpoint written before a setting existed holds the model its
-# default gives, so the setting at that default is no part of the identity.
+# Model settings added later and the value that gives the model of a checkpoint written before they existed (a setting's
+# Config default may differ): the setting at that value is no part of the identity.
 _ADDED_CONFIG_DEFAULTS = {"max_significant": 100, "pc_stages": None, "pc_birth_scale": 0.1,
     "tau2_fudge": None, "tau2_fudge_scheme": None, "radius_rule": "stages", "incr_size": 10,
     "order_rule": "stages", "order_max": 4, "final_order_max": None, "accuracy_interval": 10,
-    "accuracy_signal": "divergence", "init_mean_map": None}
+    "accuracy_signal": "divergence", "init_mean_map": None, "sgd_loading_scale": 1.0}
 
 
 def _identity_config(config_dict):

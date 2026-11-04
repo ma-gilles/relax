@@ -326,7 +326,6 @@ def _tiny_momentum_run(monkeypatch):
         return [
             SimpleNamespace(
                 residual_gradient=jnp.zeros((n_freq, 3), jnp.complex64),
-                metric_trace=jnp.ones(n_freq, jnp.float32),
                 lhs_tri=None,
                 rhs=None,
                 residual_num=jnp.ones(3, jnp.float32),
@@ -346,7 +345,7 @@ def _tiny_momentum_run(monkeypatch):
         ]
 
     monkeypatch.setattr(iteration_loop, "expectation_groups", groups)
-    monkeypatch.setattr(iteration_loop, "_curvature_trace", lambda stats, p: sum(s.metric_trace for s in stats))
+    monkeypatch.setattr(iteration_loop, "_curvature", lambda stats, p: len(stats) * jnp.ones((n_freq, 2), jnp.float32))
     dataset = SimpleNamespace(n_images=40, grid_size=4, volume_shape=shape, voxel_size=1.0)
     fp32 = Config(
         iterations=3,

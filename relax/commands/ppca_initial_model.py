@@ -177,6 +177,13 @@ def add_args(parser):
         help="RELION's --tau2_fudge_scheme: plain, or <deflate>-step (default: <fudge>-step)",
     )
     parser.add_argument("--sgd-learning-rate", type=float, default=0.4)
+    parser.add_argument(
+        "--sgd-loading-scale",
+        type=float,
+        default=Config().sgd_loading_scale,
+        help="momentum SGD: the loading columns' learning rate as a multiple of --sgd-learning-rate (the mean's; "
+        "default: %(default)s)",
+    )
     parser.add_argument("--resume")
     parser.add_argument("--stop-after", type=int, help="Checkpoint stop without changing the scientific schedule")
     parser.add_argument("--stop-file", help="Stop between iterations after an atomic checkpoint")
@@ -444,12 +451,14 @@ def main(args=None):
         skip_final_embeddings=args.skip_final_embeddings,
         optimizer=args.optimizer,
         sgd_learning_rate=args.sgd_learning_rate,
+        sgd_loading_scale=args.sgd_loading_scale,
         gemm_precision=args.ppca_gemm_precision,
         preread_images=args.ppca_preread_images,
         pass2_mass_floor=args.ppca_pass2_mass_floor,
         stages=tuple(tuple(stage) for stage in json.loads(args.stages)) if args.stages else Config().stages,
         pc_stages=tuple(tuple(stage) for stage in json.loads(args.pc_stages)) if args.pc_stages else None,
         pc_birth_scale=args.pc_birth_scale,
+        init_mean_map=args.init_mean_map,
         radius_rule=args.radius_rule,
         incr_size=args.incr_size,
         order_rule=args.order_rule,
@@ -458,7 +467,6 @@ def main(args=None):
         accuracy_interval=args.accuracy_interval,
         accuracy_signal=args.accuracy_signal,
         tau2_fudge=args.tau2_fudge,
-        init_mean_map=args.init_mean_map,
         tau2_fudge_scheme=args.tau2_fudge_scheme,
     )
     if (args.ios is None) == (args.particles is None):
@@ -472,6 +480,11 @@ def main(args=None):
     else:
         data, identity, image_reading = load_training(args.particles, config.preread_images)
     identity["source"] = source_identity()
+    if args.init_mean_map:
+        from relax.io.map_io import require_relion_convention_reference
+
+        require_relion_convention_reference(args.init_mean_map, option="--init-mean-map")
+        identity["init_mean_map_sha256"] = file_hash(args.init_mean_map)
     if not args.resume and list(output.glob("checkpoint_*.npz")):
         raise ValueError("Output already contains checkpoints; use --resume or a new directory")
     if args.resume:
@@ -480,11 +493,6 @@ def main(args=None):
         # Reject a mismatched checkpoint before changing existing run metadata.
         load(args.resume, config, identity)
     (output / "run.json").write_text(
-    if args.init_mean_map:
-        from relax.io.map_io import require_relion_convention_reference
-
-        require_relion_convention_reference(args.init_mean_map, option="--init-mean-map")
-        identity["init_mean_map_sha256"] = file_hash(args.init_mean_map)
         json.dumps(
             {
                 "config": dataclasses.asdict(config),

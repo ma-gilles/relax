@@ -1083,8 +1083,10 @@ scientific contract; runnable code alone does not establish recovery.
   (image, rotation) pair has a nonzero float32 weight, so skipping zero weights
   saves nothing. The streamed statistics carry no RHS volume (`rhs` is `None`):
   both optimizers read only the LHS metric and the direct residual gradient.
-  Momentum SGD reads only the metric trace, so its streams backproject the
-  trace channel alone (`TracePPCAStats`, `ppca_momentum_sgd.md`).
+  Momentum SGD reads the mean's entry and the loadings' trace of the metric
+  (`ppca_momentum_sgd.md`); the controller takes both from the packed metric,
+  so its streams backproject every packed channel, as VDAM's do. The trace-only
+  stream (`TracePPCAStats`) remains an engine option the controller does not request.
   On GPU the metric and residual images of a block are backprojected together
   into one voxel-major half volume of 32-float voxel rows
   ([ppca_moment_scatter_f32](../../relax/cuda/ppca.py)): each lane

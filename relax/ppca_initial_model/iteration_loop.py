@@ -34,7 +34,7 @@ from relax.ppca_initial_model.noise import update_noise
 from relax.ppca_initial_model.order_rule import final_order, next_order, order_for
 from relax.ppca_initial_model.pose_accuracy import N_TRIALS, expected_rotation_accuracy
 from relax.ppca_initial_model.radius_rule import mean_data_vs_prior, next_radius, radius_for
-from relax.ppca_initial_model.sgd_update import metric_trace, momentum_step
+from relax.ppca_initial_model.sgd_update import metric_curvature, momentum_step
 from relax.ppca_initial_model.state import State
 from relax.ppca_initial_model.tomo import TiltParticles, initialize_tilts, load_tilt_tile, tilt_tiles
 from relax.ppca_initial_model.update import (
@@ -261,11 +261,9 @@ def _oversampling_record(stats, config, iteration):
     return record
 
 
-def _curvature_trace(stats, p):
-    """Momentum SGD's per-frequency metric trace summed over the halves."""
-    if all(isinstance(s, TracePPCAStats) for s in stats):
-        return sum(s.metric_trace for s in stats)
-    return metric_trace(sum(s.lhs_tri for s in stats), p)
+def _curvature(stats, p):
+    """Momentum SGD's per-frequency ``(mean, loading trace)`` curvature of the metric summed over the halves."""
+    return metric_curvature(sum(s.lhs_tri for s in stats), p)
 
 
 def _active_columns(array, width):
@@ -440,9 +438,6 @@ def _expectation(dataset, state, config, ids, iteration, *, embeddings_only=Fals
                     geometry=stream_geometry,
                     schedule=schedule,
                     scoring=scoring,
-                    # Momentum SGD reads only the metric trace (sgd_update.momentum_step); the data_vs_prior radius
-                    # also reads the mean's own entry of the packed metric.
-                    metric_trace_only=config.optimizer == "momentum_sgd" and config.radius_rule == "stages",
                     gemm_precision=config.gemm_precision,
                     tile_loader=load_tilt_tile if tilts else None,
                     pass2_mass_floor=config.pass2_mass_floor,
@@ -643,6 +638,11 @@ def run(
         if saved != config.gemm_precision:
             resumed_precision = saved
             logger.warning(
+                "resumed %s checkpoint under %s (%s)", saved, config.gemm_precision, _gemm_precision_used(config)
+            )
+    else:
+        initializer = initialize_tilts if isinstance(dataset, TiltParticles) else initialize
+        theta, noise, info = initializer(dataset, seed=config.seed, diameter_ang=diameter_ang, q=config.q)
         if config.init_mean_map:
             theta = with_mean_volume(
                 theta,
@@ -651,11 +651,6 @@ def run(
                 mask=support_mask(dataset.grid_size, diameter_ang / dataset.voxel_size),
             )
             info = {**info, "init_mean_map": config.init_mean_map}
-                "resumed %s checkpoint under %s (%s)", saved, config.gemm_precision, _gemm_precision_used(config)
-            )
-    else:
-        initializer = initialize_tilts if isinstance(dataset, TiltParticles) else initialize
-        theta, noise, info = initializer(dataset, seed=config.seed, diameter_ang=diameter_ang, q=config.q)
         rng = np.random.default_rng(config.seed + 1)
         order = rng.permutation(dataset.n_images)
         state = State(
@@ -713,9 +708,10 @@ def run(
                 theta_in,
                 _active_columns(state.sgd_momentum, 1 + active),
                 sum(result.residual_gradient for result in stats),
-                _curvature_trace(stats, active + 1),
+                _curvature(stats, active + 1),
                 radii <= radius,
                 learning_rate=config.sgd_learning_rate,
+                loading_scale=config.sgd_loading_scale,
                 floor=metric_floor(dataset.grid_size),
             )
             momentum = bandlimit_and_mask(proposed_momentum, dataset.volume_shape, radius, mask)
@@ -942,6 +938,7 @@ def run(
             diagnostics.update(
                 optimizer="momentum_sgd",
                 sgd_learning_rate=config.sgd_learning_rate,
+                sgd_loading_scale=config.sgd_loading_scale,
                 vdam_scheduled_step_unused=step,
                 vdam_scheduled_fudge_unused=fudge,
             )
