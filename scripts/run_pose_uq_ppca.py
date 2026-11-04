@@ -378,17 +378,17 @@ def noise_check(args) -> None:
     print(json.dumps({k: dict(mean=v["mean"], shells_every_8=v["per_shell"][::8]) for k, v in report.items()}, indent=1), flush=True)
 
 
-def consensus_mask_noise_power(run, result, target: int, half: int, rows, offset_range: float, seed: int) -> float:
-    """Mean ``w |N|^2 / 2`` of unit-variance white real-space noise prepared with the consensus particle mask: RELION
-    estimates its noise spectrum from images under that mask, so ``1 / power`` is the raw per-pixel noise variance its
-    spectrum implies. Truth free."""
-    import jax.numpy as jnp
-
-    widest = run.particle_diameter / 2.0 - run.bodies[target].max_radius_angstrom
-    white = np.random.default_rng(seed).standard_normal((run.halves[half].rows.size, run.box_size, run.box_size)).astype(np.float32)
-    ops, *_ = body_operands(run, result, target, half, rows, offset_range_angstrom=widest, images=white)
-    w = np.asarray(ops.weight)
-    return float(np.sum(w * np.asarray(jnp.abs(ops.image) ** 2)) / 2.0 / np.count_nonzero(w))
+def background_noise_variance(run, half: int, rows) -> float:
+    """The raw per-pixel noise variance from the image pixels outside the particle diameter, where the image holds noise
+    alone. Truth free. On the 5k case C fixture it gives 1.000 against the simulated noise's 1.004, where RELION's
+    spectrum read under the consensus mask gave 0.70."""
+    radius_px = run.particle_diameter / 2.0 / run.pixel_size
+    grid = np.arange(run.box_size) - run.box_size // 2
+    outside = np.hypot(*np.meshgrid(grid, grid)) > radius_px
+    if outside.sum() < 0.05 * outside.size:
+        raise ValueError(f"the particle diameter {run.particle_diameter} A leaves too little background in a {run.box_size} px box")
+    images = np.asarray(run.dataset.image_source.backend.source.get(run.halves[half].rows[rows]), dtype=np.float64)
+    return float(np.mean([image[outside].var() for image in images]))
 
 
 def sandwich(args) -> None:
@@ -396,8 +396,8 @@ def sandwich(args) -> None:
 
     ``G`` is the covariance of the score gradient that white real-space noise adds, through the native preparation and
     the body's mask, by Monte Carlo (``--realizations`` draws) at the analysis poses. The raw noise variance is
-    ``--noise-variance estimated`` (default, truth free: RELION's spectrum read under the consensus particle mask,
-    :func:`consensus_mask_noise_power`) or ``fixture`` (the simulated noise, raw image minus every noiseless body; a
+    ``--noise-variance background`` (default, truth free: the image pixels outside the particle diameter,
+    :func:`background_noise_variance`) or ``fixture`` (the simulated noise, raw image minus every noiseless body; a
     check). Writes ``uq_<dataset>_body<b>_sandwich.npz`` in the row order of the fixture table, and the calibration
     against the truth errors the fixture stage stored (evaluation only)."""
     import jax.numpy as jnp
@@ -423,7 +423,7 @@ def sandwich(args) -> None:
             raw = np.asarray(run.dataset.image_source.backend.source.get(table))
             variance = float(np.var(raw - sum(c[table] for c in components)))
         else:
-            variance = 1.0 / consensus_mask_noise_power(run, result, args.body, half, rows, offset_range, args.seed + half)
+            variance = background_noise_variance(run, half, rows)
         variances[half] = variance
         rng = np.random.default_rng(args.seed + 10 + half)
         for start in range(0, rows.size, args.batch * 8):
@@ -452,7 +452,7 @@ def sandwich(args) -> None:
     if "error_analysis" in merged:
         error, _ = remove_gauge(merged["error_analysis"], merged["consensus"])
         report.update(truth_calibration_raw_hessian=calibration(error[usable], Hinv), truth_calibration_sandwich=calibration(error[usable], covariance[usable]))
-    name = f"uq_{args.dataset}_body{args.body + 1}_sandwich" + ("" if args.noise_variance == "estimated" else "_fixture_noise")
+    name = f"uq_{args.dataset}_body{args.body + 1}_sandwich" + ("" if args.noise_variance == "background" else "_fixture_noise")
     np.savez_compressed(args.out / f"{name}.npz", G=G, sandwich=covariance, table_rows=merged["table_rows"], half=merged["half"])
     (args.out / f"{name}.json").write_text(json.dumps(report, indent=1))
     print(json.dumps(report, indent=1), flush=True)
@@ -1122,7 +1122,7 @@ def main() -> None:
         a.add_argument("--ranks", help="relative: comma-separated ranks to fit; default 10")
         a.add_argument("--rank", type=int, help="relative: the delivered rank (principal); default the largest")
         a.add_argument("--no-truth", action="store_true", help="relative: skip the state-table evaluation (fixtures without one)")
-        a.add_argument("--noise-variance", choices=("estimated", "fixture"), default="estimated", help="sandwich: raw noise variance source")
+        a.add_argument("--noise-variance", choices=("background", "fixture"), default="background", help="sandwich: raw noise variance source")
         a.add_argument("--floors", help="embed: the tau^2 floor grid, comma separated (A^2); default FLOORS")
         a.add_argument("--input", type=Path, help="embed: where the fixture stage wrote its tables; default --out")
         a.add_argument("--nuisance", choices=("estimated", "exact"), default="estimated")
