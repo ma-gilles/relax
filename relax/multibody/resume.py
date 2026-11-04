@@ -6,6 +6,7 @@ RELION's continuation reads the iteration's files and nothing else, so it carrie
   noise and perturbation the STAR files' values;
 - the leader's ``rand()`` stream starts again from ``init_random_generator(random_seed)``
   (ml_optimiser_mpi.cpp:965), so the phase randomisation of the next FSCs is not the uninterrupted run's;
+- the sampling perturbation is drawn once more, from the unseeded ``rand()`` state, before the iterations;
 - ``iterate()`` begins with ``updateCurrentResolution`` (ml_optimiser_mpi.cpp:4028), which the iteration already
   applied before writing its files, so the stall counter can step once more than in an uninterrupted run.
 
@@ -29,6 +30,7 @@ from relax.multibody import refine
 from relax.multibody.subtraction import BodyPoses
 from relax.refinement import noise_updates
 from relax.sampling.healpix import angular_sampling_deg
+from relax.sampling.perturbation import advance_relion_perturbation_from_seed
 from relax.star.blocks import read_star_blocks
 
 logger = logging.getLogger(__name__)
@@ -215,7 +217,13 @@ def continue_refinement(run: refine.MultibodyRun, optimiser_star, *, as_uninterr
         else:
             logger.warning("%s records no rand() draws: the next FSCs' phase randomisation is not the run's", optimiser_star)
     else:
-        state = replace(state, noise=noise_updates.noise_model_from_shells([radial[0], radial[0]], run.dataset.image_shape))
+        # RELION re-perturbs the sampling once on --continue, before it seeds rand(): one draw from glibc's default
+        # (unseeded, srand(1)) state. relion_angst's restart from it010 rewrote -0.47675 to -0.01670 this way.
+        state = replace(
+            state,
+            noise=noise_updates.noise_model_from_shells([radial[0], radial[0]], run.dataset.image_shape),
+            perturbation=advance_relion_perturbation_from_seed(state.perturbation, run.perturb_factor, seed=1),
+        )
     logger.info(
         "Continuing the multi-body refinement after iteration %d from %s (%s)", state.iteration, optimiser_star,
         "as the uninterrupted run" if as_uninterrupted else "as relion_refine --continue",
