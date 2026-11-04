@@ -410,3 +410,10 @@ def test_resume_reads_relax_and_relion_optimiser_blocks(tmp_path):
     for path in (relax_star, relion_star):
         table = _general(path)
         assert int(table["rlnCurrentIteration"]) == 5 and float(table["rlnSamplingPerturbInstance"]) == 0.25
+
+
+def test_relion_continue_perturbation_draw_is_unseeded():
+    from relax.sampling.perturbation import advance_relion_perturbation_from_seed
+
+    # relion_angst's restart from it010 (EMPIAR-10180) rewrote the perturbation -0.47675 as -0.01670.
+    assert abs(advance_relion_perturbation_from_seed(-0.47675, 0.5, seed=1) - (-0.01670)) < 1e-5
