@@ -62,6 +62,9 @@ def relion_multibody_state(run: refine.MultibodyRun, optimiser_star) -> refine.M
         current_changes_optimal_offsets_angstrom=float(optimiser["rlnChangesOptimalOffsets"]),
         smallest_changes_optimal_orientations=float(optimiser["rlnSmallestChangesOrientations"]),
         smallest_changes_optimal_offsets_angstrom=float(optimiser["rlnSmallestChangesOffsets"]),
+        # The class changes too: at its start value the "small changes" test never passes and the counter of
+        # iterations without large changes stays at 0 (RELION writes 0 after its first iteration).
+        smallest_changes_optimal_classes=float(optimiser.get("rlnSmallestChangesClasses", 0.0)),
         acc_rot=float(optimiser["rlnOverallAccuracyRotations"]),
         acc_trans=float(optimiser["rlnOverallAccuracyTranslationsAngst"]),
     )
