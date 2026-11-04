@@ -3233,7 +3233,9 @@ derivation is section 4.1. Opt-in, beside the table (`--order-rule accuracy`):
   the streamed E-step. Subtomograms keep the table. The order of an estimate that is not finite raises.
 
 Code: `relax/ppca_initial_model/pose_accuracy.py` (the divergence and the trials), `order_rule.py` (the rule),
-`iteration_loop.py`, `scripts/probe_ppca_pose_accuracy.py` (the estimate along saved checkpoints).
+`iteration_loop.py`, `scripts/probe_ppca_pose_accuracy.py` (the estimate along saved checkpoints),
+`scripts/plot_ppca_pose_accuracy.py` (the logged estimates against the angular step, the divergence terms, the order and
+the radius; the schedule workflow plots it for the arms that use the rule).
 
 **Checks** (`tests/unit/ppca_initial_model/test_pose_accuracy.py`, `test_order_rule.py`; CPU):
 
