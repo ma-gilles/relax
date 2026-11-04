@@ -257,7 +257,10 @@ def write_relion_model(output, state, run) -> None:
             "rlnSpectralIndex": shells, "rlnResolution": resolution,
             "rlnAngstromResolution": np.where(shells > 0, 1.0 / np.maximum(resolution, 1e-12), 999.0),
             "rlnSsnrMap": padded(track.data_vs_prior), "rlnGoldStandardFsc": padded(track.fsc),
-            "rlnFourierCompleteness": np.ones(n_shells) if track.fourier_coverage is None else padded(track.fourier_coverage), "rlnReferenceSigma2": np.zeros(n_shells),
+            "rlnFourierCompleteness": np.ones(n_shells) if track.fourier_coverage is None else padded(track.fourier_coverage),
+            "rlnReferenceSigma2": (
+                np.zeros(n_shells) if track.reference_sigma2 is None else padded(track.reference_sigma2) / frame
+            ),
             "rlnReferenceTau2": tau2, "rlnSpectralOrientabilityContribution": np.zeros(n_shells),
         })
     blocks["model_groups"] = template["model_groups"]

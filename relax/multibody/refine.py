@@ -106,6 +106,9 @@ class BodyTrack:
     keep_fixed: bool
     poses: BodyPoses
     fourier_coverage: np.ndarray | None = None  # half 1 per shell; None until a maximisation sets it
+    # The last iteration's 1 / (pad^3 * average joined weight) per shell (RELION's rlnReferenceSigma2 in the final
+    # model.star, updateSSNRarrays); None before that iteration.
+    reference_sigma2: np.ndarray | None = None
 
 
 @dataclass
@@ -833,6 +836,7 @@ def _final_maximization(state: MultibodyState, run: MultibodyRun, results, poses
             data_vs_prior=np.asarray(final.details["ssnr_shells"], dtype=np.float64),
             tau2=[np.asarray(final.details["prior_shells"], dtype=np.float64)] * 2,
             fourier_coverage=final.fourier_coverage,
+            reference_sigma2=np.asarray(final.details["sigma2_shells"], dtype=np.float64),
         )
         run_files.write_final_body_maps(run.output, b, final, run)
     state = replace(state, iteration=state.iteration + 1, bodies=tracks)
