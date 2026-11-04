@@ -27,6 +27,10 @@ class Config:
     # update, seeded by the bootstrap.
     pc_stages: tuple | None = None
     pc_birth_scale: float = 0.1
+    # Diagnostic: a map in RELION's convention (a relax or RELION map file) that the mean starts from instead of the
+    # seed's random one, e.g. the ground truth of a simulated fixture; the loadings keep the seed's values
+    # (initialization.with_mean_volume). None starts from the seed.
+    init_mean_map: str | None = None
     # RELION's --tau2_fudge and --tau2_fudge_scheme (ml_optimiser.cpp updateTau2Fudge) for the VDAM gate; None takes
     # the InitialModel defaults, a fudge of 4 on the scheme 4-step (1 at the start, 4 from the middle of the run).
     # A fudge of 1 with the scheme plain keeps the gate at its strongest shrinkage throughout.

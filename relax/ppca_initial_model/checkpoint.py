@@ -41,7 +41,7 @@ _RETIRED_CONFIG_DEFAULTS = {
 _ADDED_CONFIG_DEFAULTS = {"max_significant": 100, "pc_stages": None, "pc_birth_scale": 0.1,
     "tau2_fudge": None, "tau2_fudge_scheme": None, "radius_rule": "stages", "incr_size": 10,
     "order_rule": "stages", "order_max": 4, "final_order_max": None, "accuracy_interval": 10,
-    "accuracy_signal": "divergence"}
+    "accuracy_signal": "divergence", "init_mean_map": None}
 
 
 def _identity_config(config_dict):

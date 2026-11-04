@@ -181,6 +181,17 @@ def seed_model(rhs, lhs, volume_shape, voxel_size, diameter_ang, radius, rng):
 
 
 @full_float32
+def with_mean_volume(theta, volume, *, volume_shape, mask):
+    """``theta`` with its mean column set to the real-space ``volume`` (relax's internal frame), masked and kept on the
+    whole box as the model is after every update; the loading columns keep their values."""
+    if tuple(np.shape(volume)) != tuple(volume_shape):
+        raise ValueError(f"The mean map has shape {np.shape(volume)}, the particles' box is {tuple(volume_shape)}")
+    spectrum = ftu.get_dft3_real(jnp.asarray(volume, jnp.float32)[None]).reshape(1, -1).T
+    mean = bandlimit_and_mask(spectrum, volume_shape, volume_shape[0] // 2, mask)
+    return theta.at[:, 0].set(mean[:, 0].astype(theta.dtype))
+
+
+@full_float32
 def birth_loadings(theta, columns, *, volume_shape, diameter_px, radius, mask, scale, rng):
     """``theta`` with the loading columns ``columns`` (indices of its columns, 1 for the first PC) set to new PCs.
 

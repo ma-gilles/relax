@@ -93,6 +93,11 @@ def add_args(parser):
         help="size of a new PC's loading relative to the mean map's standard deviation",
     )
     parser.add_argument(
+        "--init-mean-map",
+        help="diagnostic: a map in RELION's convention (a relax or RELION map file, e.g. the ground-truth mean of a "
+        "simulated fixture) that the mean starts from instead of the random seed's; the loadings keep the seed's values",
+    )
+    parser.add_argument(
         "--oversampling",
         type=int,
         default=0,
@@ -453,6 +458,7 @@ def main(args=None):
         accuracy_interval=args.accuracy_interval,
         accuracy_signal=args.accuracy_signal,
         tau2_fudge=args.tau2_fudge,
+        init_mean_map=args.init_mean_map,
         tau2_fudge_scheme=args.tau2_fudge_scheme,
     )
     if (args.ios is None) == (args.particles is None):
@@ -474,6 +480,11 @@ def main(args=None):
         # Reject a mismatched checkpoint before changing existing run metadata.
         load(args.resume, config, identity)
     (output / "run.json").write_text(
+    if args.init_mean_map:
+        from relax.io.map_io import require_relion_convention_reference
+
+        require_relion_convention_reference(args.init_mean_map, option="--init-mean-map")
+        identity["init_mean_map_sha256"] = file_hash(args.init_mean_map)
         json.dumps(
             {
                 "config": dataclasses.asdict(config),

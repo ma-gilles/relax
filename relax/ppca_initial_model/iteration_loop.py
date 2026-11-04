@@ -20,9 +20,16 @@ import numpy as np
 from recovar.core import fourier_transform_utils as ftu
 from recovar.ppca.pose_accumulators import AugmentedPPCAStats
 from recovar.reconstruction.noise import make_radial_noise
+from recovar.utils.helpers import load_relion_volume
 
 from relax.ppca_initial_model import checkpoint
-from relax.ppca_initial_model.initialization import bandlimit_and_mask, birth_loadings, initialize, support_mask
+from relax.ppca_initial_model.initialization import (
+    bandlimit_and_mask,
+    birth_loadings,
+    initialize,
+    support_mask,
+    with_mean_volume,
+)
 from relax.ppca_initial_model.noise import update_noise
 from relax.ppca_initial_model.order_rule import final_order, next_order, order_for
 from relax.ppca_initial_model.pose_accuracy import N_TRIALS, expected_rotation_accuracy
@@ -636,6 +643,14 @@ def run(
         if saved != config.gemm_precision:
             resumed_precision = saved
             logger.warning(
+        if config.init_mean_map:
+            theta = with_mean_volume(
+                theta,
+                load_relion_volume(config.init_mean_map),
+                volume_shape=dataset.volume_shape,
+                mask=support_mask(dataset.grid_size, diameter_ang / dataset.voxel_size),
+            )
+            info = {**info, "init_mean_map": config.init_mean_map}
                 "resumed %s checkpoint under %s (%s)", saved, config.gemm_precision, _gemm_precision_used(config)
             )
     else:
