@@ -1,19 +1,31 @@
-"""The pose-prior benchmark: evaluator metrics, the simulator's Kent guard, fixed priors and the variant comparison."""
+"""The pose-prior benchmark: evaluator metrics, the simulator's Kent guard, fixed priors, the variant comparison and the
+ab-initio start map."""
 
 import csv
 import json
 import logging
 import math
 
+import mrcfile
 import numpy as np
+import pandas as pd
 import pytest
+import starfile
 from helpers.float_compare import assert_matches
+from scipy import ndimage
+from scipy.spatial.transform import Rotation
 
+from relax.diagnostics.gt_registration import apply_rigid_volume_transform
+from relax.io.map_io import require_relion_convention_reference
 from relax.parity.fixed_direction_prior import PROVENANCE_FILE, FixedDirectionPrior
 from relax.sampling.healpix import n_pixels, pixel_rot_tilt
+from scripts.pose_prior_benchmark import align_to_truth as al
 from scripts.pose_prior_benchmark import compare_variants as cmp
 from scripts.pose_prior_benchmark import evaluate_run as ev
+from scripts.pose_prior_benchmark import initial_model as im
+from scripts.pose_prior_benchmark import reconstruct_with_poses as rwp
 from scripts.pose_prior_benchmark import simulate_dataset as sim
+from scripts.pose_prior_benchmark import star_nonuniformity as snu
 from scripts.pose_prior_benchmark import true_prior
 from scripts.pose_prior_benchmark import write_fixed_prior as wfp
 
@@ -158,7 +170,8 @@ def test_summary_figure_is_written_for_an_infinite_kl_and_an_undefined_skill(tmp
     assert math.isinf(rows[0]["kl_bits"]) and math.isnan(rows[0]["js_skill"])
 
     curve = np.linspace(1.0, 0.0, 20)
-    result = {"rows": rows, "curves": {"half_maps": curve, "gt_merged": curve}, "box": 40, "voxel": 2.0}
+    curves = {"half_maps": curve, "gt_merged": curve, "gt_merged_aligned": curve}
+    result = {"rows": rows, "curves": curves, "box": 40, "voxel": 2.0}
     figure = tmp_path / "summary.png"
     ev.plot_summary(result, "test", figure)
     assert figure.stat().st_size > 0
@@ -253,38 +266,53 @@ def test_direction_prior_used_is_read_from_the_sidecar_relax_writes(tmp_path):
 
 
 def _evaluation(tmp_path, name, *, source, auc, median, js_skill):
-    """A minimal evaluate_run output directory: the metrics, FSC curves and pose errors the comparison reads."""
+    """A minimal evaluate_run output directory: the metrics, FSC curves and pose errors the comparison reads. The
+    aligned FSC area is ``auc`` and the aligned pose error ``median``; as refined they are 0.05 lower and 0.5 higher."""
     directory = tmp_path / name
     directory.mkdir()
     pose = {"p90": 3 * median, "fraction_over_90": 0.01}
+    refined_pose = {"p90": 3 * median + 1.0, "fraction_over_90": 0.02}
     metrics = {
         "run": {"n_iterations": 12, "final_healpix_order": 5, "direction_prior_used": {"source": source}},
         "resolution": {
             "box": 8,
             "voxel_size_A": 2.0,
             "reported": {"final_all_data_A": 9.5},
-            "gt_merged": {"auc": auc, "at_0.5": {"first_A": None}, "at_0.143": {"first_A": 6.0}},
+            "gt_merged": {"auc": auc - 0.05, "at_0.5": {"first_A": 9.0}, "at_0.143": {"first_A": 6.5}},
+            "gt_merged_aligned": {"auc": auc, "at_0.5": {"first_A": None}, "at_0.143": {"first_A": 6.0}},
             "half_maps": {"auc": 0.6, "at_0.143": {"first_A": 7.0}},
+            "alignment": {"angle_deg": 0.35, "shift_A": 0.1},
         },
-        "pose_direction_error_deg": {
+        "pose_direction_error_aligned_deg": {
             "half1": {"median": median, **pose},
             "half2": {"median": median + 1.0, **pose},
         },
+        "pose_direction_error_deg": {
+            "half1": {"median": median + 0.5, **refined_pose},
+            "half2": {"median": median + 1.5, **refined_pose},
+        },
+        "pose_frame_offset": {"angle_deg": 0.45},
         "prior_final": {"half1": {"js_bits": 0.1, "js_skill": js_skill}, "half2": {"js_bits": 0.3, "js_skill": None}},
     }
     (directory / "metrics.json").write_text(json.dumps(metrics))
     with open(directory / "fsc_curves.csv", "w", newline="") as handle:
         writer = csv.writer(handle)
-        writer.writerow(["shell", "resolution_A", "half_maps", "gt_merged"])
+        writer.writerow(["shell", "resolution_A", "half_maps", "gt_merged", "gt_merged_aligned"])
         for shell, fsc in enumerate([1.0, 0.9, 0.7, 0.4, 0.1]):
-            writer.writerow([shell, 8 * 2.0 / shell if shell else "inf", 1.0, fsc])
+            writer.writerow([shell, 8 * 2.0 / shell if shell else "inf", 1.0, 0.9 * fsc, fsc])
     with open(directory / "fsc_by_iteration.csv", "w", newline="") as handle:
         writer = csv.writer(handle)
-        writer.writerow(["iteration", "healpix_order", "gt_auc"])
+        writer.writerow(["iteration", "healpix_order", "fourier_radius", "gt_auc", "half_map_auc"])
         for iteration, order in enumerate([2, 2, 3, 3, 4], start=1):
-            writer.writerow([iteration, order, auc * iteration / 5])
+            writer.writerow([iteration, order, 10 * iteration, auc * iteration / 5, 0.5 + 0.1 * iteration])
     errors = np.random.default_rng(0).lognormal(np.log(median), 1.0, size=(2, 200)).clip(max=180.0)
-    np.savez(directory / "pose_errors.npz", half1=errors[0].astype(np.float32), half2=errors[1].astype(np.float32))
+    np.savez(
+        directory / "pose_errors.npz",
+        half1=(errors[0] + 0.5).astype(np.float32),
+        half2=(errors[1] + 0.5).astype(np.float32),
+        aligned_half1=errors[0].astype(np.float32),
+        aligned_half2=errors[1].astype(np.float32),
+    )
     return directory
 
 
@@ -297,23 +325,37 @@ def test_variants_are_compared_in_a_table_and_a_figure(tmp_path):
         rows = {row["variant"]: row for row in csv.DictReader(handle)}
     assert list(rows) == ["learned", "fixed_true"]
     assert [rows[v]["direction_prior"] for v in rows] == ["learned", "fixed"]
-    assert_matches(float(rows["learned"]["pose_error_median_deg"]), 2.5)  # the mean of the two halves
-    assert_matches(float(rows["fixed_true"]["gt_fsc_auc"]), 0.85)
+    assert_matches(float(rows["learned"]["pose_error_median_aligned_deg"]), 2.5)  # the mean of the two halves
+    assert_matches(float(rows["learned"]["pose_error_median_as_refined_deg"]), 3.0)
+    assert_matches(float(rows["fixed_true"]["gt_fsc_auc_aligned"]), 0.85)
+    assert_matches(float(rows["fixed_true"]["gt_fsc_auc_as_refined"]), 0.80)
+    assert_matches(
+        [float(rows["learned"][k]) for k in ("pose_offset_deg", "map_offset_deg", "map_shift_A")], [0.45, 0.35, 0.1]
+    )
     assert_matches(float(rows["learned"]["learned_prior_js_bits"]), 0.2)
-    assert rows["learned"]["gt_resolution_0.5_A"] == ""  # the curve never crossed
+    assert rows["learned"]["gt_resolution_0.5_A_aligned"] == ""  # the aligned curve never crossed
+    assert_matches(float(rows["learned"]["gt_resolution_0.143_A_aligned"]), 6.0)
     assert rows["learned"]["learned_prior_js_skill"] == ""  # one half has no skill (a uniform truth)
     assert (out / "variants.png").stat().st_size > 0
-    iterations, orders, area = cmp.read_iteration_curve(learned)
-    assert_matches(iterations, np.arange(1, 6))
-    assert_matches(orders, np.array([2, 2, 3, 3, 4]))
-    assert_matches(area, 0.8 * np.arange(1, 6) / 5)
+    curve = cmp.read_iteration_curve(learned)
+    assert_matches(curve.iteration, np.arange(1, 6))
+    assert_matches(curve.order, np.array([2, 2, 3, 3, 4]))
+    assert_matches(curve.radius, 10 * np.arange(1, 6))
+    assert_matches(curve.gt_area, 0.8 * np.arange(1, 6) / 5)
+    assert_matches(curve.half_area, 0.5 + 0.1 * np.arange(1, 6))
     frequency, fsc = cmp.read_gt_curve(learned, json.loads((learned / "metrics.json").read_text()))
     assert_matches(frequency, np.arange(5) / (8 * 2.0))
-    assert_matches(fsc, [1.0, 0.9, 0.7, 0.4, 0.1])
+    assert_matches(fsc, [1.0, 0.9, 0.7, 0.4, 0.1])  # the aligned curve; the as-refined one is 0.9 times it
 
 
-def test_pose_errors_of_both_halves_are_read_in_order(tmp_path):
-    np.savez(tmp_path / "pose_errors.npz", half1=np.array([1.0, 2.0], np.float32), half2=np.array([3.0], np.float32))
+def test_aligned_pose_errors_of_both_halves_are_read_in_order(tmp_path):
+    np.savez(
+        tmp_path / "pose_errors.npz",
+        half1=np.array([9.0, 9.0], np.float32),
+        half2=np.array([9.0], np.float32),
+        aligned_half1=np.array([1.0, 2.0], np.float32),
+        aligned_half2=np.array([3.0], np.float32),
+    )
     assert_matches(cmp.read_pose_errors(tmp_path), np.array([1.0, 2.0, 3.0]))
 
 
@@ -349,15 +391,28 @@ def _noisy(gt, level, seed):
 def test_fsc_by_iteration_scores_each_half_map_against_the_truth_and_the_other_half():
     gt = np.random.default_rng(0).standard_normal((16, 16, 16))
     maps = {1: (_noisy(gt, 3.0, 1), _noisy(gt, 3.0, 2)), 2: (_noisy(gt, 0.3, 3), _noisy(gt, 0.3, 4))}
-    rows = ev.fsc_by_iteration(gt, maps, {1: 2, 2: 3}, voxel=2.0, box=16)
-    assert [(r["iteration"], r["healpix_order"]) for r in rows] == [(1, 2), (2, 3)]
+    rows = ev.fsc_by_iteration(gt, maps, {1: 2, 2: 3}, {1: 28, 2: 56}, voxel=2.0, box=16)
+    assert [(r["iteration"], r["healpix_order"], r["fourier_radius"]) for r in rows] == [(1, 2, 28), (2, 3, 56)]
     assert 0.0 < rows[0]["gt_auc"] < rows[1]["gt_auc"] <= 1.0  # a less noisy half map correlates better
     assert_matches(rows[1]["gt_auc"], 0.5 * (rows[1]["gt_auc_half1"] + rows[1]["gt_auc_half2"]))
+    assert 0.0 < rows[0]["half_map_auc"] < 0.5  # two independent noisy copies agree little
     assert rows[1]["gt_resolution_0.5_half1_A"] is None  # the low-noise half map never drops below 0.5
     assert rows[0]["gt_resolution_0.5_half1_A"] is not None
-    perfect = ev.fsc_by_iteration(gt, {1: (gt, gt)}, {1: 2}, voxel=2.0, box=16)
+    perfect = ev.fsc_by_iteration(gt, {1: (gt, gt)}, {1: 2}, {1: 8}, voxel=2.0, box=16)
     assert_matches(perfect[0]["gt_auc"], 1.0)
+    assert_matches(perfect[0]["half_map_auc"], 1.0)
     assert perfect[0]["half_map_resolution_0.143_A"] is None
+
+
+def test_fourier_radius_is_half_the_image_size_both_half_sets_ran_with(tmp_path):
+    for half, size in ((1, 118), (2, 118)):
+        (tmp_path / f"run_it003_half{half}_model.star").write_text(
+            f"data_model_general\n\n_rlnCurrentResolution 19.4\n_rlnCurrentImageSize {size}\n"
+        )
+    assert ev.read_fourier_radius(tmp_path, 3) == 59
+    (tmp_path / "run_it003_half2_model.star").write_text("data_model_general\n\n_rlnCurrentImageSize 120\n")
+    with pytest.raises(ValueError, match="different image sizes"):
+        ev.read_fourier_radius(tmp_path, 3)
 
 
 def test_iteration_table_is_written_with_empty_cells_for_a_crossing_that_never_happened(tmp_path):
@@ -371,6 +426,7 @@ def test_iteration_table_is_written_with_empty_cells_for_a_crossing_that_never_h
         "iteration_rows": rows,
         "curves": {"half_maps": np.ones(3)},
         "pose_errors": {1: np.array([0.5, 3.0]), 2: np.array([170.0])},
+        "aligned_pose_errors": {1: np.array([0.4, 2.5]), 2: np.array([169.0])},
         "box": 4,
         "voxel": 2.0,
     }
@@ -378,7 +434,499 @@ def test_iteration_table_is_written_with_empty_cells_for_a_crossing_that_never_h
     with np.load(tmp_path / "pose_errors.npz") as archive:
         assert_matches(archive["half1"], np.array([0.5, 3.0]))
         assert_matches(archive["half2"], np.array([170.0]))
+        assert_matches(archive["aligned_half1"], np.array([0.4, 2.5]))
+        assert_matches(archive["aligned_half2"], np.array([169.0]))
     with open(tmp_path / "fsc_by_iteration.csv", newline="") as handle:
         written = list(csv.DictReader(handle))
     assert [r["half_map_resolution_0.143_A"] for r in written] == ["12.0", ""]
     assert [int(r["healpix_order"]) for r in written] == [2, 3]
+
+
+# ---- relion_reconstruct from given poses ----
+
+
+def _reconstruction(tmp_path, name, *, auc):
+    """A minimal reconstruct_with_poses output directory: the FSC summary and curve the comparison reads."""
+    directory = tmp_path / name
+    directory.mkdir()
+    summary = {"auc": auc, "at_0.5": {"first_A": 12.0}, "at_0.143": {"first_A": None}}
+    metrics = {"resolution": {"box": 8, "voxel_size_A": 2.0, "gt_reconstruction": summary}}
+    (directory / "metrics.json").write_text(json.dumps(metrics))
+    with open(directory / "fsc_curve.csv", "w", newline="") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(["shell", "resolution_A", "gt_reconstruction"])
+        for shell, fsc in enumerate([1.0, 0.8, 0.5, 0.3, 0.1]):
+            writer.writerow([shell, 8 * 2.0 / shell if shell else "inf", fsc * auc])
+    return directory
+
+
+def test_reconstructions_are_compared_in_a_table_and_a_figure(tmp_path):
+    learned = _evaluation(tmp_path, "learned", source="learned", auc=0.8, median=2.0, js_skill=0.9)
+    fixed = _evaluation(tmp_path, "fixed_true", source="fixed", auc=0.85, median=1.5, js_skill=0.9)
+    estimated = [_reconstruction(tmp_path, f"est_{v}", auc=a) for v, a in (("learned", 0.5), ("fixed_true", 0.4))]
+    angles = [_reconstruction(tmp_path, f"ang_{v}", auc=a) for v, a in (("learned", 0.55), ("fixed_true", 0.45))]
+    true = _reconstruction(tmp_path, "true", auc=0.9)
+    out = tmp_path / "out"
+    cmp.main(
+        ["--runs", f"learned={learned}", f"fixed_true={fixed}"]
+        + ["--reconstructions", f"learned={estimated[0]}", f"fixed_true={estimated[1]}"]
+        + ["--angle-reconstructions", f"learned={angles[0]}", f"fixed_true={angles[1]}"]
+        + ["--true-reconstruction", str(true), "--out-dir", str(out), "--label", "test"]
+    )
+    with open(out / "reconstructions.csv", newline="") as handle:
+        rows = list(csv.DictReader(handle))
+    assert [(r["poses"], r["variant"]) for r in rows] == [
+        ("estimated", "learned"),
+        ("estimated", "fixed_true"),
+        ("estimated_angles", "learned"),
+        ("estimated_angles", "fixed_true"),
+        ("true", ""),
+    ]
+    assert_matches([float(r["gt_fsc_auc"]) for r in rows], [0.5, 0.4, 0.55, 0.45, 0.9])
+    assert rows[0]["gt_resolution_0.143_A"] == ""  # the curve never crossed
+    assert (out / "variants.png").stat().st_size > 0
+    reconstruction = cmp.read_reconstruction(estimated[0])
+    assert_matches(reconstruction.frequency, np.arange(5) / (8 * 2.0))
+    assert_matches(reconstruction.fsc, 0.5 * np.array([1.0, 0.8, 0.5, 0.3, 0.1]))
+
+
+def test_reconstructions_must_be_given_together_and_cover_every_run(tmp_path):
+    learned = _evaluation(tmp_path, "learned", source="learned", auc=0.8, median=2.0, js_skill=0.9)
+    only = _reconstruction(tmp_path, "est", auc=0.5)
+    base = ["--runs", f"learned={learned}", "--out-dir", str(tmp_path / "out")]
+    with pytest.raises(SystemExit):
+        cmp.main(base + ["--reconstructions", f"learned={only}"])
+    with pytest.raises(SystemExit):
+        cmp.main(
+            base
+            + ["--reconstructions", f"other={only}", "--angle-reconstructions", f"other={only}"]
+            + ["--true-reconstruction", str(only)]
+        )
+
+
+def test_zero_origin_star_keeps_every_other_column(tmp_path):
+    import pandas as pd
+    import starfile
+
+    optics = pd.DataFrame({"rlnOpticsGroup": [1], "rlnImagePixelSize": [2.0]})
+    particles = pd.DataFrame(
+        {
+            "rlnImageName": ["1@a.mrcs", "2@a.mrcs"],
+            "rlnAngleRot": [10.0, 20.0],
+            "rlnOriginXAngst": [1.5, -2.0],
+            "rlnOriginYAngst": [0.5, 3.0],
+        }
+    )
+    star = tmp_path / "in.star"
+    starfile.write({"optics": optics, "particles": particles}, star)
+    rwp.write_zero_origin_star(star, tmp_path / "out.star")
+    written = starfile.read(tmp_path / "out.star", always_dict=True)["particles"]
+    assert_matches(written["rlnOriginXAngst"].to_numpy(), np.zeros(2))
+    assert_matches(written["rlnOriginYAngst"].to_numpy(), np.zeros(2))
+    assert_matches(written["rlnAngleRot"].to_numpy(), np.array([10.0, 20.0]))
+    assert list(written["rlnImageName"]) == ["1@a.mrcs", "2@a.mrcs"]
+
+
+def test_pose_star_is_the_last_numbered_iteration_or_the_datasets_true_poses(tmp_path):
+    run = tmp_path / "run"
+    run.mkdir()
+    for iteration in (1, 2, 10):
+        for half in (1, 2):
+            (run / f"run_it{iteration:03d}_half{half}_model.star").write_text("")
+    np.savez(run / "refinement_results.npz", initial_pose_source_resolved="none")
+    assert rwp.pose_star(tmp_path, run) == (run / "run_it010_data.star", 10)
+    assert rwp.pose_star(tmp_path, None) == (tmp_path / "particles.star", None)
+    np.savez(run / "refinement_results.npz", initial_pose_source_resolved="input")
+    with pytest.raises(ValueError, match="needs --initial-pose-source none"):
+        rwp.pose_star(tmp_path, run)
+
+
+def test_relion_reconstruct_is_called_with_the_ctf_and_the_module_environment(tmp_path, monkeypatch):
+    calls = []
+    monkeypatch.setattr(rwp.subprocess, "run", lambda *args, **kwargs: calls.append((args, kwargs)))
+    rwp.run_relion_reconstruct(
+        tmp_path / "poses.star", tmp_path, tmp_path / "map.mrc", "relion/5.0.1/cpu", tmp_path / "log.txt"
+    )
+    (command,), kwargs = calls[0]
+    assert command[:2] == ["bash", "-lc"]
+    assert command[2].startswith("module load relion/5.0.1/cpu && relion_reconstruct --i ")
+    assert "--ctf --pad 2" in command[2]
+    assert kwargs["cwd"] == tmp_path and kwargs["check"] is True
+
+
+def test_reconstruction_is_scored_by_its_fsc_to_the_ground_truth():
+    gt = np.random.default_rng(0).standard_normal((16, 16, 16))
+    summary, curve = rwp.score_reconstruction(gt, gt, voxel=2.0)
+    assert_matches(summary["gt_reconstruction"]["auc"], 1.0)
+    assert summary["box"] == 16
+    assert_matches(curve, np.ones_like(curve))
+    with pytest.raises(ValueError, match="correlate"):
+        rwp.score_reconstruction(-gt, gt, voxel=2.0)
+    with pytest.raises(ValueError, match="shape"):
+        rwp.score_reconstruction(gt[:8, :8, :8], gt, voxel=2.0)
+
+
+def test_frame_offset_is_the_rotation_between_true_and_estimated_directions_despite_noise_and_outliers():
+    rng = np.random.default_rng(0)
+    n = 4000
+    tilt = np.where(rng.random(n) < 0.9, rng.uniform(0, 50, n), rng.uniform(50, 90, n))
+    true = ev.viewing_directions(rng.uniform(-180, 180, n), tilt)
+    offset = Rotation.from_rotvec(np.radians([2.0, -1.0, 2.5]))
+    noisy = offset.apply(true) + 0.07 * rng.standard_normal((n, 3))  # about 4 degrees of pose error
+    est = noisy / np.linalg.norm(noisy, axis=1, keepdims=True)
+    wrong = rng.random(n) < 0.1
+    est[wrong] = ev.viewing_directions(rng.uniform(-180, 180, wrong.sum()), rng.uniform(0, 180, wrong.sum()))
+    result = ev.frame_offset(true, est)
+    # 6 degrees of noise over 3600 particles, mostly near the pole (sin tilt about 0.4), fits the rotation about the
+    # pole to about 0.25 degrees
+    assert_matches(result["angle_deg"], np.degrees(np.linalg.norm(offset.as_rotvec())), rtol=0.12)
+    assert 0.88 < result["inlier_fraction"] < 0.93  # the 10% of random directions, bar the few that land near the fit
+
+
+def test_frame_offset_of_identical_directions_is_zero():
+    true = ev.viewing_directions(np.linspace(-180, 170, 50), np.linspace(5, 120, 50))
+    result = ev.frame_offset(true, true)
+    assert result["angle_deg"] == pytest.approx(0.0, abs=1e-3)
+    assert result["inlier_fraction"] == 1.0
+
+
+def test_turning_the_estimates_back_by_the_frame_offset_removes_it():
+    rng = np.random.default_rng(0)
+    true = ev.viewing_directions(rng.uniform(-180, 180, 300), rng.uniform(5, 100, 300))
+    offset = Rotation.from_rotvec(np.radians([0.3, -0.2, 0.4]))
+    est = offset.apply(true)
+    est_rot, est_tilt = np.degrees(np.arctan2(est[:, 1], est[:, 0])), np.degrees(np.arccos(est[:, 2]))
+    true_rot, true_tilt = np.degrees(np.arctan2(true[:, 1], true[:, 0])), np.degrees(np.arccos(true[:, 2]))
+    result = ev.frame_offset(true, est)
+    assert_matches(np.asarray(result["rotation_matrix"]), offset.as_matrix())
+    aligned = ev.aligned_direction_error_deg(
+        true_rot, true_tilt, est_rot, est_tilt, np.asarray(result["rotation_matrix"])
+    )
+    refined = ev.direction_error_deg(true_rot, true_tilt, est_rot, est_tilt)
+    assert aligned.max() < 1e-4  # arccos resolves a cosine within 1e-16 of 1 to about 1e-6 degrees
+    assert refined.max() > 0.1  # the offset is 0.55 degrees; a direction on its axis does not move
+
+
+def _blob_volume(n: int, seed: int) -> np.ndarray:
+    """A smooth asymmetric map: eight Gaussian blobs of 2.5 to 4.5 voxels in a cube of ``n`` voxels."""
+    rng = np.random.default_rng(seed)
+    axis = np.arange(n) - (n - 1) / 2
+    x = np.meshgrid(axis, axis, axis, indexing="ij")
+    volume = np.zeros((n,) * 3)
+    for _ in range(8):
+        centre, sigma = rng.uniform(-0.25 * n, 0.25 * n, 3), rng.uniform(2.5, 4.5, 3)
+        volume += rng.uniform(0.5, 1.5) * np.exp(-sum(((x[i] - centre[i]) / sigma[i]) ** 2 for i in range(3)) / 2)
+    return volume
+
+
+def _offset_map(volume: np.ndarray, seed: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """``volume`` turned 1.5 degrees about a random axis and shifted (0.3, -0.2, 0.1) voxel: the map and the
+    transform (rotation matrix, shift)."""
+    axis = np.random.default_rng(100 + seed).normal(size=3)
+    rotation = Rotation.from_rotvec(np.radians(1.5) * axis / np.linalg.norm(axis)).as_matrix()
+    shift = np.array([0.3, -0.2, 0.1])
+    return apply_rigid_volume_transform(volume, rotation, shift, order=3), rotation, shift
+
+
+@pytest.mark.parametrize("seed", range(4))
+def test_a_fit_recovers_a_known_rotation_and_shift(seed):
+    volume = _blob_volume(64, seed)
+    moved, rotation, shift = _offset_map(volume, seed)
+    fit = al.fit_rigid_to_reference(moved, volume, shell=16)
+    # over these four maps the rotation matrix is off by at most 1.6e-5 (0.001 degrees), the shift by at most 5.2e-4
+    # of its 0.3 voxel
+    assert_matches(fit.rotation @ rotation, np.eye(3), rtol=1e-4)
+    assert_matches(-fit.translation_voxels, fit.rotation @ shift, rtol=3e-3)
+    assert fit.iterations <= 4
+
+
+@pytest.mark.parametrize("seed", range(4))
+def test_a_fit_is_undone_by_its_inverse(seed):
+    volume = _blob_volume(64, seed)
+    fit = al.fit_rigid_to_reference(_offset_map(volume, seed)[0], volume, shell=16)
+    # the two cubic-spline interpolations leave at most 5.1e-4 of the map's maximum
+    assert_matches(al.apply_fit(al.apply_fit(volume, fit), al.inverse_fit(fit)), volume, rtol=2e-3)
+
+
+def test_a_fit_refuses_a_map_that_correlates_negatively_with_the_reference():
+    volume = _blob_volume(32, 0)
+    with pytest.raises(ValueError, match="correlates with the reference at scale"):
+        al.fit_rigid_to_reference(-volume, volume, shell=8)
+
+
+def test_a_fit_that_has_not_converged_is_refused(monkeypatch):
+    volume = _blob_volume(32, 0)
+    monkeypatch.setattr(al, "MAX_ITERATIONS", 1)
+    with pytest.raises(ValueError, match="did not converge in 1 iterations"):
+        al.fit_rigid_to_reference(_offset_map(volume, 0)[0], volume, shell=8)
+
+
+def test_the_run_maps_are_aligned_to_the_truth_by_the_merged_maps_transform():
+    truth = _blob_volume(64, 0)
+    moved, _, _ = _offset_map(truth, 0)
+    maps = {"gt": truth, "merged": 0.8 * moved, "half1": 0.8 * moved, "half2": 0.8 * moved}
+    aligned, record, round_trip = ev.align_run_maps(maps, voxel=2.0, box=64)
+    assert record["band_shell"] == 13  # 10 A at a 128 A box
+    assert_matches(record["angle_deg"], 1.5, rtol=3e-3)  # fitted to 1.5005 degrees on this map
+    assert_matches(record["scale"], 1.25, rtol=1e-3)  # the maps are 0.8 of the truth
+    report, curves = ev.resolution_metrics(maps, aligned, 2.0, 64)
+    inside_band = slice(1, record["band_shell"] + 1)
+    assert round_trip.shape == curves["gt_merged_aligned"].shape
+    assert round_trip[inside_band].min() > 0.9999
+    assert_matches(record["interpolation_round_trip_fsc_auc"], ev.normalized_fsc_auc(round_trip))
+    assert curves["gt_merged_aligned"][inside_band].min() > 0.9999
+    assert curves["gt_merged"][inside_band].min() < 0.999
+    for name in ev.RUN_MAP_NAMES:
+        assert f"gt_{name}_aligned" in report
+
+
+def test_crop_images_keeps_pixel_values_and_scales_white_noise_variance_by_the_retained_energy():
+    assert_matches(im.crop_images(np.full((2, 32, 32), 3.0), 16), np.full((2, 16, 16), 3.0))
+    x = np.arange(32)
+    wave = np.tile(np.cos(2 * np.pi * 2 * x / 32), (32, 1))[None]  # two periods across the image
+    assert_matches(im.crop_images(wave, 16)[0], np.tile(np.cos(2 * np.pi * 2 * np.arange(16) / 16), (16, 1)))
+    noise = np.random.default_rng(0).standard_normal((64, 32, 32))
+    # (box - 1)^2 modes keep all their energy, the 2 box - 1 Nyquist-row and -column modes half of it;
+    # the retained share varies by about 1% between draws of this size
+    retained = ((16 - 1) ** 2 + (2 * 16 - 1) / 2) / 32**2
+    assert im.crop_images(noise, 16).var() == pytest.approx(noise.var() * retained, rel=0.05)
+
+
+def _write_particles(directory, images, names):
+    """A particle STAR with pose columns and the stack ``a.mrcs`` of ``images`` in ``directory``."""
+    with mrcfile.new(directory / "a.mrcs", overwrite=True) as handle:
+        handle.set_data(images.astype(np.float32))
+    optics = {"rlnOpticsGroup": [1], "rlnImagePixelSize": [2.0], "rlnImageSize": [images.shape[-1]]}
+    particles = {
+        "rlnImageName": names,
+        "rlnDefocusU": [10000.0 + 1000 * i for i in range(len(names))],
+        **{c: [float(i) for i in range(len(names))] for c in im.POSE_COLUMNS},
+    }
+    starfile.write({"optics": pd.DataFrame(optics), "particles": pd.DataFrame(particles)}, directory / "particles.star")
+    return directory / "particles.star"
+
+
+def test_prepare_particles_crops_the_listed_slices_drops_the_poses_and_rescales_the_pixel(tmp_path):
+    images = np.random.default_rng(0).standard_normal((3, 16, 16)).astype(np.float32)
+    source = _write_particles(tmp_path, images, ["3@a.mrcs", "1@a.mrcs", "2@a.mrcs"])  # out of stack order
+    assert im.prepare_particles(source, tmp_path / "out", box=8) == 3
+    blocks = starfile.read(tmp_path / "out" / "particles.star", always_dict=True)
+    assert list(blocks["particles"].columns) == ["rlnImageName", "rlnDefocusU"]
+    assert blocks["particles"]["rlnImageName"].tolist() == [f"{i}@particles.8.mrcs" for i in (1, 2, 3)]
+    assert blocks["particles"]["rlnDefocusU"].tolist() == [10000.0, 11000.0, 12000.0]
+    assert blocks["optics"]["rlnImagePixelSize"].tolist() == [4.0]
+    assert blocks["optics"]["rlnImageSize"].tolist() == [8]
+    with mrcfile.open(tmp_path / "out" / "particles.8.mrcs") as handle:
+        assert handle.voxel_size.x == 4.0
+        assert_matches(handle.data, im.crop_images(images[[2, 0, 1]], 8))
+
+
+def test_prepare_particles_at_the_stacks_own_box_only_drops_the_poses(tmp_path):
+    images = np.random.default_rng(1).standard_normal((2, 8, 8)).astype(np.float32)
+    source = _write_particles(tmp_path, images, ["1@a.mrcs", "2@a.mrcs"])
+    im.prepare_particles(source, tmp_path / "out", box=8)
+    with mrcfile.open(tmp_path / "out" / "particles.8.mrcs") as handle:
+        assert_matches(handle.data, images)
+    optics = starfile.read(tmp_path / "out" / "particles.star", always_dict=True)["optics"]
+    assert optics["rlnImagePixelSize"].tolist() == [2.0]
+
+
+@pytest.mark.parametrize("box", [7, 12])
+def test_prepare_particles_refuses_an_odd_or_larger_box(tmp_path, box):
+    source = _write_particles(tmp_path, np.zeros((1, 8, 8)), ["1@a.mrcs"])
+    with pytest.raises(ValueError, match="even"):
+        im.prepare_particles(source, tmp_path / "out", box=box)
+
+
+def test_prepare_particles_refuses_particles_in_several_stacks(tmp_path):
+    source = _write_particles(tmp_path, np.zeros((2, 8, 8)), ["1@a.mrcs", "1@b.mrcs"])
+    with pytest.raises(ValueError, match="2 stacks"):
+        im.prepare_particles(source, tmp_path / "out", box=4)
+
+
+def test_resample_volume_pads_in_fourier_space_and_keeps_the_density_values():
+    volume = ndimage.gaussian_filter(np.random.default_rng(0).standard_normal((16, 16, 16)), 2.0)
+    padded = im.resample_volume(volume, 32)
+    assert padded.shape == (32, 32, 32)
+    assert_matches(padded[::2, ::2, ::2], volume)  # the original voxels are every second one
+
+
+def test_upsample_writes_the_map_on_the_reference_grid_and_refuses_a_different_physical_box(tmp_path):
+    volume = ndimage.gaussian_filter(np.random.default_rng(2).standard_normal((8, 8, 8)), 1.0)
+    like = np.zeros((16, 16, 16))
+    im.write_map(tmp_path / "small.mrc", volume, voxel=4.0)
+    im.write_map(tmp_path / "like.mrc", like, voxel=2.0)
+    im.main(
+        [
+            "upsample",
+            "--map",
+            str(tmp_path / "small.mrc"),
+            "--like",
+            str(tmp_path / "like.mrc"),
+            "--out",
+            str(tmp_path / "up.mrc"),
+        ]
+    )
+    upsampled, voxel = im.read_map(tmp_path / "up.mrc")
+    assert upsampled.shape == (16, 16, 16) and voxel == 2.0
+    assert_matches(upsampled[::2, ::2, ::2], volume, rtol=1e-6)  # both maps went through float32 files (5e-8 measured)
+    with pytest.raises(ValueError, match="rescale"):
+        im.upsample(volume, 3.0, like, 2.0)
+
+
+def test_a_written_map_carries_the_label_relax_refine_requires_of_a_start_map(tmp_path):
+    im.write_map(tmp_path / "start.mrc", np.zeros((4, 4, 4)), voxel=2.0)
+    # the name has no `_relion` marker, so only the label lets it pass
+    require_relion_convention_reference(tmp_path / "start.mrc")
+
+
+def _hand_fit(mirror_x):
+    """A registration fit that keeps the map in place (identity rotation), mirrored or not."""
+    from relax.diagnostics.gt_registration import RigidHandFit
+
+    return RigidHandFit(
+        rotation_matrix=np.eye(3),
+        translation_voxels=np.zeros(3),
+        mirror_x=mirror_x,
+        lowpass_score=0.9,
+        start_lowpass_scores=(0.9,),
+        failed_starts=(),
+        fine_start_score=0.9,
+        fine_score=0.9,
+        fine_evaluations=1,
+        lowpass_optimizer_success=True,
+        lowpass_evaluations=1,
+        fine_optimizer_success=True,
+        fine_optimizer_message="",
+    )
+
+
+def _registration_with_fits(monkeypatch, fits):
+    """Replace the rigid fit by ``fits`` (the fit itself is tested with ``relax.diagnostics.gt_registration``)."""
+    monkeypatch.setattr("relax.diagnostics.gt_metrics.relion_alignment_rotations", lambda order: np.eye(3)[None])
+    monkeypatch.setattr("relax.diagnostics.gt_registration.fit_rigid_both_hands", lambda *args, **kwargs: fits)
+
+
+def test_registration_keeps_the_hand_with_the_larger_fsc_area_and_applies_its_transform(monkeypatch):
+    reference = ndimage.gaussian_filter(np.random.default_rng(0).standard_normal((16, 16, 16)), 1.5)
+    moving = reference[::-1].copy()  # the mirror image
+    _registration_with_fits(monkeypatch, {"proper": _hand_fit(False), "mirror": _hand_fit(True)})
+    registered, summary = im.register(moving, reference, voxel=4.0)
+    assert summary["hand"] == "mirror"
+    assert summary["fsc_auc_margin_over_other_hand"] > 0.5
+    assert summary["hands"]["proper"]["gt_fsc"]["auc"] < summary["hands"]["mirror"]["gt_fsc"]["auc"]
+    assert_matches(registered, reference)
+
+
+def test_registration_refuses_a_map_whose_hand_failed_to_fit(monkeypatch):
+    reference = np.random.default_rng(0).standard_normal((8, 8, 8))
+    _registration_with_fits(monkeypatch, {"proper": _hand_fit(False)})
+    with pytest.raises(ValueError, match="mirror"):
+        im.register(reference, reference, voxel=4.0)
+
+
+def test_registered_map_and_its_record_are_written_beside_each_other(tmp_path, monkeypatch):
+    reference = ndimage.gaussian_filter(np.random.default_rng(1).standard_normal((16, 16, 16)), 1.5)
+    im.write_map(tmp_path / "gt.mrc", reference, voxel=4.0)
+    im.write_map(tmp_path / "ab_initio.mrc", reference[::-1], voxel=4.0)
+    _registration_with_fits(monkeypatch, {"proper": _hand_fit(False), "mirror": _hand_fit(True)})
+    im.main(
+        [
+            "register",
+            "--map",
+            str(tmp_path / "ab_initio.mrc"),
+            "--reference",
+            str(tmp_path / "gt.mrc"),
+            "--out-dir",
+            str(tmp_path / "out"),
+        ]
+    )
+    registered, voxel = im.read_map(tmp_path / "out" / im.REGISTERED_NAME)
+    assert voxel == 4.0
+    assert_matches(registered, reference, rtol=1e-6)
+    assert json.loads((tmp_path / "out" / "registration.json").read_text())["hand"] == "mirror"
+
+
+def _azimuth_and_tilt_deg(vectors):
+    """Azimuth in [0, 360) and tilt of unit vectors, degrees."""
+    return np.degrees(np.arctan2(vectors[..., 1], vectors[..., 0])) % 360.0, np.degrees(np.arccos(vectors[..., 2]))
+
+
+def test_expand_directions_gives_a_c3_particle_the_rotations_about_z_by_120_degrees():
+    rot, tilt = np.array([10.0, -50.0]), np.array([40.0, 120.0])
+    orbits = snu.expand_directions(ev.viewing_directions(rot, tilt), "C3").reshape(2, 3, 3)
+    azimuth, orbit_tilt = _azimuth_and_tilt_deg(orbits)
+    assert_matches(np.sort(azimuth, axis=1), np.sort((rot[:, None] + np.array([0.0, 120.0, 240.0])) % 360.0, axis=1))
+    assert_matches(orbit_tilt, np.repeat(tilt[:, None], 3, axis=1))
+
+
+def test_expand_directions_of_c1_is_the_input_and_of_d3_gives_six_distinct_directions():
+    vectors = ev.viewing_directions(np.array([10.0, -50.0]), np.array([40.0, 120.0]))
+    assert_matches(snu.expand_directions(vectors, "C1"), vectors)
+    orbits = snu.expand_directions(vectors, "D3").reshape(2, 6, 3)
+    assert_matches(np.linalg.norm(orbits, axis=-1), np.ones((2, 6)))
+    assert [len({tuple(np.round(v, 9)) for v in orbit}) for orbit in orbits] == [6, 6]
+
+
+def test_direction_counts_agree_with_the_evaluators_histogram_of_the_same_angles():
+    rng = np.random.default_rng(0)
+    rot, tilt = rng.uniform(-180.0, 180.0, 5000), np.degrees(np.arccos(rng.uniform(-1.0, 1.0, 5000)))
+    for order in (1, 3, 4):
+        assert_matches(
+            snu.direction_counts(ev.viewing_directions(rot, tilt), order), ev.direction_histogram(rot, tilt, order)
+        )
+
+
+def test_concentration_of_all_particles_in_one_direction_is_log2_of_the_direction_count():
+    n = n_pixels(1)
+    counts = np.zeros(n)
+    counts[7] = 100.0
+    measures = snu.concentration(counts)
+    assert_matches(measures["kl_from_uniform_bits"], math.log2(n))
+    assert_matches(measures["sphere_fraction_with_half_of_mass"], 1.0 / n)
+    assert_matches(measures["directions_without_a_particle"], (n - 1.0) / n)
+
+
+def test_poses_uniform_in_a_c3_wedge_are_uniform_after_expansion_and_far_from_it_before():
+    # Measured on seeds 0-2 (30000 particles, order 2): expanded KL 0.0010-0.0016 bits (the floor is 0.0015), raw 1.46.
+    rng = np.random.default_rng(0)
+    rot, tilt = rng.uniform(-60.0, 60.0, 30000), np.degrees(np.arccos(rng.uniform(-1.0, 1.0, 30000)))
+    row = snu.nonuniformity_by_order(ev.viewing_directions(rot, tilt), "C3", (2,), 4, 0)[0]
+    assert row["expanded_kl_from_uniform_bits"] < 0.01
+    assert abs(row["expanded_kl_above_floor_bits"]) < 0.01
+    assert row["unexpanded_kl_from_uniform_bits"] > 1.4
+
+
+def test_nonuniformity_without_symmetry_scores_the_raw_directions_and_the_floor_is_that_of_uniform_particles():
+    rng = np.random.default_rng(1)
+    vectors = ev.viewing_directions(rng.uniform(-180.0, 180.0, 4000), 30.0 * rng.uniform(0.0, 1.0, 4000))
+    row = snu.nonuniformity_by_order(vectors, "C1", (2,), 3, 0)[0]
+    assert_matches(row["expanded_kl_from_uniform_bits"], row["unexpanded_kl_from_uniform_bits"])
+    assert row["expanded_kl_from_uniform_bits"] > 2.0  # a 30 degree cap holds the whole sample
+    assert 0.0 <= row["uniform_mean_kl_from_uniform_bits"] < 0.2
+
+
+def test_kent_scenario_kl_lists_the_kent_scenarios_of_a_config_with_their_population_kl(tmp_path):
+    config = tmp_path / "config.yaml"
+    config.write_text(
+        "scenarios:\n"
+        "  cap:\n"
+        "    poses: {kind: kent, kappa: 8.0, beta: 2.0, mu: [1.0, 1.0, 0.0], mu0: [0.0, 0.0, 1.0]}\n"
+        "  flat:\n"
+        "    poses: {kind: uniform}\n"
+        "  cap_again:\n"
+        "    dataset_from: cap\n"
+    )
+    result = snu.kent_scenario_kl(config, (2, 3))
+    assert list(result) == ["cap"]
+    for order in (2, 3):
+        p = true_prior.kent_population_prior(8.0, 2.0, [1.0, 1.0, 0.0], [0.0, 0.0, 1.0], order)
+        assert_matches(result["cap"][order], ev.kl_bits(p, np.full(p.size, 1.0 / p.size)))
+
+
+def test_expanded_star_reads_back_as_the_expanded_directions(tmp_path):
+    vectors = snu.expand_directions(ev.viewing_directions(np.array([10.0, -50.0]), np.array([40.0, 120.0])), "C3")
+    path = tmp_path / "expanded.star"
+    snu.write_expanded_star(path, vectors)
+    assert_matches(snu.read_viewing_directions(path), vectors, rtol=1e-6)
+    assert set(starfile.read(path)) == {"optics", "particles"}  # the blocks angdist looks up by name

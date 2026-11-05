@@ -2,7 +2,8 @@
 # is a given prior worth to the refinement?
 #
 # Per scenario (config.yaml: `scenarios`) one dataset is simulated; each of its variants (config.yaml: `variants`)
-# refines it once:
+# refines it once. The default target runs the scenarios of `run_scenarios`; another scenario is run by requesting its
+# output, e.g. <output_root>/kent_cap_abinitio/comparison/variants.png:
 #   1. simulate_dataset  RECOVAR simulates a K=1 PDB fixture; its viewing directions form a polar cap of
 #                        preferred views (RECOVAR's Kent option) or are uniform (control).       [GPU]
 #   2. write_fixed_prior (variants with a fixed prior) the prior file relax refine scores with.
@@ -10,20 +11,37 @@
 #                        poses: --initial-pose-source none makes relax ignore the true angles and origins
 #                        that particles.star holds, and evaluate_run refuses a run that used them. A variant
 #                        with a fixed prior scores every search with it (--fixed-direction-prior); the others
-#                        learn it as RELION does.                                                  [GPU]
+#                        learn it as RELION does. A scenario with `init: abinitio` starts instead from the
+#                        map of relax initial_model (VDAM) on the same particles, without their poses:
+#                        downsample_particles Fourier-crops them to `initial_model.box` pixels,
+#                        abinitio_initial_model runs VDAM on them, upsample_initial_model pads the map back to
+#                        the dataset's grid and register_initial_model rigidly registers it to the ground
+#                        truth's frame and hand (initial_model.py); a scenario with `dataset_from` refines
+#                        another scenario's dataset.                                             [GPU]
 #   4. evaluate_run      half-map and ground-truth FSC resolution, the pose error, and the accuracy of every
-#                        iteration's learned direction prior against the true viewing directions.
+#                        iteration's learned direction prior against the true viewing directions. The final
+#                        map is scored to the ground truth as refined and rigidly aligned to it, the poses'
+#                        direction error as refined and after removing their average offset (align_to_truth.py),
+#                        so runs started from maps in slightly different frames compare.
 #   5. plot_*_angles     angdist plots of the true angles and of the final estimated poses.
-#   6. compare_variants  the variants of one scenario side by side.
+#   6. reconstruct_*     relion_reconstruct with the final estimated poses of each variant (with their origins, or
+#                        the angles alone) and with the true poses; each map's FSC to the ground truth shows what
+#                        the poses allow without the refinement's regularization and soft assignments.
+#   7. compare_variants  the variants of one scenario side by side.
 #
 # Outputs, under config `output_root`:
 #   <scenario>/dataset/              particles.star (true angles), particles.<box>.mrcs, reference_*_relion.mrc,
 #                                    pose_distribution.json, angdist_true.png
+#   <scenario>/initial_model/        (init: abinitio) particles/ (the cropped particles without poses),
+#                                    abinitio/run_it<N>_class001.mrc, initial_model_upsampled.mrc,
+#                                    initial_model_registered.mrc, registration.json
 #   <scenario>/<variant>/            fixed_direction_prior.npy (fixed-prior variants)
 #   <scenario>/<variant>/refine/     run_itNNN_* files, final_merged.mrc, final_half{1,2}_unfil.mrc
 #   <scenario>/<variant>/evaluation/ metrics.json, prior_by_iteration.csv, fsc_by_iteration.csv, fsc_curves.csv,
-#                                    summary.png, angdist_estimated.png
-#   <scenario>/comparison/           variants.csv, variants.png
+#                                    pose_errors.npz, summary.png, angdist_estimated.png
+#   <scenario>/<variant>/reconstruction_{estimated,angles}/  reconstruction.mrc, metrics.json, fsc_curve.csv
+#   <scenario>/true_poses/           the same for the true poses
+#   <scenario>/comparison/           variants.csv, reconstructions.csv, variants.png
 #   logs/                            one log per rule, scenario and variant
 #
 # Run (the profile submits the GPU rules to Slurm). --directory keeps Snakemake's metadata and the Slurm logs
@@ -64,12 +82,21 @@ NATIVES = required_path("natives_dir")
 # angdist runs in the Snakemake environment (it is not part of the pixi environment).
 ANGDIST = config["angdist"] or str(Path(sys.executable).parent / "angdist")
 SCENARIOS = config["scenarios"]
+RUN_SCENARIOS = config["run_scenarios"]
 VARIANTS = config["variants"]
 FIXED_PRIOR_KINDS = ("truth", "uniform", "kent")
+INIT_KINDS = ("ground_truth", "abinitio")
+INITIAL_MODEL = config["initial_model"]
+INITIAL_MODEL_MAP = f"run_it{INITIAL_MODEL['nr_iter']:03d}_class001.mrc"
+INITIAL_MODEL_STACK = f"particles.{INITIAL_MODEL['box']}.mrcs"
 SIMULATE_SCRIPT = str(BENCHMARK_DIR / "simulate_dataset.py")
 WRITE_PRIOR_SCRIPT = str(BENCHMARK_DIR / "write_fixed_prior.py")
 EVALUATE_SCRIPT = str(BENCHMARK_DIR / "evaluate_run.py")
 COMPARE_SCRIPT = str(BENCHMARK_DIR / "compare_variants.py")
+RECONSTRUCT_SCRIPT = str(BENCHMARK_DIR / "reconstruct_with_poses.py")
+ALIGN_SCRIPT = str(BENCHMARK_DIR / "align_to_truth.py")
+INITIAL_MODEL_SCRIPT = str(BENCHMARK_DIR / "initial_model.py")
+RELION_MODULE = config["relion_module"]
 
 # The rules call the Python of the repository's pixi environment directly (no conda: directive).
 # The pinned environment only: no user site packages, none of the Python or conda variables the Snakemake
@@ -83,15 +110,25 @@ RUN_ENV = (
     f"RELAX_HOST_MATH_LIB={NATIVES}/librelax_host_math.so"
 )
 
-# Every (scenario, variant) refinement of the config.
-RUNS = [(scenario, variant) for scenario, entry in SCENARIOS.items() for variant in entry["variants"]]
+unknown_runs = [scenario for scenario in RUN_SCENARIOS if scenario not in SCENARIOS]
+if unknown_runs:
+    raise WorkflowError(f"run_scenarios lists {unknown_runs} that config.yaml does not define")
+
+# Every (scenario, variant) refinement of the default target.
+RUNS = [(scenario, variant) for scenario in RUN_SCENARIOS for variant in SCENARIOS[scenario]["variants"]]
 
 for scenario, entry in SCENARIOS.items():
     unknown = [variant for variant in entry["variants"] if variant not in VARIANTS]
     if unknown:
         raise WorkflowError(f"scenario {scenario} lists variants {unknown} that config.yaml does not define")
+for scenario, entry in SCENARIOS.items():
+    owner = entry.get("dataset_from")
+    if owner is not None and (owner not in SCENARIOS or "dataset_from" in SCENARIOS[owner]):
+        raise WorkflowError(f"scenario {scenario}: dataset_from must name a scenario that simulates its own dataset")
+    if entry.get("init", "ground_truth") not in INIT_KINDS:
+        raise WorkflowError(f"scenario {scenario}: init must be one of {INIT_KINDS}")
 for variant, entry in VARIANTS.items():
-    if variant in ("dataset", "comparison"):
+    if variant in ("dataset", "comparison", "true_poses", "initial_model"):
         raise WorkflowError(f"variant name {variant!r} is a directory of the scenario")
     if "fixed_prior" in entry and entry["fixed_prior"]["kind"] not in FIXED_PRIOR_KINDS:
         raise WorkflowError(f"variant {variant}: fixed_prior.kind must be one of {FIXED_PRIOR_KINDS}")
@@ -102,18 +139,36 @@ def output_path(*parts):
     return str(OUTPUT_ROOT.joinpath(*parts))
 
 
+def dataset_scenario(scenario):
+    """The scenario whose dataset a scenario refines: itself, or its `dataset_from`."""
+    return SCENARIOS[scenario].get("dataset_from", scenario)
+
+
+def dataset_file(name):
+    """Input function: the file `name` of the dataset a scenario refines."""
+    return lambda wildcards: output_path(dataset_scenario(wildcards.scenario), "dataset", name)
+
+
+def start_map(wildcards):
+    """The map a refinement starts from: the low-passed ground truth, or the registered ab-initio map."""
+    if SCENARIOS[wildcards.scenario].get("init", "ground_truth") == "abinitio":
+        return output_path(wildcards.scenario, "initial_model", "initial_model_registered.mrc")
+    return dataset_file("reference_init_relion.mrc")(wildcards)
+
+
 def scenario_setting(scenario, section):
     """The shared `dataset` settings with the scenario's own overrides."""
     return {**config[section], **SCENARIOS[scenario].get(section, {})}
 
 
+def refine_setting_of(scenario):
+    """The `refine` settings of a scenario: the shared ones with its own overrides."""
+    return {**config["refine"], **SCENARIOS[scenario].get("refine", {})}
+
+
 def refine_setting(wildcards):
-    """The `refine` settings of a run: the shared ones with the scenario's and the variant's own overrides."""
-    return {
-        **config["refine"],
-        **SCENARIOS[wildcards.scenario].get("refine", {}),
-        **VARIANTS[wildcards.variant].get("refine", {}),
-    }
+    """The `refine` settings of a run: the scenario's with the variant's own overrides."""
+    return {**refine_setting_of(wildcards.scenario), **VARIANTS[wildcards.variant].get("refine", {})}
 
 
 def has_fixed_prior(variant):
@@ -143,6 +198,16 @@ def fixed_prior_flags(wildcards):
     return f"--kind {prior['kind']}"
 
 
+def reconstruction_files(scenario, name):
+    """The file `name` of every reconstruction of a scenario: each variant's final poses (with and without their
+    origins) and the true poses."""
+    variants = SCENARIOS[scenario]["variants"]
+    return [
+        *[output_path(scenario, v, f"reconstruction_{poses}", name) for poses in ("estimated", "angles") for v in variants],
+        output_path(dataset_scenario(scenario), "true_poses", name),
+    ]
+
+
 def fixed_prior_input(wildcards):
     """The prior file a run scores with: [] for a variant that learns its prior."""
     if not has_fixed_prior(wildcards.variant):
@@ -153,24 +218,27 @@ def fixed_prior_input(wildcards):
 wildcard_constraints:
     scenario="|".join(map(re.escape, SCENARIOS)),
     variant="|".join(map(re.escape, VARIANTS)),
+    poses="estimated|angles",
 
 
 localrules:
     all,
     write_fixed_prior,
-    evaluate_run,
+    upsample_initial_model,
     plot_true_angles,
     plot_estimated_angles,
     compare_variants,
 
 
 rule all:
-    """Simulate, refine and evaluate every scenario and variant of the config, and compare the variants."""
+    """Simulate, refine and evaluate every variant of the scenarios of `run_scenarios`, and compare the variants."""
     input:
         metrics=[output_path(s, v, "evaluation", "metrics.json") for s, v in RUNS],
         estimated_angles=[output_path(s, v, "evaluation", "angdist_estimated.png") for s, v in RUNS],
-        true_angles=[output_path(s, "dataset", "angdist_true.png") for s in SCENARIOS],
-        comparison=[output_path(s, "comparison", "variants.png") for s in SCENARIOS],
+        true_angles=[
+            output_path(s, "dataset", "angdist_true.png") for s in sorted({dataset_scenario(s) for s in RUN_SCENARIOS})
+        ],
+        comparison=[output_path(s, "comparison", "variants.png") for s in RUN_SCENARIOS],
 
 
 # ----------------------------------------------------------------------------------------------------------------
@@ -221,7 +289,7 @@ rule write_fixed_prior:
     message:
         "Writing the fixed direction prior of {wildcards.scenario}/{wildcards.variant}"
     input:
-        pose_distribution=rules.simulate_dataset.output.pose_distribution,
+        pose_distribution=dataset_file("pose_distribution.json"),
         script=WRITE_PRIOR_SCRIPT,
     output:
         fixed_prior=output_path("{scenario}", "{variant}", "fixed_direction_prior.npy"),
@@ -241,12 +309,124 @@ rule write_fixed_prior:
         "> {log} 2>&1"
 
 
+rule downsample_particles:
+    message:
+        "Writing the particles of {wildcards.scenario} without poses, cropped to box {params.box}"
+    input:
+        particles_star=dataset_file("particles.star"),
+        script=INITIAL_MODEL_SCRIPT,
+    output:
+        particles_star=output_path("{scenario}", "initial_model", "particles", "particles.star"),
+        stack=output_path("{scenario}", "initial_model", "particles", INITIAL_MODEL_STACK),
+    params:
+        env=CLEAN_ENV,
+        python=PYTHON,
+        box=INITIAL_MODEL["box"],
+        out_dir=lambda wildcards, output: str(Path(output.particles_star).parent),
+    resources:
+        cpus_per_task=8,
+        mem="32G",
+        runtime=60,
+    log:
+        output_path("logs", "{scenario}.downsample_particles.log"),
+    shell:
+        "{params.env} {params.python} {input.script} prepare-particles "
+        "--star {input.particles_star} "
+        "--out-dir {params.out_dir} "
+        "--box {params.box} "
+        "> {log} 2>&1"
+
+
+rule abinitio_initial_model:
+    message:
+        "Building the ab-initio start map of {wildcards.scenario} with relax initial_model (K=1, VDAM)"
+    input:
+        particles_star=rules.downsample_particles.output.particles_star,
+        stack=rules.downsample_particles.output.stack,
+    output:
+        initial_model=output_path("{scenario}", "initial_model", "abinitio", INITIAL_MODEL_MAP),
+    params:
+        settings=INITIAL_MODEL,
+        extra_args=" ".join(map(shlex.quote, map(str, INITIAL_MODEL["extra_args"]))),
+        env=RUN_ENV,
+        python=PYTHON,
+        particle_diameter=lambda wildcards: refine_setting_of(wildcards.scenario)["particle_diameter_ang"],
+        particles_dir=lambda wildcards, input: str(Path(input.particles_star).parent),
+        prefix=lambda wildcards, output: str(Path(output.initial_model).parent / "run"),
+    resources:
+        gpu=1,
+    log:
+        output_path("logs", "{scenario}.abinitio_initial_model.log"),
+    shell:
+        "{params.env} {params.python} -m relax_cli initial_model "
+        "--i {input.particles_star} "
+        "--datadir {params.particles_dir} "
+        "--o {params.prefix} "
+        "--K 1 "
+        "--sym C1 "
+        "--particle-diameter {params.particle_diameter} "
+        "--nr-iter {params.settings[nr_iter]} "
+        "--random-seed {params.settings[seed]} "
+        "{params.extra_args} "
+        "> {log} 2>&1"
+
+
+rule upsample_initial_model:
+    message:
+        "Padding the ab-initio map of {wildcards.scenario} back to the dataset's grid"
+    input:
+        initial_model=rules.abinitio_initial_model.output.initial_model,
+        reference_gt=dataset_file("reference_gt_relion.mrc"),
+        script=INITIAL_MODEL_SCRIPT,
+    output:
+        upsampled=output_path("{scenario}", "initial_model", "initial_model_upsampled.mrc"),
+    params:
+        env=CLEAN_ENV,
+        python=PYTHON,
+    log:
+        output_path("logs", "{scenario}.upsample_initial_model.log"),
+    shell:
+        "{params.env} {params.python} {input.script} upsample "
+        "--map {input.initial_model} "
+        "--like {input.reference_gt} "
+        "--out {output.upsampled} "
+        "> {log} 2>&1"
+
+
+rule register_initial_model:
+    message:
+        "Registering the ab-initio map of {wildcards.scenario} to the ground truth's frame and hand"
+    input:
+        initial_model=rules.upsample_initial_model.output.upsampled,
+        reference_gt=dataset_file("reference_gt_relion.mrc"),
+        script=INITIAL_MODEL_SCRIPT,
+    output:
+        registered=output_path("{scenario}", "initial_model", "initial_model_registered.mrc"),
+        record=output_path("{scenario}", "initial_model", "registration.json"),
+    params:
+        env=CLEAN_ENV,
+        python=PYTHON,
+        out_dir=lambda wildcards, output: str(Path(output.registered).parent),
+    resources:
+        cpus_per_task=8,
+        mem="16G",
+        runtime=240,
+    log:
+        output_path("logs", "{scenario}.register_initial_model.log"),
+    shell:
+        "{params.env} JAX_PLATFORMS=cpu {params.python} {input.script} register "
+        "--map {input.initial_model} "
+        "--reference {input.reference_gt} "
+        "--out-dir {params.out_dir} "
+        "> {log} 2>&1"
+
+
 rule refine_k1:
     message:
         "Refining {wildcards.scenario}/{wildcards.variant} with relax refine (K=1, global search, no input poses)"
     input:
-        particles_star=rules.simulate_dataset.output.particles_star,
-        reference_init=rules.simulate_dataset.output.reference_init,
+        particles_star=dataset_file("particles.star"),
+        reference_init=start_map,
         fixed_prior=fixed_prior_input,
     output:
         final_merged=output_path("{scenario}", "{variant}", "refine", "final_merged.mrc"),
@@ -290,12 +470,13 @@ rule evaluate_run:
     message:
         "Evaluating {wildcards.scenario}/{wildcards.variant}: resolution and direction-prior accuracy"
     input:
-        particles_star=rules.simulate_dataset.output.particles_star,
-        reference_gt=rules.simulate_dataset.output.reference_gt,
+        particles_star=dataset_file("particles.star"),
+        reference_gt=dataset_file("reference_gt_relion.mrc"),
         final_merged=rules.refine_k1.output.final_merged,
         final_half1=rules.refine_k1.output.final_half1,
         final_half2=rules.refine_k1.output.final_half2,
         script=EVALUATE_SCRIPT,
+        align_script=ALIGN_SCRIPT,
     output:
         metrics=output_path("{scenario}", "{variant}", "evaluation", "metrics.json"),
         prior_by_iteration=output_path("{scenario}", "{variant}", "evaluation", "prior_by_iteration.csv"),
@@ -309,6 +490,9 @@ rule evaluate_run:
         dataset_dir=lambda wildcards, input: str(Path(input.particles_star).parent),
         run_dir=lambda wildcards, input: str(Path(input.final_merged).parent),
         out_dir=lambda wildcards, output: str(Path(output.metrics).parent),
+    resources:
+        mem="24G",
+        runtime=120,
     log:
         output_path("logs", "{scenario}.{variant}.evaluate.log"),
     shell:
@@ -324,7 +508,7 @@ rule plot_true_angles:
     message:
         "Plotting {wildcards.scenario}: orientation distribution of the true angles"
     input:
-        particles_star=rules.simulate_dataset.output.particles_star,
+        particles_star=dataset_file("particles.star"),
     output:
         true_angles=output_path("{scenario}", "dataset", "angdist_true.png"),
     params:
@@ -356,6 +540,84 @@ rule plot_estimated_angles:
         "-o {output.estimated_angles} > {log} 2>&1"
 
 
+# ----------------------------------------------------------------------------------------------------------------
+# Stage 4: reconstruction from the final poses
+# ----------------------------------------------------------------------------------------------------------------
+
+
+rule reconstruct_estimated_poses:
+    """relion_reconstruct with a variant's final poses: `estimated` keeps their origins, `angles` zeroes them."""
+    message:
+        "Reconstructing {wildcards.scenario}/{wildcards.variant} from its final poses ({wildcards.poses})"
+    input:
+        particles_star=dataset_file("particles.star"),
+        reference_gt=dataset_file("reference_gt_relion.mrc"),
+        final_merged=rules.refine_k1.output.final_merged,
+        script=RECONSTRUCT_SCRIPT,
+    output:
+        reconstruction=output_path("{scenario}", "{variant}", "reconstruction_{poses}", "reconstruction.mrc"),
+        metrics=output_path("{scenario}", "{variant}", "reconstruction_{poses}", "metrics.json"),
+        fsc_curve=output_path("{scenario}", "{variant}", "reconstruction_{poses}", "fsc_curve.csv"),
+    params:
+        env=CLEAN_ENV,
+        python=PYTHON,
+        relion_module=RELION_MODULE,
+        origin_flag=lambda wildcards: "--zero-origins" if wildcards.poses == "angles" else "",
+        dataset_dir=lambda wildcards, input: str(Path(input.particles_star).parent),
+        run_dir=lambda wildcards, input: str(Path(input.final_merged).parent),
+        out_dir=lambda wildcards, output: str(Path(output.metrics).parent),
+    resources:
+        mem="16G",
+        runtime=240,
+    log:
+        output_path("logs", "{scenario}.{variant}.reconstruct_{poses}.log"),
+    shell:
+        "{params.env} JAX_PLATFORMS=cpu {params.python} {input.script} "
+        "--dataset-dir {params.dataset_dir} "
+        "--run-dir {params.run_dir} "
+        "--out-dir {params.out_dir} "
+        "--relion-module {params.relion_module} "
+        "{params.origin_flag} "
+        "> {log} 2>&1"
+
+
+rule reconstruct_true_poses:
+    """relion_reconstruct with the simulator's true poses: what the particles allow at best."""
+    message:
+        "Reconstructing {wildcards.scenario} from its true poses"
+    input:
+        particles_star=dataset_file("particles.star"),
+        reference_gt=dataset_file("reference_gt_relion.mrc"),
+        script=RECONSTRUCT_SCRIPT,
+    output:
+        reconstruction=output_path("{scenario}", "true_poses", "reconstruction.mrc"),
+        metrics=output_path("{scenario}", "true_poses", "metrics.json"),
+        fsc_curve=output_path("{scenario}", "true_poses", "fsc_curve.csv"),
+    params:
+        env=CLEAN_ENV,
+        python=PYTHON,
+        relion_module=RELION_MODULE,
+        dataset_dir=lambda wildcards, input: str(Path(input.particles_star).parent),
+        out_dir=lambda wildcards, output: str(Path(output.metrics).parent),
+    resources:
+        mem="16G",
+        runtime=240,
+    log:
+        output_path("logs", "{scenario}.reconstruct_true_poses.log"),
+    shell:
+        "{params.env} JAX_PLATFORMS=cpu {params.python} {input.script} "
+        "--dataset-dir {params.dataset_dir} "
+        "--true-poses "
+        "--out-dir {params.out_dir} "
+        "--relion-module {params.relion_module} "
+        "> {log} 2>&1"
+
+
+# ----------------------------------------------------------------------------------------------------------------
+# Stage 5: comparison
+# ----------------------------------------------------------------------------------------------------------------
+
+
 rule compare_variants:
     message:
         "Comparing the variants of {wildcards.scenario}"
@@ -373,9 +635,12 @@ rule compare_variants:
         pose_errors=lambda wildcards: [
             output_path(wildcards.scenario, v, "evaluation", "pose_errors.npz") for v in SCENARIOS[wildcards.scenario]["variants"]
         ],
+        reconstruction_metrics=lambda wildcards: reconstruction_files(wildcards.scenario, "metrics.json"),
+        reconstruction_fsc_curves=lambda wildcards: reconstruction_files(wildcards.scenario, "fsc_curve.csv"),
         script=COMPARE_SCRIPT,
     output:
         table=output_path("{scenario}", "comparison", "variants.csv"),
+        reconstruction_table=output_path("{scenario}", "comparison", "reconstructions.csv"),
         figure=output_path("{scenario}", "comparison", "variants.png"),
     params:
         env=CLEAN_ENV,
@@ -383,12 +648,22 @@ rule compare_variants:
         runs=lambda wildcards: " ".join(
             f"{v}={output_path(wildcards.scenario, v, 'evaluation')}" for v in SCENARIOS[wildcards.scenario]["variants"]
         ),
+        reconstructions=lambda wildcards: " ".join(
+            f"{v}={output_path(wildcards.scenario, v, 'reconstruction_estimated')}" for v in SCENARIOS[wildcards.scenario]["variants"]
+        ),
+        angle_reconstructions=lambda wildcards: " ".join(
+            f"{v}={output_path(wildcards.scenario, v, 'reconstruction_angles')}" for v in SCENARIOS[wildcards.scenario]["variants"]
+        ),
+        true_reconstruction=lambda wildcards: output_path(dataset_scenario(wildcards.scenario), "true_poses"),
         out_dir=lambda wildcards, output: str(Path(output.table).parent),
     log:
         output_path("logs", "{scenario}.compare.log"),
     shell:
         "{params.env} JAX_PLATFORMS=cpu {params.python} {input.script} "
         "--runs {params.runs} "
+        "--reconstructions {params.reconstructions} "
+        "--angle-reconstructions {params.angle_reconstructions} "
+        "--true-reconstruction {params.true_reconstruction} "
         "--out-dir {params.out_dir} "
         "--label {wildcards.scenario} "
         "> {log} 2>&1"

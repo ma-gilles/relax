@@ -11,6 +11,9 @@ natives_dir: null
 # Python of the relax pixi environment. null: <checkout>/.pixi/envs/default/bin/python.
 python: null
 
+# Environment module that provides RELION's relion_reconstruct (the CPU build of 5.0.1 suffices).
+relion_module: relion/5.0.1/gcc-14.2.1-cpu
+
 # angdist executable that plots the orientation distributions. null: the one beside the Python running Snakemake.
 angdist: null
 
@@ -43,9 +46,27 @@ refine:
   max_healpix_order: 7
   extra_args: []               # appended verbatim to the relax refine command
 
+# relax initial_model (VDAM ab initio, K=1, C1) settings of a scenario that starts from an ab-initio map; the particle
+# diameter and every flag not listed keep the refine settings and the RELION GUI job defaults. The particles are
+# Fourier-cropped to `box` pixels (the same physical box; the dataset's grid size keeps them as they are) before
+# VDAM runs, and its map is padded back to the dataset's grid.
+initial_model:
+  box: 64
+  nr_iter: 200
+  seed: 1                      # --random-seed
+  extra_args: []               # appended verbatim to the relax initial_model command
+
+# Scenarios the default target runs; any other scenario below is run by requesting its output, e.g.
+# <output_root>/kent_cap_abinitio/comparison/variants.png, or by listing it here in an override file. The default run
+# starts from the ground truth only: the scenario that starts from an ab-initio map is a separate, explicit run.
+run_scenarios: [kent_cap, uniform]
+
 # One entry per scenario: its own simulated dataset. `poses` selects RECOVAR's pose generator; `variants` lists
 # how the dataset is refined (the entries of `variants` below); optional `dataset:` and `refine:` entries override
-# the shared settings above.
+# the shared settings above. `dataset_from` names another scenario whose dataset this one refines instead of
+# simulating its own; `init` is the map the refinements start from: `ground_truth` (default: the ground truth
+# low-passed at refine.init_resolution) or `abinitio` (relax initial_model on the particles without their poses,
+# rigidly registered to the ground truth's frame and hand).
 scenarios:
   # RECOVAR's Kent option draws the third COLUMN of each rotation matrix from a Kent distribution (mean direction
   # mu0, major axis mu) and the in-plane angle uniformly. RELION's viewing direction is the third ROW, so it is
@@ -56,6 +77,26 @@ scenarios:
   kent_cap:
     poses: {kind: kent, kappa: 8.0, beta: 2.0, mu: [1.0, 1.0, 0.0], mu0: [0.0, 0.0, 1.0]}
     variants: [learned, fixed_true, fixed_uniform, fixed_wrong_belt]
+  # The same particles, refined from an ab-initio map instead of the ground truth. VDAM recovers the particle's shape
+  # only at enough SNR (box 256, 100k particles: at noise level 0.5, not at 1), so check the map before reading the
+  # refinements: the FSC area to the ground truth in initial_model/registration.json is 0.02 to 0.03 for a map without
+  # signal and about 0.24 for one that matches it to the box-64 Nyquist (17 A).
+  kent_cap_abinitio:
+    dataset_from: kent_cap
+    init: abinitio
+    variants: [learned, fixed_true, fixed_uniform]
+  # The same cap shape at half the concentration (kappa 4, beta 1), so the sparsely populated directions hold more
+  # particles: KL 1.47 bits from uniform at HEALPix order 3 (2.36 for kent_cap), median tilt 36 deg and 90% within
+  # 67 deg (25 and 48 for kent_cap), half of the particles in 9.3% of the sphere (4.9%), 10% of the particles beyond
+  # 67 deg of tilt (1.5%). RECOVAR's rejection sampler fills 100k particles without its approximate fallback.
+  kent_cap_mild:
+    poses: {kind: kent, kappa: 4.0, beta: 1.0, mu: [1.0, 1.0, 0.0], mu0: [0.0, 0.0, 1.0]}
+    variants: [learned, fixed_true, fixed_uniform]
+  # kent_cap_mild's particles, refined from an ab-initio map (see kent_cap_abinitio).
+  kent_cap_mild_abinitio:
+    dataset_from: kent_cap_mild
+    init: abinitio
+    variants: [learned, fixed_true, fixed_uniform]
   # Control: uniform viewing directions, where the true prior is flat (so a fixed uniform prior is the truth).
   uniform:
     poses: {kind: uniform}

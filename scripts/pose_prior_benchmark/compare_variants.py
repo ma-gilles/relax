@@ -5,15 +5,24 @@ Each variant is one ``evaluate_run.py`` output directory (``metrics.json``, ``fs
 ``fsc_by_iteration.csv`` and ``pose_errors.npz``) of the same
 dataset. ``variants.csv`` has one row per variant: the prior that scored it, the iterations and final HEALPix order,
 the resolutions and area under the FSC curve against the ground truth and between the half maps, the pose
-direction error, and the final learned prior's accuracy. ``variants.png`` shows the ground-truth FSC curves, the
-FSC area, the distribution of the particles' direction errors, the learned prior's divergence from the true prior
-and, per iteration, the half maps' FSC area to the truth (so runs that stop at different iterations or orders
-compare at equal iteration).
+direction error, the final learned prior's accuracy and the frame offsets. The ground-truth FSC and the pose error are
+those of the final map and poses aligned to the ground truth's frame (``_aligned``: the map rigidly aligned to the
+truth, the poses turned back by their average offset), with the values as refined beside them (``_as_refined``), so
+runs that start from maps in different frames compare. ``variants.png`` shows the aligned ground-truth FSC curves, the
+FSC area, the distribution of the particles' aligned direction errors, the learned prior's divergence from the true
+prior and, per iteration, the half maps' FSC area to the truth (as refined) and to each other and the refinement's
+Fourier radius (so runs that stop at different iterations or orders compare at equal iteration).
+
+``--reconstructions`` (relion_reconstruct maps from each variant's final poses), ``--angle-reconstructions`` (from
+their angles alone, with zero origins) and ``--true-reconstruction`` (from the true poses) take
+``reconstruct_with_poses.py`` output directories. Given together they add a figure row with those maps' FSC to the
+ground truth beside the refinement's own maps, and write ``reconstructions.csv`` with their resolutions and FSC areas.
 
 Run::
 
     python scripts/pose_prior_benchmark/compare_variants.py --runs learned=EVAL_DIR fixed_true=EVAL_DIR \\
-        --out-dir OUT --label kent_cap
+        --out-dir OUT --label kent_cap [--reconstructions learned=DIR ... --angle-reconstructions learned=DIR ...
+        --true-reconstruction DIR]
 """
 
 from __future__ import annotations
@@ -23,7 +32,7 @@ import csv
 import json
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 import numpy as np
 
@@ -45,17 +54,51 @@ COLUMNS = (
     "iterations",
     "final_healpix_order",
     "reported_final_A",
-    "gt_fsc_auc",
-    "gt_resolution_0.5_A",
-    "gt_resolution_0.143_A",
+    "gt_fsc_auc_aligned",
+    "gt_resolution_0.5_A_aligned",
+    "gt_resolution_0.143_A_aligned",
+    "gt_fsc_auc_as_refined",
     "half_map_resolution_0.143_A",
     "half_map_fsc_auc",
-    "pose_error_median_deg",
-    "pose_error_p90_deg",
-    "pose_error_fraction_over_90",
+    "pose_error_median_aligned_deg",
+    "pose_error_p90_aligned_deg",
+    "pose_error_fraction_over_90_aligned",
+    "pose_error_median_as_refined_deg",
+    "pose_offset_deg",
+    "map_offset_deg",
+    "map_shift_A",
     "learned_prior_js_bits",
     "learned_prior_js_skill",
 )
+RECONSTRUCTION_COLUMNS = ("poses", "variant", "gt_fsc_auc", "gt_resolution_0.5_A", "gt_resolution_0.143_A")
+
+
+class IterationCurve(NamedTuple):
+    """A run's ``fsc_by_iteration.csv`` columns: the iteration, its HEALPix order, its Fourier radius (pixels), the
+    half maps' mean FSC area to the truth and the area of the FSC between the two half maps."""
+
+    iteration: np.ndarray
+    order: np.ndarray
+    radius: np.ndarray
+    gt_area: np.ndarray
+    half_area: np.ndarray
+
+
+class Reconstruction(NamedTuple):
+    """A ``reconstruct_with_poses.py`` map's FSC to the ground truth: its summary and curve (1/A, FSC)."""
+
+    summary: dict[str, Any]
+    frequency: np.ndarray
+    fsc: np.ndarray
+
+
+class Reconstructions(NamedTuple):
+    """The relion_reconstruct maps of a scenario: from each variant's final poses (with their origins, and the
+    angles alone with zero origins) and from the true poses."""
+
+    estimated: dict[str, Reconstruction]
+    angles: dict[str, Reconstruction]
+    true: Reconstruction
 
 
 def parse_runs(items: list[str]) -> dict[str, Path]:
@@ -78,7 +121,7 @@ def half_mean(values: dict[str, dict[str, Any]], key: str) -> float | None:
 def summary_row(variant: str, metrics: dict[str, Any]) -> dict[str, Any]:
     """One variant's row of ``COLUMNS`` from its ``metrics.json``."""
     resolution = metrics["resolution"]
-    pose = metrics["pose_direction_error_deg"]
+    pose = metrics["pose_direction_error_aligned_deg"]
     prior = metrics["prior_final"]
     used = metrics["run"]["direction_prior_used"]
     return {
@@ -87,43 +130,81 @@ def summary_row(variant: str, metrics: dict[str, Any]) -> dict[str, Any]:
         "iterations": metrics["run"]["n_iterations"],
         "final_healpix_order": metrics["run"]["final_healpix_order"],
         "reported_final_A": resolution["reported"]["final_all_data_A"],
-        "gt_fsc_auc": resolution["gt_merged"]["auc"],
-        "gt_resolution_0.5_A": resolution["gt_merged"]["at_0.5"]["first_A"],
-        "gt_resolution_0.143_A": resolution["gt_merged"]["at_0.143"]["first_A"],
+        "gt_fsc_auc_aligned": resolution["gt_merged_aligned"]["auc"],
+        "gt_resolution_0.5_A_aligned": resolution["gt_merged_aligned"]["at_0.5"]["first_A"],
+        "gt_resolution_0.143_A_aligned": resolution["gt_merged_aligned"]["at_0.143"]["first_A"],
+        "gt_fsc_auc_as_refined": resolution["gt_merged"]["auc"],
         "half_map_resolution_0.143_A": resolution["half_maps"]["at_0.143"]["first_A"],
         "half_map_fsc_auc": resolution["half_maps"]["auc"],
-        "pose_error_median_deg": half_mean(pose, "median"),
-        "pose_error_p90_deg": half_mean(pose, "p90"),
-        "pose_error_fraction_over_90": half_mean(pose, "fraction_over_90"),
+        "pose_error_median_aligned_deg": half_mean(pose, "median"),
+        "pose_error_p90_aligned_deg": half_mean(pose, "p90"),
+        "pose_error_fraction_over_90_aligned": half_mean(pose, "fraction_over_90"),
+        "pose_error_median_as_refined_deg": half_mean(metrics["pose_direction_error_deg"], "median"),
+        "pose_offset_deg": metrics["pose_frame_offset"]["angle_deg"],
+        "map_offset_deg": resolution["alignment"]["angle_deg"],
+        "map_shift_A": resolution["alignment"]["shift_A"],
         "learned_prior_js_bits": half_mean(prior, "js_bits"),
         "learned_prior_js_skill": half_mean(prior, "js_skill"),
     }
 
 
 def read_gt_curve(evaluation_dir: Path, metrics: dict[str, Any]) -> tuple[np.ndarray, np.ndarray]:
-    """The final map's FSC to the ground truth: spatial frequency (1/A) and correlation per shell."""
+    """The final map's FSC to the ground truth after the map is aligned to it: spatial frequency (1/A) and correlation
+    per shell."""
     with open(evaluation_dir / "fsc_curves.csv", newline="") as handle:
         rows = list(csv.DictReader(handle))
     shells = np.array([int(row["shell"]) for row in rows], dtype=float)
-    fsc = np.array([float(row["gt_merged"]) for row in rows])
+    fsc = np.array([float(row["gt_merged_aligned"]) for row in rows])
     return shells / (metrics["resolution"]["box"] * metrics["resolution"]["voxel_size_A"]), fsc
 
 
-def read_iteration_curve(evaluation_dir: Path) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """The run's ``fsc_by_iteration.csv``: iteration, HEALPix order and the half maps' mean FSC area to the truth."""
+def read_iteration_curve(evaluation_dir: Path) -> IterationCurve:
+    """The run's ``fsc_by_iteration.csv`` as an :class:`IterationCurve`."""
     with open(evaluation_dir / "fsc_by_iteration.csv", newline="") as handle:
         rows = list(csv.DictReader(handle))
-    return (
+    return IterationCurve(
         np.array([int(row["iteration"]) for row in rows]),
         np.array([int(row["healpix_order"]) for row in rows]),
+        np.array([int(row["fourier_radius"]) for row in rows]),
         np.array([float(row["gt_auc"]) for row in rows]),
+        np.array([float(row["half_map_auc"]) for row in rows]),
     )
 
 
+def read_reconstruction(directory: Path) -> Reconstruction:
+    """A ``reconstruct_with_poses.py`` output directory: ``metrics.json`` and ``fsc_curve.csv``."""
+    metrics = json.loads((directory / "metrics.json").read_text())["resolution"]
+    with open(directory / "fsc_curve.csv", newline="") as handle:
+        rows = list(csv.DictReader(handle))
+    shells = np.array([int(row["shell"]) for row in rows], dtype=float)
+    fsc = np.array([float(row["gt_reconstruction"]) for row in rows])
+    return Reconstruction(metrics["gt_reconstruction"], shells / (metrics["box"] * metrics["voxel_size_A"]), fsc)
+
+
+def reconstruction_rows(reconstructions: Reconstructions) -> list[dict[str, Any]]:
+    """One row of ``RECONSTRUCTION_COLUMNS`` per map: each variant's poses with and without origins, then the truth."""
+    labelled = [
+        *(("estimated", variant, r) for variant, r in reconstructions.estimated.items()),
+        *(("estimated_angles", variant, r) for variant, r in reconstructions.angles.items()),
+        ("true", "", reconstructions.true),
+    ]
+    return [
+        {
+            "poses": poses,
+            "variant": variant,
+            "gt_fsc_auc": r.summary["auc"],
+            "gt_resolution_0.5_A": r.summary["at_0.5"]["first_A"],
+            "gt_resolution_0.143_A": r.summary["at_0.143"]["first_A"],
+        }
+        for poses, variant, r in labelled
+    ]
+
+
 def read_pose_errors(evaluation_dir: Path) -> np.ndarray:
-    """Every particle's final direction error (degrees) of the run, both half sets, from ``pose_errors.npz``."""
+    """Every particle's final direction error (degrees) of the run after its poses are turned back by their average
+    offset, both half sets, from ``pose_errors.npz``."""
     with np.load(evaluation_dir / "pose_errors.npz", allow_pickle=False) as archive:
-        return np.concatenate([archive[f"half{half}"] for half in HALVES]).astype(np.float64)
+        return np.concatenate([archive[f"aligned_half{half}"] for half in HALVES]).astype(np.float64)
 
 
 def error_density(errors: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -144,10 +225,10 @@ def error_density(errors: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     return 10 ** (0.5 * (edges[:-1] + edges[1:])), smooth / (errors.size * step)
 
 
-def write_table(rows: list[dict[str, Any]], path: Path) -> None:
-    """Write ``rows`` as a CSV with the columns of ``COLUMNS`` (a value that never happened is empty)."""
+def write_table(rows: list[dict[str, Any]], path: Path, columns: tuple[str, ...] = COLUMNS) -> None:
+    """Write ``rows`` as a CSV with ``columns`` (a value that never happened is empty)."""
     with open(path, "w", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=COLUMNS)
+        writer = csv.DictWriter(handle, fieldnames=columns)
         writer.writeheader()
         for row in rows:
             writer.writerow({key: "" if value is None else value for key, value in row.items()})
@@ -164,33 +245,110 @@ def style_axes(ax) -> None:
     ax.set_axisbelow(True)
 
 
+def draw_reconstructions(
+    curve_ax,
+    bar_ax,
+    rows: list[dict[str, Any]],
+    colors: dict[str, str],
+    labels: list[str],
+    reconstructions: Reconstructions,
+) -> None:
+    """The relion_reconstruct maps' FSC to the ground truth, in the frame of the poses (not aligned): the curves of
+    the variants' final poses (dotted: the true poses) and, per variant, the FSC area of the maps from the poses with
+    and without origins, against the area of the refinement's own final map as refined (black line) and of the true
+    poses (dotted line)."""
+    variants = [row["variant"] for row in rows]
+    x = np.arange(len(variants))
+    style_axes(curve_ax)
+    for variant in variants:
+        curve = reconstructions.estimated[variant]
+        curve_ax.plot(curve.frequency, curve.fsc, color=colors[variant], linewidth=2)
+    true = reconstructions.true
+    curve_ax.plot(true.frequency, true.fsc, color=PALETTE["ink2"], linewidth=1.5, linestyle=":")
+    for threshold in GT_FSC_THRESHOLDS:
+        curve_ax.axhline(threshold, color=PALETTE["reference"], linewidth=1, linestyle=":")
+    curve_ax.set_title("relion_reconstruct maps: FSC to the ground truth", color=PALETTE["ink"])
+    curve_ax.set_xlabel("spatial frequency (1/A)", color=PALETTE["ink2"])
+    curve_ax.set_ylabel("FSC", color=PALETTE["ink2"])
+
+    style_axes(bar_ax)
+    width = 0.36
+    for offset, source, alpha in (
+        (-width / 2, reconstructions.estimated, 1.0),
+        (width / 2, reconstructions.angles, 0.45),
+    ):
+        for position, variant in zip(x, variants):
+            auc = source[variant].summary["auc"]
+            bar_ax.bar(
+                position + offset,
+                auc,
+                width=width,
+                color=colors[variant],
+                alpha=alpha,
+                edgecolor=colors[variant],
+                linewidth=1.2,
+            )
+            bar_ax.text(
+                position + offset,
+                0.01,
+                f"{auc:.3g}",
+                rotation=90,
+                ha="center",
+                va="bottom",
+                color=PALETTE["ink"],
+                fontsize=8,
+            )
+    for position, row in zip(x, rows):
+        bar_ax.plot(
+            [position - 0.4, position + 0.4], [row["gt_fsc_auc_as_refined"]] * 2, color=PALETTE["ink"], linewidth=2
+        )
+    bar_ax.axhline(true.summary["auc"], color=PALETTE["ink2"], linewidth=1.5, linestyle=":")
+    bar_ax.text(
+        bar_ax.get_xlim()[1],
+        true.summary["auc"],
+        f"true poses {true.summary['auc']:.3g}",
+        ha="right",
+        va="bottom",
+        color=PALETTE["ink2"],
+        fontsize=8,
+    )
+    bar_ax.set_xticks(x, labels)
+    bar_ax.set_title("Area under that FSC curve", color=PALETTE["ink"])
+    bar_ax.set_ylabel("normalized area", color=PALETTE["ink2"])
+    bar_ax.margins(y=0.15)
+
+
 def plot_comparison(
     rows: list[dict[str, Any]],
     curves: dict[str, tuple[np.ndarray, np.ndarray]],
-    iteration_curves: dict[str, tuple[np.ndarray, np.ndarray, np.ndarray]],
+    iteration_curves: dict[str, IterationCurve],
     pose_errors: dict[str, np.ndarray],
+    reconstructions: Reconstructions | None,
     label: str,
     path: Path,
 ) -> None:
     """The comparison figure of ``rows`` (one per variant), their ground-truth FSC ``curves``, their
-    per-iteration half-map FSC areas (``iteration_curves``: iterations, HEALPix orders, areas) and their
-    particles' direction errors (``pose_errors``, degrees)."""
+    per-iteration half-map FSC areas and Fourier radii (``iteration_curves``), their particles' direction errors
+    (``pose_errors``, degrees) and, when given, the relion_reconstruct maps from their poses (``reconstructions``)."""
     import matplotlib
 
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     import matplotlib.ticker
     from matplotlib.lines import Line2D
+    from matplotlib.patches import Patch
 
     if len(rows) > len(VARIANT_COLORS):
         raise ValueError(f"{len(rows)} variants; the palette is validated for {len(VARIANT_COLORS)}")
     variants = [row["variant"] for row in rows]
     colors = dict(zip(variants, VARIANT_COLORS))
-    fig = plt.figure(figsize=(11, 11.6), facecolor=PALETTE["surface"])
-    grid = fig.add_gridspec(3, 2, height_ratios=[1, 1, 0.85])
-    axes = np.array([[fig.add_subplot(grid[row, col]) for col in range(2)] for row in range(2)])
-    trace_ax = fig.add_subplot(grid[2, :])
-    for ax in (*axes.flat, trace_ax):
+    n_rows = 2 + (reconstructions is not None)
+    fig = plt.figure(figsize=(11, 4.07 * (n_rows + 1.45)), facecolor=PALETTE["surface"])
+    grid = fig.add_gridspec(n_rows + 2, 2, height_ratios=[1] * n_rows + [0.85, 0.6])
+    axes = np.array([[fig.add_subplot(grid[row, col]) for col in range(2)] for row in range(n_rows)])
+    trace_ax = fig.add_subplot(grid[n_rows, :])
+    radius_ax = fig.add_subplot(grid[n_rows + 1, :], sharex=trace_ax)
+    for ax in (*axes.flat, trace_ax, radius_ax):
         ax.set_facecolor(PALETTE["surface"])
         ax.tick_params(colors=PALETTE["ink2"])
     fig.suptitle(f"{label}: refinement variants", x=0.01, ha="left", color=PALETTE["ink"])
@@ -205,7 +363,7 @@ def plot_comparison(
     for threshold in GT_FSC_THRESHOLDS:
         ax.axhline(threshold, color=PALETTE["reference"], linewidth=1, linestyle=":")
         ax.text(ax.get_xlim()[1], threshold, f"{threshold}", ha="right", va="bottom", color=PALETTE["ink2"], fontsize=8)
-    ax.set_title("FSC of the final map to the ground truth", color=PALETTE["ink"])
+    ax.set_title("FSC of the final map, aligned to the ground truth", color=PALETTE["ink"])
     ax.set_xlabel("spatial frequency (1/A)", color=PALETTE["ink2"])
     ax.set_ylabel("FSC", color=PALETTE["ink2"])
 
@@ -221,7 +379,7 @@ def plot_comparison(
         ax.set_ylabel(ylabel, color=PALETTE["ink2"])
         ax.margins(y=0.15)
 
-    bars(axes[0, 1], "gt_fsc_auc", "Area under the ground-truth FSC curve", "normalized area")
+    bars(axes[0, 1], "gt_fsc_auc_aligned", "Area under the aligned ground-truth FSC curve", "normalized area")
 
     ax = axes[1, 0]
     style_axes(ax)
@@ -260,7 +418,7 @@ def plot_comparison(
     ax.yaxis.set_minor_formatter(matplotlib.ticker.NullFormatter())
     ax.set_xticks(x, labels)
     ax.set_xlim(-0.6, len(variants) - 0.4)
-    ax.set_title("Distribution of the direction error of the final poses", color=PALETTE["ink"], pad=18)
+    ax.set_title("Direction error of the final poses, average offset removed", color=PALETTE["ink"], pad=18)
     ax.set_ylabel("degrees (log scale)", color=PALETTE["ink2"])
 
     bars(
@@ -271,22 +429,39 @@ def plot_comparison(
         title_pad=18,
     )
 
+    if reconstructions is not None:
+        draw_reconstructions(axes[2, 0], axes[2, 1], rows, colors, labels, reconstructions)
+
     style_axes(trace_ax)
+    style_axes(radius_ax)
     for variant in variants:
-        iterations, orders, area = iteration_curves[variant]
-        trace_ax.plot(iterations, area, color=colors[variant], linewidth=2)
-        raised = np.flatnonzero(np.diff(orders, prepend=orders[0]) > 0)
-        trace_ax.plot(iterations[raised], area[raised], "o", color=colors[variant], markersize=6)
+        curve = iteration_curves[variant]
+        raised = np.flatnonzero(np.diff(curve.order, prepend=curve.order[0]) > 0)
+        trace_ax.plot(curve.iteration, curve.half_area, color=colors[variant], linewidth=2, linestyle="--")
+        trace_ax.plot(curve.iteration, curve.gt_area, color=colors[variant], linewidth=2)
+        trace_ax.plot(curve.iteration[raised], curve.gt_area[raised], "o", color=colors[variant], markersize=6)
         trace_ax.text(
-            iterations[-1] + 0.15, area[-1], f"order {orders[-1]}", va="center", color=PALETTE["ink2"], fontsize=8
+            curve.iteration[-1] + 0.15,
+            curve.gt_area[-1],
+            f"order {curve.order[-1]}",
+            va="center",
+            color=PALETTE["ink2"],
+            fontsize=8,
         )
-    trace_ax.set_title("Half maps' FSC area to the ground truth, per iteration", color=PALETTE["ink"])
-    trace_ax.set_xlabel("iteration", color=PALETTE["ink2"])
+        radius_ax.plot(curve.iteration, curve.radius, color=colors[variant], linewidth=2)
+        radius_ax.plot(curve.iteration[raised], curve.radius[raised], "o", color=colors[variant], markersize=6)
+    trace_ax.set_title("Half maps' FSC area per iteration", color=PALETTE["ink"])
     trace_ax.set_ylabel("normalized area", color=PALETTE["ink2"])
-    trace_ax.xaxis.set_major_locator(matplotlib.ticker.MaxNLocator(integer=True))
-    trace_ax.margins(x=0.08)
+    trace_ax.tick_params(labelbottom=False)
+    radius_ax.set_title("Fourier radius of the refinement per iteration", color=PALETTE["ink"])
+    radius_ax.set_xlabel("iteration", color=PALETTE["ink2"])
+    radius_ax.set_ylabel("pixels", color=PALETTE["ink2"])
+    radius_ax.xaxis.set_major_locator(matplotlib.ticker.MaxNLocator(integer=True))
+    radius_ax.margins(x=0.08)
 
     legend = [Line2D([], [], color=colors[v], linewidth=2, label=v) for v in variants] + [
+        Line2D([], [], color=PALETTE["ink2"], linewidth=2, label="half maps vs ground truth, as refined"),
+        Line2D([], [], color=PALETTE["ink2"], linewidth=2, linestyle="--", label="half map vs other half map"),
         Line2D([], [], marker="o", color=PALETTE["ink2"], linestyle="", label="HEALPix order raised"),
         Line2D([], [], marker="o", color=PALETTE["ink2"], linestyle="", label="median error"),
         Line2D(
@@ -299,8 +474,15 @@ def plot_comparison(
             label="90th percentile",
         ),
     ]
-    fig.legend(handles=legend, loc="lower center", ncol=len(legend), frameon=False, labelcolor=PALETTE["ink2"])
-    fig.tight_layout(rect=(0, 0.04, 1, 0.97))
+    if reconstructions is not None:
+        legend += [
+            Patch(facecolor=PALETTE["ink2"], label="reconstruction from the final poses"),
+            Patch(facecolor=PALETTE["ink2"], alpha=0.45, label="... with zero origins"),
+            Line2D([], [], color=PALETTE["ink"], linewidth=2, label="the refinement's final map, as refined"),
+            Line2D([], [], color=PALETTE["ink2"], linewidth=1.5, linestyle=":", label="true poses"),
+        ]
+    fig.legend(handles=legend, loc="lower center", ncol=5, frameon=False, labelcolor=PALETTE["ink2"])
+    fig.tight_layout(rect=(0, 0.07 if reconstructions is None else 0.09, 1, 0.97))
     fig.savefig(path, dpi=150, bbox_inches="tight", facecolor=PALETTE["surface"])
     plt.close(fig)
 
@@ -308,13 +490,35 @@ def plot_comparison(
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--runs", nargs="+", required=True, help="LABEL=EVALUATION_DIR of each variant")
+    parser.add_argument("--reconstructions", nargs="+", help="LABEL=DIR of each variant's relion_reconstruct map")
+    parser.add_argument(
+        "--angle-reconstructions", nargs="+", help="LABEL=DIR of each variant's map from the angles with zero origins"
+    )
+    parser.add_argument("--true-reconstruction", type=Path, help="DIR of the map from the true poses")
     parser.add_argument("--out-dir", type=Path, required=True)
     parser.add_argument("--label", default="scenario")
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    given = [args.reconstructions, args.angle_reconstructions, args.true_reconstruction]
+    if any(item is not None for item in given) and any(item is None for item in given):
+        parser.error("--reconstructions, --angle-reconstructions and --true-reconstruction go together")
+    return args
+
+
+def read_reconstructions(args: argparse.Namespace, variants: list[str]) -> Reconstructions | None:
+    """The reconstructions named on the command line, None when there are none; each must cover ``variants``."""
+    if args.reconstructions is None:
+        return None
+    sets = []
+    for items in (args.reconstructions, args.angle_reconstructions):
+        directories = parse_runs(items)
+        if list(directories) != variants:
+            raise SystemExit(f"reconstructions for {list(directories)}, the runs are {variants}")
+        sets.append({variant: read_reconstruction(directory) for variant, directory in directories.items()})
+    return Reconstructions(sets[0], sets[1], read_reconstruction(args.true_reconstruction))
 
 
 def main(argv: list[str] | None = None) -> None:
-    """Write ``variants.csv`` and ``variants.png`` for the evaluated variants."""
+    """Write ``variants.csv``, ``variants.png`` and, with reconstructions, ``reconstructions.csv``."""
     args = parse_args(argv)
     runs = parse_runs(args.runs)
     metrics = {variant: json.loads((directory / "metrics.json").read_text()) for variant, directory in runs.items()}
@@ -322,13 +526,19 @@ def main(argv: list[str] | None = None) -> None:
     curves = {variant: read_gt_curve(directory, metrics[variant]) for variant, directory in runs.items()}
     iteration_curves = {variant: read_iteration_curve(directory) for variant, directory in runs.items()}
     pose_errors = {variant: read_pose_errors(directory) for variant, directory in runs.items()}
+    reconstructions = read_reconstructions(args, list(runs))
     args.out_dir.mkdir(parents=True, exist_ok=True)
     write_table(rows, args.out_dir / "variants.csv")
-    plot_comparison(rows, curves, iteration_curves, pose_errors, args.label, args.out_dir / "variants.png")
+    if reconstructions is not None:
+        write_table(reconstruction_rows(reconstructions), args.out_dir / "reconstructions.csv", RECONSTRUCTION_COLUMNS)
+    plot_comparison(
+        rows, curves, iteration_curves, pose_errors, reconstructions, args.label, args.out_dir / "variants.png"
+    )
     for row in rows:
         print(
             f"{row['variant']}: {row['direction_prior']} prior, {row['iterations']} iterations, "
-            f"GT-FSC area {row['gt_fsc_auc']:.3f}, median pose error {row['pose_error_median_deg']:.2f} deg"
+            f"aligned GT-FSC area {row['gt_fsc_auc_aligned']:.3f}, "
+            f"aligned median pose error {row['pose_error_median_aligned_deg']:.2f} deg"
         )
 
 

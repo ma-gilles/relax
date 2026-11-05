@@ -6,7 +6,8 @@ Resolution (unmasked FSC; resolution = box * voxel / first shell below the thres
   * FSC of the final merged map, and of each half map, to the ground-truth map at 0.5 and 0.143;
   * the resolution the refinement reported;
   * per numbered iteration (``fsc_by_iteration.csv``): each unfiltered half map's FSC to the ground truth and the two
-    half maps' FSC to each other, so runs that stop at different iterations or orders compare at equal iteration.
+    half maps' FSC to each other and the Fourier radius the iteration ran with, so runs that stop at different
+    iterations or orders compare at equal iteration.
 
 Direction-prior accuracy: ``run_itNNN_half{1,2}_model.star`` holds each half set's learned direction prior
 (``model_pdf_orient_class_1``, one probability per HEALPix direction at that iteration's order). Its target is
@@ -18,13 +19,28 @@ that perfect poses would give), which is how close any estimate from that many p
 with ``relax refine --fixed-direction-prior`` still estimates and writes the learned prior, so it is evaluated
 the same way; ``run.direction_prior_used`` in ``metrics.json`` says which prior scored the run.
 
+Frame offset: a run started from a map that sits a little off the ground truth's frame returns maps and poses in that
+frame, which adds the offset to every pose error and takes from the map's FSC to the truth. Both are therefore reported
+twice, as refined and aligned:
+  * ``pose_frame_offset`` in ``metrics.json`` is the average pose offset: the rotation (matrix, angle in degrees, and the
+    share of particles within 15 degrees of it) that best maps the true viewing directions onto the estimated ones.
+    ``pose_direction_error_aligned_deg`` is the direction error after turning the estimated directions back by it;
+    ``pose_direction_error_deg`` is the error as refined.
+  * ``resolution.alignment`` is the rotation and shift that bring the final merged map onto the ground truth
+    (``align_to_truth.py``, fitted on both maps low-passed at ``ALIGN_RESOLUTION_A``); ``gt_merged_aligned`` and
+    ``gt_half{1,2}_aligned`` are the FSC to the truth of the final maps after that transform, ``gt_merged`` and
+    ``gt_half{1,2}`` as refined. The half-map FSC does not depend on the frame. ``interpolation_round_trip`` is the FSC
+    to the truth of the truth transformed and transformed back, which is what the interpolation alone costs an aligned
+    map. The per-iteration FSC (``fsc_by_iteration.csv``) is as refined.
+
 Run::
 
     python scripts/pose_prior_benchmark/evaluate_run.py --dataset-dir DATASET --run-dir REFINE --out-dir OUT
 
 ``OUT`` receives ``metrics.json``, ``prior_by_iteration.csv``, ``fsc_by_iteration.csv``, ``fsc_curves.csv``,
-``pose_errors.npz`` (every particle's final direction error, degrees, one array per half set) and ``summary.png`` (the
-FSC curves and every learned-prior metric per iteration). The orientation-distribution plots are made by the Snakefile
+``pose_errors.npz`` (every particle's final direction error, degrees, one array per half set as ``half1``, ``half2``
+and aligned as ``aligned_half1``, ``aligned_half2``) and ``summary.png`` (the FSC curves and every learned-prior
+metric per iteration). The orientation-distribution plots are made by the Snakefile
 with ``angdist``.
 """
 
@@ -49,11 +65,19 @@ from relax.sampling.orientation_priors import infer_direction_prior_healpix_orde
 from relax.star.blocks import read_star_blocks  # noqa: E402
 from scripts.fsc_metrics import centered_corr, first_shell_below, normalized_fsc_auc, shell_fsc  # noqa: E402
 from scripts.masked_fsc import first_sustained_below  # noqa: E402
+from scripts.pose_prior_benchmark.align_to_truth import (  # noqa: E402
+    apply_fit,
+    fit_rigid_to_reference,
+    inverse_fit,
+    rotation_angle_deg,
+)
 from scripts.pose_prior_benchmark.true_prior import population_prior  # noqa: E402
 
 HALF_FSC_THRESHOLD = 0.143
 GT_FSC_THRESHOLDS = (0.5, 0.143)
 SUSTAINED_SHELLS = 3  # the scorecards' crossing rule: this many consecutive shells below the threshold
+FRAME_FIT_TRIMS_DEG = (60.0, 30.0, 15.0)  # frame_offset keeps the particles within each of these of the previous fit
+ALIGN_RESOLUTION_A = 10.0  # the maps are low-passed at this resolution to fit their rigid alignment to the truth
 PRIOR_SUM_TOLERANCE = 1e-3
 PRIOR_BLOCK = "model_pdf_orient_class_1"
 GT_MAP_NAME = "reference_gt_relion.mrc"
@@ -272,17 +296,50 @@ def truth_nonuniformity(poses: dict[str, Any], halves: dict[int, dict[str, np.nd
     }
 
 
+def viewing_directions(rot: np.ndarray, tilt: np.ndarray) -> np.ndarray:
+    """Unit viewing directions (n, 3) of RELION's (rot, tilt) in degrees."""
+    r, t = np.deg2rad(rot), np.deg2rad(tilt)
+    return np.stack([np.sin(t) * np.cos(r), np.sin(t) * np.sin(r), np.cos(t)], axis=-1)
+
+
 def direction_error_deg(
     true_rot: np.ndarray, true_tilt: np.ndarray, est_rot: np.ndarray, est_tilt: np.ndarray
 ) -> np.ndarray:
     """Angle (degrees) between true and estimated viewing directions."""
-
-    def unit(rot: np.ndarray, tilt: np.ndarray) -> np.ndarray:
-        r, t = np.deg2rad(rot), np.deg2rad(tilt)
-        return np.stack([np.sin(t) * np.cos(r), np.sin(t) * np.sin(r), np.cos(t)], axis=-1)
-
-    cosine = np.sum(unit(true_rot, true_tilt) * unit(est_rot, est_tilt), axis=-1)
+    cosine = np.sum(viewing_directions(true_rot, true_tilt) * viewing_directions(est_rot, est_tilt), axis=-1)
     return np.degrees(np.arccos(np.clip(cosine, -1.0, 1.0)))
+
+
+def aligned_direction_error_deg(
+    true_rot: np.ndarray, true_tilt: np.ndarray, est_rot: np.ndarray, est_tilt: np.ndarray, rotation: np.ndarray
+) -> np.ndarray:
+    """Angle (degrees) between the true viewing directions and the estimated ones turned back by the frame offset
+    ``rotation`` (the ``rotation_matrix`` of ``frame_offset``, ``est = rotation true``)."""
+    cosine = np.sum(
+        viewing_directions(true_rot, true_tilt) * (viewing_directions(est_rot, est_tilt) @ rotation), axis=-1
+    )
+    return np.degrees(np.arccos(np.clip(cosine, -1.0, 1.0)))
+
+
+def frame_offset(true_directions: np.ndarray, est_directions: np.ndarray) -> dict[str, Any]:
+    """The rotation Q with ``est = Q true`` that fits the viewing directions: its matrix and angle in degrees.
+
+    A refinement started from a map in a rotated frame returns poses in that frame, so its pose errors include the
+    offset. Q is a Kabsch fit trimmed to the particles within 60, 30 and 15 degrees of the previous fit;
+    ``inlier_fraction`` is the share of particles within 15 degrees of the final fit.
+    """
+    q = np.eye(3)
+    for trim in FRAME_FIT_TRIMS_DEG:
+        angle = np.degrees(np.arccos(np.clip(np.sum(est_directions * (true_directions @ q.T), axis=-1), -1.0, 1.0)))
+        keep = angle < trim
+        u, _, vt = np.linalg.svd(true_directions[keep].T @ est_directions[keep])
+        q = vt.T @ np.diag([1.0, 1.0, np.sign(np.linalg.det(vt.T @ u.T))]) @ u.T
+    residual = np.degrees(np.arccos(np.clip(np.sum(est_directions * (true_directions @ q.T), axis=-1), -1.0, 1.0)))
+    return {
+        "angle_deg": rotation_angle_deg(q),
+        "rotation_matrix": q.tolist(),
+        "inlier_fraction": float(np.mean(residual < FRAME_FIT_TRIMS_DEG[-1])),
+    }
 
 
 # ---------------------------------------------------------------------------------------------------------------
@@ -329,14 +386,16 @@ def fsc_by_iteration(
     gt: np.ndarray,
     half_maps: dict[int, tuple[np.ndarray, np.ndarray]],
     orders: dict[int, int],
+    radii: dict[int, int],
     voxel: float,
     box: int,
 ) -> list[dict[str, Any]]:
     """Per numbered iteration: each unfiltered half map's FSC to the ground truth ``gt`` and to the other half.
 
-    Columns: the iteration and its HEALPix order; the area under the half maps' FSC to the truth (each half, and
-    their mean ``gt_auc``); the resolution (A) where each half's FSC to the truth first drops below 0.5, and
-    where the two halves' FSC drops below 0.143 (empty: never).
+    Columns: the iteration, its HEALPix order and its Fourier radius (``radii``, pixels); the area under the half
+    maps' FSC to the truth (each half, and their mean ``gt_auc``); the resolution (A) where each half's FSC to the
+    truth first drops below 0.5; the area under the two halves' FSC to each other (``half_map_auc``) and the
+    resolution where it drops below 0.143 (empty: never).
     """
     rows = []
     for iteration, (half1, half2) in sorted(half_maps.items()):
@@ -347,11 +406,13 @@ def fsc_by_iteration(
             {
                 "iteration": iteration,
                 "healpix_order": orders[iteration],
+                "fourier_radius": radii[iteration],
                 "gt_auc_half1": aucs[0],
                 "gt_auc_half2": aucs[1],
                 "gt_auc": float(np.mean(aucs)),
                 "gt_resolution_0.5_half1_A": crossing_summary(gt_curves[0], 0.5, voxel, box)["first_A"],
                 "gt_resolution_0.5_half2_A": crossing_summary(gt_curves[1], 0.5, voxel, box)["first_A"],
+                "half_map_auc": normalized_fsc_auc(half_curve),
                 "half_map_resolution_0.143_A": crossing_summary(half_curve, HALF_FSC_THRESHOLD, voxel, box)["first_A"],
             }
         )
@@ -381,10 +442,39 @@ def fsc_report(curve: np.ndarray, thresholds: tuple[float, ...], voxel: float, b
     return report
 
 
-def resolution_metrics(
+def align_run_maps(
     maps: dict[str, np.ndarray], voxel: float, box: int
+) -> tuple[dict[str, np.ndarray], dict[str, Any], np.ndarray]:
+    """The run's final maps in the ground truth's frame, the record of the alignment and its interpolation floor.
+
+    The transform is fitted on the merged map (``align_to_truth``, band ``ALIGN_RESOLUTION_A``) and applied to it and
+    to both half maps. The floor is the FSC to the truth of the truth transformed and transformed back.
+    """
+    shell = round(box * voxel / ALIGN_RESOLUTION_A)
+    fit = fit_rigid_to_reference(maps["merged"], maps["gt"], shell)
+    aligned = {name: apply_fit(maps[name], fit) for name in RUN_MAP_NAMES}
+    round_trip = shell_fsc(apply_fit(apply_fit(maps["gt"], fit), inverse_fit(fit)), maps["gt"])
+    record = {
+        "band_resolution_A": ALIGN_RESOLUTION_A,
+        "band_shell": shell,
+        "angle_deg": rotation_angle_deg(fit.rotation),
+        "rotation_matrix": fit.rotation.tolist(),
+        "translation_voxels": fit.translation_voxels.tolist(),
+        "shift_A": float(np.linalg.norm(fit.translation_voxels) * voxel),
+        "scale": fit.scale,
+        "iterations": fit.iterations,
+        "last_rotation_step_deg": fit.last_rotation_step_deg,
+        "last_shift_step_voxels": fit.last_shift_step_voxels,
+        "interpolation_round_trip_fsc_auc": normalized_fsc_auc(round_trip),
+    }
+    return aligned, record, round_trip
+
+
+def resolution_metrics(
+    maps: dict[str, np.ndarray], aligned: dict[str, np.ndarray], voxel: float, box: int
 ) -> tuple[dict[str, Any], dict[str, np.ndarray]]:
-    """FSC curves and resolution summaries: half maps against each other and the run's maps against truth."""
+    """FSC curves and resolution summaries: half maps against each other and the run's maps against truth, as
+    refined (``maps``) and in the truth's frame (``aligned``, the keys of ``RUN_MAP_NAMES``)."""
     if maps["gt"].shape[0] != box:
         raise ValueError(f"maps have box {maps['gt'].shape[0]}, the particles {box}")
     corr = centered_corr(maps["merged"], maps["gt"])
@@ -395,6 +485,7 @@ def resolution_metrics(
         "gt_merged": shell_fsc(maps["merged"], maps["gt"]),
         "gt_half1": shell_fsc(maps["half1"], maps["gt"]),
         "gt_half2": shell_fsc(maps["half2"], maps["gt"]),
+        **{f"gt_{name}_aligned": shell_fsc(aligned[name], maps["gt"]) for name in RUN_MAP_NAMES},
     }
     report = {
         "voxel_size_A": voxel,
@@ -430,6 +521,21 @@ def read_direction_prior_used(run_dir: Path) -> dict[str, Any]:
     return {"source": "fixed", **json.loads(record.read_text())}
 
 
+def read_fourier_radius(run_dir: Path, iteration: int) -> int:
+    """The Fourier radius (pixels) the iteration ran with: half its ``rlnCurrentImageSize``, the same in both halves."""
+    sizes = {
+        int(
+            read_star_blocks(run_dir / f"run_it{iteration:03d}_half{half}_model.star")["model_general"][
+                "rlnCurrentImageSize"
+            ]
+        )
+        for half in HALVES
+    }
+    if len(sizes) != 1:
+        raise ValueError(f"iteration {iteration}: the half sets ran with different image sizes {sorted(sizes)}")
+    return sizes.pop() // 2
+
+
 def reported_resolution(run_dir: Path, iteration: int) -> dict[str, float]:
     """The resolution (A) the refinement reported: its final all-data pass and the last numbered iteration."""
     with np.load(run_dir / "refinement_results.npz", allow_pickle=False) as archive:
@@ -459,13 +565,30 @@ def evaluate(dataset_dir: Path, run_dir: Path) -> dict[str, Any]:
         raise ValueError(f"iteration {final} has no direction prior in a half-set model STAR")
     order = final_rows[0]["healpix_order"]
     maps = load_maps(dataset_dir, run_dir)
-    resolution, curves = resolution_metrics(maps, voxel, box)
+    aligned_maps, alignment, round_trip = align_run_maps(maps, voxel, box)
+    resolution, curves = resolution_metrics(maps, aligned_maps, voxel, box)
+    curves["interpolation_round_trip"] = round_trip
     orders = {r["iteration"]: r["healpix_order"] for r in rows if r["half"] == 1 and r["prior_available"]}
     iteration_rows = fsc_by_iteration(
-        maps["gt"], {i: load_iteration_half_maps(run_dir, i) for i in iterations}, orders, voxel, box
+        maps["gt"],
+        {i: load_iteration_half_maps(run_dir, i) for i in iterations},
+        orders,
+        {i: read_fourier_radius(run_dir, i) for i in iterations},
+        voxel,
+        box,
     )
     errors = {
         half: direction_error_deg(h["true_rot"], h["true_tilt"], h["est_rot"], h["est_tilt"])
+        for half, h in halves.items()
+    }
+    offset = frame_offset(
+        np.concatenate([viewing_directions(h["true_rot"], h["true_tilt"]) for h in halves.values()]),
+        np.concatenate([viewing_directions(h["est_rot"], h["est_tilt"]) for h in halves.values()]),
+    )
+    aligned_errors = {
+        half: aligned_direction_error_deg(
+            h["true_rot"], h["true_tilt"], h["est_rot"], h["est_tilt"], np.asarray(offset["rotation_matrix"])
+        )
         for half, h in halves.items()
     }
     metrics = {
@@ -477,19 +600,26 @@ def evaluate(dataset_dir: Path, run_dir: Path) -> dict[str, Any]:
             "direction_prior_used": read_direction_prior_used(run_dir),
         },
         "truth": truth_nonuniformity(poses, halves, order),
-        "resolution": {**resolution, "reported": reported_resolution(run_dir, final)},
+        "resolution": {**resolution, "alignment": alignment, "reported": reported_resolution(run_dir, final)},
         "prior_final": {
             f"half{r['half']}": {k: v for k, v in r.items() if k not in ("iteration", "half", "prior_available")}
             for r in final_rows
         },
-        "pose_direction_error_deg": {
-            f"half{h}": {
-                "median": float(np.median(e)),
-                "p90": float(np.percentile(e, 90)),
-                "fraction_over_90": float(np.mean(e > 90)),
+        **{
+            key: {
+                f"half{h}": {
+                    "median": float(np.median(e)),
+                    "p90": float(np.percentile(e, 90)),
+                    "fraction_over_90": float(np.mean(e > 90)),
+                }
+                for h, e in per_half.items()
             }
-            for h, e in errors.items()
+            for key, per_half in (
+                ("pose_direction_error_deg", errors),
+                ("pose_direction_error_aligned_deg", aligned_errors),
+            )
         },
+        "pose_frame_offset": offset,
     }
     return {
         "metrics": metrics,
@@ -497,6 +627,7 @@ def evaluate(dataset_dir: Path, run_dir: Path) -> dict[str, Any]:
         "iteration_rows": iteration_rows,
         "curves": curves,
         "pose_errors": errors,
+        "aligned_pose_errors": aligned_errors,
         "voxel": voxel,
         "box": box,
     }
@@ -522,6 +653,7 @@ def write_tables(result: dict[str, Any], out_dir: Path) -> None:
     np.savez_compressed(
         out_dir / "pose_errors.npz",
         **{f"half{half}": e.astype(np.float32) for half, e in result["pose_errors"].items()},
+        **{f"aligned_half{half}": e.astype(np.float32) for half, e in result["aligned_pose_errors"].items()},
     )
     rows = result["rows"]
     columns = list(dict.fromkeys(key for row in rows for key in row))
@@ -656,7 +788,17 @@ def plot_summary(result: dict[str, Any], label: str, path: Path) -> None:
     curves, box, voxel = result["curves"], result["box"], result["voxel"]
     frequency = np.arange(len(curves["half_maps"])) / (box * voxel)
     ax.plot(frequency, curves["half_maps"], color=c["half1"], linewidth=2, label="half maps (gold standard)")
-    ax.plot(frequency, curves["gt_merged"], color=c["half2"], linewidth=2, label="final map vs ground truth")
+    ax.plot(
+        frequency,
+        curves["gt_merged"],
+        color=c["half2"],
+        linewidth=1.5,
+        linestyle="--",
+        label="final map vs ground truth, as refined",
+    )
+    ax.plot(
+        frequency, curves["gt_merged_aligned"], color=c["half2"], linewidth=2, label="... aligned to the ground truth"
+    )
     for level in (0.143, 0.5):
         ax.axhline(level, color=c["reference"], linewidth=1, linestyle=":")
         ax.text(frequency[-1], level + 0.015, f"{level}", color=c["ink2"], ha="right", va="bottom", fontsize=8)
