@@ -809,6 +809,7 @@ def prepare_resident_half_operands(
         cc_power_weights=kwargs.get("cc_power_weights"),
         nyquist_column_counting=kwargs.get("nyquist_column_counting", "relion"),
         image_translations=kwargs.get("image_translations"),
+        body_prediction=kwargs.get("body_prediction"),
     )
 
     score_indices = jnp.asarray(window_indices, dtype=jnp.int32)

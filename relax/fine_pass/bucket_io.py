@@ -325,6 +325,7 @@ def prepare_unshifted_bucket_operands(
     cc_power_weights=None,
     nyquist_column_counting="relion",
     image_translations=None,
+    body_prediction=None,
 ) -> UnshiftedBucketOperands:
     """Per-image half of :func:`prepare_bucket_io`, statement for statement.
 
@@ -355,6 +356,11 @@ def prepare_unshifted_bucket_operands(
     applies (:func:`half_translation_phase_table`), so every operand below sees the
     translated image; the pass then runs on the one zero translation. RELION ``--skip_align``
     scores each particle at ``old_offset - ROUND(old_offset)`` alone (ml_optimiser.cpp:4684-4720).
+
+    ``body_prediction`` (multi-body only; :class:`relax.multibody.subtraction.BodyImagePrediction`, exclusive with
+    ``image_translations``) returns each image's masked and plain other-body predictions and the phase of its refined
+    offset: the score and reconstruction images become ``(image - prediction) * phase``, in double, cast last. The
+    power spectrum and ``Xi2`` read the image before the subtraction (``processed_power_half``), as RELION does.
     """
 
     optics_group_rows = jnp.ndim(noise_variance_half) == 2 and noise_optics_groups is not None
@@ -476,14 +482,27 @@ def prepare_unshifted_bucket_operands(
         )
     else:
         processed_recon_half_raw = processed_score_half_raw
+    if image_translations is not None and body_prediction is not None:
+        raise ValueError("image_translations (single-particle --skip_align) and body_prediction (multi-body) are exclusive")
     unsubtracted_body_image = None
     if image_translations is not None:
+        phases = half_translation_phase_table(
+            np.asarray(image_translations, dtype=np.float64)[np.asarray(image_indices).reshape(-1)],
+            image_shape,
+            dtype=jnp.float64,
+        ).astype(processed_score_half_raw.dtype)
+        translated_recon = processed_recon_half_raw is not processed_score_half_raw
+        processed_score_half_raw = processed_score_half_raw * phases
+        processed_recon_half_raw = (
+            processed_recon_half_raw * phases if translated_recon else processed_score_half_raw
+        )
+    elif body_prediction is not None:
         # A multi-body image (BodyImagePrediction): RELION takes the power spectrum, then subtracts the other bodies
         # and applies the refined offset in double, and casts to XFLOAT last.
         unsubtracted_body_image = processed_score_half_raw
         output_dtype = processed_score_half_raw.dtype
-        masked_prediction, plain_prediction = image_translations(image_indices)
-        phases = image_translations.phases(image_indices)
+        masked_prediction, plain_prediction = body_prediction(image_indices)
+        phases = body_prediction.phases(image_indices)
         processed_score_half_raw = (
             (processed_score_half_raw.astype(jnp.complex128) - masked_prediction) * phases
         ).astype(output_dtype)
@@ -765,6 +784,7 @@ def prepare_bucket_io(
     cc_power_weights=None,
     nyquist_column_counting="relion",
     image_translations=None,
+    body_prediction=None,
     *,
     finite_check_mode: str,
 ):
@@ -807,6 +827,7 @@ def prepare_bucket_io(
         cc_power_weights=cc_power_weights,
         nyquist_column_counting=nyquist_column_counting,
         image_translations=image_translations,
+        body_prediction=body_prediction,
     )
     (
         image_shape,

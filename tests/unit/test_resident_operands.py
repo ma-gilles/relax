@@ -776,3 +776,55 @@ def test_operand_peak_counts_the_smallest_preparation_batch():
     assert large_peak - small_peak == resident_prepare_reserved_bytes((380, 380)) - resident_prepare_reserved_bytes(
         (64, 64)
     )
+
+
+def _unshifted(case, **extra):
+    kwargs = case["bucket_io_kwargs"]
+    batch, ctf_params = _prepared(case, np.arange(N_IMAGES))[2:4]
+    return prepare_unshifted_bucket_operands(
+        case["dataset"],
+        batch,
+        ctf_params,
+        np.arange(N_IMAGES, dtype=np.int64),
+        noise_variance_half=kwargs["noise_variance_half"],
+        config=kwargs["config"],
+        score_with_masked_images=True,
+        image_corrections=None,
+        scale_corrections=None,
+        image_pre_shifts=None,
+        use_float64_scoring=False,
+        return_direct_scoring_io=True,
+        window_indices=case["window_indices"],
+        finite_check_mode="off",
+        **extra,
+    )
+
+
+def test_image_translations_array_is_a_phase_on_the_preprocessed_images():
+    """``image_translations`` stays the single-particle ``[n_images, 2]`` array (``--skip_align``, given poses).
+
+    The multi-body other-body prediction has its own keyword (``body_prediction``); reusing this one for it broke
+    every array caller (kclass_emptied_class, test_skip_align_image_translations_gpu). Pins: zero translations are
+    the untranslated record, nonzero ones multiply the preprocessed score image by the half translation phase, the
+    power image is the noise image, and the two keywords are exclusive.
+    """
+
+    case = _case(relion_angles=False)
+    base = _unshifted(case)
+    zero = _unshifted(case, image_translations=np.zeros((N_IMAGES, 2)))
+    for name in ("processed_score_half_for_noise", "processed_power_half", "recon_weighted_half"):
+        np.testing.assert_array_equal(np.asarray(getattr(zero, name)), np.asarray(getattr(base, name)), err_msg=name)
+
+    translations = np.random.default_rng(3).uniform(-0.5, 0.5, size=(N_IMAGES, 2))
+    moved = _unshifted(case, image_translations=translations)
+    phases = np.asarray(half_translation_phase_table(translations, case["image_shape"], dtype=jnp.float64))
+    expected = (np.asarray(base.processed_score_half_for_noise) * phases).astype(
+        np.asarray(base.processed_score_half_for_noise).dtype
+    )
+    _assert_matches(moved.processed_score_half_for_noise, expected, "translated noise image")
+    np.testing.assert_array_equal(
+        np.asarray(moved.processed_power_half), np.asarray(moved.processed_score_half_for_noise)
+    )
+
+    with pytest.raises(ValueError, match="exclusive"):
+        _unshifted(case, image_translations=translations, body_prediction=object())

@@ -128,11 +128,11 @@ def _prepare_chunk_score_operands(
             native_corr_img = native_corr_img[:, jnp.asarray(score_window_indices, dtype=jnp.int32)]
         corr_img_score = native_corr_img.astype(corr_img_score.dtype)
         score_input = to_relion_native_fine_units(score_input, int(np.prod(image_shape)))
-    image_translations = bucket_io_kwargs.get("image_translations")
+    body_prediction = bucket_io_kwargs.get("body_prediction")
     highres_xi2_half, _ = relion_powerclass_noise_terms(
         processed_score_half_for_noise,
         image_shape=image_shape,
-        current_size=current_size if image_translations is None else image_translations.current_size,
+        current_size=current_size if body_prediction is None else body_prediction.current_size,
         use_exact_relion_gaussian=True,
         accumulate_noise=False,
         source_faithful_spectrum_norm=source_faithful_spectrum_norm,
