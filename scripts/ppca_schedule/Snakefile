@@ -4,7 +4,7 @@
 #   1. train_ppca     relax ppca_initial_model on the eleven-state fixture with the arm's schedule flags.   [GPU]
 #   2. score_latents  how well the final latents separate the true states (scripts/analyze_ppca_latents.py).
 #   3. plot_run       the standard run figures: latents by true state, volume projections, and the shell gates
-#                     of a VDAM run (the owner's plot_ppca_run.py, config `plot_script`).
+#                     of a VDAM run (scripts/plot_ppca_run.py).
 #   4. plot_umap      UMAP of the final latents coloured by true state (scripts/plot_ppca_umap.py); arms with q >= 2.
 #   5. plot_pose_accuracy  the expected rotation accuracy (acc_rot, acc_rot_mean_only) along the run
 #                     (scripts/plot_ppca_pose_accuracy.py); only arms with --order-rule accuracy, the others make no estimate.
@@ -25,10 +25,15 @@
 #   summary.tsv           the scores of every arm and seed
 #   logs/                 one log per rule, arm and seed
 #
+# Settings: config.yaml holds the experiment (training settings, seeds, arms). The locations that differ between sites
+# (output_root, natives_dir, fixture) are null there; set them in a site file kept outside the repository (copy
+# site.example.yaml) and pass it with --configfile, which overrides config.yaml.
+#
 # Run from a frozen copy of the checkout (the jobs import the code at their start). --directory keeps Snakemake's
-# metadata and the Slurm logs beside the results; the target goes first, because --config takes what follows it:
-#   snakemake --snakefile <snapshot>/scripts/ppca_schedule/Snakefile --directory <dir> --profile slurm all \
-#       --config output_root=<dir> natives_dir=<natives> python=<python>
+# metadata and the Slurm logs beside the results; the target goes first, because --config takes what follows it. The
+# Slurm profile is yours (--profile): the rules ask only for gpu=1 where they need one, and for runtime and memory:
+#   snakemake --snakefile <snapshot>/scripts/ppca_schedule/Snakefile --directory <dir> --profile <profile> all \
+#       --configfile <site.yaml> --config output_root=<dir> [only_arms=[a,b]] [seeds=[11]]
 
 import csv
 import json
@@ -48,19 +53,18 @@ configfile: os.path.join(workflow.basedir, "config.yaml")
 # ----------------------------------------------------------------------------------------------------------------
 
 
-def required_path(key):
-    """A config entry that has no default, as a Path."""
-    if not config.get(key):
-        raise WorkflowError(f"set {key}: --config {key}=<path> (see config.yaml)")
-    return Path(config[key])
+def required_path(settings, key, label=None):
+    """A setting that has no default, as a Path; the error names it ``label`` (default ``key``) and says where to set it."""
+    if not settings.get(key):
+        raise WorkflowError(f"{label or key} is not set: give it in a site file (--configfile; see site.example.yaml) or with --config")
+    return Path(settings[key])
 
 
 REPO = Path(workflow.basedir).resolve().parents[1]
 PYTHON = config["python"] or str(REPO / ".pixi/envs/default/bin/python")
-OUTPUT_ROOT = required_path("output_root")
-NATIVES = required_path("natives_dir")
-FIXTURE = Path(config["fixture"])
-PLOT_SCRIPT = Path(config["plot_script"])
+OUTPUT_ROOT = required_path(config, "output_root")
+NATIVES = required_path(config, "natives_dir")
+FIXTURE = required_path(config, "fixture")
 TRAIN = config["train"]
 ARMS = config["arms"]
 RUN_ARMS = config["only_arms"] or list(ARMS)
@@ -235,7 +239,7 @@ rule plot_run:
         embeddings=rules.train_ppca.output.embeddings,
         iterations=rules.train_ppca.output.iterations,
         truth=FIXTURE / "evaluation" / "truth.npz",
-        script=PLOT_SCRIPT,
+        script=REPO / "scripts" / "plot_ppca_run.py",
     output:
         volumes=output_path("{arm}", "seed{seed}", "plots", "volume_projections.png"),
         latents=output_path("{arm}", "seed{seed}", "plots", "latents_pc_ordered.npz"),
@@ -244,13 +248,11 @@ rule plot_run:
         python=PYTHON,
         n_pcs=lambda wildcards: arm_q(wildcards.arm),
         gates=lambda wildcards: "--gates " if arm_optimizer(wildcards.arm) == "vdam" else "",
-        script_dir=lambda wildcards, input: str(Path(input.script).parent),
         run_dir=lambda wildcards, input: str(Path(input.embeddings).parent),
         plots_dir=lambda wildcards, output: str(Path(output.volumes).parent),
     log:
         output_path("logs", "{arm}.seed{seed}.plot.log"),
     shell:
-        "cd {params.script_dir} && "
         "{params.env} JAX_PLATFORMS=cpu {params.python} {input.script} {params.run_dir} "
         "--labels {input.truth} "
         "--n-pcs {params.n_pcs} "

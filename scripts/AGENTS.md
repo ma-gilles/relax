@@ -13,6 +13,7 @@ The root guide applies. Slurm requests in a script follow the owner's global ins
 | `build_em_fixture_manifest.py` | writes `tests/fixtures/em_fixture_manifest.json`; the owner's instruction only |
 | `run_em_*_slurm.sh`, `run_em_*_slurm.py`, `run_vdam_*.sbatch`, `gpu_matrix/`, `polar/` | Slurm launchers |
 | `prepare_vdam_ppca_fixture.py`, `prepare_vdam_ppca_small_pilot.py`, `prepare_vdam_ppca_star.py`, `ppca_suite_score_star.py`, `lib/ppca_training_star.py` | PPCA training data as RELION particle STARs for `relax ppca_initial_model --i`: simulated fixtures, the converter from a retired `recovar-ppca-training-v1` manifest, and scoring such a run with the curated PPCA suite's `suite_score.py` |
+| `ppca_schedule/` (`Snakefile`, `config.yaml`, `site.example.yaml`), `plot_ppca_run.py`, `plot_ppca_gates.py` | the PPCA ab initio schedule experiments: a Snakemake workflow over arms and seeds and its run figures. No default names a site: output, natives and fixture come from a site file kept outside the repository (`--configfile`; copy `site.example.yaml`) |
 | `lib/` | library modules that only scripts and tests import (moved out of `relax/`, which no command of it reaches); imported as `scripts.lib.<module>` |
 | `run_*`, `analyze_*`, `audit_*`, `validate_*`, `compare_*`, `prepare_*` (about 180 files) | one-off experiment drivers and analyses; most are records of a past question |
 

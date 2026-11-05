@@ -1,0 +1,12 @@
+# The locations of one site, for scripts/ppca_schedule/Snakefile. Copy this file outside the repository, fill in the
+# paths and pass it to Snakemake (it overrides config.yaml):
+#   snakemake --snakefile scripts/ppca_schedule/Snakefile --directory <output_root> --profile <your Slurm profile> all \
+#       --configfile my_site.yaml
+# Absolute paths, on a file system the compute nodes see.
+
+output_root: /path/to/runs                      # new runs, scores and the summary table go here
+natives_dir: /path/to/natives                   # holds librelax_cuda.so built from this checkout: `relax build_cuda --output <dir>/librelax_cuda.so`
+python: null                                    # null: <checkout>/.pixi/envs/default/bin/python
+
+# A simulated fixture with training/particles.star and evaluation/truth.npz (and evaluation/manifest.json)
+fixture: /path/to/ppca_elevenstate_fixture

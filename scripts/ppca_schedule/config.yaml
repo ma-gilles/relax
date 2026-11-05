@@ -1,8 +1,10 @@
-# PPCA schedule experiments: paths, training settings, seeds and arms (read by the Snakefile).
-# Override any value on the command line, e.g. --config output_root=<dir> natives_dir=<dir>.
+# PPCA schedule experiments: training settings, seeds and arms (read by the Snakefile).
+#
+# Nothing here names a user, an account or a cluster directory. Every location is null and is set for your site, in a
+# YAML file kept outside the repository (copy site.example.yaml) and passed with --configfile, or one by one with
+# --config key=value. Any other value can be overridden the same way.
 
-# Directory that receives every run, score and the summary table. Required: it names a scratch directory of one
-# account, so there is no default.
+# Directory that receives every run, score and the summary table. Required.
 output_root: null
 
 # Directory holding librelax_cuda.so built from this checkout (`relax build_cuda --output <dir>/librelax_cuda.so`).
@@ -12,19 +14,14 @@ natives_dir: null
 # Python of a relax pixi environment. null: <checkout>/.pixi/envs/default/bin/python.
 python: null
 
-# The owner's plotting script (latents by true state, volume projections, VDAM gates); it runs on the CPU and reads
-# a run's last checkpoint, embeddings.npz and iterations.jsonl.
-plot_script: /scratch/gpfs/CRYOEM/gilleslab/ry2228/data/ppca_scripts/plot_ppca_run.py
-
-# Curated eleven-state fixture: training/particles.star is what training reads, evaluation/truth.npz holds the
-# labels (evaluation only).
-fixture: /scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/ppca_elevenstate20k_noise1_20261003
+# Curated eleven-state simulated fixture: training/particles.star is what training reads, evaluation/truth.npz holds the
+# labels (evaluation only). Required.
+fixture: null
 particle_diameter_ang: 288
 
 # relax ppca_initial_model settings shared by every arm. `args` is appended before each arm's own flags: the fixed batch
 # of 300 images (150 per pseudo-half) on every update, the search of +-2 px in 1 px steps, no oversampling and a
-# checkpoint every 50 iterations, as in the recipe of /scratch/gpfs/CRYOEM/gilleslab/em_work/ppca_recipe_snapshot_20261030
-# (AGENT_BRIEF.md). The fixture is the eleven-state one: q = 10 is its full state space.
+# checkpoint every 50 iterations, as in the group's PPCA recipe (AGENT_BRIEF.md of its snapshot of 2026-10-30). The fixture is the eleven-state one: q = 10 is its full state space.
 train:
   q: 10
   iterations: 3000
