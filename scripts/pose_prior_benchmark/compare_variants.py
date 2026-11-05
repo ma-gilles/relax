@@ -2,14 +2,17 @@
 """Compare the refinement variants of one pose-prior benchmark scenario side by side.
 
 Each variant is one ``evaluate_run.py`` output directory (``metrics.json``, ``fsc_curves.csv``,
-``fsc_by_iteration.csv`` and ``pose_errors.npz``) of the same
+``fsc_by_iteration.csv``, ``pose_errors.npz`` and ``conical_fsc.npz``) of the same
 dataset. ``variants.csv`` has one row per variant: the prior that scored it, the iterations and final HEALPix order,
 the resolutions and area under the FSC curve against the ground truth and between the half maps, the pose
 direction error, the final learned prior's accuracy and the frame offsets. The ground-truth FSC and the pose error are
 those of the final map and poses aligned to the ground truth's frame (``_aligned``: the map rigidly aligned to the
 truth, the poses turned back by their average offset), with the values as refined beside them (``_as_refined``), so
-runs that start from maps in different frames compare. ``variants.png`` shows the aligned ground-truth FSC curves, the
-FSC area, the distribution of the particles' aligned direction errors, the learned prior's divergence from the true
+runs that start from maps in different frames compare. The conical FSC (cFSC, ``scripts/conical_fsc.py``) adds the cFAR of
+the aligned map against the truth (``gt_cfar_aligned``; the smallest over the largest area under the cones' curves, 1 for
+an isotropic map), the resolution of its worst cone and the half maps' cFAR. ``variants.png`` shows the
+aligned ground-truth FSC curves, the FSC area, the aligned map's cFSC (mean +- 1 SD over the cones) and cFAR (hollow:
+the half maps'), the distribution of the particles' aligned direction errors, the learned prior's divergence from the true
 prior and, per iteration, the half maps' FSC area to the truth (as refined) and to each other and the refinement's
 Fourier radius (so runs that stop at different iterations or orders compare at equal iteration).
 
@@ -39,6 +42,8 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
+from scripts.conical_fsc import ConicalFsc  # noqa: E402
+from scripts.pose_prior_benchmark.conical_fsc_plot import curve_statistics  # noqa: E402
 from scripts.pose_prior_benchmark.evaluate_run import HALVES, PALETTE  # noqa: E402
 
 # One colour per variant in the order given (validated for colour-vision deficiency on the light surface).
@@ -60,6 +65,9 @@ COLUMNS = (
     "gt_fsc_auc_as_refined",
     "half_map_resolution_0.143_A",
     "half_map_fsc_auc",
+    "gt_cfar_aligned",
+    "gt_worst_cone_resolution_0.143_A_aligned",
+    "half_map_cfar",
     "pose_error_median_aligned_deg",
     "pose_error_p90_aligned_deg",
     "pose_error_fraction_over_90_aligned",
@@ -82,6 +90,15 @@ class IterationCurve(NamedTuple):
     radius: np.ndarray
     gt_area: np.ndarray
     half_area: np.ndarray
+
+
+class ConicalCurve(NamedTuple):
+    """The aligned final map's cFSC to the ground truth over the cones: spatial frequency (1/A), mean and SD per
+    shell, NaN in the shells a cone does not measure."""
+
+    frequency: np.ndarray
+    mean: np.ndarray
+    std: np.ndarray
 
 
 class Reconstruction(NamedTuple):
@@ -121,6 +138,9 @@ def half_mean(values: dict[str, dict[str, Any]], key: str) -> float | None:
 def summary_row(variant: str, metrics: dict[str, Any]) -> dict[str, Any]:
     """One variant's row of ``COLUMNS`` from its ``metrics.json``."""
     resolution = metrics["resolution"]
+    if "conical_fsc" not in metrics:
+        raise ValueError(f"{variant}: metrics.json has no conical_fsc; rerun evaluate_run.py on the run")
+    conical = metrics["conical_fsc"]
     pose = metrics["pose_direction_error_aligned_deg"]
     prior = metrics["prior_final"]
     used = metrics["run"]["direction_prior_used"]
@@ -136,6 +156,9 @@ def summary_row(variant: str, metrics: dict[str, Any]) -> dict[str, Any]:
         "gt_fsc_auc_as_refined": resolution["gt_merged"]["auc"],
         "half_map_resolution_0.143_A": resolution["half_maps"]["at_0.143"]["first_A"],
         "half_map_fsc_auc": resolution["half_maps"]["auc"],
+        "gt_cfar_aligned": conical["gt_merged_aligned"]["cfar"],
+        "gt_worst_cone_resolution_0.143_A_aligned": conical["gt_merged_aligned"]["worst_resolution_A"],
+        "half_map_cfar": conical["half_maps"]["cfar"],
         "pose_error_median_aligned_deg": half_mean(pose, "median"),
         "pose_error_p90_aligned_deg": half_mean(pose, "p90"),
         "pose_error_fraction_over_90_aligned": half_mean(pose, "fraction_over_90"),
@@ -156,6 +179,22 @@ def read_gt_curve(evaluation_dir: Path, metrics: dict[str, Any]) -> tuple[np.nda
     shells = np.array([int(row["shell"]) for row in rows], dtype=float)
     fsc = np.array([float(row["gt_merged_aligned"]) for row in rows])
     return shells / (metrics["resolution"]["box"] * metrics["resolution"]["voxel_size_A"]), fsc
+
+
+def read_conical_curve(evaluation_dir: Path, metrics: dict[str, Any]) -> ConicalCurve:
+    """The aligned final map's cFSC to the ground truth from ``conical_fsc.npz``: its mean and SD over the cones
+    in the shells every cone measures."""
+    summary = metrics["conical_fsc"]["gt_merged_aligned"]
+    with np.load(evaluation_dir / "conical_fsc.npz", allow_pickle=False) as archive:
+        cfsc = ConicalFsc(
+            axes=archive["axes"],
+            half_angle_deg=summary["half_angle_deg"],
+            curves=archive["gt_merged_aligned_curves"],
+            voxels=archive["gt_merged_aligned_voxels"],
+        )
+    stats = curve_statistics(cfsc, summary["min_cone_voxels"], summary["first_shell_measured_by_all_cones"])
+    frequency = np.arange(cfsc.curves.shape[1]) / (metrics["resolution"]["box"] * metrics["resolution"]["voxel_size_A"])
+    return ConicalCurve(frequency, stats["mean"], stats["std"])
 
 
 def read_iteration_curve(evaluation_dir: Path) -> IterationCurve:
@@ -321,14 +360,15 @@ def draw_reconstructions(
 def plot_comparison(
     rows: list[dict[str, Any]],
     curves: dict[str, tuple[np.ndarray, np.ndarray]],
+    conical_curves: dict[str, ConicalCurve],
     iteration_curves: dict[str, IterationCurve],
     pose_errors: dict[str, np.ndarray],
     reconstructions: Reconstructions | None,
     label: str,
     path: Path,
 ) -> None:
-    """The comparison figure of ``rows`` (one per variant), their ground-truth FSC ``curves``, their
-    per-iteration half-map FSC areas and Fourier radii (``iteration_curves``), their particles' direction errors
+    """The comparison figure of ``rows`` (one per variant), their ground-truth FSC ``curves``, the mean and SD of
+    their cFSC over the cones (``conical_curves``), their per-iteration half-map FSC areas and Fourier radii (``iteration_curves``), their particles' direction errors
     (``pose_errors``, degrees) and, when given, the relion_reconstruct maps from their poses (``reconstructions``)."""
     import matplotlib
 
@@ -342,7 +382,7 @@ def plot_comparison(
         raise ValueError(f"{len(rows)} variants; the palette is validated for {len(VARIANT_COLORS)}")
     variants = [row["variant"] for row in rows]
     colors = dict(zip(variants, VARIANT_COLORS))
-    n_rows = 2 + (reconstructions is not None)
+    n_rows = 3 + (reconstructions is not None)
     fig = plt.figure(figsize=(11, 4.07 * (n_rows + 1.45)), facecolor=PALETTE["surface"])
     grid = fig.add_gridspec(n_rows + 2, 2, height_ratios=[1] * n_rows + [0.85, 0.6])
     axes = np.array([[fig.add_subplot(grid[row, col]) for col in range(2)] for row in range(n_rows)])
@@ -383,6 +423,40 @@ def plot_comparison(
 
     ax = axes[1, 0]
     style_axes(ax)
+    for variant in variants:
+        cone = conical_curves[variant]
+        ax.fill_between(cone.frequency, cone.mean - cone.std, cone.mean + cone.std, color=colors[variant], alpha=0.18)
+        ax.plot(cone.frequency, cone.mean, color=colors[variant], linewidth=2)
+    for threshold in GT_FSC_THRESHOLDS:
+        ax.axhline(threshold, color=PALETTE["reference"], linewidth=1, linestyle=":")
+    ax.set_title("cFSC to the ground truth, aligned: mean \N{PLUS-MINUS SIGN}1 SD over cones", color=PALETTE["ink"])
+    ax.set_xlabel("spatial frequency (1/A)", color=PALETTE["ink2"])
+    ax.set_ylabel("FSC", color=PALETTE["ink2"])
+
+    ax = axes[1, 1]
+    style_axes(ax)
+    gt_cfar = np.array([row["gt_cfar_aligned"] for row in rows])
+    half_cfar = np.array([row["half_map_cfar"] for row in rows])
+    ax.bar(x, gt_cfar, color=[colors[v] for v in variants], width=0.6)
+    ax.plot(x, half_cfar, "o", markerfacecolor=PALETTE["surface"], markeredgecolor=PALETTE["ink2"], markersize=8)
+    for position, value, half, top in zip(x, gt_cfar, half_cfar, np.maximum(gt_cfar, half_cfar)):
+        ax.annotate(
+            f"{value:.3g}\n({half:.3g})",
+            (position, top),
+            xytext=(0, 9),
+            textcoords="offset points",
+            ha="center",
+            va="bottom",
+            color=PALETTE["ink2"],
+            fontsize=9,
+        )
+    ax.set_xticks(x, labels)
+    ax.set_title("cFAR of the aligned map (hollow, in brackets: of the half maps)", color=PALETTE["ink"])
+    ax.set_ylabel("cFAR", color=PALETTE["ink2"])
+    ax.set_ylim(0, 1.45 * max(gt_cfar.max(), half_cfar.max()))  # cFAR is 1 only for an isotropic map
+
+    ax = axes[2, 0]
+    style_axes(ax)
     densities = {variant: error_density(pose_errors[variant]) for variant in variants}
     half_width = 0.42 / max(density.max() for _, density in densities.values())
     for position, variant in zip(x, variants):
@@ -422,7 +496,7 @@ def plot_comparison(
     ax.set_ylabel("degrees (log scale)", color=PALETTE["ink2"])
 
     bars(
-        axes[1, 1],
+        axes[2, 1],
         "learned_prior_js_bits",
         "Learned prior: divergence from the true prior",
         "JS (bits); fixed runs: estimated, not used",
@@ -430,7 +504,7 @@ def plot_comparison(
     )
 
     if reconstructions is not None:
-        draw_reconstructions(axes[2, 0], axes[2, 1], rows, colors, labels, reconstructions)
+        draw_reconstructions(axes[3, 0], axes[3, 1], rows, colors, labels, reconstructions)
 
     style_axes(trace_ax)
     style_axes(radius_ax)
@@ -463,6 +537,15 @@ def plot_comparison(
         Line2D([], [], color=PALETTE["ink2"], linewidth=2, label="half maps vs ground truth, as refined"),
         Line2D([], [], color=PALETTE["ink2"], linewidth=2, linestyle="--", label="half map vs other half map"),
         Line2D([], [], marker="o", color=PALETTE["ink2"], linestyle="", label="HEALPix order raised"),
+        Line2D(
+            [],
+            [],
+            marker="o",
+            markerfacecolor=PALETTE["surface"],
+            markeredgecolor=PALETTE["ink2"],
+            linestyle="",
+            label="half-map cFAR",
+        ),
         Line2D([], [], marker="o", color=PALETTE["ink2"], linestyle="", label="median error"),
         Line2D(
             [],
@@ -524,6 +607,7 @@ def main(argv: list[str] | None = None) -> None:
     metrics = {variant: json.loads((directory / "metrics.json").read_text()) for variant, directory in runs.items()}
     rows = [summary_row(variant, metrics[variant]) for variant in runs]
     curves = {variant: read_gt_curve(directory, metrics[variant]) for variant, directory in runs.items()}
+    conical_curves = {variant: read_conical_curve(directory, metrics[variant]) for variant, directory in runs.items()}
     iteration_curves = {variant: read_iteration_curve(directory) for variant, directory in runs.items()}
     pose_errors = {variant: read_pose_errors(directory) for variant, directory in runs.items()}
     reconstructions = read_reconstructions(args, list(runs))
@@ -532,12 +616,19 @@ def main(argv: list[str] | None = None) -> None:
     if reconstructions is not None:
         write_table(reconstruction_rows(reconstructions), args.out_dir / "reconstructions.csv", RECONSTRUCTION_COLUMNS)
     plot_comparison(
-        rows, curves, iteration_curves, pose_errors, reconstructions, args.label, args.out_dir / "variants.png"
+        rows,
+        curves,
+        conical_curves,
+        iteration_curves,
+        pose_errors,
+        reconstructions,
+        args.label,
+        args.out_dir / "variants.png",
     )
     for row in rows:
         print(
             f"{row['variant']}: {row['direction_prior']} prior, {row['iterations']} iterations, "
-            f"aligned GT-FSC area {row['gt_fsc_auc_aligned']:.3f}, "
+            f"aligned GT-FSC area {row['gt_fsc_auc_aligned']:.3f}, aligned cFAR {row['gt_cfar_aligned']:.3f}, "
             f"aligned median pose error {row['pose_error_median_aligned_deg']:.2f} deg"
         )
 

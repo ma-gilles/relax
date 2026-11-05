@@ -19,8 +19,10 @@ from relax.diagnostics.gt_registration import apply_rigid_volume_transform
 from relax.io.map_io import require_relion_convention_reference
 from relax.parity.fixed_direction_prior import PROVENANCE_FILE, FixedDirectionPrior
 from relax.sampling.healpix import n_pixels, pixel_rot_tilt
+from scripts.conical_fsc import ConicalFsc, cone_axes, conical_fsc, conical_fsc_summary
 from scripts.pose_prior_benchmark import align_to_truth as al
 from scripts.pose_prior_benchmark import compare_variants as cmp
+from scripts.pose_prior_benchmark import conical_fsc_plot as cfp
 from scripts.pose_prior_benchmark import evaluate_run as ev
 from scripts.pose_prior_benchmark import initial_model as im
 from scripts.pose_prior_benchmark import reconstruct_with_poses as rwp
@@ -265,9 +267,32 @@ def test_direction_prior_used_is_read_from_the_sidecar_relax_writes(tmp_path):
     assert ev.read_direction_prior_used(tmp_path) == {"source": "fixed", **record}
 
 
-def _evaluation(tmp_path, name, *, source, auc, median, js_skill):
-    """A minimal evaluate_run output directory: the metrics, FSC curves and pose errors the comparison reads. The
-    aligned FSC area is ``auc`` and the aligned pose error ``median``; as refined they are 0.05 lower and 0.5 higher."""
+# Three cones of a box-8 map (shells 0 to 2, 500 voxels each): the half maps' and the truth pair's cFSC curves.
+_HALF_MAP_CONE_CURVES = np.array([[np.nan, 0.9, 0.9], [np.nan, 0.9, 0.7], [np.nan, 0.9, 0.5]])
+_GT_CONE_CURVES = np.array([[np.nan, 0.9, 0.8], [np.nan, 0.9, 0.6], [np.nan, 0.8, 0.3]])
+
+
+def _write_conical_fsc(directory):
+    """The cFSC summaries ``metrics.json`` holds and the ``conical_fsc.npz`` evaluate_run writes, for the curves
+    above; returns the summaries."""
+    axes = cone_axes(3)
+    cfscs = {
+        name: ConicalFsc(axes, 20.0, curves, np.full((3, 3), 500))
+        for name, curves in (("half_maps", _HALF_MAP_CONE_CURVES), ("gt_merged_aligned", _GT_CONE_CURVES))
+    }
+    np.savez(
+        directory / "conical_fsc.npz",
+        axes=axes,
+        **{f"{name}_curves": cfsc.curves for name, cfsc in cfscs.items()},
+        **{f"{name}_voxels": cfsc.voxels for name, cfsc in cfscs.items()},
+    )
+    return {name: conical_fsc_summary(cfsc, voxel=2.0, box=8) for name, cfsc in cfscs.items()}
+
+
+def _evaluation(tmp_path, name, *, source, auc, median, js_skill, with_conical=True):
+    """A minimal evaluate_run output directory: the metrics, FSC curves, pose errors and cFSC the comparison reads.
+    The aligned FSC area is ``auc`` and the aligned pose error ``median``; as refined they are 0.05 lower and 0.5
+    higher."""
     directory = tmp_path / name
     directory.mkdir()
     pose = {"p90": 3 * median, "fraction_over_90": 0.01}
@@ -294,6 +319,8 @@ def _evaluation(tmp_path, name, *, source, auc, median, js_skill):
         "pose_frame_offset": {"angle_deg": 0.45},
         "prior_final": {"half1": {"js_bits": 0.1, "js_skill": js_skill}, "half2": {"js_bits": 0.3, "js_skill": None}},
     }
+    if with_conical:
+        metrics["conical_fsc"] = _write_conical_fsc(directory)
     (directory / "metrics.json").write_text(json.dumps(metrics))
     with open(directory / "fsc_curves.csv", "w", newline="") as handle:
         writer = csv.writer(handle)
@@ -333,6 +360,13 @@ def test_variants_are_compared_in_a_table_and_a_figure(tmp_path):
         [float(rows["learned"][k]) for k in ("pose_offset_deg", "map_offset_deg", "map_shift_A")], [0.45, 0.35, 0.1]
     )
     assert_matches(float(rows["learned"]["learned_prior_js_bits"]), 0.2)
+    # cFAR: the cone that crosses 0.143 never has the largest area; the smallest cone's curve ends at 0.3
+    weights = 4.0 * math.pi * np.arange(3) ** 2
+    gt_area = [weights[1:] @ np.nan_to_num(curve[1:]) for curve in _GT_CONE_CURVES]
+    half_area = [weights[1:] @ np.nan_to_num(curve[1:]) for curve in _HALF_MAP_CONE_CURVES]
+    assert_matches(float(rows["learned"]["gt_cfar_aligned"]), min(gt_area) / max(gt_area))
+    assert_matches(float(rows["learned"]["half_map_cfar"]), min(half_area) / max(half_area))
+    assert rows["learned"]["gt_worst_cone_resolution_0.143_A_aligned"] == ""  # no cone crosses 0.143
     assert rows["learned"]["gt_resolution_0.5_A_aligned"] == ""  # the aligned curve never crossed
     assert_matches(float(rows["learned"]["gt_resolution_0.143_A_aligned"]), 6.0)
     assert rows["learned"]["learned_prior_js_skill"] == ""  # one half has no skill (a uniform truth)
@@ -346,6 +380,21 @@ def test_variants_are_compared_in_a_table_and_a_figure(tmp_path):
     frequency, fsc = cmp.read_gt_curve(learned, json.loads((learned / "metrics.json").read_text()))
     assert_matches(frequency, np.arange(5) / (8 * 2.0))
     assert_matches(fsc, [1.0, 0.9, 0.7, 0.4, 0.1])  # the aligned curve; the as-refined one is 0.9 times it
+
+
+def test_the_cone_curve_of_a_variant_is_the_mean_and_sd_over_its_cones(tmp_path):
+    directory = _evaluation(tmp_path, "learned", source="learned", auc=0.8, median=2.0, js_skill=0.9)
+    curve = cmp.read_conical_curve(directory, json.loads((directory / "metrics.json").read_text()))
+    assert_matches(curve.frequency, np.arange(3) / (8 * 2.0))
+    assert_matches(curve.mean[1:], _GT_CONE_CURVES[:, 1:].mean(axis=0))
+    assert_matches(curve.std[1:], _GT_CONE_CURVES[:, 1:].std(axis=0))
+    assert np.isnan(curve.mean[0]) and np.isnan(curve.std[0])  # shell 0 is in no cone
+
+
+def test_a_variant_evaluated_before_the_conical_fsc_is_refused_not_compared_without_it(tmp_path):
+    old = _evaluation(tmp_path, "old", source="learned", auc=0.8, median=2.0, js_skill=0.9, with_conical=False)
+    with pytest.raises(ValueError, match="old: metrics.json has no conical_fsc; rerun evaluate_run.py"):
+        cmp.main(["--runs", f"old={old}", "--out-dir", str(tmp_path / "out"), "--label", "test"])
 
 
 def test_aligned_pose_errors_of_both_halves_are_read_in_order(tmp_path):
@@ -425,6 +474,10 @@ def test_iteration_table_is_written_with_empty_cells_for_a_crossing_that_never_h
         "rows": [{"iteration": 1, "half": 1}],
         "iteration_rows": rows,
         "curves": {"half_maps": np.ones(3)},
+        "conical_fsc": {
+            "half_maps": ConicalFsc(cone_axes(2), 20.0, np.full((2, 3), 0.5), np.full((2, 3), 7)),
+            "gt_merged_aligned": ConicalFsc(cone_axes(2), 20.0, np.full((2, 3), 0.25), np.full((2, 3), 9)),
+        },
         "pose_errors": {1: np.array([0.5, 3.0]), 2: np.array([170.0])},
         "aligned_pose_errors": {1: np.array([0.4, 2.5]), 2: np.array([169.0])},
         "box": 4,
@@ -436,6 +489,18 @@ def test_iteration_table_is_written_with_empty_cells_for_a_crossing_that_never_h
         assert_matches(archive["half2"], np.array([170.0]))
         assert_matches(archive["aligned_half1"], np.array([0.4, 2.5]))
         assert_matches(archive["aligned_half2"], np.array([169.0]))
+    with np.load(tmp_path / "conical_fsc.npz") as archive:
+        assert sorted(archive.files) == [
+            "axes",
+            "gt_merged_aligned_curves",
+            "gt_merged_aligned_voxels",
+            "half_maps_curves",
+            "half_maps_voxels",
+        ]
+        assert_matches(archive["axes"], cone_axes(2))
+        assert_matches(archive["half_maps_curves"], np.full((2, 3), 0.5))
+        assert_matches(archive["gt_merged_aligned_curves"], np.full((2, 3), 0.25))
+        assert archive["gt_merged_aligned_voxels"].tolist() == [[9, 9, 9]] * 2
     with open(tmp_path / "fsc_by_iteration.csv", newline="") as handle:
         written = list(csv.DictReader(handle))
     assert [r["half_map_resolution_0.143_A"] for r in written] == ["12.0", ""]
@@ -678,6 +743,104 @@ def test_the_run_maps_are_aligned_to_the_truth_by_the_merged_maps_transform():
     assert curves["gt_merged"][inside_band].min() < 0.999
     for name in ev.RUN_MAP_NAMES:
         assert f"gt_{name}_aligned" in report
+
+
+def _maps_missing_a_cone_about_z(n: int, seed: int) -> dict[str, np.ndarray]:
+    """Run maps that share their signal with the truth everywhere but in the double cone of half-angle 30 degrees
+    about z (a polar cap of views), with independent noise per half and a little in the truth."""
+    rng = np.random.default_rng(seed)
+    freqs = np.fft.fftfreq(n) * n
+    kx, ky, kz = np.meshgrid(freqs, freqs, freqs, indexing="ij")
+    keep = np.abs(kz) < np.sqrt(kx**2 + ky**2 + kz**2) * math.cos(math.radians(30.0))
+    signal = np.fft.ifftn(np.fft.fftn(rng.standard_normal((n, n, n))) * keep).real
+    half1 = signal + 0.5 * rng.standard_normal((n, n, n))
+    half2 = signal + 0.5 * rng.standard_normal((n, n, n))
+    return {
+        "gt": signal + 0.2 * rng.standard_normal((n, n, n)),
+        "half1": half1,
+        "half2": half2,
+        "merged": (half1 + half2) / 2,
+    }
+
+
+def test_conical_fsc_metrics_find_the_missing_cone_of_both_pairs():
+    maps = _maps_missing_a_cone_about_z(48, seed=1)
+    aligned = {name: maps[name] for name in ev.RUN_MAP_NAMES}
+    metrics, cfscs = ev.conical_fsc_metrics(maps, aligned, voxel=2.0, box=48, half_angle_deg=20.0, n_axes=60)
+    assert set(metrics) == set(cfscs) == {"half_maps", "gt_merged_aligned"}
+    for name, summary in metrics.items():
+        assert summary["n_axes"] == 60 and summary["half_angle_deg"] == 20.0
+        assert summary["cfar"] < 0.1, name  # measured: 0.008 (half maps) and 0 (truth pair)
+        assert summary["min_axis"]["tilt_deg"] < 30.0, name
+        assert summary["max_axis"]["tilt_deg"] > 50.0, name
+        assert cfscs[name].curves.shape == (60, 48 // 2 - 1)
+    axes = cone_axes(60)
+    for name, (lhs, rhs) in {
+        "half_maps": (maps["half1"], maps["half2"]),
+        "gt_merged_aligned": (aligned["merged"], maps["gt"]),
+    }.items():
+        assert_matches(cfscs[name].curves, conical_fsc(lhs, rhs, axes, 20.0).curves)
+
+
+def test_conical_fsc_metrics_score_the_aligned_merged_map_not_the_refined_one():
+    maps = _maps_missing_a_cone_about_z(48, seed=2)
+    aligned = {name: maps[name] for name in ev.RUN_MAP_NAMES}
+    aligned["merged"] = np.random.default_rng(9).standard_normal(maps["gt"].shape)  # unrelated to the truth
+    metrics, cfscs = ev.conical_fsc_metrics(maps, aligned, voxel=2.0, box=48, half_angle_deg=20.0, n_axes=20)
+    refined = ev.conical_fsc_metrics(maps, {name: maps[name] for name in ev.RUN_MAP_NAMES}, 2.0, 48, 20.0, 20)[1]
+    # the half-map pair does not move with the alignment; the truth pair follows the aligned map
+    assert_matches(cfscs["half_maps"].curves, refined["half_maps"].curves)
+    assert np.nanmax(np.abs(cfscs["gt_merged_aligned"].curves - refined["gt_merged_aligned"].curves)) > 0.3
+
+
+def test_the_heatmap_cell_takes_its_nearest_axis_up_to_the_opposite_direction():
+    cfsc = ConicalFsc(
+        axes=np.array([[0.0, 0.0, 1.0], [1.0, 0.0, 0.0]]),
+        half_angle_deg=20.0,
+        curves=np.zeros((2, 4)),
+        voxels=np.zeros((2, 4), dtype=int),
+    )
+    rot_edges, tilt_edges, values = cfp.relative_wauc_map(cfsc, np.array([0.5, 1.0]), step_deg=1.0)
+    assert values.shape == (90, 360)
+
+    def rot_cell(rot: float) -> int:
+        """The column of the cell holding ``rot``."""
+        return int(np.floor(rot - rot_edges[0]))
+
+    assert_matches(values[0, rot_cell(30.0)], 0.5)  # tilt 0.5 deg: the z axis
+    assert_matches(values[89, rot_cell(0.5)], 1.0)  # tilt 89.5 deg, rot 0.5: the x axis
+    assert_matches(values[89, rot_cell(-179.5)], 1.0)  # rot -179.5: the opposite of x, the same cone
+
+
+def test_curve_statistics_average_only_shells_every_cone_measures():
+    cfsc = ConicalFsc(
+        axes=np.array([[0.0, 0.0, 1.0], [1.0, 0.0, 0.0]]),
+        half_angle_deg=20.0,
+        curves=np.array([[np.nan, 0.9, 0.8, 0.7], [np.nan, 0.1, 0.4, 0.5]]),
+        voxels=np.array([[0, 300, 300, 300], [0, 50, 300, 300]]),
+    )
+    stats = cfp.curve_statistics(cfsc, min_voxels=100, first_shell=2)
+    assert np.all(np.isnan([stats[key][0:2] for key in stats]))  # shell 1 is below first_shell
+    assert_matches(stats["mean"][2:], np.array([0.6, 0.6]))
+    assert_matches(stats["std"][2:], np.array([0.2, 0.1]))
+    assert_matches(stats["min"][2:], np.array([0.4, 0.5]))
+    assert_matches(stats["max"][2:], np.array([0.8, 0.7]))
+
+
+def test_the_conical_figure_is_written_for_both_pairs(tmp_path):
+    maps = _maps_missing_a_cone_about_z(48, seed=3)
+    aligned = {name: maps[name] for name in ev.RUN_MAP_NAMES}
+    metrics, cfscs = ev.conical_fsc_metrics(maps, aligned, voxel=2.0, box=48, half_angle_deg=20.0, n_axes=30)
+    curves = {
+        "half_maps": ev.shell_fsc(maps["half1"], maps["half2"]),
+        "gt_merged_aligned": ev.shell_fsc(maps["merged"], maps["gt"]),
+    }
+    result = {"conical_fsc": cfscs, "curves": curves, "metrics": {"conical_fsc": metrics}}
+    pairs = ev.conical_figure_pairs(result)
+    assert list(pairs) == ["half maps", "final map vs ground truth, aligned"]
+    path = tmp_path / "conical_fsc.png"
+    cfp.plot_conical_fsc(pairs, 2.0, 48, "demo", ev.PALETTE, path)
+    assert path.stat().st_size > 10_000
 
 
 def test_crop_images_keeps_pixel_values_and_scales_white_noise_variance_by_the_retained_energy():

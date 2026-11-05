@@ -22,7 +22,10 @@
 #                        iteration's learned direction prior against the true viewing directions. The final
 #                        map is scored to the ground truth as refined and rigidly aligned to it, the poses'
 #                        direction error as refined and after removing their average offset (align_to_truth.py),
-#                        so runs started from maps in slightly different frames compare.
+#                        so runs started from maps in slightly different frames compare. The conical FSC
+#                        (scripts/conical_fsc.py; config `conical_fsc`) of the half maps and of the aligned
+#                        final map against the truth gives each run's cFAR, how unequally its cones
+#                        correlate (1: isotropic), and its cone curves and heatmap.
 #   5. plot_*_angles     angdist plots of the true angles and of the final estimated poses.
 #   6. reconstruct_*     relion_reconstruct with the final estimated poses of each variant (with their origins, or
 #                        the angles alone) and with the true poses; each map's FSC to the ground truth shows what
@@ -38,7 +41,8 @@
 #   <scenario>/<variant>/            fixed_direction_prior.npy (fixed-prior variants)
 #   <scenario>/<variant>/refine/     run_itNNN_* files, final_merged.mrc, final_half{1,2}_unfil.mrc
 #   <scenario>/<variant>/evaluation/ metrics.json, prior_by_iteration.csv, fsc_by_iteration.csv, fsc_curves.csv,
-#                                    pose_errors.npz, summary.png, angdist_estimated.png
+#                                    pose_errors.npz, conical_fsc.npz, summary.png, conical_fsc.png,
+#                                    angdist_estimated.png
 #   <scenario>/<variant>/reconstruction_{estimated,angles}/  reconstruction.mrc, metrics.json, fsc_curve.csv
 #   <scenario>/true_poses/           the same for the true poses
 #   <scenario>/comparison/           variants.csv, reconstructions.csv, variants.png
@@ -87,6 +91,7 @@ VARIANTS = config["variants"]
 FIXED_PRIOR_KINDS = ("truth", "uniform", "kent")
 INIT_KINDS = ("ground_truth", "abinitio")
 INITIAL_MODEL = config["initial_model"]
+CONICAL_FSC = config["conical_fsc"]
 INITIAL_MODEL_MAP = f"run_it{INITIAL_MODEL['nr_iter']:03d}_class001.mrc"
 INITIAL_MODEL_STACK = f"particles.{INITIAL_MODEL['box']}.mrcs"
 SIMULATE_SCRIPT = str(BENCHMARK_DIR / "simulate_dataset.py")
@@ -95,6 +100,8 @@ EVALUATE_SCRIPT = str(BENCHMARK_DIR / "evaluate_run.py")
 COMPARE_SCRIPT = str(BENCHMARK_DIR / "compare_variants.py")
 RECONSTRUCT_SCRIPT = str(BENCHMARK_DIR / "reconstruct_with_poses.py")
 ALIGN_SCRIPT = str(BENCHMARK_DIR / "align_to_truth.py")
+CONICAL_FSC_SCRIPT = str(REPO / "scripts" / "conical_fsc.py")
+CONICAL_FSC_PLOT_SCRIPT = str(BENCHMARK_DIR / "conical_fsc_plot.py")
 INITIAL_MODEL_SCRIPT = str(BENCHMARK_DIR / "initial_model.py")
 RELION_MODULE = config["relion_module"]
 
@@ -468,7 +475,7 @@ rule refine_k1:
 
 rule evaluate_run:
     message:
-        "Evaluating {wildcards.scenario}/{wildcards.variant}: resolution and direction-prior accuracy"
+        "Evaluating {wildcards.scenario}/{wildcards.variant}: resolution, conical FSC and direction-prior accuracy"
     input:
         particles_star=dataset_file("particles.star"),
         reference_gt=dataset_file("reference_gt_relion.mrc"),
@@ -477,19 +484,25 @@ rule evaluate_run:
         final_half2=rules.refine_k1.output.final_half2,
         script=EVALUATE_SCRIPT,
         align_script=ALIGN_SCRIPT,
+        conical_fsc_script=CONICAL_FSC_SCRIPT,
+        conical_fsc_plot_script=CONICAL_FSC_PLOT_SCRIPT,
     output:
         metrics=output_path("{scenario}", "{variant}", "evaluation", "metrics.json"),
         prior_by_iteration=output_path("{scenario}", "{variant}", "evaluation", "prior_by_iteration.csv"),
         fsc_by_iteration=output_path("{scenario}", "{variant}", "evaluation", "fsc_by_iteration.csv"),
         fsc_curves=output_path("{scenario}", "{variant}", "evaluation", "fsc_curves.csv"),
         pose_errors=output_path("{scenario}", "{variant}", "evaluation", "pose_errors.npz"),
+        conical_fsc=output_path("{scenario}", "{variant}", "evaluation", "conical_fsc.npz"),
         summary_figure=output_path("{scenario}", "{variant}", "evaluation", "summary.png"),
+        conical_fsc_figure=output_path("{scenario}", "{variant}", "evaluation", "conical_fsc.png"),
     params:
         env=CLEAN_ENV,
         python=PYTHON,
         dataset_dir=lambda wildcards, input: str(Path(input.particles_star).parent),
         run_dir=lambda wildcards, input: str(Path(input.final_merged).parent),
         out_dir=lambda wildcards, output: str(Path(output.metrics).parent),
+        cone_half_angle=CONICAL_FSC["half_angle_deg"],
+        n_cone_axes=CONICAL_FSC["n_axes"],
     resources:
         mem="24G",
         runtime=120,
@@ -500,6 +513,8 @@ rule evaluate_run:
         "--dataset-dir {params.dataset_dir} "
         "--run-dir {params.run_dir} "
         "--out-dir {params.out_dir} "
+        "--cone-half-angle-deg {params.cone_half_angle} "
+        "--n-cone-axes {params.n_cone_axes} "
         "--label {wildcards.scenario}/{wildcards.variant} "
         "> {log} 2>&1"
 
@@ -634,6 +649,9 @@ rule compare_variants:
         ],
         pose_errors=lambda wildcards: [
             output_path(wildcards.scenario, v, "evaluation", "pose_errors.npz") for v in SCENARIOS[wildcards.scenario]["variants"]
+        ],
+        conical_fsc=lambda wildcards: [
+            output_path(wildcards.scenario, v, "evaluation", "conical_fsc.npz") for v in SCENARIOS[wildcards.scenario]["variants"]
         ],
         reconstruction_metrics=lambda wildcards: reconstruction_files(wildcards.scenario, "metrics.json"),
         reconstruction_fsc_curves=lambda wildcards: reconstruction_files(wildcards.scenario, "fsc_curve.csv"),

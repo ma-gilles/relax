@@ -56,6 +56,13 @@ initial_model:
   seed: 1                      # --random-seed
   extra_args: []               # appended verbatim to the relax initial_model command
 
+# Conical FSC of every evaluated run (scripts/conical_fsc.py): the FSC inside cones of `half_angle_deg` along `n_axes`
+# axes spread over the hemisphere, for the half maps and for the final map against the ground truth. cFAR, the
+# smallest over the largest area under the cones' curves, is 1 for an isotropic map.
+conical_fsc:
+  half_angle_deg: 20.0
+  n_axes: 100                  # neighbouring axes are about 14 deg apart
+
 # Scenarios the default target runs; any other scenario below is run by requesting its output, e.g.
 # <output_root>/kent_cap_abinitio/comparison/variants.png, or by listing it here in an override file. The default run
 # starts from the ground truth only: the scenario that starts from an ab-initio map is a separate, explicit run.

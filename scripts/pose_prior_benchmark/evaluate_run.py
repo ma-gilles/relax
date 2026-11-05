@@ -9,6 +9,15 @@ Resolution (unmasked FSC; resolution = box * voxel / first shell below the thres
     half maps' FSC to each other and the Fourier radius the iteration ran with, so runs that stop at different
     iterations or orders compare at equal iteration.
 
+Conical FSC (``scripts/conical_fsc.py``, which cites its sources): the FSC inside cones of half-angle
+``--cone-half-angle-deg`` along ``--n-cone-axes`` axes spread over the hemisphere, for the two half maps (as refined) and
+for the final merged map against the truth (aligned). ``metrics.json`` ``conical_fsc.{half_maps,gt_merged_aligned}``
+holds each pair's cFAR (the smallest over the largest area under the cone curves: 1 for an isotropic map),
+the axes of the smallest and largest area and the crossing resolutions of the best and worst cone;
+``conical_fsc.npz`` holds every cone's curve and voxel counts and ``conical_fsc.png`` the mean +- SD curves and the
+heatmap of the areas over the cone axis. A cone axis is a direction in Fourier space in the frame of the maps (RELION's),
+not a viewing direction.
+
 Direction-prior accuracy: ``run_itNNN_half{1,2}_model.star`` holds each half set's learned direction prior
 (``model_pdf_orient_class_1``, one probability per HEALPix direction at that iteration's order). Its target is
 the population distribution of the true viewing directions at the same order, computed in closed form from the
@@ -39,7 +48,8 @@ Run::
 
 ``OUT`` receives ``metrics.json``, ``prior_by_iteration.csv``, ``fsc_by_iteration.csv``, ``fsc_curves.csv``,
 ``pose_errors.npz`` (every particle's final direction error, degrees, one array per half set as ``half1``, ``half2``
-and aligned as ``aligned_half1``, ``aligned_half2``) and ``summary.png`` (the FSC curves and every learned-prior
+and aligned as ``aligned_half1``, ``aligned_half2``), ``conical_fsc.npz`` (``axes``, and per pair ``<pair>_curves`` and
+``<pair>_voxels``, one row per cone), ``conical_fsc.png`` and ``summary.png`` (the FSC curves and every learned-prior
 metric per iteration). The orientation-distribution plots are made by the Snakefile
 with ``angdist``.
 """
@@ -63,6 +73,15 @@ sys.path.insert(0, str(ROOT))
 
 from relax.sampling.orientation_priors import infer_direction_prior_healpix_order  # noqa: E402
 from relax.star.blocks import read_star_blocks  # noqa: E402
+from scripts.conical_fsc import (  # noqa: E402
+    FSC_THRESHOLD,
+    HALF_ANGLE_DEG,
+    N_AXES,
+    ConicalFsc,
+    cone_axes,
+    conical_fsc,
+    conical_fsc_summary,
+)
 from scripts.fsc_metrics import centered_corr, first_shell_below, normalized_fsc_auc, shell_fsc  # noqa: E402
 from scripts.masked_fsc import first_sustained_below  # noqa: E402
 from scripts.pose_prior_benchmark.align_to_truth import (  # noqa: E402
@@ -71,6 +90,7 @@ from scripts.pose_prior_benchmark.align_to_truth import (  # noqa: E402
     inverse_fit,
     rotation_angle_deg,
 )
+from scripts.pose_prior_benchmark.conical_fsc_plot import plot_conical_fsc  # noqa: E402
 from scripts.pose_prior_benchmark.true_prior import population_prior  # noqa: E402
 
 HALF_FSC_THRESHOLD = 0.143
@@ -498,6 +518,41 @@ def resolution_metrics(
     return report, curves
 
 
+def conical_fsc_metrics(
+    maps: dict[str, np.ndarray],
+    aligned: dict[str, np.ndarray],
+    voxel: float,
+    box: int,
+    half_angle_deg: float = HALF_ANGLE_DEG,
+    n_axes: int = N_AXES,
+) -> tuple[dict[str, dict[str, Any]], dict[str, ConicalFsc]]:
+    """The cFSC of the half maps against each other (as refined) and of the final merged map against the truth
+    (``aligned``, in the truth's frame), with each pair's summary at the 0.143 threshold of cFAR.
+
+    The keys are ``half_maps`` and ``gt_merged_aligned``, as in ``resolution_metrics``.
+    """
+    axes = cone_axes(n_axes)
+    pairs = {
+        "half_maps": (maps["half1"], maps["half2"]),
+        "gt_merged_aligned": (aligned["merged"], maps["gt"]),
+    }
+    cfscs = {name: conical_fsc(a, b, axes, half_angle_deg) for name, (a, b) in pairs.items()}
+    return {name: conical_fsc_summary(cfsc, voxel, box, FSC_THRESHOLD) for name, cfsc in cfscs.items()}, cfscs
+
+
+def conical_figure_pairs(result: dict[str, Any]) -> dict[str, tuple]:
+    """``plot_conical_fsc``'s input from an ``evaluate`` result: per pair its cFSC, global FSC, summary and the
+    thresholds drawn."""
+    titles = {
+        "half_maps": ("half maps", (HALF_FSC_THRESHOLD,)),
+        "gt_merged_aligned": ("final map vs ground truth, aligned", GT_FSC_THRESHOLDS),
+    }
+    return {
+        title: (result["conical_fsc"][name], result["curves"][name], result["metrics"]["conical_fsc"][name], levels)
+        for name, (title, levels) in titles.items()
+    }
+
+
 def require_unseeded_run(run_dir: Path) -> str:
     """Return the pose source the run recorded; refuse a run that started from the input STAR's poses.
 
@@ -551,7 +606,9 @@ def reported_resolution(run_dir: Path, iteration: int) -> dict[str, float]:
 # ---------------------------------------------------------------------------------------------------------------
 
 
-def evaluate(dataset_dir: Path, run_dir: Path) -> dict[str, Any]:
+def evaluate(
+    dataset_dir: Path, run_dir: Path, cone_half_angle_deg: float = HALF_ANGLE_DEG, n_cone_axes: int = N_AXES
+) -> dict[str, Any]:
     """Evaluate one run; returns the metrics plus the arrays the figure and the CSV files need."""
     pose_source = require_unseeded_run(run_dir)
     voxel, box = read_dataset_geometry(dataset_dir)
@@ -568,6 +625,7 @@ def evaluate(dataset_dir: Path, run_dir: Path) -> dict[str, Any]:
     aligned_maps, alignment, round_trip = align_run_maps(maps, voxel, box)
     resolution, curves = resolution_metrics(maps, aligned_maps, voxel, box)
     curves["interpolation_round_trip"] = round_trip
+    conical, cfscs = conical_fsc_metrics(maps, aligned_maps, voxel, box, cone_half_angle_deg, n_cone_axes)
     orders = {r["iteration"]: r["healpix_order"] for r in rows if r["half"] == 1 and r["prior_available"]}
     iteration_rows = fsc_by_iteration(
         maps["gt"],
@@ -601,6 +659,7 @@ def evaluate(dataset_dir: Path, run_dir: Path) -> dict[str, Any]:
         },
         "truth": truth_nonuniformity(poses, halves, order),
         "resolution": {**resolution, "alignment": alignment, "reported": reported_resolution(run_dir, final)},
+        "conical_fsc": conical,
         "prior_final": {
             f"half{r['half']}": {k: v for k, v in r.items() if k not in ("iteration", "half", "prior_available")}
             for r in final_rows
@@ -626,6 +685,7 @@ def evaluate(dataset_dir: Path, run_dir: Path) -> dict[str, Any]:
         "rows": rows,
         "iteration_rows": iteration_rows,
         "curves": curves,
+        "conical_fsc": cfscs,
         "pose_errors": errors,
         "aligned_pose_errors": aligned_errors,
         "voxel": voxel,
@@ -647,13 +707,20 @@ def jsonable(value: Any) -> Any:
 
 
 def write_tables(result: dict[str, Any], out_dir: Path) -> None:
-    """Write ``metrics.json``, ``prior_by_iteration.csv``, ``fsc_by_iteration.csv``, ``fsc_curves.csv`` and
-    ``pose_errors.npz``."""
+    """Write ``metrics.json``, ``prior_by_iteration.csv``, ``fsc_by_iteration.csv``, ``fsc_curves.csv``,
+    ``pose_errors.npz`` and ``conical_fsc.npz``."""
     (out_dir / "metrics.json").write_text(json.dumps(jsonable(result["metrics"]), indent=2) + "\n")
     np.savez_compressed(
         out_dir / "pose_errors.npz",
         **{f"half{half}": e.astype(np.float32) for half, e in result["pose_errors"].items()},
         **{f"aligned_half{half}": e.astype(np.float32) for half, e in result["aligned_pose_errors"].items()},
+    )
+    cfscs = result["conical_fsc"]
+    np.savez_compressed(
+        out_dir / "conical_fsc.npz",
+        axes=next(iter(cfscs.values())).axes,
+        **{f"{name}_curves": cfsc.curves for name, cfsc in cfscs.items()},
+        **{f"{name}_voxels": cfsc.voxels for name, cfsc in cfscs.items()},
     )
     rows = result["rows"]
     columns = list(dict.fromkeys(key for row in rows for key in row))
@@ -865,6 +932,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--run-dir", type=Path, required=True, help="relax refine output directory")
     parser.add_argument("--out-dir", type=Path, required=True)
     parser.add_argument("--label", default=None, help="figure title (default: the run directory)")
+    parser.add_argument(
+        "--cone-half-angle-deg", type=float, default=HALF_ANGLE_DEG, help="half-angle of the conical FSC's cones"
+    )
+    parser.add_argument("--n-cone-axes", type=int, default=N_AXES, help="number of cone axes over the hemisphere")
     return parser.parse_args(argv)
 
 
@@ -872,9 +943,13 @@ def main(argv: list[str] | None = None) -> None:
     """Command-line entry point."""
     args = parse_args(argv)
     args.out_dir.mkdir(parents=True, exist_ok=True)
-    result = evaluate(args.dataset_dir, args.run_dir)
+    result = evaluate(args.dataset_dir, args.run_dir, args.cone_half_angle_deg, args.n_cone_axes)
     write_tables(result, args.out_dir)
-    plot_summary(result, args.label or str(args.run_dir), args.out_dir / "summary.png")
+    label = args.label or str(args.run_dir)
+    plot_summary(result, label, args.out_dir / "summary.png")
+    plot_conical_fsc(
+        conical_figure_pairs(result), result["voxel"], result["box"], label, PALETTE, args.out_dir / "conical_fsc.png"
+    )
 
 
 if __name__ == "__main__":
