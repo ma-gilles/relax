@@ -158,6 +158,44 @@ def add_args(parser):
         "--noise-anneal",
         help="F,N: the E-step of update t uses the noise estimate times 1 + (F - 1) max(0, 1 - t/N); 1,0 is off",
     )
+    parser.add_argument(
+        "--sgd-direction",
+        choices=("trace", "coupled"),
+        help="Momentum SGD direction: trace (G over the band maximum of the metric trace; default) or coupled, the "
+        "per-frequency Newton direction H_f^-1 G_f scaled at update 1 to the split-curvature step's norm "
+        "(ppca_momentum_sgd.md section 6; needs --sgd-momentum 0)",
+    )
+    parser.add_argument(
+        "--sgd-pc-gate-floor",
+        type=float,
+        help="Multiply the PC step per shell by clip(rho, F, 1), rho the moving correlation (about 20 updates) of "
+        "the two half-batch PC gradients; the mean is not gated (needs --sgd-momentum 0)",
+    )
+    parser.add_argument(
+        "--sgd-lr-schedule",
+        help=".npy of per-update steps s: update t uses --sgd-learning-rate s(t) / s(1) (needs --sgd-momentum 0)",
+    )
+    parser.add_argument(
+        "--sgd-lr-match",
+        type=float,
+        help="Set the base learning rate at update 1 so that the mean's step equals the shared-trace step at this "
+        "rate (rate M c_mean / max tr H; replaces --sgd-learning-rate; needs --sgd-momentum 0)",
+    )
+    parser.add_argument(
+        "--uniform-direction-prior",
+        action="store_true",
+        help="Keep the orientation prior uniform instead of learning RELION's direction prior",
+    )
+    parser.add_argument(
+        "--shift-schedule",
+        help="JSON [[first update, range A, step A], ...]: the zero-centred translation window of each update, in "
+        "Angstrom, rounded to whole pixels (replaces --shift-range and --shift-step)",
+    )
+    parser.add_argument(
+        "--offset-sigma-hold",
+        type=float,
+        help="Hold the Gaussian offset prior's sigma per axis at this many Angstrom (default: learned)",
+    )
     parser.add_argument("--resume")
     parser.add_argument("--stop-after", type=int, help="Checkpoint stop without changing the scientific schedule")
     parser.add_argument("--stop-file", help="Stop between iterations after an atomic checkpoint")
@@ -209,10 +247,32 @@ def resolve_sgd_options(args):
         raise ValueError("--sgd-variant, --sgd-gate, --sgd-step-scale and --sgd-momentum need --optimizer momentum_sgd")
     if args.sgd_momentum is not None:
         options["sgd_momentum"] = args.sgd_momentum
+    if args.sgd_direction is not None:
+        options["sgd_direction"] = args.sgd_direction
+    if args.sgd_pc_gate_floor is not None:
+        options["sgd_pc_gate_floor"] = args.sgd_pc_gate_floor
+    if args.sgd_lr_match is not None:
+        options["sgd_lr_match"] = args.sgd_lr_match
+    if args.sgd_lr_schedule is not None:
+        options["sgd_lr_schedule"] = str(Path(args.sgd_lr_schedule).resolve())
     if not args.vdam_second_moment:
         if args.optimizer != "vdam":
             raise ValueError("--no-vdam-second-moment needs --optimizer vdam")
         options["vdam_second_moment"] = False
+    return options
+
+
+def translation_options(args, voxel_size):
+    """``shift_schedule`` and ``offset_sigma_hold_px`` from the Angstrom options, steps and ranges in whole pixels."""
+    options = {}
+    if args.shift_schedule:
+        schedule = []
+        for first, window, step in json.loads(args.shift_schedule):
+            step_px = max(1, round(step / voxel_size))
+            schedule.append((int(first), float(step_px * round(window / voxel_size / step_px)), float(step_px)))
+        options["shift_schedule"] = tuple(schedule)
+    if args.offset_sigma_hold is not None:
+        options["offset_sigma_hold_px"] = args.offset_sigma_hold / voxel_size
     return options
 
 
@@ -486,6 +546,7 @@ def main(args=None):
         preread_images=args.ppca_preread_images,
         pass2_mass_floor=args.ppca_pass2_mass_floor,
         stages=tuple(tuple(stage) for stage in json.loads(args.stages)) if args.stages else Config().stages,
+        uniform_direction_prior=args.uniform_direction_prior,
     )
     if (args.ios is None) == (args.particles is None):
         raise ValueError("Give either a particle STAR (--i) or an optimisation set (--ios)")
@@ -503,6 +564,12 @@ def main(args=None):
         logger.info("physical band of a %g A box: --stages %s", data.grid_size * data.voxel_size, json.dumps(stages))
         if stages[-1][0] > config.iterations:
             logger.warning("--iterations %d ends before the last band stage %s", config.iterations, stages[-1])
+    if args.shift_schedule or args.offset_sigma_hold is not None:
+        config = dataclasses.replace(config, **translation_options(args, data.voxel_size))
+        logger.info(
+            "translations: schedule %s px, offset sigma %s px",
+            json.dumps(config.shift_schedule), config.offset_sigma_hold_px,
+        )
     identity["source"] = source_identity()
     if not args.resume and list(output.glob("checkpoint_*.npz")):
         raise ValueError("Output already contains checkpoints; use --resume or a new directory")

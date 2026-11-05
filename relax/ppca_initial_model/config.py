@@ -73,6 +73,24 @@ class Config:
     # (0: visit every row), when that leaves at most half the rows. A runtime setting;
     # full_row_kernels._pass2_rows has the bound; section 14 of docs/math/vdam_ppca_algorithm.md the evidence.
     pass2_mass_floor: float = 1e-10
+    # Newton SGD (ppca_momentum_sgd.md, section 6; momentum SGD with momentum 0). sgd_direction "coupled" steps
+    # along the per-frequency H_f^-1 G_f, scaled at the first update to the split-curvature step's norm.
+    # sgd_pc_gate_floor F multiplies the PC step per shell by clip(rho, F, 1), rho the moving correlation of the
+    # two half-batch PC gradients (None: no gate). sgd_lr_schedule: a .npy of per-update steps s; the rate of
+    # update t is sgd_learning_rate s(t) / s(1).
+    sgd_direction: str = "trace"
+    sgd_pc_gate_floor: float | None = None
+    sgd_lr_schedule: str | None = None
+    # sgd_lr_match M: the base rate is set at the first update to M c_mean / max tr H, so the mean's step equals
+    # the shared-trace step at rate M there (None: sgd_learning_rate).
+    sgd_lr_match: float | None = None
+    # Keep the orientation prior uniform (the learned direction prior is never used or kept).
+    uniform_direction_prior: bool = False
+    # Translation search per update: ((first update, range px, step px), ...) replacing shift_range and
+    # shift_step from each entry's first update on (empty: those two throughout). offset_sigma_hold_px holds the
+    # zero-centred Gaussian offset prior's sigma per axis at this value in pixels (None: the learned sigma).
+    shift_schedule: tuple = ()
+    offset_sigma_hold_px: float | None = None
 
     def __post_init__(self):
         if isinstance(self.q, bool) or not isinstance(self.q, (int, np.integer)) or self.q <= 0 or self.seed <= 0 or self.iterations <= 0:
@@ -158,6 +176,39 @@ class Config:
             raise ValueError("Image preread must be auto, on or off")
         if not 0 <= self.pass2_mass_floor < 1:
             raise ValueError("The pass-2 mass floor must be in [0, 1)")
+        if self.sgd_direction not in ("trace", "coupled"):
+            raise ValueError("The SGD direction must be trace or coupled")
+        newton = self.newton_sgd()
+        if self.sgd_lr_match is not None and not (np.isfinite(self.sgd_lr_match) and self.sgd_lr_match > 0):
+            raise ValueError("The matched learning-rate factor must be finite and positive")
+        if newton and (self.optimizer != "momentum_sgd" or self.sgd_momentum != 0 or self.sgd_halfset_gate):
+            raise ValueError("The coupled direction, PC gate and learning-rate schedule need momentum SGD with momentum 0 and no half-set gate")
+        if newton and self.sgd_step_scale != "trace":
+            raise ValueError("The coupled direction, PC gate and learning-rate schedule use the trace step scale")
+        if self.sgd_pc_gate_floor is not None and not 0 < self.sgd_pc_gate_floor <= 1:
+            raise ValueError("The PC gate floor must be in (0, 1]")
+        if self.shift_schedule:
+            entries = [tuple(e) for e in self.shift_schedule]
+            if entries[0][0] != 1 or entries != sorted(entries) or any(len(e) != 3 or e[1] < 0 or e[2] <= 0 for e in entries):
+                raise ValueError("The shift schedule is sorted (first update, range >= 0, step > 0) entries from update 1")
+        if self.offset_sigma_hold_px is not None and not (np.isfinite(self.offset_sigma_hold_px) and self.offset_sigma_hold_px > 0):
+            raise ValueError("The held offset sigma must be finite and positive")
+
+    def newton_sgd(self):
+        """Whether the update is the Newton SGD step (sgd_recipe.NewtonSGD) rather than the momentum step."""
+        return (
+            self.sgd_direction != "trace"
+            or self.sgd_pc_gate_floor is not None
+            or self.sgd_lr_schedule is not None
+            or self.sgd_lr_match is not None
+        )
+
+    def shifts(self, iteration):
+        """``(shift_range, shift_step)`` in pixels for update ``iteration``."""
+        if not self.shift_schedule:
+            return self.shift_range, self.shift_step
+        entry = [e for e in self.shift_schedule if e[0] <= max(iteration, 1)][-1]
+        return float(entry[1]), float(entry[2])
 
     def keeps_halfset_moments(self):
         """Whether the run keeps VDAM's half-set moments: VDAM, and momentum SGD with the half-set gate."""
