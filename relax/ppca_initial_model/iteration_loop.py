@@ -24,6 +24,8 @@ from recovar.reconstruction.noise import make_radial_noise
 from relax.ppca_initial_model import checkpoint
 from relax.ppca_initial_model.initialization import bandlimit_and_mask, initialize, support_mask
 from relax.ppca_initial_model.noise import update_noise
+from relax.ppca_initial_model.sgd_recipe import NewtonSGD
+from relax.ppca_initial_model.sgd_recipe import describe as describe_newton
 from relax.ppca_initial_model.sgd_update import gated_gradient, metric_diagonal, metric_trace, momentum_step
 from relax.ppca_initial_model.state import State
 from relax.ppca_initial_model.tomo import TiltParticles, initialize_tilts, load_tilt_tile, tilt_tiles
@@ -294,6 +296,8 @@ MAX_SGD_RATE_PER_CHANNEL = 0.8
 
 def _update_rule(config):
     """The run's update rule as configured, for the job log."""
+    if config.newton_sgd():
+        return f"Newton SGD, learning rate {config.sgd_learning_rate:g}: {describe_newton(config)}"
     if config.optimizer == "momentum_sgd":
         rate = config.sgd_learning_rate
         return (
@@ -305,6 +309,13 @@ def _update_rule(config):
 
 def _update_rule_measured(config, diagnostics):
     """What the update computed that shows its rule, for the job log."""
+    if config.newton_sgd():
+        return (
+            f"learning rate {diagnostics['learning_rate_used']:.4g}, k {diagnostics.get('coupled_k')}, "
+            f"indefinite frequencies {diagnostics.get('indefinite_frequencies')}, "
+            f"PC gate {diagnostics.get('pc_gate_shell')}, shifts {config.shifts(diagnostics['iteration'])} px, "
+            f"offset sigma {'held at %g px' % config.offset_sigma_hold_px if config.offset_sigma_hold_px else 'learned'}"
+        )
     if config.optimizer == "momentum_sgd":
         return (
             f"momentum {diagnostics['momentum']:g}, carried velocity L2 {diagnostics['velocity_carried_l2']:.4g} "
@@ -404,20 +415,22 @@ def _expectation(
     canonical_eulers = grids.get_relion_hidden_rotation_grid(hp, matrices=False)
     rotation_prior = (
         np.asarray(state.direction_prior, np.float32)
-        if state.direction_order == hp and state.direction_prior is not None
+        if state.direction_order == hp and state.direction_prior is not None and not config.uniform_direction_prior
         else np.full(len(rotations), 1 / len(rotations), np.float32)
     )
     rotation_log_prior = np.log(rotation_prior, where=rotation_prior > 0, out=np.full_like(rotation_prior, -np.inf))
     tilts = isinstance(dataset, TiltParticles)
     if tilts and not _streams_groups(config):
         raise ValueError("Subtomogram PPCA needs the streamed full-grid engine (stream_coarse_recompute)")
+    shift_range, shift_step = config.shifts(iteration)
     translations = (
         # Subtomogram particles have one 3D shift each (section 16.1), on RELION's 3D grid in pixels.
-        grids.get_relion_translation_grid_3d(config.shift_range, config.shift_step)
+        grids.get_relion_translation_grid_3d(shift_range, shift_step)
         if tilts
-        else grids.get_relion_translation_grid(max_pixel=config.shift_range, pixel_offset=config.shift_step)
+        else grids.get_relion_translation_grid(max_pixel=shift_range, pixel_offset=shift_step)
     ).astype(np.float32)
-    prior = -jnp.sum(jnp.asarray(translations) ** 2, axis=-1) / (2 * state.offset_variance)
+    offset_variance = state.offset_variance if config.offset_sigma_hold_px is None else config.offset_sigma_hold_px**2
+    prior = -jnp.sum(jnp.asarray(translations) ** 2, axis=-1) / (2 * offset_variance)
     prior = prior - jnp.log(jnp.sum(jnp.exp(prior)))
     # Subtomogram particles keep one noise spectrum per noise group (rows of ``state.noise``, section 16.6).
     noise_rows = np.asarray(state.noise) if tilts else np.asarray(state.noise)[None]
@@ -451,7 +464,10 @@ def _expectation(
                     scoring=scoring,
                     # Plain momentum SGD reads only the metric trace (sgd_update.momentum_step); the
                     # half-set gate needs the packed metric (one direction per half, as VDAM).
-                    metric_trace_only=config.optimizer == "momentum_sgd" and not config.sgd_halfset_gate,
+                    # Newton SGD solves the packed metric per frequency.
+                    metric_trace_only=config.optimizer == "momentum_sgd"
+                    and not config.sgd_halfset_gate
+                    and not config.newton_sgd(),
                     exact_metric_trace=config.sgd_step_scale == "exact_diagonal",
                     gemm_precision=config.gemm_precision,
                     tile_loader=load_tilt_tile if tilts else None,
@@ -493,7 +509,7 @@ def _expectation(
         padded_size = -(-tile_size // SHIFT_ALIGN) * SHIFT_ALIGN if streams[0].static.cuda_kernels else tile_size
         streams = [stream._replace(tile_images=padded_size) for stream in streams]
         if oversampled:
-            fine_rotations, fine_translations = relion_child_grids(hp, translations, config.shift_step)
+            fine_rotations, fine_translations = relion_child_grids(hp, translations, shift_step)
             streams = [
                 prepare_oversampled_stream(
                     stream,
@@ -682,6 +698,13 @@ def run(
             "SGD learning rate %g is above %g (1 + q) = %g",
             config.sgd_learning_rate, MAX_SGD_RATE_PER_CHANNEL, MAX_SGD_RATE_PER_CHANNEL * (config.q + 1),
         )
+    newton = None
+    if config.newton_sgd():
+        saved = Path(resume).with_name(Path(resume).name.replace("checkpoint_", "newton_sgd_")) if resume else None
+        newton = NewtonSGD(config, int(shells.max()) + 1, NewtonSGD.load(saved) if saved and saved.exists() else None)
+        if resume and newton.k is None and state.iteration > 0:
+            raise FileNotFoundError(f"Newton SGD state {saved} of the resumed checkpoint")
+        logger.info("Newton SGD: %s", describe_newton(config))
     stage_tile_sizes = {}  # compiled tile shapes seen per stage (radius, HEALPix order)
     log = _ModelLog(output / "iterations.jsonl")
     state_start = state.iteration
@@ -728,7 +751,15 @@ def run(
                 metric_info.append(info)
                 covered = jnp.sum(jnp.asarray(result.lhs_tri)[:, diagonal], axis=-1) > 0  # the metric's trace
                 coverage.append(covered & jnp.asarray(support))
-        if config.optimizer == "momentum_sgd":
+        if newton is not None:
+            moments = None
+            proposed_momentum, diagnostics = newton.step(
+                stats, support, shells, iteration, metric_floor(dataset.grid_size), config.q
+            )
+            momentum = bandlimit_and_mask(proposed_momentum, dataset.volume_shape, radius, mask)
+            theta = bandlimit_and_mask(state.theta + proposed_momentum, dataset.volume_shape, radius, mask)
+            diagnostics["velocity_l2_after_support"] = float(jnp.linalg.norm(momentum))
+        elif config.optimizer == "momentum_sgd":
             gradient = sum(result.residual_gradient for result in stats)
             moments = None
             if config.sgd_halfset_gate:
@@ -824,7 +855,9 @@ def run(
         )
         # Each direction's posterior mass per image, spread over its in-plane angles.
         rotation_mass = direction_mass[direction_ids] / multiplicity[direction_ids]
-        direction_prior = relion_blend(old_prior, rotation_mass, count, beta).astype(np.float32)
+        direction_prior = (
+            None if config.uniform_direction_prior else relion_blend(old_prior, rotation_mass, count, beta).astype(np.float32)
+        )
         state = State(
             theta,
             moments,
@@ -858,7 +891,13 @@ def run(
                 "pass2_mass_floor": config.pass2_mass_floor,
                 **({"resumed_from_gemm_precision": resumed_precision} if resumed_precision else {}),
                 **({"resumed_from_source": resumed_source} if resumed_source is not None else {}),
-                "step": config.sgd_learning_rate if config.optimizer == "momentum_sgd" else step * step_factor,
+                "step": (
+                    diagnostics.get("learning_rate_used", config.sgd_learning_rate)
+                    if config.optimizer == "momentum_sgd"
+                    else step * step_factor
+                ),
+                "shift_range_step_px": config.shifts(iteration),
+                "offset_sigma_hold_px": config.offset_sigma_hold_px,
                 "vdam_step_factor": step_factor,
                 "fudge": fudge,
                 "noise": noise,
@@ -918,6 +957,8 @@ def run(
         stop = stop_file is not None and Path(stop_file).exists()
         if stop or iteration % config.checkpoint_interval == 0 or iteration == end:
             log.wait()  # the checkpoint's iteration is logged first
+            if newton is not None:
+                newton.save(output / f"newton_sgd_{iteration:04d}.npz")
             checkpoint.save(output / f"checkpoint_{iteration:04d}.npz", state, config, identity)
         if stop:
             break
