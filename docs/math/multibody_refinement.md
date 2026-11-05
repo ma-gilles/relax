@@ -76,6 +76,12 @@ whole-data prior (`run_body<BBB>.mrc`).
 
 ## Agreement with RELION
 
+Multi-body parity references must come from a RELION build whose GPU back-projection accumulates in double
+precision (bpdouble): stock RELION 5.0.1 sums an iteration's back-projection in float32 and loses low-shell weight
+(relax#65, relax#92; see "Exact float32 accumulation" in [the algorithm map](relion_refinement_algorithm.md)). In
+the final iteration on EMPIAR-10180 (327k particles, four bodies), the worst body kept 0.85 of its weight at DC.
+Against a bpdouble build, relax's final maps there agree to 5e-5 per shell over shells 1-40.
+
 On two simulated 5000-image datasets (5nrl, body 2 twisted about an axis through a pivot,
 `scripts/prepare_multibody_benchmark.py`), relax and RELION 5.0.1 were run on the same GPU model (A100-SXM4-80GB):
 
