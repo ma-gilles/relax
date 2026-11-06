@@ -3548,3 +3548,53 @@ sha256 `4066016e63a4f37719222768690f7ef941f056ac95ae06c484d50bd8929867c1`; basel
 - The rule cannot delay the radius below 15 (its floor); the table starts at 11.
 - A mean that stops at radius 17 to 19 has no power beyond (mean power 0.07 to 0.5 times the truth's in shells 16 to
   31) and mean FSC .50 to .62 even where the poses are right (scale 1/16: 5.31 deg).
+
+### 18.15 T10: the failure audit and three diagnostics (round 19, November 5, 2026)
+
+T10 is ten unrelated TomoTwin proteins (compositional, q = 9). Heterogeneity over mean power is 6.8 (shells 5 to 15) and
+8.6 (16 to 31), against .53 and .44 on C n1, and the states correlate with the mean at .2 to .5 beyond shell 4, so the mean
+is a weak template for the poses. Every arm of rounds 15 and 17 fails (pose median 87 to 108 deg, at most 6% under 10 deg;
+homogeneous q = 0 and cryoDRGN v3 give 139 and 131 deg). Only VDAM and VDAM with the local schedule find anything: one of
+the ten states (state 5, about 50% under 10 deg); scale 1/4 half-finds state 4 (38 deg median, 12%). Every run's state FSC
+(.39 to .44) is below the .467 of the true mean map used for every state. The failing runs are confidently wrong (pmax .81 to
+.89, pose entropy .3 to .55 at iteration 3000) and the learned direction prior collapses (entropy .81 of uniform, the
+top 5% of directions holding 54 to 68% of the mass; C n1, C n3 and H1 stay at .993, D20 and D40 dip to .91 to .94 early).
+
+Offsets. All six suite datasets have exactly zero true shifts (0 of 100,000 particles). The offset variance of T10 falls
+to its floor (2 A^2, .025 px^2 at 9 A/px) by iteration 150 (VDAM) to 500 (SGD), as on C n1, C n3 and H1, and the scorer's
+offsets of the final models are all zero (on its 2 px grid). On D20 every arm keeps .46 to .70 px^2 (the new SGD the highest,
+.52 rising to .70 between iterations 500 and 1500; old SGD and VDAM flat at .41 to .51); on D40 the scale 1/16 run stays at
+.3 to .6 and fails at iteration 1000, while scale 1/4, VDAM and the old SGD reach the floor by 500 to 1000.
+
+Options and tools of round 19 (arms `s3_*` of `scripts/ppca_schedule/config.yaml`):
+- `--direction-prior` (`Config.direction_prior`, default `uniform`): `uniform` scores every direction with the same prior
+  throughout, `learned` is RELION's `pdf_direction`, blended from each iteration's posterior mass. A uniform run's
+  checkpoint holds no prior, as the scorer reads a missing prior as uniform, and a checkpoint of one setting does not
+  resume as the other. The runs before round 19 used `learned` (the default then), and their arms in
+  `scripts/ppca_schedule/config.yaml` pin it. Tests: `tests/unit/ppca_initial_model/test_direction_prior.py`.
+- `--shift-range 0 --shift-step 1` (existing options): one zero translation per image, no offset estimate.
+- `scripts/ppca_schedule/Snakefile_states` with `subset_star.py`: a mean-only model trained on the images of one true
+  state (`--q 1 --pc-stages [[1,0],[3000,1]]`: the one loading is born at the last iteration, and the scorer's
+  `--mean-only` drops its column), scored on the whole dataset's evaluation images by the suite scorer; the per-state pose
+  fit of the trained state is the answer (does one protein of 10,000 images solve on its own?).
+
+Results (T10, 3000 iterations, direct pose fit per state, a state is solved when at least 30% of its particles are under
+10 deg; seeds 11, 12, 13 unless noted).
+- States solved: VDAM with the learned prior 1, 0, 3; SGD 1/4 with the learned prior 0, 0, 0; VDAM with the uniform prior
+  3, 3, 3 (pose median 55, 43, 48 deg); SGD 1/4 with the uniform prior 3, 3, 2 (54, 65, 71 deg); SGD 1/4 with the uniform
+  prior and no shift search 4, 2, 3 (38, 74, 57 deg). The uniform prior is the effect; the shift search off is not
+  separable from the seed noise. States 0, 3, 7 and 9 are solved by no mixed run.
+- D20: SGD 1/4 gives 10.1, 9.3 and 3.8 deg with the shift search (offset variance .69, .69, .52 px^2) and 3.8, 3.9, 3.9 deg
+  (all 100% under 10 deg, offset variance at its floor) without it, and 3.6, 3.8, 3.8 deg with the uniform prior also. The
+  offsets cause the new SGD's D20 regression. C n1 is unharmed (5.1 against 4.9 deg, one seed).
+- Single state (VDAM, learned prior, shift search on, seed 11): 9 of the 10 proteins solve alone (pose median 3.7 to
+  4.6 deg, 96 to 100% under 10 deg, state 7 81%), including states 0, 3 and 7 that no mixed run solves; state 9 fails
+  (34.5 deg, 11%). The mixture is the obstacle, not a single protein or its 10,000 images.
+- The pose fit gives every state its own rotation and hand (the ten proteins share no frame), so the solved states'
+  frames differ: the relative rotation between two solved states is 68 to 180 deg, and the hand differs in some runs. A
+  refit that maximises the poses within 10 deg gives .03 to .12 of the unsolved states' particles (shuffled poses: .01).
+- The latents separate the states regardless of the poses: the 10-nearest-neighbour accuracy is .98 to 1.00 on the solved
+  states and .86 to .95 on average over the unsolved ones (VDAM, uniform prior, seed 12: states 9, 7, 3 and 0 at .95 to
+  1.00 with 1 to 5% of their poses right). The FSC of an unsolved state's map to the truth, after the best rigid and hand fit, is .89 to .99 at shells 1 to 3,
+  .47 to .84 at 4 to 6 and under .6 beyond; the solved states stay at .96 or above to shell 6. Low frequencies, which
+  every central section shares, tell the states apart without the poses; the poses need the shells beyond 6.
