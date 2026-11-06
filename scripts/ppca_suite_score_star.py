@@ -48,8 +48,11 @@ def latest_checkpoint(run):
     return candidates[-1]
 
 
-def write_mean_negated_copy(checkpoint, directory):
-    """Copy ``checkpoint`` into ``directory`` under its own name with ``theta[:, 0]`` negated; return the copy."""
+def write_mean_negated_copy(checkpoint, directory, *, mean_only=False):
+    """Copy ``checkpoint`` into ``directory`` under its own name with ``theta[:, 0]`` negated; return the copy.
+
+    ``mean_only`` also drops the loading columns, so the scorer sees a model without PCs (q = 0).
+    """
     copy = Path(directory) / Path(checkpoint).name
     with np.load(checkpoint, allow_pickle=False) as saved:
         arrays = {name: saved[name] for name in saved.files}
@@ -57,7 +60,7 @@ def write_mean_negated_copy(checkpoint, directory):
     if theta.ndim != 2 or theta.shape[1] < 2:
         raise ValueError(f"Expected a PPCA theta of one mean and at least one loading, got {theta.shape}")
     theta[:, 0] = -theta[:, 0]
-    arrays["theta"] = theta
+    arrays["theta"] = theta[:, :1] if mean_only else theta
     with open(copy, "wb") as stream:
         np.savez(stream, **arrays)
     return copy

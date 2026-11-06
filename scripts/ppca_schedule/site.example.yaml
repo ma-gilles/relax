@@ -2,11 +2,24 @@
 # paths and pass it to Snakemake (it overrides config.yaml):
 #   snakemake --snakefile scripts/ppca_schedule/Snakefile --directory <output_root> --profile <your Slurm profile> all \
 #       --configfile my_site.yaml
-# Absolute paths, on a file system the compute nodes see.
+# Absolute paths, on a file system the compute nodes see. Mode 1 (the fixture) needs the first group and `fixture`;
+# mode 2 (a suite dataset, --config dataset=<name>) needs the first group and `suite`.
 
+# Both modes.
 output_root: /path/to/runs                      # new runs, scores and the summary table go here
 natives_dir: /path/to/natives                   # holds librelax_cuda.so built from this checkout: `relax build_cuda --output <dir>/librelax_cuda.so`
 python: null                                    # null: <checkout>/.pixi/envs/default/bin/python
+git_repo: null                                  # a clone with the commits of an arm's `source_ref`; null: this checkout (must be a clone)
 
-# A simulated fixture with training/particles.star and evaluation/truth.npz (and evaluation/manifest.json)
+# Mode 1: a simulated fixture with training/particles.star and evaluation/truth.npz (and evaluation/manifest.json)
 fixture: /path/to/ppca_elevenstate_fixture
+
+# Mode 2: the curated PPCA test suite and the tools that score against it
+suite:
+  datasets_root: /path/to/suite/datasets        # <dataset>/training/manifest.json, <dataset>/evaluation/{manifest.json,truth.npz}
+  tools_dir: /path/to/suite/tools               # suite_score.py, gpu_env.sh, cpu_env.sh
+  fit_tools_dir: /path/to/fit/tools             # direct_fit.py, h1_score.py
+  gpu_env: null                                 # null: <tools_dir>/gpu_env.sh if it exists, else the caller's environment
+  cpu_env: null                                 # null: <tools_dir>/cpu_env.sh if it exists
+  scorer_python: null                           # null: PY of gpu_env
+  fit_python: null                              # null: PY of cpu_env

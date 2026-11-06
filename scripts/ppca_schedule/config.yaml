@@ -2,7 +2,8 @@
 #
 # Nothing here names a user, an account or a cluster directory. Every location is null and is set for your site, in a
 # YAML file kept outside the repository (copy site.example.yaml) and passed with --configfile, or one by one with
-# --config key=value. Any other value can be overridden the same way.
+# --config key=value (a nested key as a flow map: --config 'suite={datasets_root: <dir>}'). Any other value can be
+# overridden the same way. A setting the chosen mode does not use may stay null.
 
 # Directory that receives every run, score and the summary table. Required.
 output_root: null
@@ -14,14 +15,36 @@ natives_dir: null
 # Python of a relax pixi environment. null: <checkout>/.pixi/envs/default/bin/python.
 python: null
 
-# Curated eleven-state simulated fixture: training/particles.star is what training reads, evaluation/truth.npz holds the
-# labels (evaluation only). Required.
+# A git clone that holds the commits named by an arm's `source_ref`. null: the checkout this Snakefile belongs to, which
+# must then be a clone, not a frozen copy of one.
+git_repo: null
+
+# Mode 1, the fixture (the default mode): a curated eleven-state simulated fixture. training/particles.star is what
+# training reads and evaluation/truth.npz holds the labels (evaluation only). Required in this mode.
 fixture: null
 particle_diameter_ang: 288
 
+# Mode 2, a suite dataset: the folder name of one dataset of `suite.datasets_root` (pass it with --config dataset=<name>).
+# Its training manifest is converted to a RELION STAR, its q and particle diameter come from its manifests, and every run
+# is scored by the suite's scorer and the direct pose fit. null: mode 1. The suite is the curated PPCA test suite;
+# its scorer and the direct fit are not part of this repository (scripts/ppca_schedule/score_suite_run.py).
+dataset: null
+suite:
+  datasets_root: null   # the suite's datasets/ directory: <dataset>/training/manifest.json and <dataset>/evaluation/. Required.
+  tools_dir: null       # the suite's tools directory, with suite_score.py (and gpu_env.sh, cpu_env.sh). Required.
+  fit_tools_dir: null   # the directory with direct_fit.py and h1_score.py. Required.
+  gpu_env: null         # shell file sourced before the scorer. null: <tools_dir>/gpu_env.sh if it exists
+  cpu_env: null         # shell file sourced before the direct fit. null: <tools_dir>/cpu_env.sh if it exists
+  scorer_python: null   # interpreter of the scorer. null: PY of gpu_env
+  fit_python: null      # interpreter of the direct fit. null: PY of cpu_env
+  default_q: 2          # the PCs of a dataset whose evaluation manifest names none (D and H1)
+  checkpoints: [1000, 3000]   # the checkpoints the suite scorer scores
+  runtime_minutes: 360        # the Slurm request of an arm without its own: 100,000 particles in the final embedding
+
 # relax ppca_initial_model settings shared by every arm. `args` is appended before each arm's own flags: the fixed batch
 # of 300 images (150 per pseudo-half) on every update, the search of +-2 px in 1 px steps, no oversampling and a
-# checkpoint every 50 iterations, as in the group's PPCA recipe (AGENT_BRIEF.md of its snapshot of 2026-10-30). The fixture is the eleven-state one: q = 10 is its full state space.
+# checkpoint every 50 iterations, as in the group's PPCA recipe (AGENT_BRIEF.md of its snapshot of 2026-10-30).
+# The fixture is the eleven-state one: q = 10 is its full state space.
 train:
   q: 10
   iterations: 3000
@@ -40,8 +63,9 @@ seeds: [11, 12, 13]
 only_arms: null
 
 # One entry per arm; `args` is appended verbatim to the training command (a repeated flag wins over the shared
-# settings above), `runtime_minutes` overrides the Slurm request and `init_truth_mean: true` starts the mean from the
-# fixture's ground truth. The arms of rounds 1 to 8 (the stages table, the
+# settings above), `runtime_minutes` overrides the Slurm request, `init_truth_mean: true` starts the mean from the
+# fixture's ground truth and `source_ref: "<commit>"` (quoted) trains with the code of that commit of `git_repo` instead of
+# this checkout (it is exported to <output_root>/sources/<commit>). The arms of rounds 1 to 8 (the stages table, the
 # data_vs_prior radius, the accuracy order, constant fudge 1, q = 1 and 3) are in the history of this file; their settings
 # and results are in docs/math/vdam_ppca_algorithm.md, sections 18.4 to 18.11 (round 9: 18.12).
 #
@@ -53,38 +77,44 @@ only_arms: null
 # vdam: RELION's VDAM gradient optimizer. momentum_sgd: relax's scalar-curvature SGD with momentum 0.9 and the recipe's
 # learning rate 2.4 (the recipe's own "plain SGD" has momentum 0, which relax does not offer).
 # Rounds 9 to 12 ran the first SGD's single curvature scalar (snapshots before round13_runs); round 13 split it into the
-# mean's and the loadings'. Every momentum_sgd arm names its --sgd-loading-scale (1 for rounds 9 to 13); one that names
-# none takes the default, 1/16.
+# mean's and the loadings'. Every momentum_sgd arm but sgd_default (the old code has no such option) names its
+# --sgd-loading-scale: 1 for rounds 9 to 13, 0.0625 (the default until round 17) for the arms that named none, and the
+# default 1/4 from round 16b on. Every arm but sgd_default also names its --direction-prior: learned, which was the
+# default until the uniform prior became it, unless the arm is about the uniform prior (the s3_*_uniform arms).
 arms:
   vdam_recipe:
-    args: ["--optimizer", "vdam"]
+    args: ["--optimizer", "vdam", "--direction-prior", "learned"]
   vdam_local:
     args: ["--optimizer", "vdam", "--stages", "[[1,4,1]]", "--radius-rule", "data_vs_prior",
-           "--order-rule", "accuracy", "--order-max", "4", "--final-order-max", "4"]
-    runtime_minutes: 900                        # 13.6 s per iteration at radius 29, order 4
+           "--order-rule", "accuracy", "--order-max", "4", "--final-order-max", "4", "--direction-prior", "learned"]
+    runtime_minutes: 1200                       # 13.6 s per iteration at radius 29, order 4
   sgd_recipe:
-    args: ["--optimizer", "momentum_sgd", "--sgd-learning-rate", "2.4", "--sgd-loading-scale", "1"]
+    args: ["--optimizer", "momentum_sgd", "--sgd-learning-rate", "2.4", "--sgd-loading-scale", "1",
+           "--direction-prior", "learned"]
   sgd_local:
     args: ["--optimizer", "momentum_sgd", "--sgd-learning-rate", "2.4", "--sgd-loading-scale", "1", "--stages", "[[1,4,1]]",
-           "--radius-rule", "data_vs_prior", "--order-rule", "accuracy", "--order-max", "4", "--final-order-max", "4"]
+           "--radius-rule", "data_vs_prior", "--order-rule", "accuracy", "--order-max", "4", "--final-order-max", "4",
+           "--direction-prior", "learned"]
     runtime_minutes: 900
   # Round 10: the two SGD arms of round 9 with the mean started from the ground truth (init_truth_mean: the
   # count-weighted mean of the fixture's state maps, scripts/write_ppca_truth_mean.py, as --init-mean-map). The loadings
   # keep the seed's values and nothing else differs. Tests whether SGD fails for want of reaching the mean.
   sgd_recipe_truth_mean:
     init_truth_mean: true
-    args: ["--optimizer", "momentum_sgd", "--sgd-learning-rate", "2.4", "--sgd-loading-scale", "1"]
+    args: ["--optimizer", "momentum_sgd", "--sgd-learning-rate", "2.4", "--sgd-loading-scale", "1",
+           "--direction-prior", "learned"]
   sgd_local_truth_mean:
     init_truth_mean: true
     args: ["--optimizer", "momentum_sgd", "--sgd-learning-rate", "2.4", "--sgd-loading-scale", "1", "--stages", "[[1,4,1]]",
-           "--radius-rule", "data_vs_prior", "--order-rule", "accuracy", "--order-max", "4", "--final-order-max", "4"]
+           "--radius-rule", "data_vs_prior", "--order-rule", "accuracy", "--order-max", "4", "--final-order-max", "4",
+           "--direction-prior", "learned"]
     runtime_minutes: 900                        # up to 13.6 s per iteration once the radius is 29 at order 4
   # Round 11: sgd_local with the order rule reading the accuracy of the mean image alone (--accuracy-signal mean_only)
   # instead of the divergence, whose trace term the loadings drive under SGD (round 9 and 10 pose_accuracy figures).
   sgd_local_mean_only:
     args: ["--optimizer", "momentum_sgd", "--sgd-learning-rate", "2.4", "--sgd-loading-scale", "1", "--stages", "[[1,4,1]]",
            "--radius-rule", "data_vs_prior", "--order-rule", "accuracy", "--accuracy-signal", "mean_only",
-           "--order-max", "4", "--final-order-max", "4"]
+           "--order-max", "4", "--final-order-max", "4", "--direction-prior", "learned"]
     runtime_minutes: 900
   # Round 12: does the loadings' presence erode a correct mean, or is the mean's own SGD update the problem? The erosion
   # arms start the mean from the ground truth at a fixed radius 15 and order 3 (the accuracy rule only logs the estimate:
@@ -95,34 +125,37 @@ arms:
   erosion_q10:
     init_truth_mean: true
     args: ["--optimizer", "momentum_sgd", "--sgd-learning-rate", "2.4", "--sgd-loading-scale", "1", "--iterations", "1500", "--stages", "[[1,15,3]]",
-           "--order-rule", "accuracy", "--accuracy-signal", "mean_only", "--order-max", "3", "--final-order-max", "3"]
+           "--order-rule", "accuracy", "--accuracy-signal", "mean_only", "--order-max", "3", "--final-order-max", "3",
+           "--direction-prior", "learned"]
   erosion_mean_only:
     init_truth_mean: true
     args: ["--optimizer", "momentum_sgd", "--sgd-learning-rate", "2.4", "--sgd-loading-scale", "1", "--iterations", "1500", "--stages", "[[1,15,3]]",
            "--order-rule", "accuracy", "--accuracy-signal", "mean_only", "--order-max", "3", "--final-order-max", "3",
-           "--pc-stages", "[[1,0],[1500,10]]"]
+           "--pc-stages", "[[1,0],[1500,10]]", "--direction-prior", "learned"]
   erosion_pc500:
     init_truth_mean: true
     args: ["--optimizer", "momentum_sgd", "--sgd-learning-rate", "2.4", "--sgd-loading-scale", "1", "--iterations", "1500", "--stages", "[[1,15,3]]",
            "--order-rule", "accuracy", "--accuracy-signal", "mean_only", "--order-max", "3", "--final-order-max", "3",
-           "--pc-stages", "[[1,0],[500,10]]"]
+           "--pc-stages", "[[1,0],[500,10]]", "--direction-prior", "learned"]
   erosion_q10_lr0p6:
     init_truth_mean: true
     args: ["--optimizer", "momentum_sgd", "--sgd-learning-rate", "0.6", "--sgd-loading-scale", "1", "--iterations", "1500", "--stages", "[[1,15,3]]",
-           "--order-rule", "accuracy", "--accuracy-signal", "mean_only", "--order-max", "3", "--final-order-max", "3"]
+           "--order-rule", "accuracy", "--accuracy-signal", "mean_only", "--order-max", "3", "--final-order-max", "3",
+           "--direction-prior", "learned"]
   erosion_q10_lr0p15:
     init_truth_mean: true
     args: ["--optimizer", "momentum_sgd", "--sgd-learning-rate", "0.15", "--sgd-loading-scale", "1", "--iterations", "1500", "--stages", "[[1,15,3]]",
-           "--order-rule", "accuracy", "--accuracy-signal", "mean_only", "--order-max", "3", "--final-order-max", "3"]
+           "--order-rule", "accuracy", "--accuracy-signal", "mean_only", "--order-max", "3", "--final-order-max", "3",
+           "--direction-prior", "learned"]
   erosion_q10_batch1200:
     init_truth_mean: true
     args: ["--optimizer", "momentum_sgd", "--sgd-learning-rate", "2.4", "--sgd-loading-scale", "1", "--stochastic-batch-size", "1200",
            "--iterations", "1500", "--stages", "[[1,15,3]]", "--order-rule", "accuracy", "--accuracy-signal", "mean_only",
-           "--order-max", "3", "--final-order-max", "3"]
+           "--order-max", "3", "--final-order-max", "3", "--direction-prior", "learned"]
   sgd_local_pc0:
     args: ["--optimizer", "momentum_sgd", "--sgd-learning-rate", "2.4", "--sgd-loading-scale", "1", "--stages", "[[1,4,1]]",
            "--radius-rule", "data_vs_prior", "--order-rule", "accuracy", "--order-max", "4", "--final-order-max", "4",
-           "--pc-stages", "[[1,0],[3000,10]]"]
+           "--pc-stages", "[[1,0],[3000,10]]", "--direction-prior", "learned"]
     runtime_minutes: 900
   # Round 14: sgd_local with the loading columns' learning rate cut to 1/4, 1/16 and 1/64 of the mean's
   # (--sgd-loading-scale; the mean's stays 2.4). Tests whether the loadings' step is too large (they grow past the
@@ -130,15 +163,136 @@ arms:
   sgd_local_load0p25:
     args: ["--optimizer", "momentum_sgd", "--sgd-learning-rate", "2.4", "--sgd-loading-scale", "0.25",
            "--stages", "[[1,4,1]]", "--radius-rule", "data_vs_prior", "--order-rule", "accuracy", "--order-max", "4",
-           "--final-order-max", "4"]
+           "--final-order-max", "4", "--direction-prior", "learned"]
     runtime_minutes: 900
   sgd_local_load0p0625:
     args: ["--optimizer", "momentum_sgd", "--sgd-learning-rate", "2.4", "--sgd-loading-scale", "0.0625",
            "--stages", "[[1,4,1]]", "--radius-rule", "data_vs_prior", "--order-rule", "accuracy", "--order-max", "4",
-           "--final-order-max", "4"]
+           "--final-order-max", "4", "--direction-prior", "learned"]
     runtime_minutes: 900
   sgd_local_load0p0156:
     args: ["--optimizer", "momentum_sgd", "--sgd-learning-rate", "2.4", "--sgd-loading-scale", "0.015625",
            "--stages", "[[1,4,1]]", "--radius-rule", "data_vs_prior", "--order-rule", "accuracy", "--order-max", "4",
-           "--final-order-max", "4"]
+           "--final-order-max", "4", "--direction-prior", "learned"]
     runtime_minutes: 900
+  # Round 15: the branch against the default PPCA on a suite dataset (--config dataset=<name>). Default PPCA: vdam_recipe and
+  # sgd_default, the recipe schedule; sgd_default is the SGD with one curvature scalar over all channels, which is the
+  # code of the checkout before the branch's SGD changes (commit f9621ab8, `source_ref`: after a rebase, name the rebased
+  # commit that precedes "momentum SGD curvature per group"). The branch: the local schedule (vdam_local) and, for SGD,
+  # the split curvature with the loading scale 1/16 on the recipe schedule (sgd_new_recipe) and on the
+  # local one (sgd_new_local).
+  sgd_default:
+    source_ref: "f9621ab8"
+    args: ["--optimizer", "momentum_sgd", "--sgd-learning-rate", "2.4"]
+  sgd_new_recipe:
+    args: ["--optimizer", "momentum_sgd", "--sgd-learning-rate", "2.4", "--sgd-loading-scale", "0.0625",
+           "--direction-prior", "learned"]
+  sgd_new_local:
+    args: ["--optimizer", "momentum_sgd", "--sgd-learning-rate", "2.4", "--sgd-loading-scale", "0.0625", "--stages", "[[1,4,1]]",
+           "--radius-rule", "data_vs_prior", "--order-rule", "accuracy", "--order-max", "4", "--final-order-max", "4",
+           "--direction-prior", "learned"]
+    runtime_minutes: 1200
+  # Round 16: SGD on one suite dataset (C n1), 3000 iterations, the HEALPix order capped at 3, one aspect changed per arm
+  # against sgd_new_recipe (momentum SGD at 2.4, loading scale 1/16, the recipe's radius and order table, no PC schedule).
+  # Radius and order rules: the four cells of {table, data_vs_prior} x {table, accuracy} (the first is sgd_new_recipe).
+  s1_rad_stages_ord_acc:
+    args: ["--optimizer", "momentum_sgd", "--sgd-learning-rate", "2.4", "--sgd-loading-scale", "0.0625",
+           "--order-rule", "accuracy", "--order-max", "3", "--final-order-max", "3", "--direction-prior", "learned"]
+  s1_rad_dvp_ord_stages:
+    args: ["--optimizer", "momentum_sgd", "--sgd-learning-rate", "2.4", "--sgd-loading-scale", "0.0625", "--radius-rule", "data_vs_prior",
+           "--direction-prior", "learned"]
+  s1_rad_dvp_ord_acc:
+    args: ["--optimizer", "momentum_sgd", "--sgd-learning-rate", "2.4", "--sgd-loading-scale", "0.0625", "--stages", "[[1,4,1]]",
+           "--radius-rule", "data_vs_prior", "--order-rule", "accuracy", "--order-max", "3", "--final-order-max", "3",
+           "--direction-prior", "learned"]
+  # The radius margin: the resolved shell plus 3 shells instead of 10.
+  s1_rad_dvp3_ord_stages:
+    args: ["--optimizer", "momentum_sgd", "--sgd-learning-rate", "2.4", "--sgd-loading-scale", "0.0625", "--radius-rule", "data_vs_prior", "--incr-size", "3",
+           "--direction-prior", "learned"]
+  # The accuracy order rule on the table's radius: estimate every 100 iterations, and the divergence threshold (RELION's
+  # ln 100 = 4.605) times 4 and 16, which make the accuracy angle about 2 and 4 times larger.
+  s1_ord_int100:
+    args: ["--optimizer", "momentum_sgd", "--sgd-learning-rate", "2.4", "--sgd-loading-scale", "0.0625",
+           "--order-rule", "accuracy", "--order-max", "3", "--final-order-max", "3", "--accuracy-interval", "100",
+           "--direction-prior", "learned"]
+  s1_ord_thr4:
+    args: ["--optimizer", "momentum_sgd", "--sgd-learning-rate", "2.4", "--sgd-loading-scale", "0.0625",
+           "--order-rule", "accuracy", "--order-max", "3", "--final-order-max", "3", "--accuracy-kl-threshold", "18.42",
+           "--direction-prior", "learned"]
+  s1_ord_thr16:
+    args: ["--optimizer", "momentum_sgd", "--sgd-learning-rate", "2.4", "--sgd-loading-scale", "0.0625",
+           "--order-rule", "accuracy", "--order-max", "3", "--final-order-max", "3", "--accuracy-kl-threshold", "73.68",
+           "--direction-prior", "learned"]
+  s1_ord_int100_thr4:
+    args: ["--optimizer", "momentum_sgd", "--sgd-learning-rate", "2.4", "--sgd-loading-scale", "0.0625",
+           "--order-rule", "accuracy", "--order-max", "3", "--final-order-max", "3", "--accuracy-interval", "100",
+           "--accuracy-kl-threshold", "18.42", "--direction-prior", "learned"]
+  # The learning rates: the mean's and the loadings' together (lr), then the loadings' share of it (scale).
+  s1_lr1p2:
+    args: ["--optimizer", "momentum_sgd", "--sgd-learning-rate", "1.2", "--sgd-loading-scale", "0.0625",
+           "--direction-prior", "learned"]
+  s1_lr4p8:
+    args: ["--optimizer", "momentum_sgd", "--sgd-learning-rate", "4.8", "--sgd-loading-scale", "0.0625",
+           "--direction-prior", "learned"]
+  s1_scale1_4:
+    args: ["--optimizer", "momentum_sgd", "--sgd-learning-rate", "2.4", "--sgd-loading-scale", "0.25",
+           "--direction-prior", "learned"]
+  s1_scale1_64:
+    args: ["--optimizer", "momentum_sgd", "--sgd-learning-rate", "2.4", "--sgd-loading-scale", "0.015625",
+           "--direction-prior", "learned"]
+  # PC marching: the mean alone first, then the PCs together or in steps; and the same mean-only start on the local schedule.
+  s1_pc500:
+    args: ["--optimizer", "momentum_sgd", "--sgd-learning-rate", "2.4", "--sgd-loading-scale", "0.0625", "--pc-stages", "[[1,0],[500,10]]",
+           "--direction-prior", "learned"]
+  s1_pc1000:
+    args: ["--optimizer", "momentum_sgd", "--sgd-learning-rate", "2.4", "--sgd-loading-scale", "0.0625", "--pc-stages", "[[1,0],[1000,10]]",
+           "--direction-prior", "learned"]
+  s1_pc_steps:
+    args: ["--optimizer", "momentum_sgd", "--sgd-learning-rate", "2.4", "--sgd-loading-scale", "0.0625", "--pc-stages", "[[1,0],[500,2],[1000,5],[1500,10]]",
+           "--direction-prior", "learned"]
+  s1_local_pc500:
+    args: ["--optimizer", "momentum_sgd", "--sgd-learning-rate", "2.4", "--sgd-loading-scale", "0.0625", "--stages", "[[1,4,1]]",
+           "--radius-rule", "data_vs_prior", "--order-rule", "accuracy", "--order-max", "3", "--final-order-max", "3",
+           "--pc-stages", "[[1,0],[500,10]]", "--direction-prior", "learned"]
+  # Loading scale 1/4 (the best PC quality on the table schedule) under the adaptive rules: both, then each alone.
+  s1_scale1_4_rad_dvp_ord_acc:
+    args: ["--optimizer", "momentum_sgd", "--sgd-learning-rate", "2.4", "--sgd-loading-scale", "0.25", "--stages", "[[1,4,1]]",
+           "--radius-rule", "data_vs_prior", "--order-rule", "accuracy", "--order-max", "3", "--final-order-max", "3",
+           "--direction-prior", "learned"]
+  s1_scale1_4_rad_stages_ord_acc:
+    args: ["--optimizer", "momentum_sgd", "--sgd-learning-rate", "2.4", "--sgd-loading-scale", "0.25",
+           "--order-rule", "accuracy", "--order-max", "3", "--final-order-max", "3", "--direction-prior", "learned"]
+  s1_scale1_4_rad_dvp_ord_stages:
+    args: ["--optimizer", "momentum_sgd", "--sgd-learning-rate", "2.4", "--sgd-loading-scale", "0.25", "--radius-rule", "data_vs_prior",
+           "--direction-prior", "learned"]
+  # The data_vs_prior radius that also asks the loadings' total variance to stand at or above 1 (--radius-rule
+  # data_vs_prior_pcs), at loading scale 1/4 with the table's order and with the accuracy order, and the cell that failed
+  # under the mean-only rule at the default scale 1/16.
+  s2_scale1_4_rad_pcs_ord_stages:
+    args: ["--optimizer", "momentum_sgd", "--sgd-learning-rate", "2.4", "--sgd-loading-scale", "0.25",
+           "--radius-rule", "data_vs_prior_pcs", "--direction-prior", "learned"]
+  s2_scale1_4_rad_pcs_ord_acc:
+    args: ["--optimizer", "momentum_sgd", "--sgd-learning-rate", "2.4", "--sgd-loading-scale", "0.25", "--stages", "[[1,4,1]]",
+           "--radius-rule", "data_vs_prior_pcs", "--order-rule", "accuracy", "--order-max", "3", "--final-order-max", "3",
+           "--direction-prior", "learned"]
+  s2_rad_pcs_ord_acc:
+    args: ["--optimizer", "momentum_sgd", "--sgd-learning-rate", "2.4", "--sgd-loading-scale", "0.0625", "--stages", "[[1,4,1]]",
+           "--radius-rule", "data_vs_prior_pcs", "--order-rule", "accuracy", "--order-max", "3", "--final-order-max", "3",
+           "--direction-prior", "learned"]
+  # Round 19, two diagnostics for the synthetic suites, whose views are uniform and whose images are centred: the shift
+  # search off (--shift-range 0: one zero translation per image, no offset estimate) and the direction prior uniform
+  # (--direction-prior uniform) instead of learned. Against vdam_recipe and s1_scale1_4 (the same arms with the +-2 px search
+  # and the learned prior).
+  s3_vdam_noshift:
+    args: ["--optimizer", "vdam", "--shift-range", "0", "--shift-step", "1", "--direction-prior", "learned"]
+  s3_scale1_4_noshift:
+    args: ["--optimizer", "momentum_sgd", "--sgd-learning-rate", "2.4", "--sgd-loading-scale", "0.25",
+           "--shift-range", "0", "--shift-step", "1", "--direction-prior", "learned"]
+  s3_vdam_uniform:
+    args: ["--optimizer", "vdam", "--direction-prior", "uniform"]
+  s3_scale1_4_uniform:
+    args: ["--optimizer", "momentum_sgd", "--sgd-learning-rate", "2.4", "--sgd-loading-scale", "0.25",
+           "--direction-prior", "uniform"]
+  s3_scale1_4_uniform_noshift:
+    args: ["--optimizer", "momentum_sgd", "--sgd-learning-rate", "2.4", "--sgd-loading-scale", "0.25",
+           "--direction-prior", "uniform", "--shift-range", "0", "--shift-step", "1"]

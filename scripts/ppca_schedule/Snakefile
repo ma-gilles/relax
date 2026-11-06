@@ -1,7 +1,9 @@
 # PPCA schedule experiments: does a mean-only start, with PCs joining later, separate the states better?
 #
-# Per arm and seed (config.yaml: `arms`, `seeds`), six stages:
-#   1. train_ppca     relax ppca_initial_model on the eleven-state fixture with the arm's schedule flags.   [GPU]
+# Per arm and seed (config.yaml: `arms`, `seeds`), these stages (0 and 8 only for a suite `dataset`):
+#   0. convert_training  the dataset's training manifest as a RELION STAR (scripts/prepare_vdam_ppca_star.py).   [CPU]
+#   1. train_ppca     relax ppca_initial_model on the eleven-state fixture, or the suite dataset, with the arm's flags.   [GPU]
+#                     An arm with `source_ref` first has that commit exported (checkout_source).
 #   2. score_latents  how well the final latents separate the true states (scripts/analyze_ppca_latents.py).
 #   3. plot_run       the standard run figures: latents by true state, volume projections, and the shell gates
 #                     of a VDAM run (scripts/plot_ppca_run.py).
@@ -11,12 +13,21 @@
 #   6. plot_mean_vs_truth  the run's mean against the ground-truth mean by shell and band of shells, with the loadings'
 #                     power (scripts/plot_ppca_mean_vs_truth.py); only arms with `init_truth_mean`, whose frame it shares.
 #   7. summary_table  one row per arm and seed: the scores of every run.
+#   8. score_suite    the suite's scorer and the direct pose fit at the checkpoints of config `suite` (scripts/ppca_schedule/
+#                     score_suite_run.py); a suite `dataset` only.   [GPU]
 # An arm with `init_truth_mean: true` starts its mean from the fixture's ground truth instead of the random seed's
 # (truth_mean_map, scripts/write_ppca_truth_mean.py, which sets the map's sign from the data; relax ppca_initial_model
 # --init-mean-map).
 #
+# A suite `dataset` (--config dataset=<folder name of config suite.datasets_root>) replaces the fixture: q and the particle
+# diameter come from its manifests, and an arm with `source_ref: <commit>` trains with the code of that commit of config
+# `git_repo` (checkout_source exports it).
+#
 # Outputs, under config `output_root`:
-#   <arm>/seed<seed>/     checkpoint_NNNN.npz, iterations.jsonl, run.json, embeddings.npz, latent_scores.json
+#   sources/<commit>/     the code of a `source_ref` commit, with PROVENANCE.txt (the full hash)
+#   training/             particles.star and particles.mrcs of a suite dataset (converted)
+#   <arm>/seed<seed>/     checkpoint_NNNN.npz, iterations.jsonl, run.json, embeddings.npz, latent_scores.json,
+#                         suite_scores.json (a suite dataset; the scoring work is in suite_work/)
 #   <arm>/seed<seed>/plots/   pc_histogram.png (q = 1) or pc_scatter.png and pc_density.png (q > 1),
 #                         volume_projections.png, latents_pc_ordered.npz, gates_spectrogram.png (VDAM arms only),
 #                         umap.png and umap_embedding.npy (q >= 2), pose_accuracy.png and .json (--order-rule accuracy),
@@ -26,14 +37,14 @@
 #   logs/                 one log per rule, arm and seed
 #
 # Settings: config.yaml holds the experiment (training settings, seeds, arms). The locations that differ between sites
-# (output_root, natives_dir, fixture) are null there; set them in a site file kept outside the repository (copy
-# site.example.yaml) and pass it with --configfile, which overrides config.yaml.
+# (output_root, natives_dir, fixture or suite.*, ...) are null there; set them in a site file kept outside the repository
+# (copy site.example.yaml) and pass it with --configfile, which overrides config.yaml.
 #
 # Run from a frozen copy of the checkout (the jobs import the code at their start). --directory keeps Snakemake's
 # metadata and the Slurm logs beside the results; the target goes first, because --config takes what follows it. The
 # Slurm profile is yours (--profile): the rules ask only for gpu=1 where they need one, and for runtime and memory:
 #   snakemake --snakefile <snapshot>/scripts/ppca_schedule/Snakefile --directory <dir> --profile <profile> all \
-#       --configfile <site.yaml> --config output_root=<dir> [only_arms=[a,b]] [seeds=[11]]
+#       --configfile <site.yaml> --config output_root=<dir> [dataset=<name>] [only_arms=[a,b]] [seeds=[11]]
 
 import csv
 import json
@@ -60,21 +71,62 @@ def required_path(settings, key, label=None):
     return Path(settings[key])
 
 
+# The suite scorer's locations, as options of score_suite_run.py: config `suite` key -> option.
+SUITE_TOOL_OPTIONS = {
+    "tools_dir": "suite-tools",
+    "fit_tools_dir": "fit-tools",
+    "gpu_env": "gpu-env",
+    "cpu_env": "cpu-env",
+    "scorer_python": "scorer-python",
+    "fit_python": "fit-python",
+}
+
 REPO = Path(workflow.basedir).resolve().parents[1]
 PYTHON = config["python"] or str(REPO / ".pixi/envs/default/bin/python")
 OUTPUT_ROOT = required_path(config, "output_root")
 NATIVES = required_path(config, "natives_dir")
-FIXTURE = required_path(config, "fixture")
+GIT_REPO = Path(config["git_repo"]) if config.get("git_repo") else REPO
+DATASET = config.get("dataset")
+SUITE = config["suite"]
+if DATASET:
+    for key in ("datasets_root", "tools_dir", "fit_tools_dir"):
+        required_path(SUITE, key, f"suite.{key}")
+    FIXTURE = Path(SUITE["datasets_root"]) / DATASET
+    SUITE_OPTIONS = " ".join(
+        f"--{option} {shlex.quote(str(SUITE[key]))}" for key, option in SUITE_TOOL_OPTIONS.items() if SUITE.get(key)
+    )
+else:
+    FIXTURE = required_path(config, "fixture")
+    SUITE_OPTIONS = ""
 TRAIN = config["train"]
 ARMS = config["arms"]
 RUN_ARMS = config["only_arms"] or list(ARMS)
 SEEDS = config["seeds"]
 TRUTH_MEAN = OUTPUT_ROOT / "truth_mean.mrc"
+TRAIN_STAR = OUTPUT_ROOT / "training" / "particles.star" if DATASET else FIXTURE / "training" / "particles.star"
+if DATASET:
+    # A suite dataset states its own geometry; the PCs of its runs are named there, else the suite's default (D and H1: 2).
+    config["particle_diameter_ang"] = json.loads((FIXTURE / "training" / "manifest.json").read_text())["particle_diameter_ang"]
+    TRAIN["q"] = json.loads((FIXTURE / "evaluation" / "manifest.json").read_text()).get("pcs_used_in_runs") or SUITE["default_q"]
+    TRAIN["runtime_minutes"] = SUITE["runtime_minutes"]
 
 # The pinned environment only: no user site packages, none of the Python or conda variables the Snakemake
 # environment sets, this checkout on the import path, and the native library built from it for the GPU rule.
 CLEAN_ENV = f"env -u PYTHONHOME -u CONDA_PREFIX -u VIRTUAL_ENV PYTHONNOUSERSITE=1 PYTHONPATH={REPO}"
-RUN_ENV = f"{CLEAN_ENV} RELAX_CUDA_LIB={NATIVES}/librelax_cuda.so"
+
+
+def arm_source(arm):
+    """The code an arm trains with: the export of its `source_ref` commit, else this checkout."""
+    ref = ARMS[arm].get("source_ref")
+    return OUTPUT_ROOT / "sources" / str(ref) if ref else REPO
+
+
+def arm_run_env(arm):
+    """The training environment of an arm: the arm's code on the import path and the native library."""
+    return (
+        f"env -u PYTHONHOME -u CONDA_PREFIX -u VIRTUAL_ENV PYTHONNOUSERSITE=1 PYTHONPATH={arm_source(arm)} "
+        f"RELAX_CUDA_LIB={NATIVES}/librelax_cuda.so"
+    )
 
 
 def arm_q(arm):
@@ -103,10 +155,12 @@ def output_path(*parts):
 wildcard_constraints:
     arm="|".join(map(re.escape, ARMS)),
     seed=r"\d+",
+    ref=r"[0-9A-Za-z._-]+",
 
 
 localrules:
     all,
+    checkout_source,
     score_latents,
     plot_run,
     summary_table,
@@ -115,6 +169,7 @@ localrules:
 UMAP_ARMS = [arm for arm in RUN_ARMS if arm_q(arm) >= 2]
 ACCURACY_ARMS = [arm for arm in RUN_ARMS if arm_order_rule(arm) == "accuracy"]
 TRUTH_MEAN_ARMS = [arm for arm in RUN_ARMS if ARMS[arm].get("init_truth_mean")]
+SUITE_ARMS = RUN_ARMS if DATASET else []
 
 
 rule all:
@@ -129,11 +184,41 @@ rule all:
         means=expand(
             output_path("{arm}", "seed{seed}", "plots", "mean_vs_truth.png"), arm=TRUTH_MEAN_ARMS, seed=SEEDS
         ),
+        suite=expand(output_path("{arm}", "seed{seed}", "suite_scores.json"), arm=SUITE_ARMS, seed=SEEDS),
 
 
 # ----------------------------------------------------------------------------------------------------------------
 # Stage 1: training
 # ----------------------------------------------------------------------------------------------------------------
+
+
+if DATASET:
+
+    rule convert_training:
+        message:
+            "Converting the training manifest of {DATASET} to a RELION STAR"
+        input:
+            manifest=FIXTURE / "training" / "manifest.json",
+            script=REPO / "scripts" / "prepare_vdam_ppca_star.py",
+        output:
+            particles_star=TRAIN_STAR,
+            stack=TRAIN_STAR.parent / "particles.mrcs",
+        params:
+            env=CLEAN_ENV,
+            python=PYTHON,
+            directory=TRAIN_STAR.parent,
+            scratch=str(TRAIN_STAR.parent) + ".converting",
+        resources:
+            cpus_per_task=4,
+            mem="16G",
+            runtime=120,
+        log:
+            output_path("logs", "convert_training.log"),
+        shell:
+            "rm -rf {params.scratch} && "
+            "{params.env} {params.python} {input.script} {input.manifest} -o {params.scratch} "
+            "> {log} 2>&1 && "
+            "mv {params.scratch}/* {params.directory}/ && rmdir {params.scratch}"
 
 
 rule truth_mean_map:
@@ -143,7 +228,7 @@ rule truth_mean_map:
         script=REPO / "scripts" / "write_ppca_truth_mean.py",
         manifest=FIXTURE / "evaluation" / "manifest.json",
         truth=FIXTURE / "evaluation" / "truth.npz",
-        particles_star=FIXTURE / "training" / "particles.star",
+        particles_star=TRAIN_STAR,
     output:
         truth_mean=TRUTH_MEAN,
     params:
@@ -162,17 +247,38 @@ rule truth_mean_map:
         "> {log} 2>&1"
 
 
+rule checkout_source:
+    message:
+        "Exporting commit {wildcards.ref} of {params.repo} as the code of an arm"
+    output:
+        provenance=output_path("sources", "{ref}", "PROVENANCE.txt"),
+    params:
+        repo=GIT_REPO,
+        directory=lambda wildcards, output: str(Path(output.provenance).parent),
+    log:
+        output_path("logs", "checkout_{ref}.log"),
+    shell:
+        "{{ git -C {params.repo} archive {wildcards.ref} | tar -x -C {params.directory} && "
+        "git -C {params.repo} rev-parse {wildcards.ref} > {output.provenance}; }} "
+        "> {log} 2>&1"
+
+
 rule train_ppca:
     message:
         "Training arm {wildcards.arm}, seed {wildcards.seed}"
     input:
-        particles_star=FIXTURE / "training" / "particles.star",
+        particles_star=TRAIN_STAR,
         truth_mean=lambda wildcards: [TRUTH_MEAN] if ARMS[wildcards.arm].get("init_truth_mean") else [],
+        source=lambda wildcards: (
+            [output_path("sources", str(ARMS[wildcards.arm]["source_ref"]), "PROVENANCE.txt")]
+            if ARMS[wildcards.arm].get("source_ref")
+            else []
+        ),
     output:
         embeddings=output_path("{arm}", "seed{seed}", "embeddings.npz"),
         iterations=output_path("{arm}", "seed{seed}", "iterations.jsonl"),
     params:
-        env=RUN_ENV,
+        env=lambda wildcards: arm_run_env(wildcards.arm),
         python=PYTHON,
         diameter=config["particle_diameter_ang"],
         train=TRAIN,
@@ -343,6 +449,46 @@ rule plot_mean_vs_truth:
 
 
 # ----------------------------------------------------------------------------------------------------------------
+# Stage 8: the suite's scorer (a suite dataset only)
+# ----------------------------------------------------------------------------------------------------------------
+
+
+if DATASET:
+
+    rule score_suite:
+        message:
+            "Scoring arm {wildcards.arm}, seed {wildcards.seed} with the suite scorer and the direct pose fit"
+        input:
+            embeddings=rules.train_ppca.output.embeddings,
+            script=REPO / "scripts" / "ppca_schedule" / "score_suite_run.py",
+        output:
+            scores=output_path("{arm}", "seed{seed}", "suite_scores.json"),
+        params:
+            env=CLEAN_ENV,
+            python=PYTHON,
+            dataset=DATASET,
+            datasets_root=SUITE["datasets_root"],
+            tools=SUITE_OPTIONS,
+            checkpoints=" ".join(map(str, SUITE["checkpoints"])),
+            run_dir=lambda wildcards, input: str(Path(input.embeddings).parent),
+        resources:
+            gpu=1,
+            runtime=240,
+        log:
+            output_path("logs", "{arm}.seed{seed}.suite_score.log"),
+        shell:
+            "{params.env} {params.python} {input.script} {params.run_dir} "
+            "--dataset {params.dataset} "
+            "--arm {wildcards.arm} "
+            "--seed {wildcards.seed} "
+            "--datasets-root {params.datasets_root} "
+            "{params.tools} "
+            "--checkpoints {params.checkpoints} "
+            "-o {output.scores} "
+            "> {log} 2>&1"
+
+
+# ----------------------------------------------------------------------------------------------------------------
 # Stage 7: summary
 # ----------------------------------------------------------------------------------------------------------------
 
@@ -352,14 +498,21 @@ rule summary_table:
         "Collecting the scores of every arm and seed"
     input:
         scores=expand(rules.score_latents.output.scores, arm=RUN_ARMS, seed=SEEDS),
+        suite=expand(output_path("{arm}", "seed{seed}", "suite_scores.json"), arm=SUITE_ARMS, seed=SEEDS),
     output:
         summary=output_path("summary.tsv"),
     run:
         rows = []
         for path in input.scores:
             arm, seed = Path(path).parent.parent.name, Path(path).parent.name.removeprefix("seed")
-            rows.append({"arm": arm, "seed": seed, **json.loads(Path(path).read_text())})
+            row = {"arm": arm, "seed": seed, **json.loads(Path(path).read_text())}
+            suite = Path(path).parent / "suite_scores.json"
+            if suite.exists():
+                for checkpoint, scores in json.loads(suite.read_text())["checkpoints"].items():
+                    row.update({f"{name}_{checkpoint}": value for name, value in scores.items()})
+            rows.append(row)
+        fieldnames = list(dict.fromkeys(name for row in rows for name in row))
         with open(output.summary, "w", newline="") as stream:
-            writer = csv.DictWriter(stream, fieldnames=list(rows[0]), delimiter="\t")
+            writer = csv.DictWriter(stream, fieldnames=fieldnames, delimiter="\t")
             writer.writeheader()
             writer.writerows(rows)
