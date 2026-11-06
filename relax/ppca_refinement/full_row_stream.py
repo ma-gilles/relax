@@ -292,7 +292,15 @@ def _prepare_full_row_stream(
         if tile_loader is None
         else None
     )
-    noise_variance_half = noise_utils.to_batched_half_pixel_noise(noise_variance, resolved.image_shape).squeeze()
+    if isinstance(noise_variance, (list, tuple)):
+        # A noise table, one spectrum per noise group (subtomogram particles): (G, n_half), kept 2D for one group.
+        if tile_loader is None:
+            raise ValueError("A noise table needs a tile reader that gives each tile its noise groups")
+        noise_variance_half = jnp.stack(
+            [noise_utils.to_batched_half_pixel_noise(row, resolved.image_shape).reshape(-1) for row in noise_variance]
+        )
+    else:
+        noise_variance_half = noise_utils.to_batched_half_pixel_noise(noise_variance, resolved.image_shape).squeeze()
     block_size = int(schedule.rotation_block_size)
     block_starts = device_block_starts(n_rot, block_size, device)
     # The sentinel row (identity rotation, zero prior) has the all-unsupported
@@ -588,9 +596,14 @@ def finish_full_row_tile(stream, image_indices, tile, layout, posterior, carry, 
     if enforce_x0:
         lhs_tri = enforce_augmented_x0(lhs_tri.astype(jnp.complex64), static.volume_shape).real.astype(jnp.float32)
     weights, shells, n_shells = _shell_tables(tuple(int(n) for n in static.image_shape), stream.device)
-    residual_num = jnp.zeros(n_shells, jnp.float32).at[shells].add(weights * carry.residual_power)
+    # Per noise group (rows) with a stream noise table, else one row.
+    power = carry.residual_power
+    residual_num = jnp.zeros((*power.shape[:-1], n_shells), jnp.float32).at[..., shells].add(weights * power)
     # Every observed image counts once: a subtomogram particle observes each of its visible tilts.
-    residual_den = jnp.zeros(n_shells, jnp.float32).at[shells].add(weights * layout["n_observations"])
+    observations = jnp.asarray(layout["n_observations"], jnp.float32)
+    residual_den = (
+        jnp.zeros((*observations.shape, n_shells), jnp.float32).at[..., shells].add(weights * observations[..., None])
+    )
     # Scores exclude the pose-invariant image constant; the absolute log-partition adds it back.
     logZ = (
         posterior.center

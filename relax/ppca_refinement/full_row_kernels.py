@@ -139,6 +139,15 @@ class TileArrays(NamedTuple):
     ctf2_recon: jax.Array  # (B, K F) float32
     y_norm: jax.Array  # (B,)
     frames: jax.Array | None = None  # (K, 3, 3) float32 tilt frame matrices; None for single particles
+    # Subtomogram tiles: the global noise group of each tilt group of the tile, (G,) int32 (G = 1 for a
+    # tile of one tilt group). None for single particles.
+    noise_groups: jax.Array | None = None
+    # Mixed tiles only (``frames`` (G, K, 3, 3)): ``slots[0]`` the group-major slot ``g b + j`` of each
+    # particle position (real particles first), ``slots[1]`` its inverse, (2, B) int32. In a mixed tile the
+    # operands are per tilt group, group-major: ``Y1`` (G, K 2F, b T), ``ctf2`` (G, K F, b), ``Y1_recon``
+    # (G, b T, K 2F), ``ctf2_recon`` (G, b, K F); every per-particle array (``coarse_mask``, ``y_norm``, the kept
+    # results, the posterior) stays in particle order.
+    slots: jax.Array | None = None
 
 
 class Posterior(NamedTuple):
@@ -279,16 +288,22 @@ def _latent_block(Y1, ctf2, proj, pose_log_prior, n_images: int):
     score ``(R, B, T)``, means ``(q, R, B, T)`` and packed covariances
     ``(R, B, tri(q))``.
     """
+    inner, gram = _inner_gram(Y1, ctf2, proj, n_images, HIGHEST)
+    return latent_scores(inner, gram, pose_log_prior)
+
+
+def _inner_gram(Y1, ctf2, proj, n_images: int, precision):
+    """The two GEMMs of :func:`_latent_block`: ``inner`` ``(P, R, B, T)`` and the packed ``gram`` ``(tri(P), R, B)``."""
     P, R = proj.shape[:2]
     B = n_images
     T = Y1.shape[1] // B
-    inner = jnp.dot(real_imag(proj).reshape(P * R, -1), Y1, precision=HIGHEST).reshape(P, R, B, T)
+    inner = jnp.dot(real_imag(proj).reshape(P * R, -1), Y1, precision=precision).reshape(P, R, B, T)
     first, second = np.triu_indices(P)
     # Static component slices: an index-array gather here lowers to a strided gather fusion.
     real, imag = proj.real, proj.imag
     products = jnp.stack([real[i] * real[j] + imag[i] * imag[j] for i, j in zip(first.tolist(), second.tolist())])
-    gram = jnp.dot(products.reshape(first.size * R, -1), ctf2, precision=HIGHEST).reshape(first.size, R, B)
-    return latent_scores(inner, gram, pose_log_prior)
+    gram = jnp.dot(products.reshape(first.size * R, -1), ctf2, precision=precision).reshape(first.size, R, B)
+    return inner, gram
 
 
 def latent_scores(inner, gram, pose_log_prior):
@@ -393,7 +408,17 @@ def _block_rows(tile, start, size: int):
 
 
 def n_frames(tile) -> int:
-    return 1 if tile.frames is None else int(tile.frames.shape[0])
+    return 1 if tile.frames is None else int(tile.frames.shape[-3])
+
+
+def mixed(tile) -> bool:
+    """A tile of several tilt groups, each with its own frames (``frames`` (G, K, 3, 3))."""
+    return tile.frames is not None and tile.frames.ndim == 4
+
+
+def _group_rotations(frames, rotations):
+    """``Aproj_f R_r`` of one tilt group's frames ``(K, 3, 3)`` at ``rotations`` ``(R, 3, 3)``, frame minor."""
+    return jnp.einsum("fab,rbc->rfac", frames, rotations, precision=HIGHEST).reshape(-1, 3, 3)
 
 
 def frame_rotations(tile, rotations):
@@ -403,14 +428,17 @@ def frame_rotations(tile, rotations):
     """
     if tile.frames is None:
         return rotations
-    expanded = jnp.einsum("fab,rbc->rfac", tile.frames, rotations, precision=HIGHEST)
-    return expanded.reshape(-1, 3, 3)
+    if mixed(tile):
+        raise ValueError("A mixed tile has frames per tilt group (_group_rotations)")
+    return _group_rotations(tile.frames, rotations)
 
 
 @partial(jax.jit, static_argnames=("static", "block_size"), donate_argnums=(2,))
 def score_block(arrays, tile, kept, start, *, static, block_size):
     """Pass 1 for one rotation block, written into the kept tile results."""
     rows = _block_rows(tile, start, block_size)
+    if mixed(tile):
+        return _score_block_mixed(arrays, tile, kept, start, rows, static)
     if static.cuda_kernels:
         return _score_block_cuda(arrays, tile, kept, start, rows, static)
     prior = full_row_pose_log_prior(
@@ -471,6 +499,74 @@ def _score_block_cuda(arrays, tile, kept, start, rows, static):
         tile.coarse_mask,
     )
     return _Kept(*ppca_latent_epilogue_f32(inner, gram, rows, tables, start, kept))
+
+
+def _mixed_take(x, g):
+    return jax.lax.dynamic_index_in_dim(x, g, axis=0, keepdims=False)
+
+
+def _score_block_mixed(arrays, tile, kept, start, rows, static):
+    """Pass 1 of one rotation block on a mixed tile: per tilt group, the projections at the group's own frames
+    against the group's particles (one scan step each, the shapes of a one-group tile of ``b`` particles), then
+    the latent stage once for the whole tile in particle order."""
+    P = static.basis_size
+    G, b = int(tile.ctf2.shape[0]), int(tile.ctf2.shape[2])
+    T = int(arrays.shift_squared.shape[0])
+    R = rows.shape[0]
+    rotations = arrays.rotations[rows]
+    position_slot = tile.slots[0]
+
+    def group(_, g):
+        frame_rotations_g = _group_rotations(_mixed_take(tile.frames, g), rotations)
+        Y1, ctf2 = _mixed_take(tile.Y1, g), _mixed_take(tile.ctf2, g)
+        if static.cuda_kernels:
+            planar, products = ppca_window_project_f32(
+                arrays.augmented_voxel_major,
+                arrays.gemm_window,
+                frame_rotations_g,
+                image_shape=static.image_shape,
+                volume_shape=static.volume_shape,
+                max_r=static.projection_max_r,
+                with_products=True,
+                basis_size=static.basis_size,
+            )
+            inner = jnp.dot(planar.reshape(P * R, -1), Y1, precision=gemm(static)).reshape(P, R, -1)
+            gram = jnp.dot(products.reshape(products.shape[0] * R, -1), ctf2, precision=gemm(static))
+            return None, (inner[:, :, : b * T], gram.reshape(-1, R, b))
+        proj = project(arrays, frame_rotations_g, static)
+        proj = proj.reshape(P, R, -1, proj.shape[-1])
+        inner, gram = _inner_gram(Y1, ctf2, proj, b, HIGHEST)
+        return None, (inner.reshape(P, R, b * T), gram)
+
+    _, (inner, gram) = jax.lax.scan(group, None, jnp.arange(G))
+    # (G, P, R, b T) -> particle order (P, R, B, T); (G, tri, R, b) -> (tri, R, B).
+    inner = jnp.transpose(inner, (1, 2, 0, 3)).reshape(P, R, G * b, T)[:, :, position_slot]
+    gram = jnp.transpose(gram, (1, 2, 0, 3)).reshape(gram.shape[1], R, G * b)[:, :, position_slot]
+    if static.cuda_kernels:
+        B = G * b
+        flat = inner.reshape(P, R, B * T)
+        flat = jnp.pad(flat, ((0, 0), (0, 0), (0, -(B * T) % SHIFT_ALIGN)))
+        tables = (
+            arrays.rotation_parent,
+            arrays.rotation_log_prior,
+            arrays.translation_parent,
+            arrays.translation_log_prior,
+            tile.coarse_mask,
+        )
+        return _Kept(*ppca_latent_epilogue_f32(flat, gram, rows, tables, start, kept))
+    prior = full_row_pose_log_prior(
+        tile.coarse_mask,
+        arrays.rotation_parent[rows],
+        arrays.translation_parent,
+        arrays.rotation_log_prior[rows],
+        arrays.translation_log_prior,
+    )
+    score, mean, covariance = latent_scores(inner, gram, prior)
+    return kept._replace(
+        score=jax.lax.dynamic_update_slice_in_dim(kept.score, score, start, axis=0),
+        latent_mean=jax.lax.dynamic_update_slice_in_dim(kept.latent_mean, mean, start, axis=1),
+        latent_covariance=jax.lax.dynamic_update_slice_in_dim(kept.latent_covariance, covariance, start, axis=0),
+    )
 
 
 @partial(jax.jit, static_argnames=("n_blocks", "block_size"))
@@ -540,6 +636,8 @@ def second_moment_sums(gamma, mean, covariance):
 @partial(jax.jit, static_argnames=("static", "block_size", "moments"), donate_argnums=(0,))
 def moment_block(carry, arrays, tile, kept, posterior, start, *, static, block_size, moments):
     """Pass 2 for one rotation block: posterior weights, M-step images, residuals and diagnostics."""
+    if mixed(tile):
+        return _moment_block_mixed(carry, arrays, tile, kept, posterior, start, static, block_size, moments)
     if static.cuda_kernels:
         weights, sums, carry = _posterior_block_cuda(
             carry, arrays, kept, posterior, start, static, block_size, tile.Y1_recon.shape[0]
@@ -554,17 +652,93 @@ def moment_block(carry, arrays, tile, kept, posterior, start, *, static, block_s
     F = tile.ctf2_recon.shape[1] // n_frames(tile)
     n_moments = sums.shape[0]  # packed (1 + q) x (1 + q) moment channels
     rotations = frame_rotations(tile, arrays.rotations[_block_rows(tile, start, block_size)])
-    rhs_parts = jnp.dot(weights.reshape(P * block_size, -1), tile.Y1_recon, precision=gemm(static)).reshape(
-        P, R, 2 * F
-    )
+    rhs_parts = jnp.dot(weights.reshape(P * block_size, -1), tile.Y1_recon, precision=gemm(static)).reshape(P, R, 2 * F)
     lhs_images = _metric_dot(sums.reshape(n_moments * block_size, -1), tile.ctf2_recon, static).reshape(n_moments, R, F)
-    return scatter_moment_images(carry, arrays, static, rhs_parts, lhs_images, rotations)
+    return scatter_moment_images(
+        carry, arrays, static, rhs_parts, lhs_images, rotations, noise_group=tile_noise_group(tile)
+    )
 
 
-def scatter_moment_images(carry, arrays, static, rhs_parts, lhs_images, rotations):
+def tile_noise_group(tile):
+    """The noise group of a one-group subtomogram tile (its row of a stream's noise table); None otherwise."""
+    return None if tile.noise_groups is None else tile.noise_groups[0]
+
+
+def _moment_block_mixed(carry, arrays, tile, kept, posterior, start, static, block_size, moments):
+    """Pass 2 of one rotation block on a mixed tile: posterior weights for the whole tile in particle order, then
+    per tilt group its M-step images at its own frames, backprojected with its noise group's residual (one scan
+    step each); the block's volumes are summed over the groups and added to the carry once."""
+    B = int(tile.y_norm.shape[0])
+    T = int(arrays.shift_squared.shape[0])
+    if static.cuda_kernels:
+        weights, sums, carry = _posterior_block_cuda(carry, arrays, kept, posterior, start, static, block_size, B * T)
+    else:
+        weights, sums, carry = _posterior_block(carry, arrays, kept, posterior, start, block_size)
+    if not moments:
+        return carry
+    P = static.basis_size
+    G, b = int(tile.ctf2_recon.shape[0]), int(tile.ctf2_recon.shape[1])
+    K = n_frames(tile)
+    F = tile.ctf2_recon.shape[2] // K
+    n_moments = sums.shape[0]
+    slot_position = tile.slots[1]
+    # Particle order -> group-major (G, ., R, b ...).
+    weights = weights.reshape(P, block_size, B, T)[:, :, slot_position].reshape(P, block_size, G, b * T)
+    weights = jnp.transpose(weights, (2, 0, 1, 3))
+    # A key's reconstruction operand may pad its (image, shift) rows (GPU streams): zero weights there.
+    weights = jnp.pad(weights, ((0, 0), (0, 0), (0, 0), (0, tile.Y1_recon.shape[1] - b * T)))
+    sums = jnp.transpose(sums[:, :, slot_position].reshape(n_moments, block_size, G, b), (2, 0, 1, 3))
+    rotations = arrays.rotations[_block_rows(tile, start, block_size)]
+
+    def group(state, g):
+        volume, residual_power = state
+        rhs_parts = jnp.dot(
+            _mixed_take(weights, g).reshape(P * block_size, -1), _mixed_take(tile.Y1_recon, g), precision=gemm(static)
+        ).reshape(P, block_size * K, 2 * F)
+        lhs_images = _metric_dot(
+            _mixed_take(sums, g).reshape(n_moments * block_size, -1), _mixed_take(tile.ctf2_recon, g), static
+        ).reshape(n_moments, block_size * K, F)
+        frame_rotations_g = _group_rotations(_mixed_take(tile.frames, g), rotations)
+        block, correction = _scatter_block(arrays, static, rhs_parts, lhs_images, frame_rotations_g)
+        residual_power = _add_residual(residual_power, arrays, correction, tile.noise_groups[g])
+        return (volume + block, residual_power), None
+
+    zero = jnp.zeros(carry.moments.shape, carry.moments.dtype)
+    (volume, residual_power), _ = jax.lax.scan(group, (zero, carry.residual_power), jnp.arange(G))
+    moments_sum, compensation = compensated_add(carry.moments, carry.moments_compensation, volume)
+    return carry._replace(moments=moments_sum, moments_compensation=compensation, residual_power=residual_power)
+
+
+def _add_residual(residual_power, arrays, correction, noise_group):
+    """Add one block's noise-power correction (on the score window), scaled back by the noise: with a noise table
+    (``coefficient_noise`` (G, n_half), subtomogram streams) into the row of ``noise_group``."""
+    indices = arrays.score_indices
+    nv = arrays.coefficient_noise
+    if nv.ndim == 1:
+        nv = jnp.broadcast_to(nv, (residual_power.shape[-1],))
+        if indices is None:
+            return residual_power + correction * nv
+        return residual_power.at[..., indices].add(correction * nv[indices])
+    if noise_group is None:
+        raise ValueError("A noise table needs the tile's noise group")
+    row = nv[noise_group]
+    if indices is None:
+        return residual_power.at[noise_group].add(correction * row)
+    return residual_power.at[noise_group, indices].add(correction * row[indices])
+
+
+def scatter_moment_images(carry, arrays, static, rhs_parts, lhs_images, rotations, *, noise_group=None):
     """Backproject one block's M-step images into the carry: the packed LHS metric images ``(tri(P), R, F)``
     and the planar RHS images ``(P, R, 2F)`` at ``rotations`` ``(R, 3, 3)``, as residual images, and their
-    noise-power correction."""
+    noise-power correction (into ``noise_group``'s row of a noise table)."""
+    block, correction = _scatter_block(arrays, static, rhs_parts, lhs_images, rotations)
+    residual_power = _add_residual(carry.residual_power, arrays, correction, noise_group)
+    moments, moments_compensation = compensated_add(carry.moments, carry.moments_compensation, block)
+    return carry._replace(moments=moments, moments_compensation=moments_compensation, residual_power=residual_power)
+
+
+def _scatter_block(arrays, static, rhs_parts, lhs_images, rotations):
+    """``(block volumes, correction on the score window)`` of :func:`scatter_moment_images`."""
     P = static.basis_size
     F = lhs_images.shape[2]
     # The reconstruction operands equal the score operands without the
@@ -572,7 +746,6 @@ def scatter_moment_images(carry, arrays, static, rhs_parts, lhs_images, rotation
     # statistics are already divided by that weight. The RHS images enter the
     # residual only: neither optimizer reads an RHS volume, so only the LHS
     # metric and the residual gradient are backprojected.
-    indices = arrays.score_indices
     if static.cuda_kernels:
         window = arrays.gemm_window
         projections, _ = ppca_window_project_f32(
@@ -609,13 +782,7 @@ def scatter_moment_images(carry, arrays, static, rhs_parts, lhs_images, rotation
             tri_i, tri_j = np.triu_indices(P)
             lhs_images = jnp.sum(lhs_images[np.flatnonzero(tri_i == tri_j)], axis=0, keepdims=True)
         block = _backproject_moments(lhs_images, residual_images, window, rotations, static)
-    nv = jnp.broadcast_to(arrays.coefficient_noise, (carry.residual_power.size,))
-    if indices is None:
-        residual_power = carry.residual_power + correction * nv
-    else:
-        residual_power = carry.residual_power.at[indices].add(correction * nv[indices])
-    moments, moments_compensation = compensated_add(carry.moments, carry.moments_compensation, block)
-    return carry._replace(moments=moments, moments_compensation=moments_compensation, residual_power=residual_power)
+    return block, correction
 
 
 def _posterior_block(carry, arrays, kept, posterior, start, block_size):
