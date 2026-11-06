@@ -32,7 +32,7 @@ def split_curvature_step(gradient, diagonal, active, learning_rate, floor):
     return step, float(c_mean), float(c_pc)
 
 
-def damped_newton_direction(lhs_tri, gradient, active, floor):
+def damped_newton_direction(lhs_tri, gradient, active, floor, relative_floor=None):
     """``H_f^-1 G_f`` per active frequency, eigenvalues floored at ``floor``.
 
     A materially indefinite ``H_f`` (smallest eigenvalue below ``-32 eps max|eigenvalue|``) is damped instead of
@@ -46,6 +46,10 @@ def damped_newton_direction(lhs_tri, gradient, active, floor):
     metric = unpack_tri_to_full(jnp.asarray(lhs_tri), p)
     metric = jnp.where(active[:, None, None], (metric + metric.swapaxes(-1, -2)) * 0.5, 0)
     values, vectors = jnp.linalg.eigh(metric)
+    if relative_floor is not None:
+        # A floor relative to the band's stiffest direction bounds every step at 1 / (r max eigenvalue).
+        top = float(jnp.max(jnp.where(active, values[:, -1], 0.0)))
+        floor_ = np.float32(max(float(floor_), relative_floor * top))
     bound = 32 * np.finfo(np.float32).eps * jnp.maximum(jnp.max(jnp.abs(values), axis=-1, keepdims=True), floor_)
     damping = jnp.where(values[:, :1] < -bound, floor_ - values[:, :1], 0.0)
     damped = jnp.maximum(values + damping, floor_)
@@ -61,6 +65,7 @@ def damped_newton_direction(lhs_tri, gradient, active, floor):
         "max_damping": float(host_damping.max()) if host_damping.size else 0.0,
         "minimum_eigenvalue": float(host_values[:, 0].min()) if host_values.size else 0.0,
         "floored_eigenvalues": int(np.sum(host_values < floor_)),
+        "eigenvalue_floor": float(floor_),
     }
 
 
@@ -141,6 +146,8 @@ class NewtonSGD:
             else None
         )
         self.direction = config.sgd_direction
+        self.pc_min_shell = int(config.sgd_pc_min_shell)
+        self.relative_floor = config.sgd_eig_floor_rel
 
     def step(self, stats, active, shells, iteration, floor, q):
         """The update ``(n_frequency, 1+q)`` and its diagnostics."""
@@ -156,7 +163,7 @@ class NewtonSGD:
         split, c_mean, c_pc = split_curvature_step(gradient, diagonal, active, lr, floor)
         diagnostics = {"learning_rate_used": lr, "learning_rate_base": self.lr.base, "c_mean": c_mean, "c_pc": c_pc}
         if self.direction == "coupled":
-            direction, info = damped_newton_direction(lhs, gradient, active, floor)
+            direction, info = damped_newton_direction(lhs, gradient, active, floor, self.relative_floor)
             if self.k is None:
                 self.k = float(jnp.linalg.norm(split) / jnp.maximum(lr * jnp.linalg.norm(direction), 1e-30))
             step = jnp.float32(lr * self.k) * direction
@@ -170,6 +177,9 @@ class NewtonSGD:
             top = int(np.max(np.where(np.asarray(active), np.asarray(shells), 0)))
             diagnostics["pc_gate_shell"] = [round(float(x), 4) for x in np.asarray(factors)[: top + 1]]
             diagnostics["pc_gate_raw_shell"] = [round(float(x), 4) for x in np.asarray(self.gate.raw())[: top + 1]]
+        if self.pc_min_shell:
+            keep = (jnp.asarray(shells) >= self.pc_min_shell)[:, None].astype(step.dtype)
+            step = jnp.asarray(step).at[:, 1:].multiply(keep)
         diagnostics["step_l2"] = float(jnp.linalg.norm(step))
         return step.astype(gradient.dtype), diagnostics
 
