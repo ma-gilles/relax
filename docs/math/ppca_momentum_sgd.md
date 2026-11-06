@@ -159,3 +159,53 @@ package retains main's forward/backprojection convention and does not assert
 that its gridded trace is the exact map-space Hessian. Reconciliation of those
 old options requires matched-source, matched-observation validation rather
 than copying their units or masking assumptions into this trial.
+
+## Newton SGD
+
+`--sgd-direction coupled` (with `--optimizer momentum_sgd --sgd-momentum 0`)
+replaces the shared-trace step by plain SGD along the per-frequency Newton
+direction of the packed block metric. The owner is
+[`sgd_recipe.py`](../../relax/ppca_initial_model/sgd_recipe.py). With
+\(G_f\), \(H_f\) the summed half-batch gradient and \((1+q)\times(1+q)\)
+metric as above, the step of update \(t\) on an active frequency is
+
+\[
+\Delta\theta_f=\eta(t)\,k\,\tilde H_f^{-1}G_f .
+\]
+
+\(\tilde H_f\) has the eigenvalues of \(H_f\) floored at the existing curvature
+floor. A materially indefinite \(H_f\) (smallest eigenvalue below
+\(-32\,\epsilon\max|\lambda|\)) is damped, not refused: \(\text{floor}-\lambda_{\min}\)
+is added to every eigenvalue. The run logs the number of damped and floored
+frequencies at each update.
+
+The Newton direction has no natural scale relative to the trace step, so
+\(k\) is fixed once, at the first update, so that \(\|\Delta\theta\|\) equals
+the norm of the split-curvature step \(\eta G/c\), with
+\(c=(c_\text{mean},c_\text{pc},\dots,c_\text{pc})\), \(c_\text{mean}\) the band
+maximum of \(H_{f,00}\) and \(c_\text{pc}\) the band maximum of
+\(\operatorname{tr}H_{f,[1:,1:]}/q\). One scalar for every PC keeps the step
+invariant to rotating the loadings. \(k\) is saved with each checkpoint
+(`newton_sgd_XXXX.npz`) and restored on resume.
+
+Learning rate. `--sgd-lr-schedule` reads a `.npy` of per-update factors
+\(s\), and \(\eta(t)=\eta_0\,s(t)/s(1)\). With `--sgd-lr-match M`,
+\(\eta_0\) is set at the first update to \(M\,c_\text{mean}/\max_{f\in S}\operatorname{tr}H_f\),
+so that the mean's split-curvature step there equals the shared-trace step at
+rate \(M\); otherwise \(\eta_0\) is `--sgd-learning-rate`.
+
+PC gate. `--sgd-pc-gate-floor F` multiplies the loading columns of the step,
+per Fourier shell, by \(\operatorname{clip}(\rho,F,1)\), where \(\rho\) is the
+correlation of the two half-batch loading gradients over the shell,
+\(\rho=\langle G^{(0)},G^{(1)}\rangle/\sqrt{\|G^{(0)}\|^2\|G^{(1)}\|^2}\), each
+of the three sums an exponential moving average with weight 1/20. The mean is
+never gated. Without a gate the option is absent; there is no gate on the
+trace step.
+
+Translations and orientations. `--shift-schedule` gives
+`[[first update, range Å, step Å], ...]`; each entry replaces the search range
+and step from its first update on, converted to whole pixels (the range a
+whole number of steps). The window is zero-centred and searched exhaustively.
+`--offset-sigma-hold S` holds the Gaussian offset prior's per-axis sigma at
+\(S\) Å instead of the learned value. `--uniform-direction-prior` keeps the
+orientation prior uniform. These three options also apply to the trace step.

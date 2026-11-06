@@ -73,7 +73,7 @@ class Config:
     # (0: visit every row), when that leaves at most half the rows. A runtime setting;
     # full_row_kernels._pass2_rows has the bound; section 14 of docs/math/vdam_ppca_algorithm.md the evidence.
     pass2_mass_floor: float = 1e-10
-    # Newton SGD (ppca_momentum_sgd.md, section 6; momentum SGD with momentum 0). sgd_direction "coupled" steps
+    # Newton SGD (docs/math/ppca_momentum_sgd.md, "Newton SGD"; momentum SGD with momentum 0). sgd_direction "coupled" steps
     # along the per-frequency H_f^-1 G_f, scaled at the first update to the split-curvature step's norm.
     # sgd_pc_gate_floor F multiplies the PC step per shell by clip(rho, F, 1), rho the moving correlation of the
     # two half-batch PC gradients (None: no gate). sgd_lr_schedule: a .npy of per-update steps s; the rate of
