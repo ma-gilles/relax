@@ -442,8 +442,9 @@ def _expectation(
     mu, W = state.theta[:, 0], state.theta[:, 1:]
     if config.stream_coarse_recompute:
         # One artificial coarse parent represents the full coarse pose grid.
-        # It keeps the shared full-row mask Bx1x1 instead of BxRxT. Each noise group has its
-        # own stream (its noise enters the operands); single particles have one group.
+        # It keeps the shared full-row mask Bx1x1 instead of BxRxT. Subtomogram particles have one stream
+        # with a noise table (each tile reads its keys' rows; the residual sums are per noise group);
+        # single particles have one noise group.
         def make_streams(stream_geometry):
             return [
                 prepare_full_row_stream(
@@ -473,7 +474,7 @@ def _expectation(
                     tile_loader=load_tilt_tile if tilts else None,
                     pass2_mass_floor=config.pass2_mass_floor,
                 )
-                for group_nv in nvs
+                for group_nv in ([nvs] if tilts else nvs)
             ]
 
         # Adaptive oversampling scores pass 1 on RELION's coarse image window and pass 2 at the stage's.
@@ -482,15 +483,16 @@ def _expectation(
         streams = make_streams(dataclasses.replace(geometry, current_size=pass1_size))
         pass2_streams = make_streams(geometry) if pass1_size != 2 * radius else streams
 
-        # Here ``ids`` is the list of id groups; each group is cut into image tiles, of one tilt
-        # group and one noise group each for subtomogram particles. ``image_batch_size`` particles
-        # per tile at most, fewer when a tile (with all its particles' tilts) would not fit the device.
+        # Here ``ids`` is the list of id groups; each group is cut into image tiles (subtomogram particles:
+        # mixed tiles of many tilt groups, or one tilt group's own tiles; tilt_tiles). ``image_batch_size``
+        # particles per tile at most, fewer when a tile (with all its particles' tilts) would not fit the device.
         def cut(size):
             return [
-                (group, int(dataset.particle_noise_group[tile[0]]) if tilts else 0, np.asarray(tile))
+                (group, 0, np.asarray(tile))
                 for group, ids_group in enumerate(ids)
                 for tile in (
-                    tilt_tiles(dataset, ids_group, size)
+                    # Adaptive oversampling reads one tilt group's frames per tile.
+                    tilt_tiles(dataset, ids_group, size, mixed=not oversampled)
                     if tilts
                     else [ids_group[begin : begin + size] for begin in range(0, len(ids_group), size)]
                 )
@@ -543,7 +545,6 @@ def _expectation(
                     sums[tiles[members[position]][0]].add(members[position], part)
 
                 accumulate(stream, items, consume=consume)
-        noise_owner = [owner for _, owner, _ in tiles]
         tiles = [(group, tile_ids) for group, _, tile_ids in tiles]
         results = []
         for group in range(len(ids)):
@@ -565,25 +566,8 @@ def _expectation(
                     )
                 )
                 continue
+            # Subtomogram tiles give their noise sums per noise group already, (G, S).
             stats = _merge_statistics(group_parts, sums[group].totals)
-            if tilts:
-                # Noise sums per noise group, (G, S); a group without images in this id group adds zeros.
-                owners = [owner for (half, _), owner in zip(tiles, noise_owner) if half == group]
-                stats = dataclasses.replace(
-                    stats,
-                    **{
-                        name: jnp.stack(
-                            [
-                                sum(
-                                    (getattr(part, name) for part, owner in zip(group_parts, owners) if owner == g),
-                                    jnp.zeros_like(getattr(group_parts[0], name)),
-                                )
-                                for g in range(len(streams))
-                            ]
-                        )
-                        for name in ("residual_num", "residual_den")
-                    },
-                )
             stats.diagnostics.update(
                 {
                     "rotation_mass": sum(np.asarray(part.diagnostics["rotation_mass"]) for part in group_parts),
@@ -696,7 +680,9 @@ def run(
     if config.optimizer == "momentum_sgd" and config.sgd_learning_rate / (config.q + 1) > MAX_SGD_RATE_PER_CHANNEL:
         logger.warning(
             "SGD learning rate %g is above %g (1 + q) = %g",
-            config.sgd_learning_rate, MAX_SGD_RATE_PER_CHANNEL, MAX_SGD_RATE_PER_CHANNEL * (config.q + 1),
+            config.sgd_learning_rate,
+            MAX_SGD_RATE_PER_CHANNEL,
+            MAX_SGD_RATE_PER_CHANNEL * (config.q + 1),
         )
     newton = None
     if config.newton_sgd():
@@ -856,7 +842,9 @@ def run(
         # Each direction's posterior mass per image, spread over its in-plane angles.
         rotation_mass = direction_mass[direction_ids] / multiplicity[direction_ids]
         direction_prior = (
-            None if config.uniform_direction_prior else relion_blend(old_prior, rotation_mass, count, beta).astype(np.float32)
+            None
+            if config.uniform_direction_prior
+            else relion_blend(old_prior, rotation_mass, count, beta).astype(np.float32)
         )
         state = State(
             theta,
@@ -946,7 +934,10 @@ def run(
         if iteration == state_start + 1 or config.stage(iteration) != config.stage(iteration - 1):
             logger.info(
                 "update %d, radius %d, HEALPix order %d: %s",
-                iteration, radius, config.stage(iteration)[1], _update_rule_measured(config, diagnostics),
+                iteration,
+                radius,
+                config.stage(iteration)[1],
+                _update_rule_measured(config, diagnostics),
             )
         if not log_direction_prior:
             # The full angular prior is checkpointed in State. Large stochastic

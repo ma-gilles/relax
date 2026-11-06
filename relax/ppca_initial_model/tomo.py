@@ -30,6 +30,10 @@ from relax.ppca_refinement.residual_statistics import full_float32
 from relax.reconstruction.resolution import compute_ini_high_shell
 from relax.sampling.tomo_particles import tilt_image_shifts
 
+# Tilt groups (one tomogram, one noise group) with at most this many particles of a batch share mixed tiles
+# (:func:`tilt_tiles`); larger groups keep tiles of their own, whose projections all their particles share.
+MIXED_GROUP_MAX = 8
+
 
 @dataclasses.dataclass(frozen=True)
 class TiltParticles:
@@ -157,18 +161,40 @@ def tilt_particles_from_tomo_dataset(tomo) -> TiltParticles:
     )
 
 
-def tilt_tiles(particles: TiltParticles, ids, tile_size: int) -> list[np.ndarray]:
-    """Cut ``ids`` into tiles of at most ``tile_size`` particles of one tilt group and one noise group each.
+def _tile_keys(particles: TiltParticles, ids) -> np.ndarray:
+    """Each particle's (tilt group, noise group) key: the particles of one key share frames and noise."""
+    return particles.particle_group[ids] * particles.n_noise_groups + particles.particle_noise_group[ids]
 
-    Groups appear in order of their first particle in ``ids``; particles keep their order within a group.
+
+def _slot_bucket(n: int) -> int:
+    """Particle slots per tilt group of a mixed tile: ``n`` rounded up to a power of two."""
+    return 1 << max(0, int(n) - 1).bit_length()
+
+
+def tilt_tiles(particles: TiltParticles, ids, tile_size: int, *, mixed: bool = True) -> list[np.ndarray]:
+    """Cut ``ids`` into tiles of at most ``tile_size`` particles.
+
+    A key (tilt group and noise group) with more than :data:`MIXED_GROUP_MAX` particles (or ``tile_size``) of
+    ``ids`` is cut into tiles of its own, in order of its first particle in ``ids``. With ``mixed`` the smaller
+    keys share mixed tiles (:func:`load_tilt_tile`): largest first, each tile as many keys as fit
+    ``tile_size`` at the slots its largest key takes (:func:`_slot_bucket`), so a batch spread over hundreds of
+    tomograms makes a few tiles, not hundreds. Without ``mixed`` (adaptive oversampling) every key keeps tiles of
+    its own. Particles keep their order within a key.
     """
     ids = np.asarray(ids, dtype=np.int64)
-    groups = particles.particle_group[ids] * particles.n_noise_groups + particles.particle_noise_group[ids]
+    groups = _tile_keys(particles, ids)
     _, first = np.unique(groups, return_index=True)
+    members = [ids[groups == group] for group in groups[np.sort(first)]]
+    limit = min(MIXED_GROUP_MAX, int(tile_size)) if mixed else 0
     tiles = []
-    for group in groups[np.sort(first)]:
-        members = ids[groups == group]
-        tiles.extend(members[start : start + tile_size] for start in range(0, members.size, tile_size))
+    for group in members:
+        if group.size > limit:
+            tiles.extend(group[start : start + tile_size] for start in range(0, group.size, tile_size))
+    small = sorted((group for group in members if group.size <= limit), key=lambda group: -group.size)
+    while small:
+        take = max(1, int(tile_size) // _slot_bucket(small[0].size))
+        tiles.append(np.concatenate(small[:take]))
+        small = small[take:]
     return tiles
 
 
@@ -183,8 +209,33 @@ def tilt_shifts(frames, translations) -> np.ndarray:
     return tilt_image_shifts(translations, np.zeros((1, 3)), frames, np.zeros(n_frames, np.int64)).astype(np.float32)
 
 
+def _noise_table(stream):
+    """The stream's noise spectra as rows ``(G, n_half)`` and whether it is a per-group table."""
+    nv = stream.noise_variance_half
+    return (nv, True) if nv.ndim == 2 else (nv[None], False)
+
+
+def _per_noise_group(stream, values, groups):
+    """``values`` (rows of ``groups``) summed per noise group of a stream noise table, else over all rows."""
+    table, per_group = _noise_table(stream)
+    if not per_group:
+        return jnp.sum(values, axis=0)
+    return jnp.zeros((table.shape[0], *values.shape[1:]), values.dtype).at[jnp.asarray(groups)].add(values)
+
+
+def _observation_counts(stream, image_noise_groups):
+    """Tilt images per noise group of a stream noise table, else their number."""
+    table, per_group = _noise_table(stream)
+    if not per_group:
+        return int(image_noise_groups.size)
+    return np.bincount(image_noise_groups, minlength=table.shape[0]).astype(np.int64)
+
+
 def load_tilt_tile(stream, image_indices, significant_rows, *, collect_observation: bool):
-    """:class:`FullRowStream` tile reader for subtomogram particles (one tilt group per tile).
+    """:class:`FullRowStream` tile reader for subtomogram particles.
+
+    A tile of one key (tilt group and noise group) is read here; a tile of several keys is a mixed tile
+    (:func:`_load_mixed_tilt_tile`).
 
     Operands follow section 16.4: frame-major ``(frame, [Re | Im], pixel)`` GEMM axes, each tilt's
     image phase-shifted by its own projection of every 3D shift, and zeros at frames a particle
@@ -195,10 +246,12 @@ def load_tilt_tile(stream, image_indices, significant_rows, *, collect_observati
     """
     particles = stream.dataset
     ids = np.asarray(image_indices, dtype=np.int64)
-    groups = np.unique(particles.particle_group[ids])
-    if groups.size != 1:
-        raise ValueError("A subtomogram tile must hold particles of one tilt group")
-    frames = particles.group_frames[int(groups[0])]
+    keys = _tile_keys(particles, ids)
+    if np.unique(keys).size != 1:
+        return _load_mixed_tilt_tile(stream, ids, keys, significant_rows, collect_observation=collect_observation)
+    frames = particles.group_frames[int(particles.particle_group[ids[0]])]
+    noise_group = int(particles.particle_noise_group[ids[0]])
+    table, _ = _noise_table(stream)
     images, owner = particles.particle_images(ids)
     B, K, T = ids.size, frames.shape[0], int(stream.translations.shape[0])
     padded = B if stream.tile_images is None else tile_size_bucket(B, stream.tile_images)
@@ -214,7 +267,7 @@ def load_tilt_tile(stream, image_indices, significant_rows, *, collect_observati
         half,
         ctf,
         jnp.asarray(visible),
-        stream.noise_variance_half,
+        table[noise_group],
         jnp.asarray(window),
         constants["lattice"],
         jnp.asarray(tilt_shifts(frames, stream.translations)),
@@ -234,16 +287,110 @@ def load_tilt_tile(stream, image_indices, significant_rows, *, collect_observati
         ctf2_recon=ctf2_recon,
         y_norm=y_norm,
         frames=jnp.asarray(frames, jnp.float32),
+        noise_groups=jnp.asarray([noise_group], jnp.int32),
     )
     if stream.static.cuda_kernels and tile.Y1.shape[0] != K * 2 * stream.arrays.gemm_window.shape[0]:
         # The CUDA projector writes each frame's rows padded to the GEMM window, frame-major.
         raise RuntimeError("Tilt tile operands do not follow the frame-major GEMM window layout")
-    observation = observation if collect_observation else None
+    observation = _per_noise_group(stream, observation[None], [noise_group]) if collect_observation else None
     layout.update(
         n_real=B,
-        n_observations=int(images.size),
+        n_observations=_observation_counts(stream, np.full(images.size, noise_group, np.int64)),
         original_ids=particles.original_image_indices_from_local(ids),
         frames=frames,
+    )
+    return tile, observation, layout
+
+
+def _load_mixed_tilt_tile(stream, ids, keys, significant_rows, *, collect_observation: bool):
+    """A tile of several keys (tilt groups with their noise groups): RELION's per-particle tilt matrices.
+
+    Each key ``g`` holds ``b`` particle slots (:func:`_slot_bucket` of its largest key) and the frames of its tilt
+    group, padded with identity frames no particle sees to the stream's largest group (:func:`tilt_frames`); the
+    key count is padded to a :func:`tile_size_bucket` of the tile's slot capacity with keys of padding particles,
+    so a stage compiles one program per (slots, keys) bucket. Operands are per key, group-major
+    (:class:`TileArrays`); particles keep the tile's order, real ones first (``slots`` maps them). The pass-1 and
+    pass-2 kernels run each key at its own frames (``full_row_kernels._score_block_mixed``,
+    ``_moment_block_mixed``) and add each key's residual to its noise group.
+    """
+    particles = stream.dataset
+    _, first = np.unique(keys, return_index=True)
+    key_order = keys[np.sort(first)]
+    lookup = {int(key): g for g, key in enumerate(key_order)}
+    position_group = np.asarray([lookup[int(key)] for key in keys], np.int64)
+    G = key_order.size
+    counts = np.bincount(position_group, minlength=G)
+    b = _slot_bucket(int(counts.max()))
+    capacity = G if stream.tile_images is None else max(G, int(stream.tile_images) // b)
+    G_pad = tile_size_bucket(G, capacity)
+    B, n_real = G_pad * b, int(ids.size)
+    rank = np.zeros(n_real, np.int64)
+    seen = np.zeros(G, np.int64)
+    for position, group in enumerate(position_group):
+        rank[position] = seen[group]
+        seen[group] += 1
+    position_slot = np.empty(B, np.int64)
+    position_slot[:n_real] = position_group * b + rank
+    used = np.zeros(B, bool)
+    used[position_slot[:n_real]] = True
+    position_slot[n_real:] = np.flatnonzero(~used)  # padding particles take the free slots in order
+    slot_position = np.argsort(position_slot)
+
+    K = tilt_frames(stream)
+    T = int(stream.translations.shape[0])
+    frames = np.tile(np.eye(3), (G_pad, K, 1, 1))
+    noise_groups = np.zeros(G_pad, np.int64)
+    for g, key in enumerate(key_order):
+        tilt_group, noise_group = divmod(int(key), particles.n_noise_groups)
+        group_frames = particles.group_frames[tilt_group]
+        frames[g, : len(group_frames)] = group_frames
+        noise_groups[g] = noise_group
+    images, owner = particles.particle_images(ids)
+    slot_image = np.full(B * K, -1, np.int64)
+    slot_image[position_slot[owner] * K + particles.image_frame[images]] = images
+    visible = slot_image >= 0
+    _, half, ctf = particles.read(np.where(visible, slot_image, images[0]))
+    half, ctf = jax.device_put((half, ctf), stream.device)
+    table, _ = _noise_table(stream)
+    window, constants, static = _operand_layout(stream, b, K)
+    # GPU streams pad each key's (image, shift) axis to SHIFT_ALIGN, so its GEMMs run cuBLAS's aligned kernels.
+    shifts = np.stack([tilt_shifts(frames[g], stream.translations) for g in range(G_pad)])  # (G, K, T, 2)
+    Y1, ctf2, Y1_recon, ctf2_recon, y_norm, observation = _mixed_tilt_operands(
+        half,
+        ctf,
+        jnp.asarray(visible),
+        table[jnp.asarray(noise_groups)],
+        jnp.asarray(window),
+        constants["lattice"],
+        jnp.asarray(shifts),
+        constants["score_mask"],
+        constants["recon_mask"],
+        constants["weights"],
+        **static,
+    )
+    coarse_mask, rows, layout = tile_support(stream, significant_rows)
+    tile = TileArrays(
+        coarse_mask=jnp.concatenate([coarse_mask, jnp.repeat(coarse_mask[:1], B - n_real, axis=0)]),
+        rows=rows,
+        Y1=Y1,
+        ctf2=ctf2,
+        Y1_recon=Y1_recon,
+        ctf2_recon=ctf2_recon,
+        y_norm=y_norm.reshape(-1)[jnp.asarray(position_slot)],
+        frames=jnp.asarray(frames, jnp.float32),
+        noise_groups=jnp.asarray(noise_groups, jnp.int32),
+        slots=jnp.asarray(np.stack([position_slot, slot_position]), jnp.int32),
+    )
+    if stream.static.cuda_kernels and tile.Y1.shape[1] != K * 2 * stream.arrays.gemm_window.shape[0]:
+        raise RuntimeError("Tilt tile operands do not follow the frame-major GEMM window layout")
+    image_noise = noise_groups[position_group[owner]]
+    observation = _per_noise_group(stream, observation, noise_groups) if collect_observation else None
+    layout.update(
+        n_real=n_real,
+        n_observations=_observation_counts(stream, image_noise),
+        original_ids=particles.original_image_indices_from_local(ids),
+        frames=None,  # adaptive oversampling reads one tilt group's frames: it runs on one-key tiles only
+        n_keys=G,
     )
     return tile, observation, layout
 
@@ -274,7 +421,7 @@ def _layout_constants(stream, n_half: int):
 def _operand_layout(stream, n_particles: int, n_frames: int):
     """The operand program's score window, per-pixel constants and static shape arguments for a tile size."""
     resolved = stream.resolved
-    n_half = int(np.asarray(stream.noise_variance_half).size)
+    n_half = int(stream.noise_variance_half.shape[-1])
     T = int(stream.translations.shape[0])
     window, constants = _layout_constants(stream, n_half)
     static = {
@@ -297,7 +444,7 @@ def tilt_operand_bytes(stream, n_particles: int) -> tuple[int, int]:
     """
     n_frames = max(len(frames) for frames in stream.dataset.group_frames)
     window, _, static = _operand_layout(stream, n_particles, n_frames)
-    n_half = int(np.asarray(stream.noise_variance_half).size)
+    n_half = int(stream.noise_variance_half.shape[-1])
     return _operand_bytes(
         n_half,
         int(window.size),
@@ -337,8 +484,7 @@ def _operand_bytes(n_half, window_size, window_dtype, n_translations, static, de
     return int(peak), int(analysis.output_size_in_bytes)
 
 
-@partial(jax.jit, static_argnames=("n_particles", "n_frames", "pad", "shift_pad"))
-def _tilt_operands(
+def _tilt_operands_body(
     half,
     ctf,
     visible,
@@ -384,6 +530,43 @@ def _tilt_operands(
     y_norm = jnp.sum(jnp.abs(half) ** 2 / nv * weights, axis=(1, 2))
     observation = jnp.sum(jnp.abs(half) ** 2, axis=(0, 1))
     return Y1, ctf2_score, Y1_recon, ctf2_recon, y_norm, observation
+
+
+_tilt_operands = partial(jax.jit, static_argnames=("n_particles", "n_frames", "pad", "shift_pad"))(_tilt_operands_body)
+
+
+@partial(jax.jit, static_argnames=("n_particles", "n_frames", "pad", "shift_pad"))
+def _mixed_tilt_operands(
+    half,
+    ctf,
+    visible,
+    nv_rows,
+    window,
+    lattice,
+    frame_shifts,
+    score_mask,
+    recon_mask,
+    weights,
+    *,
+    n_particles,
+    n_frames,
+    pad,
+    shift_pad,
+):
+    """:func:`_tilt_operands` per key of a mixed tile, one key at a time (its own noise row and frame shifts
+    ``(G, K, T, 2)``): every output gains a leading key axis."""
+    G = nv_rows.shape[0]
+    per_key = n_particles * n_frames
+    static = dict(n_particles=n_particles, n_frames=n_frames, pad=pad, shift_pad=shift_pad)
+
+    def one(args):
+        h, c, v, nv, shifts = args
+        return _tilt_operands_body(h, c, v, nv, window, lattice, shifts, score_mask, recon_mask, weights, **static)
+
+    return jax.lax.map(
+        one,
+        (half.reshape(G, per_key, -1), ctf.reshape(G, per_key, -1), visible.reshape(G, per_key), nv_rows, frame_shifts),
+    )
 
 
 def tilt_bootstrap(particles: TiltParticles, rng, channels: int, radius: int, *, image_target: int = 1000):
