@@ -499,10 +499,10 @@ def test_padded_tile_matches_the_real_tile(tile_problem):
     assert_matches(np.asarray(embedded.embeddings), np.asarray(real.embeddings))
 
 
-@pytest.mark.parametrize("planned", [4, 80, 96])
+@pytest.mark.parametrize("planned", [4, 7, 13])
 def test_single_particle_reader_pads_to_the_planned_buckets(tile_problem, planned):
     """With a planned tile size the single-particle reader pads a short tile to its bucket (3 images
-    to 4, 5 and 6 here); the statistics do not depend on the padded size."""
+    to 4 each here); the statistics do not depend on the padded size."""
     from relax.ppca_refinement.full_row_stream import read_tile, tile_size_bucket
 
     _dataset, _mu, _W, stream, _host = tile_problem
@@ -541,7 +541,7 @@ def test_tile_size_buckets_cap_compiled_shapes():
         sizes = {tile_size_bucket(n, planned) for n in range(1, planned + 1)}
         assert len(sizes) <= TILE_SIZE_BUCKETS and max(sizes) == planned
         assert all(tile_size_bucket(n, planned) >= n for n in range(1, planned + 1))
-    assert sorted({tile_size_bucket(n, 150) for n in range(1, 151)}) == [10, 19, 38, 75, 150]
+    assert sorted({tile_size_bucket(n, 150) for n in range(1, 151)}) == [1, 2, 3, 5, 10, 19, 38, 75, 150]
     with pytest.raises(ValueError):
         tile_size_bucket(151, 150)
 

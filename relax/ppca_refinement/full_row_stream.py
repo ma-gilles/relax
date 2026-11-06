@@ -514,7 +514,7 @@ def _deliver(position, stats, consume):
 
 
 # Compiled tile sizes per stage: a padding reader rounds a tile up to one of these many sizes.
-TILE_SIZE_BUCKETS = 5
+TILE_SIZE_BUCKETS = 9
 
 
 def tile_size_bucket(n_images: int, planned: int) -> int:
@@ -557,6 +557,14 @@ def _enqueue_full_row_tile(stream, tile, observation_power, layout, kept=None):
     return (tile, layout, posterior, carry), kept
 
 
+@functools.lru_cache(maxsize=8)
+def _shell_tables(image_shape: tuple, device):
+    """Half-image weights, shell indices and shell count, on ``device``: built once, not once per tile."""
+    weights = jax.device_put(make_half_image_weights(image_shape), device)
+    shells = jax.device_put(make_shell_indices_half(image_shape), device)
+    return weights, shells, int(np.max(np.asarray(shells))) + 1
+
+
 def finish_full_row_tile(stream, image_indices, tile, layout, posterior, carry, *, enforce_x0):
     n_images = real_image_count(tile, layout)
     check_finite_posterior(posterior, n_images)
@@ -564,9 +572,7 @@ def finish_full_row_tile(stream, image_indices, tile, layout, posterior, carry, 
     lhs_tri, residual = unpack_moments(carry.moments, static)
     if enforce_x0:
         lhs_tri = enforce_augmented_x0(lhs_tri.astype(jnp.complex64), static.volume_shape).real.astype(jnp.float32)
-    weights = make_half_image_weights(static.image_shape)
-    shells = make_shell_indices_half(static.image_shape)
-    n_shells = int(np.max(np.asarray(shells))) + 1
+    weights, shells, n_shells = _shell_tables(tuple(int(n) for n in static.image_shape), stream.device)
     residual_num = jnp.zeros(n_shells, jnp.float32).at[shells].add(weights * carry.residual_power)
     # Every observed image counts once: a subtomogram particle observes each of its visible tilts.
     residual_den = jnp.zeros(n_shells, jnp.float32).at[shells].add(weights * layout["n_observations"])
