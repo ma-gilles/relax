@@ -182,6 +182,17 @@ def add_args(parser):
         "rate (rate M c_mean / max tr H; replaces --sgd-learning-rate; needs --sgd-momentum 0)",
     )
     parser.add_argument(
+        "--sgd-pc-min-shell",
+        type=int,
+        help="Coupled direction: no PC step on Fourier shells below N (1 freezes the PCs' zero-frequency term)",
+    )
+    parser.add_argument(
+        "--sgd-eig-floor-rel",
+        type=float,
+        help="Coupled direction: also floor each frequency's metric eigenvalues at this fraction of the band's "
+        "largest eigenvalue",
+    )
+    parser.add_argument(
         "--uniform-direction-prior",
         action="store_true",
         help="Keep the orientation prior uniform instead of learning RELION's direction prior",
@@ -253,6 +264,10 @@ def resolve_sgd_options(args):
         options["sgd_pc_gate_floor"] = args.sgd_pc_gate_floor
     if args.sgd_lr_match is not None:
         options["sgd_lr_match"] = args.sgd_lr_match
+    if args.sgd_pc_min_shell is not None:
+        options["sgd_pc_min_shell"] = args.sgd_pc_min_shell
+    if args.sgd_eig_floor_rel is not None:
+        options["sgd_eig_floor_rel"] = args.sgd_eig_floor_rel
     if args.sgd_lr_schedule is not None:
         options["sgd_lr_schedule"] = str(Path(args.sgd_lr_schedule).resolve())
     if not args.vdam_second_moment:

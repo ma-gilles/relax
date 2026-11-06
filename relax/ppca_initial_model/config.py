@@ -84,6 +84,10 @@ class Config:
     # sgd_lr_match M: the base rate is set at the first update to M c_mean / max tr H, so the mean's step equals
     # the shared-trace step at rate M there (None: sgd_learning_rate).
     sgd_lr_match: float | None = None
+    # Newton SGD stabilisers (opt-in). sgd_pc_min_shell N: no PC step on shells below N (1 freezes the PCs' DC term).
+    # sgd_eig_floor_rel r: floor every frequency's metric eigenvalues at r times the band's largest eigenvalue too.
+    sgd_pc_min_shell: int = 0
+    sgd_eig_floor_rel: float | None = None
     # Keep the orientation prior uniform (the learned direction prior is never used or kept).
     uniform_direction_prior: bool = False
     # Translation search per update: ((first update, range px, step px), ...) replacing shift_range and
@@ -187,6 +191,10 @@ class Config:
             raise ValueError("The coupled direction, PC gate and learning-rate schedule use the trace step scale")
         if self.sgd_pc_gate_floor is not None and not 0 < self.sgd_pc_gate_floor <= 1:
             raise ValueError("The PC gate floor must be in (0, 1]")
+        if self.sgd_pc_min_shell < 0 or (self.sgd_eig_floor_rel is not None and not 0 < self.sgd_eig_floor_rel < 1):
+            raise ValueError("The PC minimum shell must be >= 0 and the relative eigenvalue floor in (0, 1)")
+        if (self.sgd_pc_min_shell or self.sgd_eig_floor_rel is not None) and self.sgd_direction != "coupled":
+            raise ValueError("The PC minimum shell and relative eigenvalue floor need the coupled direction")
         if self.shift_schedule:
             entries = [tuple(e) for e in self.shift_schedule]
             if entries[0][0] != 1 or entries != sorted(entries) or any(len(e) != 3 or e[1] < 0 or e[2] <= 0 for e in entries):
