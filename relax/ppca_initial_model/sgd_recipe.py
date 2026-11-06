@@ -1,4 +1,4 @@
-"""Plain SGD along the per-frequency Newton direction, with a half-batch PC gate (ppca_momentum_sgd.md, section 6).
+"""Plain SGD along the per-frequency Newton direction, with a half-batch PC gate (docs/math/ppca_momentum_sgd.md, "Newton SGD").
 
 The step of update ``t`` is ``lr(t) k H_f^-1 G_f`` on every active Fourier voxel ``f``: ``G`` sums the two
 half-batch residual gradients and ``H_f`` the two half-batch ``(1+q) x (1+q)`` Gauss-Newton metrics. ``k`` is fixed
@@ -12,8 +12,8 @@ import json
 
 import jax.numpy as jnp
 import numpy as np
-
 from recovar.ppca.triangular import unpack_tri_to_full
+
 from relax.ppca_initial_model.sgd_update import metric_diagonal
 
 GATE_EMA_WEIGHT = 1 / 20

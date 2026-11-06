@@ -163,7 +163,7 @@ def add_args(parser):
         choices=("trace", "coupled"),
         help="Momentum SGD direction: trace (G over the band maximum of the metric trace; default) or coupled, the "
         "per-frequency Newton direction H_f^-1 G_f scaled at update 1 to the split-curvature step's norm "
-        "(ppca_momentum_sgd.md section 6; needs --sgd-momentum 0)",
+        "(ppca_momentum_sgd.md, 'Newton SGD'; needs --sgd-momentum 0)",
     )
     parser.add_argument(
         "--sgd-pc-gate-floor",
