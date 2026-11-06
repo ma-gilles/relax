@@ -265,6 +265,12 @@ def add_args(parser):
         "largest eigenvalue",
     )
     parser.add_argument(
+        "--sgd-mean-gate-floor",
+        type=float,
+        help="Coupled direction with --sgd-pc-gate-floor: also multiply the mean's step per shell by clip(rho, F, 1), "
+        "rho the moving correlation of the two half-batch mean gradients",
+    )
+    parser.add_argument(
         "--uniform-direction-prior",
         action="store_true",
         help="Keep the orientation prior uniform instead of learning RELION's direction prior",
@@ -340,6 +346,8 @@ def resolve_sgd_options(args):
         options["sgd_pc_min_shell"] = args.sgd_pc_min_shell
     if args.sgd_eig_floor_rel is not None:
         options["sgd_eig_floor_rel"] = args.sgd_eig_floor_rel
+    if args.sgd_mean_gate_floor is not None:
+        options["sgd_mean_gate_floor"] = args.sgd_mean_gate_floor
     if args.sgd_lr_schedule is not None:
         options["sgd_lr_schedule"] = str(Path(args.sgd_lr_schedule).resolve())
     if not args.vdam_second_moment:

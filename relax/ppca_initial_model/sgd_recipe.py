@@ -76,9 +76,10 @@ class PCGate:
     channels, EMA weight 1/20. The mean is never gated.
     """
 
-    def __init__(self, floor, n_shells, state=None):
+    def __init__(self, floor, n_shells, state=None, channels=slice(1, None)):
         if not 0 < floor <= 1:
-            raise ValueError("The PC gate floor must be in (0, 1]")
+            raise ValueError("The gate floor must be in (0, 1]")
+        self.channels = channels
         self.floor = float(floor)
         self.n_shells = int(n_shells)
         self.sums = None if state is None else {key: jnp.asarray(value) for key, value in state.items()}
@@ -86,7 +87,7 @@ class PCGate:
     def update(self, half_gradients, shells):
         if len(half_gradients) != 2:
             raise ValueError("The PC gate needs the two half-batch gradients")
-        g0, g1 = (jnp.asarray(g)[:, 1:] for g in half_gradients)
+        g0, g1 = (jnp.asarray(g)[:, self.channels] for g in half_gradients)
         shells = jnp.asarray(shells)
 
         def per_shell(values):
@@ -145,6 +146,12 @@ class NewtonSGD:
             if config.sgd_pc_gate_floor is not None
             else None
         )
+        # Opt-in: the same half-batch shell gate on the mean channel, with its own floor.
+        mean_floor = getattr(config, "sgd_mean_gate_floor", None)
+        mean_state = None if state is None else {key[6:]: state[key] for key in state if key.startswith("mgate_")}
+        self.mean_gate = (
+            PCGate(mean_floor, n_shells, mean_state or None, channels=slice(0, 1)) if mean_floor is not None else None
+        )
         self.direction = config.sgd_direction
         self.pc_min_shell = int(config.sgd_pc_min_shell)
         self.relative_floor = config.sgd_eig_floor_rel
@@ -177,6 +184,12 @@ class NewtonSGD:
             top = int(np.max(np.where(np.asarray(active), np.asarray(shells), 0)))
             diagnostics["pc_gate_shell"] = [round(float(x), 4) for x in np.asarray(factors)[: top + 1]]
             diagnostics["pc_gate_raw_shell"] = [round(float(x), 4) for x in np.asarray(self.gate.raw())[: top + 1]]
+        if self.mean_gate is not None:
+            self.mean_gate.update([s.residual_gradient for s in stats], shells)
+            mean_factors = self.mean_gate.factors()
+            step = jnp.asarray(step).at[:, 0].multiply(mean_factors[jnp.asarray(shells)].astype(step.dtype))
+            top = int(np.max(np.where(np.asarray(active), np.asarray(shells), 0)))
+            diagnostics["mean_gate_shell"] = [round(float(x), 4) for x in np.asarray(mean_factors)[: top + 1]]
         if self.pc_min_shell:
             keep = (jnp.asarray(shells) >= self.pc_min_shell)[:, None].astype(step.dtype)
             step = jnp.asarray(step).at[:, 1:].multiply(keep)
@@ -190,6 +203,8 @@ class NewtonSGD:
         }
         if self.gate is not None and self.gate.sums is not None:
             record.update({f"gate_{key}": value for key, value in self.gate.state().items()})
+        if self.mean_gate is not None and self.mean_gate.sums is not None:
+            record.update({f"mgate_{key}": value for key, value in self.mean_gate.state().items()})
         np.savez(path, **record)
 
     @staticmethod
