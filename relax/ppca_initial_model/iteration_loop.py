@@ -841,18 +841,20 @@ def run(
             planned_radius = next_radius(
                 resolved, radius=radius, grid_size=dataset.grid_size, incr_size=config.incr_size
             )
-        direction_ids = _direction_ids(hp)
-        masses = sum(np.asarray(result.diagnostics["rotation_mass"]) for result in stats)
-        direction_mass = np.bincount(direction_ids, weights=masses)
-        multiplicity = np.bincount(direction_ids)
-        old_prior = (
-            state.direction_prior
-            if state.direction_order == hp and state.direction_prior is not None
-            else np.full(len(direction_ids), 1 / len(direction_ids), np.float32)
-        )
-        # Each direction's posterior mass per image, spread over its in-plane angles.
-        rotation_mass = direction_mass[direction_ids] / multiplicity[direction_ids]
-        direction_prior = relion_blend(old_prior, rotation_mass, count, beta).astype(np.float32)
+        direction_prior = None  # uniform: the E-step then scores every direction equally
+        if config.direction_prior == "learned":
+            direction_ids = _direction_ids(hp)
+            masses = sum(np.asarray(result.diagnostics["rotation_mass"]) for result in stats)
+            direction_mass = np.bincount(direction_ids, weights=masses)
+            multiplicity = np.bincount(direction_ids)
+            old_prior = (
+                state.direction_prior
+                if state.direction_order == hp and state.direction_prior is not None
+                else np.full(len(direction_ids), 1 / len(direction_ids), np.float32)
+            )
+            # Each direction's posterior mass per image, spread over its in-plane angles.
+            rotation_mass = direction_mass[direction_ids] / multiplicity[direction_ids]
+            direction_prior = relion_blend(old_prior, rotation_mass, count, beta).astype(np.float32)
         state = State(
             theta,
             moments,

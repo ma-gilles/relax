@@ -44,6 +44,10 @@ class Config:
     # (radius_rule.loading_data_vs_prior); without active loadings it is the mean's rule.
     radius_rule: str = "stages"
     incr_size: int = 10
+    # The prior over the HEALPix directions of the global search. "uniform": every direction equally likely throughout.
+    # "learned": RELION's pdf_direction, blended from each iteration's posterior mass (it can collapse onto a few
+    # directions when the poses are wrong).
+    direction_prior: str = "uniform"
     # The HEALPix order of each iteration. "stages": the stages table's. "accuracy": RELION's updateAngularSampling
     # rule with the expected rotation accuracy of the PPCA model (relax/ppca_initial_model/order_rule.py): the table's
     # first order at iteration 1, then, every accuracy_interval iterations, one order finer while the angular step is
@@ -132,6 +136,8 @@ class Config:
             raise ValueError("pc_birth_scale must be finite and positive")
         if self.radius_rule not in ("stages", "data_vs_prior", "data_vs_prior_pcs"):
             raise ValueError("The radius rule must be stages, data_vs_prior or data_vs_prior_pcs")
+        if self.direction_prior not in ("learned", "uniform"):
+            raise ValueError("The direction prior must be learned or uniform")
         if isinstance(self.incr_size, bool) or not isinstance(self.incr_size, (int, np.integer)) or self.incr_size <= 0:
             raise ValueError("incr_size must be a positive integer")
         self._validate_order_rule()

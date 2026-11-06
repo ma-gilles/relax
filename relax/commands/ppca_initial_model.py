@@ -43,6 +43,13 @@ def add_args(parser):
         "requires the data_vs_prior of the loadings' total variance to stand at or above 1",
     )
     parser.add_argument(
+        "--direction-prior",
+        choices=("learned", "uniform"),
+        default=Config().direction_prior,
+        help="the prior over the HEALPix directions of the global search: uniform throughout, or RELION's learned "
+        "pdf_direction, blended from each iteration's posterior mass",
+    )
+    parser.add_argument(
         "--incr-size",
         type=int,
         default=Config().incr_size,
@@ -469,6 +476,7 @@ def main(args=None):
         init_mean_map=args.init_mean_map,
         radius_rule=args.radius_rule,
         incr_size=args.incr_size,
+        direction_prior=args.direction_prior,
         order_rule=args.order_rule,
         order_max=args.order_max,
         final_order_max=args.final_order_max,

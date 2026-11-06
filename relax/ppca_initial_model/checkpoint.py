@@ -39,7 +39,7 @@ _RETIRED_CONFIG_DEFAULTS = {
 # Model settings added later and the value that gives the model of a checkpoint written before they existed (a setting's
 # Config default may differ): the setting at that value is no part of the identity.
 _ADDED_CONFIG_DEFAULTS = {"max_significant": 100, "pc_stages": None, "pc_birth_scale": 0.1,
-    "tau2_fudge": None, "tau2_fudge_scheme": None, "radius_rule": "stages", "incr_size": 10,
+    "tau2_fudge": None, "tau2_fudge_scheme": None, "radius_rule": "stages", "incr_size": 10, "direction_prior": "learned",
     "order_rule": "stages", "order_max": 4, "final_order_max": None, "accuracy_interval": 10,
     "accuracy_signal": "divergence", "accuracy_kl_threshold": None, "init_mean_map": None,
     "sgd_loading_scale": 1.0}
