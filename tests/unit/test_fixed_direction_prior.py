@@ -18,7 +18,8 @@ from relax.parity.fixed_direction_prior import PROVENANCE_FILE, FixedDirectionPr
 from relax.refinement import local_half
 from relax.refinement.ports import InputSource
 from relax.runtime.engine_tuning import EngineTuning
-from relax.sampling.grids import build_local_search_grid_metadata, rotation_grid_size
+from relax.sampling.grids import build_local_search_grid_metadata, rotation_grid_n_in_planes, rotation_grid_size
+from relax.sampling.healpix import euler_angles_to_matrix
 from relax.sampling.orientation_priors import HalfDirectionLogPriors, make_relion_direction_log_prior
 
 pytestmark = pytest.mark.unit
@@ -181,7 +182,7 @@ def test_native_source_leaves_the_log_prior_alone():
     assert InputSource().direction_log_prior(0, own, healpix_order=3, use_local=True) is own
 
 
-# ---- the local search adds it to every hypothesis of a rotation ----
+# ---- the local search selects with its Gaussian and weights every hypothesis of a rotation by the prior alone ----
 
 ORDER = 1
 N_IMAGES = 5
@@ -209,14 +210,71 @@ def _table(source, order=ORDER):
     ).rotation_log_prior
 
 
-def test_local_layout_adds_the_direction_log_prior_of_each_rotation(tmp_path):
+def _expanded_layout(rotation_log_prior):
+    """The local layout at HEALPix order ORDER + 1 whose rows are the children of order-ORDER parents."""
+    return build_local_hypothesis_layout(
+        _eulers(), None, 0.35, 0.35, ORDER + 1, TRANSLATIONS, np.zeros((N_IMAGES, 2), dtype=np.float32), 3.0, None, 1.0,
+        grid_metadata=build_local_search_grid_metadata(ORDER + 1),
+        translation_prior_reference_translations=TRANSLATIONS, rotation_log_prior=rotation_log_prior,
+        local_parent_oversampling_order=1, dtype=np.float32, sigma_tilt_deg=0.0, engine_tuning=EngineTuning(),
+    )
+
+
+def _within_three_widths(eulers, sigma_rad, order):
+    """Per image, the (direction, psi index) pairs of the order-``order`` grid within three widths of its pose.
+
+    Directions are healpy's NEST pixel centres; the width is on the angle between a direction and the pose's, and on
+    the wrapped in-plane difference.
+    """
+    n_psi = rotation_grid_n_in_planes(order)
+    pixels = np.arange(hp.nside2npix(2**order))
+    directions = np.array(hp.pix2vec(2**order, pixels, nest=True)).T
+    psi_grid = np.arange(n_psi) * 360.0 / n_psi
+    cutoff = 3.0 * np.rad2deg(sigma_rad)
+    pairs = []
+    for rot, tilt, psi in eulers:
+        centre = euler_angles_to_matrix(np.array([[rot, tilt, psi]]))[0, 2]
+        angle = np.rad2deg(np.arccos(np.clip(directions @ centre, -1.0, 1.0)))
+        gap = np.abs(psi_grid - psi % 360.0)
+        gap = np.minimum(gap, 360.0 - gap)
+        pairs.append({(int(d), int(p)) for d in np.flatnonzero(angle < cutoff) for p in np.flatnonzero(gap < cutoff)})
+    return pairs
+
+
+def test_local_layout_weights_each_row_by_the_fixed_prior_alone(tmp_path):
     source = _source(tmp_path, order=ORDER)
     without, with_prior = _layout(None), _layout(_table(source))
-    ids = np.asarray(without.rotation_ids_flat)
-    assert_matches(np.asarray(with_prior.rotation_ids_flat), ids)
-    added = np.asarray(with_prior.rotation_log_priors_flat) - np.asarray(without.rotation_log_priors_flat)
+    ids = np.asarray(with_prior.rotation_ids_flat)
+    by_hand = np.log(source.prior.at_order(ORDER))[ids % (12 * 4**ORDER)].astype(np.float32)
+    assert_matches(np.asarray(with_prior.rotation_log_priors_flat), by_hand)
+    # The Gaussian log priors of the layout without it are not this table: they are what the prior leaves out.
+    assert np.max(np.abs(np.asarray(without.rotation_log_priors_flat) - by_hand)) > 0.1
+
+
+def test_local_layout_selects_the_orientations_within_three_widths_with_or_without_the_prior(tmp_path):
+    with_prior, without = _layout(_table(_source(tmp_path, order=ORDER))), _layout(None)
+    np.testing.assert_array_equal(with_prior.rotation_ids_flat, without.rotation_ids_flat)
+    np.testing.assert_array_equal(with_prior.rotation_offsets, without.rotation_offsets)
     n_directions = 12 * 4**ORDER
-    assert_matches(added, np.log(source.prior.at_order(ORDER))[ids % n_directions].astype(np.float32))
+    expected = _within_three_widths(_eulers(), 0.35, ORDER)
+    for image, pairs in enumerate(expected):
+        ids = np.asarray(with_prior.rotation_ids_flat)[
+            with_prior.rotation_offsets[image] : with_prior.rotation_offsets[image + 1]
+        ]
+        assert {(int(i % n_directions), int(i // n_directions)) for i in ids} == pairs
+    # The window trims the grid; a selection of every rotation would make the comparison vacuous.
+    assert any(len(pairs) < n_directions * rotation_grid_n_in_planes(ORDER) for pairs in expected)
+
+
+def test_oversampled_children_carry_their_parents_fixed_prior_alone(tmp_path):
+    source = _source(tmp_path, order=ORDER)
+    without, with_prior = _expanded_layout(None), _expanded_layout(_table(source))
+    ids = np.asarray(with_prior.rotation_ids_flat)
+    np.testing.assert_array_equal(ids, without.rotation_ids_flat)
+    # A child's direction is NEST pixel p of order ORDER + 1; its parent's is pixel p // 4 of order ORDER.
+    parent_direction = (ids % (12 * 4 ** (ORDER + 1))) // 4
+    by_hand = np.log(source.prior.at_order(ORDER))[parent_direction].astype(np.float32)
+    assert_matches(np.asarray(with_prior.rotation_log_priors_flat), by_hand)
 
 
 def test_adaptive_pass2_children_inherit_their_parent_prior(tmp_path):
@@ -261,9 +319,10 @@ def test_local_half_builds_its_parent_layout_with_the_prior(tmp_path):
 
     without, with_prior = parent_layout(None), parent_layout(_table(source))
     ids = np.asarray(without.rotation_ids_flat)
-    added = np.asarray(with_prior.rotation_log_priors_flat) - np.asarray(without.rotation_log_priors_flat)
-    assert_matches(added, np.log(source.prior.at_order(ORDER))[ids % (12 * 4**ORDER)].astype(np.float32))
-    assert np.ptp(added) > 0.0
+    np.testing.assert_array_equal(with_prior.rotation_ids_flat, ids)
+    by_hand = np.log(source.prior.at_order(ORDER))[ids % (12 * 4**ORDER)].astype(np.float32)
+    assert_matches(np.asarray(with_prior.rotation_log_priors_flat), by_hand)
+    assert np.ptp(by_hand) > 0.0
 
 
 # ---- the controller ----

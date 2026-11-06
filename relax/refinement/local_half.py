@@ -81,8 +81,9 @@ class LocalPriorSpec:
     # Class3D: the class log priors. A local search's weights carry no class prior, as RELION's, but a
     # class at -inf (pdf_class == 0) is left out of the search.
     class_log_priors: object | None = None
-    # K=1: the log prior of each rotation of the parent grid (``sampling.search.parent_order``), added to every
-    # local hypothesis of that rotation; None (RELION's local search) adds none.
+    # K=1: the log prior of each rotation of the parent grid (``sampling.search.parent_order``). It weights every
+    # local hypothesis of that rotation in place of the Gaussian direction and psi log priors, which then only
+    # select the hypotheses; None (RELION's local search) keeps the Gaussian log priors.
     direction_log_prior: object | None = None
 
 
@@ -528,10 +529,11 @@ def _score_half_local_one_shape(
 
     # RELION's convertAllSquaredDifferencesToWeights uses mymodel.pdf_direction
     # only when orientational_prior_mode == NOPRIOR. Local searches run through
-    # PRIOR_ROTTILT_PSI and score the local direction/psi priors in the
-    # hypothesis layout, so adding the learned global direction prior here
-    # biases both support selection and final weights. A prior is added only
-    # when the input source supplies one (``priors.direction_log_prior``).
+    # PRIOR_ROTTILT_PSI and weight their hypotheses with the local direction/psi
+    # Gaussian priors of the hypothesis layout, so the learned global direction
+    # prior is not applied here. A direction prior from the input source
+    # (``priors.direction_log_prior``) weights the hypotheses in place of those
+    # Gaussians, which then only select them.
 
     reconstruction_current_size_for_engine = (
         sampling.image_window_size

@@ -458,6 +458,10 @@ def build_parent_expanded_local_entries(
     sampling object, then ``getOrientations`` expands those selected coarse
     direction/psi parents into oversampled children. The child orientations
     inherit the parent prior; the prior is not redistributed over children.
+
+    ``rotation_log_prior`` (one value per parent-grid rotation) replaces the Gaussian direction and psi log
+    priors as the weight of every selected parent: the widths still select each image's parents (directions
+    and in-plane angles within three widths of its prior pose) but add nothing to their log prior.
     """
 
     if oversampling_order <= 0:
@@ -507,9 +511,11 @@ def build_parent_expanded_local_entries(
         start = int(parent_offsets[image_idx])
         stop = int(parent_offsets[image_idx + 1])
         parent_ids = np.asarray(parent_ids_flat[start:stop], dtype=np.int64)
-        parent_log_prior = np.asarray(parent_log_priors_flat[start:stop], dtype=dtype)
-        if rotation_log_prior_np is not None:
-            parent_log_prior = parent_log_prior + rotation_log_prior_np[parent_ids]
+        parent_log_prior = (
+            np.asarray(parent_log_priors_flat[start:stop], dtype=dtype)
+            if rotation_log_prior_np is None
+            else rotation_log_prior_np[parent_ids]
+        )
         oversampled = get_oversampled_rotation_grid_from_samples(
             parent_ids,
             parent_order,

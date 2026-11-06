@@ -6,6 +6,11 @@ half set, reset to uniform whenever the sampling order changes, and not applied 
 is still estimated and written to the run files, but it is not fed back, so a run shows how well the prior is
 estimated and how much a given prior is worth to the refinement.
 
+A local search keeps its selection of orientations (directions and in-plane angles within three widths of each
+particle's current pose) and weights every selected one by the given prior alone: the Gaussian direction and psi
+priors do not enter the weights. The prior has no in-plane dependence, so the selected in-plane angles of a
+direction weigh the same.
+
 The file is a one-dimensional ``.npy`` of positive floats that sum to one, indexed like a model.star's
 ``rlnOrientationDistribution`` (HEALPix NEST order). Its length gives its HEALPix order; a coarser order is the
 exact sum of each direction's children. ``max_healpix_order`` of the run must be given and at most the file's order.

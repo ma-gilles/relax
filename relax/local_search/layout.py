@@ -282,6 +282,11 @@ def build_local_hypothesis_layout(
     the tilt angle alone (``--sigma_tilt``, in degrees as given): every in-plane angle and the directions
     within three widths of the image's prior tilt (``direction_supports._tilt_prior_direction_supports``).
 
+    ``rotation_log_prior`` (one value per rotation of the grid the rows are selected on) replaces the Gaussian
+    direction and psi log priors as the weight of every selected row: ``sigma_rot`` and ``sigma_psi`` still
+    select each image's rows (directions and in-plane angles within three widths of its prior pose) but add
+    nothing to their log prior. A child of an oversampled parent takes its parent's value.
+
     ``dtype`` controls the precision of every rotation/translation/prior
     array built here (default float32, matching RELION's accelerated-GPU
     single-precision path). Pass ``np.float64`` to keep this local-search
@@ -390,9 +395,7 @@ def build_local_hypothesis_layout(
                 f"({int(grid_metadata['n_pixels']) * int(grid_metadata['n_psi'])}); "
                 f"got {rotation_log_prior_np.shape}"
             )
-        rotation_log_priors_flat = (
-            rotation_log_priors_flat + rotation_log_prior_np[np.asarray(rotation_ids_flat, dtype=np.int64)]
-        )
+        rotation_log_priors_flat = rotation_log_prior_np[np.asarray(rotation_ids_flat, dtype=np.int64)]
     rotations_flat = (
         rotations_flat_override
         if rotations_flat_override is not None

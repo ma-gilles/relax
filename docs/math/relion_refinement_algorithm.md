@@ -400,12 +400,13 @@ A fixed direction prior (`--fixed-direction-prior`, K=1, C1, single-particle, on
 difference from that rule. [`FixedDirectionPriorSource`](../../relax/parity/fixed_direction_prior.py) hands the
 scorers, through `InputSource.direction_log_prior`, one prior on every rotation of the scoring grid of the
 expectation's HEALPix order (its file's, a coarser order by summing each direction's children) in every global
-search, every local search and the final pass, whatever the half and the iteration. A local search adds the
-log prior of each parent-grid rotation to the Gaussian direction and psi priors of every hypothesis of that
-rotation ([`LocalPriorSpec.direction_log_prior`](../../relax/refinement/local_half.py), the
-`rotation_log_prior` of [`build_local_hypothesis_layout`](../../relax/local_search/layout.py)), and a pass-2
-child inherits its parent's. The learned prior is still estimated and written to the model STARs; it is not fed
-back.
+search, every local search and the final pass, whatever the half and the iteration. A local search still selects
+the directions and in-plane angles within three widths of each particle's current pose, but weights every
+hypothesis of a selected parent-grid rotation by that rotation's log prior alone: the Gaussian direction and psi
+log priors are not added ([`LocalPriorSpec.direction_log_prior`](../../relax/refinement/local_half.py), the
+`rotation_log_prior` of [`build_local_hypothesis_layout`](../../relax/local_search/layout.py)). The prior depends
+on the direction only, so the selected in-plane angles of a direction weigh the same. A pass-2 child inherits its
+parent's value. The learned prior is still estimated and written to the model STARs; it is not fed back.
 
 The source Euler and matrix precision can also matter at score ties.
 
