@@ -167,3 +167,25 @@ def test_matched_rate_makes_the_mean_step_equal_the_shared_trace_step(tmp_path):
     newton.save(tmp_path / "n.npz")
     again = NewtonSGD(_config(sgd_direction="trace", sgd_pc_gate_floor=None, sgd_lr_match=1.95), 2, NewtonSGD.load(tmp_path / "n.npz"))
     assert again.lr.base == pytest.approx(info["learning_rate_base"])
+
+
+def test_relative_floor_bounds_every_eigenvalue_by_the_band_maximum():
+    h = np.stack([np.diag(np.array([100.0, 1e-6, 1e-6], np.float32)), np.diag(np.array([4.0, 2.0, 1.0], np.float32))])
+    g = np.ones((2, 3), np.complex64)
+    direction, info = damped_newton_direction(_pack(h), g, np.ones(2, bool), 1e-8, relative_floor=0.01)
+    assert info["eigenvalue_floor"] == pytest.approx(1.0)  # 0.01 x the band's largest eigenvalue, 100
+    np.testing.assert_allclose(np.asarray(direction).real, [[0.01, 1.0, 1.0], [0.25, 0.5, 1.0]], rtol=1e-5)
+    plain, _ = damped_newton_direction(_pack(h), g, np.ones(2, bool), 1e-8)
+    assert np.asarray(plain).real[0, 1] > 1e5  # without it the near-zero curvature gives a huge step
+
+
+def test_pc_min_shell_leaves_low_shells_of_the_pcs_unchanged():
+    rng = np.random.default_rng(3)
+    n, q = 8, 2
+    shells = np.array([0, 1, 1, 2, 2, 3, 3, 3])
+    stats = [SimpleNamespace(lhs_tri=_pack(_spd(rng, n, q + 1)), residual_gradient=_gradient(rng, n, q + 1)) for _ in range(2)]
+    step, _ = NewtonSGD(_config(sgd_pc_min_shell=2), 4).step(stats, np.ones(n, bool), shells, 1, 1e-6, q)
+    step = np.asarray(step)
+    assert not np.any(step[shells < 2, 1:]) and np.all(step[shells >= 2, 1:] != 0) and np.all(step[:, 0] != 0)
+    with pytest.raises(ValueError):
+        Config(optimizer="momentum_sgd", sgd_momentum=0.0, sgd_pc_min_shell=1)  # needs the coupled direction
