@@ -285,6 +285,7 @@ def plan_shape_key(stream: FullRowStream) -> tuple:
         int(stream.arrays.augmented.shape[1]),
         static.basis_size,
         static.metric_trace_only,
+        static.exact_metric_trace,
         tile_frames(stream),
         stream.tile_loader,
     )

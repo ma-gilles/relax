@@ -1,4 +1,4 @@
-"""Host memory a process may use (physical memory, capped by the job's cgroup v2 limit), and returning freed heap."""
+"""Host memory a process may use (physical memory, capped by the job's cgroup limit), and returning freed heap."""
 
 import ctypes
 import functools
@@ -10,27 +10,39 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 
-def _cgroup_memory_limit():
-    """The tightest memory limit over this process's cgroup v2 ancestors (a Slurm job's), or None."""
-    try:
-        relative = next(
-            line.split(":", 2)[2].strip()
-            for line in Path("/proc/self/cgroup").read_text().splitlines()
-            if line.startswith("0::")
-        )
-    except (OSError, StopIteration):
-        return None
+def _cgroup_limits(group, root, name):
+    """The limits in file ``name`` of cgroup directory ``group`` and of its ancestors up to ``root``."""
     limits = []
-    group = Path("/sys/fs/cgroup") / relative.lstrip("/")
     for directory in (group, *group.parents):
         try:
-            value = (directory / "memory.max").read_text().strip()
+            value = (directory / name).read_text().strip()
         except OSError:
-            continue
+            value = "max"
         if value != "max":
             limits.append(int(value))
-        if directory == Path("/sys/fs/cgroup"):
+        if directory == root:
             break
+    return limits
+
+
+def _cgroup_memory_limit(cgroup_file=Path("/proc/self/cgroup"), root=Path("/sys/fs/cgroup")):
+    """The tightest memory limit over this process's cgroup ancestors (a Slurm job's), or None.
+
+    cgroup v2 keeps the limit in ``memory.max`` under the ``0::`` path; cgroup v1 in
+    ``memory/<path>/memory.limit_in_bytes`` under the ``memory`` controller's path, a huge value when unlimited.
+    """
+    try:
+        lines = cgroup_file.read_text().splitlines()
+    except OSError:
+        return None
+    limits = []
+    for line in lines:
+        _, controllers, relative = line.split(":", 2)
+        relative = relative.strip().lstrip("/")
+        if controllers == "":
+            limits += _cgroup_limits(root / relative, root, "memory.max")
+        elif "memory" in controllers.split(","):
+            limits += _cgroup_limits(root / "memory" / relative, root / "memory", "memory.limit_in_bytes")
     return min(limits) if limits else None
 
 

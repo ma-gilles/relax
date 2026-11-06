@@ -2259,6 +2259,28 @@ Script `snr008_os1/run_local_gpu3.sh` (driver `snr008_os1/et_run_hp4.py`, table
 (`table.json`, per-arm `eval.json`).
 
 
+### 16.13 The ab initio versions as options
+
+Two update rules and a band rule, on single particles and with `--ios`, with random
+start and `--oversampling 0`:
+
+- VDAM without the second-moment scaling, `--no-vdam-second-moment`: section 3's
+  update with the averaged direction not divided by the root of the second moment.
+  The moments, gates and schedules are unchanged. Each update records
+  `second_moment_scaling`, `direction_divisor_mean` (1 when off) and
+  `second_moment_mean`; the job log repeats them at each stage.
+- Plain SGD, `--optimizer momentum_sgd --sgd-momentum 0`
+  ([ppca_momentum_sgd.md](ppca_momentum_sgd.md) has the learning rate's scale).
+- `--physical-band [--band-target-resolution A]` computes `--stages` from the box
+  ([band_schedule.py](../../relax/ppca_initial_model/band_schedule.py)) and logs them:
+  with `L` the box in Angstrom, the band starts at 35 A and gains `1/(384 A)` every
+  125 updates, up to the target or Nyquist - 1, on the nearest shell. HEALPix order
+  1 above 32 A, 2 above 16 A, then 3, or 3 from 20 A if the band stops above 16 A.
+  A fixed `--stages` in shells means a different resolution at every box.
+
+The update counts need `--iterations`, which also sets VDAM's step and gate schedules.
+
+
 ## 17. VDAM drift from a ground-truth start and the batch-share step (October 3, 2026)
 
 Started from the ground-truth model, momentum SGD holds it and VDAM does not: on

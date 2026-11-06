@@ -43,7 +43,24 @@ class Config:
     checkpoint_interval: int = 1
     skip_final_embeddings: bool = False
     optimizer: str = "vdam"
+    # The multiplier of G / c, with c the band maximum of the metric trace over all 1 + q channels: rates comparable
+    # across q are sgd_learning_rate / (1 + q) (docs/math/ppca_momentum_sgd.md).
     sgd_learning_rate: float = 0.4
+    # Momentum B of the velocity B v + (1 - B) sgd_learning_rate G / c; 0 is plain SGD.
+    sgd_momentum: float = 0.9
+    # VDAM divides its direction by the root of the half-set second moment; False keeps the rest of VDAM without it.
+    vdam_second_moment: bool = True
+    # Momentum SGD variants (docs/development/ppca_optimizer_axes.md, "Gated momentum SGD"); the defaults are
+    # the plain step. sgd_halfset_gate applies VDAM's half-set shell gate to the step (the direction
+    # gate G - (1 - gate) diag(H) theta; the run then keeps VDAM's half-set moments as well).
+    # sgd_step_scale: "trace" divides by the band maximum of the backprojected metric trace sum_p w_p tr LHS_p,
+    # "exact_diagonal" by that of the exact projection-Hessian diagonal sum_p w_p^2 tr LHS_p (GPU streams).
+    sgd_halfset_gate: bool = False
+    sgd_step_scale: str = "trace"
+    # Noise annealing: the E-step of update t uses the noise estimate times
+    # 1 + (noise_anneal_factor - 1) max(0, 1 - t / noise_anneal_updates); 1.0 and 0 leave it unchanged.
+    noise_anneal_factor: float = 1.0
+    noise_anneal_updates: int = 0
     # Precision of the streamed engine's four GEMMs: "auto" (the default: tf32 on GPUs of compute
     # capability 8.0+, fp32 elsewhere), "tf32" (TF32 tensor-core products, float32 accumulation) or
     # "fp32" (exact float32 products). Section 14 of docs/math/vdam_ppca_algorithm.md has the evidence.
@@ -115,6 +132,24 @@ class Config:
                 )
         if not np.isfinite(self.sgd_learning_rate) or self.sgd_learning_rate <= 0:
             raise ValueError("Momentum SGD learning rate must be finite and positive")
+        if not 0 <= self.sgd_momentum < 1:
+            raise ValueError("Momentum SGD momentum must be in [0, 1)")
+        if self.optimizer != "momentum_sgd" and self.sgd_momentum != 0.9:
+            raise ValueError("The SGD momentum is a momentum SGD option")
+        if self.optimizer != "vdam" and not self.vdam_second_moment:
+            raise ValueError("Turning off the second-moment scaling is a VDAM option")
+        if self.sgd_step_scale not in ("trace", "exact_diagonal"):
+            raise ValueError("Momentum SGD step scale must be trace or exact_diagonal")
+        if self.optimizer != "momentum_sgd" and (self.sgd_halfset_gate or self.sgd_step_scale != "trace"):
+            raise ValueError("The half-set gate and the exact-diagonal step scale are momentum SGD options")
+        if self.sgd_step_scale == "exact_diagonal" and not self.stream_coarse_recompute:
+            raise ValueError("The exact-diagonal step scale runs on the streamed engine (stream_coarse_recompute)")
+        if isinstance(self.noise_anneal_updates, bool) or not isinstance(self.noise_anneal_updates, (int, np.integer)):
+            raise ValueError("Noise annealing updates must be an integer")
+        if not np.isfinite(self.noise_anneal_factor) or self.noise_anneal_factor < 1 or self.noise_anneal_updates < 0:
+            raise ValueError("Noise annealing needs a finite factor of at least 1 and a nonnegative update count")
+        if (self.noise_anneal_factor == 1) != (self.noise_anneal_updates == 0):
+            raise ValueError("Noise annealing needs both a factor above 1 and a positive update count, or neither")
         if self.gemm_precision not in ("auto", "fp32", "tf32"):
             raise ValueError("GEMM precision must be auto, fp32 or tf32")
         if self.gemm_precision == "tf32" and not self.stream_coarse_recompute:
@@ -123,6 +158,16 @@ class Config:
             raise ValueError("Image preread must be auto, on or off")
         if not 0 <= self.pass2_mass_floor < 1:
             raise ValueError("The pass-2 mass floor must be in [0, 1)")
+
+    def keeps_halfset_moments(self):
+        """Whether the run keeps VDAM's half-set moments: VDAM, and momentum SGD with the half-set gate."""
+        return self.optimizer == "vdam" or self.sgd_halfset_gate
+
+    def noise_inflation(self, iteration):
+        """The factor on the noise estimate in the E-step of update ``iteration`` (1.0 without annealing)."""
+        if self.noise_anneal_updates == 0:
+            return 1.0
+        return 1.0 + (self.noise_anneal_factor - 1.0) * max(0.0, 1.0 - iteration / self.noise_anneal_updates)
 
     def step_factor(self, iteration, n_images):
         """``min(1, count / scheduled count)``: the factor on VDAM's step for a batch below its own subset.
