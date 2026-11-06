@@ -88,6 +88,9 @@ class Config:
     # sgd_eig_floor_rel r: floor every frequency's metric eigenvalues at r times the band's largest eigenvalue too.
     sgd_pc_min_shell: int = 0
     sgd_eig_floor_rel: float | None = None
+    # sgd_mean_gate_floor F: multiply the mean's step per shell by clip(rho, F, 1), rho the PC gate's moving
+    # half-batch gradient correlation computed on the mean channel.
+    sgd_mean_gate_floor: float | None = None
     # Keep the orientation prior uniform (the learned direction prior is never used or kept).
     uniform_direction_prior: bool = False
     # Translation search per update: ((first update, range px, step px), ...) replacing shift_range and
@@ -276,6 +279,10 @@ class Config:
             raise ValueError("The PC minimum shell must be >= 0 and the relative eigenvalue floor in (0, 1)")
         if (self.sgd_pc_min_shell or self.sgd_eig_floor_rel is not None) and self.sgd_direction != "coupled":
             raise ValueError("The PC minimum shell and relative eigenvalue floor need the coupled direction")
+        if self.sgd_mean_gate_floor is not None and (
+            not 0 < self.sgd_mean_gate_floor <= 1 or self.sgd_pc_gate_floor is None
+        ):
+            raise ValueError("The mean gate floor must be in (0, 1] and needs --sgd-pc-gate-floor")
         if self.shift_schedule:
             entries = [tuple(e) for e in self.shift_schedule]
             if entries[0][0] != 1 or entries != sorted(entries) or any(len(e) != 3 or e[1] < 0 or e[2] <= 0 for e in entries):

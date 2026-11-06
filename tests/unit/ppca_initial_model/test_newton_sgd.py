@@ -189,3 +189,26 @@ def test_pc_min_shell_leaves_low_shells_of_the_pcs_unchanged():
     assert not np.any(step[shells < 2, 1:]) and np.all(step[shells >= 2, 1:] != 0) and np.all(step[:, 0] != 0)
     with pytest.raises(ValueError):
         Config(optimizer="momentum_sgd", sgd_momentum=0.0, sgd_pc_min_shell=1)  # needs the coupled direction
+
+
+def test_mean_gate_scales_the_mean_by_its_half_batch_correlation_only():
+    rng = np.random.default_rng(4)
+    n, q = 8, 2
+    shells = np.array([0, 1, 1, 2, 2, 3, 3, 3])
+    lhs = _pack(_spd(rng, n, q + 1))
+    g = _gradient(rng, n, q + 1)
+    # Half 1 repeats half 0 on the mean, except shell 3 where it is its negative: rho 1 there, then -1 (floored).
+    g1 = np.array(g)
+    g1[shells == 3, 0] *= -1
+    stats = [SimpleNamespace(lhs_tri=lhs, residual_gradient=g), SimpleNamespace(lhs_tri=lhs, residual_gradient=g1)]
+    base, _ = NewtonSGD(_config(sgd_pc_gate_floor=0.25), 4).step(stats, np.ones(n, bool), shells, 1, 1e-6, q)
+    gated, info = NewtonSGD(_config(sgd_pc_gate_floor=0.25, sgd_mean_gate_floor=0.1), 4).step(
+        stats, np.ones(n, bool), shells, 1, 1e-6, q
+    )
+    base, gated = np.asarray(base), np.asarray(gated)
+    np.testing.assert_allclose(gated[:, 1:], base[:, 1:], rtol=1e-6)
+    np.testing.assert_allclose(gated[shells < 3, 0], base[shells < 3, 0], rtol=1e-5)
+    np.testing.assert_allclose(gated[shells == 3, 0], 0.1 * base[shells == 3, 0], rtol=1e-5)
+    assert info["mean_gate_shell"][3] == pytest.approx(0.1)
+    with pytest.raises(ValueError):
+        Config(optimizer="momentum_sgd", sgd_momentum=0.0, sgd_direction="coupled", sgd_mean_gate_floor=0.1)
