@@ -87,9 +87,9 @@ class Config:
     skip_final_embeddings: bool = False
     optimizer: str = "vdam"
     sgd_learning_rate: float = 0.4
-    # Momentum SGD only: the loading columns' learning rate relative to the mean's (1: the same). 1/16 keeps the mean and
-    # the pose estimate sound at q = 10 (docs/math/ppca_momentum_sgd.md).
-    sgd_loading_scale: float = 1 / 16
+    # Momentum SGD only: the loading columns' learning rate relative to the mean's (1: the same). 1/4 is the best of
+    # {1, 1/4, 1/16, 1/64} on the loadings at q = 10 (docs/math/ppca_momentum_sgd.md).
+    sgd_loading_scale: float = 1 / 4
     # Precision of the streamed engine's four GEMMs: "auto" (the default: tf32 on GPUs of compute
     # capability 8.0+, fp32 elsewhere), "tf32" (TF32 tensor-core products, float32 accumulation) or
     # "fp32" (exact float32 products). Section 14 of docs/math/vdam_ppca_algorithm.md has the evidence.

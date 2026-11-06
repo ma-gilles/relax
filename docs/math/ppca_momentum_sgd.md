@@ -42,7 +42,7 @@ v_t=0.9v_{t-1}+0.1\,\eta\,s_a\,G/c_a,\qquad \eta=\texttt{sgd_learning_rate},
 \]
 
 with \(a=\mu\) for the mean column and \(a=W\) for every loading column;
-\(s_\mu=1\) and \(s_W=\texttt{sgd\_loading\_scale}\) (default 1/16), the loading
+\(s_\mu=1\) and \(s_W=\texttt{sgd\_loading\_scale}\) (default 1/4), the loading
 columns' learning rate relative to the mean's, the same for every loading
 column so that loading rotations still commute with the step. Only
 active Fourier frequencies receive the new gradient. A group with zero
@@ -63,12 +63,16 @@ the normalized learning-rate step, with no bias correction. There is no
 split-half disagreement gate, second-moment adaptation, explicit map prior,
 class occupancy factor, positivity clamp or posterior rewhitening.
 
-The default \(s_W=1/16\) was chosen at \(q=10\) on the eleven-state fixture with the
-`data_vs_prior` radius and the accuracy order (seeds 11 to 13). The between-state \(R^2\) of the
-latents was .08 to .10 at \(s_W=1\), .10 to .42 at 1/4, .47 to .48 at 1/16 and .58 at 1/64
-(VDAM .54). At 1/64 the loadings hold under a tenth of the truth mean's power at shells 5 to 31,
-while at 1/16 they are still growing at iteration 3000 and every seed agrees. The loading trace divides each loading
-column's step by about \(q\), so the value is calibrated at \(q=10\).
+The default is \(s_W=1/4\), calibrated at \(q=10\) because the loading trace divides each loading
+column's step by about \(q\). On the eleven-state fixture (C n1) with the `data_vs_prior` radius and the
+accuracy order (seeds 11 to 13) the between-state \(R^2\) of the latents was .08 to .10 at \(s_W=1\), .10 to
+.42 at 1/4, .47 to .48 at 1/16 and .58 at 1/64 (VDAM .54); at 1/64 the loadings hold under a tenth of the
+truth mean's power at shells 5 to 31. On the recipe schedule (radius and order table, 3000 iterations, one
+seed) 1/4 is better than 1/16 on the loadings and the same on the poses (within twice the replicate range): C n1 energy captured .855 against
+.691 (pose 4.90 against 4.57 deg, state FSC .914 against .899); C n3 energy captured .760 against .571 (pose
+6.61 against 6.45 deg); H1 pose 6.14 against 6.34 deg; D40 3.80 against 3.74 deg, and the early collapse at
+iteration 1000 (115 deg) is gone (4.9 deg). D20 (9.41 against 8.25 deg) and T10 (87 against 93 deg) fail at
+both scales.
 
 The controller reads \((H_f)_{00}\) and \(\sum_{k\ge1}(H_f)_{kk}\) from the
 packed metric `lhs_tri` of every statistics path

@@ -228,7 +228,7 @@ def test_cli_config_and_optimizer_checkpoint(tmp_path):
         optimizer=args.optimizer, sgd_learning_rate=args.sgd_learning_rate, sgd_loading_scale=args.sgd_loading_scale
     )
     assert (config.optimizer, config.sgd_learning_rate, config.sgd_loading_scale) == ("momentum_sgd", 0.25, 0.5)
-    assert Config().optimizer == "vdam" and Config().sgd_loading_scale == 1 / 16
+    assert Config().optimizer == "vdam" and Config().sgd_loading_scale == 1 / 4
     default_args = parser.parse_args(["--i", "particles.star", "--particle-diameter", "100", "-o", str(tmp_path)])
     assert default_args.sgd_loading_scale == Config().sgd_loading_scale
     with pytest.raises(ValueError, match="learning rate"):
@@ -263,7 +263,7 @@ def test_cli_config_and_optimizer_checkpoint(tmp_path):
 def test_a_checkpoint_from_before_the_loading_scale_is_scale_one():
     older = checkpoint._identity_config(dataclasses.asdict(Config(sgd_loading_scale=1.0)))
     assert "sgd_loading_scale" not in older
-    assert checkpoint._identity_config(dataclasses.asdict(Config()))["sgd_loading_scale"] == pytest.approx(1 / 16)
+    assert checkpoint._identity_config(dataclasses.asdict(Config()))["sgd_loading_scale"] == pytest.approx(1 / 4)
 
 
 def test_controller_pools_direct_residual_and_restarts_with_velocity(tmp_path, monkeypatch):
