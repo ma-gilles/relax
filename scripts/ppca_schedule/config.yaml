@@ -62,6 +62,13 @@ seeds: [11, 12, 13]
 # Arms to run (null: every arm below). A list, e.g. --config only_arms=[vdam_recipe,sgd_recipe].
 only_arms: null
 
+# The single-state study (Snakefile_states): one run per true state of a suite dataset on the images of that state alone, a
+# mean-only model (Snakefile_states). `args` is appended to the training command after `train`'s, `states` are the states run.
+single_state:
+  args: ["--direction-prior", "learned"]
+  states: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+  runtime_minutes: 120
+
 # One entry per arm; `args` is appended verbatim to the training command (a repeated flag wins over the shared
 # settings above), `runtime_minutes` overrides the Slurm request, `init_truth_mean: true` starts the mean from the
 # fixture's ground truth and `source_ref: "<commit>"` (quoted) trains with the code of that commit of `git_repo` instead of

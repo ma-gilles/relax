@@ -1,0 +1,188 @@
+# PPCA single-state ab initio: can one protein of a compositional suite dataset be solved on its own?
+#
+# Per true state and seed, with the shared training settings of config.yaml (`train`) and the arm of config `single_state`:
+#   1. subset_state  the training STAR restricted to the images of the state (scripts/ppca_schedule/subset_star.py).   [CPU]
+#   2. train_state   relax ppca_initial_model on those images as a mean-only model: one PC that is not activated until the
+#                    last iteration (--q 1 --pc-stages [[1,0],[<iterations>,1]]); scoring drops the loading column.   [GPU]
+#   3. score_state   the suite's scorer and the direct pose fit on the whole dataset's evaluation images
+#                    (scripts/ppca_schedule/score_suite_run.py --mean-only); the per-state pose fit of the trained state is the answer,
+#                    the other states' rows score a model that never saw them.   [GPU]
+# Outputs, under config `output_root`: training_state<k>/ (the subset STAR), state<k>/seed<seed>/ (checkpoints, run.json,
+# iterations.jsonl, suite_scores.json) and logs/. `output_root` holds a `training/` directory with the dataset's converted
+# particles.star and particles.mrcs (a link to an earlier run's is enough).
+#
+# Run from a frozen copy of the checkout, as Snakefile does:
+#   snakemake --snakefile <snapshot>/scripts/ppca_schedule/Snakefile_states --directory <dir> --profile <profile> all \
+#       --configfile <site.yaml> --config output_root=<dir> dataset=<suite folder> [states=[5]] [seeds=[11]]
+import json
+import os
+import shlex
+from pathlib import Path
+
+from snakemake.exceptions import WorkflowError
+
+configfile: os.path.join(workflow.basedir, "config.yaml")
+
+
+def required_path(settings, key):
+    """A setting that has no default, as a Path; the error says where to set it."""
+    if not settings.get(key):
+        raise WorkflowError(f"{key} is not set: give it in a site file (--configfile) or with --config")
+    return Path(settings[key])
+
+
+REPO = Path(workflow.basedir).resolve().parents[1]
+PYTHON = config["python"] or str(REPO / ".pixi/envs/default/bin/python")
+OUTPUT_ROOT = required_path(config, "output_root")
+NATIVES = required_path(config, "natives_dir")
+SUITE = config["suite"]
+DATASET = config["dataset"]
+DATASET_DIR = required_path(SUITE, "datasets_root") / DATASET
+TRAIN = config["train"]
+ARM = config["single_state"]
+STATES = config.get("states") or ARM["states"]
+SEEDS = config.get("seeds") or config["seeds"]
+PC_STAGES = json.dumps([[1, 0], [TRAIN["iterations"], 1]])
+DIAMETER = json.loads((DATASET_DIR / "training" / "manifest.json").read_text())["particle_diameter_ang"]
+SUITE_OPTIONS = " ".join(
+    f"--{option} {SUITE[key]}"
+    for key, option in {
+        "tools_dir": "suite-tools",
+        "fit_tools_dir": "fit-tools",
+        "gpu_env": "gpu-env",
+        "cpu_env": "cpu-env",
+        "scorer_python": "scorer-python",
+        "fit_python": "fit-python",
+    }.items()
+    if SUITE.get(key)
+)
+CLEAN_ENV = f"env -u PYTHONHOME -u CONDA_PREFIX -u VIRTUAL_ENV PYTHONNOUSERSITE=1 PYTHONPATH={REPO}"
+TRAIN_ENV = CLEAN_ENV + f" RELAX_CUDA_LIB={NATIVES}/librelax_cuda.so"
+
+
+def output_path(*parts):
+    """A path pattern under output_root; {state} and {seed} stay wildcards."""
+    return str(OUTPUT_ROOT.joinpath(*parts))
+
+
+wildcard_constraints:
+    state=r"\d+",
+    seed=r"\d+",
+
+
+localrules:
+    all,
+
+
+rule all:
+    """Train and score every state and seed."""
+    input:
+        scores=expand(output_path("state{state}", "seed{seed}", "suite_scores.json"), state=STATES, seed=SEEDS),
+
+
+# ----------------------------------------------------------------------------------------------------------------
+# Stage 1: the images of one state
+# ----------------------------------------------------------------------------------------------------------------
+
+
+rule subset_state:
+    message:
+        "Subsetting the training STAR of {DATASET} to state {wildcards.state}"
+    input:
+        particles_star=output_path("training", "particles.star"),
+        truth=DATASET_DIR / "evaluation" / "truth.npz",
+        script=REPO / "scripts" / "ppca_schedule" / "subset_star.py",
+    output:
+        subset_star=output_path("training_state{state}", "particles.star"),
+    params:
+        env=CLEAN_ENV,
+        python=PYTHON,
+        directory=lambda wildcards, output: str(Path(output.subset_star).parent),
+    resources:
+        cpus_per_task=2,
+        mem="8G",
+        runtime=10,
+    log:
+        output_path("logs", "subset_state{state}.log"),
+    shell:
+        "{params.env} {params.python} {input.script} {input.particles_star} {input.truth} "
+        "--state {wildcards.state} -o {params.directory} "
+        "> {log} 2>&1"
+
+
+# ----------------------------------------------------------------------------------------------------------------
+# Stage 2: training
+# ----------------------------------------------------------------------------------------------------------------
+
+
+rule train_state:
+    message:
+        "Training on the images of state {wildcards.state}, seed {wildcards.seed}"
+    input:
+        subset_star=rules.subset_state.output.subset_star,
+    output:
+        iterations=output_path("state{state}", "seed{seed}", "iterations.jsonl"),
+    params:
+        env=TRAIN_ENV,
+        python=PYTHON,
+        train=TRAIN,
+        train_args=" ".join(map(shlex.quote, map(str, TRAIN["args"]))),
+        arm_args=" ".join(map(shlex.quote, map(str, ARM["args"]))),
+        run_dir=lambda wildcards, output: str(Path(output.iterations).parent),
+    resources:
+        gpu=1,
+        runtime=ARM["runtime_minutes"],
+    log:
+        output_path("logs", "state{state}.seed{seed}.train.log"),
+    shell:
+        "{params.env} {params.python} -m relax.command_line ppca_initial_model "
+        "--i {input.subset_star} "
+        "--particle-diameter {DIAMETER} "
+        "-o {params.run_dir} "
+        "--q 1 "
+        "--pc-stages {PC_STAGES:q} "
+        "--seed {wildcards.seed} "
+        "--iterations {params.train[iterations]} "
+        "--stages {params.train[stages]:q} "
+        "--optimizer {params.train[optimizer]} "
+        "{params.train_args} "
+        "{params.arm_args} "
+        "--skip-final-embeddings "
+        "> {log} 2>&1"
+
+
+# ----------------------------------------------------------------------------------------------------------------
+# Stage 3: scoring
+# ----------------------------------------------------------------------------------------------------------------
+
+
+rule score_state:
+    message:
+        "Scoring the model trained on state {wildcards.state}, seed {wildcards.seed}"
+    input:
+        iterations=rules.train_state.output.iterations,
+        script=REPO / "scripts" / "ppca_schedule" / "score_suite_run.py",
+    output:
+        scores=output_path("state{state}", "seed{seed}", "suite_scores.json"),
+    params:
+        env=CLEAN_ENV,
+        python=PYTHON,
+        datasets_root=SUITE["datasets_root"],
+        checkpoints=" ".join(map(str, SUITE["checkpoints"])),
+        run_dir=lambda wildcards, input: str(Path(input.iterations).parent),
+    resources:
+        gpu=1,
+        runtime=240,
+    log:
+        output_path("logs", "state{state}.seed{seed}.suite_score.log"),
+    shell:
+        "{params.env} {params.python} {input.script} {params.run_dir} "
+        "--dataset {DATASET} "
+        "--arm state{wildcards.state} "
+        "--seed {wildcards.seed} "
+        "--datasets-root {params.datasets_root} "
+        "{SUITE_OPTIONS} "
+        "--checkpoints {params.checkpoints} "
+        "--mean-only "
+        "-o {output.scores} "
+        "> {log} 2>&1"
