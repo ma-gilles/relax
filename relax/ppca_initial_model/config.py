@@ -39,7 +39,9 @@ class Config:
     # The Fourier radius of each iteration. "stages": the stages table's. "data_vs_prior": RELION's InitialModel rule
     # (relax/ppca_initial_model/radius_rule.py): the table's first radius at iteration 1, then the last shell where the
     # mean's data_vs_prior stays at or above 1 plus incr_size shells (RELION's --incr_size), never decreasing. The
-    # table's later radii do not apply; the HEALPix orders follow order_rule.
+    # table's later radii do not apply; the HEALPix orders follow order_rule. "data_vs_prior_pcs": the same, where a
+    # shell counts only if the loadings' total variance also has data_vs_prior at or above 1
+    # (radius_rule.loading_data_vs_prior); without active loadings it is the mean's rule.
     radius_rule: str = "stages"
     incr_size: int = 10
     # The HEALPix order of each iteration. "stages": the stages table's. "accuracy": RELION's updateAngularSampling
@@ -128,8 +130,8 @@ class Config:
             self._validate_pc_stages()
         if not np.isfinite(self.pc_birth_scale) or self.pc_birth_scale <= 0:
             raise ValueError("pc_birth_scale must be finite and positive")
-        if self.radius_rule not in ("stages", "data_vs_prior"):
-            raise ValueError("The radius rule must be stages or data_vs_prior")
+        if self.radius_rule not in ("stages", "data_vs_prior", "data_vs_prior_pcs"):
+            raise ValueError("The radius rule must be stages, data_vs_prior or data_vs_prior_pcs")
         if isinstance(self.incr_size, bool) or not isinstance(self.incr_size, (int, np.integer)) or self.incr_size <= 0:
             raise ValueError("incr_size must be a positive integer")
         self._validate_order_rule()

@@ -8,11 +8,11 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 from recovar.core import fourier_transform_utils as ftu
-from recovar.ppca.triangular import unpack_tri_to_full
+from recovar.ppca.triangular import pack_upper_tri, unpack_tri_to_full
 
 from relax.ppca_initial_model import checkpoint
 from relax.ppca_initial_model.config import Config
-from relax.ppca_initial_model.radius_rule import mean_data_vs_prior, next_radius, radius_for
+from relax.ppca_initial_model.radius_rule import loading_data_vs_prior, mean_data_vs_prior, next_radius, radius_for
 from relax.ppca_initial_model.state import State
 from relax.ppca_initial_model.update import empty_moments, metric_floor
 from relax.reconstruction.resolution_criteria import RELION_MINRES_MAP
@@ -58,7 +58,7 @@ def _state(radius=2, next_radius=None, iteration=0):
 @pytest.mark.parametrize(
     "options, message",
     [
-        ({"radius_rule": "fixed"}, "stages or data_vs_prior"),
+        ({"radius_rule": "fixed"}, "stages, data_vs_prior or data_vs_prior_pcs"),
         ({"radius_rule": "data_vs_prior", "incr_size": 0}, "positive integer"),
         ({"radius_rule": "data_vs_prior", "incr_size": True}, "positive integer"),
     ],
@@ -129,6 +129,89 @@ def test_data_vs_prior_is_the_shell_average_weight_times_the_shell_average_power
     assert np.all(result[: radius + 1] > 0) and np.all(result[radius + 1 :] == 0)
     # More data or a stronger prior only raises it: doubling the weight doubles every shell.
     assert_matches(mean_data_vs_prior(2 * weight, mean, shape, fudge=fudge, radius=radius), 2 * result, rtol=1e-5)
+
+
+def _blocks(rng, rows, q):
+    """Random symmetric positive definite ``(1 + q)`` blocks per row, well above the metric floor."""
+    factor = rng.normal(size=(rows, q + 1, q + 1))
+    return (factor @ factor.swapaxes(-1, -2) + np.eye(q + 1)) * 50 * metric_floor(BOX)
+
+
+def _shell_loop(weight, power, radius, fudge):
+    """Shell s up to ``radius``: fudge * mean(weight / floor) * mean(power) over the rows of that shell inside the radius."""
+    shape = (BOX,) * 3
+    shells = np.asarray(ftu.get_grid_of_radial_distances_real(shape), np.int32).reshape(-1)
+    radii = np.asarray(ftu.get_grid_of_radial_distances_real(shape, rounded=False)).reshape(-1)
+    expected = np.zeros(BOX // 2 + 1)
+    for shell in range(radius + 1):
+        rows = (shells == shell) & (radii < radius)
+        expected[shell] = fudge * np.mean(weight[rows] / metric_floor(BOX)) * np.mean(power[rows])
+    return expected
+
+
+def _loading_case(rng, q, scale=1.0):
+    """Blocks, their packed metric and a reference ``theta`` with ``q`` loadings; all on the test box's half volume."""
+    blocks = scale * _blocks(rng, N_FREQ, q)
+    theta = (rng.normal(size=(N_FREQ, q + 1)) + 1j * rng.normal(size=(N_FREQ, q + 1))).astype(np.complex64)
+    return blocks, np.asarray(pack_upper_tri(jnp.asarray(blocks.astype(np.float32)))), theta
+
+
+@pytest.mark.parametrize("q", [1, 3])
+def test_the_loading_data_vs_prior_is_the_total_loading_power_over_the_inverse_of_the_loading_block(q):
+    """The noise of the loadings is the loading block of the metric's inverse (the Schur complement's inverse),
+    whatever couples them to the mean: weight q / tr, power the shell mean per loading."""
+    blocks, metric, theta = _loading_case(np.random.default_rng(2), q)
+    radius, fudge = 3, 2.0
+    result = loading_data_vs_prior(metric, theta, (BOX,) * 3, fudge=fudge, radius=radius)
+
+    noise = np.trace(np.linalg.inv(blocks.astype(np.float32).astype(np.float64))[:, 1:, 1:], axis1=-2, axis2=-1)
+    power = np.sum(np.abs(theta[:, 1:]) ** 2, axis=-1) / (q * BOX**4)
+    expected = _shell_loop(q / noise, power, radius, fudge)
+    assert_matches(result, expected, rtol=2e-4)  # float32 metric and theta
+    assert np.all(result[: radius + 1] > 0) and np.all(result[radius + 1 :] == 0)
+
+
+def test_one_loading_without_coupling_is_the_mean_formula_on_the_loading_column():
+    rng = np.random.default_rng(3)
+    weight = rng.uniform(0.5, 2.0, N_FREQ) * 50 * metric_floor(BOX)
+    blocks = np.zeros((N_FREQ, 2, 2))
+    blocks[:, 0, 0] = weight
+    blocks[:, 1, 1] = weight
+    theta = (rng.normal(size=(N_FREQ, 2)) + 1j * rng.normal(size=(N_FREQ, 2))).astype(np.complex64)
+    metric = np.asarray(pack_upper_tri(jnp.asarray(blocks.astype(np.float32))))
+    shape = (BOX,) * 3
+    assert_matches(
+        loading_data_vs_prior(metric, theta, shape, fudge=1.5, radius=3),
+        mean_data_vs_prior(metric[:, 2], theta[:, 1], shape, fudge=1.5, radius=3),
+        rtol=1e-4,
+    )
+
+
+def test_the_loading_data_vs_prior_does_not_depend_on_the_latent_basis_and_scales_with_the_data():
+    q = 3
+    blocks, metric, theta = _loading_case(np.random.default_rng(4), q)
+    shape, options = (BOX,) * 3, {"fudge": 1.0, "radius": 3}
+    base = loading_data_vs_prior(metric, theta, shape, **options)
+
+    rotation, _ = np.linalg.qr(np.random.default_rng(5).normal(size=(q, q)))
+    turn = np.eye(q + 1)
+    turn[1:, 1:] = rotation
+    turned_blocks = turn.T @ blocks @ turn
+    turned_theta = (theta @ turn).astype(np.complex64)
+    turned = np.asarray(pack_upper_tri(jnp.asarray(turned_blocks.astype(np.float32))))
+    assert_matches(loading_data_vs_prior(turned, turned_theta, shape, **options), base, rtol=1e-3)
+
+    doubled = np.asarray(pack_upper_tri(jnp.asarray((2 * blocks).astype(np.float32))))
+    assert_matches(loading_data_vs_prior(doubled, theta, shape, **options), 2 * base, rtol=1e-4)
+
+
+def test_unmodelled_voxels_get_the_floor_weight_so_empty_shells_stay_below_one():
+    """A row without data has the weight RELION gives it (1, the floor), not an infinite or undefined one."""
+    q = 2
+    metric = np.zeros((N_FREQ, (q + 1) * (q + 2) // 2), np.float32)
+    theta = np.full((N_FREQ, q + 1), 0.1, np.complex64)
+    result = loading_data_vs_prior(metric, theta, (BOX,) * 3, fudge=1.0, radius=3)
+    assert np.all(np.isfinite(result)) and np.all(result < 1)
 
 
 def test_the_planned_radius_is_saved_and_an_older_checkpoint_resumes_without_one(tmp_path):
@@ -206,3 +289,24 @@ def test_the_stages_rule_logs_no_data_vs_prior(monkeypatch, tmp_path):
     log = [json.loads(line) for line in open(tmp_path / "run" / "iterations.jsonl")]
     assert all("data_vs_prior" not in row and "next_radius" not in row for row in log)
     assert [row["radius"] for row in log] == [2] * 8
+
+
+def test_the_pcs_rule_logs_the_loading_curve_and_plans_from_the_lower_of_the_two(monkeypatch, tmp_path):
+    """With active loadings the run logs the loadings' data_vs_prior beside the mean's, and the planned radius is
+    never above the mean-only rule's; the first iteration (the table's radius) has no curve yet either way."""
+    monkeypatch.setenv("SLURM_JOB_ID", "test")
+    star = _write_star(tmp_path / "data", 16)
+    _run_command(star, tmp_path / "run", "--radius-rule", "data_vs_prior_pcs", "--incr-size", "1")
+    log = [json.loads(line) for line in open(tmp_path / "run" / "iterations.jsonl")]
+    assert all(len(row["loading_data_vs_prior"]) == BOX // 2 + 1 for row in log)
+    assert all(row["next_radius"] <= 3 for row in log)
+
+
+def test_the_pcs_rule_is_the_mean_rule_while_no_loading_is_active(monkeypatch, tmp_path):
+    monkeypatch.setenv("SLURM_JOB_ID", "test")
+    star = _write_star(tmp_path / "data", 16)
+    _run_command(
+        star, tmp_path / "run", "--radius-rule", "data_vs_prior_pcs", "--incr-size", "1", "--pc-stages", "[[1,0],[5,1]]"
+    )
+    log = [json.loads(line) for line in open(tmp_path / "run" / "iterations.jsonl")]
+    assert [("loading_data_vs_prior" in row) for row in log] == [False] * 4 + [True] * 4

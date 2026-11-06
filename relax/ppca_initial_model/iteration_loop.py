@@ -33,7 +33,7 @@ from relax.ppca_initial_model.initialization import (
 from relax.ppca_initial_model.noise import update_noise
 from relax.ppca_initial_model.order_rule import final_order, next_order, order_for
 from relax.ppca_initial_model.pose_accuracy import N_TRIALS, expected_rotation_accuracy
-from relax.ppca_initial_model.radius_rule import mean_data_vs_prior, next_radius, radius_for
+from relax.ppca_initial_model.radius_rule import loading_data_vs_prior, mean_data_vs_prior, next_radius, radius_for
 from relax.ppca_initial_model.sgd_update import metric_curvature, momentum_step
 from relax.ppca_initial_model.state import State
 from relax.ppca_initial_model.tomo import TiltParticles, initialize_tilts, load_tilt_tile, tilt_tiles
@@ -826,14 +826,20 @@ def run(
                     if iteration == config.iterations
                     else next_order(order, acc_rot, order_max=config.order_max)
                 )
-        data_vs_prior = planned_radius = None
-        if config.radius_rule == "data_vs_prior":
+        data_vs_prior = loading_dvp = planned_radius = None
+        if config.radius_rule != "stages":
             # The reference this E-step used and half 0's mean weight, as RELION's updateSSNRarrays.
             data_vs_prior = mean_data_vs_prior(
                 stats[0].lhs_tri[:, 0], theta_in[:, 0], dataset.volume_shape, fudge=fudge, radius=radius
             )
+            resolved = data_vs_prior
+            if config.radius_rule == "data_vs_prior_pcs" and active > 0:
+                loading_dvp = loading_data_vs_prior(
+                    stats[0].lhs_tri, theta_in, dataset.volume_shape, fudge=fudge, radius=radius
+                )
+                resolved = np.minimum(data_vs_prior, loading_dvp)
             planned_radius = next_radius(
-                data_vs_prior, radius=radius, grid_size=dataset.grid_size, incr_size=config.incr_size
+                resolved, radius=radius, grid_size=dataset.grid_size, incr_size=config.incr_size
             )
         direction_ids = _direction_ids(hp)
         masses = sum(np.asarray(result.diagnostics["rotation_mass"]) for result in stats)
@@ -884,6 +890,7 @@ def run(
                     if planned_radius is not None
                     else {}
                 ),
+                **({"loading_data_vs_prior": loading_dvp} if loading_dvp is not None else {}),
                 **(
                     {
                         "next_order": planned_order,

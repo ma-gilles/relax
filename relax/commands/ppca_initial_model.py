@@ -35,11 +35,12 @@ def add_args(parser):
     parser.add_argument("--stages", help="JSON list of [first iteration, Fourier radius, HEALPix order]")
     parser.add_argument(
         "--radius-rule",
-        choices=("stages", "data_vs_prior"),
+        choices=("stages", "data_vs_prior", "data_vs_prior_pcs"),
         default=Config().radius_rule,
         help="the Fourier radius of each iteration: the --stages table's, or RELION's data_vs_prior rule for the mean "
         "(the table's first radius starts the run, then the last shell where data_vs_prior stays at or above 1 plus "
-        "--incr-size shells, never decreasing; the HEALPix orders follow --order-rule)",
+        "--incr-size shells, never decreasing; the HEALPix orders follow --order-rule); data_vs_prior_pcs also "
+        "requires the data_vs_prior of the loadings' total variance to stand at or above 1",
     )
     parser.add_argument(
         "--incr-size",

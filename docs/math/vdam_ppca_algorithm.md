@@ -3487,3 +3487,64 @@ runs spend more than half of the run after the step), whether a cap on the radiu
 the states better, and whether the radius floor of 15 shells suits other box sizes. Open from slice 4: the folded
 PC1 of seed 13 at start order 3, the planner's margin at order 5, and the divergence on a fixture with stronger
 heterogeneity.
+
+### 18.14 The radius with the loadings, `--radius-rule data_vs_prior_pcs` (November 5, 2026)
+
+The mean's `data_vs_prior` (section 18.6) opens the radius to 23 to 26 within 30 to 100 iterations of a momentum-SGD
+run on the b150 box-64 datasets, while the loadings are still at their random start. On C n1 that radius with the
+accuracy order (order 3 at iteration 30) fails, at loading scale 1/16 and 1/4, and each rule alone does not.
+`data_vs_prior_pcs` plans the next radius from the shells where the mean and the loadings' total variance both have
+`data_vs_prior` at or above 1: the curves of the two are compared shell by shell, the lower one goes through
+RELION's scan (`next_radius`), so the radius still never decreases and `--incr-size` still applies. Without active
+loadings (`--pc-stages` before the first PC) it is the mean's rule.
+
+The mean's weight is the metric's first entry, the back-projected CTF^2 over the noise. That is not the loadings'
+precision. The metric of a voxel is `L = sum_i w_i E[a a^T]` with `a = [1; z]` (section 5), so its loading block holds
+the latents' second moments, and the mean and loadings are solved together: the loading estimates have the covariance
+of the loading block of `L^{-1}`, which is the inverse of the Schur complement `S = L_WW - L_W0 L_00^{-1} L_0W`.
+For a voxel:
+
+- noise: `tr(S^{-1})`, the total variance of the loading estimates (eigenvalues of `S` floored at `metric_floor`, as the
+  update floors its block);
+- weight: `q / tr(S^{-1})` over `metric_floor`, in RELION's units, the weight at which `q` equal loadings would have that total noise;
+- prior: the shell mean of `sum_k |W_k|^2 / q` (raw FFT power over `N^4`, as the mean's), with the same fudge;
+- `data_vs_prior_W(s) = fudge * mean_s(weight) * tau2_W(s)`, the total loading power over the total estimation noise.
+
+Both sums are invariant to a rotation of the latent basis, as the section 7.1 requirement asks, and with uncoupled unit
+second moments and one loading it is the mean's formula applied to the loading column (tests below).
+
+What it is not: `L` is the expected complete-data metric, so `S` is the information the M-step uses, not the
+observed-data information (section 5 and 8.1). Where the latents are uncertain it overstates what the data say about
+the loadings, so the criterion can open the radius earlier than an exact one would; the posterior covariance enters `S`
+and cannot be separated from the posterior means by the statistics kept. The prior is the current loadings' own power,
+as the mean's is the current mean's: noise in the estimate counts as signal. Half 0's statistics are used, as for the mean.
+
+- Code: `radius_rule.loading_data_vs_prior`; `iterations.jsonl` gains `loading_data_vs_prior` (the curve) beside
+  `data_vs_prior` while loadings are active; `Config.radius_rule` accepts `data_vs_prior_pcs`.
+- Tests (`tests/unit/ppca_initial_model/test_radius_rule.py`): the curve against an independent shell loop with the
+  noise taken from `np.linalg.inv` of the whole block, for q = 1 and 3; equality with the mean formula for one uncoupled
+  loading; invariance to a latent rotation; doubling the metric doubles the curve; empty rows stay below 1; a CPU run
+  logs the curve, and with `--pc-stages [[1,0],[5,1]]` logs it only once a loading is active.
+
+First experiment (round 18, C n1, seed 11, 3000 iterations, order capped at 3, `snapshots/round18_runs`, HEAD `e16efe4e`, diff
+sha256 `4066016e63a4f37719222768690f7ef941f056ac95ae06c484d50bd8929867c1`; baseline noise from `sgd_new_recipe` seeds 11 to 13):
+
+| Arm | Pose median / below 10 deg | Mean FSC | Energy | Radius when order 3 starts (iteration 30) | Radius at the end |
+| --- | --- | --- | --- | --- | --- |
+| scale 1/4, table radius and order (reference) | 4.90 / 98.4% | .987 | .855 | 11 | 31 |
+| scale 1/4, `data_vs_prior_pcs`, table order | 5.96 / 93.0% | .979 | .819 | 15 | 19 |
+| scale 1/4, `data_vs_prior_pcs`, accuracy order | 79.5 / 1.3% | .500 | .078 | 15 | 17 |
+| scale 1/16, `data_vs_prior_pcs`, accuracy order | 5.31 / 95.3% | .620 | .016 | 15 | 18 |
+| scale 1/4, `data_vs_prior`, accuracy order (round 16b) | 35.3 / 6.0% | .454 | .075 | 24 | 31 |
+
+- The loadings' curve stays at or above 1 only up to shell 3 (the `minres_map` floor of 5 plus 10 gives the radius 15) for
+  about 1,000 iterations, and only up to shell 7 or 8 after the batch grows (iteration 1,000 to 1,500; the mean's curve
+  also rises 3 to 4 times then). The gate therefore held the radius at 15 for 1,650 to 2,400 iterations and ended
+  at 17 to 19 (one run), where the mean's own curve allows 28 or more.
+- Holding the radius did not prevent the failure: scale 1/4 with the accuracy order failed at radius 15, which is
+  the table's 11 only from iteration 500. The failure with the mean's rule (radius 24 at order 3) is therefore not
+  specific to a radius that opens early, and the radius at which order 3 starts (11 against 15 or more) is the
+  one difference between the working and failing runs that these arms show; no run varies it alone.
+- The rule cannot delay the radius below 15 (its floor); the table starts at 11.
+- A mean that stops at radius 17 to 19 has no power beyond (mean power 0.07 to 0.5 times the truth's in shells 16 to
+  31) and mean FSC .50 to .62 even where the poses are right (scale 1/16: 5.31 deg).
