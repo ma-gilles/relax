@@ -63,6 +63,7 @@ from relax.ppca_refinement.full_row_kernels import (
     score_tile,
     score_window_pixels,
     second_moment_sums,
+    tile_noise_group,
 )
 from relax.ppca_refinement.full_row_stream import (
     check_finite_posterior,
@@ -529,7 +530,9 @@ def _moment_rows(
         sums.shape[0], N * K, F
     )
     rotations = frame_rotations(tile, arrays.rotations[rows.row])
-    return scatter_moment_images(carry, arrays, static, rhs_parts, lhs_images, rotations)
+    return scatter_moment_images(
+        carry, arrays, static, rhs_parts, lhs_images, rotations, noise_group=tile_noise_group(tile)
+    )
 
 
 def _chunks(mask, sizes, padding: int):
@@ -771,7 +774,9 @@ def oversampled_tile_embeddings(
         n_real = real_image_count(tile, layout)
         # Over the pass-2 poses: the children of each image's significant coarse samples.
         scores = image_scores(
-            posterior.center[:n_real], posterior.centered_logZ[:n_real], posterior.top_score[:n_real],
+            posterior.center[:n_real],
+            posterior.centered_logZ[:n_real],
+            posterior.top_score[:n_real],
             tile.y_norm[:n_real],
         )
         return DensePPCAEmbeddings(carry.embedding[:n_real], layout["original_ids"], n_real, *scores)

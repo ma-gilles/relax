@@ -130,7 +130,6 @@ def _brute_force(particles, stream, p):
     theta = np.concatenate([p["mu"][:, None], p["W"]], axis=1).T.astype(np.complex128)  # (P, half volume)
     P = theta.shape[0]
     q = P - 1
-    frames = particles.group_frames[0]
     R, T = len(p["rotations"]), len(translations)
 
     def project(rotation):
@@ -147,8 +146,13 @@ def _brute_force(particles, stream, p):
         )
         return np.asarray(out)[:, 0, :]  # (P, n_half)
 
+    # Keys (tilt group, rotation, frame): each tilt group projects at its own frames.
     tilt_rotation = {
-        (r, k): frames[k] @ p["rotations"][r].astype(np.float64) for r in range(R) for k in range(len(frames))
+        (g, r, k): frames[k] @ p["rotations"][r].astype(np.float64)
+        for g in sorted(set(particles.particle_group.tolist()))
+        for frames in [particles.group_frames[g]]
+        for r in range(R)
+        for k in range(len(frames))
     }
     projections = {key: project(rot) for key, rot in tilt_rotation.items()}
     real = lambda z: np.concatenate([z.real, z.imag], axis=-1)  # noqa: E731
@@ -167,6 +171,8 @@ def _brute_force(particles, stream, p):
     for i in range(n_particles):
         image_ids, _ = particles.particle_images([i])
         slots = particles.image_frame[image_ids]
+        group = int(particles.particle_group[i])
+        frames = particles.group_frames[group]
         y = p["images"][image_ids].astype(np.complex128)
         C = p["ctf"][image_ids].astype(np.float64)
         outside = np.ones(N_HALF, bool)
@@ -180,7 +186,9 @@ def _brute_force(particles, stream, p):
                 shifts = tilt_shifts(frames, translations[t : t + 1])[slots, 0].astype(np.float64)  # (n, 2)
                 phase = np.exp(-2j * np.pi * shifts @ lattice[window].T)  # (n, F)
                 shifted = y[:, window] * phase
-                A = np.stack([C[n, window] * projections[(r, k)][:, window] for n, k in enumerate(slots)], axis=1)
+                A = np.stack(
+                    [C[n, window] * projections[(group, r, k)][:, window] for n, k in enumerate(slots)], axis=1
+                )
                 residual = real(shifted - A[0]).reshape(-1)
                 B = np.stack([real(A[j]).reshape(-1) for j in range(1, P)], axis=1)
                 d = np.tile(np.concatenate([D, D]), len(slots))
@@ -207,9 +215,9 @@ def _brute_force(particles, stream, p):
             G[1:, 1:] += covariance
             for n, k in enumerate(slots):
                 y_recon = shifted[n] * C[n, window] / sigma2
-                rhs_images[(r, k)][:, window] += g * alpha[:, None] * y_recon[None]
+                rhs_images[(group, r, k)][:, window] += g * alpha[:, None] * y_recon[None]
                 for c, (a, b) in enumerate(tri):
-                    lhs_images[(r, k)][c, window] += g * G[a, b] * C[n, window] ** 2 / sigma2
+                    lhs_images[(group, r, k)][c, window] += g * G[a, b] * C[n, window] ** 2 / sigma2
                 predicted = alpha @ A[:, n]  # CTF-weighted projection of mu + W m
                 loading = A[1:, n]  # (q, F)
                 expected = (
@@ -412,6 +420,124 @@ def test_tiles_keep_one_tilt_group():
     particles = TiltParticles(**{**particles.__dict__, "particle_group": np.asarray([1, 0, 1, 1])})
     tiles = tilt_tiles(particles, np.asarray([3, 1, 0, 2]), 2)
     assert [t.tolist() for t in tiles] == [[3, 0], [2], [1]]
+
+
+# Three tilt groups (their own frames, two with three of them) and two noise groups: keys (tilt group, noise group)
+# (0, 0) x2, (1, 1), (2, 1), (1, 0), so a tile of all five particles is a mixed tile of four keys.
+MIXED_GROUP_FRAMES = (
+    FRAMES,
+    Rotation.from_euler("zyx", [[-30, -30, 2], [-30, 0, 0], [-30, 30, -1]], degrees=True).as_matrix(),
+    FRAMES[1:],
+)
+MIXED_PARTICLE_GROUP = np.asarray([0, 1, 0, 2, 1])
+MIXED_NOISE_GROUP = np.asarray([0, 1, 0, 1, 0])
+MIXED_IMAGE_FRAMES = [[0, 1, 2, 3], [2, 0], [3, 1, 2], [0, 1, 2], [1]]
+MIXED_NOISE = np.asarray([30.0, 75.0])
+
+
+def make_mixed_problem(seed=12):
+    """Five particles of three tilt groups and two noise groups, with a stream noise table."""
+    _, base, arrays = make_problem(image_frames=MIXED_IMAGE_FRAMES, seed=seed)
+    offsets = np.concatenate([[0], np.cumsum([len(f) for f in MIXED_IMAGE_FRAMES])]).astype(np.int64)
+    images, ctf = arrays["images"].astype(np.complex64), arrays["ctf"]
+    particles = TiltParticles(
+        image_shape=IMAGE_SHAPE,
+        volume_shape=VOLUME_SHAPE,
+        voxel_size=1.0,
+        image_offsets=offsets,
+        image_frame=np.concatenate(MIXED_IMAGE_FRAMES).astype(np.int64),
+        particle_group=MIXED_PARTICLE_GROUP,
+        group_frames=tuple(np.asarray(f, np.float64) for f in MIXED_GROUP_FRAMES),
+        read=lambda ids: (None, jnp.asarray(images[np.asarray(ids)]), jnp.asarray(ctf[np.asarray(ids)])),
+        noise_group=MIXED_NOISE_GROUP,
+    )
+    stream = prepare_full_row_stream(
+        particles,
+        arrays["mu"],
+        arrays["W"],
+        noise_variance=[np.full(IMAGE_SHAPE, n, np.float32) for n in MIXED_NOISE],
+        rotations=arrays["rotations"],
+        translations=TRANSLATIONS,
+        rotation_log_prior=arrays["rotation_log_prior"],
+        translation_log_prior=arrays["translation_log_prior"],
+        rotation_parent=np.zeros(5, np.int32),
+        translation_parent=np.zeros(len(TRANSLATIONS), np.int32),
+        n_coarse_rotations=1,
+        n_coarse_translations=1,
+        geometry=GeometryConfig(current_size=6, q=2, volume_domain="fourier_half"),
+        schedule=ScheduleConfig(image_batch_size=5, rotation_block_size=2),
+        scoring=ScoringConfig(relion_texture_interp=False, full_real_observation=True),
+        tile_loader=load_tilt_tile,
+        gemm_precision="fp32",
+        device=base.device,
+    )
+    truth = brute_force(particles, stream, {**arrays, "noise": MIXED_NOISE[MIXED_NOISE_GROUP]})
+    return particles, stream, truth
+
+
+@pytest.fixture(scope="module")
+def mixed_problem():
+    return make_mixed_problem()
+
+
+@pytest.mark.parametrize("planned", [None, 10])
+def test_mixed_tile_matches_brute_force(mixed_problem, planned):
+    """One tile of particles from three tilt groups and two noise groups (RELION's per-particle tilt matrices),
+    unpadded and padded to a key bucket (10 slots of two: a bucket of five keys, one of them padding), gives the joint
+    Gaussian's statistics, the residual sums per noise group."""
+    from relax.ppca_refinement.full_row_stream import full_row_tile_embeddings
+
+    particles, stream, truth = mixed_problem
+    stream = stream._replace(tile_images=planned)
+    tile, _, layout = load_tilt_tile(stream, np.arange(5), [None] * 5, collect_observation=False)
+    assert tile.frames.shape == (4 if planned is None else 5, 4, 3, 3) and layout["n_keys"] == 4
+    actual = accumulate_full_row_tile(stream, np.arange(5), [None] * 5)
+    rtol = 2e-5  # the one-group tile's band (test_tilt_tile_matches_brute_force_joint_gaussian)
+    assert_matches(actual.log_likelihood, truth["log_likelihood"], rtol=rtol)
+    assert_matches(np.asarray(actual.embeddings), truth["embeddings"], rtol=rtol)
+    assert_matches(actual.diagnostics["rotation_mass"], truth["rotation_mass"], rtol=rtol)
+    assert_matches(actual.diagnostics["offset_second_sum_px2"], truth["offset_second_sum_px2"], rtol=rtol)
+    assert_matches(np.asarray(actual.lhs_tri), truth["lhs_tri"], rtol=rtol)
+    assert_matches(np.asarray(actual.residual_gradient), truth["residual_gradient"], rtol=rtol)
+    assert np.asarray(actual.residual_num).shape == truth["residual_num"].shape == (2, truth["residual_num"].shape[1])
+    assert_matches(np.asarray(actual.residual_num), truth["residual_num"], rtol=rtol)
+    assert_matches(np.asarray(actual.residual_den), truth["residual_den"], rtol=1e-6)
+    np.testing.assert_array_equal(actual.original_image_ids, np.arange(5))
+    embedded = full_row_tile_embeddings(stream, np.arange(5), [None] * 5)
+    assert_matches(np.asarray(embedded.embeddings), truth["embeddings"], rtol=rtol)
+
+
+def test_mixed_tile_equals_its_keys_own_tiles(mixed_problem):
+    """The mixed tile's sums equal those of one tile per key, within float32 summation order."""
+    from relax.ppca_refinement.full_row_stream import accumulate_full_row_tiles
+
+    particles, stream, _ = mixed_problem
+    keys = MIXED_PARTICLE_GROUP * 2 + MIXED_NOISE_GROUP
+    order = [np.flatnonzero(keys == key) for key in dict.fromkeys(keys.tolist())]
+    parts = accumulate_full_row_tiles(stream, [(ids, [None] * ids.size) for ids in order])
+    mixed = accumulate_full_row_tile(stream, np.concatenate(order), [None] * 5)
+    rtol = 1e-5
+    for name in ("lhs_tri", "residual_gradient", "residual_num", "residual_den"):
+        assert_matches(np.asarray(getattr(mixed, name)), sum(np.asarray(getattr(p, name)) for p in parts), rtol=rtol)
+    assert_matches(np.asarray(mixed.embeddings), np.concatenate([np.asarray(p.embeddings) for p in parts]), rtol=rtol)
+    assert_matches(np.float32(mixed.log_likelihood), np.float32(sum(p.log_likelihood for p in parts)), rtol=rtol)
+
+
+def test_tilt_tiles_pack_small_groups_into_mixed_tiles():
+    """Small keys share tiles, largest first, as many as fit the tile at the largest key's slot bucket; a key
+    above MIXED_GROUP_MAX keeps tiles of its own; without ``mixed`` every key does."""
+    from relax.ppca_initial_model.tomo import MIXED_GROUP_MAX
+
+    group = np.asarray([0] * (MIXED_GROUP_MAX + 2) + [1, 2, 2, 3, 4, 5, 6])
+    n = group.size
+    particles = _particles(np.zeros((n, N_HALF), np.complex64), np.ones((n, N_HALF), np.float32), [[0]] * n, FRAMES)
+    particles = TiltParticles(**{**particles.__dict__, "particle_group": group, "group_frames": (FRAMES,) * 7})
+    ids = np.arange(n)
+    big = ids[: MIXED_GROUP_MAX + 2]
+    tiles = tilt_tiles(particles, ids, 6)
+    assert [t.tolist() for t in tiles] == [big[:6].tolist(), big[6:].tolist(), [11, 12, 10, 13], [14, 15, 16]]
+    alone = tilt_tiles(particles, ids, 6, mixed=False)
+    assert [t.tolist() for t in alone] == [big[:6].tolist(), big[6:].tolist(), [10], [11, 12], [13], [14], [15], [16]]
 
 
 def _controller_particles():

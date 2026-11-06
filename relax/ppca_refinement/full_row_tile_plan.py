@@ -43,7 +43,7 @@ def _window_pixels(stream: FullRowStream) -> int:
         return int(arrays.gemm_window.shape[0])
     if arrays.score_indices is not None:
         return int(np.asarray(arrays.score_indices).size)
-    return int(arrays.coefficient_noise.size)
+    return int(arrays.coefficient_noise.shape[-1])
 
 
 # What a tile reader other than the single-particle one must report for the tile planner.
@@ -88,6 +88,9 @@ def tile_spec(stream: FullRowStream, n_images: int) -> TileArrays:
         ctf2_recon=spec((B, K * F), f32),
         y_norm=spec((B,), f32),
         frames=None if _plan_reader(stream) is None else spec((K, 3, 3), f32),
+        # A one-key subtomogram tile (the planned shape; a mixed tile of as many particles holds as many
+        # operand bytes and runs its keys one at a time).
+        noise_groups=None if _plan_reader(stream) is None else spec((1,), jnp.int32),
     )
 
 
@@ -160,7 +163,7 @@ def single_particle_reader_bytes(stream: FullRowStream, n_images: int) -> tuple[
     and CTF rows, live until the tile finishes.
     """
     T = int(stream.translations.shape[0])
-    n_half = int(stream.arrays.coefficient_noise.size)
+    n_half = int(stream.arrays.coefficient_noise.shape[-1])
     F = _window_pixels(stream)
     complex_full = 2 * T * n_half  # one (T, n_half) complex64 image stack, in float32 values
     complex_window = 2 * T * F
@@ -281,7 +284,7 @@ def plan_shape_key(stream: FullRowStream) -> tuple:
         stream.rotation_block_size,
         int(stream.translations.shape[0]),
         _window_pixels(stream),
-        int(stream.arrays.coefficient_noise.size),
+        int(stream.arrays.coefficient_noise.shape[-1]),
         int(stream.arrays.augmented.shape[1]),
         static.basis_size,
         static.metric_trace_only,

@@ -1710,10 +1710,11 @@ z_i\sim\mathcal N(0,I_q).
 Noise is independent across tilt images, with spectrum `Sigma_g` in the
 coefficient units of section 14 for the particle's optics group `g` (one per
 tomogram on RELION 5 imports), as in RELION; dose enters through the CTF, not the
-noise. Tiles hold particles of one tilt group and one noise group (16.4), and the
-controller runs one stream per noise group, whose noise enters that stream's
-operands; no engine change is needed. Until October 3, 2026 the first version
-used one spectrum for every tilt image.
+noise. The controller runs one stream with a noise table, one spectrum per noise
+group: each tile key (tilt group and noise group, 16.4) reads its row into its
+operands, and the tile's residual sums are kept per noise group. Until October 3,
+2026 the first version used one spectrum for every tilt image; until November 6,
+2026 each noise group had a stream of its own.
 
 ### 16.2 The latent is shared: sum the tilts before integrating it out
 
@@ -1762,7 +1763,8 @@ smoothing as SPA.
 A **tilt group** is a set of particles whose images come from one fixed list of
 frame matrices `{Aproj_f}_{f=1..K}`: the particles of one tomogram when they
 share the subtomogram matrix (the simulator writes none, so every particle of a
-tomogram does). Image tiles are drawn from one group. A particle's invisible
+tomogram does). A tile of one key is drawn from one group and one noise group (mixed
+tiles of many keys follow the table). A particle's invisible
 frames get zero operands, which add exact zeros to every GEMM and to the scatter.
 Particles with individual subtomogram orientations form groups of one, which is
 correct but shares no projections.
@@ -1785,6 +1787,29 @@ to `R K` rows, and the moment scatter backprojects them with the expanded
 rotations. A one-frame group with `Aproj = I` and a 2D shift grid is exactly the
 SPA tile. Per-image 3D-to-2D phases replace SPA's shared translation table when
 `Y1` is built (`tilt_translation_angles` geometry, one table per tilt image).
+
+**Mixed tiles.** On real data a batch is spread over hundreds of tomograms with a
+few particles each (300 particles over about 500 tomograms on the
+thyroglobulin/beta-galactosidase mix), so tiles of one key would be hundreds of
+tiles of one or two particles, and the host work and launches per tile, not the
+arithmetic, set the update time (7.7 s per update against 0.42 s on a synthetic
+set of the same size). RELION has no such constraint: its expectation projects
+each particle's tilts at the particle's own matrices. Keys with at most
+`MIXED_GROUP_MAX = 8` particles of a batch share mixed tiles (`tilt_tiles`): a
+mixed tile holds `G` keys of `b` particle slots each (`b` the power of two that
+holds its largest key; `G` padded to a size bucket with keys of padding particles),
+each key with its own frames (padded to the stream's largest group with identity
+frames no particle sees) and noise row. Its operands are per key,
+`Y1 (G, K 2F, b T)`, `ctf2 (G, K F, b)` and so on; pass 1 and pass 2 run each key
+as one step of a scan, at the shapes of a one-key tile of `b` particles
+(projections at that key's `Aproj_f R_r`, the two GEMMs, and in pass 2 the moment
+scatter with that key's residual added to its noise group), while the latent
+epilogue, normalization and posterior weights run once for the tile in particle
+order (a slot permutation maps between the two orders). The arithmetic is that of
+the one-key tiles; the tile count per update drops from hundreds to a few. Keys
+with more particles keep tiles of their own, whose projections all their particles
+share; adaptive oversampling reads one key's frames per tile and keeps one-key
+tiles.
 
 Cost per tile and pass is `2 P R (K 2F)(B T)` GEMM flops, `K` times an SPA tile
 of the same `B T`, plus `R K` window projections shared by the tile's `B`
