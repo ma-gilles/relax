@@ -727,7 +727,12 @@ def fused_dense_pose_ppca_block(
 
 
 def enforce_augmented_x0(volumes, volume_shape):
-    from relax.reconstruction.half_volume_mstep import enforce_relion_half_volume_x0_hermitian
+    """RELION's x=0 Hermitian enforcement on every packed metric channel, in one compiled call."""
+    return _enforce_augmented_x0_jit(volumes, tuple(int(value) for value in volume_shape))
 
-    enforced = [enforce_relion_half_volume_x0_hermitian(volumes[i], volume_shape) for i in range(volumes.shape[0])]
-    return jnp.stack(enforced, axis=0)
+
+@partial(jax.jit, static_argnames=("volume_shape",))
+def _enforce_augmented_x0_jit(volumes, volume_shape):
+    from relax.reconstruction.half_volume_mstep import _enforce_relion_half_volume_x0_hermitian_jit
+
+    return jax.vmap(lambda volume: _enforce_relion_half_volume_x0_hermitian_jit(volume, volume_shape))(volumes)

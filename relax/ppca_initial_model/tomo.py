@@ -654,20 +654,35 @@ def load_tilt_tile(stream, image_indices, significant_rows, *, collect_observati
     return tile, observation, layout
 
 
+# The operand constants of the stage's resolved band, built once instead of once per tile (a real-data batch spans
+# hundreds of tomograms, so hundreds of tiles). Entries hold their ``resolved`` object, so an ``is`` match is exact.
+_LAYOUT_CONSTANTS: list = []
+
+
+def _layout_constants(stream, n_half: int):
+    """``(window, constants)`` of :func:`_operand_layout` for the stream's resolved band, cached per band."""
+    resolved, image_shape = stream.resolved, tuple(int(n) for n in stream.static.image_shape)
+    for entry in _LAYOUT_CONSTANTS:
+        if entry[0] is resolved and entry[1] == (image_shape, n_half):
+            return entry[2]
+    window = np.arange(n_half) if resolved.score_indices is None else np.asarray(resolved.score_indices)
+    constants = {
+        "lattice": jnp.asarray(np.asarray(relion_half_translation_lattice(image_shape), np.float32)[window]),
+        "score_mask": resolved.score_mask[window],
+        "recon_mask": resolved.recon_mask[window],
+        "weights": make_half_image_weights(image_shape),
+    }
+    _LAYOUT_CONSTANTS.insert(0, (resolved, (image_shape, n_half), (window, constants)))
+    del _LAYOUT_CONSTANTS[4:]
+    return window, constants
+
+
 def _operand_layout(stream, n_particles: int, n_frames: int):
     """The operand program's score window, per-pixel constants and static shape arguments for a tile size."""
     resolved = stream.resolved
     n_half = int(np.asarray(stream.noise_variance_half).size)
-    window = np.arange(n_half) if resolved.score_indices is None else np.asarray(resolved.score_indices)
     T = int(stream.translations.shape[0])
-    constants = {
-        "lattice": jnp.asarray(
-            np.asarray(relion_half_translation_lattice(stream.static.image_shape), np.float32)[window]
-        ),
-        "score_mask": resolved.score_mask[window],
-        "recon_mask": resolved.recon_mask[window],
-        "weights": make_half_image_weights(stream.static.image_shape),
-    }
+    window, constants = _layout_constants(stream, n_half)
     static = {
         "n_particles": int(n_particles),
         "n_frames": int(n_frames),
