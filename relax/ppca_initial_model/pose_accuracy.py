@@ -114,20 +114,22 @@ def error_angles() -> tuple[np.ndarray, float]:
 class PoseAccuracy(NamedTuple):
     """The trials' expected rotation error under the divergence and under the mean image alone."""
 
-    acc_rot: float  # degrees: mean over the trials of the first angle with K above PVALUE
+    acc_rot: float  # degrees: mean over the trials of the first angle with K above the threshold
     acc_rot_mean_only: float  # the same with the loadings left out of the covariance (RELION's quantity)
     terms: dict  # the trials' mean of (mean, log_det, trace) over two, at each trial's error
     n_trials: int
 
 
-def first_passing(values: np.ndarray, angles: np.ndarray, cap: float) -> tuple[np.ndarray, np.ndarray]:
-    """Each trial's first angle whose value passes ``PVALUE`` and its index (``cap`` and the last index if none).
+def first_passing(
+    values: np.ndarray, angles: np.ndarray, cap: float, threshold: float = PVALUE
+) -> tuple[np.ndarray, np.ndarray]:
+    """Each trial's first angle whose value passes ``threshold`` and its index (``cap`` and the last index if none).
 
     A value that is not finite raises: a diverged model has no accuracy, and RELION's loop would read NaN as a pass.
     """
     if not np.all(np.isfinite(values)):
         raise ValueError("The pose accuracy is not finite: the model's loadings or noise have diverged")
-    passed = values > PVALUE
+    passed = values > threshold
     index = np.where(passed.any(axis=1), passed.argmax(axis=1), len(angles) - 1)
     return np.where(passed.any(axis=1), angles[index], cap), index
 
@@ -217,15 +219,24 @@ def trial_divergences(
 
 
 def expected_rotation_accuracy(
-    dataset, theta, noise_row, *, ids: np.ndarray, eulers_deg: np.ndarray, radius: int, active_pcs: int
+    dataset,
+    theta,
+    noise_row,
+    *,
+    ids: np.ndarray,
+    eulers_deg: np.ndarray,
+    radius: int,
+    active_pcs: int,
+    threshold: float = PVALUE,
 ) -> PoseAccuracy:
     """The expected rotation accuracy of the model at the trial images' best poses (arguments of
-    :func:`trial_divergences`): the mean over the trials of the first angle whose divergence passes ``PVALUE``."""
+    :func:`trial_divergences`): the mean over the trials of the first angle whose divergence passes ``threshold``
+    (RELION's ``PVALUE`` by default)."""
     d = trial_divergences(
         dataset, theta, noise_row, ids=ids, eulers_deg=eulers_deg, radius=radius, active_pcs=active_pcs
     )
-    error, index = first_passing(d.kl, d.angles, d.cap)
-    error_mean_only, _ = first_passing(d.mean_only, d.angles, d.cap)
+    error, index = first_passing(d.kl, d.angles, d.cap, threshold)
+    error_mean_only, _ = first_passing(d.mean_only, d.angles, d.cap, threshold)
     at_error = d.parts[np.arange(len(error)), index]
     return PoseAccuracy(
         acc_rot=float(np.mean(error)),

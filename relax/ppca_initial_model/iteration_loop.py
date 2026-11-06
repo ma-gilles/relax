@@ -70,6 +70,7 @@ from relax.ppca_refinement.residual_statistics import full_float32
 from relax.reconstruction.resolution import relion_coarse_image_size
 from relax.sampling import grids
 from relax.sampling.healpix import angular_sampling_deg
+from relax.sampling.relion_expected_accuracy import PVALUE
 from relax.steps.model_blend import MIN_SIGMA2_OFFSET_ANGSTROM2, blend_offset_variance, relion_blend
 
 logger = logging.getLogger(__name__)
@@ -810,7 +811,14 @@ def run(
                     stats[0].diagnostics["best_rotation_idx"][: len(ids)]
                 ]
                 accuracy = expected_rotation_accuracy(
-                    dataset, theta_in, state.noise, ids=ids, eulers_deg=eulers, radius=radius, active_pcs=active
+                    dataset,
+                    theta_in,
+                    state.noise,
+                    ids=ids,
+                    eulers_deg=eulers,
+                    radius=radius,
+                    active_pcs=active,
+                    threshold=PVALUE if config.accuracy_kl_threshold is None else config.accuracy_kl_threshold,
                 )
                 acc_rot = accuracy.acc_rot if config.accuracy_signal == "divergence" else accuracy.acc_rot_mean_only
                 planned_order = (

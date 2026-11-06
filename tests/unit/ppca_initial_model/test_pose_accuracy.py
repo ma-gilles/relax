@@ -126,6 +126,14 @@ def test_the_first_passing_angle_and_the_cap():
         first_passing(np.array([[0.0, np.nan, 1.0]]), angles, cap=35.0)
 
 
+def test_a_higher_threshold_gives_a_larger_first_passing_angle():
+    angles = np.array([1.0, 2.0, 3.0, 4.0])
+    values = np.array([[1.0, 5.0, 20.0, 40.0]])
+    assert first_passing(values, angles, cap=35.0)[0][0] == 2.0
+    assert first_passing(values, angles, cap=35.0, threshold=15.0)[0][0] == 3.0
+    assert first_passing(values, angles, cap=35.0, threshold=100.0)[0][0] == 35.0
+
+
 def test_with_no_loadings_the_divergence_is_relions_snr_except_on_the_pixels_it_counts_twice():
     """RELION sums |F1-F2|^2 / (2 sigma^2) over the half plane, kx = 0 for ky >= 0 only; its sigma^2 is half the mean
     power nv = E|F|^2 of a noise pixel. With nv = 2 sigma^2 and the Hermitian weights of the real-image metric

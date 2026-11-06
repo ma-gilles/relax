@@ -3229,6 +3229,9 @@ derivation is section 4.1. Opt-in, beside the table (`--order-rule accuracy`):
   `acc_rot_mean_only`, the mean, log-det and trace shares of the divergence at the crossing, `n_trials`;
   `next_order`; `healpix_order` is the order of the iteration). Checkpoints carry `next_order`; an older checkpoint
   resumes without one.
+- `--accuracy-kl-threshold` sets the divergence at which two poses count as told apart (default RELION's `PVALUE`,
+  ln 100 = 4.605). The divergence grows with the square of the angle, so a threshold `k` times larger gives an
+  `acc_rot` about `sqrt(k)` times larger and fewer order increases.
 - Single particles, exhaustive grids only (`--oversampling 0`, the streamed engine): the best pose per image comes from
   the streamed E-step. Subtomograms keep the table. The order of an estimate that is not finite raises.
 

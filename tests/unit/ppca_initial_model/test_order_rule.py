@@ -34,6 +34,8 @@ def _state(next_order=None):
         ({"order_rule": "accuracy", "final_order_max": 3}, "at least order_max"),
         ({"order_rule": "accuracy", "oversampling": 1}, "without oversampling"),
         ({"order_rule": "accuracy", "accuracy_signal": "kl"}, "divergence or mean_only"),
+        ({"order_rule": "accuracy", "accuracy_kl_threshold": 0.0}, "finite and positive"),
+        ({"order_rule": "accuracy", "accuracy_kl_threshold": float("inf")}, "finite and positive"),
     ],
 )
 def test_the_order_rule_options_are_validated(options, message):
@@ -90,7 +92,8 @@ def test_the_planned_order_is_saved_and_an_older_checkpoint_resumes_without_one(
 
 def test_an_older_checkpoint_of_the_stages_rule_keeps_its_identity():
     identity = checkpoint._identity_config(dataclasses.asdict(Config(q=1)))
-    assert not {"order_rule", "order_max", "final_order_max", "accuracy_interval", "accuracy_signal"} & identity.keys()
+    settings = {"order_rule", "order_max", "final_order_max", "accuracy_interval", "accuracy_signal", "accuracy_kl_threshold"}
+    assert not settings & identity.keys()
     changed = checkpoint._identity_config(dataclasses.asdict(Config(q=1, order_rule="accuracy")))
     assert changed["order_rule"] == "accuracy"
 
@@ -156,3 +159,15 @@ def test_the_stages_rule_logs_no_order_plan(monkeypatch, tmp_path):
     log = _log(tmp_path / "run")
     assert all("next_order" not in row and "pose_accuracy" not in row for row in log)
     assert [row["healpix_order"] for row in log] == [1] * 8
+
+
+def test_the_accuracy_threshold_is_a_command_line_option_whose_default_is_relions():
+    import argparse
+
+    from relax.commands import ppca_initial_model
+
+    parser = argparse.ArgumentParser()
+    ppca_initial_model.add_args(parser)
+    required = ["--i", "x", "--particle-diameter", "1", "-o", "y"]
+    assert parser.parse_args(required).accuracy_kl_threshold is None
+    assert parser.parse_args([*required, "--accuracy-kl-threshold", "18.4"]).accuracy_kl_threshold == 18.4

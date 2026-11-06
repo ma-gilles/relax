@@ -54,6 +54,9 @@ class Config:
     # The accuracy the order rule reads: "divergence" (the PPCA image laws of the two poses, doc section 4.1) or
     # "mean_only" (the mean image alone, RELION's quantity under the engine's noise and window).
     accuracy_signal: str = "divergence"
+    # The divergence at which two poses count as told apart, which sets the expected accuracy: a higher value gives a
+    # larger accuracy angle and so fewer order increases. None takes RELION's PVALUE, ln 100.
+    accuracy_kl_threshold: float | None = None
     # Adaptive oversampling: 0 scores every stage's full pose grid; 1 runs the last stage with RELION's two passes
     # (each image's significant coarse samples, then their children; relax/ppca_refinement/oversampled_stream.py)
     # and the earlier stages dense (iteration_loop.oversampled_update).
@@ -180,6 +183,10 @@ class Config:
             return
         if self.accuracy_signal not in ("divergence", "mean_only"):
             raise ValueError("The accuracy signal must be divergence or mean_only")
+        if self.accuracy_kl_threshold is not None and not (
+            np.isfinite(self.accuracy_kl_threshold) and self.accuracy_kl_threshold > 0
+        ):
+            raise ValueError("accuracy_kl_threshold must be finite and positive")
         for name in ("order_max", "accuracy_interval"):
             value = getattr(self, name)
             if isinstance(value, bool) or not isinstance(value, (int, np.integer)) or value <= 0:

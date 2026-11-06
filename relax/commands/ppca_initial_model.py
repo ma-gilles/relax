@@ -81,6 +81,13 @@ def add_args(parser):
         "mean image alone (RELION's quantity)",
     )
     parser.add_argument(
+        "--accuracy-kl-threshold",
+        type=float,
+        default=Config().accuracy_kl_threshold,
+        help="the divergence at which --order-rule accuracy counts two poses as told apart; higher gives a larger "
+        "accuracy angle and fewer order increases (default: RELION's, ln 100)",
+    )
+    parser.add_argument(
         "--pc-stages",
         help="JSON list of [first iteration, PCs]: the PCs the model learns, from iteration 1 and ending at --q. "
         "A PC joins at its stage as a small random loading; before it the model is the mean and the earlier PCs "
@@ -466,6 +473,7 @@ def main(args=None):
         final_order_max=args.final_order_max,
         accuracy_interval=args.accuracy_interval,
         accuracy_signal=args.accuracy_signal,
+        accuracy_kl_threshold=args.accuracy_kl_threshold,
         tau2_fudge=args.tau2_fudge,
         tau2_fudge_scheme=args.tau2_fudge_scheme,
     )
