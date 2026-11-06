@@ -198,7 +198,7 @@ without the owner's OK.
   - PPCA checkpoints (grid);
   - explicit poses plus given latents, with the estimator named in the row (route a, RECOVAR);
   - decoded maps (cryoDRGN).
-- **Known suite bug (found 2026-11-06, v3.1):** for a pseudo-symmetric protein the per-protein frame search can settle on the winner's ~180° partner. That partner fits the low shells well (objective .86-.88), so no flag fires, but it loses at full band. Seen on the D distinctive protein 42: the suite gives D20/D40 decoded .608-.625, while the frame its own objective prefers gives .90-.94. Until v3.2 (extra 180° partner starts about centre-of-mass and principal axes, truth-free) is in place and rows are rescored, treat D and T10 per-protein suite rows as possibly low.
+- **Known suite bug (found 2026-11-06, v3.1):** for a pseudo-symmetric protein the per-protein frame search can settle on the winner's ~180° partner. That partner fits the low shells well (objective .86-.88), so no flag fires, but it loses at full band. Seen on the D distinctive protein 42: the suite gives D20/D40 decoded .608-.625, while the frame its own objective prefers gives .90-.94. Fixed in suite v3.2 (accepted 2026-11-06): six extra 180° partner starts about axes through the target's centre of mass (3 box axes, 3 inertia axes), truth-free; a partner replaces the winner only if the objective gains more than 1e-3. Acceptance: C n1/n3, H1 and true_T10 are unchanged; T10 union protein 5 is fixed (.778 → .949, row decoded .779 → .796); the true-model D distinctive frames are unchanged, while 60-65 of the poorly determined D background frames move (population-weighted +.003). Use v3.2 for all new scoring; quoted D and T10 rows are being rescored.
 - **Oracle arms** (any use of the truth beyond scoring) are labelled "oracle" everywhere.
 
 ## 6. Baselines
@@ -271,6 +271,7 @@ STANDARD:
   - full headline column list, band and AUC definition, references, revisions, how frames are fitted, D-set caveats, input modes.
 - 2026-11-04 v1.4. Section 4: the owner's proposed base translation schedule T0 recorded (under evaluation, not yet STANDARD).
 - 2026-11-04 v1.5 (owner). Sampling rules must be image-size invariant, tied to HEALPix. T0 window widened from ±1 to ±3 steps (RELION InitialModel uses 6 px range / 2 px step). TFULL reference arm added.
+- 2026-11-06 v1.44. Suite v3.2 accepted (pseudo-symmetric frame fix).
 - 2026-11-06 v1.43. 11846 correction: our published-pose reference was wrong; scored against the PDB 8EKI model instead.
 - 2026-11-06 v1.42. Suite bug: pseudo-symmetric per-protein frames can land 180° off; D/T10 rows possibly low; v3.2 fix in progress.
 - 2026-11-06 v1.41. Exhaustive grid rejected for SGD (suite); oversampling passes on C; wrong-protein T10 start worse than random at seed 12 (.641 vs .695).
