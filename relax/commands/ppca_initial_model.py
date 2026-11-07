@@ -117,6 +117,12 @@ def add_args(parser):
         "applied when at most half the rows remain; 0: none skipped)",
     )
     parser.add_argument(
+        "--tilt-coarse-pass",
+        action="store_true",
+        help="subtomogram particles: score the order hp - 1 grid first and the stage's grid only near each "
+        "particle's significant coarse poses (target mass, max significant; a runtime setting)",
+    )
+    parser.add_argument(
         "--sgd-learning-rate",
         type=float,
         help="Momentum SGD step factor on the gradient over the band maximum of the metric trace, which sums the "
@@ -581,6 +587,7 @@ def main(args=None):
         gemm_precision=args.ppca_gemm_precision,
         preread_images=args.ppca_preread_images,
         pass2_mass_floor=args.ppca_pass2_mass_floor,
+        tilt_coarse_pass=args.tilt_coarse_pass,
         stages=tuple(tuple(stage) for stage in json.loads(args.stages)) if args.stages else Config().stages,
         uniform_direction_prior=args.uniform_direction_prior,
     )

@@ -326,8 +326,8 @@ def _load_mixed_tilt_tile(stream, ids, keys, significant_rows, *, collect_observ
 
     Each key ``g`` holds ``b`` particle slots (:func:`_slot_bucket` of its largest key) and the frames of its tilt
     group, padded with identity frames no particle sees to the stream's largest group (:func:`tilt_frames`); the
-    key count is padded to a :func:`tile_size_bucket` of the tile's slot capacity with keys of padding particles,
-    so a stage compiles one program per (slots, keys) bucket. Operands are per key, group-major
+    key count is padded to the tile's slot capacity (planned tile size over ``b``) with keys of padding
+    particles, so a stage compiles one program per slot bucket. Operands are per key, group-major
     (:class:`TileArrays`); particles keep the tile's order, real ones first (``slots`` maps them). The pass-1 and
     pass-2 kernels run each key at its own frames (``full_row_kernels._score_block_mixed``,
     ``_moment_block_mixed``) and add each key's residual to its noise group.
@@ -340,8 +340,9 @@ def _load_mixed_tilt_tile(stream, ids, keys, significant_rows, *, collect_observ
     G = key_order.size
     counts = np.bincount(position_group, minlength=G)
     b = _slot_bucket(int(counts.max()))
-    capacity = G if stream.tile_images is None else max(G, int(stream.tile_images) // b)
-    G_pad = tile_size_bucket(G, capacity)
+    # Every mixed tile of a stage holds the planned slot capacity (padding keys skip their work), so its
+    # programs compile once per slot bucket b, not once per key count.
+    G_pad = G if stream.tile_images is None else max(G, int(stream.tile_images) // b)
     B, n_real = G_pad * b, int(ids.size)
     rank = np.zeros(n_real, np.int64)
     seen = np.zeros(G, np.int64)

@@ -48,6 +48,7 @@ from relax.ppca_refinement.full_row_stream import (
     ExactTracePPCAStats,
     TracePPCAStats,
     accumulate_full_row_tiles,
+    coarse_significant_rows,
     full_row_tile_embeddings,
     prepare_full_row_stream,
 )
@@ -83,6 +84,20 @@ def _rotation_grid(hp):
     rotations = grids.get_relion_hidden_rotation_grid(hp, matrices=True).astype(np.float32)
     rotations.flags.writeable = False
     return rotations
+
+
+@functools.lru_cache(maxsize=4)
+def _coarse_parents(hp):
+    """Each order-``hp`` rotation's nearest order-``hp - 1`` rotation (largest |quaternion dot|), int32 (read-only)."""
+    from scipy.spatial.transform import Rotation
+
+    fine = Rotation.from_matrix(_rotation_grid(hp).astype(np.float64)).as_quat()
+    coarse = Rotation.from_matrix(_rotation_grid(hp - 1).astype(np.float64)).as_quat()
+    parents = np.concatenate(
+        [np.argmax(np.abs(fine[start : start + 2048] @ coarse.T), axis=1) for start in range(0, len(fine), 2048)]
+    ).astype(np.int32)
+    parents.flags.writeable = False
+    return parents
 
 
 @functools.lru_cache(maxsize=4)
@@ -445,21 +460,25 @@ def _expectation(
         # It keeps the shared full-row mask Bx1x1 instead of BxRxT. Subtomogram particles have one stream
         # with a noise table (each tile reads its keys' rows; the residual sums are per noise group);
         # single particles have one noise group.
-        def make_streams(stream_geometry):
+        def make_streams(stream_geometry, **grid):
+            grid = {
+                "rotations": rotations,
+                "rotation_log_prior": rotation_log_prior,
+                "rotation_parent": np.zeros(len(grid.get("rotations", rotations)), np.int32),
+                "translation_parent": np.zeros(len(translations), np.int32),
+                "n_coarse_rotations": 1,
+                "n_coarse_translations": 1,
+                **grid,
+            }
             return [
                 prepare_full_row_stream(
                     dataset,
                     mu,
                     W,
                     noise_variance=group_nv,
-                    rotations=rotations,
                     translations=translations,
-                    rotation_log_prior=rotation_log_prior,
                     translation_log_prior=np.asarray(prior),
-                    rotation_parent=np.zeros(len(rotations), np.int32),
-                    translation_parent=np.zeros(len(translations), np.int32),
-                    n_coarse_rotations=1,
-                    n_coarse_translations=1,
+                    **grid,
                     geometry=stream_geometry,
                     schedule=schedule,
                     scoring=scoring,
@@ -480,7 +499,27 @@ def _expectation(
         # Adaptive oversampling scores pass 1 on RELION's coarse image window and pass 2 at the stage's.
         oversampled = oversampled_update(config, iteration)
         pass1_size = pass1_image_size(hp, dataset, 2 * radius, diameter_ang) if oversampled else 2 * radius
-        streams = make_streams(dataclasses.replace(geometry, current_size=pass1_size))
+        # Subtomogram coarse pass (config.tilt_coarse_pass): pass 1 on the order hp - 1 grid gives each particle its
+        # significant (coarse rotation, shift) poses (target_mass, max_significant); the stage's grid is then
+        # scored only on the rows whose nearest coarse rotation is significant (_coarse_parents).
+        coarse_pass = tilts and config.tilt_coarse_pass and not oversampled and hp >= 1
+        if coarse_pass:
+            parents = _coarse_parents(hp)
+            coarse_rotations = _rotation_grid(hp - 1)
+            coarse_log_prior = np.full(len(coarse_rotations), -np.inf, np.float64)
+            np.logaddexp.at(coarse_log_prior, parents, rotation_log_prior.astype(np.float64))
+            streams = make_streams(
+                geometry,
+                rotation_parent=parents,
+                translation_parent=np.arange(len(translations), dtype=np.int32),
+                n_coarse_rotations=len(coarse_rotations),
+                n_coarse_translations=len(translations),
+            )
+            coarse_streams = make_streams(
+                geometry, rotations=coarse_rotations, rotation_log_prior=coarse_log_prior.astype(np.float32)
+            )
+        else:
+            streams = make_streams(dataclasses.replace(geometry, current_size=pass1_size))
         pass2_streams = make_streams(geometry) if pass1_size != 2 * radius else streams
 
         # Here ``ids`` is the list of id groups; each group is cut into image tiles (subtomogram particles:
@@ -510,6 +549,8 @@ def _expectation(
         # fragmentation headroom covers the few extra images.
         padded_size = -(-tile_size // SHIFT_ALIGN) * SHIFT_ALIGN if streams[0].static.cuda_kernels else tile_size
         streams = [stream._replace(tile_images=padded_size) for stream in streams]
+        if coarse_pass:
+            coarse_streams = [stream._replace(tile_images=padded_size) for stream in coarse_streams]
         if oversampled:
             fine_rotations, fine_translations = relion_child_grids(hp, translations, shift_step)
             streams = [
@@ -535,7 +576,20 @@ def _expectation(
         sums = [TileSums(k for k, (owner, _, _) in enumerate(tiles) if owner == group) for group in range(len(ids))]
         for noise_group, stream in enumerate(streams):
             members = [k for k, (_, owner, _) in enumerate(tiles) if owner == noise_group]
-            items = [(tiles[k][2], [None] * len(tiles[k][2])) for k in members]
+            items = [
+                (
+                    tiles[k][2],
+                    coarse_significant_rows(
+                        coarse_streams[noise_group],
+                        tiles[k][2],
+                        target_mass=config.target_mass,
+                        max_significant=config.max_significant,
+                    )
+                    if coarse_pass
+                    else [None] * len(tiles[k][2]),
+                )
+                for k in members
+            ]
             if embeddings_only:
                 for k, part in zip(members, [embed(stream, *item) for item in items]):
                     parts[k] = part

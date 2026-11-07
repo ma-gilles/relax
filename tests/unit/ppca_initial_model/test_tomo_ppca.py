@@ -539,6 +539,97 @@ def test_mixed_tile_pass2_skips_each_keys_own_rows(mixed_problem):
     assert_matches(skipped.log_likelihood, full.log_likelihood, rtol=1e-6)
 
 
+def _coarse_stream(stream, n_coarse=2):
+    """The mixed problem's stream with real coarse parents: rotation r's parent is r % n_coarse, shifts their own."""
+    T = int(stream.translations.shape[0])
+    parents = np.arange(5, dtype=np.int32) % n_coarse
+    return stream._replace(
+        arrays=stream.arrays._replace(
+            rotation_parent=jnp.asarray(np.append(parents, np.int32(n_coarse))),
+            translation_parent=jnp.arange(T, dtype=jnp.int32),
+        ),
+        rotation_parent=parents,
+        n_coarse_rotations=n_coarse,
+        n_coarse_translations=T,
+    )
+
+
+def test_sparse_mixed_tile_with_full_support_matches_brute_force(mixed_problem):
+    """With coarse parents and every coarse pose significant, each key's own-row pass 1 gives the joint Gaussian."""
+    particles, stream, truth = mixed_problem
+    actual = accumulate_full_row_tile(_coarse_stream(stream), np.arange(5), [None] * 5)
+    rtol = 2e-5
+    assert_matches(actual.log_likelihood, truth["log_likelihood"], rtol=rtol)
+    assert_matches(np.asarray(actual.embeddings), truth["embeddings"], rtol=rtol)
+    assert_matches(np.asarray(actual.lhs_tri), truth["lhs_tri"], rtol=rtol)
+    assert_matches(np.asarray(actual.residual_gradient), truth["residual_gradient"], rtol=rtol)
+    assert_matches(np.asarray(actual.residual_num), truth["residual_num"], rtol=rtol)
+
+
+def test_sparse_mixed_tile_equals_its_keys_own_tiles_on_partial_support(mixed_problem):
+    """Particles with different significant coarse poses: the mixed tile's per-key rows give the sums of one tile
+    per key (whose pass 1 masks the same unsupported poses)."""
+    from relax.ppca_refinement.full_row_stream import accumulate_full_row_tiles
+
+    particles, stream, _ = mixed_problem
+    stream = _coarse_stream(stream)
+    T = len(TRANSLATIONS)
+    rng = np.random.default_rng(3)
+    significant = [np.sort(rng.choice(2 * T, size=n, replace=False)) for n in (3, 9, 5, 14, 1)]
+    keys = MIXED_PARTICLE_GROUP * 2 + MIXED_NOISE_GROUP
+    order = [np.flatnonzero(keys == key) for key in dict.fromkeys(keys.tolist())]
+    parts = accumulate_full_row_tiles(stream, [(ids, [significant[i] for i in ids]) for ids in order])
+    ids = np.concatenate(order)
+    mixed = accumulate_full_row_tile(stream, ids, [significant[i] for i in ids])
+    rtol = 1e-5
+    for name in ("lhs_tri", "residual_gradient", "residual_num", "residual_den"):
+        assert_matches(np.asarray(getattr(mixed, name)), sum(np.asarray(getattr(p, name)) for p in parts), rtol=rtol)
+    assert_matches(np.asarray(mixed.embeddings), np.concatenate([np.asarray(p.embeddings) for p in parts]), rtol=rtol)
+    assert_matches(np.float32(mixed.log_likelihood), np.float32(sum(p.log_likelihood for p in parts)), rtol=rtol)
+
+
+def test_coarse_pass_keeping_every_pose_changes_nothing():
+    """The controller's coarse pass with target mass 1 keeps every fine pose (on the coarse parents' row tables and
+    pose priors): the update's statistics equal those without it."""
+    from relax.ppca_initial_model import iteration_loop
+    from relax.ppca_initial_model.config import Config
+    from relax.ppca_initial_model.state import State
+
+    particles, _stream, arrays = make_problem(seed=9)
+    theta = np.stack([arrays["mu"], *arrays["W"].T], axis=1).astype(np.complex64)
+    state = State(jnp.asarray(theta), None, jnp.full((1, 5), 40.0, jnp.float32), 0, np.arange(3), {}, 2.0, 0, {})
+
+    def statistics(**options):
+        config = Config(
+            q=2,
+            stages=((1, 3, 1),),
+            oversampling=0,
+            stream_coarse_recompute=True,
+            shift_range=1,
+            shift_step=1,
+            image_batch_size=3,
+            rotation_block_size=32,
+            gemm_precision="fp32",
+            **options,
+        )
+        iteration_loop._rotation_grid.cache_clear()
+        iteration_loop._direction_ids.cache_clear()
+        try:
+            return iteration_loop.expectation_groups(particles, state, config, [np.arange(3)], 1)[0]
+        finally:
+            iteration_loop._rotation_grid.cache_clear()
+            iteration_loop._direction_ids.cache_clear()
+
+    plain = statistics()
+    coarse = statistics(tilt_coarse_pass=True, target_mass=1.0)
+    order_a, order_b = np.argsort(plain.original_image_ids), np.argsort(coarse.original_image_ids)
+    rtol = 1e-5
+    assert_matches(np.float32(coarse.log_likelihood), np.float32(plain.log_likelihood), rtol=rtol)
+    assert_matches(np.asarray(coarse.embeddings)[order_b], np.asarray(plain.embeddings)[order_a], rtol=rtol)
+    for name in ("lhs_tri", "residual_gradient", "residual_num", "residual_den"):
+        assert_matches(np.asarray(getattr(coarse, name)), np.asarray(getattr(plain, name)), rtol=rtol)
+
+
 def test_tilt_tiles_pack_small_groups_into_mixed_tiles():
     """Small keys share tiles, largest first, as many as fit the tile at the largest key's slot bucket; a key
     above MIXED_GROUP_MAX keeps tiles of its own; without ``mixed`` every key does."""

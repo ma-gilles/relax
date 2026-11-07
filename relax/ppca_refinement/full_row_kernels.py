@@ -880,6 +880,8 @@ def score_tile(stream: FullRowStream, tile: TileArrays, n_blocks: int, kept: _Ke
     T = int(stream.translations.shape[0])
     q = stream.static.basis_size - 1
     capacity = len(stream.block_starts) * stream.rotation_block_size
+    if sparse_mixed(stream, tile):
+        return _score_tile_mixed_sparse(stream, tile, n_blocks)
     if kept is None or kept.score.shape != (capacity, n_images, T):
         kept = empty_kept(capacity, n_images, T, q, jnp.float32)
     for start in stream.block_starts[:n_blocks]:
@@ -1012,35 +1014,150 @@ def _expand_rotation_mass(compact_mass, positions, count):
     return jnp.zeros_like(compact_mass).at[positions].add(values)
 
 
-@partial(jax.jit, static_argnames=("n", "n_keys", "slots", "cuda"))
-def _key_row_mass(kept, posterior, slot_position, *, n, n_keys, slots, cuda):
-    """Largest posterior mass of each of the first ``n`` pose rows over each key's particles, ``(n, G)``."""
+@partial(jax.jit, static_argnames=("n_keys", "slots", "cuda"))
+def _key_row_mass(kept, posterior, slot_position, limit, *, n_keys, slots, cuda):
+    """Largest posterior mass of each pose row (the kept buffer's every row; rows from ``limit`` on were not scored
+    and get -1) over each key's particles, ``(capacity, G)``."""
     log_norm = posterior.center + posterior.centered_logZ
     if cuda:
-        mass = kept.part_sum[:n] * jnp.exp(kept.part_max[:n] - log_norm[None, :])
+        mass = kept.part_sum * jnp.exp(kept.part_max - log_norm[None, :])
     else:
-        mass = jnp.sum(jnp.exp(kept.score[:n] - log_norm[None, :, None]), axis=2)
-    return jnp.max(mass[:, slot_position].reshape(n, n_keys, slots), axis=2)
+        mass = jnp.sum(jnp.exp(kept.score - log_norm[None, :, None]), axis=2)
+    n = mass.shape[0]
+    mass = jnp.max(mass[:, slot_position].reshape(n, n_keys, slots), axis=2)
+    return jnp.where(jnp.arange(n)[:, None] < limit, mass, -1.0)
 
 
-@partial(jax.jit, static_argnames=("capacity",))
-def _key_rows(key_mass, floor, *, capacity):
-    """Each key's kept pass-1 positions (mass at least ``floor``), first ``capacity`` in row order, ``(C, G)``,
-    with their validity."""
-    keep = key_mass >= floor
-    order = jnp.argsort(jnp.logical_not(keep), axis=0, stable=True)[:capacity]
+@jax.jit
+def _key_rows(keep):
+    """Each key's rows where ``keep`` ``(capacity, G)`` holds, first in row order, ``(capacity, G)``, with their
+    validity and count per key."""
+    order = jnp.argsort(jnp.logical_not(keep), axis=0, stable=True)
     count = jnp.sum(keep, axis=0)
-    return order.astype(jnp.int32), jnp.arange(capacity)[:, None] < count[None, :]
+    return order.astype(jnp.int32), jnp.arange(keep.shape[0])[:, None] < count[None, :], count
+
+
+def sparse_mixed(stream, tile) -> bool:
+    """A mixed tile on a stream with real coarse parents (a coarse pass gave each particle its support): pass 1
+    scores each key on its own particles' supported rows (:func:`_score_tile_mixed_sparse`)."""
+    return mixed(tile) and stream.n_coarse_rotations > 1
+
+
+def _step_table(count, n_chunks, chunk):
+    """``(key, chunk)`` steps of keys with ``count`` rows each, real steps first, padded with (-1, -1) to every
+    key's every chunk (a fixed shape per stage and slot bucket), and the real step count."""
+    steps = [(g, c) for g in range(count.size) for c in range(-(-int(count[g]) // chunk))]
+    table = np.full((count.size * n_chunks, 2), -1, np.int32)
+    table[: len(steps)] = steps
+    return jnp.asarray(table), np.int32(len(steps))
+
+
+def _score_tile_mixed_sparse(stream, tile, n_blocks):
+    """Pass 1 of a mixed tile whose particles have coarse support: each key scores only the fine rows of the
+    tile's row table that are supported for one of its own particles (their coarse parent significant), in chunks
+    of :data:`MIXED_PASS2_CHUNK` rows, at its own frames; unsupported (row, particle) pairs keep -inf. Returns the
+    kept results (scores, latent moments; the CUDA partials unused) and the tile posterior."""
+    block = stream.rotation_block_size
+    chunk = min(block, MIXED_PASS2_CHUNK)
+    capacity = len(stream.block_starts) * block
+    G, b = int(tile.ctf2.shape[0]), int(tile.ctf2.shape[2])
+    T = int(stream.translations.shape[0])
+    q = stream.static.basis_size - 1
+    positions, valid, count = _key_support(
+        tile.coarse_mask,
+        stream.arrays.rotation_parent,
+        tile.rows,
+        tile.slots[1],
+        np.int32(n_blocks * block),
+        n_keys=G,
+        slots=b,
+    )
+    table, n_steps = _step_table(np.asarray(jax.device_get(count)), -(-capacity // chunk), chunk)
+    kept = empty_kept(capacity, G * b, T, q, jnp.float32)
+    kept = _pass1_mixed_sparse(
+        kept, stream.arrays, tile, positions, valid, table, n_steps, static=stream.static, chunk=chunk
+    )
+    return kept, _normalize(kept.score, tile.rows, n_blocks=len(stream.block_starts), block_size=block)
+
+
+@partial(jax.jit, static_argnames=("n_keys", "slots"))
+def _key_support(coarse_mask, rotation_parent, rows, slot_position, limit, *, n_keys, slots):
+    """Each key's supported rows of the row table (any of its particles has a significant coarse parent), as
+    :func:`_key_rows`; rows from ``limit`` on are padding."""
+    capacity = rows.shape[0]
+    parents = rotation_parent[rows]  # (capacity,); the sentinel row's parent is the all-unsupported coarse row
+    support = jnp.any(coarse_mask[:, parents, :], axis=2).T  # (capacity, B)
+    keep = jnp.any(support[:, slot_position].reshape(capacity, n_keys, slots), axis=2)
+    return _key_rows(keep & (jnp.arange(capacity)[:, None] < limit))
+
+
+@partial(jax.jit, static_argnames=("static", "chunk"), donate_argnums=(0,))
+def _pass1_mixed_sparse(kept, arrays, tile, positions, valid, steps, n_steps, *, static, chunk):
+    """:func:`_score_tile_mixed_sparse`'s device loop over its real (key, chunk) steps."""
+    P = static.basis_size
+    b = int(tile.ctf2.shape[2])
+    T = int(arrays.shift_squared.shape[0])
+    K = n_frames(tile)
+    sentinel = arrays.rotations.shape[0] - 1
+    first, second = np.triu_indices(P)
+    slot_position = tile.slots[1]
+
+    def step(i, kept):
+        g, c = steps[i, 0], steps[i, 1]
+        particles = jax.lax.dynamic_slice_in_dim(slot_position, g * b, b)
+        pos = jax.lax.dynamic_slice_in_dim(_mixed_take(positions.T, g), c * chunk, chunk)
+        real = jax.lax.dynamic_slice_in_dim(_mixed_take(valid.T, g), c * chunk, chunk)
+        rows = jnp.where(real, tile.rows[pos], sentinel)
+        rotations = _group_rotations(_mixed_take(tile.frames, g), arrays.rotations[rows])
+        Y1, ctf2 = _mixed_take(tile.Y1, g), _mixed_take(tile.ctf2, g)
+        if static.cuda_kernels:
+            planar, _ = ppca_window_project_f32(
+                arrays.augmented_voxel_major,
+                arrays.gemm_window,
+                rotations,
+                image_shape=static.image_shape,
+                volume_shape=static.volume_shape,
+                max_r=static.projection_max_r,
+                with_products=False,
+                basis_size=static.basis_size,
+            )
+            planar = planar.reshape(P, chunk, -1)
+            inner = jnp.dot(planar.reshape(P * chunk, -1), Y1, precision=gemm(static)).reshape(P, chunk, -1)
+            inner = inner[:, :, : b * T].reshape(P, chunk, b, T)
+            F = ctf2.shape[0] // K
+            weights = ctf2.reshape(K, F, b)
+            weights = jnp.concatenate([weights, weights], axis=1).reshape(-1, b)
+            grams = []
+            for j in range(b):
+                full = jax.lax.dot_general(
+                    planar * weights[:, j], planar, (((2,), (2,)), ((1,), (1,))), precision=HIGHEST
+                )
+                grams.append(jnp.stack([full[:, i, k] for i, k in zip(first.tolist(), second.tolist())]))
+            gram = jnp.stack(grams, axis=-1)
+        else:
+            proj = project(arrays, rotations, static).reshape(P, chunk, K, -1)
+            inner, gram = _inner_gram(Y1, ctf2, proj, b, HIGHEST)
+        prior = full_row_pose_log_prior(
+            tile.coarse_mask[particles],
+            arrays.rotation_parent[rows],
+            arrays.translation_parent,
+            arrays.rotation_log_prior[rows],
+            arrays.translation_log_prior,
+        )
+        prior = jnp.where(real[None, :, None], prior, -jnp.inf)
+        score, mean, covariance = latent_scores(inner, gram, prior)  # (chunk, b, T), (q, chunk, b, T), (chunk, b, .)
+        return kept._replace(
+            score=kept.score.at[pos[:, None], particles[None, :]].set(score),
+            latent_mean=kept.latent_mean.at[:, pos[:, None], particles[None, :]].set(mean),
+            latent_covariance=kept.latent_covariance.at[pos[:, None], particles[None, :]].set(covariance),
+        )
+
+    return jax.lax.fori_loop(0, n_steps, step, kept)
 
 
 # Rows per pass-2 step of a mixed tile: each key visits its own rows in chunks of this many (fewer when the
 # stream's rotation block is smaller), so a key pays for its rows rounded up to a chunk, not to the largest key's.
 MIXED_PASS2_CHUNK = 128
-
-
-def _bucket(n: int) -> int:
-    """``n`` rounded up to a power of two (compiled shapes per stage stay few)."""
-    return 1 << max(0, int(n) - 1).bit_length()
 
 
 def _run_pass2_mixed(stream, tile, kept, posterior, layout, carry, *, moments):
@@ -1050,27 +1167,24 @@ def _run_pass2_mixed(stream, tile, kept, posterior, layout, carry, *, moments):
     (key, chunk of that key's rows), so each key's work follows its own row count."""
     block = stream.rotation_block_size
     chunk = min(block, MIXED_PASS2_CHUNK)
-    n = layout["n_blocks"] * block
+    n = len(stream.block_starts) * block  # the kept buffer's every row: one shape per stage
+    limit = np.int32(layout["n_blocks"] * block)  # rows scored this tile
     G, b = int(tile.ctf2_recon.shape[0]), int(tile.ctf2_recon.shape[1])
-    if stream.pass2_mass_floor > 0:
-        mass = _key_row_mass(kept, posterior, tile.slots[1], n=n, n_keys=G, slots=b, cuda=stream.static.cuda_kernels)
-        count = np.asarray(jax.device_get(jnp.sum(mass >= stream.pass2_mass_floor, axis=0)))
-        capacity = min(_bucket(max(1, -(-int(count.max()) // chunk))) * chunk, -(-n // chunk) * chunk)
-        positions, valid = _key_rows(mass, np.float32(stream.pass2_mass_floor), capacity=min(capacity, n))
-        if capacity > n:  # the whole table in chunks: pad with invalid rows
-            positions = jnp.pad(positions, ((0, capacity - n), (0, 0)))
-            valid = jnp.pad(valid, ((0, capacity - n), (0, 0)))
-    else:
-        count = np.full(G, n)
-        capacity = -(-n // chunk) * chunk
-        positions = jnp.broadcast_to(jnp.arange(capacity, dtype=jnp.int32)[:, None] % n, (capacity, G))
-        valid = jnp.broadcast_to((jnp.arange(capacity) < n)[:, None], (capacity, G))
+    # Fixed shapes per stage and slot bucket (no recompiles after warm-up): every key's row table spans the whole
+    # scored table in chunks, and the step table holds every (key, chunk); the device loop runs the real steps.
+    capacity = -(-n // chunk) * chunk
+    # A sparse pass 1 fills scores only: the row masses come from them, not from the CUDA partials.
+    cuda = stream.static.cuda_kernels and not sparse_mixed(stream, tile)
+    mass = _key_row_mass(kept, posterior, tile.slots[1], limit, n_keys=G, slots=b, cuda=cuda)
+    floor = stream.pass2_mass_floor if stream.pass2_mass_floor > 0 else -0.5  # no floor: every scored row
+    positions, valid, count = _key_rows(mass >= floor)
+    count = np.asarray(jax.device_get(count))
+    if capacity > n:  # pad the last chunk with invalid rows
+        positions = jnp.pad(positions, ((0, capacity - n), (0, 0)))
+        valid = jnp.pad(valid, ((0, capacity - n), (0, 0)))
     n_keys = int(layout.get("n_keys", G))
     layout["pass2_rows"] = float(np.sum(count[:n_keys])) / n_keys
-    # One step per (key, chunk) with rows; padding steps (key -1) visit nothing.
-    steps = [(g, c) for g in range(G) for c in range(-(-int(count[g]) // chunk))]
-    table = np.full((_bucket(max(1, len(steps))), 2), -1, np.int32)
-    table[: len(steps)] = steps
+    table, n_steps = _step_table(count, capacity // chunk, chunk)
     return _pass2_mixed(
         carry,
         stream.arrays,
@@ -1079,7 +1193,8 @@ def _run_pass2_mixed(stream, tile, kept, posterior, layout, carry, *, moments):
         posterior,
         positions,
         valid,
-        jnp.asarray(table),
+        table,
+        n_steps,
         static=stream.static,
         chunk=chunk,
         moments=moments,
@@ -1087,7 +1202,7 @@ def _run_pass2_mixed(stream, tile, kept, posterior, layout, carry, *, moments):
 
 
 @partial(jax.jit, static_argnames=("static", "chunk", "moments"), donate_argnums=(0,))
-def _pass2_mixed(carry, arrays, tile, kept, posterior, positions, valid, steps, *, static, chunk, moments):
+def _pass2_mixed(carry, arrays, tile, kept, posterior, positions, valid, steps, n_steps, *, static, chunk, moments):
     """:func:`_run_pass2_mixed`'s device program: a scan over ``steps`` ``(S, 2)`` (key, chunk) pairs, each
     ``chunk`` of the key's rows (``positions`` ``(C, G)`` into the pass-1 row table, ``valid`` marking real
     ones; key -1 pads). Per step the key's posterior weights on its own particles, its M-step images at its own
@@ -1145,12 +1260,12 @@ def _pass2_mixed(carry, arrays, tile, kept, posterior, positions, valid, steps, 
         residual = _add_residual(carry.residual_power, arrays, correction, tile.noise_groups[g])
         return (carry._replace(residual_power=residual), volume + block), None
 
-    def step(state, pair):
-        # Padding steps (key -1) skip their projection and scatter.
-        return jax.lax.cond(pair[0] >= 0, lambda st: body(st, pair)[0], lambda st: st, state), None
+    def step(i, state):
+        return body(state, steps[i])[0]
 
     volume = jnp.zeros(carry.moments.shape, carry.moments.dtype) if moments else jnp.zeros((), carry.moments.dtype)
-    (carry, volume), _ = jax.lax.scan(step, (carry, volume), steps)
+    # The real steps come first in the table: a device loop of n_steps (a traced bound, one compiled program).
+    carry, volume = jax.lax.fori_loop(0, n_steps, step, (carry, volume))
     if not moments:
         return carry
     moments_sum, compensation = compensated_add(carry.moments, carry.moments_compensation, volume)
