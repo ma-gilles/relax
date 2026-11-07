@@ -39,12 +39,13 @@ from relax.ppca_initial_model.state import State
 from relax.ppca_initial_model.tomo import TiltParticles, initialize_tilts, load_tilt_tile, tilt_tiles
 from relax.ppca_initial_model.update import (
     Moments,
-    advance_noise_weight,
+    advance_noise_track,
     coupled_direction,
     empty_moments,
     full_data_disagreement_scale,
     metric_floor,
     stochastic_update,
+    theta_disagreement_scale,
 )
 from relax.ppca_refinement.config import GeometryConfig, ScheduleConfig, ScoringConfig, SparsePass2Config
 from relax.ppca_refinement.dense_dataset import (
@@ -681,11 +682,13 @@ def run(
     end = config.iterations if stop_after is None else min(config.iterations, stop_after)
     stage_tile_sizes = {}  # compiled tile shapes seen per stage (radius, HEALPix order)
     log = _ModelLog(output / "iterations.jsonl")
-    # The first moments' noise weight (update.advance_noise_weight), tracked for the full_data noise reference.
-    noise_weight = None
-    if config.optimizer == "vdam" and config.gate_noise_reference == "full_data":
+    # The noise of the first moments and of theta (update.advance_noise_track), kept for the non-batch noise references.
+    noise_track = None
+    if config.optimizer == "vdam" and config.gate_noise_reference != "batch":
         for past in range(1, state.iteration + 1):
-            noise_weight = advance_noise_weight(noise_weight, config.schedule(past, dataset.n_images)[0])
+            past_count, past_step, _ = config.schedule(past, dataset.n_images)
+            past_step *= config.step_factor(past, dataset.n_images)
+            noise_track = advance_noise_track(noise_track, past_count, past_step)
     for iteration in range(state.iteration + 1, end + 1):
         started = time.monotonic()
         count, step, fudge = config.schedule(iteration, dataset.n_images)
@@ -756,9 +759,13 @@ def run(
                 covered = jnp.sum(jnp.asarray(result.lhs_tri)[:, diagonal], axis=-1) > 0  # the metric's trace
                 coverage.append(covered & jnp.asarray(support))
             disagreement_scale = 1.0
-            if config.gate_noise_reference == "full_data":
-                noise_weight = advance_noise_weight(noise_weight, count)
-                disagreement_scale = full_data_disagreement_scale(noise_weight, dataset.n_images)
+            if config.gate_noise_reference != "batch":
+                noise_track = advance_noise_track(noise_track, count, step * step_factor)
+                disagreement_scale = (
+                    full_data_disagreement_scale(noise_track.weight, dataset.n_images)
+                    if config.gate_noise_reference == "full_data"
+                    else theta_disagreement_scale(noise_track)
+                )
             theta, moments, diagnostics = stochastic_update(
                 theta_in,
                 _active_moments(state.moments, 1 + active),

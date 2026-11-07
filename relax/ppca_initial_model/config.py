@@ -43,7 +43,9 @@ class Config:
     # The noise the gate's disagreement stands for. "batch": the disagreement of the halves' first moments as measured, the
     # noise of the direction that is applied (RELION's). "full_data": rescaled to the noise of two full-data half maps
     # (update.full_data_disagreement_scale: it divides out each iteration's batch size, multiplies by the data size and
-    # divides out the first moments' running-average noise reduction); an intentional difference from RELION.
+    # divides out the first moments' running-average noise reduction). "theta": rescaled to the noise theta carries after
+    # its own averaging, the first moments' running average passed through the update step
+    # (update.theta_disagreement_scale); both are intentional differences from RELION.
     gate_noise_reference: str = "batch"
     # The Fourier radius of each iteration. "stages": the stages table's. "data_vs_prior": RELION's InitialModel rule
     # (relax/ppca_initial_model/radius_rule.py): the table's first radius at iteration 1, then the last shell where the
@@ -149,8 +151,8 @@ class Config:
             raise ValueError("The direction prior must be learned or uniform")
         if self.gate_statistic not in ("amplitude", "power"):
             raise ValueError("The gate statistic must be amplitude or power")
-        if self.gate_noise_reference not in ("batch", "full_data"):
-            raise ValueError("The gate noise reference must be batch or full_data")
+        if self.gate_noise_reference not in ("batch", "full_data", "theta"):
+            raise ValueError("The gate noise reference must be batch, full_data or theta")
         if isinstance(self.incr_size, bool) or not isinstance(self.incr_size, (int, np.integer)) or self.incr_size <= 0:
             raise ValueError("incr_size must be a positive integer")
         self._validate_order_rule()

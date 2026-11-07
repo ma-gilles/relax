@@ -33,18 +33,42 @@ FIRST_MOMENT_DECAY = 0.9
 FIRST_MOMENT_WEIGHT = 0.1
 
 
-def advance_noise_weight(weight: float | None, count: int) -> float:
-    """The noise weight of the first moments after one more iteration whose batch holds ``count`` particles.
+@dataclass(frozen=True)
+class NoiseTrack:
+    """Noise powers, in units of one particle's, of what the gate's noise reference is built from.
 
-    A direction's noise power is inversely proportional to the particles of its half (count / 2 each), so the two halves'
-    first moments differ by noise of power s^2 * weight, with s^2 the noise power of one particle and ``weight`` the
-    sum, over the iterations averaged into the moments, of (their coefficient)^2 * 4 / count. ``weight`` is None
-    before the first iteration, whose direction is the moment itself.
+    All are variances of per-voxel noise that is independent between iterations and halves; a batch of ``count``
+    particles gives each half's direction a noise power of 2 / count and their average 1 / count.
     """
-    inverse = 4.0 / count
-    if weight is None:
-        return inverse
-    return FIRST_MOMENT_DECAY**2 * weight + FIRST_MOMENT_WEIGHT**2 * inverse
+
+    weight: float  # the halves' first moments differ by noise of power s^2 * weight (s^2: one particle's)
+    moment: float  # the noise power of the averaged first moment z = (m_0 + m_1) / 2
+    theta: float  # the noise power of theta after the update, theta <- (1 - step) theta + step z
+    cross: float  # the covariance of theta's noise with the previous iteration's z
+
+
+def advance_noise_track(track: NoiseTrack | None, count: int, step: float) -> NoiseTrack:
+    """The noise track after one more iteration with a batch of ``count`` particles and update step ``step``.
+
+    ``track`` is None before the first iteration, whose direction is the first moment itself and whose theta carries
+    no data noise. The first moments follow first = DECAY first + WEIGHT direction, so z has power
+    DECAY^2 z + WEIGHT^2 / count; theta follows the step on z, with the covariance carried between iterations. The
+    recursion treats theta's own dependence on the directions (they hold -theta) as absent, which holds when the step
+    is small against the running average's window (about 10 iterations).
+    """
+    inverse = 1.0 / count
+    if track is None:
+        moment, cross_with_moment, theta_previous = inverse, 0.0, 0.0
+        weight = 4.0 * inverse
+    else:
+        moment = FIRST_MOMENT_DECAY**2 * track.moment + FIRST_MOMENT_WEIGHT**2 * inverse
+        cross_with_moment = FIRST_MOMENT_DECAY * track.cross
+        theta_previous = track.theta
+        weight = FIRST_MOMENT_DECAY**2 * track.weight + FIRST_MOMENT_WEIGHT**2 * 4.0 * inverse
+    keep = 1.0 - step
+    theta = keep**2 * theta_previous + 2 * keep * step * cross_with_moment + step**2 * moment
+    cross = keep * cross_with_moment + step * moment
+    return NoiseTrack(weight=weight, moment=moment, theta=theta, cross=cross)
 
 
 def full_data_disagreement_scale(weight: float, n_images: int) -> float:
@@ -56,6 +80,16 @@ def full_data_disagreement_scale(weight: float, n_images: int) -> float:
     (b / n_images) / e.
     """
     return 4.0 / (n_images * weight)
+
+
+def theta_disagreement_scale(track: NoiseTrack) -> float:
+    """The factor on the halves' disagreement power that gives the noise power of two half maps as noisy as theta.
+
+    Theta averages the batches of its window like a map of 1 / track.theta particles of power s^2, so a half of that map
+    has noise power 2 s^2 * track.theta and the disagreement of two such halves is 4 s^2 * track.theta; the measured
+    disagreement is s^2 * track.weight. It equals full_data_disagreement_scale when theta averages all n_images particles.
+    """
+    return 4.0 * track.theta / track.weight
 
 
 def metric_floor(image_size):
