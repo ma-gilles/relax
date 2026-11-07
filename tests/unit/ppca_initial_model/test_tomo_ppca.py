@@ -507,11 +507,14 @@ def test_mixed_tile_matches_brute_force(mixed_problem, planned):
     assert_matches(np.asarray(embedded.embeddings), truth["embeddings"], rtol=rtol)
 
 
-def test_mixed_tile_equals_its_keys_own_tiles(mixed_problem):
-    """The mixed tile's sums equal those of one tile per key, within float32 summation order."""
+@pytest.mark.parametrize("floor", [0.0, 1e-30])
+def test_mixed_tile_equals_its_keys_own_tiles(mixed_problem, floor):
+    """The mixed tile's sums equal those of one tile per key, within float32 summation order, with and without
+    pass-2 row skipping (a floor no row's mass is below: each key's own rows, every row)."""
     from relax.ppca_refinement.full_row_stream import accumulate_full_row_tiles
 
     particles, stream, _ = mixed_problem
+    stream = stream._replace(pass2_mass_floor=floor)
     keys = MIXED_PARTICLE_GROUP * 2 + MIXED_NOISE_GROUP
     order = [np.flatnonzero(keys == key) for key in dict.fromkeys(keys.tolist())]
     parts = accumulate_full_row_tiles(stream, [(ids, [None] * ids.size) for ids in order])
@@ -521,6 +524,19 @@ def test_mixed_tile_equals_its_keys_own_tiles(mixed_problem):
         assert_matches(np.asarray(getattr(mixed, name)), sum(np.asarray(getattr(p, name)) for p in parts), rtol=rtol)
     assert_matches(np.asarray(mixed.embeddings), np.concatenate([np.asarray(p.embeddings) for p in parts]), rtol=rtol)
     assert_matches(np.float32(mixed.log_likelihood), np.float32(sum(p.log_likelihood for p in parts)), rtol=rtol)
+
+
+def test_mixed_tile_pass2_skips_each_keys_own_rows(mixed_problem):
+    """With a pass-2 floor each key visits the rows that carry its own particles' mass: fewer than the scored
+    rows, and the statistics stay those of the unskipped tile within the dropped mass."""
+    particles, stream, truth = mixed_problem
+    full = accumulate_full_row_tile(stream, np.arange(5), [None] * 5)
+    skipped = accumulate_full_row_tile(stream._replace(pass2_mass_floor=1e-3), np.arange(5), [None] * 5)
+    assert skipped.diagnostics["pass2_rows"] < skipped.diagnostics["scored_rows"]
+    assert full.diagnostics["pass2_rows"] == full.diagnostics["scored_rows"]
+    # At most rows * floor of each particle's mass is dropped (5 rows, floor 1e-3).
+    assert_matches(np.asarray(skipped.lhs_tri), np.asarray(full.lhs_tri), rtol=1e-2)
+    assert_matches(skipped.log_likelihood, full.log_likelihood, rtol=1e-6)
 
 
 def test_tilt_tiles_pack_small_groups_into_mixed_tiles():
