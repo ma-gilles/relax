@@ -40,6 +40,10 @@ class Config:
     # update.full_data_disagreement_scale) or "seen" (the particles of the iterations so far, at most the dataset;
     # docs/math/vdam_ppca_algorithm.md section 3.3).
     gate_noise_images: str = "dataset"
+    # The iteration count VDAM's phases (step size, tau2 fudge, subset size) are laid out for; None: the run's iterations.
+    # A run of more iterations than this continues the last phase: iterations past it take the values of the schedule's
+    # last but one, so a run can be extended from its final checkpoint without re-warming the schedule.
+    schedule_iterations: int | None = None
     # The Fourier radius of each iteration. "stages": the stages table's. "data_vs_prior": RELION's InitialModel rule
     # (relax/ppca_initial_model/radius_rule.py): the table's first radius at iteration 1, then the last shell where the
     # mean's data_vs_prior stays at or above 1 plus incr_size shells (RELION's --incr_size), never decreasing. The
@@ -177,19 +181,21 @@ class Config:
             raise ValueError("The offset sigma must be positive")
         if self.gate_noise_images not in ("dataset", "seen"):
             raise ValueError("The gate's noise images must be dataset or seen")
+        if self.schedule_iterations is not None and not 1 < self.schedule_iterations <= self.iterations:
+            raise ValueError("The schedule's iterations must be more than 1 and at most the run's iterations")
         if self.optimizer not in ("vdam", "momentum_sgd"):
             raise ValueError("Optimizer must be vdam or momentum_sgd")
         if self.optimizer == "vdam":
             # RELION's tau2-fudge sigmoid has length grad_inbetween_iter // 4; for 4 and 5 iterations that is 0 and
             # the fudge at iteration grad_ini_iter is 0/0 = NaN (kept for RELION parity in relax.vdam.schedules).
             # The VDAM update multiplies the fudge into every gate, so such a run cannot produce a finite model.
-            phases = compute_phase_lengths(self.iterations)
+            phases = compute_phase_lengths(self.schedule_length)
             unusable = [
-                i for i in range(1, self.iterations + 1) if not np.isfinite(self.tau2_fudge_at(i, phases))
+                i for i in range(1, self.schedule_length + 1) if not np.isfinite(self.tau2_fudge_at(i, phases))
             ]
             if unusable:
                 raise ValueError(
-                    f"VDAM's tau2-fudge schedule for {self.iterations} iterations is not finite at iteration(s) "
+                    f"VDAM's tau2-fudge schedule for {self.schedule_length} iterations is not finite at iteration(s) "
                     f"{unusable} (RELION's sigmoid length grad_inbetween_iter // 4 is 0); choose another iteration "
                     "count or optimizer momentum_sgd"
                 )
@@ -269,6 +275,15 @@ class Config:
             return self.q
         return next(count for start, count in reversed(self.pc_stages) if start <= iteration)
 
+    @property
+    def schedule_length(self) -> int:
+        """The iteration count VDAM's phases are laid out for: ``schedule_iterations``, else the run's ``iterations``."""
+        return self.iterations if self.schedule_iterations is None else self.schedule_iterations
+
+    def schedule_iteration(self, iteration: int) -> int:
+        """The iteration whose schedule values ``iteration`` takes: itself, or for one past the schedule its last but one."""
+        return min(iteration, self.schedule_length - 1) if iteration > self.schedule_length else iteration
+
     def step_factor(self, iteration, n_images):
         """``min(1, count / scheduled count)``: the factor on VDAM's step for a batch below its own subset.
 
@@ -277,12 +292,12 @@ class Config:
         window; scaling the step by the batch's share of the scheduled subset restores it
         (docs/math/vdam_ppca_algorithm.md section 17). It is one for VDAM's own schedule.
         """
-        phases = compute_phase_lengths(self.iterations)
+        length = self.schedule_length
+        at = self.schedule_iteration(iteration)
+        phases = compute_phase_lengths(length)
         first, last = default_subset_sizes_for_3d_initial_model(n_images)
-        scheduled = compute_subset_size(
-            iteration, phases, first, last, n_images, self.iterations, grad_em_iters=DEFAULT_GRAD_EM_ITERS
-        )
-        scheduled = n_images if scheduled < 0 or iteration == self.iterations else min(scheduled, n_images)
+        scheduled = compute_subset_size(at, phases, first, last, n_images, length, grad_em_iters=DEFAULT_GRAD_EM_ITERS)
+        scheduled = n_images if scheduled < 0 or at == length else min(scheduled, n_images)
         return min(1.0, self.schedule(iteration, n_images)[0] / scheduled)
 
     def shift_grid(self, iteration: int) -> tuple[float, float]:
@@ -296,17 +311,17 @@ class Config:
         return next((r, hp) for start, r, hp in reversed(self.stages) if start <= iteration)
 
     def schedule(self, iteration, n_images):
-        phases = compute_phase_lengths(self.iterations)
+        length = self.schedule_length
+        at = self.schedule_iteration(iteration)
+        phases = compute_phase_lengths(length)
         first, last = default_subset_sizes_for_3d_initial_model(n_images)
-        count = compute_subset_size(
-            iteration, phases, first, last, n_images, self.iterations, grad_em_iters=DEFAULT_GRAD_EM_ITERS
-        )
-        if self.stochastic_batch_size is not None and (iteration != self.iterations or self.stochastic_all_iterations):
+        count = compute_subset_size(at, phases, first, last, n_images, length, grad_em_iters=DEFAULT_GRAD_EM_ITERS)
+        if self.stochastic_batch_size is not None and (at != length or self.stochastic_all_iterations):
             count = self.stochastic_batch_size
-        if (iteration == self.iterations and not self.stochastic_all_iterations) or count < 0:
+        if (at == length and not self.stochastic_all_iterations) or count < 0:
             count = n_images
         return (
             min(count, n_images),
-            compute_stepsize(iteration, phases, True, 3),
-            self.tau2_fudge_at(iteration, phases),
+            compute_stepsize(at, phases, True, 3),
+            self.tau2_fudge_at(at, phases),
         )

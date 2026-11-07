@@ -208,6 +208,12 @@ def add_args(parser):
         help="VDAM gate: compare the halves' disagreement with the noise of half maps of all the particles (dataset) or "
         "of the particles of the iterations so far, at most all (seen)",
     )
+    parser.add_argument(
+        "--schedule-iterations",
+        type=int,
+        help="lay VDAM's phases out for this many iterations, fewer than --iterations: the iterations past it keep the "
+        "last phase, so a finished run can be extended with --resume (default: the schedule is --iterations long)",
+    )
     parser.add_argument("--sgd-learning-rate", type=float, default=0.4)
     parser.add_argument(
         "--sgd-loading-scale",
@@ -469,6 +475,7 @@ def main(args=None):
         q=args.q,
         seed=args.seed,
         iterations=args.iterations,
+        schedule_iterations=args.schedule_iterations,
         oversampling=args.oversampling,
         max_significant=args.maxsig,
         shift_range=args.shift_range,

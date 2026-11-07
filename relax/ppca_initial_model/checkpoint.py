@@ -48,9 +48,13 @@ _ADDED_CONFIG_DEFAULTS = {"max_significant": 100, "pc_stages": None, "pc_birth_s
 
 
 def _identity_config(config_dict):
+    config = canonical(config_dict)
+    # The model is set by the length of VDAM's schedule, not by where the run stops: a run extended past its schedule
+    # (Config.schedule_iterations) resumes from a checkpoint of the shorter run.
+    config["iterations"] = config.pop("schedule_iterations", None) or config["iterations"]
     return {
         key: value
-        for key, value in canonical(config_dict).items()
+        for key, value in config.items()
         if key not in RUNTIME_CONFIG_FIELDS
         and _RETIRED_CONFIG_DEFAULTS.get(key, ...) != value
         and _ADDED_CONFIG_DEFAULTS.get(key, ...) != value
