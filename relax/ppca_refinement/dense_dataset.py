@@ -609,6 +609,9 @@ class DensePPCAEmbeddings(NamedTuple):
     best_pose_log_score: np.ndarray | None = None  # (n_images,) float32
     max_posterior: np.ndarray | None = None  # (n_images,) float32
     null_log_likelihood: np.ndarray | None = None  # (n_images,) float32
+    # With an explicit empty component (relax/ppca_refinement/occupancy.py): P(occupied) per image; the
+    # embeddings are then E[z | occupied] and log_evidence the two-component log-partition.
+    p_occupied: np.ndarray | None = None  # (n_images,) float32
 
 
 @full_float32

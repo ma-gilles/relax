@@ -215,6 +215,9 @@ class FullRowStream(NamedTuple):
     # Planned images per tile (:func:`plan_tile_images`), set by the controller; a padding reader rounds
     # each tile up to its :func:`tile_size_bucket`. None: tiles keep their own sizes.
     tile_images: int | None = None
+    # Prior probability that an image holds a placed copy of the model, against an explicit empty component
+    # (relax/ppca_refinement/occupancy.py). None: every image holds one (no empty component).
+    occupancy: float | None = None
 
 
 def full_row_pose_log_prior(

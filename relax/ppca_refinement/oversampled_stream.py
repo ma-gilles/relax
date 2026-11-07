@@ -180,6 +180,10 @@ def prepare_oversampled_stream(
     of each image's fine posterior that pass 2 accumulates (``adaptive_fraction`` when None, as RELION).
     """
     pass2 = coarse if pass2 is None else pass2
+    if coarse.occupancy is not None or pass2.occupancy is not None:
+        # Children inherit their parent's priors, so a sampling refinement would change the occupied evidence
+        # against the empty component; the empty component runs on the full grid only.
+        raise ValueError("An empty component (occupancy) needs the full pose grid, not adaptive oversampling")
     if pass2.tile_loader is not None and not callable(getattr(pass2.tile_loader, "shift_phases", None)):
         raise ValueError("Adaptive oversampling needs a tile reader with shift_phases")
     fine_fraction = adaptive_fraction if fine_fraction is None else fine_fraction
