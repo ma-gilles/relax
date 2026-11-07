@@ -100,6 +100,23 @@ def _coarse_parents(hp):
     return parents
 
 
+# Coarse cells around a significant coarse rotation that the coarse pass also supports: every coarse rotation within
+# this many grid steps (60 / 2^order degrees) of it.
+COARSE_NEIGHBOR_STEPS = 1.5
+
+
+@functools.lru_cache(maxsize=4)
+def _coarse_neighbors(order):
+    """``(R, R)`` bool: order-``order`` rotations within :data:`COARSE_NEIGHBOR_STEPS` grid steps of each other."""
+    from scipy.spatial.transform import Rotation
+
+    q = Rotation.from_matrix(_rotation_grid(order).astype(np.float64)).as_quat()
+    angle = 2 * np.degrees(np.arccos(np.clip(np.abs(q @ q.T), 0, 1)))
+    table = angle <= COARSE_NEIGHBOR_STEPS * 60.0 / 2**order
+    table.flags.writeable = False
+    return table
+
+
 @functools.lru_cache(maxsize=4)
 def _direction_ids(hp):
     """Index of each rotation's HEALPix direction on the order-``hp`` grid, in its RELION hidden order (read-only)."""
@@ -502,7 +519,8 @@ def _expectation(
         # Subtomogram coarse pass (config.tilt_coarse_pass): pass 1 on the order hp - 1 grid gives each particle its
         # significant (coarse rotation, shift) poses (target_mass, max_significant); the stage's grid is then
         # scored only on the rows whose nearest coarse rotation is significant (_coarse_parents).
-        coarse_pass = tilts and config.tilt_coarse_pass and not oversampled and hp >= 1
+        # Order 1's coarse grid (order 0) is too coarse to prune; the pass runs from order 2.
+        coarse_pass = tilts and config.tilt_coarse_pass and not oversampled and hp >= 2
         if coarse_pass:
             parents = _coarse_parents(hp)
             coarse_rotations = _rotation_grid(hp - 1)
@@ -584,6 +602,7 @@ def _expectation(
                         tiles[k][2],
                         target_mass=config.target_mass,
                         max_significant=config.max_significant,
+                        neighbors=_coarse_neighbors(hp - 1),
                     )
                     if coarse_pass
                     else [None] * len(tiles[k][2]),

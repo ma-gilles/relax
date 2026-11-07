@@ -73,9 +73,10 @@ class Config:
     # (0: visit every row), when that leaves at most half the rows. A runtime setting;
     # full_row_kernels._pass2_rows has the bound; section 14 of docs/math/vdam_ppca_algorithm.md the evidence.
     pass2_mass_floor: float = 1e-10
-    # Subtomogram particles: score pass 1 on the order hp - 1 grid first and the stage's grid only on the rows whose
-    # nearest coarse rotation is among a particle's significant poses (target_mass, max_significant), as RELION's
-    # adaptive oversampling (iteration_loop._expectation). A runtime setting, like pass2_mass_floor.
+    # Subtomogram particles from HEALPix order 2: score pass 1 on the order hp - 1 grid first and the stage's grid only
+    # on the rows whose nearest coarse rotation is a particle's significant coarse rotation (those of its poses
+    # holding target_mass, at most max_significant) or a neighbouring cell of one (iteration_loop._expectation).
+    # A runtime setting, like pass2_mass_floor; off by default.
     tilt_coarse_pass: bool = False
     # Newton SGD (docs/math/ppca_momentum_sgd.md, "Newton SGD"; momentum SGD with momentum 0). sgd_direction "coupled" steps
     # along the per-frequency H_f^-1 G_f, scaled at the first update to the split-curvature step's norm.
