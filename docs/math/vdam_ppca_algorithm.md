@@ -187,6 +187,39 @@ or an exact MAP update under a stated volume prior. That distinction matters
 when deciding how to regularize PPCA. We should not assume that adding an
 explicit Gaussian prior and retaining this gate gives the same objective.
 
+**The gate's statistic, `--gate-statistic`.** RELION 5.0.1 builds both shell means from amplitudes
+(`src/backprojector.cpp`: `sqrt(norm(diff))` in `applyMomenta`, `sqrt(norm(F))` in `reconstructGrad`'s
+`use_fsc == false` branch, the one an InitialModel run takes), although the first is named `mom1_noise_power`.
+The paper's gate is an FSC of two separately reconstructed halves, which RELION uses directly only when it refines
+split random halves. `amplitude` (the default) reproduces RELION. `power`
+replaces both means by shell means of squared magnitudes (`|F|^2`, `|m_0-m_1|^2`; for the loadings `||W||^2/q` and
+`||m_{W0}-m_{W1}||^2/q`) and keeps `rho = 2 fudge a / nu`. For halves with independent noise of power `N` and a signal of
+power `P`, `E|m_0-m_1|^2 = 2N`, so at fudge 1 the power gate is `2P/(2P+nu) = P/(P+N)`, the expected FSC of the halves.
+The amplitude gate follows about the square root of that power SNR: in a simulation (Gaussian signal and noise,
+`2e5` voxels per shell) at `P/N = 0.02` it reads .17 against an FSC of .02, at `P/N = 1` .59 against .50, and at
+`P/N = 10` .82 against .91. Both gates are the FSC only under that idealisation: the two halves share the model, so
+the measured disagreement is that of the updates, not of independent reconstructions; the model carries its own noise
+in `a`; and the first moments are running averages. `power` is an intentional difference from RELION, off by default
+and VDAM only (`relax/ppca_initial_model/update.py`, `stochastic_update`; tests
+`tests/unit/ppca_initial_model/test_gate_statistic.py`). Section 18.16 has the runs.
+
+**The gate's noise reference, `--gate-noise-reference`.** The halves' directions are minibatch estimates, so the
+disagreement of their first moments is the noise of the direction that is applied: a batch of `b` particles (`b/2` per
+half), averaged by `first = 0.9 first + 0.1 d`. `batch` (the default) uses it as measured, as RELION does. `full_data`
+rescales it to the noise of two full-data half maps, which is what an FSC of two half reconstructions measures. For
+independent noise a half's first moment has `e = (1-l)/(1+l) = (1-l)^2/(1-l^2)` times the noise power of one direction
+(`l = 0.9` the decay, `e = 0.0526`; a simulation of the recursion gives 0.0526), and a full-data half has `b/N` times
+a batch half's, so the disagreement is multiplied by `(b/N)/e`: 0.057 for `b = 300` of `N = 100,000`, which opens the
+gates far wider. The code carries the exact sum over the batches the moments average (`advance_noise_weight`,
+`full_data_disagreement_scale`), which gives that factor for a constant batch and stays right when the batch changes and
+at the final all-data iteration; it counts every voxel as averaged since iteration 1 (a voxel newly covered starts from
+a raw direction for about 5 iterations). The scale multiplies the power statistic and its square root multiplies the
+amplitude statistic. It treats theta as a full-data estimate. Theta averages the first moments with the step `eta`
+(`theta <- (1-eta) theta + eta phi m`), so its own window is `N_eff`, the batch over the noise reduction of the two
+cascaded filters: for the C n1 recipe (`b = 300`, the step from `iterations.jsonl`) `N_eff / N` is .06 up to iteration
+500, .08 at 1000, .22 at 1500, .35 at 2000 and .45 from 2500. Early in a run the gate is therefore more open than the
+noise left in theta warrants, late it is close to it.
+
 ### 3.4 Reference power, SSNR and resolution are a different mechanism
 
 The driver refreshes `tau2_class` from the current projector power before the
@@ -583,8 +616,9 @@ own gate would introduce latent-basis dependence.
 | Mean | Shell average of the mean Fourier amplitude | Shell average of the absolute difference between the two mean first moments | One scalar per shell for the mean |
 | Loadings | Shell average of the loading-vector norm, divided by `sqrt(q)` | Shell average of the norm of the difference between loading first moments, divided by `sqrt(q)` | One scalar per shell shared by every loading |
 
-Use VDAM's ratio form in sections 3.3 and 6.2 for the respective gates. The
-proposed updates, in the reconstruction Fourier coordinates, are
+Use VDAM's ratio form in sections 3.3 and 6.2 for the respective gates. Under
+`--gate-statistic power` both columns are shell means of the squares (`|mu|^2`,
+`||W||^2/q`; section 3.3). The proposed updates, in the reconstruction Fourier coordinates, are
 
 \[
 \mu_f\leftarrow\mu_f+\eta_j
@@ -3598,3 +3632,74 @@ Results (T10, 3000 iterations, direct pose fit per state, a state is solved when
   1.00 with 1 to 5% of their poses right). The FSC of an unsolved state's map to the truth, after the best rigid and hand fit, is .89 to .99 at shells 1 to 3,
   .47 to .84 at 4 to 6 and under .6 beyond; the solved states stay at .96 or above to shell 6. Low frequencies, which
   every central section shares, tell the states apart without the poses; the poses need the shells beyond 6.
+
+### 18.16 The gate's statistic and noise reference (November 6, 2026)
+
+Question. RELION's InitialModel gate takes shell means of amplitudes (section 3.3). Does the power statistic
+(`--gate-statistic power`, the half-map FSC under independent noise) or the power statistic with the disagreement
+rescaled to the noise of two full-data half maps (`--gate-noise-reference full_data`, factor `(b/N)/e`) do better?
+
+Setup. VDAM with the uniform direction prior and the recipe stages (`scripts/ppca_schedule/config.yaml`), 3000
+iterations, batch 300, on the six round-15 datasets (b150, box-64 crops). Arms: `s3_vdam_uniform` (amplitude, as RELION),
+`g1_vdam_uniform_power`, `g2_vdam_uniform_power_full`. Seeds 11, 12 and 13 on C n1, C n3 and T10 and seed 11 on H1, D40
+and D20. Scored at checkpoint 3000 by the suite scorer and the direct pose fit (`score_suite_run.py`). Code: branch
+`ppca_gate_power` on `ppca_schedule` 2fd7b0e8; the first two arms from the snapshot with `git diff HEAD` sha256
+`bb5bdf89...`, the third from the snapshot with `145eda75...`, which adds the noise reference (scale 1 for the first two
+arms; the unit tests of their paths pass unchanged). Run roots
+`gate_power` and `gate_power2` beside the other PPCA schedule rounds, launcher `gate_power/launch_gate.sh`.
+
+Results, checkpoint 3000, mean over seeds (n seeds in the first column):
+
+| dataset (seeds) | gate | pose med (deg) | <10 deg (%) | state FSC | mean FSC | energy | subspace (deg) | ARI | R2 |
+|---|---|---|---|---|---|---|---|---|---|
+| C n1 (3) | amplitude | 3.95 | 99.9 | .950 | .999 | .931 | 37.3 | .987 | .759 |
+| | power | 3.90 | 99.9 | .947 | .999 | .945 | 22.8 | .985 | .741 |
+| | power, full data | 3.95 | 99.9 | .944 | .999 | .911 | 49.1 | .988 | .739 |
+| C n3 (3) | amplitude | 4.50 | 96.8 | .896 | .998 | .926 | 28.2 | .895 | .575 |
+| | power | 4.89 | 94.5 | .885 | .998 | .870 | 37.4 | .637 | .497 |
+| | power, full data | 4.48 | 97.2 | .917 | .998 | .909 | 39.4 | .924 | .572 |
+| T10 (3) | amplitude | 48.3 | 29.8 | n/a | .378 | .158 | 88.5 | .767 | .672 |
+| | power | 94.8 | 8.6 | n/a | .359 | .151 | 89.4 | .561 | .511 |
+| | power, full data | 23.7 | 43.5 | n/a | .335 | .131 | 89.2 | .830 | .792 |
+| H1 (1) | amplitude | 4.19 | 99.3 | n/a | .940 | n/a | n/a | n/a | n/a |
+| | power | 4.31 | 99.0 | n/a | .966 | n/a | n/a | n/a | n/a |
+| | power, full data | 4.32 | 99.4 | n/a | .995 | n/a | n/a | n/a | n/a |
+| D40 (1) | amplitude | 3.75 | 100.0 | .951 | .700 | .289 | 87.0 | n/a | .616 |
+| | power | 3.90 | 99.8 | .958 | .785 | .298 | 87.3 | n/a | .565 |
+| | power, full data | 3.84 | 100.0 | .952 | .881 | .318 | 87.5 | n/a | .440 |
+| D20 (1) | amplitude | 3.93 | 100.0 | .983 | .314 | .059 | 81.4 | n/a | .706 |
+| | power | 3.76 | 100.0 | .986 | .386 | .064 | 75.2 | n/a | .680 |
+| | power, full data | 3.82 | 100.0 | .984 | .333 | .062 | 73.7 | n/a | .653 |
+
+The C n3 energy, subspace and mean-FSC columns use seeds 11 and 12: seed 13 of both power arms has a frame-dependent
+anomaly (mean FSC .738, energy .36 to .38, subspace 87 deg, PC outside span .72 to .79) that its model does not show (its
+mean and loading power by shell and the FSC of its mean between checkpoints match seeds 11 and 12, and its pose, ARI and
+R2 are the same as theirs). The amplitude arm at that seed and every arm at seeds 11 and 12 are normal; the cause, in the
+scorer's registration to the truth frame, was not found.
+
+T10 states solved (at least 30% of a state's particles under 10 deg), seeds 11, 12, 13: amplitude 3, 3, 3 (states 2, 4, 5;
+2, 4, 5; 4, 5, 6); power 1, 1, 1 (state 5 only, 51 to 69%); power with the full-data reference 4, 5, 4 (states 1, 2, 4, 5
+in seeds 11 and 13, plus 6 in seed 12, at 88 to 100%).
+
+- Power against amplitude. The power gate is sharper: where the signal stands well above the disagreement it is closer to 1,
+  where it does not it falls to 0 (C n1 loadings gate at iteration 3000: .98 at shell 2, .94 at 11, .29 at 15 and 0 from 20,
+  against .95, .91, .83 and .65). It is clearly worse on C n3 (ARI .637 against .895, outside the .04 seed range) and on T10 (1
+  of 10 states against 3), mixed on C n1 (loading subspace error 22.8 deg against 37.3 in every seed, no change in pose, ARI or
+  R2) and not distinguishable on pose on H1, D40 and D20 (one seed).
+- The full-data reference. For `b = 300` and `N = 100,000` the scale is .057 and the gates sit at 1.00 in the inner shells
+  (D40). It matches the amplitude gate on pose, ARI and R2 on C n1 and C n3 (ARI .924 against .895 on C n3, state FSC .917
+  against .896), has the largest loading power (PC/mean .12 to .19 against .09 to .12) and the worst loading subspace on C n1
+  and C n3 (49 and 39 deg against 37 and 28), and is the only arm that improves T10 (4 to 5 states against 3; pose median
+  23.7 deg against 48.3; ARI .830 against .767; R2 .792 against .672). On D40 it gives the highest mean FSC and the lowest R2
+  (.881 and .440 against .700 and .616).
+- Mean against loadings. The mean FSC rises as the gate opens (D40 .700, .785, .881; H1 .940, .966, .995), while the loading
+  measures do not follow: R2 falls on D40 (.616, .565, .440), and on C n1 the full-data gate has the worst energy and
+  subspace error. Which gate is better depends on the dataset; none is best on every metric.
+- Not established. One seed on H1, D40 and D20. The step and the first moments set theta's own averaging window, a
+  fraction of the data (section 3.3: .06 up to iteration 500, .45 from 2500 for C n1), so the full-data reference is the
+  noise of a full-data estimate theta has not reached early in a run; a reference with that window was not run. `fudge`, the
+  learned direction prior, other batch sizes and real data are untested. The first attempt of the T10 power arm hung after
+  iteration 172 (job 16998613 on one A100 node: 50 of its 53 threads waiting on futexes and 3 polling, the GPU idle, no
+  error); it was cancelled and rerun
+  (job 17003112) without incident, and the cause is unknown.
+
