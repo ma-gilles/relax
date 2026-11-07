@@ -489,12 +489,14 @@ def refuse_unsupported_tilt_optics(particles_star):
     refuse_unsupported_optics(optics, source=str(particles_star), supported=TOMO_PPCA_OPTICS_FEATURES)
 
 
-def load_tilt_training(ios, output, *, particle_frame: bool = False):
-    """Subtomogram particles of a RELION 5 optimisation set (algorithm section 16).
+def load_tilt_training(ios, output, preread_images="auto", *, particle_frame: bool = False):
+    """Subtomogram particles of a RELION 5 optimisation set (algorithm section 16), and the image-reading record.
 
     Only the tilt-series geometry (each image's ``Aproj``), the images and their CTF and dose
     enter training; the particles' input angles and offsets are not read, except that ``particle_frame``
-    (the filament band) composes each particle's ``rlnAngle*`` into its projections.
+    (the filament band) composes each particle's ``rlnAngle*`` into its projections. ``preread_images``
+    (:func:`resolve_preread_images` of the tilt images' bytes) holds every tilt image in host memory after the
+    first read.
     """
     from relax.ppca_initial_model.tomo import tilt_particles_from_tomo_dataset
     from relax.star.tomo_input import read_optimisation_set
@@ -516,7 +518,17 @@ def load_tilt_training(ios, output, *, particle_frame: bool = False):
         "tomograms_sha256": file_hash(tomograms_star),
         "tilt_series_sha256": tilt_series_hash(tomograms_star),
     }
-    return tilt_particles_from_tomo_dataset(tomo), identity
+    image_bytes = int(np.asarray(tomo.image_rows).size) * int(np.prod(tomo.image_shape)) * 4
+    preread, reading = resolve_preread_images(preread_images, image_bytes, available_memory_bytes())
+    logger.info(
+        "PPCA tilt images: %s (setting %s; %.2f GB, memory %.1f GB, preread limit %.0f%%)",
+        "held in host memory after the first read" if preread else "read from disk per tile",
+        preread_images,
+        image_bytes / 1e9,
+        reading["memory_gb"],
+        100 * PREREAD_MEMORY_FRACTION,
+    )
+    return tilt_particles_from_tomo_dataset(tomo, preread=preread), identity, reading
 
 
 def tilt_series_hash(tomograms_star):
@@ -668,7 +680,9 @@ def main(args=None):
     output = Path(args.output)
     output.mkdir(parents=True, exist_ok=True)
     if args.ios:
-        data, identity = load_tilt_training(args.ios, output, particle_frame=config.band() is not None)
+        data, identity, image_reading = load_tilt_training(
+            args.ios, output, config.preread_images, particle_frame=config.band() is not None
+        )
         if config.fixed_core is not None:
             from recovar.utils.helpers import load_relion_volume
 
@@ -774,8 +788,6 @@ def main(args=None):
                 )
                 data = subtract_fixed_core(observed, basis, scales=scales, free_offset=offset)
             identity["fixed_core_sha256"] = file_hash(config.fixed_core)
-        # Subtomogram stacks are always read into memory (load_tilt_training).
-        image_reading = None
     else:
         data, identity, image_reading = load_training(args.particles, config.preread_images)
     if args.physical_band:
