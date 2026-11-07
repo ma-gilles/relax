@@ -490,8 +490,12 @@ def estimate_residual_background(
     return symmetrize_core(real, mode)
 
 
-def tilt_particles_from_tomo_dataset(tomo) -> TiltParticles:
+def tilt_particles_from_tomo_dataset(tomo, *, preread: bool = False) -> TiltParticles:
     """:class:`TiltParticles` of a :class:`relax.steps.tomo_half.TomoDataset`.
+
+    With ``preread`` every tilt image is read once, at the first read, into one host array that later reads
+    index: a batch of a real data set spans hundreds of stacks, and reading it per tile cost about a quarter
+    of an update at HEALPix order 1.
 
     Particles of one tomogram form one group when every image's ``Aproj`` equals its frame's
     matrix in the tomogram (one subtomogram matrix); a particle that disagrees forms its own group.
@@ -538,11 +542,26 @@ def tilt_particles_from_tomo_dataset(tomo) -> TiltParticles:
     dataset = tomo.images
     image_shape = tuple(int(s) for s in tomo.image_shape)
 
-    def read(image_ids):
-        rows = np.asarray(tomo.image_rows, dtype=np.int64)[np.asarray(image_ids, dtype=np.int64)]
+    image_rows = np.asarray(tomo.image_rows, dtype=np.int64)
+    held = {}
+
+    def fetch(rows):
         images, _ctf_params, fetched = fetch_indexed_batch(dataset, rows)
         if not np.array_equal(np.asarray(fetched), rows):
             raise RuntimeError("the dataset returned the tilt images in another order")
+        return np.asarray(images)
+
+    def read(image_ids):
+        image_ids = np.asarray(image_ids, dtype=np.int64)
+        rows = image_rows[image_ids]
+        if preread:
+            if "images" not in held:
+                held["images"] = np.concatenate(
+                    [fetch(image_rows[start : start + 4096]) for start in range(0, image_rows.size, 4096)]
+                )
+            images = held["images"][image_ids]
+        else:
+            images = fetch(rows)
         half = dataset.process_images_half(jnp.asarray(images), apply_image_mask=False).reshape(rows.size, -1)
         ctf = relion_exact_ctf_half_from_source_star(dataset, rows, image_shape)
         return np.asarray(images), half.astype(jnp.complex64), jnp.asarray(ctf, jnp.float32)
@@ -786,6 +805,7 @@ def _load_mixed_tilt_tile(stream, ids, keys, significant_rows, *, collect_observ
         frames=jnp.asarray(frames, jnp.float32),
         noise_groups=jnp.asarray(noise_groups, jnp.int32),
         slots=jnp.asarray(np.stack([position_slot, slot_position]), jnp.int32),
+        keys=jnp.asarray(G, jnp.int32),
     )
     if stream.static.cuda_kernels and tile.Y1.shape[1] != K * 2 * stream.arrays.gemm_window.shape[0]:
         raise RuntimeError("Tilt tile operands do not follow the frame-major GEMM window layout")

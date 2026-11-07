@@ -663,7 +663,7 @@ def test_ios_command_trains_the_ab_initio_versions(tmp_path, monkeypatch, caplog
     iteration_loop._direction_ids.cache_clear()
     monkeypatch.setenv("SLURM_JOB_ID", "1")
     monkeypatch.setattr(
-        command, "load_tilt_training", lambda ios, output, **options: (_controller_particles(), {"test": True})
+        command, "load_tilt_training", lambda ios, output, *args, **options: (_controller_particles(), {"test": True}, None)
     )
     monkeypatch.setattr(command, "source_identity", lambda: {"test": True})
     caplog.set_level(logging.INFO, logger="relax")
@@ -873,16 +873,19 @@ def test_tilt_geometry_edit_refuses_resume(tmp_path, monkeypatch):
     )
     series = tmp_path / "tilt_series/TS_01.star"
     series.write_text("data_TS_01\n\nloop_\n_rlnMicrographName #1\n_rlnTomoYTilt #2\nTS_01_001.tif 0.0\n")
-    monkeypatch.setattr(tomo_half, "load_tomo_dataset", lambda *args, **kwargs: None)
-    monkeypatch.setattr(tomo, "tilt_particles_from_tomo_dataset", lambda dataset: None)
-    _, identity = command.load_tilt_training(tmp_path / "optimisation_set.star", tmp_path)
+    from types import SimpleNamespace
+
+    stub = SimpleNamespace(image_rows=np.arange(1), image_shape=(8, 8))
+    monkeypatch.setattr(tomo_half, "load_tomo_dataset", lambda *args, **kwargs: stub)
+    monkeypatch.setattr(tomo, "tilt_particles_from_tomo_dataset", lambda dataset, preread=False: None)
+    _, identity, _ = command.load_tilt_training(tmp_path / "optimisation_set.star", tmp_path)
     theta = jnp.ones((5, 3), jnp.complex64)
     state = State(theta, None, jnp.ones(3, jnp.float32), 3, np.arange(8), {}, 2.0, 4, {}, sgd_momentum=0 * theta)
     config = Config(optimizer="momentum_sgd")
     save(tmp_path / "checkpoint.npz", state, config, identity)
     assert load(tmp_path / "checkpoint.npz", config, identity).iteration == 3
     series.write_text("data_TS_01\n\nloop_\n_rlnMicrographName #1\n_rlnTomoYTilt #2\nTS_01_001.tif 1.5\n")
-    _, edited = command.load_tilt_training(tmp_path / "optimisation_set.star", tmp_path)
+    _, edited, _ = command.load_tilt_training(tmp_path / "optimisation_set.star", tmp_path)
     assert edited["particles_sha256"] == identity["particles_sha256"]
     assert edited["tilt_series_sha256"] != identity["tilt_series_sha256"]
     with pytest.raises(ValueError, match="identity mismatch"):

@@ -148,6 +148,8 @@ class TileArrays(NamedTuple):
     # (G, b T, K 2F), ``ctf2_recon`` (G, b, K F); every per-particle array (``coarse_mask``, ``y_norm``, the kept
     # results, the posterior) stays in particle order.
     slots: jax.Array | None = None
+    # Mixed tiles only: the number of real keys (scalar int32); keys from it on are padding and skip their work.
+    keys: jax.Array | None = None
 
 
 class Posterior(NamedTuple):
@@ -516,27 +518,50 @@ def _score_block_mixed(arrays, tile, kept, start, rows, static):
     rotations = arrays.rotations[rows]
     position_slot = tile.slots[0]
 
-    def group(_, g):
+    first, second = np.triu_indices(P)
+    n_tri = first.size
+
+    def work(g):
         frame_rotations_g = _group_rotations(_mixed_take(tile.frames, g), rotations)
         Y1, ctf2 = _mixed_take(tile.Y1, g), _mixed_take(tile.ctf2, g)
         if static.cuda_kernels:
-            planar, products = ppca_window_project_f32(
+            # No pair products: with b of one or a few particles the Gram is cheaper as each row's P x P product
+            # of the CTF^2/noise-weighted planar projections (full float32: the metric stays symmetric).
+            planar, _ = ppca_window_project_f32(
                 arrays.augmented_voxel_major,
                 arrays.gemm_window,
                 frame_rotations_g,
                 image_shape=static.image_shape,
                 volume_shape=static.volume_shape,
                 max_r=static.projection_max_r,
-                with_products=True,
+                with_products=False,
                 basis_size=static.basis_size,
             )
+            planar = planar.reshape(P, R, -1)  # (P, R, K 2F)
             inner = jnp.dot(planar.reshape(P * R, -1), Y1, precision=gemm(static)).reshape(P, R, -1)
-            gram = jnp.dot(products.reshape(products.shape[0] * R, -1), ctf2, precision=gemm(static))
-            return None, (inner[:, :, : b * T], gram.reshape(-1, R, b))
+            F = ctf2.shape[0] // n_frames(tile)
+            weights = ctf2.reshape(n_frames(tile), F, b)
+            weights = jnp.concatenate([weights, weights], axis=1).reshape(-1, b)  # (K 2F, b): Re and Im parts
+            grams = []
+            for j in range(b):
+                weighted = planar * weights[:, j]
+                full = jax.lax.dot_general(
+                    weighted, planar, (((2,), (2,)), ((1,), (1,))), precision=HIGHEST
+                )  # (R, P, P)
+                grams.append(jnp.stack([full[:, i, k] for i, k in zip(first.tolist(), second.tolist())]))
+            return inner[:, :, : b * T], jnp.stack(grams, axis=-1)  # (P, R, b T), (tri, R, b)
         proj = project(arrays, frame_rotations_g, static)
         proj = proj.reshape(P, R, -1, proj.shape[-1])
         inner, gram = _inner_gram(Y1, ctf2, proj, b, HIGHEST)
-        return None, (inner.reshape(P, R, b * T), gram)
+        return inner.reshape(P, R, b * T), gram
+
+    def skip(g):
+        return jnp.zeros((P, R, b * T), jnp.float32), jnp.zeros((n_tri, R, b), jnp.float32)
+
+    def group(_, g):
+        if tile.keys is None:
+            return None, work(g)
+        return None, jax.lax.cond(g < tile.keys, work, skip, g)
 
     _, (inner, gram) = jax.lax.scan(group, None, jnp.arange(G))
     # (G, P, R, b T) -> particle order (P, R, B, T); (G, tri, R, b) -> (tri, R, B).
@@ -1083,7 +1108,7 @@ def _pass2_mixed(carry, arrays, tile, kept, posterior, positions, valid, steps, 
     slot_position = tile.slots[1]
     log_norm = posterior.center + posterior.centered_logZ
 
-    def step(state, pair):
+    def body(state, pair):
         carry, volume = state
         active = pair[0] >= 0
         g = jnp.maximum(pair[0], 0)
@@ -1122,6 +1147,10 @@ def _pass2_mixed(carry, arrays, tile, kept, posterior, positions, valid, steps, 
         # A padding step's images are all zero (no posterior mass): its correction is zero too.
         residual = _add_residual(carry.residual_power, arrays, correction, tile.noise_groups[g])
         return (carry._replace(residual_power=residual), volume + block), None
+
+    def step(state, pair):
+        # Padding steps (key -1) skip their projection and scatter.
+        return jax.lax.cond(pair[0] >= 0, lambda st: body(st, pair)[0], lambda st: st, state), None
 
     volume = jnp.zeros(carry.moments.shape, carry.moments.dtype) if moments else jnp.zeros((), carry.moments.dtype)
     (carry, volume), _ = jax.lax.scan(step, (carry, volume), steps)
