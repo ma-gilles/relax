@@ -210,15 +210,24 @@ rescales it to the noise of two full-data half maps, which is what an FSC of two
 independent noise a half's first moment has `e = (1-l)/(1+l) = (1-l)^2/(1-l^2)` times the noise power of one direction
 (`l = 0.9` the decay, `e = 0.0526`; a simulation of the recursion gives 0.0526), and a full-data half has `b/N` times
 a batch half's, so the disagreement is multiplied by `(b/N)/e`: 0.057 for `b = 300` of `N = 100,000`, which opens the
-gates far wider. The code carries the exact sum over the batches the moments average (`advance_noise_weight`,
+gates far wider. The code carries the exact sum over the batches the moments average (`advance_noise_track`,
 `full_data_disagreement_scale`), which gives that factor for a constant batch and stays right when the batch changes and
 at the final all-data iteration; it counts every voxel as averaged since iteration 1 (a voxel newly covered starts from
 a raw direction for about 5 iterations). The scale multiplies the power statistic and its square root multiplies the
-amplitude statistic. It treats theta as a full-data estimate. Theta averages the first moments with the step `eta`
+amplitude statistic.
+
+`full_data` treats theta as a full-data estimate. Theta averages the first moments with the step `eta`
 (`theta <- (1-eta) theta + eta phi m`), so its own window is `N_eff`, the batch over the noise reduction of the two
 cascaded filters: for the C n1 recipe (`b = 300`, the step from `iterations.jsonl`) `N_eff / N` is .06 up to iteration
-500, .08 at 1000, .22 at 1500, .35 at 2000 and .45 from 2500. Early in a run the gate is therefore more open than the
-noise left in theta warrants, late it is close to it.
+500, .08 at 1000, .22 at 1500, .35 at 2000 and .45 from 2500. `theta` uses that window: `advance_noise_track` carries,
+in units of one particle's noise power, the noise `z` of the averaged first moment, the noise `th` of theta after each
+update (`th' = (1-eta)^2 th + 2(1-eta) eta cov + eta^2 z`, with the covariance of theta's noise and `z` carried
+along) and the disagreement weight `w`, and `theta_disagreement_scale` is `4 th / w`, the disagreement of two half
+maps as noisy as theta (the factor of `full_data` when theta averages all `N` particles, `th = 1/N`). The step is the
+update's `step * step_factor` of each iteration. The recursion treats theta's dependence on the directions (they hold
+`-theta`) as absent, which holds when `eta` is small against the running average's window of about 10 iterations; early
+in a run, with `eta` near 0.5, it is an approximation. The gate then shrinks theta by the Wiener factor of the noise
+theta carries, `P/(P + th)` at fudge 1.
 
 ### 3.4 Reference power, SSNR and resolution are a different mechanism
 
