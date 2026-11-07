@@ -58,11 +58,10 @@ def add_args(parser):
     )
     parser.add_argument(
         "--gate-noise-reference",
-        choices=("batch", "full_data", "theta"),
+        choices=("batch", "full_data"),
         default=Config().gate_noise_reference,
         help="the noise the VDAM gate's disagreement stands for: the halves' first moments as measured (the noise of the "
-        "applied direction, RELION's), rescaled to the noise of two full-data half maps, or rescaled to the noise theta "
-        "carries after its own averaging; a VDAM setting",
+        "applied direction, RELION's), or rescaled to the noise of two full-data half maps; a VDAM setting",
     )
     parser.add_argument(
         "--incr-size",

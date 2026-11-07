@@ -16,12 +16,10 @@ from relax.ppca_initial_model.state import State
 from relax.ppca_initial_model.update import (
     FIRST_MOMENT_DECAY,
     FIRST_MOMENT_WEIGHT,
-    NoiseTrack,
-    advance_noise_track,
+    advance_noise_weight,
     empty_moments,
     full_data_disagreement_scale,
     stochastic_update,
-    theta_disagreement_scale,
 )
 
 pytestmark = pytest.mark.unit
@@ -136,15 +134,14 @@ def test_the_power_gate_estimates_the_half_map_fsc_and_the_amplitude_gate_does_n
     assert (1 if snr < 2 else -1) * (amplitude_gate - power_gate) > 0.02
 
 
-def test_the_gate_noise_reference_is_batch_by_default_and_the_option_takes_only_batch_full_data_or_theta():
+def test_the_gate_noise_reference_is_batch_by_default_and_the_option_takes_only_batch_or_full_data():
     parser = argparse.ArgumentParser()
     ppca_initial_model.add_args(parser)
     required = ["--i", "particles.star", "--particle-diameter", "100", "-o", "out"]
     assert Config().gate_noise_reference == "batch"
     assert parser.parse_args(required).gate_noise_reference == "batch"
-    for reference in ("full_data", "theta"):
-        assert parser.parse_args([*required, "--gate-noise-reference", reference]).gate_noise_reference == reference
-    with pytest.raises(ValueError, match="gate noise reference must be batch, full_data or theta"):
+    assert parser.parse_args([*required, "--gate-noise-reference", "full_data"]).gate_noise_reference == "full_data"
+    with pytest.raises(ValueError, match="gate noise reference must be batch or full_data"):
         Config(gate_noise_reference="data")
     with pytest.raises(ValueError, match="momentum SGD has no gate"):
         Config(optimizer="momentum_sgd", gate_noise_reference="full_data")
@@ -244,28 +241,26 @@ def test_the_option_reaches_the_update_a_power_run_scores_iteration_one_as_the_a
 def test_the_noise_weight_is_the_sum_of_squared_moment_coefficients_over_the_batches():
     """first_t = decay^(t-1) d_1 + sum_i weight * decay^(t-i) d_i, each d_i with noise power 4 / count_i (two halves)."""
     counts = [300] * 7 + [1200, 1200, 50_000, 300]
-    track = None
+    weight = None
     for count in counts:
-        track = advance_noise_track(track, count, 0.5)
+        weight = advance_noise_weight(weight, count)
     t = len(counts)
     explicit = FIRST_MOMENT_DECAY ** (2 * (t - 1)) * 4 / counts[0] + sum(
         FIRST_MOMENT_WEIGHT**2 * FIRST_MOMENT_DECAY ** (2 * (t - i)) * 4 / counts[i - 1] for i in range(2, t + 1)
     )
-    assert_matches(track.weight, explicit, rtol=1e-12)
-    assert advance_noise_track(None, 300, 0.5).weight == 4 / 300
+    assert_matches(weight, explicit, rtol=1e-12)
+    assert advance_noise_weight(None, 300) == 4 / 300
 
 
 def test_for_a_constant_batch_the_scale_is_the_batch_share_over_the_running_average_noise_reduction():
     """(b / N) / e with e = (1 - decay) / (1 + decay) = (1 - decay)^2 / (1 - decay^2), from the first iteration on."""
-    track = None
+    weight = None
     for _ in range(400):
-        track = advance_noise_track(track, 300, 0.5)
+        weight = advance_noise_weight(weight, 300)
     reduction = (1 - FIRST_MOMENT_DECAY) / (1 + FIRST_MOMENT_DECAY)
     assert reduction == pytest.approx(FIRST_MOMENT_WEIGHT**2 / (1 - FIRST_MOMENT_DECAY**2), rel=1e-12)
-    assert_matches(full_data_disagreement_scale(track.weight, 100_000), 300 / 100_000 / reduction, rtol=1e-9)
-    assert full_data_disagreement_scale(advance_noise_track(None, 300, 0.5).weight, 100_000) == pytest.approx(
-        300 / 100_000
-    )
+    assert_matches(full_data_disagreement_scale(weight, 100_000), 300 / 100_000 / reduction, rtol=1e-9)
+    assert full_data_disagreement_scale(advance_noise_weight(None, 300), 100_000) == pytest.approx(300 / 100_000)
 
 
 @pytest.mark.parametrize(
@@ -283,10 +278,10 @@ def test_the_scaled_disagreement_recovers_the_noise_of_two_full_data_half_maps_t
     n, n_images, sigma2 = 20_000, 50_000, 1.0
     rng = np.random.default_rng(31)
     theta = jnp.zeros((n, 2), jnp.complex64)
-    moments, track = empty_moments(theta), None
+    moments, weight = empty_moments(theta), None
     for count in counts:
-        track = advance_noise_track(track, count, 0.5)
-        scale = full_data_disagreement_scale(track.weight, n_images)
+        weight = advance_noise_weight(weight, count)
+        scale = full_data_disagreement_scale(weight, n_images)
         noise = np.zeros((2, n, 2), np.complex64)
         for half in range(2):
             noise[half, :, 0] = _complex_gaussian(rng, sigma2 * n_images / count, n)
@@ -296,68 +291,6 @@ def test_the_scaled_disagreement_recovers_the_noise_of_two_full_data_half_maps_t
         )  # fmt: skip
     assert float(info["disagreement"][0, 0]) == pytest.approx(2 * sigma2, rel=0.05)
     assert float(info["disagreement"][0, 0]) / scale > 3 * 2 * sigma2
-
-
-def _theta_noise_by_coefficients(counts, steps):
-    """Noise power of theta (one particle's units) after the iterations, from each iteration's coefficient in z and theta.
-
-    z = (m_0 + m_1) / 2 follows z = decay z + weight n_t (the first iteration z = n_1) and theta' = (1 - step) theta + step z,
-    each iteration's batch noise n_t having power 1 / count_t.
-    """
-    n = len(counts)
-    z, theta = np.zeros(n), np.zeros(n)
-    for t, step in enumerate(steps):
-        z = FIRST_MOMENT_DECAY * z
-        z[t] = 1.0 if t == 0 else FIRST_MOMENT_WEIGHT
-        theta = (1 - step) * theta + step * z
-    return float(np.sum(theta**2 / np.asarray(counts, float))), float(np.sum(z**2 / np.asarray(counts, float)))
-
-
-def test_the_theta_noise_recursion_is_the_coefficient_sum_over_the_batches_and_steps():
-    rng = np.random.default_rng(41)
-    counts = [int(c) for c in rng.choice([300, 300, 1200, 50_000], size=60)]
-    steps = rng.uniform(0.01, 0.9, size=60)
-    track = None
-    for count, step in zip(counts, steps):
-        track = advance_noise_track(track, count, float(step))
-    theta, moment = _theta_noise_by_coefficients(counts, steps)
-    assert_matches(track.theta, theta, rtol=1e-12)
-    assert_matches(track.moment, moment, rtol=1e-12)
-
-
-def test_the_theta_scale_is_the_full_data_scale_when_theta_averages_all_particles():
-    track = NoiseTrack(weight=3.7e-3, moment=1e-3, theta=1 / 50_000, cross=2e-4)
-    assert_matches(theta_disagreement_scale(track), full_data_disagreement_scale(track.weight, 50_000), rtol=1e-12)
-
-
-def test_the_theta_scale_through_the_update_recovers_the_noise_theta_carries():
-    """One particle's noise power 1, so each half's direction has 2 / count_t; the step falls from 0.5 to 0.02.
-
-    The scaled disagreement of the power statistic is 4 * (theta's noise power) and the simulated theta noise
-    (theta' = (1 - step) theta + step z with z the averaged first moment the update returns) has the tracked power. The
-    mean of 2e4 voxels has a sampling error of 0.7%; over 6 seeds of this construction the largest error is 0.5% for the
-    simulated theta noise and 2.2% for the scaled disagreement, so rtol is 0.05.
-    """
-    n = 20_000
-    counts = [300] * 150 + [1200] * 20 + [300] * 150
-    steps = np.linspace(0.5, 0.02, len(counts))
-    rng = np.random.default_rng(43)
-    theta = jnp.zeros((n, 2), jnp.complex64)
-    moments, track, simulated = empty_moments(theta), None, np.zeros(n, np.complex128)
-    for count, step in zip(counts, steps):
-        track = advance_noise_track(track, count, float(step))
-        noise = np.zeros((2, n, 2), np.complex64)
-        for half in range(2):
-            noise[half, :, 0] = _complex_gaussian(rng, 2.0 / count, n)
-        theta, moments, info = stochastic_update(
-            theta, moments, jnp.asarray(noise), np.ones((2, n), bool), np.zeros(n, np.int32),
-            step=float(step), fudge=1.0, image_size=BOX, gate_statistic="power",
-            disagreement_scale=theta_disagreement_scale(track),
-        )  # fmt: skip
-        averaged = (np.asarray(moments.first[0, :, 0]) + np.asarray(moments.first[1, :, 0])) / 2
-        simulated = (1 - step) * simulated + step * averaged
-    assert float(np.mean(abs(simulated) ** 2)) == pytest.approx(track.theta, rel=0.05)
-    assert float(info["disagreement"][0, 0]) == pytest.approx(4 * track.theta, rel=0.05)
 
 
 def test_the_amplitude_statistic_takes_the_square_root_of_the_variance_scale():
@@ -377,28 +310,22 @@ def _rows(output):
     return {row["iteration"]: row for row in map(json.loads, open(output / "iterations.jsonl"))}
 
 
-@pytest.mark.parametrize("reference", ["full_data", "theta"])
-def test_a_noise_reference_reaches_the_update_and_a_resumed_run_keeps_it(reference, monkeypatch, tmp_path):
-    """16 images in batches of 8: every iteration's logged scale is the reference's formula on the explicit sums."""
+def test_the_full_data_reference_reaches_the_update_and_a_resumed_run_keeps_it(monkeypatch, tmp_path):
+    """16 images in batches of 8: every iteration's logged scale is (1 / (N * weight)) with the explicit weight sum."""
     monkeypatch.setenv("SLURM_JOB_ID", "test")
     star = _write_star(tmp_path / "data", 16)
-    option = ("--gate-statistic", "power", "--gate-noise-reference", reference)
+    full = ("--gate-statistic", "power", "--gate-noise-reference", "full_data")
     _run_command(star, tmp_path / "batch", "--gate-statistic", "power")
-    _run_command(star, tmp_path / "straight", *option)
-    _run_command(star, tmp_path / "resumed", *option, "--stop-after", "4")
-    _run_command(star, tmp_path / "resumed", *option, "--resume", str(tmp_path / "resumed" / "checkpoint_0004.npz"))
-    batch, straight, resumed = (_rows(tmp_path / name) for name in ("batch", "straight", "resumed"))
+    _run_command(star, tmp_path / "full", *full)
+    _run_command(star, tmp_path / "resumed", *full, "--stop-after", "4")
+    _run_command(star, tmp_path / "resumed", *full, "--resume", str(tmp_path / "resumed" / "checkpoint_0004.npz"))
+    batch, straight, resumed = (_rows(tmp_path / name) for name in ("batch", "full", "resumed"))
 
-    steps = [straight[t]["step"] for t in range(1, 9)]
     for t in range(1, 9):
         weight = FIRST_MOMENT_DECAY ** (2 * (t - 1)) * 4 / 8 + sum(
             FIRST_MOMENT_WEIGHT**2 * FIRST_MOMENT_DECAY ** (2 * (t - i)) * 4 / 8 for i in range(2, t + 1)
         )
-        if reference == "full_data":
-            expected = 4 / (16 * weight)
-        else:
-            expected = 4 * _theta_noise_by_coefficients([8] * t, steps[:t])[0] / weight
-        assert_matches(straight[t]["disagreement_scale"], expected, rtol=1e-9)
+        assert_matches(straight[t]["disagreement_scale"], 4 / (16 * weight), rtol=1e-9)
         assert batch[t]["disagreement_scale"] == 1.0
     assert_matches(straight[1]["log_likelihood"], batch[1]["log_likelihood"])
     assert not np.allclose(straight[8]["gates"], batch[8]["gates"])
