@@ -634,7 +634,7 @@ def second_moment_sums(gamma, mean, covariance):
 def moment_block(carry, arrays, tile, kept, posterior, start, *, static, block_size, moments):
     """Pass 2 for one rotation block: posterior weights, M-step images, residuals and diagnostics."""
     if mixed(tile):
-        return _moment_block_mixed(carry, arrays, tile, kept, posterior, start, static, block_size, moments)
+        raise ValueError("A mixed tile's pass 2 runs per key on its own rows (_run_pass2_mixed)")
     if static.cuda_kernels:
         weights, sums, carry = _posterior_block_cuda(
             carry, arrays, kept, posterior, start, static, block_size, tile.Y1_recon.shape[0]
@@ -659,51 +659,6 @@ def moment_block(carry, arrays, tile, kept, posterior, start, *, static, block_s
 def tile_noise_group(tile):
     """The noise group of a one-group subtomogram tile (its row of a stream's noise table); None otherwise."""
     return None if tile.noise_groups is None else tile.noise_groups[0]
-
-
-def _moment_block_mixed(carry, arrays, tile, kept, posterior, start, static, block_size, moments):
-    """Pass 2 of one rotation block on a mixed tile: posterior weights for the whole tile in particle order, then
-    per tilt group its M-step images at its own frames, backprojected with its noise group's residual (one scan
-    step each); the block's volumes are summed over the groups and added to the carry once."""
-    B = int(tile.y_norm.shape[0])
-    T = int(arrays.shift_squared.shape[0])
-    if static.cuda_kernels:
-        weights, sums, carry = _posterior_block_cuda(carry, arrays, kept, posterior, start, static, block_size, B * T)
-    else:
-        weights, sums, carry = _posterior_block(carry, arrays, kept, posterior, start, block_size)
-    if not moments:
-        return carry
-    P = static.basis_size
-    G, b = int(tile.ctf2_recon.shape[0]), int(tile.ctf2_recon.shape[1])
-    K = n_frames(tile)
-    F = tile.ctf2_recon.shape[2] // K
-    n_moments = sums.shape[0]
-    slot_position = tile.slots[1]
-    # Particle order -> group-major (G, ., R, b ...).
-    weights = weights.reshape(P, block_size, B, T)[:, :, slot_position].reshape(P, block_size, G, b * T)
-    weights = jnp.transpose(weights, (2, 0, 1, 3))
-    # A key's reconstruction operand may pad its (image, shift) rows (GPU streams): zero weights there.
-    weights = jnp.pad(weights, ((0, 0), (0, 0), (0, 0), (0, tile.Y1_recon.shape[1] - b * T)))
-    sums = jnp.transpose(sums[:, :, slot_position].reshape(n_moments, block_size, G, b), (2, 0, 1, 3))
-    rotations = arrays.rotations[_block_rows(tile, start, block_size)]
-
-    def group(state, g):
-        volume, residual_power = state
-        rhs_parts = jnp.dot(
-            _mixed_take(weights, g).reshape(P * block_size, -1), _mixed_take(tile.Y1_recon, g), precision=gemm(static)
-        ).reshape(P, block_size * K, 2 * F)
-        lhs_images = _metric_dot(
-            _mixed_take(sums, g).reshape(n_moments * block_size, -1), _mixed_take(tile.ctf2_recon, g), static
-        ).reshape(n_moments, block_size * K, F)
-        frame_rotations_g = _group_rotations(_mixed_take(tile.frames, g), rotations)
-        block, correction = _scatter_block(arrays, static, rhs_parts, lhs_images, frame_rotations_g)
-        residual_power = _add_residual(residual_power, arrays, correction, tile.noise_groups[g])
-        return (volume + block, residual_power), None
-
-    zero = jnp.zeros(carry.moments.shape, carry.moments.dtype)
-    (volume, residual_power), _ = jax.lax.scan(group, (zero, carry.residual_power), jnp.arange(G))
-    moments_sum, compensation = compensated_add(carry.moments, carry.moments_compensation, volume)
-    return carry._replace(moments=moments_sum, moments_compensation=compensation, residual_power=residual_power)
 
 
 def _add_residual(residual_power, arrays, correction, noise_group):
@@ -1032,8 +987,142 @@ def _expand_rotation_mass(compact_mass, positions, count):
     return jnp.zeros_like(compact_mass).at[positions].add(values)
 
 
+@partial(jax.jit, static_argnames=("n", "n_keys", "slots", "cuda"))
+def _key_row_mass(kept, posterior, slot_position, *, n, n_keys, slots, cuda):
+    """Largest posterior mass of each of the first ``n`` pose rows over each key's particles, ``(n, G)``."""
+    log_norm = posterior.center + posterior.centered_logZ
+    if cuda:
+        mass = kept.part_sum[:n] * jnp.exp(kept.part_max[:n] - log_norm[None, :])
+    else:
+        mass = jnp.sum(jnp.exp(kept.score[:n] - log_norm[None, :, None]), axis=2)
+    return jnp.max(mass[:, slot_position].reshape(n, n_keys, slots), axis=2)
+
+
+@partial(jax.jit, static_argnames=("capacity",))
+def _key_rows(key_mass, floor, *, capacity):
+    """Each key's kept pass-1 positions (mass at least ``floor``), first ``capacity`` in row order, ``(C, G)``,
+    with their validity."""
+    keep = key_mass >= floor
+    order = jnp.argsort(jnp.logical_not(keep), axis=0, stable=True)[:capacity]
+    count = jnp.sum(keep, axis=0)
+    return order.astype(jnp.int32), jnp.arange(capacity)[:, None] < count[None, :]
+
+
+def _run_pass2_mixed(stream, tile, kept, posterior, layout, carry, *, moments):
+    """Pass 2 of a mixed tile: each key visits only the rows that carry posterior mass for its own particles
+    (:attr:`FullRowStream.pass2_mass_floor`; every scored row with no floor), as a one-key tile does, so the
+    tile keeps each particle's sparsity instead of the union over its keys."""
+    block = stream.rotation_block_size
+    n = layout["n_blocks"] * block
+    G, b = int(tile.ctf2_recon.shape[0]), int(tile.ctf2_recon.shape[1])
+    if stream.pass2_mass_floor > 0:
+        mass = _key_row_mass(kept, posterior, tile.slots[1], n=n, n_keys=G, slots=b, cuda=stream.static.cuda_kernels)
+        count = np.asarray(jax.device_get(jnp.sum(mass >= stream.pass2_mass_floor, axis=0)))
+        n_chunks = _compact_capacity(len(stream.block_starts), max(1, -(-int(count.max()) // block)))
+        n_chunks = min(n_chunks, layout["n_blocks"])
+        positions, valid = _key_rows(mass, np.float32(stream.pass2_mass_floor), capacity=n_chunks * block)
+    else:
+        count = np.full(G, n)
+        n_chunks = layout["n_blocks"]
+        positions = jnp.broadcast_to(jnp.arange(n, dtype=jnp.int32)[:, None], (n, G))
+        valid = jnp.ones((n, G), bool)
+    n_keys = int(layout.get("n_keys", G))
+    layout["pass2_rows"] = float(np.sum(count[:n_keys])) / n_keys
+    return _pass2_mixed(
+        carry,
+        stream.arrays,
+        tile,
+        kept,
+        posterior,
+        positions,
+        valid,
+        static=stream.static,
+        block_size=block,
+        n_chunks=n_chunks,
+        moments=moments,
+    )
+
+
+@partial(jax.jit, static_argnames=("static", "block_size", "n_chunks", "moments"), donate_argnums=(0,))
+def _pass2_mixed(carry, arrays, tile, kept, posterior, positions, valid, *, static, block_size, n_chunks, moments):
+    """:func:`_run_pass2_mixed`'s device program: a scan over keys, each a scan over chunks of ``block_size`` of
+    its rows (``positions`` ``(C, G)`` into the pass-1 row table, ``valid`` marking real ones). Per chunk the
+    key's posterior weights on its own particles, its M-step images at its own frames and their backprojection
+    with the residual added to its noise group; the tile's volumes are added to the carry once."""
+    P = static.basis_size
+    q = P - 1
+    G, b = int(tile.ctf2_recon.shape[0]), int(tile.ctf2_recon.shape[1])
+    K = n_frames(tile)
+    F = tile.ctf2_recon.shape[2] // K
+    T = int(arrays.shift_squared.shape[0])
+    n_moments = tri_size(P)
+    sentinel = arrays.rotations.shape[0] - 1
+    diagonal = [k for k, (i, j) in enumerate(zip(*np.triu_indices(q))) if i == j]
+    slot_position = tile.slots[1]
+    log_norm = posterior.center + posterior.centered_logZ
+
+    def key(state, g):
+        particles = jax.lax.dynamic_slice_in_dim(slot_position, g * b, b)  # (b,) tile positions of the key's slots
+        frames = _mixed_take(tile.frames, g)
+        Y1_recon, ctf2_recon = _mixed_take(tile.Y1_recon, g), _mixed_take(tile.ctf2_recon, g)
+        noise = tile.noise_groups[g]
+        key_norm = log_norm[particles]
+
+        def chunk(state, c):
+            carry, volume = state
+            pos = jax.lax.dynamic_slice_in_dim(positions[:, g], c * block_size, block_size)
+            real = jax.lax.dynamic_slice_in_dim(valid[:, g], c * block_size, block_size)
+            score = kept.score[pos][:, particles]  # (blk, b, T)
+            centered = jnp.where(real[:, None, None], score - key_norm[None, :, None], -jnp.inf)
+            gamma = jnp.exp(centered)
+            mean = kept.latent_mean[:, pos][:, :, particles]  # (q, blk, b, T)
+            covariance = kept.latent_covariance[pos][:, particles]  # (blk, b, tri(q))
+            latent_trace = sum(
+                (covariance[..., k] for k in diagonal), jnp.zeros(covariance.shape[:2], covariance.dtype)
+            )
+            row_mass = jnp.sum(gamma, axis=(1, 2))
+            carry = carry._replace(
+                embedding=carry.embedding.at[particles].add(jnp.einsum("rbt,qrbt->bq", gamma, mean, precision=HIGHEST)),
+                rotation_mass=carry.rotation_mass.at[pos].add(jnp.where(real, row_mass, 0.0)),
+                latent_covariance_trace_sum=carry.latent_covariance_trace_sum
+                + jnp.sum(gamma * latent_trace[..., None]),
+                pose_entropy_sum=carry.pose_entropy_sum - jnp.sum(jnp.where(gamma > 0, gamma * centered, 0)),
+                offset_second_sum=carry.offset_second_sum + jnp.sum(gamma * arrays.shift_squared),
+                n_significant=carry.n_significant.at[particles].add(
+                    jnp.sum(gamma > 1e-3, axis=(0, 2)).astype(jnp.int32)
+                ),
+            )
+            if not moments:
+                return (carry, volume), None
+            weights = jnp.concatenate([gamma[None], gamma[None] * mean], axis=0).reshape(P * block_size, b * T)
+            weights = jnp.pad(weights, ((0, 0), (0, Y1_recon.shape[0] - b * T)))
+            sums = second_moment_sums(gamma, mean, covariance)  # (tri(P), blk, b)
+            rhs_parts = jnp.dot(weights, Y1_recon, precision=gemm(static)).reshape(P, block_size * K, 2 * F)
+            lhs_images = _metric_dot(sums.reshape(n_moments * block_size, b), ctf2_recon, static).reshape(
+                n_moments, block_size * K, F
+            )
+            rows = jnp.where(real, tile.rows[pos], sentinel)
+            rotations = _group_rotations(frames, arrays.rotations[rows])
+            block, correction = _scatter_block(arrays, static, rhs_parts, lhs_images, rotations)
+            carry = carry._replace(residual_power=_add_residual(carry.residual_power, arrays, correction, noise))
+            return (carry, volume + block), None
+
+        state, _ = jax.lax.scan(chunk, state, jnp.arange(n_chunks))
+        return state, None
+
+    volume = jnp.zeros(carry.moments.shape, carry.moments.dtype) if moments else jnp.zeros((), carry.moments.dtype)
+    (carry, volume), _ = jax.lax.scan(key, (carry, volume), jnp.arange(G))
+    if not moments:
+        return carry
+    moments_sum, compensation = compensated_add(carry.moments, carry.moments_compensation, volume)
+    return carry._replace(moments=moments_sum, moments_compensation=compensation)
+
+
 def run_skipping_pass2(stream, tile, kept, posterior, layout, carry, *, moments):
-    """Pass 2 over the rows :func:`_pass2_rows` keeps; per-row outputs return to pass-1 positions."""
+    """Pass 2 over the rows :func:`_pass2_rows` keeps; per-row outputs return to pass-1 positions. A mixed tile
+    keeps rows per key (:func:`_run_pass2_mixed`)."""
+    if mixed(tile):
+        return _run_pass2_mixed(stream, tile, kept, posterior, layout, carry, moments=moments)
     positions = _pass2_rows(stream, kept, posterior, layout["n_blocks"])
     layout["pass2_rows"] = layout["n_blocks"] * stream.rotation_block_size if positions is None else int(positions.size)
     if positions is None:
