@@ -3734,3 +3734,37 @@ against 3, pose median 23.7 against 48.3 deg), matches the amplitude gate on pos
 the worst loading subspace on C n1 and C n3 (49 and 39 deg against 37 and 27) and the lowest R2 on D40 (.440 against .616).
 Every VDAM arm of `scripts/ppca_schedule/config.yaml` from this commit on, `s3_vdam_uniform` included, runs the new gate;
 the VDAM numbers of the other sections and of the rounds before this one are amplitude-gate numbers.
+
+## 19. Translation search of the best-v1 recipe (November 6, 2026)
+
+### 19.1 What best-v1 changes in the translation search
+
+Source: branch `origin/ppca/best-v1` (commit 9276afba), `ppca_study/best_v1/RECIPE.md` and its driver `coupled_arm.py`
+(sha256 `67233a3c...`). Its translation search is not in the relax tree of that branch: the driver replaces
+`iteration_loop._expectation` and edits the config and the state it receives. Two changes:
+
+1. `--shift-sched '[[1, 8, 2], [1626, 8, 1]]'`: a table of `[first update, range, step]` in pixels that replaces
+   `--shift-range` and `--shift-step` for each E-step (the last row whose first update is at most the update applies).
+   At box 64 and 6 A/px that is a zero-centred circular grid of 49 translations (range 8 px, step 2 px = 12 A) until
+   update 1626, then of 197 (step 1 px = 6 A), which is where HEALPix order 3 starts. The window is the same ±48 A
+   throughout and is searched in full at every update; no per-particle offset is stored (no `--recentre`).
+2. `--offset-sigma-hold 20`: the Gaussian translation prior's sigma is held at 20 A per axis, centred at zero, for every
+   E-step. The learned sigma (RELION's `sigma2_offset` update) is still computed and logged but unused.
+
+The recipe gives its units in A ("convert with your pixel size and round to whole pixels"). Its own status on
+November 6: the exhaustive grid is rejected for SGD on the synthetic sets (it loses on C n3, Ribosembly, T10, D20, D40 and
+shifted C n1 and holds on C n1 and H1), the one rule that poses shifted Ribosembly, about 1.8 times the training time of
+its alternative "relrfine" (RELION's learned-sigma rule with stored offsets and a 1 px late step), and the rule the real
+data runs (EMPIAR-10076, FSC .80 to the RELION map; EMPIAR-10180, .96) used. Not taken over here: the stored-offset
+variants (`--recentre*`) and the grid M-step for sigma (`--offset-mstep grid`).
+
+### 19.2 The options here
+
+`relax ppca_initial_model --shift-stages '[[first iteration, range, step], ...]'` (pixels, RELION's circular grid) and
+`--offset-sigma-angstrom A` (`Config.shift_stages`, `Config.offset_sigma_angstrom`; `Config.shift_grid(iteration)`,
+`iteration_loop._prior_offset_variance`). Both are off by default, which keeps the fixed `--shift-range`/`--shift-step`
+grid and the learned sigma; the stage table excludes an explicit range or step. The held sigma enters the E-step as
+`(A / pixel size)^2` pixels squared; the learned variance is still blended each iteration and logged as
+`offset_variance_px2`, and `shift_range_px` and `shift_step_px` are logged per iteration. Tests:
+`tests/unit/ppca_initial_model/test_offset_search.py`. A checkpoint records both settings in its identity unless they are
+off.

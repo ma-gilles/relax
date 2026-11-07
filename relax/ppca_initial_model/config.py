@@ -73,6 +73,13 @@ class Config:
     max_significant: int = 100
     shift_range: float = 6
     shift_step: float = 2
+    # Opt-in translation search of the best-v1 recipe (docs/math/vdam_ppca_algorithm.md section 19). shift_stages: rows
+    # (first iteration, range, step) in pixels of RELION's circular grid, zero-centred, the last row whose first iteration
+    # is at most the iteration applies, in place of shift_range and shift_step; None keeps those. offset_sigma_angstrom:
+    # the translation prior's Gaussian sigma per axis, held for every E-step, in place of RELION's learned sigma (the
+    # learned value is still updated and logged, unused); None keeps the learned sigma.
+    shift_stages: tuple | None = None
+    offset_sigma_angstrom: float | None = None
     image_batch_size: int = 150
     rotation_block_size: int = 512
     stream_full_fine_rows: bool = False
@@ -154,6 +161,16 @@ class Config:
             raise ValueError("Balanced stochastic halves require an even fixed batch on all iterations")
         if self.shift_range < 0 or self.shift_step <= 0:
             raise ValueError("Shift range must be nonnegative and step positive")
+        if self.shift_stages is not None:
+            stages = self.shift_stages
+            if not stages or any(len(stage) != 3 for stage in stages) or stages[0][0] != 1:
+                raise ValueError("Shift stages are (first iteration, range, step) rows, the first at iteration 1")
+            if list(stages) != sorted(stages) or len({start for start, _, _ in stages}) < len(stages):
+                raise ValueError("Shift stages must have increasing first iterations")
+            if any(rng < 0 or step <= 0 for _, rng, step in stages):
+                raise ValueError("Shift stages need a nonnegative range and a positive step")
+        if self.offset_sigma_angstrom is not None and not self.offset_sigma_angstrom > 0:
+            raise ValueError("The offset sigma must be positive")
         if self.optimizer not in ("vdam", "momentum_sgd"):
             raise ValueError("Optimizer must be vdam or momentum_sgd")
         if self.optimizer == "vdam":
@@ -261,6 +278,13 @@ class Config:
         )
         scheduled = n_images if scheduled < 0 or iteration == self.iterations else min(scheduled, n_images)
         return min(1.0, self.schedule(iteration, n_images)[0] / scheduled)
+
+    def shift_grid(self, iteration: int) -> tuple[float, float]:
+        """The translation (range, step) in pixels of ``iteration``: its shift stage's, else shift_range and shift_step."""
+        if self.shift_stages is None:
+            return self.shift_range, self.shift_step
+        _, rng, step = next(stage for stage in reversed(self.shift_stages) if stage[0] <= iteration)
+        return rng, step
 
     def stage(self, iteration):
         return next((r, hp) for start, r, hp in reversed(self.stages) if start <= iteration)

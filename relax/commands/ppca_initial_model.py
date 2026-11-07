@@ -130,6 +130,16 @@ def add_args(parser):
     )
     parser.add_argument("--shift-range", type=float, default=6)
     parser.add_argument("--shift-step", type=float, default=2)
+    parser.add_argument(
+        "--shift-stages",
+        help="JSON list of [first iteration, range, step] in pixels: the translation grid of each iteration, in place of "
+        "--shift-range and --shift-step",
+    )
+    parser.add_argument(
+        "--offset-sigma-angstrom",
+        type=float,
+        help="hold the translation prior's Gaussian sigma per axis at this many Angstrom, instead of learning it",
+    )
     parser.add_argument("--image-batch-size", type=int, default=150)
     parser.add_argument("--rotation-block-size", type=int, default=512)
     parser.add_argument("--stream-full-fine-rows", action="store_true",
@@ -446,6 +456,8 @@ def main(args=None):
         raise RuntimeError("Particle refinement runs require Slurm; use unit tests for local numerical checks")
     from relax.ppca_initial_model.iteration_loop import run
 
+    if args.shift_stages and (args.shift_range, args.shift_step) != (Config().shift_range, Config().shift_step):
+        raise ValueError("--shift-stages replaces --shift-range and --shift-step; give one or the other")
     config = Config(
         q=args.q,
         seed=args.seed,
@@ -454,6 +466,8 @@ def main(args=None):
         max_significant=args.maxsig,
         shift_range=args.shift_range,
         shift_step=args.shift_step,
+        shift_stages=tuple(tuple(stage) for stage in json.loads(args.shift_stages)) if args.shift_stages else None,
+        offset_sigma_angstrom=args.offset_sigma_angstrom,
         image_batch_size=args.image_batch_size,
         rotation_block_size=args.rotation_block_size,
         stream_full_fine_rows=args.stream_full_fine_rows,

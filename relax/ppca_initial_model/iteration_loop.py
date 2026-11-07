@@ -23,6 +23,7 @@ from recovar.reconstruction.noise import make_radial_noise
 from recovar.utils.helpers import load_relion_volume
 
 from relax.ppca_initial_model import checkpoint
+from relax.ppca_initial_model.config import Config
 from relax.ppca_initial_model.initialization import (
     bandlimit_and_mask,
     birth_loadings,
@@ -385,6 +386,13 @@ def pass1_image_size(order, dataset, current_size, diameter_ang):
     )
 
 
+def _prior_offset_variance(dataset, state: State, config: Config) -> float:
+    """The translation prior's variance per axis in pixels squared: the held sigma if set, else the learned one."""
+    if config.offset_sigma_angstrom is None:
+        return state.offset_variance
+    return (config.offset_sigma_angstrom / dataset.voxel_size) ** 2
+
+
 @full_float32
 def _expectation(dataset, state, config, ids, iteration, *, embeddings_only=False, diameter_ang=None):
     hp = order_for(config, state, iteration)
@@ -405,13 +413,14 @@ def _expectation(dataset, state, config, ids, iteration, *, embeddings_only=Fals
     tilts = isinstance(dataset, TiltParticles)
     if tilts and not _streams_groups(config):
         raise ValueError("Subtomogram PPCA needs the streamed full-grid engine (stream_coarse_recompute)")
+    shift_range, shift_step = config.shift_grid(iteration)
     translations = (
         # Subtomogram particles have one 3D shift each (section 16.1), on RELION's 3D grid in pixels.
-        grids.get_relion_translation_grid_3d(config.shift_range, config.shift_step)
+        grids.get_relion_translation_grid_3d(shift_range, shift_step)
         if tilts
-        else grids.get_relion_translation_grid(max_pixel=config.shift_range, pixel_offset=config.shift_step)
+        else grids.get_relion_translation_grid(max_pixel=shift_range, pixel_offset=shift_step)
     ).astype(np.float32)
-    prior = -jnp.sum(jnp.asarray(translations) ** 2, axis=-1) / (2 * state.offset_variance)
+    prior = -jnp.sum(jnp.asarray(translations) ** 2, axis=-1) / (2 * _prior_offset_variance(dataset, state, config))
     prior = prior - jnp.log(jnp.sum(jnp.exp(prior)))
     # Subtomogram particles keep one noise spectrum per noise group (rows of ``state.noise``, section 16.6).
     noise_rows = np.asarray(state.noise) if tilts else np.asarray(state.noise)[None]
@@ -481,7 +490,7 @@ def _expectation(dataset, state, config, ids, iteration, *, embeddings_only=Fals
         padded_size = -(-tile_size // SHIFT_ALIGN) * SHIFT_ALIGN if streams[0].static.cuda_kernels else tile_size
         streams = [stream._replace(tile_images=padded_size) for stream in streams]
         if oversampled:
-            fine_rotations, fine_translations = relion_child_grids(hp, translations, config.shift_step)
+            fine_rotations, fine_translations = relion_child_grids(hp, translations, shift_step)
             streams = [
                 prepare_oversampled_stream(
                     stream,
@@ -956,6 +965,8 @@ def run(
                 "likelihood_scope": "minibatch/support/noise dependent; omitted observation constants",
                 "direction_prior": direction_prior,
                 "offset_variance_px2": offset_variance,
+                "shift_range_px": config.shift_grid(iteration)[0],
+                "shift_step_px": config.shift_grid(iteration)[1],
                 "dtype": str(theta.dtype),
                 "elapsed_seconds": time.monotonic() - started,
             }
