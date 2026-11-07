@@ -221,7 +221,9 @@ Theta averages the first moments with the step `eta` (`theta <- (1-eta) theta + 
 `N_eff`, the batch over the noise reduction of the two cascaded filters: for the C n1 recipe (`b = 300`, the step from
 `iterations.jsonl`) `N_eff / N` is .06 up to iteration 500, .08 at 1000, .22 at 1500, .35 at 2000 and .45 from 2500.
 Early in a run the gate is therefore more open than the noise left in theta warrants, late it is close to it. A scale
-from that window instead gave the amplitude gate's results (section 18.16).
+from that window instead gave the amplitude gate's results (section 18.16). `--gate-noise-images seen` (opt-in) takes
+`N_ref = min(particles of the iterations so far, N)` in place of `N`, so the scale is `4 / (N_ref w)`: the batch's own noise
+at iteration 1 and the full-data scale once the batches have covered the dataset; section 18.17 has its result.
 
 ### 3.4 Reference power, SSNR and resolution are a different mechanism
 
@@ -3734,6 +3736,67 @@ against 3, pose median 23.7 against 48.3 deg), matches the amplitude gate on pos
 the worst loading subspace on C n1 and C n3 (49 and 39 deg against 37 and 27) and the lowest R2 on D40 (.440 against .616).
 Every VDAM arm of `scripts/ppca_schedule/config.yaml` from this commit on, `s3_vdam_uniform` included, runs the new gate;
 the VDAM numbers of the other sections and of the rounds before this one are amplitude-gate numbers.
+
+### 18.17 The gate's noise reference of the images seen so far (November 7, 2026)
+
+Question (owner). At a large `N` the full-data scale `(b/N)/e` is small and the gates stay open, so the shrinkage is off. Take the half maps' particles as `N_ref = min(t b, N)`
+(the particles of the iterations so far, at most the dataset; the code sums the batches, which is `t b` for a constant batch)
+instead of `N`, so that early iterations are not left unshrunk. The six synthetic datasets of 18.16 are the test.
+
+Implementation. `--gate-noise-images dataset|seen` (default `dataset`, the gate of 18.16), `Config.gate_noise_images`,
+`update.noise_reference_images`, logged per iteration as `gate_noise_images`; the count is rebuilt from the batch schedule on
+resume. Tests: `tests/unit/ppca_initial_model/test_gate_statistic.py` (the reference, the noise power the scaled disagreement
+recovers for 10, 100 and 170 batches, a straight run against a resumed one, the checkpoint identity). The commit is "ppca_initial_model: opt-in gate noise reference of the images seen so far".
+
+Runs. The same VDAM runs of 18.16 (uniform direction prior, `b = 300`, 3000 iterations, the recipe schedule) on C n1, C n3, H1 n3,
+D40 n1, D20 n1 and T10 n1, seeds 11, 12, 13, from the frozen snapshot `snapshots/gate_runs4` (HEAD: that commit): the arm
+`g4_vdam_uniform_power_seen` and, to measure the runs' own scatter, the current default `s3_vdam_uniform` again (the round
+18.16 full-data arm, whose runs of only seed 11 exist on H1, D40 and D20). Output `ppca_schedule/gate_power4`, figure
+`gate_power4/figures/gate_noise_images.png`, tables and scripts beside it. All 36 runs finished and have the standard plots.
+
+The two references differ only early. For `N = 100,000` and `b = 300` the seen reference reaches `N` at iteration 334 of 3000
+(the batch's own scale 1 at iteration 1, .51 at 10, .68 at 25, .19 at 100, .095 at 200, .057 = the full-data scale from 334 on).
+The effect on the gates is confined to the loadings in the first 100 iterations: on C n1 seed 11 the lowest loadings gate of
+the shells inside the radius is .45 at iteration 10, .78 at 25, .93 at 50 and .96 at 100 (full data: .995, .992, .991, .990),
+and from iteration 333 on the two arms' gates agree (.979 and .978 at 333; .24 and .25 at 3000). The mean's gate is .97 or
+above at those iterations; the exception is D40 seed 11 (its lowest shell .22 at iteration 10, .93 at 25). The late gates, which
+the full-data scale already shrinks (the lowest loadings gate is .24 on C n1, .44 on D40 and .32 on T10 at iteration 3000), are not
+touched.
+
+Results at iteration 3000 (means of 3 seeds, paired by seed; "sd" is the seed spread of the full-data rerun):
+
+| dataset | metric | full data | seen | seen minus full data, by seed 11 / 12 / 13 |
+|---|---|---|---|---|
+| C n1 | state FSC | .944 (sd .005) | .954 | +.005 / +.002 / +.024 |
+| C n3 | state FSC | .917 (.019) | .932 | -.000 / -.003 / +.049 |
+| D40 n1 | state FSC | .957 (.011) | .971 | +.002 / +.037 / +.003 |
+| D20 n1 | state FSC | .963 (.017) | .975 | +.005 / +.013 / +.017 |
+| D40 n1 | pose median (deg) | 3.90 (.07) | 3.71 | -.30 / -.17 / -.08 |
+| D20 n1 | mean FSC | .376 (.038) | .342 | -.015 / -.047 / -.042 |
+| D20 n1 | R2 | .632 (.026) | .649 | +.041 / +.006 / +.004 |
+| C n3 | ARI | .921 (.014) | .901 | -.021 / -.047 / +.008 |
+| C n1 | ARI | .988 (.000) | .996 | +.008 in each seed |
+| H1 n3 | mean FSC | .974 (.022) | .956 | -.032 / +.001 / -.022 |
+| T10 n1 | R2 | .824 (.023) | .786 | -.071 / -.002 / -.041 |
+
+The other metrics (pose within 10 deg, mean FSC and R2 on C, PC over mean power, loading subspace on C n1, C n3 and D40) move by
+less than their seed spread; the full table is `gate_power4/figures/paired4.md` and `table4_3000.md`, checkpoint 1000
+`table4_1000.md`. The direct-fit state FSC is the one metric that moves the same way on four datasets: 10 of 12 seed pairs
+are positive at iteration 3000 and 9 of 12 at 1000, by .010 to .015 on the means, which is 0.7 to 2 of the seed spreads.
+T10 states solved (at least 30% of a state's particles under 10 deg), seeds 11, 12, 13: 4, 5, 4 with the seen reference, 4, 5,
+4 in the 18.16 run of the full-data arm and 5, 5, 5 in its rerun.
+
+Reproducibility of the control. The rerun of the full-data arm repeats the 18.16 runs on C n1 and C n3 to .001 in state FSC on
+every seed, and on D40 and D20 seed 11 to .005 in mean FSC and .002 in R2; the T10 runs do not repeat: pose median 27.0, 12.9,
+31.2 deg then 9.1, 10.2, 9.1 for seeds 11, 12, 13 (the same arm and seeds, rerun from a later snapshot whose default path is unchanged), with 4, 5, 4 then 5, 5,
+5 states solved. The T10 pose median is therefore a bimodal quantity (a solution near 9 to 13 deg or one near 25 to 31 deg) that
+one run per seed does not resolve: the seen arm's 30.1, 10.5, 25.6 deg are inside the 18.16 arm's and the rerun's range, and the
+statement of 18.16 that the full-data reference "improves T10" (pose median 23.7 against 48.3 deg) rests on that quantity too;
+its states solved (4 to 5 against 3) hold in all six runs.
+
+Not established. Whether the .010 to .015 state FSC gain is more than the trajectory scatter of a change that moves only the first
+hundred iterations (it is one seed spread, 12 pairs, 8 metrics looked at); no loading-quality metric (subspace, energy, PC outside
+span, R2) improves, and D20's mean FSC and T10's R2 are lower.
 
 ## 19. Translation search of the best-v1 recipe (November 6, 2026)
 
