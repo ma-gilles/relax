@@ -34,7 +34,7 @@ Oversampling (rotations only, 3.75° from update 1626), SGD with the old grid, s
 
 ## 2. The recipe
 
-Units: Å are the definition. Pixels are given for box 64 at 6 Å/px. Convert with your pixel size and round to whole
+Units: Å are the definition. Pixels are given for box 64 at 6 Å/px (C, H1, Ribosembly); the D and T10 sets are 9 Å/px at box 64. Convert with your pixel size and round to whole
 pixels.
 
 **Optimizer: plain SGD with an H⁻¹ direction and a PC gate.**

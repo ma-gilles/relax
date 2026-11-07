@@ -9,7 +9,9 @@ under your own scratch folder (for example `/scratch/gpfs/CRYOEM/gilleslab/ry222
 ## 1. Datasets
 
 Synthetic sets, all under `/scratch/gpfs/CRYOEM/gilleslab/em_work/ppca_suite_b150_20261102/datasets/`. Use the
-box-64 versions (`__b128crop64`, 6 Å/px): Fourier crops of the box-128 builds with the field of view kept.
+box-64 versions (`__b128crop64`): Fourier crops of the box-128 builds with the field of view kept. Pixel size at box 64:
+6 Å for C, H1 and Ribosembly; 9 Å for D and T10. Shift windows, steps and σ given in pixels mean different Å on the two
+families, so state them in Å.
 
 | set | what it is | noise | latent dim q |
 |---|---|---|---|
