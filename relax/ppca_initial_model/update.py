@@ -48,14 +48,19 @@ def advance_noise_weight(weight: float | None, count: int) -> float:
 
 
 def full_data_disagreement_scale(weight: float, n_images: int) -> float:
-    """The factor on the halves' disagreement power that gives the noise power of two full-data half maps.
+    """The factor on the halves' disagreement power that gives the noise power of two half maps of ``n_images`` particles.
 
-    The full-data half map of n_images / 2 particles has noise power 2 s^2 / n_images, and the disagreement of two such
-    maps is twice that; the measured disagreement is s^2 * ``weight``. For a constant batch of b particles ``weight``
-    tends to 4 e / b with e = (1 - decay) / (1 + decay) the running average's noise reduction, so the factor is
-    (b / n_images) / e.
+    The half map of n_images / 2 particles has noise power 2 s^2 / n_images, and the disagreement of two such maps is
+    twice that; the measured disagreement is s^2 * ``weight``. For a constant batch of b particles ``weight`` tends to
+    4 e / b with e = (1 - decay) / (1 + decay) the running average's noise reduction, so the factor is
+    (b / n_images) / e. With all the dataset's particles these are full-data half maps.
     """
     return 4.0 / (n_images * weight)
+
+
+def noise_reference_images(seen: int, n_images: int, reference: str) -> int:
+    """The particles whose half maps' noise the gate compares with: ``n_images`` (``dataset``) or those ``seen`` so far, at most ``n_images``."""
+    return n_images if reference == "dataset" else min(seen, n_images)
 
 
 def metric_floor(image_size):

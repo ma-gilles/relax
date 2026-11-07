@@ -36,6 +36,10 @@ class Config:
     # A fudge of 1 with the scheme plain keeps the gate at its strongest shrinkage throughout.
     tau2_fudge: float | None = None
     tau2_fudge_scheme: str | None = None
+    # The particles whose half maps' noise the VDAM gate compares the halves' disagreement with: "dataset" (all of them,
+    # update.full_data_disagreement_scale) or "seen" (the particles of the iterations so far, at most the dataset;
+    # docs/math/vdam_ppca_algorithm.md section 3.3).
+    gate_noise_images: str = "dataset"
     # The Fourier radius of each iteration. "stages": the stages table's. "data_vs_prior": RELION's InitialModel rule
     # (relax/ppca_initial_model/radius_rule.py): the table's first radius at iteration 1, then the last shell where the
     # mean's data_vs_prior stays at or above 1 plus incr_size shells (RELION's --incr_size), never decreasing. The
@@ -171,6 +175,8 @@ class Config:
                 raise ValueError("Shift stages need a nonnegative range and a positive step")
         if self.offset_sigma_angstrom is not None and not self.offset_sigma_angstrom > 0:
             raise ValueError("The offset sigma must be positive")
+        if self.gate_noise_images not in ("dataset", "seen"):
+            raise ValueError("The gate's noise images must be dataset or seen")
         if self.optimizer not in ("vdam", "momentum_sgd"):
             raise ValueError("Optimizer must be vdam or momentum_sgd")
         if self.optimizer == "vdam":

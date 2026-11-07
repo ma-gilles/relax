@@ -201,6 +201,13 @@ def add_args(parser):
         "--tau2-fudge-scheme",
         help="RELION's --tau2_fudge_scheme: plain, or <deflate>-step (default: <fudge>-step)",
     )
+    parser.add_argument(
+        "--gate-noise-images",
+        choices=("dataset", "seen"),
+        default=Config().gate_noise_images,
+        help="VDAM gate: compare the halves' disagreement with the noise of half maps of all the particles (dataset) or "
+        "of the particles of the iterations so far, at most all (seen)",
+    )
     parser.add_argument("--sgd-learning-rate", type=float, default=0.4)
     parser.add_argument(
         "--sgd-loading-scale",
@@ -499,6 +506,7 @@ def main(args=None):
         accuracy_kl_threshold=args.accuracy_kl_threshold,
         tau2_fudge=args.tau2_fudge,
         tau2_fudge_scheme=args.tau2_fudge_scheme,
+        gate_noise_images=args.gate_noise_images,
     )
     if (args.ios is None) == (args.particles is None):
         raise ValueError("Give either a particle STAR (--i) or an optimisation set (--ios)")
