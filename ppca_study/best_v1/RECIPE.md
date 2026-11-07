@@ -1,6 +1,6 @@
 # PPCA ab initio: current best recipe, v1 (2026-11-05)
 
-Status (2026-11-06): **the exhaustive translation grid is rejected for SGD; the translation choice is open (v1b, relrfine, being scored). Oversampling from HEALPix 3 passes and is a candidate addition.**
+Status (2026-11-06, evening): **for SGD both the exhaustive translation grid (v1) and relrfine (v1b) are rejected; the old +-2 px grid stays for centred data. Oversampling from HEALPix 3 passes (candidate). The lr match rule underestimates the step on real data; set the effective step lr*k to about .04-.10 instead (BEST_PRACTICE v1.48-v1.51, confirmation running).**
 
 Suite v3.1, seed 11, decoded score (distinctive protein for D), next to the same SGD with the old ±2 px grid. References: mean only / true model.
 
@@ -83,6 +83,9 @@ pixels.
 - At box 64, oversampling should gain at most about .01-.02 on back-projected maps; a test is running. At box 128,
   order 3 undersamples shells 32-63.
 - Never run on shifted D, H1 or T10, or on real data (validation running).
+
+- **lr match (2026-11-06):** on 11846 the match gave lr .177 and SGD failed (.288); with lr x4 SGD reaches .787 vs 8EKI (VDAM .762). The match rule underestimates the step on real data; until it is revised, check the effective step lr*k (driver log coupled_k) against the synthetic C n1 value (about .06).
+- **11846 (2026-11-06):** on the pre-centred selection, VDAM-simple PPCA reaches FSC .762 to the 8EKI map (SGD recipe .288 on the same input; relax homogeneous .819). The SGD recipe fails on this real dataset; VDAM does not.
 
 ## Driver caveats (2026-11-06)
 
