@@ -589,8 +589,8 @@ def test_sparse_mixed_tile_equals_its_keys_own_tiles_on_partial_support(mixed_pr
 
 
 def test_coarse_pass_keeping_every_pose_changes_nothing():
-    """The controller's coarse pass with target mass 1 keeps every fine pose (on the coarse parents' row tables and
-    pose priors): the update's statistics equal those without it."""
+    """The controller's coarse pass (HEALPix order 2) with target mass 1 keeps every fine pose (on the coarse
+    parents' row tables and pose priors): the update's statistics equal those without it."""
     from relax.ppca_initial_model import iteration_loop
     from relax.ppca_initial_model.config import Config
     from relax.ppca_initial_model.state import State
@@ -602,7 +602,7 @@ def test_coarse_pass_keeping_every_pose_changes_nothing():
     def statistics(**options):
         config = Config(
             q=2,
-            stages=((1, 3, 1),),
+            stages=((1, 3, 2),),
             oversampling=0,
             stream_coarse_recompute=True,
             shift_range=1,
@@ -628,6 +628,21 @@ def test_coarse_pass_keeping_every_pose_changes_nothing():
     assert_matches(np.asarray(coarse.embeddings)[order_b], np.asarray(plain.embeddings)[order_a], rtol=rtol)
     for name in ("lhs_tri", "residual_gradient", "residual_num", "residual_den"):
         assert_matches(np.asarray(getattr(coarse, name)), np.asarray(getattr(plain, name)), rtol=rtol)
+
+
+def test_coarse_support_is_whole_rotations_with_their_neighbours():
+    """The coarse pass supports each significant coarse rotation at every shift, and its neighbouring cells."""
+    from relax.ppca_refinement.full_row_stream import _significant_rotations
+
+    T, R = 3, 4
+    score = np.full((R, 1, T), -np.inf, np.float32)
+    score[2, 0, 1] = 0.0  # all the mass on rotation 2, shift 1
+    neighbors = np.eye(R, dtype=bool)
+    neighbors[2, 3] = neighbors[3, 2] = True
+    supported = _significant_rotations(
+        jnp.asarray(score), jnp.arange(R), jnp.zeros(1), np.float32(0.999), jnp.asarray(neighbors), max_significant=5
+    )
+    np.testing.assert_array_equal(np.asarray(supported), [[False, False, True, True]])
 
 
 def test_tilt_tiles_pack_small_groups_into_mixed_tiles():
