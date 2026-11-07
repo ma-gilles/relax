@@ -1,18 +1,15 @@
-"""The VDAM gate's statistic (Config.gate_statistic): RELION's amplitude shell means, or the power shell means."""
+"""The VDAM gate: shell means of the power (the half-map FSC under independent noise) and the full-data noise scale."""
 
-import argparse
 import dataclasses
-import json
 
 import jax.numpy as jnp
 import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
+from helpers.ppca_command_run import rows, run_command, write_star
 
-from relax.commands import ppca_initial_model
 from relax.ppca_initial_model import checkpoint
 from relax.ppca_initial_model.config import Config
-from relax.ppca_initial_model.state import State
 from relax.ppca_initial_model.update import (
     FIRST_MOMENT_DECAY,
     FIRST_MOMENT_WEIGHT,
@@ -32,7 +29,7 @@ def _complex_gaussian(rng, power, size):
     return np.sqrt(power / 2) * (rng.standard_normal(size) + 1j * rng.standard_normal(size))
 
 
-def _gate_of_one_shell(theta, directions, *, gate_statistic, fudge=1.0):
+def _gate_of_one_shell(theta, directions, *, fudge=1.0):
     """The mean channel's gate of ``stochastic_update`` on first-call moments, all voxels in shell 0."""
     n = theta.shape[0]
     _, _, info = stochastic_update(
@@ -44,43 +41,9 @@ def _gate_of_one_shell(theta, directions, *, gate_statistic, fudge=1.0):
         step=0.5,
         fudge=fudge,
         image_size=BOX,
-        gate_statistic=gate_statistic,
         disagreement_scale=1.0,
     )
     return float(info["gates"][0, 0])
-
-
-def test_the_power_gate_follows_the_scalar_recurrence_with_squared_magnitudes():
-    n = BOX
-    scale = n**2
-    value = 0.7 + 0.3j
-    first = [0j, 0j]
-    second = 1.0
-    theta = jnp.asarray([[scale * value]], jnp.complex64)
-    moments = empty_moments(theta)
-    for iteration, directions in enumerate([(0.3 + 0.2j, -0.1 + 0.4j), (0.1 - 0.2j, 0.5 + 0.1j)]):
-        for half in range(2):
-            first[half] = directions[half] if iteration == 0 else 0.9 * first[half] + 0.1 * directions[half]
-        ratio = abs(directions[1] - directions[0]) ** 2 / (abs(sum(directions) / 2) ** 2 + 1e-12)
-        second = 0.999 * second + 0.001 * ratio
-        gradient = sum(first) / 2 / (np.sqrt(second) + 1e-12)
-        rho = 2 * 1.7 * abs(value) ** 2 / abs(first[0] - first[1]) ** 2
-        gate = rho / (1 + rho)
-        value += 0.8 * (gate * gradient - (1 - gate) * value)
-        theta, moments, info = stochastic_update(
-            theta,
-            moments,
-            jnp.asarray(directions, jnp.complex64).reshape(2, 1, 1) * scale,
-            np.ones((2, 1), bool),
-            np.zeros(1, np.int32),
-            step=0.8,
-            fudge=1.7,
-            image_size=n,
-            gate_statistic="power",
-            disagreement_scale=1.0,
-        )
-        assert_matches(theta[0, 0] / scale, value, rtol=2e-6)
-        assert_matches(info["gates"][0, 0], gate, rtol=2e-6)
 
 
 def test_the_loading_channel_takes_the_mean_square_over_the_pcs():
@@ -88,31 +51,29 @@ def test_the_loading_channel_takes_the_mean_square_over_the_pcs():
     theta = jnp.asarray([[0.5, 3.0, 4.0]], jnp.complex64)
     directions = jnp.asarray([[[0.0, 1.0, 0.0]], [[0.0, 0.0, 1.0]]], jnp.complex64)
     fudge = 1.5
-    for statistic, signal, disagreement in (("power", 12.5, 1.0), ("amplitude", np.sqrt(12.5), 1.0)):
-        _, _, info = stochastic_update(
-            theta,
-            empty_moments(theta),
-            directions,
-            np.ones((2, 1), bool),
-            np.zeros(1, np.int32),
-            step=0.5,
-            fudge=fudge,
-            image_size=BOX,
-            gate_statistic=statistic,
-            disagreement_scale=1.0,
-        )
-        rho = 2 * fudge * signal / disagreement
-        assert_matches(info["signal"][0, 1], signal, rtol=1e-6)
-        assert_matches(info["disagreement"][0, 1], disagreement, rtol=1e-6)
-        assert_matches(info["gates"][0, 1], rho / (1 + rho), rtol=1e-6)
+    _, _, info = stochastic_update(
+        theta,
+        empty_moments(theta),
+        directions,
+        np.ones((2, 1), bool),
+        np.zeros(1, np.int32),
+        step=0.5,
+        fudge=fudge,
+        image_size=BOX,
+        disagreement_scale=1.0,
+    )
+    rho = 2 * fudge * 12.5 / 1.0
+    assert_matches(info["signal"][0, 1], 12.5, rtol=1e-6)
+    assert_matches(info["disagreement"][0, 1], 1.0, rtol=1e-6)
+    assert_matches(info["gates"][0, 1], rho / (1 + rho), rtol=1e-6)
 
 
 @pytest.mark.parametrize("snr", [0.05, 0.5, 4.0])
-def test_the_power_gate_estimates_the_half_map_fsc_and_the_amplitude_gate_does_not(snr):
+def test_the_gate_estimates_the_half_map_fsc(snr):
     """Signal power ``snr`` and unit noise power in each half, so the expected FSC is snr / (1 + snr).
 
     The two halves' directions are S + N_h with the model theta = S; the FSC is computed from the halves directly. Over
-    20 seeds of this construction the largest |power gate - FSC| of the three cases is 4.0e-3 (sampling error of a
+    20 seeds of this construction the largest |gate - FSC| of the three cases is 4.0e-3 (sampling error of a
     1e5-voxel shell), so the tolerance is 0.01.
     """
     rng = np.random.default_rng(23)
@@ -125,117 +86,19 @@ def test_the_power_gate_estimates_the_half_map_fsc_and_the_amplitude_gate_does_n
     theta = np.stack([signal, np.zeros(n)], axis=-1).astype(np.complex64)
     directions = np.stack([np.stack([h, np.zeros(n)], axis=-1) for h in halves]).astype(np.complex64)
 
-    power_gate = _gate_of_one_shell(theta, directions, gate_statistic="power")
-    amplitude_gate = _gate_of_one_shell(theta, directions, gate_statistic="amplitude")
+    gate = _gate_of_one_shell(theta, directions)
 
-    assert power_gate == pytest.approx(fsc, abs=0.01)
-    assert power_gate == pytest.approx(snr / (1 + snr), abs=0.01)
-    # Amplitude shell means make the gate follow about the square root of the power SNR: open below an SNR of 2, tight above.
-    assert (1 if snr < 2 else -1) * (amplitude_gate - power_gate) > 0.02
+    assert gate == pytest.approx(fsc, abs=0.01)
+    assert gate == pytest.approx(snr / (1 + snr), abs=0.01)
 
 
-def test_the_gate_noise_reference_is_batch_by_default_and_the_option_takes_only_batch_or_full_data():
-    parser = argparse.ArgumentParser()
-    ppca_initial_model.add_args(parser)
-    required = ["--i", "particles.star", "--particle-diameter", "100", "-o", "out"]
-    assert Config().gate_noise_reference == "batch"
-    assert parser.parse_args(required).gate_noise_reference == "batch"
-    assert parser.parse_args([*required, "--gate-noise-reference", "full_data"]).gate_noise_reference == "full_data"
-    with pytest.raises(ValueError, match="gate noise reference must be batch or full_data"):
-        Config(gate_noise_reference="data")
-    with pytest.raises(ValueError, match="momentum SGD has no gate"):
-        Config(optimizer="momentum_sgd", gate_noise_reference="full_data")
-    assert "gate_noise_reference" not in checkpoint._identity_config(dataclasses.asdict(Config()))
-    assert (
-        checkpoint._identity_config(dataclasses.asdict(Config(gate_noise_reference="full_data")))[
-            "gate_noise_reference"
-        ]
-        == "full_data"
-    )
-
-
-def test_the_gate_statistic_is_amplitude_by_default_and_the_option_takes_only_amplitude_or_power():
-    parser = argparse.ArgumentParser()
-    ppca_initial_model.add_args(parser)
-    required = ["--i", "particles.star", "--particle-diameter", "100", "-o", "out"]
-    assert Config().gate_statistic == "amplitude"
-    assert parser.parse_args(required).gate_statistic == "amplitude"
-    assert parser.parse_args([*required, "--gate-statistic", "power"]).gate_statistic == "power"
-    with pytest.raises(ValueError, match="gate statistic must be amplitude or power"):
-        Config(gate_statistic="fsc")
-    with pytest.raises(ValueError, match="momentum SGD has no gate"):
-        Config(optimizer="momentum_sgd", gate_statistic="power")
-    Config(optimizer="momentum_sgd")
-
-
-def _state():
-    n_freq = BOX * BOX * (BOX // 2 + 1)
-    theta = jnp.zeros((n_freq, 2), jnp.complex64)
-    return State(theta, empty_moments(theta), jnp.ones(BOX // 2 + 1, jnp.float32), 0, np.arange(4), {}, 2.0, 2, {})
-
-
-def test_the_amplitude_gate_is_no_part_of_a_checkpoints_identity_and_a_resume_cannot_change_the_statistic(tmp_path):
-    power = Config(gate_statistic="power")
-    assert "gate_statistic" not in checkpoint._identity_config(dataclasses.asdict(Config()))
-    assert checkpoint._identity_config(dataclasses.asdict(power))["gate_statistic"] == "power"
-    checkpoint.save(tmp_path / "power.npz", _state(), power, {"input": "x"})
-    checkpoint.load(tmp_path / "power.npz", power, {"input": "x"})
-    with pytest.raises(ValueError, match="identity mismatch"):
-        checkpoint.load(tmp_path / "power.npz", Config(), {"input": "x"})
-    checkpoint.save(tmp_path / "amplitude.npz", _state(), Config(), {"input": "x"})
-    with pytest.raises(ValueError, match="identity mismatch"):
-        checkpoint.load(tmp_path / "amplitude.npz", power, {"input": "x"})
-
-
-def _write_star(root, count):
-    """A RELION particle STAR of ``count`` noise images of ``BOX`` pixels with one optics group."""
-    import mrcfile
-
-    from scripts.lib.ppca_training_star import write_training_star
-
-    root.mkdir(parents=True, exist_ok=True)
-    images = np.random.default_rng(19).normal(size=(count, BOX, BOX)).astype(np.float32)
-    with mrcfile.new(root / "particles.mrcs", overwrite=True) as stack:
-        stack.set_data(images)
-        stack.voxel_size = 2
-    ctf = np.tile([15000, 15000, 0, 300, 2.7, 0.07, 0], (count, 1))
-    ctf[:, 0] += 100 * np.arange(count)
-    return write_training_star(root / "particles.star", "particles.mrcs", ctf, voxel_size=2, box=BOX)
-
-
-def _run_command(star, output, *extra):
-    """``relax ppca_initial_model`` on ``star`` for 8 iterations of a fixed batch of 8 particles."""
-    argv = [
-        "--i", str(star), "--particle-diameter", "12", "-o", str(output), "--q", "1", "--seed", "11",
-        "--iterations", "8", "--stages", "[[1,2,1]]", "--stochastic-batch-size", "8", "--stochastic-all-iterations",
-        "--image-batch-size", "4", "--rotation-block-size", "64", "--skip-final-embeddings", *extra,
-    ]  # fmt: skip
-    ppca_initial_model.main(argv)
-
-
-def test_the_option_reaches_the_update_a_power_run_scores_iteration_one_as_the_amplitude_run_does(
-    monkeypatch, tmp_path
-):
-    """No gate acts before the first update, so iteration 1 agrees; the gates and the model differ afterwards."""
-    monkeypatch.setenv("SLURM_JOB_ID", "test")
-    star = _write_star(tmp_path / "data", 16)
-    _run_command(star, tmp_path / "amplitude")
-    _run_command(star, tmp_path / "power", "--gate-statistic", "power")
-    assert json.loads((tmp_path / "power" / "run.json").read_text())["config"]["gate_statistic"] == "power"
-    logs = {
-        name: [json.loads(line) for line in open(tmp_path / name / "iterations.jsonl")]
-        for name in ("amplitude", "power")
-    }
-    assert_matches(logs["power"][0]["log_likelihood"], logs["amplitude"][0]["log_likelihood"])
-    gates = {name: np.asarray([row["gates"] for row in rows]) for name, rows in logs.items()}
-    assert np.isfinite(gates["power"]).all() and np.isfinite(gates["amplitude"]).all()
-    assert not np.allclose(gates["power"][-1], gates["amplitude"][-1])
-    with (
-        np.load(tmp_path / "amplitude" / "checkpoint_0008.npz") as amplitude,
-        np.load(tmp_path / "power" / "checkpoint_0008.npz") as power,
-    ):
-        assert np.isfinite(power["theta"]).all()
-        assert not np.allclose(power["theta"], amplitude["theta"])
+def test_a_checkpoint_of_the_retired_gate_options_resumes_only_at_the_values_that_remain():
+    """The study arms recorded gate_statistic and gate_noise_reference; only power and full_data are the model now."""
+    config = dataclasses.asdict(Config())
+    recorded = {**config, "gate_statistic": "power", "gate_noise_reference": "full_data"}
+    assert checkpoint._identity_config(recorded) == checkpoint._identity_config(config)
+    for retired in ({"gate_statistic": "amplitude"}, {"gate_noise_reference": "batch"}):
+        assert checkpoint._identity_config({**config, **retired}) != checkpoint._identity_config(config)
 
 
 def test_the_noise_weight_is_the_sum_of_squared_moment_coefficients_over_the_batches():
@@ -287,48 +150,27 @@ def test_the_scaled_disagreement_recovers_the_noise_of_two_full_data_half_maps_t
             noise[half, :, 0] = _complex_gaussian(rng, sigma2 * n_images / count, n)
         theta, moments, info = stochastic_update(
             theta, moments, jnp.asarray(noise), np.ones((2, n), bool), np.zeros(n, np.int32),
-            step=0.5, fudge=1.0, image_size=BOX, gate_statistic="power", disagreement_scale=scale,
+            step=0.5, fudge=1.0, image_size=BOX, disagreement_scale=scale,
         )  # fmt: skip
     assert float(info["disagreement"][0, 0]) == pytest.approx(2 * sigma2, rel=0.05)
     assert float(info["disagreement"][0, 0]) / scale > 3 * 2 * sigma2
 
 
-def test_the_amplitude_statistic_takes_the_square_root_of_the_variance_scale():
-    rng = np.random.default_rng(37)
-    theta = jnp.asarray(_complex_gaussian(rng, 1.0, (50, 3)), jnp.complex64)
-    directions = jnp.asarray(_complex_gaussian(rng, 1.0, (2, 50, 3)), jnp.complex64)
-    common = dict(step=0.5, fudge=1.0, image_size=BOX, gate_statistic="amplitude")
-    runs = [
-        stochastic_update(theta, empty_moments(theta), directions, np.ones((2, 50), bool), np.zeros(50, np.int32), disagreement_scale=s, **common)[2]
-        for s in (1.0, 0.04)
-    ]  # fmt: skip
-    assert_matches(runs[1]["disagreement"], runs[0]["disagreement"] * 0.2, rtol=1e-6)
-
-
-def _rows(output):
-    """The rows of a run's iterations.jsonl by iteration number."""
-    return {row["iteration"]: row for row in map(json.loads, open(output / "iterations.jsonl"))}
-
-
-def test_the_full_data_reference_reaches_the_update_and_a_resumed_run_keeps_it(monkeypatch, tmp_path):
+def test_the_scale_reaches_the_update_and_a_resumed_run_keeps_it(monkeypatch, tmp_path):
     """16 images in batches of 8: every iteration's logged scale is (1 / (N * weight)) with the explicit weight sum."""
     monkeypatch.setenv("SLURM_JOB_ID", "test")
-    star = _write_star(tmp_path / "data", 16)
-    full = ("--gate-statistic", "power", "--gate-noise-reference", "full_data")
-    _run_command(star, tmp_path / "batch", "--gate-statistic", "power")
-    _run_command(star, tmp_path / "full", *full)
-    _run_command(star, tmp_path / "resumed", *full, "--stop-after", "4")
-    _run_command(star, tmp_path / "resumed", *full, "--resume", str(tmp_path / "resumed" / "checkpoint_0004.npz"))
-    batch, straight, resumed = (_rows(tmp_path / name) for name in ("batch", "full", "resumed"))
+    star = write_star(tmp_path / "data", 16)
+    run_command(star, tmp_path / "straight")
+    run_command(star, tmp_path / "resumed", "--stop-after", "4")
+    run_command(star, tmp_path / "resumed", "--resume", str(tmp_path / "resumed" / "checkpoint_0004.npz"))
+    straight, resumed = (rows(tmp_path / name) for name in ("straight", "resumed"))
 
     for t in range(1, 9):
         weight = FIRST_MOMENT_DECAY ** (2 * (t - 1)) * 4 / 8 + sum(
             FIRST_MOMENT_WEIGHT**2 * FIRST_MOMENT_DECAY ** (2 * (t - i)) * 4 / 8 for i in range(2, t + 1)
         )
         assert_matches(straight[t]["disagreement_scale"], 4 / (16 * weight), rtol=1e-9)
-        assert batch[t]["disagreement_scale"] == 1.0
-    assert_matches(straight[1]["log_likelihood"], batch[1]["log_likelihood"])
-    assert not np.allclose(straight[8]["gates"], batch[8]["gates"])
+    assert np.isfinite(np.asarray(straight[8]["gates"])).all()
     for t in range(5, 9):
         assert_matches(resumed[t]["disagreement_scale"], straight[t]["disagreement_scale"], rtol=1e-12)
         assert_matches(resumed[t]["gates"], straight[t]["gates"])

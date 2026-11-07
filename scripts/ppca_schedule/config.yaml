@@ -303,11 +303,3 @@ arms:
   s3_scale1_4_uniform_noshift:
     args: ["--optimizer", "momentum_sgd", "--sgd-learning-rate", "2.4", "--sgd-loading-scale", "0.25",
            "--direction-prior", "uniform", "--shift-range", "0", "--shift-step", "1"]
-  # The VDAM gate from power shell means (--gate-statistic power: |x|^2, which at fudge 1 estimates the half-map FSC) instead
-  # of RELION's amplitude means, with the uniform direction prior. Against s3_vdam_uniform, the same arm with the amplitude gate.
-  g1_vdam_uniform_power:
-    args: ["--optimizer", "vdam", "--direction-prior", "uniform", "--gate-statistic", "power"]
-  # The power gate with the disagreement rescaled to the noise of two full-data half maps (--gate-noise-reference full_data).
-  # Against g1_vdam_uniform_power (the same arm with the noise as measured) and s3_vdam_uniform (amplitude gate).
-  g2_vdam_uniform_power_full:
-    args: ["--optimizer", "vdam", "--direction-prior", "uniform", "--gate-statistic", "power", "--gate-noise-reference", "full_data"]

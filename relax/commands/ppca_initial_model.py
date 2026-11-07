@@ -50,20 +50,6 @@ def add_args(parser):
         "pdf_direction, blended from each iteration's posterior mass",
     )
     parser.add_argument(
-        "--gate-statistic",
-        choices=("amplitude", "power"),
-        default=Config().gate_statistic,
-        help="the VDAM gate's per-voxel statistic: RELION's amplitude (|x| shell means) or the power (|x|^2 shell "
-        "means), which at fudge 1 estimates the half-map FSC; a VDAM setting",
-    )
-    parser.add_argument(
-        "--gate-noise-reference",
-        choices=("batch", "full_data"),
-        default=Config().gate_noise_reference,
-        help="the noise the VDAM gate's disagreement stands for: the halves' first moments as measured (the noise of the "
-        "applied direction, RELION's), or rescaled to the noise of two full-data half maps; a VDAM setting",
-    )
-    parser.add_argument(
         "--incr-size",
         type=int,
         default=Config().incr_size,
@@ -491,8 +477,6 @@ def main(args=None):
         radius_rule=args.radius_rule,
         incr_size=args.incr_size,
         direction_prior=args.direction_prior,
-        gate_statistic=args.gate_statistic,
-        gate_noise_reference=args.gate_noise_reference,
         order_rule=args.order_rule,
         order_max=args.order_max,
         final_order_max=args.final_order_max,

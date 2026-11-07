@@ -106,7 +106,6 @@ def test_coupled_and_vdam_update_independent_reference(q, dtype, tol):
         step=0.8,
         fudge=1.7,
         image_size=8,
-        gate_statistic="amplitude",
         disagreement_scale=1.0,
     )
     first = refdir
@@ -121,11 +120,11 @@ def test_coupled_and_vdam_update_independent_reference(q, dtype, tol):
         [average[:, :1] / (np.sqrt(second[:, :1]) + 1e-12), average[:, 1:] / (np.sqrt(second[:, 1:]) + 1e-12)], axis=-1
     )
 
-    def amplitude(x):
-        return np.stack([abs(x[:, 0]), np.linalg.norm(x[:, 1:], axis=-1) / np.sqrt(q)], axis=-1)
+    def mean_power(x):
+        return power(x) / np.array([1, q])
 
-    signal = amplitude(theta.astype(np.complex128)).mean(axis=0)
-    disagreement = amplitude(difference).mean(axis=0)
+    signal = mean_power(theta.astype(np.complex128)).mean(axis=0)
+    disagreement = mean_power(difference).mean(axis=0)
     rho = 2 * 1.7 * signal / disagreement
     gates = rho / (1 + rho)
     gate = np.r_[gates[0], np.repeat(gates[1], q)]

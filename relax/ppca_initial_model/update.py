@@ -126,7 +126,6 @@ def stochastic_update(
     step: float,
     fudge: float,
     image_size: int,
-    gate_statistic: str,
     disagreement_scale: float,
 ) -> tuple[jnp.ndarray, Moments, dict]:
     """Simultaneous old-model update; one scalar adaptation/gate for all PCs.
@@ -136,12 +135,11 @@ def stochastic_update(
     projection separately. Exactly zero disagreement gives rho=0 by contract.
 
     The shell gate is rho / (1 + rho) with rho = 2 * fudge * signal / disagreement, where signal and
-    disagreement are shell means of one per-voxel statistic of theta and of the half first moments' difference:
-    "amplitude" is RELION's (|x|, and ||W|| / sqrt(q) for the loadings), "power" its square (|x|^2, ||W||^2 / q),
-    which at fudge 1 estimates the half-map FSC (docs/math/vdam_ppca_algorithm.md section 3.3). ``disagreement_scale``
-    multiplies the disagreement's variance (the power statistic by it, the amplitude statistic by its square root): 1 keeps
-    the noise of the applied direction, full_data_disagreement_scale the noise of full-data half maps. The returned
-    "signal" and "disagreement" are in the statistic's units, the disagreement after the scale.
+    disagreement are shell means of the power of theta (|x|^2, ||W||^2 / q for the loadings) and of the half first
+    moments' difference, so that at fudge 1 the gate is the half-map FSC under independent noise (RELION takes shell
+    means of the amplitudes instead; docs/math/vdam_ppca_algorithm.md section 3.3). ``disagreement_scale`` multiplies the
+    disagreement: full_data_disagreement_scale turns the noise of the applied direction into that of full-data half maps.
+    The returned "signal" and "disagreement" are the shell means of the power, the disagreement after the scale.
     """
     theta, directions = jnp.asarray(theta), jnp.asarray(directions)
     coverage = jnp.asarray(coverage, bool)
@@ -168,19 +166,9 @@ def stochastic_update(
     adapted = jnp.concatenate([mean_first[:, :1] / divisor[:, :1], mean_first[:, 1:] / divisor[:, 1:]], axis=-1)
     q = theta.shape[-1] - 1
 
-    def amplitudes(value):
-        return jnp.stack(
-            [
-                jnp.abs(value[:, 0]),
-                jnp.linalg.norm(value[:, 1:], axis=-1) / jnp.sqrt(jnp.asarray(max(q, 1), theta.real.dtype)),
-            ],
-            axis=-1,
-        )
-
     def powers(value):
         return channel_power(value) / jnp.asarray([1, max(q, 1)], theta.real.dtype)
 
-    statistic = {"amplitude": amplitudes, "power": powers}[gate_statistic]
     shells = jnp.asarray(shells, jnp.int32)
     nshells = int(np.max(np.asarray(shells))) + 1
     counts = jnp.zeros(nshells, theta.real.dtype).at[shells].add(active.astype(theta.real.dtype))
@@ -189,9 +177,8 @@ def stochastic_update(
         sums = jnp.zeros((nshells, 2), theta.real.dtype).at[shells].add(value * active[:, None])
         return sums / jnp.maximum(counts[:, None], 1)
 
-    scale = disagreement_scale if gate_statistic == "power" else disagreement_scale**0.5
-    signal = shell_average(statistic(theta))
-    disagreement = shell_average(statistic(first[0] - first[1])) * scale
+    signal = shell_average(powers(theta))
+    disagreement = shell_average(powers(first[0] - first[1])) * disagreement_scale
     safe_disagreement = jnp.where(disagreement > 0, disagreement, 1)
     rho = jnp.where(disagreement > 0, 2 * fudge * signal / safe_disagreement, 0)
     gates = rho / (1 + rho)

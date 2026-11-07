@@ -187,38 +187,41 @@ or an exact MAP update under a stated volume prior. That distinction matters
 when deciding how to regularize PPCA. We should not assume that adding an
 explicit Gaussian prior and retaining this gate gives the same objective.
 
-**The gate's statistic, `--gate-statistic`.** RELION 5.0.1 builds both shell means from amplitudes
-(`src/backprojector.cpp`: `sqrt(norm(diff))` in `applyMomenta`, `sqrt(norm(F))` in `reconstructGrad`'s
-`use_fsc == false` branch, the one an InitialModel run takes), although the first is named `mom1_noise_power`.
-The paper's gate is an FSC of two separately reconstructed halves, which RELION uses directly only when it refines
-split random halves. `amplitude` (the default) reproduces RELION. `power`
-replaces both means by shell means of squared magnitudes (`|F|^2`, `|m_0-m_1|^2`; for the loadings `||W||^2/q` and
-`||m_{W0}-m_{W1}||^2/q`) and keeps `rho = 2 fudge a / nu`. For halves with independent noise of power `N` and a signal of
-power `P`, `E|m_0-m_1|^2 = 2N`, so at fudge 1 the power gate is `2P/(2P+nu) = P/(P+N)`, the expected FSC of the halves.
-The amplitude gate follows about the square root of that power SNR: in a simulation (Gaussian signal and noise,
+**The gate in `relax ppca_initial_model` differs from RELION's in two places.** RELION 5.0.1 builds both shell means
+from amplitudes (`src/backprojector.cpp`: `sqrt(norm(diff))` in `applyMomenta`, `sqrt(norm(F))` in `reconstructGrad`'s
+`use_fsc == false` branch, the one an InitialModel run takes), although the first is named `mom1_noise_power`, and
+measures the disagreement of the halves' first moments as they are. The paper's gate is an FSC of two separately
+reconstructed halves, which RELION uses directly only when it refines split random halves. The PPCA VDAM update takes
+the paper's quantity in both places. They are not options: the owner made them the behavior on November 6, 2026,
+after section 18.16 (whose arms ran as options, from commit cbf33c57, where `--gate-statistic amplitude` and
+`--gate-noise-reference batch` are RELION's). The code is `stochastic_update` and the noise scale
+(`advance_noise_weight`, `full_data_disagreement_scale`) in `relax/ppca_initial_model/update.py`; the tests are
+`tests/unit/ppca_initial_model/test_gate_statistic.py`.
+
+*The statistic.* Both shell means are of squared magnitudes (`|F|^2`, `|m_0-m_1|^2`; for the loadings `||W||^2/q` and
+`||m_{W0}-m_{W1}||^2/q`), with `rho = 2 fudge a / nu` as before. For halves with independent noise of power `N` and a
+signal of power `P`, `E|m_0-m_1|^2 = 2N`, so at fudge 1 the gate is `2P/(2P+nu) = P/(P+N)`, the expected FSC of the
+halves. The amplitude gate follows about the square root of that power SNR: in a simulation (Gaussian signal and noise,
 `2e5` voxels per shell) at `P/N = 0.02` it reads .17 against an FSC of .02, at `P/N = 1` .59 against .50, and at
 `P/N = 10` .82 against .91. Both gates are the FSC only under that idealisation: the two halves share the model, so
 the measured disagreement is that of the updates, not of independent reconstructions; the model carries its own noise
-in `a`; and the first moments are running averages. `power` is an intentional difference from RELION, off by default
-and VDAM only (`relax/ppca_initial_model/update.py`, `stochastic_update`; tests
-`tests/unit/ppca_initial_model/test_gate_statistic.py`). Section 18.16 has the runs.
+in `a`; and the first moments are running averages.
 
-**The gate's noise reference, `--gate-noise-reference`.** The halves' directions are minibatch estimates, so the
-disagreement of their first moments is the noise of the direction that is applied: a batch of `b` particles (`b/2` per
-half), averaged by `first = 0.9 first + 0.1 d`. `batch` (the default) uses it as measured, as RELION does. `full_data`
-rescales it to the noise of two full-data half maps, which is what an FSC of two half reconstructions measures. For
-independent noise a half's first moment has `e = (1-l)/(1+l) = (1-l)^2/(1-l^2)` times the noise power of one direction
-(`l = 0.9` the decay, `e = 0.0526`; a simulation of the recursion gives 0.0526), and a full-data half has `b/N` times
-a batch half's, so the disagreement is multiplied by `(b/N)/e`: 0.057 for `b = 300` of `N = 100,000`, which opens the
-gates far wider. The code carries the exact sum over the batches the moments average (`advance_noise_weight`,
-`full_data_disagreement_scale`), which gives that factor for a constant batch and stays right when the batch changes and
-at the final all-data iteration; it counts every voxel as averaged since iteration 1 (a voxel newly covered starts from
-a raw direction for about 5 iterations). The scale multiplies the power statistic and its square root multiplies the
-amplitude statistic. It treats theta as a full-data estimate. Theta averages the first moments with the step `eta`
-(`theta <- (1-eta) theta + eta phi m`), so its own window is `N_eff`, the batch over the noise reduction of the two
-cascaded filters: for the C n1 recipe (`b = 300`, the step from `iterations.jsonl`) `N_eff / N` is .06 up to iteration
-500, .08 at 1000, .22 at 1500, .35 at 2000 and .45 from 2500. Early in a run the gate is therefore more open than the
-noise left in theta warrants, late it is close to it.
+*The noise reference.* The halves' directions are minibatch estimates, so the disagreement of their first moments is the
+noise of the direction that is applied: a batch of `b` particles (`b/2` per half), averaged by
+`first = 0.9 first + 0.1 d`. The disagreement is rescaled to the noise of two full-data half maps, which is what an FSC
+of two half reconstructions measures. For independent noise a half's first moment has `e = (1-l)/(1+l) = (1-l)^2/(1-l^2)`
+times the noise power of one direction (`l = 0.9` the decay, `e = 0.0526`; a simulation of the recursion gives 0.0526),
+and a full-data half has `b/N` times a batch half's, so the disagreement is multiplied by `(b/N)/e`: 0.057 for
+`b = 300` of `N = 100,000`, which opens the gates far wider. The code carries the exact sum over the batches the
+moments average, which gives that factor for a constant batch and stays right when the batch changes and at the final
+all-data iteration; it counts every voxel as averaged since iteration 1 (a voxel newly covered starts from a raw
+direction for about 5 iterations). The scale multiplies the power statistic. It treats theta as a full-data estimate.
+Theta averages the first moments with the step `eta` (`theta <- (1-eta) theta + eta phi m`), so its own window is
+`N_eff`, the batch over the noise reduction of the two cascaded filters: for the C n1 recipe (`b = 300`, the step from
+`iterations.jsonl`) `N_eff / N` is .06 up to iteration 500, .08 at 1000, .22 at 1500, .35 at 2000 and .45 from 2500.
+Early in a run the gate is therefore more open than the noise left in theta warrants, late it is close to it. A scale
+from that window instead gave the amplitude gate's results (section 18.16).
 
 ### 3.4 Reference power, SSNR and resolution are a different mechanism
 
@@ -611,14 +614,13 @@ different evidence and uncertainty. Sharing one gate across both would let a
 strong mean protect poorly supported heterogeneity; giving each loading its
 own gate would introduce latent-basis dependence.
 
-| Component | Signal amplitude | Disagreement amplitude | Applied shrinkage |
+| Component | Signal power | Disagreement power | Applied shrinkage |
 | --- | --- | --- | --- |
-| Mean | Shell average of the mean Fourier amplitude | Shell average of the absolute difference between the two mean first moments | One scalar per shell for the mean |
-| Loadings | Shell average of the loading-vector norm, divided by `sqrt(q)` | Shell average of the norm of the difference between loading first moments, divided by `sqrt(q)` | One scalar per shell shared by every loading |
+| Mean | Shell average of the squared mean Fourier magnitude | Shell average of the squared difference between the two mean first moments | One scalar per shell for the mean |
+| Loadings | Shell average of the squared loading-vector norm, divided by `q` | Shell average of the squared norm of the difference between loading first moments, divided by `q` | One scalar per shell shared by every loading |
 
-Use VDAM's ratio form in sections 3.3 and 6.2 for the respective gates. Under
-`--gate-statistic power` both columns are shell means of the squares (`|mu|^2`,
-`||W||^2/q`; section 3.3). The proposed updates, in the reconstruction Fourier coordinates, are
+Use VDAM's ratio form in sections 3.3 and 6.2 for the respective gates, on shell means of the squares as section 3.3
+sets them (RELION takes amplitudes). The proposed updates, in the reconstruction Fourier coordinates, are
 
 \[
 \mu_f\leftarrow\mu_f+\eta_j
@@ -3648,8 +3650,9 @@ and the direct pose fit (`score_suite_run.py`). Code: branch `ppca_gate_power` o
 arms ran from the snapshot with `git diff HEAD` sha256 `bb5bdf89...`, `g2` from the one with `145eda75...` (it adds
 `--gate-noise-reference`, scale 1 for the earlier arms; their unit tests pass unchanged) and `g3` from a clean checkout of
 commit 9509272c. Run roots `gate_power`, `gate_power2` and `gate_power3` beside the other PPCA schedule rounds, launcher
-`gate_power/launch_gate.sh`. The theta reference did not improve on the amplitude gate and was removed afterwards (its code
-is commit 3a93e717, `--gate-noise-reference theta`).
+`gate_power/launch_gate.sh`. The three options named in the question existed for these runs only: commit cbf33c57 has
+`--gate-statistic` and `--gate-noise-reference batch|full_data`, commit 3a93e717 the theta reference, which did not improve
+on the amplitude gate and was removed first.
 
 Results, checkpoint 3000, mean over seeds (n seeds in the first column):
 
@@ -3723,3 +3726,11 @@ in seeds 11 and 13, plus 6 in seed 12, at 88 to 100%); power with the theta wind
   direction prior, other batch sizes and real data are untested. The first attempt of the T10 power arm hung after iteration
   172 (job 16998613 on one A100 node: 50 of its 53 threads waiting on futexes and 3 polling, the GPU idle, no error); it was
   cancelled and rerun (job 17003112) without incident, and the cause is unknown.
+
+Decision (owner, November 6, 2026). The power statistic with the full-data noise reference is the gate of
+`relax ppca_initial_model`, with no option; RELION's amplitude gate and the measured-batch noise are no longer reachable
+(rebuild commit cbf33c57 for them). The evidence above is mixed: the full-data gate improves T10 (4 to 5 states of 10
+against 3, pose median 23.7 against 48.3 deg), matches the amplitude gate on pose, ARI and R2 on C n1 and C n3, and gives
+the worst loading subspace on C n1 and C n3 (49 and 39 deg against 37 and 27) and the lowest R2 on D40 (.440 against .616).
+Every VDAM arm of `scripts/ppca_schedule/config.yaml` from this commit on, `s3_vdam_uniform` included, runs the new gate;
+the VDAM numbers of the other sections and of the rounds before this one are amplitude-gate numbers.

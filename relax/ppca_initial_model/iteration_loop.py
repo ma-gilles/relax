@@ -681,9 +681,9 @@ def run(
     end = config.iterations if stop_after is None else min(config.iterations, stop_after)
     stage_tile_sizes = {}  # compiled tile shapes seen per stage (radius, HEALPix order)
     log = _ModelLog(output / "iterations.jsonl")
-    # The first moments' noise weight (update.advance_noise_weight), tracked for the full_data noise reference.
+    # The first moments' noise weight (update.advance_noise_weight), which scales the gate's disagreement.
     noise_weight = None
-    if config.optimizer == "vdam" and config.gate_noise_reference == "full_data":
+    if config.optimizer == "vdam":
         for past in range(1, state.iteration + 1):
             noise_weight = advance_noise_weight(noise_weight, config.schedule(past, dataset.n_images)[0])
     for iteration in range(state.iteration + 1, end + 1):
@@ -755,10 +755,8 @@ def run(
                 metric_info.append(info)
                 covered = jnp.sum(jnp.asarray(result.lhs_tri)[:, diagonal], axis=-1) > 0  # the metric's trace
                 coverage.append(covered & jnp.asarray(support))
-            disagreement_scale = 1.0
-            if config.gate_noise_reference == "full_data":
-                noise_weight = advance_noise_weight(noise_weight, count)
-                disagreement_scale = full_data_disagreement_scale(noise_weight, dataset.n_images)
+            noise_weight = advance_noise_weight(noise_weight, count)
+            disagreement_scale = full_data_disagreement_scale(noise_weight, dataset.n_images)
             theta, moments, diagnostics = stochastic_update(
                 theta_in,
                 _active_moments(state.moments, 1 + active),
@@ -768,7 +766,6 @@ def run(
                 step=step * step_factor,
                 fudge=fudge,
                 image_size=dataset.grid_size,
-                gate_statistic=config.gate_statistic,
                 disagreement_scale=disagreement_scale,
             )
             diagnostics["disagreement_scale"] = disagreement_scale

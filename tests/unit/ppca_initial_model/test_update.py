@@ -42,7 +42,6 @@ def test_latent_rotation_equivariance(dtype, tol):
         step=0.8,
         fudge=2,
         image_size=8,
-        gate_statistic="amplitude",
         disagreement_scale=1.0,
     )
     out, moments, info = stochastic_update(jnp.asarray(theta), empty_moments(jnp.asarray(theta)), dirs, **args)
@@ -66,7 +65,6 @@ def test_zero_disagreement_and_new_support():
         step=0.5,
         fudge=1,
         image_size=8,
-        gate_statistic="amplitude",
         disagreement_scale=1.0,
     )
     np.testing.assert_array_equal(out, [[0.5] * 3, [1] * 3])
@@ -87,8 +85,8 @@ def test_metric_units():
 
 
 def test_scalar_vdam_reference_in_normalized_units():
-    # Diagnostic Python complex128 transcription of reconstructGrad's scalar
-    # recurrence, before spatial postprocessing. Production stays complex64.
+    # Diagnostic Python complex128 transcription of reconstructGrad's scalar recurrence with the gate on squared
+    # magnitudes, before spatial postprocessing. Production stays complex64.
     n = 8
     scale = n**2
     value = 0.7 + 0.3j
@@ -102,10 +100,10 @@ def test_scalar_vdam_reference_in_normalized_units():
         ratio = abs(directions[1] - directions[0]) ** 2 / (abs(sum(directions) / 2) ** 2 + 1e-12)
         second = 0.999 * second + 0.001 * ratio
         gradient = sum(first) / 2 / (np.sqrt(second) + 1e-12)
-        rho = 2 * 1.7 * abs(value) / abs(first[0] - first[1])
+        rho = 2 * 1.7 * abs(value) ** 2 / abs(first[0] - first[1]) ** 2
         gate = rho / (1 + rho)
         value += 0.8 * (gate * gradient - (1 - gate) * value)
-        theta, moments, _ = stochastic_update(
+        theta, moments, info = stochastic_update(
             theta,
             moments,
             jnp.asarray(directions, jnp.complex64).reshape(2, 1, 1) * scale,
@@ -114,8 +112,8 @@ def test_scalar_vdam_reference_in_normalized_units():
             step=0.8,
             fudge=1.7,
             image_size=n,
-            gate_statistic="amplitude",
-            disagreement_scale=1.0,
+                disagreement_scale=1.0,
         )
         np.testing.assert_allclose(theta[0, 0] / scale, value, rtol=2e-6, atol=2e-6)
         np.testing.assert_allclose(moments.second[0, 0], second, rtol=2e-6, atol=2e-6)
+        np.testing.assert_allclose(info["gates"][0, 0], gate, rtol=2e-6)
