@@ -3645,17 +3645,19 @@ Results (T10, 3000 iterations, direct pose fit per state, a state is solved when
 ### 18.16 The gate's statistic and noise reference (November 6, 2026)
 
 Question. RELION's InitialModel gate takes shell means of amplitudes (section 3.3). Does the power statistic
-(`--gate-statistic power`, the half-map FSC under independent noise) or the power statistic with the disagreement
-rescaled to the noise of two full-data half maps (`--gate-noise-reference full_data`, factor `(b/N)/e`) do better?
+(`--gate-statistic power`, the half-map FSC under independent noise) do better, and does it help to rescale its
+disagreement to the noise of two full-data half maps (`--gate-noise-reference full_data`, factor `(b/N)/e`) or to the
+noise theta carries after its own averaging (`--gate-noise-reference theta`)?
 
 Setup. VDAM with the uniform direction prior and the recipe stages (`scripts/ppca_schedule/config.yaml`), 3000
 iterations, batch 300, on the six round-15 datasets (b150, box-64 crops). Arms: `s3_vdam_uniform` (amplitude, as RELION),
-`g1_vdam_uniform_power`, `g2_vdam_uniform_power_full`. Seeds 11, 12 and 13 on C n1, C n3 and T10 and seed 11 on H1, D40
-and D20. Scored at checkpoint 3000 by the suite scorer and the direct pose fit (`score_suite_run.py`). Code: branch
-`ppca_gate_power` on `ppca_schedule` 2fd7b0e8; the first two arms from the snapshot with `git diff HEAD` sha256
-`bb5bdf89...`, the third from the snapshot with `145eda75...`, which adds the noise reference (scale 1 for the first two
-arms; the unit tests of their paths pass unchanged). Run roots
-`gate_power` and `gate_power2` beside the other PPCA schedule rounds, launcher `gate_power/launch_gate.sh`.
+`g1_vdam_uniform_power`, `g2_vdam_uniform_power_full` (full data), `g3_vdam_uniform_power_theta` (theta window).
+Seeds 11, 12 and 13 on C n1, C n3 and T10 and seed 11 on H1, D40 and D20. Scored at checkpoint 3000 by the suite scorer
+and the direct pose fit (`score_suite_run.py`). Code: branch `ppca_gate_power` on `ppca_schedule` 2fd7b0e8. The first two
+arms ran from the snapshot with `git diff HEAD` sha256 `bb5bdf89...`, `g2` from the one with `145eda75...` (it adds
+`--gate-noise-reference`, scale 1 for the earlier arms; their unit tests pass unchanged) and `g3` from a clean checkout of
+commit 9509272c. Run roots `gate_power`, `gate_power2` and `gate_power3` beside the other PPCA schedule rounds, launcher
+`gate_power/launch_gate.sh`.
 
 Results, checkpoint 3000, mean over seeds (n seeds in the first column):
 
@@ -3664,31 +3666,40 @@ Results, checkpoint 3000, mean over seeds (n seeds in the first column):
 | C n1 (3) | amplitude | 3.95 | 99.9 | .950 | .999 | .931 | 37.3 | .987 | .759 |
 | | power | 3.90 | 99.9 | .947 | .999 | .945 | 22.8 | .985 | .741 |
 | | power, full data | 3.95 | 99.9 | .944 | .999 | .911 | 49.1 | .988 | .739 |
-| C n3 (3) | amplitude | 4.50 | 96.8 | .896 | .998 | .926 | 28.2 | .895 | .575 |
-| | power | 4.89 | 94.5 | .885 | .998 | .870 | 37.4 | .637 | .497 |
-| | power, full data | 4.48 | 97.2 | .917 | .998 | .909 | 39.4 | .924 | .572 |
+| | power, theta window | 3.92 | 99.9 | .959 | .999 | .932 | 37.6 | .993 | .763 |
+| C n3 (3) | amplitude | 4.50 | 96.8 | .896 | .998 | .928 | 26.6 | .895 | .575 |
+| | power | 4.89 | 94.5 | .885 | .998 | .870 | 37.3 | .637 | .497 |
+| | power, full data | 4.48 | 97.2 | .917 | .998 | .908 | 39.4 | .924 | .572 |
+| | power, theta window | 4.49 | 97.1 | .900 | .998 | .931 | 27.1 | .890 | .563 |
 | T10 (3) | amplitude | 48.3 | 29.8 | n/a | .378 | .158 | 88.5 | .767 | .672 |
 | | power | 94.8 | 8.6 | n/a | .359 | .151 | 89.4 | .561 | .511 |
 | | power, full data | 23.7 | 43.5 | n/a | .335 | .131 | 89.2 | .830 | .792 |
+| | power, theta window | 53.9 | 29.0 | n/a | .375 | .145 | 89.6 | .700 | .634 |
 | H1 (1) | amplitude | 4.19 | 99.3 | n/a | .940 | n/a | n/a | n/a | n/a |
 | | power | 4.31 | 99.0 | n/a | .966 | n/a | n/a | n/a | n/a |
 | | power, full data | 4.32 | 99.4 | n/a | .995 | n/a | n/a | n/a | n/a |
+| | power, theta window | 4.29 | 99.3 | n/a | .965 | n/a | n/a | n/a | n/a |
 | D40 (1) | amplitude | 3.75 | 100.0 | .951 | .700 | .289 | 87.0 | n/a | .616 |
 | | power | 3.90 | 99.8 | .958 | .785 | .298 | 87.3 | n/a | .565 |
 | | power, full data | 3.84 | 100.0 | .952 | .881 | .318 | 87.5 | n/a | .440 |
+| | power, theta window | 3.93 | 100.0 | .957 | .770 | .311 | 90.0 | n/a | .492 |
 | D20 (1) | amplitude | 3.93 | 100.0 | .983 | .314 | .059 | 81.4 | n/a | .706 |
 | | power | 3.76 | 100.0 | .986 | .386 | .064 | 75.2 | n/a | .680 |
 | | power, full data | 3.82 | 100.0 | .984 | .333 | .062 | 73.7 | n/a | .653 |
+| | power, theta window | 3.90 | 100.0 | .987 | .380 | .060 | 74.7 | n/a | .630 |
 
-The C n3 energy, subspace and mean-FSC columns use seeds 11 and 12: seed 13 of both power arms has a frame-dependent
-anomaly (mean FSC .738, energy .36 to .38, subspace 87 deg, PC outside span .72 to .79) that its model does not show (its
-mean and loading power by shell and the FSC of its mean between checkpoints match seeds 11 and 12, and its pose, ARI and
-R2 are the same as theirs). The amplitude arm at that seed and every arm at seeds 11 and 12 are normal; the cause, in the
-scorer's registration to the truth frame, was not found.
+Three runs have a frame-dependent anomaly: mean FSC .737 or .738 (the others of their dataset .998 or .999), energy .36
+to .38, subspace error 87 to 88 deg, PC outside span .72 to .79. They are C n3 seed 13 of the power and the full-data arms
+and C n1 seed 12 of the theta arm (whose ARI is 1.000): 3 of the 18 runs of the other arms on the two C datasets, none of
+the 6 amplitude runs. The scorer's rigid registration of the model's mean to the truth landed in a second optimum there: its fitted
+translation is 3.0 to 3.6 voxels in both x and y (the others: under 1.4 voxels). Their models are normal (mean and
+loading power by shell and the FSC of the mean between checkpoints match the other seeds) and their pose, ARI and R2 do
+not depend on the registration. Their mean FSC, energy, subspace and PC-outside-span columns are left out of the means above.
 
 T10 states solved (at least 30% of a state's particles under 10 deg), seeds 11, 12, 13: amplitude 3, 3, 3 (states 2, 4, 5;
 2, 4, 5; 4, 5, 6); power 1, 1, 1 (state 5 only, 51 to 69%); power with the full-data reference 4, 5, 4 (states 1, 2, 4, 5
-in seeds 11 and 13, plus 6 in seed 12, at 88 to 100%).
+in seeds 11 and 13, plus 6 in seed 12, at 88 to 100%); power with the theta window 3, 3, 3 (states 1, 4, 5; 4, 5, 6; 4,
+5, 8).
 
 - Power against amplitude. The power gate is sharper: where the signal stands well above the disagreement it is closer to 1,
   where it does not it falls to 0 (C n1 loadings gate at iteration 3000: .98 at shell 2, .94 at 11, .29 at 15 and 0 from 20,
@@ -3698,17 +3709,25 @@ in seeds 11 and 13, plus 6 in seed 12, at 88 to 100%).
 - The full-data reference. For `b = 300` and `N = 100,000` the scale is .057 and the gates sit at 1.00 in the inner shells
   (D40). It matches the amplitude gate on pose, ARI and R2 on C n1 and C n3 (ARI .924 against .895 on C n3, state FSC .917
   against .896), has the largest loading power (PC/mean .12 to .19 against .09 to .12) and the worst loading subspace on C n1
-  and C n3 (49 and 39 deg against 37 and 28), and is the only arm that improves T10 (4 to 5 states against 3; pose median
+  and C n3 (49 and 39 deg against 37 and 27), and is the only arm that improves T10 (4 to 5 states against 3; pose median
   23.7 deg against 48.3; ARI .830 against .767; R2 .792 against .672). On D40 it gives the highest mean FSC and the lowest R2
   (.881 and .440 against .700 and .616).
+- The theta window. Its scale, from the logged steps, is .89 up to iteration 500, .73 at 1000, .27 at 1500 and .13 from 2500
+  on (`full_data`: .057 throughout; `batch`: 1). It reproduces the amplitude gate on every metric within the seed spread: C n1
+  ARI .993 against .987 and R2 .763 against .759, C n3 ARI .890 against .895 and subspace 27.1 against 26.6 deg, T10 3 of 10
+  states as with amplitude (ARI .700 against .767, pose median 53.9 against 48.3 deg). It repairs the plain power gate on C n3
+  (ARI .890 against .637) and does not give the full-data reference's gain on T10. On C n3 (seed 11) its loadings gate is shut
+  at shell 10 and above through iteration 1000, as the plain power gate's is; at iterations 1100 to 1300 it opens to shell 14
+  (.03 at 1100, .89 at 1300) and later to shell 18 (.63 at 2000, .78 at 3000), while the plain power gate's stays at .02 or
+  below at shell 14 and 0 at shell 18 to the end. The late phase, not the early one, is what repairs C n3 (the expectation
+  before the runs was the reverse). Against the full-data reference it has the better loading subspace
+  and energy (C n1 37.6 against 49.1 deg) and the weaker T10.
 - Mean against loadings. The mean FSC rises as the gate opens (D40 .700, .785, .881; H1 .940, .966, .995), while the loading
-  measures do not follow: R2 falls on D40 (.616, .565, .440), and on C n1 the full-data gate has the worst energy and
-  subspace error. Which gate is better depends on the dataset; none is best on every metric.
-- Not established. One seed on H1, D40 and D20. The step and the first moments set theta's own averaging window, a
-  fraction of the data (section 3.3: .06 up to iteration 500, .45 from 2500 for C n1), so the full-data reference is the
-  noise of a full-data estimate theta has not reached early in a run; a reference with that window was not run. `fudge`, the
-  learned direction prior, other batch sizes and real data are untested. The first attempt of the T10 power arm hung after
-  iteration 172 (job 16998613 on one A100 node: 50 of its 53 threads waiting on futexes and 3 polling, the GPU idle, no
-  error); it was cancelled and rerun
-  (job 17003112) without incident, and the cause is unknown.
-
+  measures do not follow: R2 falls on D40 (.616, .565, .440, and .492 with the theta window), and on C n1 the full-data gate has
+  the worst energy and subspace error. Which gate is better depends on the dataset; no variant improves on RELION's amplitude
+  gate across the board, and the full-data reference is the only one that improves T10.
+- Not established. One seed on H1, D40 and D20. The theta recursion treats theta's dependence on the directions (they hold
+  -theta) as absent, which holds for a small step and only approximately early in a run (step .54). `fudge`, the learned
+  direction prior, other batch sizes and real data are untested. The first attempt of the T10 power arm hung after iteration
+  172 (job 16998613 on one A100 node: 50 of its 53 threads waiting on futexes and 3 polling, the GPU idle, no error); it was
+  cancelled and rerun (job 17003112) without incident, and the cause is unknown.
