@@ -957,3 +957,62 @@ def test_tf32_stream_gemms_need_ampere_and_auto_selects_them(tile_problem):
         a, b = np.asarray(getattr(fp32, name)), np.asarray(getattr(tf32, name))
         assert np.all(np.isfinite(b))
         assert _relative_l2(b, a.astype(np.complex128)) > 1e-5, name  # the switch reaches the GEMMs
+
+
+def _weak_model_stream(scale):
+    """The tile problem's stream with mu and W scaled by ``scale``: a weak model puts the occupied-versus-empty
+    log-odds of the noise images near 0, so P(occupied) is interior rather than saturated."""
+    reference, shared, parent = _layouts()
+    dataset, mu, W, _, host = make_tile_problem()
+    stream = prepare_full_row_stream(
+        dataset,
+        scale * mu,
+        scale * W,
+        rotations=shared.rotations_flat,
+        translations=shared.translation_grid,
+        rotation_log_prior=shared.rotation_log_priors_flat,
+        translation_log_prior=host["translation_log_prior"],
+        rotation_parent=shared.rotation_posterior_ids_flat,
+        translation_parent=parent,
+        n_coarse_rotations=3,
+        n_coarse_translations=3,
+        gemm_precision="fp32",
+        noise_variance=host["noise_variance"],
+        geometry=host["geometry"],
+        schedule=host["schedule"],
+        scoring=host["scoring"],
+    )
+    return stream
+
+
+@pytest.mark.parametrize("occupancy", [0.2, 1.0])
+def test_empty_component_weights_each_image_by_its_occupied_probability(occupancy):
+    """Pass-2 statistics are linear in each image's pose weights; the empty component scales them by P(occupied)."""
+    stream = _weak_model_stream(0.1)
+    mixed = stream._replace(occupancy=occupancy)
+    plain_embeddings = full_row_tile_embeddings(stream, np.arange(3), SIGNIFICANT)
+    mixed_embeddings = full_row_tile_embeddings(mixed, np.arange(3), SIGNIFICANT)
+    log_evidence = plain_embeddings.log_evidence.astype(np.float64)
+    null = plain_embeddings.null_log_likelihood.astype(np.float64)
+    occupied = np.log(occupancy) + log_evidence
+    empty = np.log1p(-occupancy) + null if occupancy < 1 else np.full_like(null, -np.inf)
+    p = np.exp(occupied - np.logaddexp(occupied, empty))
+    if occupancy < 1:
+        assert np.all((p > 0.01) & (p < 0.99)), p  # the comparison is about interior probabilities
+    assert_matches(mixed_embeddings.p_occupied, p.astype(np.float32))
+    assert_matches(mixed_embeddings.log_evidence, np.logaddexp(occupied, empty).astype(np.float32))
+    # E[z | occupied] is the one-component embedding: the empty component changes no pose's relative weight.
+    assert_matches(np.asarray(mixed_embeddings.embeddings), np.asarray(plain_embeddings.embeddings))
+
+    plain_tiles = [accumulate_full_row_tile(stream, np.asarray([i]), [SIGNIFICANT[i]]) for i in range(3)]
+    mixed_tile = accumulate_full_row_tile(mixed, np.arange(3), SIGNIFICANT)
+    assert_matches(mixed_tile.diagnostics["p_occupied_per_image"], p.astype(np.float32))
+    for name in ("lhs_tri", "residual_gradient"):
+        parts = [np.asarray(getattr(t, name)) for t in plain_tiles]
+        expected = sum(p[i] * part.astype(np.result_type(part, np.float64)) for i, part in enumerate(parts))
+        assert_matches(np.asarray(getattr(mixed_tile, name)), expected.astype(parts[0].dtype))
+    # The tile log-likelihood (0.34 here) is a float32 sum of per-image terms of magnitude ~2 that cancel (evidence
+    # ~ +1.4, null ~ -1.6): measured |diff| 7.7e-7, i.e. 2.3e-6 of the total, which the default band cannot hold.
+    assert_matches(
+        np.float32(mixed_tile.log_likelihood), np.float32(np.sum(np.logaddexp(occupied, empty))), rtol=1e-5
+    )

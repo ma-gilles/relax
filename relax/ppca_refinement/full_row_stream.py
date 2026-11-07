@@ -80,6 +80,7 @@ from relax.ppca_refinement.full_row_kernels import (
     score_tile,
     unpack_moments,
 )
+from relax.ppca_refinement.occupancy import check_occupancy, log_partition_correction, with_empty_component
 from relax.ppca_refinement.residual_statistics import full_float32
 
 FULL_ROW_ENGINE = "full_row_device_resident"
@@ -172,11 +173,16 @@ def prepare_full_row_stream(
     device=None,
     tile_loader=None,
     pass2_mass_floor: float = 0.0,
+    occupancy: float | None = None,
 ) -> FullRowStream:
     """Upload the model, fine grids and priors once to ``device`` for an expectation's tiles.
 
     ``pass2_mass_floor`` (:attr:`FullRowStream.pass2_mass_floor`) lets pass 2 skip the pose rows
     that carry less posterior mass than it for every image of a tile.
+
+    ``occupancy`` (:attr:`FullRowStream.occupancy`) adds an explicit empty component with that prior: every
+    pass-2 statistic is weighted by the image's probability of holding a placed copy of the model
+    (:mod:`relax.ppca_refinement.occupancy`). None keeps the one-component model.
 
     ``tile_loader`` reads the tiles of a dataset that is not a single-particle image dataset
     (:attr:`FullRowStream.tile_loader`); ``experiment_dataset`` then only supplies the image and
@@ -216,7 +222,7 @@ def prepare_full_row_stream(
             gemm_precision=gemm_precision,
             device=device,
             tile_loader=tile_loader,
-        )._replace(pass2_mass_floor=float(pass2_mass_floor))
+        )._replace(pass2_mass_floor=float(pass2_mass_floor), occupancy=check_occupancy(occupancy))
 
 
 def _prepare_full_row_stream(
@@ -544,6 +550,15 @@ def drop_padding(posterior: Posterior, n_real: int) -> Posterior:
     return posterior._replace(center=jnp.where(real, posterior.center, jnp.inf))
 
 
+def apply_occupancy(stream: FullRowStream, posterior: Posterior, layout: dict) -> Posterior:
+    """The two-component normalization when the stream has an empty component (``layout["p_occupied"]`` gets
+    each image's probability of holding the model); the posterior unchanged otherwise."""
+    if stream.occupancy is None:
+        return posterior
+    posterior, layout["p_occupied"] = with_empty_component(posterior, stream.occupancy)
+    return posterior
+
+
 def _enqueue_full_row_tile(stream, tile, observation_power, layout, kept=None):
     """Dispatch both passes of one loaded tile; returns its pass-1 kept buffer too.
 
@@ -551,7 +566,7 @@ def _enqueue_full_row_tile(stream, tile, observation_power, layout, kept=None):
     (:func:`_pass2_rows` needs the row count).
     """
     kept, posterior = score_tile(stream, tile, layout["n_blocks"], kept)
-    posterior = drop_padding(posterior, real_image_count(tile, layout))
+    posterior = apply_occupancy(stream, drop_padding(posterior, real_image_count(tile, layout)), layout)
     carry = empty_carry(stream, int(tile.y_norm.shape[0]), observation_power)
     carry = run_skipping_pass2(stream, tile, kept, posterior, layout, carry, moments=True)
     return (tile, layout, posterior, carry), kept
@@ -571,7 +586,12 @@ def finish_full_row_tile(stream, image_indices, tile, layout, posterior, carry, 
     # Every observed image counts once: a subtomogram particle observes each of its visible tilts.
     residual_den = jnp.zeros(n_shells, jnp.float32).at[shells].add(weights * layout["n_observations"])
     # Scores exclude the pose-invariant image constant; the absolute log-partition adds it back.
-    logZ = posterior.center + posterior.centered_logZ + pose_invariant_score_offset(tile.y_norm)
+    logZ = (
+        posterior.center
+        + posterior.centered_logZ
+        + log_partition_correction(stream.occupancy)
+        + pose_invariant_score_offset(tile.y_norm)
+    )
     real = slice(0, n_images)  # padding images (after the real ones) report nothing
     host = jax.device_get(
         {
@@ -616,6 +636,12 @@ def finish_full_row_tile(stream, image_indices, tile, layout, posterior, carry, 
         "latent_covariance_trace_mean": float(host["latent"] / np.float32(n_images)),
         "pose_entropy_mean": float(host["entropy"] / np.float32(n_images)),
     }
+    if stream.occupancy is not None:
+        # With an empty component, max_posterior_per_image is the joint P(occupied, top pose).
+        p_occupied = np.asarray(jax.device_get(layout["p_occupied"][real]))
+        diagnostics.update(
+            occupancy_prior=stream.occupancy, p_occupied_per_image=p_occupied, p_occupied_mean=float(p_occupied.mean())
+        )
     fields = dict(
         # No RHS volume: the streamed statistics feed the direct residual gradient only.
         rhs=None,
@@ -646,11 +672,20 @@ def full_row_tile_embeddings(stream: FullRowStream, image_indices, significant_r
         kept, posterior = score_tile(stream, tile, layout["n_blocks"])
         n_real = real_image_count(tile, layout)
         check_finite_posterior(posterior, n_real)
-        posterior = drop_padding(posterior, n_real)
+        posterior = apply_occupancy(stream, drop_padding(posterior, n_real), layout)
         carry = empty_carry(stream, int(tile.y_norm.shape[0]), jnp.float32(0))
         carry = run_skipping_pass2(stream, tile, kept, posterior, layout, carry, moments=False)
         scores = image_scores(
-            posterior.center[:n_real], posterior.centered_logZ[:n_real], posterior.top_score[:n_real],
+            posterior.center[:n_real],
+            posterior.centered_logZ[:n_real] + log_partition_correction(stream.occupancy),
+            posterior.top_score[:n_real],
             tile.y_norm[:n_real],
         )
-        return DensePPCAEmbeddings(carry.embedding[:n_real], layout["original_ids"], n_real, *scores)
+        if stream.occupancy is None:
+            return DensePPCAEmbeddings(carry.embedding[:n_real], layout["original_ids"], n_real, *scores)
+        # Pass 2 weights each pose by P(occupied, pose): the embedding is P(occupied) E[z | occupied].
+        p_occupied = layout["p_occupied"][:n_real]
+        embedding = carry.embedding[:n_real] / jnp.maximum(p_occupied, jnp.finfo(jnp.float32).tiny)[:, None]
+        return DensePPCAEmbeddings(
+            embedding, layout["original_ids"], n_real, *scores, p_occupied=np.asarray(jax.device_get(p_occupied))
+        )
