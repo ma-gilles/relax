@@ -311,3 +311,8 @@ arms:
   # Against g1_vdam_uniform_power (the same arm with the noise as measured) and s3_vdam_uniform (amplitude gate).
   g2_vdam_uniform_power_full:
     args: ["--optimizer", "vdam", "--direction-prior", "uniform", "--gate-statistic", "power", "--gate-noise-reference", "full_data"]
+  # The power gate with the disagreement rescaled to the noise theta carries after its own averaging
+  # (--gate-noise-reference theta). Against g2_vdam_uniform_power_full (full-data noise), g1_vdam_uniform_power and
+  # s3_vdam_uniform (amplitude gate).
+  g3_vdam_uniform_power_theta:
+    args: ["--optimizer", "vdam", "--direction-prior", "uniform", "--gate-statistic", "power", "--gate-noise-reference", "theta"]
