@@ -106,6 +106,8 @@ def test_coupled_and_vdam_update_independent_reference(q, dtype, tol):
         step=0.8,
         fudge=1.7,
         image_size=8,
+        gate_statistic="amplitude",
+        disagreement_scale=1.0,
     )
     first = refdir
     difference = first[1] - first[0]

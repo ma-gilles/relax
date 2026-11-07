@@ -36,7 +36,15 @@ def test_latent_rotation_equivariance(dtype, tol):
     # Rotate the references on the host: a default-precision GPU matmul would be TF32.
     np.testing.assert_allclose(dirs_q, np.asarray(dirs) @ Q, atol=tol, rtol=tol)
     shells = np.arange(9) // 3
-    args = dict(coverage=np.ones((2, 9), bool), shells=shells, step=0.8, fudge=2, image_size=8)
+    args = dict(
+        coverage=np.ones((2, 9), bool),
+        shells=shells,
+        step=0.8,
+        fudge=2,
+        image_size=8,
+        gate_statistic="amplitude",
+        disagreement_scale=1.0,
+    )
     out, moments, info = stochastic_update(jnp.asarray(theta), empty_moments(jnp.asarray(theta)), dirs, **args)
     out_q, moments_q, info_q = stochastic_update(
         jnp.asarray(theta @ Q), empty_moments(jnp.asarray(theta @ Q)), dirs_q, **args
@@ -58,6 +66,8 @@ def test_zero_disagreement_and_new_support():
         step=0.5,
         fudge=1,
         image_size=8,
+        gate_statistic="amplitude",
+        disagreement_scale=1.0,
     )
     np.testing.assert_array_equal(out, [[0.5] * 3, [1] * 3])
     np.testing.assert_array_equal(next_moments.initialized, [[True, False], [True, False]])
@@ -104,6 +114,8 @@ def test_scalar_vdam_reference_in_normalized_units():
             step=0.8,
             fudge=1.7,
             image_size=n,
+            gate_statistic="amplitude",
+            disagreement_scale=1.0,
         )
         np.testing.assert_allclose(theta[0, 0] / scale, value, rtol=2e-6, atol=2e-6)
         np.testing.assert_allclose(moments.second[0, 0], second, rtol=2e-6, atol=2e-6)

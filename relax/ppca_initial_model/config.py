@@ -36,6 +36,15 @@ class Config:
     # A fudge of 1 with the scheme plain keeps the gate at its strongest shrinkage throughout.
     tau2_fudge: float | None = None
     tau2_fudge_scheme: str | None = None
+    # The per-voxel statistic whose shell means set the VDAM gate rho = 2 * fudge * signal / disagreement
+    # (relax/ppca_initial_model/update.py stochastic_update). "amplitude": RELION's reconstructGrad (|x| shell means).
+    # "power": the squares (|x|^2), which at fudge 1 estimate the half-map FSC; an intentional difference from RELION.
+    gate_statistic: str = "amplitude"
+    # The noise the gate's disagreement stands for. "batch": the disagreement of the halves' first moments as measured, the
+    # noise of the direction that is applied (RELION's). "full_data": rescaled to the noise of two full-data half maps
+    # (update.full_data_disagreement_scale: it divides out each iteration's batch size, multiplies by the data size and
+    # divides out the first moments' running-average noise reduction); an intentional difference from RELION.
+    gate_noise_reference: str = "batch"
     # The Fourier radius of each iteration. "stages": the stages table's. "data_vs_prior": RELION's InitialModel rule
     # (relax/ppca_initial_model/radius_rule.py): the table's first radius at iteration 1, then the last shell where the
     # mean's data_vs_prior stays at or above 1 plus incr_size shells (RELION's --incr_size), never decreasing. The
@@ -138,6 +147,10 @@ class Config:
             raise ValueError("The radius rule must be stages, data_vs_prior or data_vs_prior_pcs")
         if self.direction_prior not in ("learned", "uniform"):
             raise ValueError("The direction prior must be learned or uniform")
+        if self.gate_statistic not in ("amplitude", "power"):
+            raise ValueError("The gate statistic must be amplitude or power")
+        if self.gate_noise_reference not in ("batch", "full_data"):
+            raise ValueError("The gate noise reference must be batch or full_data")
         if isinstance(self.incr_size, bool) or not isinstance(self.incr_size, (int, np.integer)) or self.incr_size <= 0:
             raise ValueError("incr_size must be a positive integer")
         self._validate_order_rule()
@@ -156,6 +169,9 @@ class Config:
             raise ValueError("Shift range must be nonnegative and step positive")
         if self.optimizer not in ("vdam", "momentum_sgd"):
             raise ValueError("Optimizer must be vdam or momentum_sgd")
+        gate_is_default = self.gate_statistic == "amplitude" and self.gate_noise_reference == "batch"
+        if self.optimizer == "momentum_sgd" and not gate_is_default:
+            raise ValueError("The gate statistic and noise reference are VDAM settings; momentum SGD has no gate")
         if self.optimizer == "vdam":
             # RELION's tau2-fudge sigmoid has length grad_inbetween_iter // 4; for 4 and 5 iterations that is 0 and
             # the fudge at iteration grad_ini_iter is 0/0 = NaN (kept for RELION parity in relax.vdam.schedules).
