@@ -1801,11 +1801,16 @@ holds its largest key; `G` padded to a size bucket with keys of padding particle
 each key with its own frames (padded to the stream's largest group with identity
 frames no particle sees) and noise row. Its operands are per key,
 `Y1 (G, K 2F, b T)`, `ctf2 (G, K F, b)` and so on; pass 1 and pass 2 run each key
-as one step of a scan, at the shapes of a one-key tile of `b` particles
-(projections at that key's `Aproj_f R_r`, the two GEMMs, and in pass 2 the moment
-scatter with that key's residual added to its noise group), while the latent
-epilogue, normalization and posterior weights run once for the tile in particle
-order (a slot permutation maps between the two orders). The arithmetic is that of
+as one step of a scan, at the shapes of a one-key tile of `b` particles: in pass 1
+the projections at that key's `Aproj_f R_r` and the two GEMMs, with the latent
+epilogue and normalization run once for the tile in particle order (a slot
+permutation maps between the two orders). Pass 2 keeps each particle's sparsity:
+each key visits only the rows on which one of its own particles has posterior mass
+of at least `pass2_mass_floor` (in blocks, padded to the tile's largest key), forms
+its posterior weights, M-step images and moment scatter there and adds its residual
+to its noise group. With the union of all keys' rows instead, pass 2 visited every
+row (row fraction 1.0 against 0.05-0.08 for one-key tiles on the real mix) and the
+order-2 stage ran slower than with one-key tiles. The arithmetic is that of
 the one-key tiles; the tile count per update drops from hundreds to a few. Keys
 with more particles keep tiles of their own, whose projections all their particles
 share; adaptive oversampling reads one key's frames per tile and keeps one-key
