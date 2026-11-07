@@ -716,3 +716,41 @@ def full_row_tile_embeddings(stream: FullRowStream, image_indices, significant_r
         return DensePPCAEmbeddings(
             embedding, layout["original_ids"], n_real, *scores, p_occupied=np.asarray(jax.device_get(p_occupied)), **top
         )
+
+
+@functools.partial(jax.jit, static_argnames=("max_significant",))
+def _significant_poses(score, rows, log_norm, target_mass, *, max_significant):
+    """Each image's most probable kept poses ``(B, S)`` as packed ``row * T + t`` ids of the stream's grid, the
+    smallest leading set holding ``target_mass`` of its posterior (at most ``max_significant``), and their count."""
+    n, B, T = score.shape
+    mass = jnp.exp(jnp.transpose(score, (1, 0, 2)).reshape(B, n * T) - log_norm[:, None])
+    top, index = jax.lax.top_k(mass, max_significant)
+    before = jnp.cumsum(top, axis=1) - top  # mass of the poses ahead of each
+    keep = (before < target_mass) & (top > 0)
+    ids = rows[index // T] * T + index % T
+    return ids, jnp.sum(keep, axis=1)
+
+
+@full_float32
+def coarse_significant_rows(stream: FullRowStream, image_indices, *, target_mass: float, max_significant: int):
+    """Each image's significant poses on ``stream``'s (coarse) grid, as packed ``rotation * T + t`` ids for a fine
+    stream whose rotations have these as parents (:func:`coarse_support_mask`): pass 1 of the image tile on the
+    coarse grid, then the leading poses holding ``target_mass`` of each image's posterior, at most
+    ``max_significant`` (RELION's adaptive oversampling selection). A target mass of 1 keeps every pose (None),
+    poses whose posterior underflows included."""
+    image_indices = np.asarray(image_indices)
+    if target_mass >= 1:
+        return [None] * image_indices.size
+    with jax.default_device(stream.device):
+        tile, _, layout = read_tile(stream, image_indices, [None] * image_indices.size, collect_observation=False)
+        kept, posterior = score_tile(stream, tile, layout["n_blocks"])
+        n = layout["n_blocks"] * stream.rotation_block_size
+        ids, count = _significant_poses(
+            kept.score[:n],
+            tile.rows[:n],
+            posterior.center + posterior.centered_logZ,
+            np.float32(target_mass),
+            max_significant=min(int(max_significant), n * int(stream.translations.shape[0])),
+        )
+        ids, count = jax.device_get((ids, count))
+    return [np.sort(ids[k, : count[k]]) for k in range(image_indices.size)]
