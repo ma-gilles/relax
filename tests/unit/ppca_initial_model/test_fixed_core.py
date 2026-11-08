@@ -19,9 +19,10 @@ from scipy.spatial.transform import Rotation
 
 from relax.fourier.half_spectrum import make_half_image_weights
 from relax.fourier.preprocessing import relion_half_translation_lattice
-from relax.ppca_initial_model.fixed_core import FixedCore, core_prediction, image_core_shifts
+from relax.ppca_initial_model.fixed_core import FixedCore, core_basis_volumes, core_prediction, image_core_shifts
 from relax.ppca_initial_model.tomo import (
     TiltParticles,
+    estimate_core_coefficients,
     estimate_core_scales,
     load_tilt_tile,
     subtract_fixed_core,
@@ -354,3 +355,50 @@ def test_core_map_reads_back_as_the_volume_it_holds(tmp_path):
         m.voxel_size = (voxel, voxel, 2 * voxel)
     with pytest.raises(ValueError, match="anisotropic"):
         FixedCore.from_map(tmp_path / "aniso.mrc")
+
+
+def _tube(radius, shift_x=0.0, n=N, width=1.2):
+    """A smooth hollow tube along axis 2 (the internal frame's z) about (shift_x, 0), real space, float64."""
+    x = (np.arange(n) - n // 2)[:, None, None] - shift_x
+    y = (np.arange(n) - n // 2)[None, :, None]
+    rho = np.sqrt(x**2 + y**2) + 0.0 * np.arange(n)[None, None, :]
+    return np.exp(-0.5 * ((rho - radius) / width) ** 2)
+
+
+def _real_to_half(volume):
+    full = np.fft.fftshift(np.fft.fftn(volume)).astype(np.complex64)
+    return np.asarray(ftu.full_volume_to_half_volume(full, VOLUME_SHAPE)).reshape(-1).astype(np.complex64)
+
+
+def test_core_basis_coefficients_are_recovered_and_absorb_shape_error():
+    _, _, owner, projections = _layout()
+    rng = np.random.default_rng(6)
+    ctf = rng.uniform(0.3, 1.2, (owner.size, N_HALF))
+    basis_real = core_basis_volumes(_tube(4.0))
+    halves = [_real_to_half(v) for v in basis_real]  # one Fourier layout for the cores and the reference images
+    basis = [
+        FixedCore.from_volume(h, volume_shape=VOLUME_SHAPE, voxel_size=2.0, volume_domain="fourier_half")
+        for h in halves
+    ]
+    parts = [reference_images(h, projections, ctf, OFFSETS[owner]) for h in halves]
+    # Noiseless images that are exactly the basis at known per-particle coefficients give those coefficients back.
+    truth = np.array([[0.7, 0.05, 0.1, -0.2], [1.1, -0.03, 0.0, 0.15], [0.9, 0.02, -0.12, 0.0], [1.3, 0.0, 0.05, 0.05]])
+    exact = sum(truth[owner, k, None] * parts[k] for k in range(4))
+    fitted = estimate_core_coefficients(_particles(exact, ctf), basis, _shell_noise(), offsets=OFFSETS)
+    # The ridge (1e-6 of each diagonal entry) biases the nearly collinear derivatives by about that much.
+    assert_matches(fitted, truth, rtol=1e-4)
+    # A tube 3% wider and 0.3 px off the axis: the scale alone leaves the wall's edges in the residual, the basis
+    # (dilation and shifts) removes most of it.
+    observed = reference_images(_real_to_half(_tube(4.12, shift_x=0.3)), projections, ctf, OFFSETS[owner])
+    particles = _particles(observed, ctf)
+    every = np.arange(owner.size)
+    scales = estimate_core_scales(particles, basis[0], _shell_noise(), offsets=OFFSETS)
+    scale_only = np.asarray(subtract_fixed_core(particles, basis[0], offsets=OFFSETS, scales=scales).read(every)[1])
+    coefficients = estimate_core_coefficients(particles, basis, _shell_noise(), offsets=OFFSETS)
+    with_basis = np.asarray(
+        subtract_fixed_core(particles, tuple(basis), offsets=OFFSETS, scales=coefficients).read(every)[1]
+    )
+    basis_power, scale_power = (float(np.sum(np.abs(r) ** 2)) for r in (with_basis, scale_only))
+    assert basis_power < 0.2 * scale_power, (basis_power, scale_power)  # measured ratio 0.023
+    # C + c_1 D = C((1 + c_1) r): the 3% wider tube reads as c_1 / c_0 of about -0.03 (measured -0.023 to -0.027).
+    assert np.all((coefficients[:, 1] / coefficients[:, 0] < -0.01) & (coefficients[:, 1] / coefficients[:, 0] > -0.05))

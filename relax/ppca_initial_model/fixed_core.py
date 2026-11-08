@@ -155,3 +155,49 @@ def core_scale(a, b, *, prior_sd: float | None = None) -> np.ndarray:
         raise ValueError(f"prior_sd must be positive, got {prior_sd}")
     precision = 1.0 / float(prior_sd) ** 2
     return (a + precision) / (b + precision)
+
+
+def core_basis_volumes(volume) -> list[np.ndarray]:
+    """The core and its first-order shape-error directions, real-space float32 volumes in the internal frame
+    (axis 0 = RELION x, 1 = y, 2 = z = the filament axis; relax/io/map_io.py): ``[C, x dC/dx + y dC/dy, dC/dx,
+    dC/dy]`` (voxel units, central differences, coordinates from the box centre ``N // 2``).
+
+    A particle's core is then fitted as ``c_0 C + c_1 D + c_2 dC/dx + c_3 dC/dy``: its scale, a radial dilation
+    of the tube about its axis (``c_0 C((1 + c_1/c_0) r)`` to first order, so a wider tube has ``c_1 < 0``) and a
+    transverse shift (``-(c_2, c_3) / c_0`` voxels), all small errors of a fixed core that a scale alone leaves in
+    the residual at the wall.
+    """
+    volume = np.asarray(volume, np.float64)
+    n = volume.shape[0]
+    x = (np.arange(n) - n // 2)[:, None, None]
+    y = (np.arange(n) - n // 2)[None, :, None]
+    dx, dy = np.gradient(volume, axis=0), np.gradient(volume, axis=1)
+    return [v.astype(np.float32) for v in (volume, x * dx + y * dy, dx, dy)]
+
+
+def core_basis_sums(predictions, half, precision, owner, n_particles: int):
+    """Per-particle normal equations of a core basis fit, float64: ``G`` ``(n_particles, K, K)`` with
+    ``G_kl = sum Re(conj(p_k) p_l) w / sigma^2`` and ``h`` ``(n_particles, K)`` with ``h_k = sum Re(conj(p_k) y) w /
+    sigma^2`` over a particle's images; ``predictions`` ``(K, n, F)``, the metric as :func:`core_scale_sums`."""
+    predictions, half, precision = (np.asarray(x) for x in (predictions, half, precision))
+    owner = np.asarray(owner, np.int64)
+    K = predictions.shape[0]
+    g_image = np.einsum("knf,lnf,nf->nkl", predictions.conj(), predictions, precision).real
+    h_image = np.einsum("knf,nf,nf->nk", predictions.conj(), half, precision).real
+    G = np.zeros((n_particles, K, K))
+    h = np.zeros((n_particles, K))
+    np.add.at(G, owner, g_image)
+    np.add.at(h, owner, h_image)
+    return G, h
+
+
+def core_basis_coefficients(G, h, *, relative_ridge: float = 1e-6) -> np.ndarray:
+    """Least-squares coefficients ``(n_particles, K)`` from :func:`core_basis_sums`, with a ridge of
+    ``relative_ridge`` times each diagonal entry (the derivative directions are nearly collinear for a thin wall)."""
+    G = np.asarray(G, np.float64)
+    h = np.asarray(h, np.float64)
+    diagonal = np.einsum("pkk->pk", G)
+    if np.any(diagonal[:, 0] <= 0):
+        raise ValueError("A particle sees no core signal: its basis fit is undetermined")
+    regularized = G + relative_ridge * np.einsum("pk,kl->pkl", diagonal, np.eye(G.shape[1]))
+    return np.linalg.solve(regularized, h[..., None])[..., 0]

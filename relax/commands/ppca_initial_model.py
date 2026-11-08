@@ -114,9 +114,10 @@ def add_args(parser):
     )
     parser.add_argument(
         "--fixed-core-scale",
-        choices=("particle", "none"),
+        choices=("particle", "basis", "none"),
         default="particle",
-        help="particle (default): fit each particle's core scale before removing the core; none: scale 1",
+        help="particle (default): fit each particle's core scale before removing the core; basis: the scale plus the "
+        "core's radial-dilation and transverse-shift directions; none: scale 1",
     )
     parser.add_argument(
         "--occupancy",
@@ -596,17 +597,38 @@ def main(args=None):
     if args.ios:
         data, identity = load_tilt_training(args.ios, output, particle_frame=config.band() is not None)
         if config.fixed_core is not None:
-            from relax.ppca_initial_model.fixed_core import FixedCore
-            from relax.ppca_initial_model.tomo import estimate_core_scales, subtract_fixed_core
+            from relax.ppca_initial_model.fixed_core import FixedCore, core_basis_volumes
+            from relax.ppca_initial_model.tomo import (
+                estimate_core_coefficients,
+                estimate_core_scales,
+                subtract_fixed_core,
+            )
 
             core = FixedCore.from_map(config.fixed_core)
             scales = None
+            # Before any noise estimate: a white metric (one flat spectrum per noise group).
+            white = np.ones((data.n_noise_groups, data.grid_size // 2 + 1), np.float32)
             if config.fixed_core_scale == "particle":
-                # Before any noise estimate: a white metric (one flat spectrum per noise group).
-                white = np.ones((data.n_noise_groups, data.grid_size // 2 + 1), np.float32)
                 scales = estimate_core_scales(data, core, white)
                 np.save(output / "core_scales.npy", scales)
                 logger.info("fixed-core scales: %s", np.percentile(scales, [1, 25, 50, 75, 99]).round(3).tolist())
+            elif config.fixed_core_scale == "basis":
+                from recovar.utils.helpers import load_relion_volume
+
+                volume = np.asarray(load_relion_volume(config.fixed_core), np.float32)
+                core = tuple(
+                    FixedCore.from_volume(
+                        v, volume_shape=volume.shape, voxel_size=core.voxel_size, volume_domain="real"
+                    )
+                    for v in core_basis_volumes(volume)
+                )
+                scales = estimate_core_coefficients(data, core, white)
+                np.save(output / "core_coefficients.npy", scales)
+                logger.info(
+                    "fixed-core basis: scale %s, dilation/scale %s",
+                    np.percentile(scales[:, 0], [1, 50, 99]).round(3).tolist(),
+                    np.percentile(scales[:, 1] / scales[:, 0], [1, 50, 99]).round(4).tolist(),
+                )
             data = subtract_fixed_core(data, core, scales=scales)
             identity["fixed_core_sha256"] = file_hash(config.fixed_core)
         # Subtomogram stacks are always read into memory (load_tilt_training).
