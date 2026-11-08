@@ -113,6 +113,12 @@ def add_args(parser):
         "each tilt's CTF and removed from the images before training (subtomogram particles)",
     )
     parser.add_argument(
+        "--fixed-core-scale",
+        choices=("particle", "none"),
+        default="particle",
+        help="particle (default): fit each particle's core scale before removing the core; none: scale 1",
+    )
+    parser.add_argument(
         "--occupancy",
         type=float,
         help="Prior probability that a particle holds the model, against an explicit empty component (needs "
@@ -579,6 +585,7 @@ def main(args=None):
         attachment_radius_ang=args.attachment_radius,
         occupancy=args.occupancy,
         fixed_core=args.fixed_core,
+        fixed_core_scale=args.fixed_core_scale,
     )
     if (args.ios is None) == (args.particles is None):
         raise ValueError("Give either a particle STAR (--i) or an optimisation set (--ios)")
@@ -590,9 +597,17 @@ def main(args=None):
         data, identity = load_tilt_training(args.ios, output, particle_frame=config.band() is not None)
         if config.fixed_core is not None:
             from relax.ppca_initial_model.fixed_core import FixedCore
-            from relax.ppca_initial_model.tomo import subtract_fixed_core
+            from relax.ppca_initial_model.tomo import estimate_core_scales, subtract_fixed_core
 
-            data = subtract_fixed_core(data, FixedCore.from_map(config.fixed_core))
+            core = FixedCore.from_map(config.fixed_core)
+            scales = None
+            if config.fixed_core_scale == "particle":
+                # Before any noise estimate: a white metric (one flat spectrum per noise group).
+                white = np.ones((data.n_noise_groups, data.grid_size // 2 + 1), np.float32)
+                scales = estimate_core_scales(data, core, white)
+                np.save(output / "core_scales.npy", scales)
+                logger.info("fixed-core scales: %s", np.percentile(scales, [1, 25, 50, 75, 99]).round(3).tolist())
+            data = subtract_fixed_core(data, core, scales=scales)
             identity["fixed_core_sha256"] = file_hash(config.fixed_core)
         # Subtomogram stacks are always read into memory (load_tilt_training).
         image_reading = None
