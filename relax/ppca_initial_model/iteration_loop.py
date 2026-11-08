@@ -1014,11 +1014,17 @@ def run(
             {}
             if band is None
             else dict(
-                # Each particle's top (a, phi) and P(occupied); the grid that best_rotation/translation index.
+                # Each particle's top pose and P(occupied), and the grid that best_rotation/translation index.
                 best_rotation=final.best_rotation,
                 best_translation=final.best_translation,
                 band_eulers_deg=band.eulers(),
                 band_axial_offsets_ang=band.axial_offsets_ang(),
+                # The attachment's placement T(a, phi) f(r) = f(R_z(phi)^T (r - a e_z)) of the model's canonical
+                # object: the inverse of the top pose (R_z(phi_pose), a_pose e_z) as the stream applies it, so
+                # a = -a_pose and phi = -phi_pose (measured on the stage-0 synthetic set, relax-band job 7425640:
+                # median errors 3.7 A and 1.2 degrees against the truth in this convention).
+                attachment_axial_ang=-band.axial_offsets_ang()[final.best_translation],
+                attachment_phi_deg=np.mod(-band.eulers()[final.best_rotation, 0], 360.0),
                 **({} if final.p_occupied is None else {"p_occupied": final.p_occupied}),
             )
         )
