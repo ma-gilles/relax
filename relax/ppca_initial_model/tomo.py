@@ -424,17 +424,19 @@ def tilt_noise_images(particles: TiltParticles, rng, *, images_per_group: int = 
 
 
 @full_float32
-def initialize_tilts(particles: TiltParticles, *, seed, diameter_ang, q=2):
+def initialize_tilts(particles: TiltParticles, *, seed, diameter_ang, q=2, band=None):
     """:func:`relax.ppca_initial_model.initialization.initialize` for subtomogram particles (section 16.5).
 
-    The noise is one spectrum per noise group, ``(G, S)``.
+    The noise is one spectrum per noise group, ``(G, S)``. A
+    :class:`relax.ppca_initial_model.filament_band.FilamentBand` seeds the model about the attachment
+    support (:func:`relax.ppca_initial_model.initialization.seed_model`); ``None`` seeds about the box centre.
     """
     if isinstance(q, bool) or not isinstance(q, (int, np.integer)) or q <= 0:
         raise ValueError("q must be a positive integer")
     rng = np.random.default_rng(seed)
     radius = max(1, compute_ini_high_shell(particles.grid_size))
     rhs, lhs, chosen = tilt_bootstrap(particles, rng, q + 1, radius)
-    theta = seed_model(rhs, lhs, particles.volume_shape, particles.voxel_size, diameter_ang, radius, rng)
+    theta = seed_model(rhs, lhs, particles.volume_shape, particles.voxel_size, diameter_ang, radius, rng, band=band)
     images_for_noise = tilt_noise_images(particles, rng)
     noise = initial_noise(
         images_for_noise, particles.image_shape, particles.voxel_size, diameter_ang, n_groups=particles.n_noise_groups
@@ -448,6 +450,7 @@ def initialize_tilts(particles: TiltParticles, *, seed, diameter_ang, q=2):
         "projection": "complex64",
         "accumulation": "complex64/float32",
         "noise_initializer": "deliberate host float64; coefficient spectrum float32",
+        "band": None if band is None else dataclasses.asdict(band),
     }
     return theta, noise, info
 
