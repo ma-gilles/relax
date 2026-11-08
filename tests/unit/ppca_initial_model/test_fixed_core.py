@@ -327,3 +327,30 @@ def test_core_scale_prior_shrinks_toward_one():
         assert_matches(np.array(fitted[i]), np.array(plain), rtol=1e-6)
         assert_matches(np.array(shrunk[i]), np.array(prior), rtol=1e-6)
         assert abs(shrunk[i] - 1) < abs(fitted[i] - 1) and (shrunk[i] - 1) * (fitted[i] - 1) > 0
+
+
+def test_core_map_reads_back_as_the_volume_it_holds(tmp_path):
+    """A RELION-convention core map (one voxel size per header axis) is the core its array holds."""
+    import mrcfile
+    from recovar.utils.helpers import load_relion_volume
+
+    n, voxel = 16, 8.0
+    relion = np.random.default_rng(4).normal(size=(n, n, n)).astype(np.float32)
+    path = tmp_path / "core.mrc"
+    with mrcfile.new(path) as m:
+        m.set_data(relion)
+        m.voxel_size = voxel
+    core = FixedCore.from_map(path)
+    reference = FixedCore.from_volume(
+        np.asarray(load_relion_volume(str(path)), np.float32),
+        volume_shape=(n, n, n),
+        voxel_size=voxel,
+        volume_domain="real",
+    )
+    assert core.volume_shape == (n, n, n) and core.voxel_size == voxel
+    assert_matches(np.asarray(core.volume_half), np.asarray(reference.volume_half))
+    with mrcfile.new(tmp_path / "aniso.mrc") as m:
+        m.set_data(relion)
+        m.voxel_size = (voxel, voxel, 2 * voxel)
+    with pytest.raises(ValueError, match="anisotropic"):
+        FixedCore.from_map(tmp_path / "aniso.mrc")

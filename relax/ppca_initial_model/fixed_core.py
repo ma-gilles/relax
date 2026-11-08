@@ -63,8 +63,12 @@ class FixedCore:
 
         volume, voxel_size = load_relion_volume(str(path), return_voxel_size=True)
         volume = np.asarray(volume, np.float32)
+        # The header holds one voxel size per axis (an mrcfile (x, y, z) record); a core map must be isotropic.
+        sizes = np.asarray(voxel_size.tolist() if hasattr(voxel_size, "tolist") else voxel_size, np.float64).reshape(-1)
+        if not np.allclose(sizes, sizes[0], rtol=1e-5):
+            raise ValueError(f"{path} has anisotropic voxels {sizes.tolist()}")
         return cls.from_volume(
-            volume, volume_shape=volume.shape, voxel_size=float(voxel_size), volume_domain="real", disc_type=disc_type
+            volume, volume_shape=volume.shape, voxel_size=float(sizes[0]), volume_domain="real", disc_type=disc_type
         )
 
 
