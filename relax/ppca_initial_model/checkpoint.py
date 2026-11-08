@@ -56,6 +56,7 @@ _ADDED_CONFIG_DEFAULTS = {
     "fixed_core_scale": "particle",
     "fixed_core_box": None,
     "fixed_core_free_offset": True,
+    "fixed_core_background": "none",
 }
 
 

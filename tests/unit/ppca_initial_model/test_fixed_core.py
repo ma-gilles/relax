@@ -25,11 +25,13 @@ from relax.ppca_initial_model.fixed_core import (
     core_prediction,
     extend_axial_core,
     image_core_shifts,
+    symmetrize_core,
 )
 from relax.ppca_initial_model.tomo import (
     TiltParticles,
     estimate_core_coefficients,
     estimate_core_scales,
+    estimate_residual_background,
     load_tilt_tile,
     subtract_fixed_core,
     tilt_shift_phases,
@@ -477,3 +479,51 @@ def test_frozen_noise_shells_keep_their_value_and_the_rest_update():
     unfrozen = np.asarray(update_noise(previous[:, 1:], numerator[:, 1:], denominator[:, 1:], full_data=True))
     assert_matches(frozen[:, 0], previous[:, 0])
     assert_matches(frozen[:, 1:], unfrozen)
+
+
+def test_symmetrize_core_keeps_a_tube_and_averages_an_offset_blob_down():
+    tube = _tube(4.0).astype(np.float32)
+    assert_matches(symmetrize_core(tube, "z"), tube)
+    # A ring wide against the 1-voxel radial bins survives the azimuthal average up to the linear interpolation
+    # over radius (measured 3.7e-2 of its peak for this width; a 1.2-voxel-wide ring loses ~0.1).
+    wide = _tube(4.0, width=2.5).astype(np.float32)
+    assert_matches(symmetrize_core(wide, "cylinder"), wide, rtol=5e-2)
+    blob = np.zeros((N, N, N), np.float32)
+    blob[N // 2 + 5, N // 2, N // 2] = 1.0
+    assert symmetrize_core(blob, "z").max() == pytest.approx(1.0 / N)
+    assert symmetrize_core(blob, "cylinder").max() < 0.2 / N
+
+
+def test_residual_background_absorbs_a_shared_leftover_the_core_misses():
+    """Images = c_i P(core) + P(ring) + noise with a cylindrical ring the core map lacks: after the core, the
+    symmetrised residual mean recovers the ring, and fitting [core, background] removes it."""
+    _, _, owner, projections = _layout()
+    rng = np.random.default_rng(9)
+    n_images = owner.size
+    ctf = rng.uniform(0.3, 1.2, (n_images, N_HALF)).astype(np.float32)
+    core_real, ring_real = _tube(4.0).astype(np.float32), 0.4 * _tube(6.5, width=0.8).astype(np.float32)
+
+    def fixed(v):
+        return FixedCore.from_volume(v, volume_shape=VOLUME_SHAPE, voxel_size=2.0, volume_domain="real")
+
+    shifts = np.zeros((n_images, 2), np.float32)
+    parts = [
+        np.asarray(core_prediction(fixed(v), IMAGE_SHAPE, projections, ctf, shifts)) for v in (core_real, ring_real)
+    ]
+    scales = np.array([0.8, 1.2, 1.0, 0.9])
+    noise = 0.05 * np.std(parts[1]) * (rng.standard_normal(parts[0].shape) + 1j * rng.standard_normal(parts[0].shape))
+    observed = _particles(scales[owner, None] * parts[0] + parts[1] + noise, ctf)
+    every = np.arange(n_images)
+    flat = _shell_noise()
+    core_only = subtract_fixed_core(
+        observed, fixed(core_real), scales=estimate_core_scales(observed, fixed(core_real), flat)
+    )
+    background = estimate_residual_background(core_only, "cylinder", ridge=1e-2)
+    # The core-only fit's scale takes up the ring's component along the core, so the background holds the rest of
+    # the ring (measured correlation with the whole ring 0.68).
+    assert np.corrcoef(background.ravel(), ring_real.ravel())[0, 1] > 0.5
+    basis = (fixed(core_real), fixed(background))
+    coefficients = estimate_core_coefficients(observed, basis, flat)
+    both = subtract_fixed_core(observed, basis, scales=coefficients)
+    left = [float(np.sum(np.abs(np.asarray(x.read(every)[1])) ** 2)) for x in (core_only, both)]
+    assert left[1] < 0.2 * left[0], left

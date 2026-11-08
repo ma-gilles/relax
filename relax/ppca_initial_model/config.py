@@ -118,6 +118,10 @@ class Config:
     # Each image's mean is free (its DC pixel is dropped from the core fit and the residual): RELION's background
     # normalisation subtracts a ring mean that includes the filament's own projection.
     fixed_core_free_offset: bool = True
+    # "z" / "cylinder": after the core, the residual's mean in the particle frame, averaged along (and about) the
+    # filament (tomo.estimate_residual_background), joins the core as a second fitted component, so a leftover that
+    # every particle shares is not fitted as an attachment in every window. "none": the core alone.
+    fixed_core_background: str = "none"
 
     def band(self):
         """The :class:`FilamentBand` search, or None for the full grid."""
@@ -141,6 +145,8 @@ class Config:
                     "The filament band searches its own full grid: oversampling 0, the streamed engine, "
                     "no shift schedule"
                 )
+        if self.fixed_core_background not in ("none", "z", "cylinder"):
+            raise ValueError(f"fixed_core_background must be none, z or cylinder, got {self.fixed_core_background}")
         if self.fixed_core_scale not in ("particle", "basis", "none"):
             raise ValueError(f"fixed_core_scale must be particle, basis or none, got {self.fixed_core_scale}")
         if self.occupancy is not None:

@@ -328,6 +328,54 @@ def estimate_core_coefficients(
     return core_basis_coefficients(G, h)
 
 
+def estimate_residual_background(
+    particles: TiltParticles, mode: str, *, max_particles: int = 3000, batch_particles: int = 64, ridge: float = 1e-3
+) -> np.ndarray:
+    """The symmetrised mean of the residual images in the particle frame, a real-space volume in the internal frame.
+
+    The fixed core removed by :func:`subtract_fixed_core` (required) is never exact; what it leaves that every
+    particle shares (a mismatch of the core's shape, or the scaffold's own detail) would be fitted by the PPCA as
+    an attachment in every window. This reconstructs the residual's mean - CTF-weighted backprojection at each
+    image's ``Aproj`` with its particle's core offset, Wiener-regularised by ``ridge`` times the largest weight -
+    from up to ``max_particles`` evenly spread particles and symmetrises it (:func:`fixed_core.symmetrize_core`:
+    ``"z"`` along the filament, ``"cylinder"`` also about it), which averages down attachments at random positions.
+    """
+    from recovar import core as recovar_core
+    from recovar.core import fourier_transform_utils as ftu
+
+    from relax.fourier.preprocessing import relion_half_translation_lattice, translation_phases
+    from relax.ppca_initial_model.fixed_core import symmetrize_core
+
+    if particles.core_subtraction is None:
+        raise ValueError("The residual background is estimated after the fixed core is subtracted")
+    image_shape, volume_shape = tuple(particles.image_shape), tuple(particles.volume_shape)
+    n = particles.n_images
+    chosen_all = np.unique(np.linspace(0, n - 1, min(n, int(max_particles))).round().astype(np.int64))
+    offsets = particles.core_subtraction.offsets
+    lattice = jnp.asarray(np.asarray(relion_half_translation_lattice(image_shape), np.float32))
+    rhs = lhs = None
+    for start in range(0, chosen_all.size, int(batch_particles)):
+        chosen = chosen_all[start : start + int(batch_particles)]
+        images, position = particles.particle_images(chosen)
+        _, half, ctf = particles.read(images)
+        projections = particles.image_projections(images)
+        shifts = image_core_shifts(projections, offsets[chosen[position]])
+        # The residual carries the particle's shift as conj(phase) (core_prediction); undo it before backprojecting.
+        unshifted = half * translation_phases(jnp.asarray(shifts, jnp.float32), lattice)
+        rotations = jnp.asarray(projections.astype(np.float32))
+        common = dict(half_image=True, half_volume=True)
+        r = recovar_core.adjoint_slice_volume(
+            ctf * unshifted, rotations, image_shape, volume_shape, "linear_interp", **common
+        )
+        w = recovar_core.adjoint_slice_volume(ctf**2, rotations, image_shape, volume_shape, "linear_interp", **common)
+        rhs = r if rhs is None else rhs + r
+        lhs = w.real if lhs is None else lhs + w.real
+    mean_half = rhs / (lhs + ridge * jnp.max(lhs))
+    n_box = volume_shape[0]
+    real = np.asarray(ftu.get_idft3_real(mean_half.reshape(n_box, n_box, n_box // 2 + 1), volume_shape))
+    return symmetrize_core(real, mode)
+
+
 def tilt_particles_from_tomo_dataset(tomo) -> TiltParticles:
     """:class:`TiltParticles` of a :class:`relax.steps.tomo_half.TomoDataset`.
 

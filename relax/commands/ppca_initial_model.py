@@ -132,6 +132,12 @@ def add_args(parser):
         help="fit the core with each image's DC pixel (default: a free per-image offset)",
     )
     parser.add_argument(
+        "--fixed-core-background",
+        choices=("none", "z", "cylinder"),
+        default="none",
+        help="after the core, fit the residual's mean (averaged along / about the filament) as a second core component",
+    )
+    parser.add_argument(
         "--occupancy",
         type=float,
         help="Prior probability that a particle holds the model, against an explicit empty component (needs "
@@ -601,6 +607,7 @@ def main(args=None):
         fixed_core_scale=args.fixed_core_scale,
         fixed_core_box=args.fixed_core_box,
         fixed_core_free_offset=args.fixed_core_free_offset,
+        fixed_core_background=args.fixed_core_background,
     )
     if (args.ios is None) == (args.particles is None):
         raise ValueError("Give either a particle STAR (--i) or an optimisation set (--ios)")
@@ -653,7 +660,25 @@ def main(args=None):
                     np.percentile(scales[:, 0], [1, 50, 99]).round(3).tolist(),
                     np.percentile(scales[:, 1] / scales[:, 0], [1, 50, 99]).round(4).tolist(),
                 )
-            data = subtract_fixed_core(data, core, scales=scales, free_offset=offset)
+            observed = data
+            data = subtract_fixed_core(observed, core, scales=scales, free_offset=offset)
+            if config.fixed_core_background != "none":
+                from relax.ppca_initial_model.tomo import estimate_residual_background
+
+                background = estimate_residual_background(data, config.fixed_core_background)
+                np.save(output / "core_background.npy", background)
+                if box != background.shape[0]:
+                    background = extend_axial_core(background, box)
+                basis = (core if isinstance(core, tuple) else (core,)) + (as_core(background),)
+                scales = estimate_core_coefficients(observed, basis, white, free_offset=offset)
+                np.save(output / "core_coefficients.npy", scales)
+                logger.info(
+                    "fixed-core background (%s): core coefficient %s, background coefficient %s",
+                    config.fixed_core_background,
+                    np.percentile(scales[:, 0], [1, 50, 99]).round(3).tolist(),
+                    np.percentile(scales[:, -1], [1, 50, 99]).round(3).tolist(),
+                )
+                data = subtract_fixed_core(observed, basis, scales=scales, free_offset=offset)
             identity["fixed_core_sha256"] = file_hash(config.fixed_core)
         # Subtomogram stacks are always read into memory (load_tilt_training).
         image_reading = None
