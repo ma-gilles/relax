@@ -103,6 +103,9 @@ class Config:
     # Prior probability that a particle holds the model, against an explicit empty component
     # (relax/ppca_refinement/occupancy.py); None: every particle holds it. Needs the band's full grid.
     occupancy: float | None = None
+    # A RELION-convention map of a fixed core in each particle's frame, removed from every tilt image before the PPCA
+    # sees it (relax/ppca_initial_model/fixed_core.py): the model then holds what is left. None: nothing removed.
+    fixed_core: str | None = None
 
     def band(self):
         """The :class:`FilamentBand` search, or None for the full grid."""

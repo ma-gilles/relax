@@ -52,6 +52,7 @@ _ADDED_CONFIG_DEFAULTS = {
     "attachment_center_ang": 180.0,
     "attachment_radius_ang": 60.0,
     "occupancy": None,
+    "fixed_core": None,
 }
 
 

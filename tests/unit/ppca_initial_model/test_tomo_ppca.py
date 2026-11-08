@@ -520,7 +520,9 @@ def test_ios_command_trains_the_ab_initio_versions(tmp_path, monkeypatch, caplog
     iteration_loop._rotation_grid.cache_clear()
     iteration_loop._direction_ids.cache_clear()
     monkeypatch.setenv("SLURM_JOB_ID", "1")
-    monkeypatch.setattr(command, "load_tilt_training", lambda ios, output: (_controller_particles(), {"test": True}))
+    monkeypatch.setattr(
+        command, "load_tilt_training", lambda ios, output, **options: (_controller_particles(), {"test": True})
+    )
     monkeypatch.setattr(command, "source_identity", lambda: {"test": True})
     caplog.set_level(logging.INFO, logger="relax")
     output = tmp_path / "run"
