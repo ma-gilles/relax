@@ -73,13 +73,33 @@ class FixedCore:
 
 
 def core_prediction(fixed: FixedCore, image_shape, projections, ctf, shifts) -> jax.Array:
-    """``CTF S_s P(Aproj) C`` of each image, ``(n, n_half)`` complex64 on the packed half grid.
+    """``CTF S_s P(Aproj) C`` of each image, ``(n, n_half)`` complex64 on the packed half grid of ``image_shape``.
 
     ``projections`` ``(n, 3, 3)`` are the images' full projection rotations of the particle frame
-    (``Aproj``), ``ctf`` ``(n, n_half)`` their CTF rows and ``shifts`` ``(n, 2)`` their 2D image shifts in
-    pixels (:func:`image_core_shifts`).
+    (``Aproj``), ``ctf`` their CTF rows and ``shifts`` ``(n, 2)`` their 2D image shifts in pixels
+    (:func:`image_core_shifts`).
+
+    A core in a box ``M`` larger than the image box ``N`` (same voxel size; e.g. a filament continued with
+    :func:`extend_axial_core`) is projected, CTF-weighted and shifted on the ``(M, M)`` grid (``ctf`` rows are then
+    evaluated on ``(M, M)``) and the image is the central ``(N, N)`` crop of that, back on the ``N`` half grid: the
+    observed image is a crop of a whole tilt image in which the filament continues past the box and the CTF acts
+    on all of it. With ``M == N`` this is the box's own prediction.
     """
     image_shape = tuple(int(n) for n in image_shape)
+    box = int(fixed.volume_shape[0])
+    if box != image_shape[0]:
+        if box < image_shape[0] or (box - image_shape[0]) % 2:
+            raise ValueError(f"A core box {box} must exceed the image box {image_shape[0]} by an even number")
+        return _cropped_prediction(
+            fixed.volume_half,
+            jnp.asarray(np.asarray(projections), jnp.float32),
+            jnp.asarray(ctf, jnp.float32),
+            jnp.asarray(np.asarray(shifts), jnp.float32),
+            jnp.asarray(np.asarray(relion_half_translation_lattice((box, box)), np.float32)),
+            image_shape=image_shape,
+            volume_shape=tuple(fixed.volume_shape),
+            disc_type=fixed.disc_type,
+        )
     return _prediction(
         fixed.volume_half,
         jnp.asarray(np.asarray(projections), jnp.float32),
@@ -107,6 +127,43 @@ def _prediction(volume_half, projections, ctf, shifts, lattice, *, image_shape, 
         max_r=image_shape[0] // 2 - 1,
     )[0]
     return (ctf * sliced * jnp.conj(translation_phases(shifts, lattice))).astype(jnp.complex64)
+
+
+@partial(jax.jit, static_argnames=("image_shape", "volume_shape", "disc_type"))
+def _cropped_prediction(volume_half, projections, ctf, shifts, lattice, *, image_shape, volume_shape, disc_type):
+    from recovar.core import fourier_transform_utils as ftu
+
+    box = (volume_shape[0], volume_shape[1])
+    large = _prediction(
+        volume_half, projections, ctf, shifts, lattice, image_shape=box, volume_shape=volume_shape, disc_type=disc_type
+    )
+    real = ftu.get_idft2_real(large.reshape((-1, box[0], box[1] // 2 + 1)), box)
+    lo0, lo1 = (box[0] - image_shape[0]) // 2, (box[1] - image_shape[1]) // 2
+    crop = real[:, lo0 : lo0 + image_shape[0], lo1 : lo1 + image_shape[1]]
+    return ftu.get_dft2_real(crop).reshape((crop.shape[0], -1)).astype(jnp.complex64)
+
+
+def extend_axial_core(volume, box: int) -> np.ndarray:
+    """A real-space core that is uniform along the filament axis (internal frame axis 2), continued periodically
+    along that axis and zero-padded across it to an even ``box`` (the box centres stay at index ``N // 2``).
+
+    Refused when the core is not axially uniform (its slices along the axis differ by more than 1e-3 of their
+    norm): a lattice or a finite object would be wrong when tiled.
+    """
+    volume = np.asarray(volume, np.float32)
+    n = volume.shape[0]
+    if box < n or (box - n) % 2:
+        raise ValueError(f"The extended box {box} must exceed the core box {n} by an even number")
+    slices = np.moveaxis(volume, 2, 0).reshape(n, -1)  # one row per position along the axis
+    mean = slices.mean(axis=0)
+    spread = np.max(np.linalg.norm(slices - mean, axis=1)) / max(float(np.linalg.norm(mean)), 1e-30)
+    if spread > 1e-3:
+        raise ValueError(f"The core is not uniform along its axis (relative slice spread {spread:.3g}); cannot tile it")
+    pad = (box - n) // 2
+    across = np.pad(volume, ((pad, pad), (pad, pad), (0, 0)))
+    # Periodic continuation along the axis, keeping the original slab at the centre.
+    index = (np.arange(box) - pad) % n
+    return np.ascontiguousarray(across[:, :, index])
 
 
 def image_core_shifts(projections, offsets) -> np.ndarray:

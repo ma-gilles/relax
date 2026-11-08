@@ -111,6 +111,13 @@ class Config:
     # the core's radial-dilation and transverse-shift directions (fixed_core.core_basis_volumes), which absorb small
     # core shape errors that a scale leaves at the wall; "none": scale 1.
     fixed_core_scale: str = "particle"
+    # The box the fixed core is projected in (fixed_core.core_prediction): the filament continues past the image box
+    # and the CTF acts on all of it, so the core (axially uniform: fixed_core.extend_axial_core) is extended to this
+    # box, projected and CTF-weighted there and cropped. None: twice the image box.
+    fixed_core_box: int | None = None
+    # Each image's mean is free (its DC pixel is dropped from the core fit and the residual): RELION's background
+    # normalisation subtracts a ring mean that includes the filament's own projection.
+    fixed_core_free_offset: bool = True
 
     def band(self):
         """The :class:`FilamentBand` search, or None for the full grid."""
