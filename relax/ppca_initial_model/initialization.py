@@ -69,10 +69,12 @@ def bandlimit_and_mask(theta, shape, radius, mask):
     return spectrum * _spherical_support(tuple(int(n) for n in shape), radius).astype(spectrum.real.dtype)
 
 
-def _blob_field(amplitude, diameter, rng):
+def _blob_field(amplitude, diameter, rng, center=None):
+    """Random Gaussian blobs about ``center`` (voxel indices; the box centre when None), scaled by ``amplitude``."""
     n = amplitude.shape[0]
+    center = np.full(3, n / 2) if center is None else np.asarray(center, np.float64)
     # Host RNG/geometry is deliberate; all field arithmetic stays float32.
-    centers = (rng.normal(size=(40, 3)) * diameter / 6 + n / 2).astype(np.float32)
+    centers = (rng.normal(size=(40, 3)) * diameter / 6 + center).astype(np.float32)
     grid = np.indices((n, n, n), dtype=np.float32)
     out = np.zeros((n, n, n), np.float32)
     for center in centers:
@@ -152,22 +154,33 @@ def initialize(dataset, *, seed, diameter_ang, batch_size=64, q=2):
     )
 
 
-def seed_model(rhs, lhs, volume_shape, voxel_size, diameter_ang, radius, rng):
-    """Seed maps from the bootstrap reconstructions ``rhs / lhs`` (one per channel), as half-Fourier theta."""
+def seed_model(rhs, lhs, volume_shape, voxel_size, diameter_ang, radius, rng, band=None):
+    """Seed maps from the bootstrap reconstructions ``rhs / lhs`` (one per channel), as half-Fourier theta.
+
+    With a :class:`relax.ppca_initial_model.filament_band.FilamentBand`, the blobs sit about the attachment's
+    canonical centre with the band's support diameter and the model is masked by its support.
+    """
+    from relax.ppca_initial_model.filament_band import attachment_support_mask
+
     channels = rhs.shape[0]
     n = volume_shape[0]
     half_shape = ftu.volume_shape_to_half_volume_shape(volume_shape)
     reconstruction = jnp.where(lhs > 0, rhs / jnp.where(lhs > 0, lhs, 1), 0)
     real = np.asarray(ftu.get_idft3_real(reconstruction.reshape((channels,) + half_shape), volume_shape), np.float32)
-    diameter = diameter_ang / voxel_size
-    mask = support_mask(n, diameter)
+    if band is None:
+        diameter, center = diameter_ang / voxel_size, None
+        mask = support_mask(n, diameter)
+    else:
+        diameter, center = 2 * band.support_radius_ang / voxel_size, band.support_center_px(n, voxel_size)
+        mask = attachment_support_mask(n, voxel_size, band)
     # The blob fields take the bootstrap's magnitude only; their sign follows the bootstrap's density (relax's
     # internal frame: negative for a RELION-sign stack, relax/io/map_io.py), so negated images seed the exactly
     # negated model.
     sign = np.float32(_bootstrap_sign(real.mean(axis=0), volume_shape))
     fields = []
     for volume in real:
-        field = _blob_field(volume, diameter, rng) - np.float32(0.5) * _blob_field(volume, diameter, rng)
+        field = _blob_field(volume, diameter, rng, center)
+        field = field - np.float32(0.5) * _blob_field(volume, diameter, rng, center)
         sd = np.std(field, dtype=np.float32)
         if sd <= 0:
             raise ValueError("Random bootstrap produced a zero blob field")

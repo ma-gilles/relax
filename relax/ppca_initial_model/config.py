@@ -91,8 +91,46 @@ class Config:
     # zero-centred Gaussian offset prior's sigma per axis at this value in pixels (None: the learned sigma).
     shift_schedule: tuple = ()
     offset_sigma_hold_px: float | None = None
+    # Filament band (relax/ppca_initial_model/filament_band.py): with band_length_ang set, each particle is searched
+    # in its own frame (rlnAngle* composed into the projections) over rotations about +z every band_phi_step_deg and
+    # shifts along it every band_axial_step_ang within +-band_length_ang / 2, with uniform priors, and the model is
+    # supported on a sphere of attachment_radius_ang at (attachment_center_ang, 0, 0). None: the full grid.
+    band_length_ang: float | None = None
+    band_axial_step_ang: float = 15.0
+    band_phi_step_deg: float = 5.0
+    attachment_center_ang: float = 180.0
+    attachment_radius_ang: float = 60.0
+    # Prior probability that a particle holds the model, against an explicit empty component
+    # (relax/ppca_refinement/occupancy.py); None: every particle holds it. Needs the band's full grid.
+    occupancy: float | None = None
+
+    def band(self):
+        """The :class:`FilamentBand` search, or None for the full grid."""
+        if self.band_length_ang is None:
+            return None
+        from relax.ppca_initial_model.filament_band import FilamentBand
+
+        return FilamentBand(
+            self.band_length_ang,
+            self.band_axial_step_ang,
+            self.band_phi_step_deg,
+            self.attachment_center_ang,
+            self.attachment_radius_ang,
+        )
 
     def __post_init__(self):
+        if self.band_length_ang is not None:
+            self.band()  # validates the band
+            if self.oversampling or not self.stream_coarse_recompute or self.shift_schedule:
+                raise ValueError(
+                    "The filament band searches its own full grid: oversampling 0, the streamed engine, "
+                    "no shift schedule"
+                )
+        if self.occupancy is not None:
+            if self.band_length_ang is None:
+                raise ValueError("An occupancy prior needs the filament band's full grid")
+            if not 0 < self.occupancy <= 1:
+                raise ValueError(f"Occupancy prior must be in (0, 1], got {self.occupancy}")
         if isinstance(self.q, bool) or not isinstance(self.q, (int, np.integer)) or self.q <= 0 or self.seed <= 0 or self.iterations <= 0:
             raise ValueError("PPCA requires positive integer q, seed and iteration count")
         if not self.stages or self.stages[0][0] != 1:

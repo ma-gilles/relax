@@ -96,6 +96,24 @@ def add_args(parser):
     )
     parser.add_argument("--optimizer", choices=("vdam", "momentum_sgd"), default="vdam")
     parser.add_argument(
+        "--filament-band-length",
+        type=float,
+        help="Search each subtomogram particle in its own frame (rlnAngle* composed): rotations about +z and shifts "
+        "along it within +-LENGTH/2 Angstrom, uniform priors (relax/ppca_initial_model/filament_band.py)",
+    )
+    parser.add_argument("--filament-band-axial-step", type=float, default=15.0, help="Angstrom (default 15)")
+    parser.add_argument("--filament-band-phi-step", type=float, default=5.0, help="degrees, divides 360 (default 5)")
+    parser.add_argument(
+        "--attachment-center", type=float, default=180.0, help="support centre on +x, Angstrom from the axis (180)"
+    )
+    parser.add_argument("--attachment-radius", type=float, default=60.0, help="support radius, Angstrom (default 60)")
+    parser.add_argument(
+        "--occupancy",
+        type=float,
+        help="Prior probability that a particle holds the model, against an explicit empty component (needs "
+        "--filament-band-length)",
+    )
+    parser.add_argument(
         "--ppca-gemm-precision",
         choices=("auto", "fp32", "tf32"),
         default="auto",
@@ -394,11 +412,12 @@ def refuse_unsupported_tilt_optics(particles_star):
     refuse_unsupported_optics(optics, source=str(particles_star), supported=TOMO_PPCA_OPTICS_FEATURES)
 
 
-def load_tilt_training(ios, output):
+def load_tilt_training(ios, output, *, particle_frame: bool = False):
     """Subtomogram particles of a RELION 5 optimisation set (algorithm section 16).
 
     Only the tilt-series geometry (each image's ``Aproj``), the images and their CTF and dose
-    enter training; the particles' input angles and offsets are not read.
+    enter training; the particles' input angles and offsets are not read, except that ``particle_frame``
+    (the filament band) composes each particle's ``rlnAngle*`` into its projections.
     """
     from relax.ppca_initial_model.tomo import tilt_particles_from_tomo_dataset
     from relax.star.tomo_input import read_optimisation_set
@@ -412,6 +431,7 @@ def load_tilt_training(ios, output):
         Path(output) / "particles_2d.star",
         datadir=str(Path(particles_star).resolve().parent),
         lazy=False,
+        particle_frame=particle_frame,
     )
     identity = {
         "ios_sha256": file_hash(ios),
@@ -547,13 +567,19 @@ def main(args=None):
         pass2_mass_floor=args.ppca_pass2_mass_floor,
         stages=tuple(tuple(stage) for stage in json.loads(args.stages)) if args.stages else Config().stages,
         uniform_direction_prior=args.uniform_direction_prior,
+        band_length_ang=args.filament_band_length,
+        band_axial_step_ang=args.filament_band_axial_step,
+        band_phi_step_deg=args.filament_band_phi_step,
+        attachment_center_ang=args.attachment_center,
+        attachment_radius_ang=args.attachment_radius,
+        occupancy=args.occupancy,
     )
     if (args.ios is None) == (args.particles is None):
         raise ValueError("Give either a particle STAR (--i) or an optimisation set (--ios)")
     output = Path(args.output)
     output.mkdir(parents=True, exist_ok=True)
     if args.ios:
-        data, identity = load_tilt_training(args.ios, output)
+        data, identity = load_tilt_training(args.ios, output, particle_frame=config.band() is not None)
         # Subtomogram stacks are always read into memory (load_tilt_training).
         image_reading = None
     else:

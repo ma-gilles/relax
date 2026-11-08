@@ -22,6 +22,7 @@ from recovar.ppca.pose_accumulators import AugmentedPPCAStats
 from recovar.reconstruction.noise import make_radial_noise
 
 from relax.ppca_initial_model import checkpoint
+from relax.ppca_initial_model.filament_band import attachment_support_mask, uniform_log_prior
 from relax.ppca_initial_model.initialization import bandlimit_and_mask, initialize, support_mask
 from relax.ppca_initial_model.noise import update_noise
 from relax.ppca_initial_model.sgd_recipe import NewtonSGD
@@ -411,27 +412,41 @@ def _expectation(
     geometry = GeometryConfig(current_size=2 * radius, q=config.q, volume_domain="fourier_half")
     schedule = ScheduleConfig(image_batch_size=config.image_batch_size, rotation_block_size=config.rotation_block_size)
     scoring = ScoringConfig(relion_texture_interp=False, full_real_observation=True)
-    rotations = _rotation_grid(hp)
-    canonical_eulers = grids.get_relion_hidden_rotation_grid(hp, matrices=False)
-    rotation_prior = (
-        np.asarray(state.direction_prior, np.float32)
-        if state.direction_order == hp and state.direction_prior is not None and not config.uniform_direction_prior
-        else np.full(len(rotations), 1 / len(rotations), np.float32)
-    )
-    rotation_log_prior = np.log(rotation_prior, where=rotation_prior > 0, out=np.full_like(rotation_prior, -np.inf))
     tilts = isinstance(dataset, TiltParticles)
     if tilts and not _streams_groups(config):
         raise ValueError("Subtomogram PPCA needs the streamed full-grid engine (stream_coarse_recompute)")
-    shift_range, shift_step = config.shifts(iteration)
-    translations = (
-        # Subtomogram particles have one 3D shift each (section 16.1), on RELION's 3D grid in pixels.
-        grids.get_relion_translation_grid_3d(shift_range, shift_step)
-        if tilts
-        else grids.get_relion_translation_grid(max_pixel=shift_range, pixel_offset=shift_step)
-    ).astype(np.float32)
-    offset_variance = state.offset_variance if config.offset_sigma_hold_px is None else config.offset_sigma_hold_px**2
-    prior = -jnp.sum(jnp.asarray(translations) ** 2, axis=-1) / (2 * offset_variance)
-    prior = prior - jnp.log(jnp.sum(jnp.exp(prior)))
+    band = config.band()
+    if band is not None:
+        # The filament band's own grid in each particle's frame, with uniform priors (filament_band.py).
+        if not tilts:
+            raise ValueError("The filament band searches subtomogram particles")
+        canonical_eulers = band.eulers()
+        rotations = band.rotations()
+        rotation_log_prior = uniform_log_prior(len(rotations))
+        translations = band.translations_px(dataset.voxel_size)
+        prior = jnp.asarray(uniform_log_prior(len(translations)))
+        shift_step = None
+    else:
+        rotations = _rotation_grid(hp)
+        canonical_eulers = grids.get_relion_hidden_rotation_grid(hp, matrices=False)
+        rotation_prior = (
+            np.asarray(state.direction_prior, np.float32)
+            if state.direction_order == hp and state.direction_prior is not None and not config.uniform_direction_prior
+            else np.full(len(rotations), 1 / len(rotations), np.float32)
+        )
+        rotation_log_prior = np.log(rotation_prior, where=rotation_prior > 0, out=np.full_like(rotation_prior, -np.inf))
+        shift_range, shift_step = config.shifts(iteration)
+        translations = (
+            # Subtomogram particles have one 3D shift each (section 16.1), on RELION's 3D grid in pixels.
+            grids.get_relion_translation_grid_3d(shift_range, shift_step)
+            if tilts
+            else grids.get_relion_translation_grid(max_pixel=shift_range, pixel_offset=shift_step)
+        ).astype(np.float32)
+        offset_variance = (
+            state.offset_variance if config.offset_sigma_hold_px is None else config.offset_sigma_hold_px**2
+        )
+        prior = -jnp.sum(jnp.asarray(translations) ** 2, axis=-1) / (2 * offset_variance)
+        prior = prior - jnp.log(jnp.sum(jnp.exp(prior)))
     # Subtomogram particles keep one noise spectrum per noise group (rows of ``state.noise``, section 16.6).
     noise_rows = np.asarray(state.noise) if tilts else np.asarray(state.noise)[None]
     nvs = [np.asarray(make_radial_noise(row, dataset.image_shape), np.float32) for row in noise_rows]
@@ -472,6 +487,7 @@ def _expectation(
                     gemm_precision=config.gemm_precision,
                     tile_loader=load_tilt_tile if tilts else None,
                     pass2_mass_floor=config.pass2_mass_floor,
+                    occupancy=config.occupancy,
                 )
                 for group_nv in nvs
             ]
@@ -665,8 +681,14 @@ def run(
                 "resumed %s checkpoint under %s (%s)", saved, config.gemm_precision, _gemm_precision_used(config)
             )
     else:
-        initializer = initialize_tilts if isinstance(dataset, TiltParticles) else initialize
-        theta, noise, info = initializer(dataset, seed=config.seed, diameter_ang=diameter_ang, q=config.q)
+        if isinstance(dataset, TiltParticles):
+            # The band seeds inside the attachment support (initialization.seed_model).
+            band_seed = {} if config.band() is None else {"band": config.band()}
+            theta, noise, info = initialize_tilts(
+                dataset, seed=config.seed, diameter_ang=diameter_ang, q=config.q, **band_seed
+            )
+        else:
+            theta, noise, info = initialize(dataset, seed=config.seed, diameter_ang=diameter_ang, q=config.q)
         rng = np.random.default_rng(config.seed + 1)
         order = rng.permutation(dataset.n_images)
         state = State(
@@ -688,7 +710,11 @@ def run(
         raise TypeError("InitialModel requires production float32 model and noise")
     if dataset.n_images < 4:
         raise ValueError("Both pseudo-halfsets need particles")
-    mask = support_mask(dataset.grid_size, diameter_ang / dataset.voxel_size)
+    mask = (
+        support_mask(dataset.grid_size, diameter_ang / dataset.voxel_size)
+        if config.band() is None
+        else attachment_support_mask(dataset.grid_size, dataset.voxel_size, config.band())
+    )
     shells = np.asarray(ftu.get_grid_of_radial_distances_real(dataset.volume_shape), np.int32).reshape(-1)
     radii = np.asarray(ftu.get_grid_of_radial_distances_real(dataset.volume_shape, rounded=False)).reshape(-1)
     end = config.iterations if stop_after is None else min(config.iterations, stop_after)
@@ -827,7 +853,9 @@ def run(
         # Mean squared offset per dimension: 2D in-plane shifts, 3D subtomogram shifts.
         dimensions = 3 if isinstance(dataset, TiltParticles) else 2
         beta = 0 if count == dataset.n_images else 0.9
-        offset_variance = blend_offset_variance(
+        # The filament band's priors are uniform and fixed: no offset variance or direction prior is learned.
+        band = config.band()
+        offset_variance = state.offset_variance if band is not None else blend_offset_variance(
             state.offset_variance,
             sum(s.diagnostics["offset_second_sum_px2"] for s in stats),
             count,
@@ -844,20 +872,25 @@ def run(
         if not bool(jnp.all(jnp.isfinite(theta))):
             raise ValueError("Nonfinite PPCA model")
         hp = config.stage(iteration)[1]
-        direction_ids = _direction_ids(hp)
-        masses = sum(np.asarray(result.diagnostics["rotation_mass"]) for result in stats)
-        direction_mass = np.bincount(direction_ids, weights=masses)
-        multiplicity = np.bincount(direction_ids)
-        old_prior = (
-            state.direction_prior
-            if state.direction_order == hp and state.direction_prior is not None
-            else np.full(len(direction_ids), 1 / len(direction_ids), np.float32)
-        )
-        # Each direction's posterior mass per image, spread over its in-plane angles.
-        rotation_mass = direction_mass[direction_ids] / multiplicity[direction_ids]
-        direction_prior = (
-            None if config.uniform_direction_prior else relion_blend(old_prior, rotation_mass, count, beta).astype(np.float32)
-        )
+        if band is not None:
+            direction_prior = None
+        else:
+            direction_ids = _direction_ids(hp)
+            masses = sum(np.asarray(result.diagnostics["rotation_mass"]) for result in stats)
+            direction_mass = np.bincount(direction_ids, weights=masses)
+            multiplicity = np.bincount(direction_ids)
+            old_prior = (
+                state.direction_prior
+                if state.direction_order == hp and state.direction_prior is not None
+                else np.full(len(direction_ids), 1 / len(direction_ids), np.float32)
+            )
+            # Each direction's posterior mass per image, spread over its in-plane angles.
+            rotation_mass = direction_mass[direction_ids] / multiplicity[direction_ids]
+            direction_prior = (
+                None
+                if config.uniform_direction_prior
+                else relion_blend(old_prior, rotation_mass, count, beta).astype(np.float32)
+            )
         state = State(
             theta,
             moments,
