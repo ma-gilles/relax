@@ -25,6 +25,8 @@ from relax.fourier.half_spectrum import make_half_image_weights
 from relax.fourier.preprocessing import relion_half_translation_lattice, translation_phases
 from relax.ppca_initial_model.fixed_core import (
     FixedCore,
+    core_basis_coefficients,
+    core_basis_sums,
     core_prediction,
     core_scale,
     core_scale_sums,
@@ -111,9 +113,10 @@ class TiltParticles:
 @dataclasses.dataclass(frozen=True)
 class CoreSubtraction:
     """The fixed core removed from every tilt image: ``core`` at each particle's 3D ``offsets`` ``(P, 3)``
-    (pixels, the stream's translation convention) with its ``scales`` ``(P,)``."""
+    (pixels, the stream's translation convention) with its ``scales`` ``(P,)``, or a core basis (``core`` a tuple
+    of K :class:`FixedCore`, ``scales`` ``(P, K)`` coefficients)."""
 
-    core: FixedCore
+    core: FixedCore | tuple
     offsets: np.ndarray
     scales: np.ndarray
 
@@ -131,15 +134,22 @@ def subtract_fixed_core(particles: TiltParticles, core: FixedCore, *, offsets=No
     """
     if particles.core_subtraction is not None:
         raise ValueError("These particles already have a fixed core subtracted")
-    if tuple(core.volume_shape) != tuple(particles.volume_shape):
-        raise ValueError(f"Core volume {core.volume_shape} differs from the particles' {particles.volume_shape}")
-    if not np.isclose(core.voxel_size, particles.voxel_size, rtol=1e-5):
-        raise ValueError(f"Core voxel size {core.voxel_size} differs from the particles' {particles.voxel_size}")
+    basis = tuple(core) if isinstance(core, (tuple, list)) else (core,)
+    for component in basis:
+        if tuple(component.volume_shape) != tuple(particles.volume_shape):
+            raise ValueError(
+                f"Core volume {component.volume_shape} differs from the particles' {particles.volume_shape}"
+            )
+        if not np.isclose(component.voxel_size, particles.voxel_size, rtol=1e-5):
+            raise ValueError(
+                f"Core voxel size {component.voxel_size} differs from the particles' {particles.voxel_size}"
+            )
     n = particles.n_images
     offsets = np.zeros((n, 3)) if offsets is None else np.asarray(offsets, np.float64)
     scales = np.ones(n) if scales is None else np.asarray(scales, np.float64)
-    if offsets.shape != (n, 3) or scales.shape != (n,):
-        raise ValueError(f"Need one 3D core offset and one core scale per particle ({n})")
+    coefficients = scales.reshape(n, 1) if scales.ndim == 1 else scales
+    if offsets.shape != (n, 3) or coefficients.shape != (n, len(basis)):
+        raise ValueError(f"Need one 3D core offset and {len(basis)} core coefficient(s) per particle ({n})")
     if not (np.all(np.isfinite(offsets)) and np.all(np.isfinite(scales))):
         raise ValueError("Core offsets and scales must be finite")
     all_images = np.arange(particles.image_offsets[-1])
@@ -147,18 +157,22 @@ def subtract_fixed_core(particles: TiltParticles, core: FixedCore, *, offsets=No
     projections = particles.image_projections(all_images)
     shifts = image_core_shifts(projections, offsets[owner])
     projections = projections.astype(np.float32)  # what the projector reads (the stream's float32 frames)
-    image_scale = scales[owner].astype(np.float32)
+    image_coefficients = coefficients[owner].astype(np.float32)
     observed_read, image_shape = particles.read, particles.image_shape
 
     def read(image_ids):
         image_ids = np.asarray(image_ids, np.int64)
         images, half, ctf = observed_read(image_ids)
-        prediction = core_prediction(core, image_shape, projections[image_ids], ctf, shifts[image_ids])
-        residual = half - jnp.asarray(image_scale[image_ids])[:, None] * prediction
+        residual = half
+        for k, component in enumerate(basis):
+            prediction = core_prediction(component, image_shape, projections[image_ids], ctf, shifts[image_ids])
+            residual = residual - jnp.asarray(image_coefficients[image_ids, k])[:, None] * prediction
         return images, residual.astype(jnp.complex64), ctf
 
     return dataclasses.replace(
-        particles, read=read, core_subtraction=CoreSubtraction(core=core, offsets=offsets, scales=scales)
+        particles,
+        read=read,
+        core_subtraction=CoreSubtraction(core=core if len(basis) == 1 else basis, offsets=offsets, scales=scales),
     )
 
 
@@ -174,26 +188,9 @@ def estimate_core_scales(
     controller does for its streams. Pass the result to :func:`subtract_fixed_core`. The fit sees everything in
     the images, so what the core does not explain but correlates with (an attachment) biases it.
     """
-    from recovar.reconstruction.noise import make_radial_noise, to_batched_half_pixel_noise
-
     if particles.core_subtraction is not None:
         raise ValueError("Core scales are fitted to the observed images, not to residuals")
-    noise = np.asarray(noise)
-    if noise.ndim != 2 or noise.shape[0] != particles.n_noise_groups:
-        raise ValueError(f"Need one noise spectrum per noise group ({particles.n_noise_groups}), got {noise.shape}")
-    weights = np.asarray(make_half_image_weights(particles.image_shape), np.float64)
-    precision = np.stack(
-        [
-            weights
-            / np.asarray(
-                to_batched_half_pixel_noise(
-                    np.asarray(make_radial_noise(row, particles.image_shape), np.float32), particles.image_shape
-                ),
-                np.float64,
-            ).reshape(-1)
-            for row in noise
-        ]
-    )
+    precision = _image_precision(particles, noise)
     n = particles.n_images
     offsets = np.zeros((n, 3)) if offsets is None else np.asarray(offsets, np.float64)
     if offsets.shape != (n, 3):
@@ -213,6 +210,63 @@ def estimate_core_scales(
         a[chosen] += sums[0]
         b[chosen] += sums[1]
     return core_scale(a, b, prior_sd=prior_sd)
+
+
+def _image_precision(particles: TiltParticles, noise) -> np.ndarray:
+    """The stream's image metric per noise group, ``(G, F)`` float64: Hermitian half-image weights over the
+    group's shell noise ``noise`` ``(G, S)`` expanded to pixels."""
+    from recovar.reconstruction.noise import make_radial_noise, to_batched_half_pixel_noise
+
+    noise = np.asarray(noise)
+    if noise.ndim != 2 or noise.shape[0] != particles.n_noise_groups:
+        raise ValueError(f"Need one noise spectrum per noise group ({particles.n_noise_groups}), got {noise.shape}")
+    weights = np.asarray(make_half_image_weights(particles.image_shape), np.float64)
+    return np.stack(
+        [
+            weights
+            / np.asarray(
+                to_batched_half_pixel_noise(
+                    np.asarray(make_radial_noise(row, particles.image_shape), np.float32), particles.image_shape
+                ),
+                np.float64,
+            ).reshape(-1)
+            for row in noise
+        ]
+    )
+
+
+def estimate_core_coefficients(
+    particles: TiltParticles, basis, noise, *, offsets=None, batch_particles: int = 64
+) -> np.ndarray:
+    """Each particle's coefficients ``(P, K)`` on a core basis (``K`` :class:`FixedCore`, e.g. from
+    :func:`relax.ppca_initial_model.fixed_core.core_basis_volumes`), shared by its visible tilts: the least-squares
+    fit of ``sum_k c_k CTF S P(Aproj) basis_k`` to the observed tilt images under the stream's image metric, as
+    :func:`estimate_core_scales` for one component. Pass the result to :func:`subtract_fixed_core` with the basis.
+    """
+    if particles.core_subtraction is not None:
+        raise ValueError("Core coefficients are fitted to the observed images, not to residuals")
+    basis = tuple(basis)
+    precision = _image_precision(particles, noise)
+    n = particles.n_images
+    offsets = np.zeros((n, 3)) if offsets is None else np.asarray(offsets, np.float64)
+    if offsets.shape != (n, 3):
+        raise ValueError(f"Need one 3D core offset per particle ({n})")
+    G, h = np.zeros((n, len(basis), len(basis))), np.zeros((n, len(basis)))
+    for start in range(0, n, int(batch_particles)):
+        chosen = np.arange(start, min(n, start + int(batch_particles)))
+        images, position = particles.particle_images(chosen)
+        _, half, ctf = particles.read(images)
+        projections = particles.image_projections(images)
+        shifts = image_core_shifts(projections, offsets[chosen[position]])
+        predictions = np.stack(
+            [np.asarray(core_prediction(c, particles.image_shape, projections, ctf, shifts)) for c in basis]
+        )
+        g, b = core_basis_sums(
+            predictions, half, precision[particles.particle_noise_group[chosen[position]]], position, chosen.size
+        )
+        G[chosen] += g
+        h[chosen] += b
+    return core_basis_coefficients(G, h)
 
 
 def tilt_particles_from_tomo_dataset(tomo) -> TiltParticles:
