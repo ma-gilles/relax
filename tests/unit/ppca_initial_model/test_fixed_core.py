@@ -19,7 +19,13 @@ from scipy.spatial.transform import Rotation
 
 from relax.fourier.half_spectrum import make_half_image_weights
 from relax.fourier.preprocessing import relion_half_translation_lattice
-from relax.ppca_initial_model.fixed_core import FixedCore, core_basis_volumes, core_prediction, image_core_shifts
+from relax.ppca_initial_model.fixed_core import (
+    FixedCore,
+    core_basis_volumes,
+    core_prediction,
+    extend_axial_core,
+    image_core_shifts,
+)
 from relax.ppca_initial_model.tomo import (
     TiltParticles,
     estimate_core_coefficients,
@@ -402,3 +408,39 @@ def test_core_basis_coefficients_are_recovered_and_absorb_shape_error():
     assert basis_power < 0.2 * scale_power, (basis_power, scale_power)  # measured ratio 0.023
     # C + c_1 D = C((1 + c_1) r): the 3% wider tube reads as c_1 / c_0 of about -0.03 (measured -0.023 to -0.027).
     assert np.all((coefficients[:, 1] / coefficients[:, 0] < -0.01) & (coefficients[:, 1] / coefficients[:, 0] > -0.05))
+
+
+def test_extend_axial_core_tiles_a_uniform_core_and_refuses_others():
+    tube = _tube(4.0).astype(np.float32)
+    long = extend_axial_core(tube, 3 * N)
+    m = long.shape[0]
+    pad = (m - N) // 2
+    assert long.shape == (m, m, m)
+    assert_matches(long[pad : pad + N, pad : pad + N, pad : pad + N], tube)  # the original slab, centred
+    assert_matches(long[pad : pad + N, pad : pad + N, :], np.tile(tube[:, :, :1], (1, 1, m)))  # uniform along z
+    assert np.all(long[:pad] == 0) and np.all(long[:, :pad] == 0)  # zero padding across the axis
+    bead = tube * np.exp(-(((np.arange(N) - N // 2) / 3.0) ** 2))[None, None, :]
+    with pytest.raises(ValueError, match="not uniform"):
+        extend_axial_core(bead, 2 * N)
+
+
+def test_a_larger_core_box_captures_the_filament_beyond_the_image_box():
+    """A tube tilted out of the image plane: the image box's own tube stops at the box faces, the image does not.
+    The prediction from an M box converges to the 2M box's in the cropped image; the N-box prediction does not."""
+    rng = np.random.default_rng(8)
+    # The tube axis (particle z) at 0, 45 and 60 degrees out of the image plane (a rotation about y by 90 - angle).
+    tilts = Rotation.from_euler("zy", [[0, 90], [20, 45], [-35, 30]], degrees=True).as_matrix()
+    tube = _tube(3.0).astype(np.float32)
+
+    def predict(box):
+        volume = extend_axial_core(tube, box) if box > N else tube
+        fixed = FixedCore.from_volume(volume, volume_shape=(box,) * 3, voxel_size=2.0, volume_domain="real")
+        ctf = np.ones((len(tilts), box * (box // 2 + 1)), np.float32)  # no CTF: the crop alone is tested
+        return np.asarray(core_prediction(fixed, IMAGE_SHAPE, tilts, ctf, np.zeros((len(tilts), 2), np.float32)))
+
+    small, large, larger = predict(N), predict(2 * N), predict(4 * N)
+    near, far = (np.linalg.norm(a - larger, axis=1) / np.linalg.norm(larger, axis=1) for a in (large, small))
+    # Measured: in plane 0.0007 (the image box holds the whole projected tube); at 45 and 60 degrees out of the
+    # plane the N box misses 0.39 and 0.52 of the 4N prediction, the 2N box 0.14 and 0.20.
+    assert far[0] < 0.05
+    assert np.all(far[1:] > 0.2) and np.all(near[1:] < 0.75 * far[1:]), (near, far)

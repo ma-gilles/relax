@@ -120,6 +120,18 @@ def add_args(parser):
         "core's radial-dilation and transverse-shift directions; none: scale 1",
     )
     parser.add_argument(
+        "--fixed-core-box",
+        type=int,
+        help="box (pixels) the fixed core is extended to and projected in before cropping to the images (default "
+        "twice the image box; the image box itself disables the extension)",
+    )
+    parser.add_argument(
+        "--no-fixed-core-free-offset",
+        dest="fixed_core_free_offset",
+        action="store_false",
+        help="fit the core with each image's DC pixel (default: a free per-image offset)",
+    )
+    parser.add_argument(
         "--occupancy",
         type=float,
         help="Prior probability that a particle holds the model, against an explicit empty component (needs "
@@ -587,6 +599,8 @@ def main(args=None):
         occupancy=args.occupancy,
         fixed_core=args.fixed_core,
         fixed_core_scale=args.fixed_core_scale,
+        fixed_core_box=args.fixed_core_box,
+        fixed_core_free_offset=args.fixed_core_free_offset,
     )
     if (args.ios is None) == (args.particles is None):
         raise ValueError("Give either a particle STAR (--i) or an optimisation set (--ios)")
@@ -597,39 +611,49 @@ def main(args=None):
     if args.ios:
         data, identity = load_tilt_training(args.ios, output, particle_frame=config.band() is not None)
         if config.fixed_core is not None:
-            from relax.ppca_initial_model.fixed_core import FixedCore, core_basis_volumes
+            from recovar.utils.helpers import load_relion_volume
+
+            from relax.ppca_initial_model.fixed_core import FixedCore, core_basis_volumes, extend_axial_core
             from relax.ppca_initial_model.tomo import (
                 estimate_core_coefficients,
                 estimate_core_scales,
                 subtract_fixed_core,
             )
 
-            core = FixedCore.from_map(config.fixed_core)
+            voxel_size = FixedCore.from_map(config.fixed_core).voxel_size
+            volume = np.asarray(load_relion_volume(config.fixed_core), np.float32)
+            box = 2 * data.grid_size if config.fixed_core_box is None else int(config.fixed_core_box)
+            if box != volume.shape[0]:
+                volume = extend_axial_core(volume, box)
+            logger.info(
+                "fixed core projected in a %d box (images %d), free offset %s",
+                box,
+                data.grid_size,
+                config.fixed_core_free_offset,
+            )
+
+            def as_core(v):
+                return FixedCore.from_volume(v, volume_shape=v.shape, voxel_size=voxel_size, volume_domain="real")
+
+            core = as_core(volume)
             scales = None
             # Before any noise estimate: a white metric (one flat spectrum per noise group).
             white = np.ones((data.n_noise_groups, data.grid_size // 2 + 1), np.float32)
+            offset = config.fixed_core_free_offset
             if config.fixed_core_scale == "particle":
-                scales = estimate_core_scales(data, core, white)
+                scales = estimate_core_scales(data, core, white, free_offset=offset)
                 np.save(output / "core_scales.npy", scales)
                 logger.info("fixed-core scales: %s", np.percentile(scales, [1, 25, 50, 75, 99]).round(3).tolist())
             elif config.fixed_core_scale == "basis":
-                from recovar.utils.helpers import load_relion_volume
-
-                volume = np.asarray(load_relion_volume(config.fixed_core), np.float32)
-                core = tuple(
-                    FixedCore.from_volume(
-                        v, volume_shape=volume.shape, voxel_size=core.voxel_size, volume_domain="real"
-                    )
-                    for v in core_basis_volumes(volume)
-                )
-                scales = estimate_core_coefficients(data, core, white)
+                core = tuple(as_core(v) for v in core_basis_volumes(volume))
+                scales = estimate_core_coefficients(data, core, white, free_offset=offset)
                 np.save(output / "core_coefficients.npy", scales)
                 logger.info(
                     "fixed-core basis: scale %s, dilation/scale %s",
                     np.percentile(scales[:, 0], [1, 50, 99]).round(3).tolist(),
                     np.percentile(scales[:, 1] / scales[:, 0], [1, 50, 99]).round(4).tolist(),
                 )
-            data = subtract_fixed_core(data, core, scales=scales)
+            data = subtract_fixed_core(data, core, scales=scales, free_offset=offset)
             identity["fixed_core_sha256"] = file_hash(config.fixed_core)
         # Subtomogram stacks are always read into memory (load_tilt_training).
         image_reading = None
