@@ -108,6 +108,11 @@ def add_args(parser):
     )
     parser.add_argument("--attachment-radius", type=float, default=60.0, help="support radius, Angstrom (default 60)")
     parser.add_argument(
+        "--fixed-core",
+        help="RELION-convention map of a fixed core (e.g. the filament) in each particle's frame; it is projected with "
+        "each tilt's CTF and removed from the images before training (subtomogram particles)",
+    )
+    parser.add_argument(
         "--occupancy",
         type=float,
         help="Prior probability that a particle holds the model, against an explicit empty component (needs "
@@ -573,13 +578,22 @@ def main(args=None):
         attachment_center_ang=args.attachment_center,
         attachment_radius_ang=args.attachment_radius,
         occupancy=args.occupancy,
+        fixed_core=args.fixed_core,
     )
     if (args.ios is None) == (args.particles is None):
         raise ValueError("Give either a particle STAR (--i) or an optimisation set (--ios)")
+    if config.fixed_core is not None and args.ios is None:
+        raise ValueError("--fixed-core removes a core from subtomogram particles (--ios)")
     output = Path(args.output)
     output.mkdir(parents=True, exist_ok=True)
     if args.ios:
         data, identity = load_tilt_training(args.ios, output, particle_frame=config.band() is not None)
+        if config.fixed_core is not None:
+            from relax.ppca_initial_model.fixed_core import FixedCore
+            from relax.ppca_initial_model.tomo import subtract_fixed_core
+
+            data = subtract_fixed_core(data, FixedCore.from_map(config.fixed_core))
+            identity["fixed_core_sha256"] = file_hash(config.fixed_core)
         # Subtomogram stacks are always read into memory (load_tilt_training).
         image_reading = None
     else:
