@@ -444,3 +444,36 @@ def test_a_larger_core_box_captures_the_filament_beyond_the_image_box():
     # plane the N box misses 0.39 and 0.52 of the 4N prediction, the 2N box 0.14 and 0.20.
     assert far[0] < 0.05
     assert np.all(far[1:] > 0.2) and np.all(near[1:] < 0.75 * far[1:]), (near, far)
+
+
+def test_free_offset_zeroes_the_residual_mean_and_marks_the_particles():
+    from relax.fourier.half_spectrum import half_spectrum_dc_index
+
+    p = make_problem(seed=5)
+    _, _, owner, _ = _layout()
+    every = np.arange(owner.size)
+    dc = half_spectrum_dc_index(IMAGE_SHAPE)
+    shifted = p["observed"].copy()
+    shifted[:, dc] += np.random.default_rng(1).normal(0, 50, owner.size)  # a per-image offset: the DC pixel only
+    observed = _particles(shifted, p["ctf"])
+    plain = subtract_fixed_core(observed, p["fixed"], offsets=OFFSETS)
+    free = subtract_fixed_core(observed, p["fixed"], offsets=OFFSETS, free_offset=True)
+    assert not plain.dc_free and free.dc_free
+    residual, reference = np.asarray(free.read(every)[1]), np.asarray(plain.read(every)[1])
+    assert np.all(residual[:, dc] == 0)
+    keep = np.arange(N_HALF) != dc
+    assert_matches(residual[:, keep], reference[:, keep])
+
+
+def test_frozen_noise_shells_keep_their_value_and_the_rest_update():
+    from relax.ppca_initial_model.noise import update_noise
+
+    previous = np.array([[5.0, 2.0, 3.0], [4.0, 1.0, 6.0]], np.float32)
+    numerator = np.array([[0.0, 8.0, 9.0], [0.0, 2.0, 3.0]])  # shell 0 holds no power (DC-free particles)
+    denominator = np.array([[4.0, 4.0, 3.0], [2.0, 1.0, 1.0]])
+    with pytest.raises(ValueError, match="Nonpositive"):
+        update_noise(previous, numerator, denominator, full_data=True)
+    frozen = np.asarray(update_noise(previous, numerator, denominator, full_data=True, frozen_shells=(0,)))
+    unfrozen = np.asarray(update_noise(previous[:, 1:], numerator[:, 1:], denominator[:, 1:], full_data=True))
+    assert_matches(frozen[:, 0], previous[:, 0])
+    assert_matches(frozen[:, 1:], unfrozen)
