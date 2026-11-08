@@ -681,11 +681,15 @@ def full_row_tile_embeddings(stream: FullRowStream, image_indices, significant_r
             posterior.top_score[:n_real],
             tile.y_norm[:n_real],
         )
+        top = dict(
+            best_rotation=np.asarray(jax.device_get(posterior.top_rotation[:n_real]), np.int32),
+            best_translation=np.asarray(jax.device_get(posterior.top_translation[:n_real]), np.int32),
+        )
         if stream.occupancy is None:
-            return DensePPCAEmbeddings(carry.embedding[:n_real], layout["original_ids"], n_real, *scores)
+            return DensePPCAEmbeddings(carry.embedding[:n_real], layout["original_ids"], n_real, *scores, **top)
         # Pass 2 weights each pose by P(occupied, pose): the embedding is P(occupied) E[z | occupied].
         p_occupied = layout["p_occupied"][:n_real]
         embedding = carry.embedding[:n_real] / jnp.maximum(p_occupied, jnp.finfo(jnp.float32).tiny)[:, None]
         return DensePPCAEmbeddings(
-            embedding, layout["original_ids"], n_real, *scores, p_occupied=np.asarray(jax.device_get(p_occupied))
+            embedding, layout["original_ids"], n_real, *scores, p_occupied=np.asarray(jax.device_get(p_occupied)), **top
         )

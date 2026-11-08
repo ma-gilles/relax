@@ -612,6 +612,9 @@ class DensePPCAEmbeddings(NamedTuple):
     # With an explicit empty component (relax/ppca_refinement/occupancy.py): P(occupied) per image; the
     # embeddings are then E[z | occupied] and log_evidence the two-component log-partition.
     p_occupied: np.ndarray | None = None  # (n_images,) float32
+    # The streamed engine's top pose per image: its fine row in the stream's rotation grid and its translation.
+    best_rotation: np.ndarray | None = None  # (n_images,) int32
+    best_translation: np.ndarray | None = None  # (n_images,) int32
 
 
 @full_float32
