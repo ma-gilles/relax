@@ -258,3 +258,32 @@ def core_basis_coefficients(G, h, *, relative_ridge: float = 1e-6) -> np.ndarray
         raise ValueError("A particle sees no core signal: its basis fit is undetermined")
     regularized = G + relative_ridge * np.einsum("pk,kl->pkl", diagonal, np.eye(G.shape[1]))
     return np.linalg.solve(regularized, h[..., None])[..., 0]
+
+
+def symmetrize_core(volume, mode: str) -> np.ndarray:
+    """A real-space volume averaged along the filament axis (internal frame axis 2) - ``mode="z"`` - or also over
+    the azimuth about the axis - ``mode="cylinder"`` (linear interpolation over radius in voxels from ``N // 2``).
+
+    A scaffold that is uniform along the filament (and cylindrical) keeps its value; something placed at random
+    positions along and around it is averaged down.
+    """
+    volume = np.asarray(volume, np.float64)
+    if mode not in ("z", "cylinder"):
+        raise ValueError(f"Symmetrisation mode must be z or cylinder, got {mode}")
+    plane = volume.mean(axis=2)
+    if mode == "cylinder":
+        n = plane.shape[0]
+        x = np.arange(n) - n // 2
+        rho = np.hypot(x[:, None], x[None, :])
+        index = np.floor(rho).astype(np.int64)
+        frac = rho - index
+        bins = index.max() + 2
+        weight = np.bincount(index.ravel(), (1 - frac).ravel(), bins) + np.bincount(
+            index.ravel() + 1, frac.ravel(), bins
+        )
+        total = np.bincount(index.ravel(), ((1 - frac) * plane).ravel(), bins) + np.bincount(
+            index.ravel() + 1, (frac * plane).ravel(), bins
+        )
+        profile = total / np.maximum(weight, 1e-12)
+        plane = (1 - frac) * profile[index] + frac * profile[index + 1]
+    return np.ascontiguousarray(np.broadcast_to(plane[:, :, None], volume.shape)).astype(np.float32)
