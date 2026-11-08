@@ -23,6 +23,13 @@ from scipy.spatial.transform import Rotation
 
 from relax.fourier.half_spectrum import make_half_image_weights
 from relax.fourier.preprocessing import relion_half_translation_lattice, translation_phases
+from relax.ppca_initial_model.fixed_core import (
+    FixedCore,
+    core_prediction,
+    core_scale,
+    core_scale_sums,
+    image_core_shifts,
+)
 from relax.ppca_initial_model.initialization import initial_noise, seed_model
 from relax.ppca_refinement.full_row_kernels import SHIFT_ALIGN, TileArrays, real_imag
 from relax.ppca_refinement.full_row_stream import tile_size_bucket, tile_support
@@ -41,6 +48,8 @@ class TiltParticles:
     ``(n, N, N)``, centered half spectra ``(n, n_half)`` complex64 and CTF rows ``(n, n_half)``
     float32 on the half grid of :meth:`process_images_half`. ``noise_group`` (``0..G-1`` per
     particle, its optics group; ``None`` is one group) selects the particle's noise spectrum.
+    ``core_subtraction`` records the fixed core :func:`subtract_fixed_core` removed from the half
+    spectra ``read`` returns (``None``: the observed images).
     """
 
     image_shape: tuple
@@ -52,6 +61,7 @@ class TiltParticles:
     group_frames: tuple
     read: Callable
     noise_group: np.ndarray | None = None
+    core_subtraction: CoreSubtraction | None = None
 
     @property
     def particle_noise_group(self) -> np.ndarray:
@@ -84,6 +94,125 @@ class TiltParticles:
             np.concatenate([np.arange(a, b) for a, b in zip(starts, stops)]) if particles.size else np.zeros(0, int)
         )
         return images.astype(np.int64), np.repeat(np.arange(particles.size), stops - starts)
+
+    def image_particle(self, image_ids) -> np.ndarray:
+        """The particle that owns each image."""
+        return np.searchsorted(self.image_offsets, np.asarray(image_ids, np.int64), side="right") - 1
+
+    def image_projections(self, image_ids) -> np.ndarray:
+        """Each image's projection rotation ``Aproj`` (its frame matrix in its particle's group), ``(n, 3, 3)``."""
+        image_ids = np.asarray(image_ids, np.int64)
+        groups = self.particle_group[self.image_particle(image_ids)]
+        if not image_ids.size:
+            return np.zeros((0, 3, 3))
+        return np.stack([self.group_frames[g][f] for g, f in zip(groups, self.image_frame[image_ids])])
+
+
+@dataclasses.dataclass(frozen=True)
+class CoreSubtraction:
+    """The fixed core removed from every tilt image: ``core`` at each particle's 3D ``offsets`` ``(P, 3)``
+    (pixels, the stream's translation convention) with its ``scales`` ``(P,)``."""
+
+    core: FixedCore
+    offsets: np.ndarray
+    scales: np.ndarray
+
+
+def subtract_fixed_core(particles: TiltParticles, core: FixedCore, *, offsets=None, scales=None) -> TiltParticles:
+    """The particles with ``core`` removed from their tilt images: ``read`` returns the residual half spectra
+    ``y - c_i CTF S_{[Aproj t_i]_{1,2}} P(Aproj) core`` (:func:`relax.ppca_initial_model.fixed_core.core_prediction`).
+
+    Every reader of the half spectra (the tile operands, ``y_norm`` and the observation power of
+    :func:`load_tilt_tile`, the bootstrap of :func:`tilt_bootstrap`) then sees the residual, and the PPCA models
+    only what the core leaves. ``read`` still returns the observed real-space images: the start-up noise
+    (:func:`tilt_noise_images`) is estimated from them, core included. ``offsets`` ``(P, 3)`` are each particle's
+    3D core offset in pixels (default zeros); ``scales`` ``(P,)`` its core scale (default ones; see
+    :func:`estimate_core_scales`).
+    """
+    if particles.core_subtraction is not None:
+        raise ValueError("These particles already have a fixed core subtracted")
+    if tuple(core.volume_shape) != tuple(particles.volume_shape):
+        raise ValueError(f"Core volume {core.volume_shape} differs from the particles' {particles.volume_shape}")
+    if not np.isclose(core.voxel_size, particles.voxel_size, rtol=1e-5):
+        raise ValueError(f"Core voxel size {core.voxel_size} differs from the particles' {particles.voxel_size}")
+    n = particles.n_images
+    offsets = np.zeros((n, 3)) if offsets is None else np.asarray(offsets, np.float64)
+    scales = np.ones(n) if scales is None else np.asarray(scales, np.float64)
+    if offsets.shape != (n, 3) or scales.shape != (n,):
+        raise ValueError(f"Need one 3D core offset and one core scale per particle ({n})")
+    if not (np.all(np.isfinite(offsets)) and np.all(np.isfinite(scales))):
+        raise ValueError("Core offsets and scales must be finite")
+    all_images = np.arange(particles.image_offsets[-1])
+    owner = particles.image_particle(all_images)
+    projections = particles.image_projections(all_images)
+    shifts = image_core_shifts(projections, offsets[owner])
+    projections = projections.astype(np.float32)  # what the projector reads (the stream's float32 frames)
+    image_scale = scales[owner].astype(np.float32)
+    observed_read, image_shape = particles.read, particles.image_shape
+
+    def read(image_ids):
+        image_ids = np.asarray(image_ids, np.int64)
+        images, half, ctf = observed_read(image_ids)
+        prediction = core_prediction(core, image_shape, projections[image_ids], ctf, shifts[image_ids])
+        residual = half - jnp.asarray(image_scale[image_ids])[:, None] * prediction
+        return images, residual.astype(jnp.complex64), ctf
+
+    return dataclasses.replace(
+        particles, read=read, core_subtraction=CoreSubtraction(core=core, offsets=offsets, scales=scales)
+    )
+
+
+def estimate_core_scales(
+    particles: TiltParticles, core: FixedCore, noise, *, offsets=None, prior_sd=None, batch_particles: int = 64
+) -> np.ndarray:
+    """Each particle's core scale ``c_i``, shared by its visible tilts, ``(P,)`` float64.
+
+    The least-squares fit of ``c_i CTF S P(Aproj) core`` to the particle's observed tilt images under the stream's
+    image metric (Hermitian half-image weights over the noise of the particle's noise group); with ``prior_sd``
+    the posterior mode under ``c_i ~ N(1, prior_sd^2)`` (:func:`relax.ppca_initial_model.fixed_core.core_scale`).
+    ``noise`` is the model's per-group shell spectra ``(G, S)`` (``state.noise``), expanded to pixels as the
+    controller does for its streams. Pass the result to :func:`subtract_fixed_core`. The fit sees everything in
+    the images, so what the core does not explain but correlates with (an attachment) biases it.
+    """
+    from recovar.reconstruction.noise import make_radial_noise, to_batched_half_pixel_noise
+
+    if particles.core_subtraction is not None:
+        raise ValueError("Core scales are fitted to the observed images, not to residuals")
+    noise = np.asarray(noise)
+    if noise.ndim != 2 or noise.shape[0] != particles.n_noise_groups:
+        raise ValueError(f"Need one noise spectrum per noise group ({particles.n_noise_groups}), got {noise.shape}")
+    weights = np.asarray(make_half_image_weights(particles.image_shape), np.float64)
+    precision = np.stack(
+        [
+            weights
+            / np.asarray(
+                to_batched_half_pixel_noise(
+                    np.asarray(make_radial_noise(row, particles.image_shape), np.float32), particles.image_shape
+                ),
+                np.float64,
+            ).reshape(-1)
+            for row in noise
+        ]
+    )
+    n = particles.n_images
+    offsets = np.zeros((n, 3)) if offsets is None else np.asarray(offsets, np.float64)
+    if offsets.shape != (n, 3):
+        raise ValueError(f"Need one 3D core offset per particle ({n})")
+    a, b = np.zeros(n), np.zeros(n)
+    for start in range(0, n, int(batch_particles)):
+        chosen = np.arange(start, min(n, start + int(batch_particles)))
+        images, position = particles.particle_images(chosen)
+        _, half, ctf = particles.read(images)
+        projections = particles.image_projections(images)
+        prediction = core_prediction(
+            core, particles.image_shape, projections, ctf, image_core_shifts(projections, offsets[chosen[position]])
+        )
+        sums = core_scale_sums(
+            prediction, half, precision[particles.particle_noise_group[chosen[position]]], position, chosen.size
+        )
+        a[chosen] += sums[0]
+        b[chosen] += sums[1]
+    return core_scale(a, b, prior_sd=prior_sd)
 
 
 def tilt_particles_from_tomo_dataset(tomo) -> TiltParticles:
