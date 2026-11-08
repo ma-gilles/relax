@@ -282,13 +282,19 @@ class TomoImageGeometry:
 
 
 def relion_image_geometry(
-    rows: pd.DataFrame, index: TomoParticleIndex, particles_star, tomograms_star
+    rows: pd.DataFrame, index: TomoParticleIndex, particles_star, tomograms_star, *, particle_frame: bool = False
 ) -> TomoImageGeometry:
     """Put ``rows`` (the per-tilt STAR, ``index`` its particles) in RELION's image order.
 
     The subtomogram matrix is ``Euler::anglesToMatrix3`` of ``rlnTomoSubtomogramRot/Tilt/Psi``
     (particle_set.cpp:381-398, Euler_angles_relion.h:38-47, the same matrix as RELION's
     ``Euler_angles2matrix``) and the identity without those columns.
+
+    ``particle_frame`` also composes each particle's own orientation ``rlnAngleRot/Tilt/Psi`` (required then):
+    the projections become ``tilt rotation x subtomogram matrix x particle matrix``, RELION's
+    ``ParticleSet::getMatrix3x3`` = ``A_subtomogram * A_particle`` (particle_set.cpp:400-425). Searches then run
+    in each particle's frame (a fixed-frame search such as the filament band). The default leaves the
+    particle angles unread, as subtomogram PPCA ab initio does.
     """
 
     from ast import literal_eval
@@ -315,6 +321,16 @@ def relion_image_geometry(
         )
     else:
         subtomogram = np.tile(np.eye(3), (names.size, 1, 1))
+    if particle_frame:
+        subtomogram = subtomogram @ euler_angles_to_matrix(
+            np.stack(
+                [
+                    np.asarray(star_column(particles, label, required=True), dtype=np.float64)
+                    for label in ("rlnAngleRot", "rlnAngleTilt", "rlnAnglePsi")
+                ],
+                axis=1,
+            )
+        )
 
     series = {}
     series_file = dict(

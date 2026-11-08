@@ -46,6 +46,12 @@ _ADDED_CONFIG_DEFAULTS = {
     "noise_anneal_updates": 0,
     "sgd_momentum": 0.9,
     "vdam_second_moment": True,
+    "band_length_ang": None,
+    "band_axial_step_ang": 15.0,
+    "band_phi_step_deg": 5.0,
+    "attachment_center_ang": 180.0,
+    "attachment_radius_ang": 60.0,
+    "occupancy": None,
 }
 
 

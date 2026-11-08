@@ -44,13 +44,15 @@ class TomoDataset:
     ``image_frames`` and the particle's tomogram in ``unit_tomogram``.
     """
 
-    def __init__(self, images, flat_rows, particles_star, tomograms_star):
+    def __init__(self, images, flat_rows, particles_star, tomograms_star, *, particle_frame: bool = False):
         from recovar.data_io.starfile import read_star, star_column
 
         from relax.star import tomo_input
 
         index = tomo_input.tomo_particle_index(flat_rows)
-        geometry = tomo_input.relion_image_geometry(flat_rows, index, particles_star, tomograms_star)
+        geometry = tomo_input.relion_image_geometry(
+            flat_rows, index, particles_star, tomograms_star, particle_frame=particle_frame
+        )
         particles, _ = read_star(str(particles_star))
         names = np.asarray(star_column(particles, "rlnTomoParticleName", required=True))
         position = {name: p for p, name in enumerate(index.particle_names)}
@@ -256,9 +258,12 @@ def warm_tilt_stacks(particles_star, datadir) -> None:
 
 
 def load_tomo_dataset(
-    particles_star, tomograms_star, flat_star, *, datadir, lazy: bool, read_policy=None
+    particles_star, tomograms_star, flat_star, *, datadir, lazy: bool, read_policy=None, particle_frame: bool = False
 ) -> TomoDataset:
     """A RELION 5 2D-stack project as a :class:`TomoDataset`; the per-tilt STAR is written to ``flat_star``.
+
+    ``particle_frame`` composes each particle's ``rlnAngle*`` orientation into its projections
+    (:func:`relax.star.tomo_input.relion_image_geometry`).
 
     ``read_policy`` (:class:`relax.io.particle_io.ParticleReadPolicy`) applies ``--scratch_dir`` to
     the stacks the per-tilt STAR names: the particle STAR has no ``_rlnImageName`` rows to stage from.
@@ -278,7 +283,9 @@ def load_tomo_dataset(
         warm_tilt_stacks(particles_star, datadir)
     images = load_dataset(str(flat_star), datadir=datadir, lazy=lazy, dtype=np.complex64, absent_angles_zero=True)
     assert_reads_from_scratch(images, scratch)
-    return TomoDataset(images, read_star(str(flat_star))[0], particles_star, tomograms_star)
+    return TomoDataset(
+        images, read_star(str(flat_star))[0], particles_star, tomograms_star, particle_frame=particle_frame
+    )
 
 
 class TomoHalf:
