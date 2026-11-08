@@ -143,9 +143,7 @@ def _drop_dc(precision_or_half, image_shape):
     return out
 
 
-def subtract_fixed_core(
-    particles: TiltParticles, core: FixedCore, *, offsets=None, scales=None, free_offset: bool = False
-) -> TiltParticles:
+def subtract_fixed_core(particles: TiltParticles, core: FixedCore, *, offsets=None, scales=None) -> TiltParticles:
     """The particles with ``core`` removed from their tilt images: ``read`` returns the residual half spectra
     ``y - c_i CTF S_{[Aproj t_i]_{1,2}} P(Aproj) core`` (:func:`relax.ppca_initial_model.fixed_core.core_prediction`).
 
@@ -154,8 +152,9 @@ def subtract_fixed_core(
     only what the core leaves. ``read`` still returns the observed real-space images: the start-up noise
     (:func:`tilt_noise_images`) is estimated from them, core included. ``offsets`` ``(P, 3)`` are each particle's
     3D core offset in pixels (default zeros); ``scales`` ``(P,)`` its core scale (default ones; see
-    :func:`estimate_core_scales`). ``free_offset`` zeroes the residual's DC pixel: each image's mean is free, as
-    after RELION's background normalisation, whose ring mean includes the filament's own projection.
+    :func:`estimate_core_scales`). A per-image offset that the fits leave free (``free_offset``, RELION's background
+    normalisation, whose ring mean includes the filament's own projection) stays in the residual's DC pixel, where
+    the noise model's shell 0 absorbs it.
     """
     if particles.core_subtraction is not None:
         raise ValueError("These particles already have a fixed core subtracted")
@@ -186,9 +185,6 @@ def subtract_fixed_core(
     projections = projections.astype(np.float32)  # what the projector reads (the stream's float32 frames)
     image_coefficients = coefficients[owner].astype(np.float32)
     observed_read, image_shape = particles.read, particles.image_shape
-    from relax.fourier.half_spectrum import half_spectrum_dc_index
-
-    dc_index = int(half_spectrum_dc_index(image_shape))
 
     def read(image_ids):
         image_ids = np.asarray(image_ids, np.int64)
@@ -198,8 +194,6 @@ def subtract_fixed_core(
             rows = _core_ctf(particles, component, image_ids, ctf)
             prediction = core_prediction(component, image_shape, projections[image_ids], rows, shifts[image_ids])
             residual = residual - jnp.asarray(image_coefficients[image_ids, k])[:, None] * prediction
-        if free_offset:
-            residual = residual.at[:, dc_index].set(0)
         return images, residual.astype(jnp.complex64), ctf
 
     return dataclasses.replace(
