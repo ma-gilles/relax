@@ -53,6 +53,7 @@ _ADDED_CONFIG_DEFAULTS = {
     "attachment_radius_ang": 60.0,
     "occupancy": None,
     "fixed_core": None,
+    "fixed_core_scale": "particle",
 }
 
 

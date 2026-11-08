@@ -106,6 +106,9 @@ class Config:
     # A RELION-convention map of a fixed core in each particle's frame, removed from every tilt image before the PPCA
     # sees it (relax/ppca_initial_model/fixed_core.py): the model then holds what is left. None: nothing removed.
     fixed_core: str | None = None
+    # "particle": each particle's core scale is fitted (least squares over its tilts, white metric) before the core
+    # is removed - a core map's absolute scale and the per-filament contrast are unknown; "none": scale 1.
+    fixed_core_scale: str = "particle"
 
     def band(self):
         """The :class:`FilamentBand` search, or None for the full grid."""
@@ -129,6 +132,8 @@ class Config:
                     "The filament band searches its own full grid: oversampling 0, the streamed engine, "
                     "no shift schedule"
                 )
+        if self.fixed_core_scale not in ("particle", "none"):
+            raise ValueError(f"fixed_core_scale must be particle or none, got {self.fixed_core_scale}")
         if self.occupancy is not None:
             if self.band_length_ang is None:
                 raise ValueError("An occupancy prior needs the filament band's full grid")
