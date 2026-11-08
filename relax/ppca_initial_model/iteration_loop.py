@@ -844,7 +844,13 @@ def run(
         padding = [(0, 0)] * (current.ndim - 1) + [(0, max(0, noise_shells - current.shape[-1]))]
         previous = np.pad(current, padding, mode="edge")[..., :noise_shells]
         try:
-            noise = update_noise(previous, numerator, denominator, full_data=count == dataset.n_images)
+            noise = update_noise(
+                previous,
+                numerator,
+                denominator,
+                full_data=count == dataset.n_images,
+                frozen_shells=(0,) if isinstance(dataset, TiltParticles) and dataset.dc_free else (),
+            )
         except ValueError:
             checkpoint.save(output / f"failure_before_{iteration:04d}.npz", state, config, identity)
             np.savez(

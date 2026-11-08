@@ -653,7 +653,7 @@ def main(args=None):
                     np.percentile(scales[:, 0], [1, 50, 99]).round(3).tolist(),
                     np.percentile(scales[:, 1] / scales[:, 0], [1, 50, 99]).round(4).tolist(),
                 )
-            data = subtract_fixed_core(data, core, scales=scales)
+            data = subtract_fixed_core(data, core, scales=scales, free_offset=offset)
             identity["fixed_core_sha256"] = file_hash(config.fixed_core)
         # Subtomogram stacks are always read into memory (load_tilt_training).
         image_reading = None

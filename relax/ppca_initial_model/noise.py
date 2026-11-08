@@ -17,12 +17,23 @@ def relion_to_coefficient_variance(sigma2, image_shape):
     return jnp.asarray(sigma2, dtype=jnp.float32) * np.float32(2 * np.prod(image_shape) ** 2)
 
 
-def update_noise(previous, numerator, denominator, *, full_data=False):
+def update_noise(previous, numerator, denominator, *, full_data=False, frozen_shells=()):
     """Apply VDAM timing to raw shell sums at the old E-step model.
 
     ``(G, S)`` sums update one spectrum per noise group (subtomogram optics groups); a group
-    without images in this batch keeps its previous spectrum.
+    without images in this batch keeps its previous spectrum. ``frozen_shells`` keep their previous values: shells
+    whose pixels the data define to carry no information (shell 0 of DC-free particles, ``TiltParticles.dc_free``).
     """
+    frozen = list(frozen_shells)
+    if frozen:
+        previous_values = np.asarray(previous, np.float32)[..., frozen]
+        numerator = np.array(numerator, np.float64, copy=True)
+        denominator = np.asarray(denominator, np.float64)
+        # Stand-in sums that reproduce the previous value; the shells are restored exactly below.
+        numerator[..., frozen] = previous_values * denominator[..., frozen]
+        updated = np.array(update_noise(previous, numerator, denominator, full_data=full_data), np.float32)
+        updated[..., frozen] = previous_values
+        return jnp.asarray(updated)
     numerator, denominator = np.asarray(numerator), np.asarray(denominator)
     if numerator.ndim == 2:
         updated = np.array(previous, dtype=np.float32, copy=True)
