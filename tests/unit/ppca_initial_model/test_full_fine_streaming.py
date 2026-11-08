@@ -1016,3 +1016,11 @@ def test_empty_component_weights_each_image_by_its_occupied_probability(occupanc
     assert_matches(
         np.float32(mixed_tile.log_likelihood), np.float32(np.sum(np.logaddexp(occupied, empty))), rtol=1e-5
     )
+
+
+def test_tile_embeddings_carry_the_statistics_pass_top_pose(tile_problem):
+    _, _, _, stream, _ = tile_problem
+    embeddings = full_row_tile_embeddings(stream, np.arange(3), SIGNIFICANT)
+    stats = accumulate_full_row_tile(stream, np.arange(3), SIGNIFICANT)
+    assert np.array_equal(embeddings.best_rotation, stats.diagnostics["best_rotation_idx"])
+    assert np.array_equal(embeddings.best_translation, stats.diagnostics["best_translation_idx"])

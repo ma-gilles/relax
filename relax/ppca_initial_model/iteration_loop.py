@@ -578,6 +578,11 @@ def _expectation(
                             np.concatenate([getattr(part, name) for part in group_parts])
                             for name in ("log_evidence", "best_pose_log_score", "max_posterior", "null_log_likelihood")
                         ),
+                        **{
+                            name: np.concatenate([getattr(part, name) for part in group_parts])
+                            for name in ("p_occupied", "best_rotation", "best_translation")
+                            if getattr(group_parts[0], name) is not None
+                        },
                     )
                 )
                 continue
@@ -1004,6 +1009,19 @@ def run(
         if not np.array_equal(np.sort(final.original_image_ids), ids):
             raise ValueError("Final embedding does not cover every particle exactly once")
         # Per-image scores of the same pass (DensePPCAEmbeddings), aligned with particle_ids.
+        band = config.band()
+        placement = (
+            {}
+            if band is None
+            else dict(
+                # Each particle's top (a, phi) and P(occupied); the grid that best_rotation/translation index.
+                best_rotation=final.best_rotation,
+                best_translation=final.best_translation,
+                band_eulers_deg=band.eulers(),
+                band_axial_offsets_ang=band.axial_offsets_ang(),
+                **({} if final.p_occupied is None else {"p_occupied": final.p_occupied}),
+            )
+        )
         np.savez(
             output / "embeddings.npz",
             particle_ids=final.original_image_ids,
@@ -1012,5 +1030,6 @@ def run(
             best_pose_log_score=final.best_pose_log_score,
             max_posterior=final.max_posterior,
             null_log_likelihood=final.null_log_likelihood,
+            **placement,
         )
     return state
