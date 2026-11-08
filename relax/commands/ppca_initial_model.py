@@ -108,6 +108,12 @@ def add_args(parser):
     )
     parser.add_argument("--attachment-radius", type=float, default=60.0, help="support radius, Angstrom (default 60)")
     parser.add_argument(
+        "--attachment-exclude-radius",
+        type=float,
+        help="leave the cylinder of this radius about the axis (Angstrom) out of the support, e.g. the fixed core's "
+        "outer radius (default: nothing excluded)",
+    )
+    parser.add_argument(
         "--fixed-core",
         help="RELION-convention map of a fixed core (e.g. the filament) in each particle's frame; it is projected with "
         "each tilt's CTF and removed from the images before training (subtomogram particles)",
@@ -602,6 +608,7 @@ def main(args=None):
         band_phi_step_deg=args.filament_band_phi_step,
         attachment_center_ang=args.attachment_center,
         attachment_radius_ang=args.attachment_radius,
+        attachment_exclude_radius_ang=args.attachment_exclude_radius,
         occupancy=args.occupancy,
         fixed_core=args.fixed_core,
         fixed_core_scale=args.fixed_core_scale,

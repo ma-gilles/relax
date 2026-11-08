@@ -56,6 +56,23 @@ def test_attachment_support_sits_on_plus_x_at_its_radius():
         attachment_support_mask(n, voxel, FilamentBand(length_ang=80.0, support_center_ang=230.0))
 
 
+def test_core_exclusion_removes_the_cylinder_about_the_axis_from_the_support():
+    n, voxel = 64, 8.0
+    band = FilamentBand(length_ang=80.0, support_center_ang=120.0, support_radius_ang=40.0)
+    excluded = dataclasses.replace(band, core_exclusion_radius_ang=96.0)
+    full, mask = np.asarray(attachment_support_mask(n, voxel, band)), np.asarray(attachment_support_mask(n, voxel, excluded))
+    grid = np.indices((n, n, n))
+    rho = np.sqrt((grid[0] - n // 2) ** 2 + (grid[1] - n // 2) ** 2) * voxel
+    assert full[rho <= 96.0].max() > 0 and mask[rho <= 96.0].max() == 0.0  # 12 voxels from the axis and in: nothing
+    outside = rho >= 96.0 + 2 * voxel  # beyond the two-voxel ramp: the sphere unchanged
+    assert np.array_equal(mask[outside], full[outside])
+    assert np.all(mask <= full)
+    for radius in (0.0, 160.0):  # none, or beyond the sphere's far side: no support left
+        with pytest.raises(ValueError, match="exclusion"):
+            dataclasses.replace(band, core_exclusion_radius_ang=radius)
+    assert Config(band_length_ang=80.0, attachment_exclude_radius_ang=96.0).band().core_exclusion_radius_ang == 96.0
+
+
 def test_config_band_needs_its_own_full_grid_and_occupancy_needs_the_band():
     config = Config(band_length_ang=240.0, occupancy=0.1)
     assert config.band() == FilamentBand(240.0)

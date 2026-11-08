@@ -32,6 +32,9 @@ class FilamentBand:
     # The attachment's canonical support: a soft sphere at (support_center_ang, 0, 0) in the particle frame.
     support_center_ang: float = 180.0
     support_radius_ang: float = 60.0
+    # The support excludes the cylinder of this radius about the axis (None: nothing excluded): what a fixed core
+    # models there (its leftover after subtraction is shared by every window) is not the attachment's.
+    core_exclusion_radius_ang: float | None = None
 
     def __post_init__(self):
         if not self.length_ang >= 0 or not self.axial_step_ang > 0 or not 0 < self.phi_step_deg <= 360:
@@ -40,6 +43,10 @@ class FilamentBand:
             raise ValueError(f"phi_step_deg must divide 360, got {self.phi_step_deg}")
         if not self.support_radius_ang > 0 or self.support_center_ang < 0:
             raise ValueError(f"Invalid attachment support {self}")
+        if self.core_exclusion_radius_ang is not None and not (
+            0 < self.core_exclusion_radius_ang < self.support_center_ang + self.support_radius_ang
+        ):
+            raise ValueError(f"The core exclusion leaves no attachment support: {self}")
 
     def phis_deg(self) -> np.ndarray:
         return np.arange(round(360.0 / self.phi_step_deg)) * np.float64(self.phi_step_deg)
@@ -71,9 +78,14 @@ def uniform_log_prior(n: int) -> np.ndarray:
     return np.full(n, -np.log(n), np.float32)
 
 
-def attachment_support_mask(n: int, voxel_size: float, band: FilamentBand, edge: int = 5) -> jnp.ndarray:
+def attachment_support_mask(
+    n: int, voxel_size: float, band: FilamentBand, edge: int = 5, exclusion_edge: int = 2
+) -> jnp.ndarray:
     """Soft sphere of ``band.support_radius_ang`` at the attachment's canonical centre on an ``n``-cube, float32: 1
-    inside, a raised-cosine fall to 0 over ``edge`` voxels, as :func:`initialization.support_mask` about its centre."""
+    inside, a raised-cosine fall to 0 over ``edge`` voxels, as :func:`initialization.support_mask` about its centre.
+    With ``band.core_exclusion_radius_ang`` it is 0 within that distance of the axis (axis 2 through the box centre)
+    and rises to 1 over ``exclusion_edge`` voxels outside it; the cylinder is invariant under the band's poses, so
+    the placed support never covers the core."""
     center = band.support_center_px(n, voxel_size)
     radius = band.support_radius_ang / voxel_size
     if center[0] + radius + edge > n:
@@ -85,4 +97,12 @@ def attachment_support_mask(n: int, voxel_size: float, band: FilamentBand, edge:
         1.0,
         np.where(distance >= radius + edge, 0.0, 0.5 + 0.5 * np.cos(np.pi * (distance - radius) / edge)),
     )
+    if band.core_exclusion_radius_ang is not None:
+        inner = band.core_exclusion_radius_ang / voxel_size
+        rho = np.sqrt((grid[0] - n // 2) ** 2 + (grid[1] - n // 2) ** 2)
+        weight = weight * np.where(
+            rho <= inner,
+            0.0,
+            np.where(rho >= inner + exclusion_edge, 1.0, 0.5 - 0.5 * np.cos(np.pi * (rho - inner) / exclusion_edge)),
+        )
     return jnp.asarray(weight, jnp.float32)

@@ -100,6 +100,8 @@ class Config:
     band_phi_step_deg: float = 5.0
     attachment_center_ang: float = 180.0
     attachment_radius_ang: float = 60.0
+    # The support leaves out the cylinder of this radius about the axis (FilamentBand.core_exclusion_radius_ang).
+    attachment_exclude_radius_ang: float | None = None
     # Prior probability that a particle holds the model, against an explicit empty component
     # (relax/ppca_refinement/occupancy.py); None: every particle holds it. Needs the band's full grid.
     occupancy: float | None = None
@@ -135,6 +137,7 @@ class Config:
             self.band_phi_step_deg,
             self.attachment_center_ang,
             self.attachment_radius_ang,
+            self.attachment_exclude_radius_ang,
         )
 
     def __post_init__(self):

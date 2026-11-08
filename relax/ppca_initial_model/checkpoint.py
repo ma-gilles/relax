@@ -51,6 +51,7 @@ _ADDED_CONFIG_DEFAULTS = {
     "band_phi_step_deg": 5.0,
     "attachment_center_ang": 180.0,
     "attachment_radius_ang": 60.0,
+    "attachment_exclude_radius_ang": None,
     "occupancy": None,
     "fixed_core": None,
     "fixed_core_scale": "particle",
