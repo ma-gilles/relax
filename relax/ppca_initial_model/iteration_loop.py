@@ -23,7 +23,7 @@ from recovar.reconstruction.noise import make_radial_noise
 
 from relax.ppca_initial_model import checkpoint
 from relax.ppca_initial_model.filament_band import attachment_support_mask, uniform_log_prior
-from relax.ppca_initial_model.initialization import bandlimit_and_mask, initialize, support_mask
+from relax.ppca_initial_model.initialization import bandlimit_and_mask, initialize, support_mask, with_initial_mean
 from relax.ppca_initial_model.noise import update_noise
 from relax.ppca_initial_model.sgd_recipe import NewtonSGD
 from relax.ppca_initial_model.sgd_recipe import describe as describe_newton
@@ -694,6 +694,12 @@ def run(
             )
         else:
             theta, noise, info = initialize(dataset, seed=config.seed, diameter_ang=diameter_ang, q=config.q)
+        if config.initial_mean is not None:
+            theta = with_initial_mean(
+                theta, config.initial_mean, config.initial_mean_scale, dataset.volume_shape, dataset.voxel_size,
+                diameter_ang, band=config.band(),
+            )
+            info = {**info, "initial_mean": config.initial_mean, "initial_mean_scale": config.initial_mean_scale}
         rng = np.random.default_rng(config.seed + 1)
         order = rng.permutation(dataset.n_images)
         state = State(

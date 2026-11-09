@@ -131,6 +131,10 @@ class Config:
     # project's make_neighbours.py from the particles STAR): their sum joins the core as a second component with
     # its own coefficient per particle. None: the core alone.
     fixed_core_neighbours: str | None = None
+    # A RELION-convention map that replaces the random initial mean (times initial_mean_scale, masked like the
+    # seed); the loadings stay random. None: the random seed.
+    initial_mean: str | None = None
+    initial_mean_scale: float = 1.0
 
     def band(self):
         """The :class:`FilamentBand` search, or None for the full grid."""
@@ -157,6 +161,8 @@ class Config:
                 )
         if self.fixed_core_neighbours is not None and self.fixed_core_scale != "particle":
             raise ValueError("fixed_core_neighbours needs fixed_core_scale 'particle'")
+        if not np.isfinite(self.initial_mean_scale) or self.initial_mean_scale == 0:
+            raise ValueError("initial_mean_scale must be finite and nonzero")
         if self.fixed_core_spectrum and self.fixed_core_scale != "particle":
             raise ValueError("fixed_core_spectrum needs fixed_core_scale 'particle'")
         if self.fixed_core_background not in ("none", "z", "cylinder"):

@@ -155,6 +155,13 @@ def add_args(parser):
         "present (P, K), particles_sha256): their sum is fitted and removed with the core",
     )
     parser.add_argument(
+        "--initial-mean",
+        help="RELION-convention map (the model's box and voxel size) that replaces the random initial mean",
+    )
+    parser.add_argument(
+        "--initial-mean-scale", type=float, default=1.0, help="factor on --initial-mean (map units to image units)"
+    )
+    parser.add_argument(
         "--occupancy",
         type=float,
         help="Prior probability that a particle holds the model, against an explicit empty component (needs "
@@ -628,6 +635,8 @@ def main(args=None):
         fixed_core_background=args.fixed_core_background,
         fixed_core_spectrum=args.fixed_core_spectrum,
         fixed_core_neighbours=args.fixed_core_neighbours,
+        initial_mean=args.initial_mean,
+        initial_mean_scale=args.initial_mean_scale,
     )
     if (args.ios is None) == (args.particles is None):
         raise ValueError("Give either a particle STAR (--i) or an optimisation set (--ios)")
