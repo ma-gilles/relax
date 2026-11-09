@@ -127,6 +127,7 @@ def main(argv=None) -> int:
     ).astype(np.int64)
     if args.limit:
         ids = ids[: args.limit]
+    args.work.mkdir(parents=True, exist_ok=True)
     dataset, _, _ = load_training(args.star, "auto")
     offsets = grids.get_relion_translation_grid(args.shift_range, args.shift_step).astype(np.float32)
     for number in args.checkpoints:

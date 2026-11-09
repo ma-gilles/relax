@@ -65,7 +65,7 @@ tested, and performs to a satisfactory level on simulated data with and without 
   `--no-contrast-estimate-sd`, `--contrast-start` (State and checkpoint carry the sd; old checkpoints resume).
   Tests: the engine on the tied column against an explicit Gaussian, the folded gradient against finite differences
   of the model A likelihood, `T^T L T`, EM recovering the true sd, the single-pose second moments through the real
-  stream, the controller's sd update and checkpoint round trip (31 new tests). The existing stream, checkpoint,
+  stream, the controller's sd update and checkpoint round trip (21 new tests, plus the four of the model comparison). The existing stream, checkpoint,
   tile-plan and oversampling tests pass (97 passed, 16 GPU-only skipped).
 - **Datasets.** `simulate_contrast_dataset.py` re-simulates a suite dataset from its truth (volumes, rotations, CTF,
   noise spectrum, simulator seed) with the signal of particle `i` scaled by `c_i ~ N(1, sd^2)` (redrawn below
