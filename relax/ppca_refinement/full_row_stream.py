@@ -687,6 +687,10 @@ def full_row_tile_embeddings(stream: FullRowStream, image_indices, significant_r
         )
         if stream.occupancy is None:
             return DensePPCAEmbeddings(carry.embedding[:n_real], layout["original_ids"], n_real, *scores, **top)
+        # The top pose's score leaves out log(occupancy); with it, max_posterior is the joint P(occupied, top pose),
+        # as the statistics pass reports it (max_posterior_per_image).
+        log_evidence, best, max_posterior, null = scores
+        scores = (log_evidence, best, (max_posterior * np.float32(stream.occupancy)).astype(np.float32), null)
         # Pass 2 weights each pose by P(occupied, pose): the embedding is P(occupied) E[z | occupied].
         p_occupied = layout["p_occupied"][:n_real]
         embedding = carry.embedding[:n_real] / jnp.maximum(p_occupied, jnp.finfo(jnp.float32).tiny)[:, None]
