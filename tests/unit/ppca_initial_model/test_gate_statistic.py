@@ -173,4 +173,5 @@ def test_the_scale_reaches_the_update_and_a_resumed_run_keeps_it(monkeypatch, tm
     assert np.isfinite(np.asarray(straight[8]["gates"])).all()
     for t in range(5, 9):
         assert_matches(resumed[t]["disagreement_scale"], straight[t]["disagreement_scale"], rtol=1e-12)
-        assert_matches(resumed[t]["gates"], straight[t]["gates"])
+        # float32 gates logged as Python floats; GPU reductions race (largest relative difference in 8 GPU runs: 8.5e-7)
+        assert_matches(resumed[t]["gates"], straight[t]["gates"], rtol=1e-5)
