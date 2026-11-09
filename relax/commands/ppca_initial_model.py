@@ -150,6 +150,11 @@ def add_args(parser):
         "the per-particle scales (--fixed-core-scale particle)",
     )
     parser.add_argument(
+        "--fixed-core-neighbours",
+        help=".npz of each particle's neighbouring core copies (rotations (P, K, 3, 3), translations_px (P, K, 3), "
+        "present (P, K), particles_sha256): their sum is fitted and removed with the core",
+    )
+    parser.add_argument(
         "--occupancy",
         type=float,
         help="Prior probability that a particle holds the model, against an explicit empty component (needs "
@@ -622,6 +627,7 @@ def main(args=None):
         fixed_core_free_offset=args.fixed_core_free_offset,
         fixed_core_background=args.fixed_core_background,
         fixed_core_spectrum=args.fixed_core_spectrum,
+        fixed_core_neighbours=args.fixed_core_neighbours,
     )
     if (args.ios is None) == (args.particles is None):
         raise ValueError("Give either a particle STAR (--i) or an optimisation set (--ios)")
@@ -680,6 +686,32 @@ def main(args=None):
                         np.round(gains[:: max(1, gains.size // 8)], 3).tolist(),
                         list(range(0, gains.size, max(1, gains.size // 8))),
                         np.percentile(scales, [1, 25, 50, 75, 99]).round(3).tolist(),
+                    )
+                if config.fixed_core_neighbours is not None:
+                    from relax.ppca_initial_model.fixed_core import PlacedNeighbours
+
+                    with np.load(config.fixed_core_neighbours) as nb:
+                        if str(nb["particles_sha256"]) != identity["particles_sha256"]:
+                            raise ValueError(f"{config.fixed_core_neighbours} was made for other particles")
+                        present = np.asarray(nb["present"], bool)
+                        if present.shape[0] != data.n_images:  # n_images counts particles (TiltParticles)
+                            raise ValueError(f"Neighbours for {present.shape[0]} particles, data has {data.n_images}")
+                        neighbours = PlacedNeighbours(
+                            core,
+                            np.asarray(nb["rotations"], np.float32),
+                            np.asarray(nb["translations_px"], np.float64),
+                            present,
+                        )
+                    core = (core, neighbours)
+                    scales = estimate_core_coefficients(data, core, white, free_offset=offset)
+                    np.save(output / "core_coefficients.npy", scales)
+                    logger.info(
+                        "fixed-core neighbours: %d particles with >= 1 (mean %.2f); core coefficient %s, neighbour "
+                        "coefficient %s",
+                        int(present.any(axis=1).sum()),
+                        float(present.sum(axis=1).mean()),
+                        np.percentile(scales[:, 0], [1, 50, 99]).round(3).tolist(),
+                        np.percentile(scales[:, 1], [1, 50, 99]).round(3).tolist(),
                     )
             elif config.fixed_core_scale == "basis":
                 core = tuple(as_core(v) for v in core_basis_volumes(volume))
