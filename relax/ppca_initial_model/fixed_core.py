@@ -227,7 +227,7 @@ def filter_core_spectrum(volume, gains, image_size: int) -> np.ndarray:
     k = [np.fft.fftfreq(m) * m] * 2 + [np.fft.rfftfreq(m) * m]
     radius = np.sqrt(k[0][:, None, None] ** 2 + k[1][None, :, None] ** 2 + k[2][None, None, :] ** 2)
     factor = np.interp(radius * image_size / m, np.arange(gains.size), gains)
-    return np.fft.irfftn(np.fft.rfftn(volume) * factor, s=volume.shape).astype(np.float32)
+    return np.fft.irfftn(np.fft.rfftn(volume) * factor, s=volume.shape, axes=(0, 1, 2)).astype(np.float32)
 
 
 def core_basis_volumes(volume) -> list[np.ndarray]:
