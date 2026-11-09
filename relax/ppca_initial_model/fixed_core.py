@@ -290,12 +290,22 @@ def core_basis_sums(predictions, half, precision, owner, n_particles: int):
 
 def core_basis_coefficients(G, h, *, relative_ridge: float = 1e-6) -> np.ndarray:
     """Least-squares coefficients ``(n_particles, K)`` from :func:`core_basis_sums`, with a ridge of
-    ``relative_ridge`` times each diagonal entry (the derivative directions are nearly collinear for a thin wall)."""
-    G = np.asarray(G, np.float64)
-    h = np.asarray(h, np.float64)
+    ``relative_ridge`` times each diagonal entry (the derivative directions are nearly collinear for a thin wall).
+    A later component with no signal in a particle's images (e.g. :class:`PlacedNeighbours` of a particle without
+    neighbours) gets coefficient 0 there."""
+    G = np.array(G, np.float64, copy=True)
+    h = np.array(h, np.float64, copy=True)
     diagonal = np.einsum("pkk->pk", G)
     if np.any(diagonal[:, 0] <= 0):
         raise ValueError("A particle sees no core signal: its basis fit is undetermined")
+    empty = diagonal <= 0  # (P, K): only later components can be empty here
+    if empty.any():
+        p, k = np.nonzero(empty)
+        G[p, k, :] = 0
+        G[p, :, k] = 0
+        G[p, k, k] = 1
+        h[p, k] = 0
+        diagonal = np.einsum("pkk->pk", G)
     regularized = G + relative_ridge * np.einsum("pk,kl->pkl", diagonal, np.eye(G.shape[1]))
     return np.linalg.solve(regularized, h[..., None])[..., 0]
 

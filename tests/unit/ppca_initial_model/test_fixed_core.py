@@ -606,7 +606,7 @@ def test_placed_neighbours_absent_are_zero_and_at_the_identity_are_the_core():
 
 def test_core_and_neighbour_coefficients_are_recovered_and_removed():
     """Noiseless images of ``a_i core + b_i neighbours`` (one copy turned 90 degrees about the axis and moved 3 px
-    across it, one absent on half the particles): the joint fit returns ``(a_i, b_i)`` and the residual is X."""
+    across it, one absent on half the particles, none on the last): the joint fit returns ``(a_i, b_i)``."""
     p = make_problem(noise=False)
     no_core = _particles(p["parts"]["X"], p["ctf"])
     n = no_core.n_images
@@ -617,8 +617,9 @@ def test_core_and_neighbour_coefficients_are_recovered_and_removed():
     translations[:, 1] = [0.0, -2.0, 0.0]
     present = np.ones((n, 2), bool)
     present[::2, 1] = False
+    present[3] = False  # a particle without neighbours: its neighbour coefficient is 0, not a singular fit
     neighbours = PlacedNeighbours(p["fixed"], rotations, translations, present)
-    truth = np.stack([[0.7, 1.1, 0.9, 1.3], [0.5, 0.8, 1.2, 0.6]], axis=1)
+    truth = np.stack([[0.7, 1.1, 0.9, 1.3], [0.5, 0.8, 1.2, 0.0]], axis=1)
     ids = np.arange(no_core.image_offsets[-1])
     # Images made by subtracting -truth from X: X + a core + b neighbours, through the code under test.
     made = subtract_fixed_core(no_core, (p["fixed"], neighbours), scales=-truth)
