@@ -180,30 +180,43 @@ unit-contrast model, and also ranks the true pose against 12 wrong poses whose i
 
 Model B is therefore not built into the stream. It stays the reference of these tables.
 
-## 9. The scale gauge, and why the sd is estimated from a centred moment
+## 9. The scale gauge: the M-step takes the contrast latent about its population mean
 
 Model A has a flat direction in the likelihood: scaling the mean volume by `a` and shifting the contrast
 latent so that `(1 + sd e) mu` is unchanged fits every image equally well. Only the prior `e ~ N(0, 1)` pins it,
 with a pull of `1 / sd^2` against the data's `nu` per image, which is weak at `sd = 0.3` (`nu` about 200: the
-prior holds 5 percent of the precision). Any force along the valley then moves the mean volume: VDAM's
-regularisation shrinks the mean each update, and the contrast latent compensates, per image, at almost no cost.
+prior holds 5 percent of the precision). The regularised mean volume of VDAM, and the update dynamics of both
+optimizers, then move it along the valley.
 
-Round 1 of the experiments (progress log) updated the sd from the uncentred second moment, `sd^2 <- sd^2 E[e^2]`.
-That counts the global gain, the mean of `e` over the images, as spread; the sd inflates, the prior pin weakens
-(it goes as `1 / sd^2`) and the gain moves further. Observed on C n1 at box 64, 100,000 particles, seed 11:
+Observed on C n1 at box 64 (100,000 particles, seed 11; details and numbers in the progress log):
 
-- VDAM: the sd reached its cap (0.5) by iteration 100 to 200 on all three datasets, including the unit-contrast
-  control (true sd 0); the mean contrast estimate drifted to 1.8 and the mean volume's power fell to 0.28 of the
-  baseline's at iteration 1000 (amplitude 0.53, the inverse of the gain the latent had taken). The spread of the
-  estimate about its own mean was right (0.30 of the mean at true sd 0.30; 0.08 at true sd 0).
-- Momentum SGD: the sd estimate was good for the first 500 iterations (0.29-0.30 at true 0.30; falling to 0.07
-  at true 0), then the sd rose and the mean volume's power ran away (0.56 at iteration 1000, 1.8e4 at 2000, true
-  sd 0.30) until the curvature check stopped the run.
+1. The sd updated from the uncentred second moment, `sd^2 <- sd^2 E[e^2]`, counts the global gain (the mean of `e`
+   over the images) as spread: VDAM's sd ran to its cap (0.5) on all three datasets, including the unit-contrast one,
+   the mean contrast estimate drifted to 1.8 and the mean volume's power fell to 0.28 of the baseline's at
+   iteration 1000. Momentum SGD's sd was right for 500 iterations (0.29-0.30 at true 0.30) and then the mean
+   volume's power ran away until the curvature check stopped the runs.
+2. The sd updated from the centred moment, `sd^2 <- sd^2 (mean E[e^2] - (mean E[e])^2)`, fixed the unit-contrast runs
+   (the sd falls to 0.03, the gain stays at 1.0) but not the sd 0.30 ones: VDAM still ended with gain 1.8, SGD with
+   gain 0.5 and a mean-volume power four times the baseline's. A late start (iteration 800) did not help: the images
+   already ask for a gain of 1.27 over the regularised mean volume at the first iteration the latent exists. A fixed
+   sd (0.3) did not prevent it either (VDAM gain 1.4; SGD stopped on the curvature check).
 
-The sd update therefore uses the second moment about the mean, `sd^2 <- sd^2 (mean E[e^2] - (mean E[e])^2)`: it is
-the EM update for a prior with a free mean, applied while the E-step keeps the prior mean at 0. The sd measures
-the spread of the contrast; the global gain does not feed it, and the prior pin stays as strong as the spread
-says. Variants that remove the freedom altogether are tested alongside it: a fixed sd, and switching the contrast
-on only after the mean volume's amplitude has settled (`--contrast-start`). A hard recentring (move the mean of
-`e` into the mean volume every update, `mu <- (1 + sd mean(e)) mu`, `sd <- sd / (1 + sd mean(e))`) is the next
-step if these are not enough; it makes the mean volume carry the whole gain, as it does without contrast.
+The cause is that the E-step and the M-step both see the gain. Any contrast model with population mean 1 is
+inconsistent with a regularised mean volume whose amplitude is below the images' (the gain 1.27 above), so the
+latent takes the difference, and the M-step, which fits `(1 + sd e) mu` to the data, then lowers `mu` by the same
+factor: the regularisation's shrinkage is undone image by image and compounds.
+
+The fix is to let the E-step keep the plain prior and the M-step ignore the population gain. With `m` the population
+mean of the latent (the batch mean of its posterior mean, followed at a rate of 0.2 per update), pass 2 forms the
+M-step moments of the shifted latent `alpha' = S alpha`, `S = I - m e_last e_0^T`, that is the moments of `e - m`
+(`ppca_refinement.contrast.center_last_latent_moments`, applied to the kernels' outputs, so no new kernel; the dense
+engine applies it to each pose's moments). The M-step then fits `(1 + sd (e - m)) mu + W z`: its amplitude target for
+`mu` is the images' own, as without contrast, while the E-step and the posterior (embeddings, evidence, the second
+moment the sd update reads) are unchanged. The sd update stays on the centred moment. Pinned this way the mean volume
+behaves as in the baseline run (power 0.30 to 0.32 in all ten runs of round 3), the mean contrast estimate stays at
+0.90 to 1.04, and the estimated sd converges on the true spread: 0.306 (true 0.30), 0.158 (true 0.15) and 0.028
+(true 0) for VDAM, 0.280, 0.144 and 0.038 for SGD.
+
+The shifted moments are the moments of a different model than the E-step's (the one without the population gain), so
+the M-step is not the exact EM of model A; it is the EM of the model in which the global gain is part of the unit-contrast
+baseline's own, which is the model the optimizers are tuned for.
