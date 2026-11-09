@@ -124,6 +124,9 @@ class Config:
     # filament (tomo.estimate_residual_background), joins the core as a second fitted component, so a leftover that
     # every particle shares is not fitted as an attachment in every window. "none": the core alone.
     fixed_core_background: str = "none"
+    # With fixed_core_scale "particle": the core's spectral shape is fitted to the data (one gain per image shell,
+    # tomo.estimate_core_spectrum), the map filtered by it (fixed_core.filter_core_spectrum) and the scales refitted.
+    fixed_core_spectrum: bool = False
 
     def band(self):
         """The :class:`FilamentBand` search, or None for the full grid."""
@@ -148,6 +151,8 @@ class Config:
                     "The filament band searches its own full grid: oversampling 0, the streamed engine, "
                     "no shift schedule"
                 )
+        if self.fixed_core_spectrum and self.fixed_core_scale != "particle":
+            raise ValueError("fixed_core_spectrum needs fixed_core_scale 'particle'")
         if self.fixed_core_background not in ("none", "z", "cylinder"):
             raise ValueError(f"fixed_core_background must be none, z or cylinder, got {self.fixed_core_background}")
         if self.fixed_core_scale not in ("particle", "basis", "none"):
