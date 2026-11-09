@@ -2,9 +2,28 @@
 # scripts/ppca_schedule/config.yaml with a second --configfile. Each pairs with a baseline arm of that file:
 # s3_vdam_uniform (VDAM) and s3_scale1_4_uniform (momentum SGD, loading scale 1/4), both with the uniform direction prior.
 # --contrast latent: the contrast scales the mean, c = 1 + sd e with a Gaussian latent e (docs/math/ppca_contrast.md).
+# c_*: the sd follows the uncentred second moment of e (round 1: the sd ran to its cap and the mean map drifted).
+# cc_*: the sd follows the centred second moment. cf_*: the sd is fixed at 0.3. cs_*: centred, from iteration 800 on.
 arms:
   c_vdam_latent:
     args: ["--optimizer", "vdam", "--direction-prior", "uniform", "--contrast", "latent", "--contrast-sd", "0.2"]
   c_sgd_latent:
     args: ["--optimizer", "momentum_sgd", "--sgd-learning-rate", "2.4", "--sgd-loading-scale", "0.25",
            "--direction-prior", "uniform", "--contrast", "latent", "--contrast-sd", "0.2"]
+  cc_vdam:
+    args: ["--optimizer", "vdam", "--direction-prior", "uniform", "--contrast", "latent", "--contrast-sd", "0.2"]
+  cc_sgd:
+    args: ["--optimizer", "momentum_sgd", "--sgd-learning-rate", "2.4", "--sgd-loading-scale", "0.25",
+           "--direction-prior", "uniform", "--contrast", "latent", "--contrast-sd", "0.2"]
+  cf_vdam:
+    args: ["--optimizer", "vdam", "--direction-prior", "uniform", "--contrast", "latent", "--contrast-sd", "0.3",
+           "--no-contrast-estimate-sd"]
+  cf_sgd:
+    args: ["--optimizer", "momentum_sgd", "--sgd-learning-rate", "2.4", "--sgd-loading-scale", "0.25",
+           "--direction-prior", "uniform", "--contrast", "latent", "--contrast-sd", "0.3", "--no-contrast-estimate-sd"]
+  cs_vdam:
+    args: ["--optimizer", "vdam", "--direction-prior", "uniform", "--contrast", "latent", "--contrast-sd", "0.2",
+           "--contrast-start", "800"]
+  cs_sgd:
+    args: ["--optimizer", "momentum_sgd", "--sgd-learning-rate", "2.4", "--sgd-loading-scale", "0.25",
+           "--direction-prior", "uniform", "--contrast", "latent", "--contrast-sd", "0.2", "--contrast-start", "800"]

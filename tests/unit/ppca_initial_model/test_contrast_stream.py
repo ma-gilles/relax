@@ -136,6 +136,7 @@ def test_the_controller_updates_the_sd_from_the_second_moment_and_logs_it(tmp_pa
     monkeypatch.setattr(iteration_loop.grids, "get_relion_hidden_rotation_grid", lambda *_a, **_k: np.zeros((1, 3)))
     monkeypatch.setattr(iteration_loop.grids, "rotation_direction_ids", lambda *_a, **_k: np.zeros(1, np.int64))
     second_moment = 1.5  # mean E[e^2] over the batch the stand-in engine reports
+    gain = 0.5  # the contrast latent's posterior mean of every image: the global gain the sd must not count as spread
     seen = []
 
     def groups(_dataset, state, _config, halves, iteration, **_kwargs):
@@ -148,7 +149,7 @@ def test_the_controller_updates_the_sd_from_the_second_moment_and_logs_it(tmp_pa
                 residual_num=jnp.ones(3, jnp.float32),
                 residual_den=jnp.ones(3, jnp.float32),
                 original_image_ids=np.asarray(ids),
-                embeddings=jnp.zeros((len(ids), 3)),
+                embeddings=jnp.zeros((len(ids), 3)).at[:, -1].set(gain),
                 n_images=len(ids),
                 log_likelihood=0.0,
                 diagnostics={
@@ -186,11 +187,13 @@ def test_the_controller_updates_the_sd_from_the_second_moment_and_logs_it(tmp_pa
     expected = 0.2
     for record in records[1:]:
         assert record["contrast"]["sd"] == pytest.approx(expected)
-        blended = 0.9 * expected**2 + 0.1 * expected**2 * second_moment  # beta = 0.9 on a stochastic batch
+        centred = second_moment - gain**2
+        blended = 0.9 * expected**2 + 0.1 * expected**2 * centred  # beta = 0.9 on a stochastic batch
         expected = float(np.sqrt(blended))
         assert record["contrast"]["next_sd"] == pytest.approx(expected)
         assert record["contrast"]["latent_second_moment"] == pytest.approx(second_moment)
-        assert record["contrast"]["estimate_mean"] == pytest.approx(1.0) and record["contrast"]["estimate_sd"] == 0.0
+        assert record["contrast"]["latent_mean"] == pytest.approx(gain)
+        assert record["contrast"]["estimate_sd"] == pytest.approx(0.0, abs=1e-7)  # one gain for every image
     assert final.contrast_sd == pytest.approx(expected)
     assert checkpoint.load(tmp_path / "checkpoint_0003.npz", config, identity).contrast_sd == pytest.approx(expected)
 

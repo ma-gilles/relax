@@ -854,22 +854,27 @@ def run(
         contrast_sd = contrast_sd_for(config, state, iteration)
         next_contrast_sd, contrast_record = state.contrast_sd, None
         if contrast_sd is not None:
-            # Mean second moment of the contrast latent e over the batch; entry p of the per-latent sums is latent p's.
+            # The contrast latent's second moment over the batch, taken about its mean: the mean of e is the global gain
+            # between the model's mean volume and the images, which the mean volume itself must carry, so the sd measures
+            # the spread of the contrast and not that gain (docs/math/ppca_contrast.md, section 9).
+            latent = np.concatenate([np.asarray(s.embeddings)[:, -1] for s in stats])
             e_second = float(
                 sum(s.diagnostics["latent_second_moment_sum"][-1] for s in stats) / sum(s.n_images for s in stats)
             )
+            e_mean = float(latent.mean())
             if config.contrast_estimate_sd:
                 next_contrast_sd = contrast_latent.updated_sd(
                     contrast_sd,
-                    e_second,
+                    e_second - e_mean**2,
                     previous_weight=beta,
                     sd_min=config.contrast_sd_min,
                     sd_max=config.contrast_sd_max,
                 )
-            estimates = 1 + contrast_sd * np.concatenate([np.asarray(s.embeddings)[:, -1] for s in stats])
+            estimates = 1 + contrast_sd * latent
             contrast_record = {
                 "sd": contrast_sd,
                 "latent_second_moment": e_second,
+                "latent_mean": e_mean,
                 "next_sd": next_contrast_sd,
                 "estimate_mean": float(estimates.mean()),
                 "estimate_sd": float(estimates.std()),
