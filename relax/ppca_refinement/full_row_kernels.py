@@ -101,6 +101,9 @@ class StreamStatic(NamedTuple):
     # weights, residual scatter); the XLA formulation runs elsewhere and is the float64 reference.
     cuda_kernels: bool
     gemm_precision: str  # resolved: "fp32" (exact float32 products) or "tf32" (TF32 tensor cores, sm_80+)
+    # Pass 2 forms the M-step moments of the last latent about ``StreamArrays.latent_center`` (the contrast latent's
+    # population mean), so the M-step does not chase the global gain; the posterior itself is unchanged.
+    center_last_latent: bool = False
 
 
 class StreamArrays(NamedTuple):
@@ -119,6 +122,7 @@ class StreamArrays(NamedTuple):
     gemm_window: jax.Array | None
     coefficient_noise: jax.Array  # (n_half,) noise variance per half-image pixel
     shift_squared: jax.Array  # (T,) squared fine shift length in px^2
+    latent_center: jax.Array | None = None  # () float32 centre of the last latent (StreamStatic.center_last_latent)
 
 
 class TileArrays(NamedTuple):
@@ -521,6 +525,26 @@ def _normalize_partials(kept, rows, *, n_blocks, block_size):
     )
 
 
+def center_last_latent_moments(weights, sums, center):
+    """The pass-2 moments of the last latent taken about ``center``: ``alpha_last -> alpha_last - center alpha_0``.
+
+    ``weights`` is ``(P, R, B, T)`` (``gamma alpha_p``) and ``sums`` the packed upper ``(tri(P), R, B)``
+    (``sum_t gamma alpha_p alpha_q``). The new moments are those of the shifted latent, ``S alpha`` with
+    ``S = I - center e_last e_0^T``: row and column ``last`` of the second moments lose ``center`` times those of the
+    constant ``alpha_0 = 1``.
+    """
+    last = weights.shape[0] - 1
+    index = {(int(i), int(j)): k for k, (i, j) in enumerate(zip(*np.triu_indices(weights.shape[0])))}
+    cross = np.asarray([index[(p, last)] for p in range(last)])
+    with_constant = np.asarray([index[(0, p)] for p in range(last)])
+    last_last, last_constant, constant = index[(last, last)], index[(0, last)], index[(0, 0)]
+    centered = sums.at[cross].set(sums[cross] - center * sums[with_constant])
+    centered = centered.at[last_last].set(
+        sums[last_last] - 2 * center * sums[last_constant] + center**2 * sums[constant]
+    )
+    return weights.at[last].set(weights[last] - center * weights[0]), centered
+
+
 def second_moment_sums(gamma, mean, covariance):
     """``sum_t gamma E[[1, z][1, z]^T]`` packed upper ``(tri(P), R, B)`` per rotation and image."""
     q = mean.shape[0]
@@ -551,6 +575,8 @@ def moment_block(carry, arrays, tile, kept, posterior, start, *, static, block_s
     )
     if not moments:
         return carry
+    if static.center_last_latent:
+        weights, sums = center_last_latent_moments(weights, sums, arrays.latent_center)
     # One image per (rotation, frame), frame minor: the GEMM outputs' rows split into frames.
     R = block_size * n_frames(tile)
     F = tile.ctf2_recon.shape[1] // n_frames(tile)

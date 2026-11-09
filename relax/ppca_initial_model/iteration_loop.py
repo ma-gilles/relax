@@ -485,6 +485,7 @@ def _expectation(
                     gemm_precision=config.gemm_precision,
                     tile_loader=load_tilt_tile if tilts else None,
                     pass2_mass_floor=config.pass2_mass_floor,
+                    latent_center=state.contrast_gain if contrast_sd is not None and config.contrast_center else None,
                 )
                 for group_nv in nvs
             ]
@@ -852,7 +853,7 @@ def run(
             MIN_SIGMA2_OFFSET_ANGSTROM2 / dataset.voxel_size**2,
         )
         contrast_sd = contrast_sd_for(config, state, iteration)
-        next_contrast_sd, contrast_record = state.contrast_sd, None
+        next_contrast_sd, next_contrast_gain, contrast_record = state.contrast_sd, state.contrast_gain, None
         if contrast_sd is not None:
             # The contrast latent's second moment over the batch, taken about its mean: the mean of e is the global gain
             # between the model's mean volume and the images, which the mean volume itself must carry, so the sd measures
@@ -870,9 +871,12 @@ def run(
                     sd_min=config.contrast_sd_min,
                     sd_max=config.contrast_sd_max,
                 )
+            if config.contrast_center:
+                next_contrast_gain = (1 - config.contrast_gain_rate) * state.contrast_gain + config.contrast_gain_rate * e_mean
             estimates = 1 + contrast_sd * latent
             contrast_record = {
                 "sd": contrast_sd,
+                "gain": state.contrast_gain,
                 "latent_second_moment": e_second,
                 "latent_mean": e_mean,
                 "next_sd": next_contrast_sd,
@@ -958,6 +962,7 @@ def run(
             planned_radius,
             planned_order,
             next_contrast_sd,
+            next_contrast_gain,
         )
         stage_key = (
             config.stage(iteration) if config.radius_rule == config.order_rule == "stages" else (radius, hp)

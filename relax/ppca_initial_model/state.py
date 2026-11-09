@@ -27,3 +27,5 @@ class State:
     next_order: int | None = None
     # Under the contrast latent, the prior sd of the contrast used by the next E-step; None without it.
     contrast_sd: float | None = None
+    # The contrast latent's population mean, the centre of the M-step's moments of that latent (Config.contrast_center).
+    contrast_gain: float = 0.0

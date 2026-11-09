@@ -46,7 +46,7 @@ _ADDED_CONFIG_DEFAULTS = {"max_significant": 100, "pc_stages": None, "pc_birth_s
     "accuracy_signal": "divergence", "accuracy_kl_threshold": None, "init_mean_map": None,
     "sgd_loading_scale": 1.0, "shift_stages": None, "offset_sigma_angstrom": None,
     "contrast": "none", "contrast_sd": 0.2, "contrast_estimate_sd": True, "contrast_start": 1,
-    "contrast_sd_min": 0.01, "contrast_sd_max": 0.5}
+    "contrast_sd_min": 0.01, "contrast_sd_max": 0.5, "contrast_center": True, "contrast_gain_rate": 0.2}
 
 
 def _identity_config(config_dict):
@@ -96,6 +96,7 @@ def save(path, state, config, identity):
         "next_radius": state.next_radius,
         "next_order": state.next_order,
         "contrast_sd": state.contrast_sd,
+        "contrast_gain": state.contrast_gain,
     }
     temporary = path.with_suffix(".tmp")
     arrays = {"theta": np.asarray(state.theta)}
@@ -165,4 +166,5 @@ def load(path, config, identity):
             meta.get("next_radius"),
             meta.get("next_order"),
             meta.get("contrast_sd"),
+            meta.get("contrast_gain", 0.0),
         )

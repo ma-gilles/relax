@@ -3,7 +3,10 @@
 # s3_vdam_uniform (VDAM) and s3_scale1_4_uniform (momentum SGD, loading scale 1/4), both with the uniform direction prior.
 # --contrast latent: the contrast scales the mean, c = 1 + sd e with a Gaussian latent e (docs/math/ppca_contrast.md).
 # c_*: the sd follows the uncentred second moment of e (round 1: the sd ran to its cap and the mean map drifted).
-# cc_*: the sd follows the centred second moment. cf_*: the sd is fixed at 0.3. cs_*: centred, from iteration 800 on.
+# cc_*: the sd follows the centred second moment (round 2, before the M-step centring: the global gain still drifted).
+# cf_*: the sd is fixed at 0.3. cs_*: centred sd, from iteration 800 on. cg_*: the M-step moments of the contrast latent are
+# taken about its population mean (--contrast-center, the default from round 3; math note section 9). cgf_*: the same with
+# the sd fixed at 0.3.
 arms:
   c_vdam_latent:
     args: ["--optimizer", "vdam", "--direction-prior", "uniform", "--contrast", "latent", "--contrast-sd", "0.2"]
@@ -27,3 +30,14 @@ arms:
   cs_sgd:
     args: ["--optimizer", "momentum_sgd", "--sgd-learning-rate", "2.4", "--sgd-loading-scale", "0.25",
            "--direction-prior", "uniform", "--contrast", "latent", "--contrast-sd", "0.2", "--contrast-start", "800"]
+  cg_vdam:
+    args: ["--optimizer", "vdam", "--direction-prior", "uniform", "--contrast", "latent", "--contrast-sd", "0.2"]
+  cg_sgd:
+    args: ["--optimizer", "momentum_sgd", "--sgd-learning-rate", "2.4", "--sgd-loading-scale", "0.25",
+           "--direction-prior", "uniform", "--contrast", "latent", "--contrast-sd", "0.2"]
+  cgf_vdam:
+    args: ["--optimizer", "vdam", "--direction-prior", "uniform", "--contrast", "latent", "--contrast-sd", "0.3",
+           "--no-contrast-estimate-sd"]
+  cgf_sgd:
+    args: ["--optimizer", "momentum_sgd", "--sgd-learning-rate", "2.4", "--sgd-loading-scale", "0.25",
+           "--direction-prior", "uniform", "--contrast", "latent", "--contrast-sd", "0.3", "--no-contrast-estimate-sd"]

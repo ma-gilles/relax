@@ -166,3 +166,79 @@ def test_latents_over_contrast_divides_and_floors_and_counts():
     assert floored == 2
     _, none = contrast.latents_over_contrast(scaled, np.array([1.0, 1.1, 0.9]))
     assert none == 0
+
+
+def test_centred_moments_are_those_of_the_shifted_latent():
+    """``center_last_latent_moments`` equals the moments of ``alpha_last - c alpha_0`` formed directly."""
+    from relax.ppca_refinement.full_row_kernels import center_last_latent_moments
+
+    rng = np.random.default_rng(4)
+    size, n_samples, centre = 5, 40, 0.7
+    alpha = np.concatenate([np.ones((n_samples, 1)), rng.normal(size=(n_samples, size - 1))], axis=1)
+    gamma = rng.uniform(size=n_samples)
+    rows, cols = np.triu_indices(size)
+    weights = (gamma[:, None] * alpha).T[:, None, None, None]  # (P, R=1, B=1, T=n)
+    weights = np.transpose((gamma[:, None] * alpha).T[:, None, None, :], (0, 1, 2, 3))
+    sums = np.einsum("n,np,nq->pq", gamma, alpha, alpha)[rows, cols][:, None, None]  # (tri(P), 1, 1)
+    shifted = alpha.copy()
+    shifted[:, -1] -= centre * alpha[:, 0]
+    expected_sums = np.einsum("n,np,nq->pq", gamma, shifted, shifted)[rows, cols][:, None, None]
+    expected_weights = (gamma[:, None] * shifted).T[:, None, None, :]
+    new_weights, new_sums = center_last_latent_moments(jnp.asarray(weights), jnp.asarray(sums), centre)
+    np.testing.assert_allclose(np.asarray(new_sums), expected_sums, rtol=1e-5, atol=1e-5)
+    np.testing.assert_allclose(np.asarray(new_weights), expected_weights, rtol=1e-5, atol=1e-5)
+    zero_weights, zero_sums = center_last_latent_moments(jnp.asarray(weights), jnp.asarray(sums), 0.0)
+    np.testing.assert_array_equal(np.asarray(zero_sums), sums)
+    np.testing.assert_array_equal(np.asarray(zero_weights), weights)
+
+
+def test_the_centred_gradient_is_the_gradient_of_the_objective_without_the_global_gain():
+    """With the contrast latent's moments shifted by ``m``, the engine's residual gradient, folded, is the gradient of the
+    expected loss of ``y - (mu + sd (e - m) mu + W z)`` at the fixed posterior: the M-step that ignores the gain ``m``."""
+    rng = np.random.default_rng(12)
+    n, sd, variance, q, centre = 7, 0.4, 0.8, 2, 0.9
+    y = rng.normal(size=n)
+    theta = 0.3 * rng.normal(size=(q + 1, n))
+    tied = np.concatenate([theta, sd * theta[:1]])
+    result = _engine(y[None], tied, variance)
+    size = q + 2
+    shift = np.eye(size)
+    shift[-1, 0] = -centre  # alpha' = S alpha: the last latent loses centre times the constant
+    alpha = np.asarray(result.alpha, np.float64)  # (1, 1, 1, P)
+    second = np.asarray(
+        __import__("recovar.ppca.triangular", fromlist=["unpack_tri_to_full"]).unpack_tri_to_full(result.G_tri, size),
+        np.float64,
+    )  # (1, 1, 1, P, P)
+    alpha_c = alpha @ shift.T
+    second_c = shift @ second @ shift.T
+    from recovar.ppca.triangular import pack_upper_tri
+
+    gradient, _, _ = residual_image_statistics(
+        result.score, jnp.asarray(alpha_c, jnp.float32), pack_upper_tri(jnp.asarray(second_c, jnp.float32)), result.logZ,
+        jnp.asarray(y[None, None] / variance), jnp.full((1, n), 1 / variance), jnp.asarray(tied[None]),
+    )
+    folded = np.asarray(contrast.fold_gradient(jnp.asarray(gradient[:, 0]).T, sd)).T  # (q + 1, n)
+
+    latent_mean = alpha[0, 0, 0, 1:].copy()
+    latent_cov = second[0, 0, 0, 1:, 1:] - np.outer(latent_mean, latent_mean)
+    latent_mean_c = latent_mean.copy()
+    latent_mean_c[-1] -= centre
+
+    def objective(value):
+        mu, w = value[0], value[1:].T
+        design = np.concatenate([w, sd * mu[:, None]], axis=1)
+        residual = y - mu - design @ latent_mean_c
+        return -0.5 * (residual @ residual + np.trace(design.T @ design @ latent_cov)) / variance
+
+    reference = np.empty(theta.shape)
+    step = 1e-3
+    for index in np.ndindex(theta.shape):
+        plus, minus, far_plus, far_minus = (theta.copy() for _ in range(4))
+        plus[index] += step
+        minus[index] -= step
+        far_plus[index] += 2 * step
+        far_minus[index] -= 2 * step
+        reference[index] = (-objective(far_plus) + 8 * objective(plus) - 8 * objective(minus) + objective(far_minus)) / (
+            12 * step
+        )
+    np.testing.assert_allclose(folded, reference, rtol=1e-4, atol=1e-4)

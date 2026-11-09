@@ -237,6 +237,14 @@ def add_args(parser):
         help="--contrast latent: the first iteration with the contrast latent; the E-steps before it have unit contrast "
         "(default: %(default)s)",
     )
+    parser.add_argument(
+        "--no-contrast-center",
+        dest="contrast_center",
+        action="store_false",
+        help="--contrast latent: keep the global gain in the M-step's moments of the contrast latent (it then moves the "
+        "mean volume; docs/math/ppca_contrast.md, section 9)",
+    )
+    parser.add_argument("--contrast-gain-rate", type=float, default=Config().contrast_gain_rate)
     parser.add_argument("--contrast-sd-min", type=float, default=Config().contrast_sd_min)
     parser.add_argument("--contrast-sd-max", type=float, default=Config().contrast_sd_max)
     parser.add_argument("--resume")
@@ -535,6 +543,8 @@ def main(args=None):
         contrast_start=args.contrast_start,
         contrast_sd_min=args.contrast_sd_min,
         contrast_sd_max=args.contrast_sd_max,
+        contrast_center=args.contrast_center,
+        contrast_gain_rate=args.contrast_gain_rate,
     )
     if (args.ios is None) == (args.particles is None):
         raise ValueError("Give either a particle STAR (--i) or an optimisation set (--ios)")

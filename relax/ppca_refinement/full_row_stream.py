@@ -157,11 +157,15 @@ def prepare_full_row_stream(
     device=None,
     tile_loader=None,
     pass2_mass_floor: float = 0.0,
+    latent_center: float | None = None,
 ) -> FullRowStream:
     """Upload the model, fine grids and priors once to ``device`` for an expectation's tiles.
 
     ``pass2_mass_floor`` (:attr:`FullRowStream.pass2_mass_floor`) lets pass 2 skip the pose rows
     that carry less posterior mass than it for every image of a tile.
+
+    ``latent_center`` (the contrast latent's population mean) makes pass 2 take the M-step moments of the last latent
+    about it (:func:`full_row_kernels.center_last_latent_moments`); ``None`` leaves them as they are.
 
     ``tile_loader`` reads the tiles of a dataset that is not a single-particle image dataset
     (:attr:`FullRowStream.tile_loader`); ``experiment_dataset`` then only supplies the image and
@@ -198,6 +202,7 @@ def prepare_full_row_stream(
             gemm_precision=gemm_precision,
             device=device,
             tile_loader=tile_loader,
+            latent_center=latent_center,
         )._replace(pass2_mass_floor=float(pass2_mass_floor))
 
 
@@ -223,6 +228,7 @@ def _prepare_full_row_stream(
     gemm_precision,
     device,
     tile_loader,
+    latent_center=None,
 ) -> FullRowStream:
     gemm_precision = resolve_gemm_precision(gemm_precision, device)
     if scoring.image_scale_corrections is not None or scoring.class_log_prior != 0.0:
@@ -286,6 +292,7 @@ def _prepare_full_row_stream(
         score_indices=resolved.score_indices,
         coefficient_noise=noise_variance_half,
         shift_squared=jnp.sum(jnp.asarray(translations, jnp.float32) ** 2, axis=-1),
+        latent_center=None if latent_center is None else jnp.float32(latent_center),
     )
     static = StreamStatic(
         image_shape=tuple(resolved.image_shape),
@@ -298,6 +305,7 @@ def _prepare_full_row_stream(
         metric_trace_only=bool(metric_trace_only),
         cuda_kernels=cuda_kernels,
         gemm_precision=str(gemm_precision),
+        center_last_latent=latent_center is not None,
     )
     if static.cuda_kernels and (decide_order(static.disc_type) != 1 or static.relion_texture_interp):
         raise ValueError("The CUDA stream kernels support linear interpolation without RELION texture lookup only")

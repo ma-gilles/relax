@@ -32,7 +32,7 @@ pytestmark = pytest.mark.unit
 N_HALF = IMAGE_SHAPE[0] * (IMAGE_SHAPE[1] // 2 + 1)
 
 
-def _single_pose_stream(q: int, sd: float | None):
+def _single_pose_stream(q: int, sd: float | None, latent_center: float | None = None):
     """A tile of 3 images scored at one pose (one rotation, one translation); the model is ``[mu, W]`` or, with ``sd``,
     ``[mu, W, sd mu]``. Returns the dataset and the stream."""
     rng = np.random.default_rng(3)
@@ -58,6 +58,7 @@ def _single_pose_stream(q: int, sd: float | None):
         schedule=ScheduleConfig(image_batch_size=3, rotation_block_size=1),
         scoring=ScoringConfig(relion_texture_interp=False, full_real_observation=True),
         gemm_precision="fp32",
+        latent_center=latent_center,
     )
     return dataset, stream
 
@@ -97,6 +98,7 @@ def test_config_validates_the_contrast_model():
         dict(contrast="latent", contrast_sd=0.0),
         dict(contrast="latent", contrast_sd=0.9),
         dict(contrast="latent", contrast_start=0),
+        dict(contrast="latent", contrast_gain_rate=0.0),
         dict(contrast="latent", oversampling=1),
         dict(contrast="latent", stream_coarse_recompute=False),
     ):
@@ -113,7 +115,10 @@ def test_checkpoint_identity_ignores_default_contrast_settings_and_keeps_the_sd(
     with np.load(path, allow_pickle=False) as arrays:
         arrays = dict(arrays)
     metadata = json.loads(str(arrays["metadata"]))
-    for key in ("contrast", "contrast_sd", "contrast_estimate_sd", "contrast_start", "contrast_sd_min", "contrast_sd_max"):
+    for key in (
+        "contrast", "contrast_sd", "contrast_estimate_sd", "contrast_start", "contrast_sd_min", "contrast_sd_max",
+        "contrast_center", "contrast_gain_rate",
+    ):
         metadata["config"].pop(key)  # a checkpoint written before the contrast settings existed
     arrays["metadata"] = json.dumps(metadata)
     old = tmp_path / "old.npz"
@@ -184,9 +189,11 @@ def test_the_controller_updates_the_sd_from_the_second_moment_and_logs_it(tmp_pa
     assert [r["iteration"] for r in records] == [1, 2, 3]
     assert "contrast" not in records[0]  # before contrast_start the E-step has unit contrast
     assert [s for _, s in seen][0] == 0.2
-    expected = 0.2
+    expected, expected_gain = 0.2, 0.0
     for record in records[1:]:
         assert record["contrast"]["sd"] == pytest.approx(expected)
+        assert record["contrast"]["gain"] == pytest.approx(expected_gain)
+        expected_gain = 0.8 * expected_gain + 0.2 * gain  # contrast_gain_rate 0.2 toward the batch mean of the latent
         centred = second_moment - gain**2
         blended = 0.9 * expected**2 + 0.1 * expected**2 * centred  # beta = 0.9 on a stochastic batch
         expected = float(np.sqrt(blended))
@@ -194,7 +201,7 @@ def test_the_controller_updates_the_sd_from_the_second_moment_and_logs_it(tmp_pa
         assert record["contrast"]["latent_second_moment"] == pytest.approx(second_moment)
         assert record["contrast"]["latent_mean"] == pytest.approx(gain)
         assert record["contrast"]["estimate_sd"] == pytest.approx(0.0, abs=1e-7)  # one gain for every image
-    assert final.contrast_sd == pytest.approx(expected)
+    assert final.contrast_sd == pytest.approx(expected) and final.contrast_gain == pytest.approx(expected_gain)
     assert checkpoint.load(tmp_path / "checkpoint_0003.npz", config, identity).contrast_sd == pytest.approx(expected)
 
 
@@ -229,3 +236,29 @@ def test_the_dense_helper_runs_the_engine_on_the_tied_model_and_folds_it():
     for name in ("lhs_tri", "residual_gradient", "embeddings"):
         assert_matches(np.asarray(getattr(folded, name)), np.asarray(getattr(expected, name)))
     assert folded.lhs_tri.shape[1] == 6 and folded.embeddings.shape[1] == 3  # [mu, W_1, W_2] and the contrast latent
+
+
+def test_centring_the_stream_shifts_the_metric_and_zero_changes_nothing():
+    """The backprojected metric of the shifted latent is ``S L S^T`` of the plain one (backprojection is linear), and a centre
+    of zero leaves every statistic as it is."""
+    centre = 0.6
+    _, plain = _single_pose_stream(q=2, sd=0.3)
+    _, zero = _single_pose_stream(q=2, sd=0.3, latent_center=0.0)
+    _, shifted = _single_pose_stream(q=2, sd=0.3, latent_center=centre)
+    base = accumulate_full_row_tile(plain, np.arange(3), [None] * 3)
+    same = accumulate_full_row_tile(zero, np.arange(3), [None] * 3)
+    moved = accumulate_full_row_tile(shifted, np.arange(3), [None] * 3)
+    for name in ("lhs_tri", "residual_gradient", "embeddings", "residual_num"):
+        assert_matches(np.asarray(getattr(same, name)), np.asarray(getattr(base, name)))
+    size = 4
+    rows, cols = np.triu_indices(size)
+    full = np.zeros((base.lhs_tri.shape[0], size, size))
+    full[:, rows, cols] = np.asarray(base.lhs_tri, np.float64)
+    full[:, cols, rows] = np.asarray(base.lhs_tri, np.float64)
+    transform = np.eye(size)
+    transform[-1, 0] = -centre
+    expected = (transform @ full @ transform.T)[:, rows, cols]
+    assert_matches(np.asarray(moved.lhs_tri), expected.astype(np.float32))
+    assert_matches(np.asarray(moved.embeddings), np.asarray(base.embeddings))  # the posterior is not shifted
+    assert_matches(np.asarray(moved.diagnostics["latent_second_moment_sum"]), np.asarray(base.diagnostics["latent_second_moment_sum"]))
+    assert not np.allclose(np.asarray(moved.residual_gradient), np.asarray(base.residual_gradient))

@@ -120,6 +120,11 @@ class Config:
     contrast_start: int = 1
     contrast_sd_min: float = 0.01
     contrast_sd_max: float = 0.5
+    # The M-step takes the contrast latent's moments about its population mean (docs/math/ppca_contrast.md, section 9), so
+    # the global gain between the mean volume and the images does not move the mean volume; the E-step keeps the prior.
+    # The population mean follows the batch mean of the latent's posterior mean at contrast_gain_rate per update.
+    contrast_center: bool = True
+    contrast_gain_rate: float = 0.2
 
     def __post_init__(self):
         if isinstance(self.q, bool) or not isinstance(self.q, (int, np.integer)) or self.q <= 0 or self.seed <= 0 or self.iterations <= 0:
@@ -224,6 +229,8 @@ class Config:
             raise ValueError("contrast_start must be a positive integer")
         if not 0 < self.contrast_sd_min <= self.contrast_sd <= self.contrast_sd_max:
             raise ValueError("Need 0 < contrast_sd_min <= contrast_sd <= contrast_sd_max")
+        if not 0 < self.contrast_gain_rate <= 1:
+            raise ValueError("contrast_gain_rate must be in (0, 1]")
 
     def _validate_order_rule(self) -> None:
         """Refuse an order rule other than the table or the accuracy rule, or an accuracy rule it cannot run."""
