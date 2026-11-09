@@ -220,3 +220,26 @@ behaves as in the baseline run (power 0.30 to 0.32 in all ten runs of round 3), 
 The shifted moments are the moments of a different model than the E-step's (the one without the population gain), so
 the M-step is not the exact EM of model A; it is the EM of the model in which the global gain is part of the unit-contrast
 baseline's own, which is the model the optimizers are tuned for.
+
+## 10. A loading parallel to the mean is a second contrast latent
+
+Model A puts the contrast on the mean only, `y = A[(1 + sd e) mu + W z]`. The loadings `W` are free, so a column
+`w_k = a_k mu + w_k'` with `w_k'` orthogonal to `mu` gives `A[(1 + sd e + a_k z_k) mu + W' z]`: the latent `z_k` is then a
+second contrast latent. The likelihood is unchanged by moving variance between `sd e` and `a_k z_k`, so `sd` is not identified
+once such a column exists, and the EM update of `sd` (section 9) is a random walk on a flat valley. A run without a contrast
+model shows why a column is attracted to `mu`: contrast variation is exactly that direction (the baseline loadings at true sd
+0.30 have 20-50 percent of their power along `mu`, against 0.1 percent at unit contrast).
+
+Observed in round 4 on C n1 at box 64 with noise level 3 (three times the injected noise variance of the datasets above; the scorer's SNR probe reads 0.041 against 0.124), true sd
+0.30, momentum SGD: the sd estimate fell from 0.28 (iteration 1600) to 0.09 (iteration 3000) while the centred second moment of
+`e` stayed at 0.99 to 1.02 (a fixed point of the update, which decays by `sqrt(0.9 + 0.1 c)` per step, 0.9995 at `c = 0.99`), the
+mean contrast estimate drifted to a gain of -0.74, the contrast estimates' correlation with the truth was -0.10, and several
+loadings of the final model kept 8 to 18 percent of their power along the mean volume. Every contrast run that worked (VDAM
+throughout; SGD at noise level 1) had loadings with 0.0 to 0.3 percent along the mean.
+
+The fix is a constraint, not a heuristic: after each update the loadings lose their component along the mean volume,
+`W <- W - mu (mu^H W) / (mu^H mu)` (real coefficient per column, the inner product of the stored half-space Fourier
+coefficients; `ppca_refinement.contrast.orthogonalize_loadings`), and so does the SGD velocity of the loadings
+(`--contrast-orthogonal`). It restricts the model to heterogeneity that is independent of the contrast, which is the physical
+situation (the contrast of a particle does not depend on its conformation). The constraint changes nothing for a model whose loadings
+are already orthogonal to the mean, so VDAM, which is, is unaffected to first order.
