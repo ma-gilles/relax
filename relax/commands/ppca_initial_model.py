@@ -201,12 +201,6 @@ def add_args(parser):
         "--tau2-fudge-scheme",
         help="RELION's --tau2_fudge_scheme: plain, or <deflate>-step (default: <fudge>-step)",
     )
-    parser.add_argument(
-        "--schedule-iterations",
-        type=int,
-        help="lay VDAM's phases out for this many iterations, fewer than --iterations: the iterations past it keep the "
-        "last phase, so a finished run can be extended with --resume (default: the schedule is --iterations long)",
-    )
     parser.add_argument("--sgd-learning-rate", type=float, default=0.4)
     parser.add_argument(
         "--sgd-loading-scale",
@@ -468,7 +462,6 @@ def main(args=None):
         q=args.q,
         seed=args.seed,
         iterations=args.iterations,
-        schedule_iterations=args.schedule_iterations,
         oversampling=args.oversampling,
         max_significant=args.maxsig,
         shift_range=args.shift_range,

@@ -35,6 +35,7 @@ RUNTIME_CONFIG_FIELDS = ("gemm_precision", "preread_images", "pass2_mass_floor")
 _RETIRED_CONFIG_DEFAULTS = {
     "contrast_estimate": False, "contrast_prior_sd": 0.3, "contrast_range": [0.5, 2.0], "fine_image_tile_size": 1,
     "gate_statistic": "power", "gate_noise_reference": "full_data", "gate_noise_images": "dataset",
+    "schedule_iterations": None,
 }
 
 # Model settings added later and the value that gives the model of a checkpoint written before they existed (a setting's
@@ -47,13 +48,9 @@ _ADDED_CONFIG_DEFAULTS = {"max_significant": 100, "pc_stages": None, "pc_birth_s
 
 
 def _identity_config(config_dict):
-    config = canonical(config_dict)
-    # The model is set by the length of VDAM's schedule, not by where the run stops: a run extended past its schedule
-    # (Config.schedule_iterations) resumes from a checkpoint of the shorter run.
-    config["iterations"] = config.pop("schedule_iterations", None) or config["iterations"]
     return {
         key: value
-        for key, value in config.items()
+        for key, value in canonical(config_dict).items()
         if key not in RUNTIME_CONFIG_FIELDS
         and _RETIRED_CONFIG_DEFAULTS.get(key, ...) != value
         and _ADDED_CONFIG_DEFAULTS.get(key, ...) != value

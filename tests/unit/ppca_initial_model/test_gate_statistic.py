@@ -174,10 +174,3 @@ def test_the_scale_reaches_the_update_and_a_resumed_run_keeps_it(monkeypatch, tm
     for t in range(5, 9):
         assert_matches(resumed[t]["disagreement_scale"], straight[t]["disagreement_scale"], rtol=1e-12)
         assert_matches(resumed[t]["gates"], straight[t]["gates"])
-
-
-def test_a_checkpoint_of_the_retired_noise_images_option_resumes_at_its_default_only():
-    """``gate_noise_images`` is retired: ``dataset`` is the behavior left, ``seen`` was another model."""
-    config = dataclasses.asdict(Config())
-    assert checkpoint._identity_config({**config, "gate_noise_images": "dataset"}) == checkpoint._identity_config(config)
-    assert checkpoint._identity_config({**config, "gate_noise_images": "seen"}) != checkpoint._identity_config(config)

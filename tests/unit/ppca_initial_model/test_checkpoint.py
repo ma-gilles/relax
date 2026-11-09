@@ -64,7 +64,7 @@ def test_checkpoint_preserves_state_and_rejects_mismatch(tmp_path):
 
 
 def test_checkpoint_with_retired_settings_resumes_only_at_their_default(tmp_path):
-    """A checkpoint written while the contrast estimate existed resumes if it was off (section 16.10)."""
+    """A checkpoint written while a retired setting existed (the contrast estimate, the gate's noise images, the schedule length) resumes if it was at the only value left."""
     import json
 
     theta = jnp.ones((5, 3), jnp.complex64)
@@ -85,10 +85,12 @@ def test_checkpoint_with_retired_settings_resumes_only_at_their_default(tmp_path
 
     retired = {
         "contrast_estimate": False, "contrast_prior_sd": 0.3, "contrast_range": [0.5, 2.0], "fine_image_tile_size": 1,
+        "gate_noise_images": "dataset", "schedule_iterations": None,
     }
     assert load(with_settings("off.npz", **retired), config, {"input": "abc"}).iteration == 3
-    with pytest.raises(ValueError, match="identity mismatch"):
-        load(with_settings("on.npz", **{**retired, "contrast_estimate": True}), config, {"input": "abc"})
+    for setting, other in (("contrast_estimate", True), ("gate_noise_images", "seen"), ("schedule_iterations", 20)):
+        with pytest.raises(ValueError, match="identity mismatch"):
+            load(with_settings("on.npz", **{**retired, setting: other}), config, {"input": "abc"})
 
 
 def test_pilot_schedule_and_final_all_data():
