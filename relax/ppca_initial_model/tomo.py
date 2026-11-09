@@ -25,6 +25,7 @@ from relax.fourier.half_spectrum import make_half_image_weights
 from relax.fourier.preprocessing import relion_half_translation_lattice, translation_phases
 from relax.ppca_initial_model.fixed_core import (
     FixedCore,
+    PlacedNeighbours,
     core_basis_coefficients,
     core_basis_sums,
     core_prediction,
@@ -137,6 +138,28 @@ def _core_ctf(particles: TiltParticles, core: FixedCore, image_ids, ctf):
     return particles.ctf_at(np.asarray(image_ids, np.int64), (box, box))
 
 
+def _component_prediction(component, image_shape, projections, ctf_rows, shifts, owner) -> jax.Array:
+    """One basis component's ``(n, n_half)`` prediction of images owned by particles ``owner``: a
+    :class:`FixedCore`, or the sum over each particle's present :class:`PlacedNeighbours` slots."""
+    if not isinstance(component, PlacedNeighbours):
+        return core_prediction(component, image_shape, projections, ctf_rows, shifts)
+    owner = np.asarray(owner, np.int64)
+    projections = np.asarray(projections, np.float32)
+    total = None
+    for k in range(component.present.shape[1]):
+        present = component.present[owner, k]
+        if not present.any():
+            continue
+        turned = np.einsum("nab,nbc->nac", projections, component.rotations[owner, k]).astype(np.float32)
+        moved = np.asarray(shifts, np.float32) + image_core_shifts(projections, -component.translations[owner, k])
+        part = core_prediction(component.core, image_shape, turned, ctf_rows, moved.astype(np.float32))
+        part = part * jnp.asarray(present, part.real.dtype)[:, None]
+        total = part if total is None else total + part
+    if total is None:  # no particle of these images has a neighbour
+        return jnp.zeros((len(owner), int(image_shape[0]) * (int(image_shape[1]) // 2 + 1)), jnp.complex64)
+    return total
+
+
 def _drop_dc(precision_or_half, image_shape):
     """A copy with the DC pixel zeroed (a free offset per image: RELION's background normalisation)."""
     from relax.fourier.half_spectrum import half_spectrum_dc_index
@@ -201,7 +224,9 @@ def subtract_fixed_core(
         residual = half
         for k, component in enumerate(basis):
             rows = _core_ctf(particles, component, image_ids, ctf)
-            prediction = core_prediction(component, image_shape, projections[image_ids], rows, shifts[image_ids])
+            prediction = _component_prediction(
+                component, image_shape, projections[image_ids], rows, shifts[image_ids], owner[image_ids]
+            )
             residual = residual - jnp.asarray(image_coefficients[image_ids, k])[:, None] * prediction
         if free_offset:
             residual = residual.at[:, dc_index].set(0)
@@ -393,7 +418,14 @@ def estimate_core_coefficients(
         predictions = np.stack(
             [
                 np.asarray(
-                    core_prediction(c, particles.image_shape, projections, _core_ctf(particles, c, images, ctf), shifts)
+                    _component_prediction(
+                        c,
+                        particles.image_shape,
+                        projections,
+                        _core_ctf(particles, c, images, ctf),
+                        shifts,
+                        chosen[position],
+                    )
                 )
                 for c in basis
             ]

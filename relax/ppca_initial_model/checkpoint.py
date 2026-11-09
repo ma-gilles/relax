@@ -59,6 +59,7 @@ _ADDED_CONFIG_DEFAULTS = {
     "fixed_core_free_offset": True,
     "fixed_core_background": "none",
     "fixed_core_spectrum": False,
+    "fixed_core_neighbours": None,
 }
 
 

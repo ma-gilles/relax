@@ -214,6 +214,30 @@ def core_scale(a, b, *, prior_sd: float | None = None) -> np.ndarray:
     return (a + precision) / (b + precision)
 
 
+@dataclasses.dataclass(frozen=True)
+class PlacedNeighbours:
+    """Copies of a core placed around each particle (e.g. the neighbouring filaments of a bundle), one basis
+    component of :func:`relax.ppca_initial_model.tomo.subtract_fixed_core`: for particle ``p`` the sum over its
+    present slots ``k`` of ``core`` turned by ``rotations[p, k]`` (the neighbour's frame in the particle's frame,
+    ``P_p^T P_n`` for reference-to-tomogram poses ``P``) at ``translations[p, k]`` (pixels, the neighbour's centre in
+    the particle frame, ``P_p^T (c_n - c_p) / voxel``). Projected with ``Aproj @ R`` and shifted by
+    ``[Aproj (-t)]_{1,2}`` in the stream's shift convention (measured on 6 Dogic s376 windows: the only placement of
+    eight frame variants that removes the neighbour's power, 104-621 A removal 4-7% -> 8-18%)."""
+
+    core: FixedCore
+    rotations: np.ndarray  # (P, K, 3, 3)
+    translations: np.ndarray  # (P, K, 3) pixels
+    present: np.ndarray  # (P, K) bool
+
+    @property
+    def volume_shape(self):
+        return self.core.volume_shape
+
+    @property
+    def voxel_size(self):
+        return self.core.voxel_size
+
+
 def filter_core_spectrum(volume, gains, image_size: int) -> np.ndarray:
     """The real-space core ``volume`` (an ``M``-cube) with each 3D frequency ``k`` multiplied by ``gains`` at its
     radius in the ``image_size`` image's shells (``|k| N / M``, linearly interpolated, the last gain held beyond).

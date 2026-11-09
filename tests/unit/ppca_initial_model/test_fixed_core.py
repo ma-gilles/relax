@@ -21,6 +21,7 @@ from relax.fourier.half_spectrum import make_half_image_weights
 from relax.fourier.preprocessing import relion_half_translation_lattice
 from relax.ppca_initial_model.fixed_core import (
     FixedCore,
+    PlacedNeighbours,
     core_basis_volumes,
     core_prediction,
     extend_axial_core,
@@ -67,6 +68,9 @@ PROJECTOR_RTOL = 3e-6
 # of a gain that changes fast over 9 shells); 0.3 leaves a 1.45x margin.
 RTOL_SPECTRUM = 5e-2
 RESIDUAL_FRACTION = 0.3
+# The joint core + neighbour fit on noiseless images of X + a core + b neighbours: X's correlation with the core
+# images biases the coefficients, measured 1.72e-2 to 2.93e-2 of the largest over seeds 3-7; 6e-2 leaves a 2x margin.
+NEIGHBOUR_RTOL = 6e-2
 
 
 def _half_volume(rng, scale):
@@ -569,3 +573,56 @@ def test_core_spectrum_recovers_a_radial_gain_and_its_filter_applies_it():
     residual = images - np.asarray(core_prediction(refit, IMAGE_SHAPE, projections.astype(np.float32), ctf, shifts))
     before = images - np.asarray(core_prediction(fixed, IMAGE_SHAPE, projections.astype(np.float32), ctf, shifts))
     assert np.sum(np.abs(residual) ** 2) < RESIDUAL_FRACTION * np.sum(np.abs(before) ** 2)
+
+
+def _neighbours(n_particles, slots, rotations=None, translations=None):
+    rotations = np.tile(np.eye(3, dtype=np.float32), (n_particles, slots, 1, 1)) if rotations is None else rotations
+    translations = np.zeros((n_particles, slots, 3)) if translations is None else translations
+    return rotations, translations
+
+
+def test_placed_neighbours_absent_are_zero_and_at_the_identity_are_the_core():
+    p = make_problem()
+    observed = _particles(p["observed"], p["ctf"])
+    rotations, translations = _neighbours(observed.n_images, 2)
+    present = np.zeros((observed.n_images, 2), bool)
+    none = subtract_fixed_core(
+        observed,
+        (p["fixed"], PlacedNeighbours(p["fixed"], rotations, translations, present)),
+        scales=np.tile([1.0, 1.0], (observed.n_images, 1)),
+    )
+    alone = subtract_fixed_core(observed, p["fixed"])
+    ids = np.arange(observed.image_offsets[-1])
+    assert_matches(np.asarray(none.read(ids)[1]), np.asarray(alone.read(ids)[1]))
+    present[:, 0] = True  # one copy at the particle's own place: the core counted twice
+    twice = subtract_fixed_core(
+        observed,
+        (p["fixed"], PlacedNeighbours(p["fixed"], rotations, translations, present)),
+        scales=np.tile([1.0, 1.0], (observed.n_images, 1)),
+    )
+    doubled = subtract_fixed_core(observed, p["fixed"], scales=np.full(observed.n_images, 2.0))
+    assert_matches(np.asarray(twice.read(ids)[1]), np.asarray(doubled.read(ids)[1]), rtol=PROJECTOR_RTOL)
+
+
+def test_core_and_neighbour_coefficients_are_recovered_and_removed():
+    """Noiseless images of ``a_i core + b_i neighbours`` (one copy turned 90 degrees about the axis and moved 3 px
+    across it, one absent on half the particles): the joint fit returns ``(a_i, b_i)`` and the residual is X."""
+    p = make_problem(noise=False)
+    no_core = _particles(p["parts"]["X"], p["ctf"])
+    n = no_core.n_images
+    turn = Rotation.from_euler("z", 90, degrees=True).as_matrix().astype(np.float32)
+    rotations, translations = _neighbours(n, 2)
+    rotations[:, 0] = turn
+    translations[:, 0] = [3.0, 0.0, 0.0]
+    translations[:, 1] = [0.0, -2.0, 0.0]
+    present = np.ones((n, 2), bool)
+    present[::2, 1] = False
+    neighbours = PlacedNeighbours(p["fixed"], rotations, translations, present)
+    truth = np.stack([[0.7, 1.1, 0.9, 1.3], [0.5, 0.8, 1.2, 0.6]], axis=1)
+    ids = np.arange(no_core.image_offsets[-1])
+    # Images made by subtracting -truth from X: X + a core + b neighbours, through the code under test.
+    made = subtract_fixed_core(no_core, (p["fixed"], neighbours), scales=-truth)
+    observed = _particles(np.asarray(made.read(ids)[1], np.complex128), p["ctf"])
+    fitted = estimate_core_coefficients(observed, (p["fixed"], neighbours), _shell_noise())
+    # X correlates weakly with the core images: the fit carries that projection (NEIGHBOUR_RTOL).
+    assert_matches(fitted.astype(np.float32), truth.astype(np.float32), rtol=NEIGHBOUR_RTOL)

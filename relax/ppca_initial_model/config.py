@@ -127,6 +127,10 @@ class Config:
     # With fixed_core_scale "particle": the core's spectral shape is fitted to the data (one gain per image shell,
     # tomo.estimate_core_spectrum), the map filtered by it (fixed_core.filter_core_spectrum) and the scales refitted.
     fixed_core_spectrum: bool = False
+    # An .npz of each particle's neighbouring copies of the core (fixed_core.PlacedNeighbours; make it with the
+    # project's make_neighbours.py from the particles STAR): their sum joins the core as a second component with
+    # its own coefficient per particle. None: the core alone.
+    fixed_core_neighbours: str | None = None
 
     def band(self):
         """The :class:`FilamentBand` search, or None for the full grid."""
@@ -151,6 +155,8 @@ class Config:
                     "The filament band searches its own full grid: oversampling 0, the streamed engine, "
                     "no shift schedule"
                 )
+        if self.fixed_core_neighbours is not None and self.fixed_core_scale != "particle":
+            raise ValueError("fixed_core_neighbours needs fixed_core_scale 'particle'")
         if self.fixed_core_spectrum and self.fixed_core_scale != "particle":
             raise ValueError("fixed_core_spectrum needs fixed_core_scale 'particle'")
         if self.fixed_core_background not in ("none", "z", "cylinder"):
