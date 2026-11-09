@@ -62,6 +62,9 @@ _ADDED_CONFIG_DEFAULTS = {
     "fixed_core_neighbours": None,
     "initial_mean": None,
     "initial_mean_scale": 1.0,
+    "sgd_pc_min_shell": 0,
+    "sgd_eig_floor_rel": None,
+    "sgd_mean_gate_floor": None,
 }
 
 
