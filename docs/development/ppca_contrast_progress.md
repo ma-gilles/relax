@@ -18,8 +18,8 @@ tested, and performs to a satisfactory level on simulated data with and without 
 | 1 | Math: sufficient statistics, exact prior, quantization | done, [ppca_contrast.md](../math/ppca_contrast.md); model A matches the exact model B (section 8) |
 | 2 | Implementation shared by initial model and refinement | model A in the initial model (`--contrast latent`) and in `contrast.py` for any engine; CPU tests pass; GPU smoke run in progress |
 | 3a | Contrast-spread simulated datasets with a paired control | done: C n1 box 64 at sd 0, 0.15, 0.30 |
-| 3b | Cost of ignoring contrast (baseline runs) | running (VDAM and momentum SGD at the default settings, seed 11) |
-| 3c | Contrast model vs baseline; harm check at unit contrast | not started |
+| 3b | Cost of ignoring contrast (baseline runs) | done for seed 11: at sd 0.30 kmeans ARI falls from 0.99 to 0.57-0.63, poses and FSC hold |
+| 3c | Contrast model vs baseline; harm check at unit contrast | round 1 hit a scale-gauge drift (below); round 2 (centred sd, fixed sd, late start) running |
 | 4 | Heuristics (when to switch contrast on, prior width) and revisit | not started |
 
 ## Decisions so far
@@ -78,3 +78,35 @@ tested, and performs to a satisfactory level on simulated data with and without 
   poses) and the scorer reuses it. The baseline arms use the scorer's own inference (this is the "ignoring contrast"
   case). The Snakefile passes the options for any arm whose `--contrast` is not `none`.
 - Baseline runs launched (round 1): `s3_vdam_uniform` and `s3_scale1_4_uniform`, seed 11, on the three datasets.
+
+### 2026-11-09 (evening) baselines, round 1 of the contrast latent, and a gauge failure
+
+**Baselines** (seed 11, C n1 box 64, 100,000 particles, current defaults: uniform direction prior; the scorer's own
+inference, which ignores contrast). Suite scorer at the last checkpoint; in-run latent scores from the final embedding
+pass.
+
+| contrast sd | arm | kmeans ARI | state FSC | mean FSC | pose median (deg) | pose < 10 deg | gmm ARI | nn acc | R^2 states |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 0 | VDAM | 0.992 | 0.949 | 0.999 | 3.94 | 0.999 | 0.994 | 0.994 | 0.761 |
+| 0 | SGD 1/4 | 1.000 | 0.941 | 0.730 | 5.01 | 0.990 | 0.993 | 0.995 | 0.761 |
+| 0.15 | VDAM | 0.976 | 0.953 | 0.999 | 3.97 | 0.998 | 0.989 | 0.991 | 0.741 |
+| 0.15 | SGD 1/4 | 0.964 | 0.921 | 0.984 | 5.46 | 0.965 | 0.982 | 0.986 | 0.727 |
+| 0.30 | VDAM | 0.573 | 0.955 | 0.998 | 4.04 | 0.981 | 0.863 | 0.951 | 0.591 |
+| 0.30 | SGD 1/4 | 0.631 | 0.920 | 0.986 | 5.39 | 0.933 | 0.908 | 0.944 | 0.614 |
+
+Ignoring a contrast spread of 0.30 leaves the poses (4.0-5.4 deg), the state FSC and the mean FSC where they were
+and takes the clustering of the latents down: kmeans ARI 0.99 to 0.57-0.63, GMM ARI 0.99 to 0.86-0.91, between-state
+R^2 0.76 to 0.59-0.61. At 0.15 the loss is a few percent of ARI. The contrast acts on the latents (and the loadings),
+not on the alignment, in this data.
+
+**Round 1 of the contrast latent** (uncentred sd update, started from iteration 1, initial sd 0.2): both optimizers
+drifted along the scale gauge of the math note (section 9). VDAM: the sd hit its cap (0.5) on all three datasets
+including sd 0, the mean map shrank to 0.28 of the baseline's power (c00, iteration 1000), the contrast estimate's mean went
+to 1.8. Even so, on sd 0.30 the latents beat the baseline's on between-state R^2 (0.710 against 0.591) and nearest-centroid
+accuracy (0.972 against 0.951), the contrast estimate correlated 0.959 with the truth (0.868 at sd 0.15), and at sd 0 nothing
+was lost (GMM ARI 0.993 against 0.994). Momentum SGD: the sd estimate was right for 500 iterations (0.29-0.30 at true 0.30,
+0.07 at true 0), then the mean-map power ran away and the curvature check stopped all three runs (iterations 2050-2250).
+The suite scorer was not run on the VDAM arms (not worth the GPU time on a gauge-drifted model).
+
+Decision: the sd update uses the centred second moment (math note, section 9), committed with a test. Round 2 runs it
+against a fixed sd (0.3) and a late start (iteration 800), for both optimizers, on the sd 0 and sd 0.30 datasets.

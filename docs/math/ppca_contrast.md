@@ -179,3 +179,31 @@ unit-contrast model, and also ranks the true pose against 12 wrong poses whose i
   same latent accuracy): modelling an absent contrast is harmless at a known pose.
 
 Model B is therefore not built into the stream. It stays the reference of these tables.
+
+## 9. The scale gauge, and why the sd is estimated from a centred moment
+
+Model A has a flat direction in the likelihood: scaling the mean volume by `a` and shifting the contrast
+latent so that `(1 + sd e) mu` is unchanged fits every image equally well. Only the prior `e ~ N(0, 1)` pins it,
+with a pull of `1 / sd^2` against the data's `nu` per image, which is weak at `sd = 0.3` (`nu` about 200: the
+prior holds 5 percent of the precision). Any force along the valley then moves the mean volume: VDAM's
+regularisation shrinks the mean each update, and the contrast latent compensates, per image, at almost no cost.
+
+Round 1 of the experiments (progress log) updated the sd from the uncentred second moment, `sd^2 <- sd^2 E[e^2]`.
+That counts the global gain, the mean of `e` over the images, as spread; the sd inflates, the prior pin weakens
+(it goes as `1 / sd^2`) and the gain moves further. Observed on C n1 at box 64, 100,000 particles, seed 11:
+
+- VDAM: the sd reached its cap (0.5) by iteration 100 to 200 on all three datasets, including the unit-contrast
+  control (true sd 0); the mean contrast estimate drifted to 1.8 and the mean volume's power fell to 0.28 of the
+  baseline's at iteration 1000 (amplitude 0.53, the inverse of the gain the latent had taken). The spread of the
+  estimate about its own mean was right (0.30 of the mean at true sd 0.30; 0.08 at true sd 0).
+- Momentum SGD: the sd estimate was good for the first 500 iterations (0.29-0.30 at true 0.30; falling to 0.07
+  at true 0), then the sd rose and the mean volume's power ran away (0.56 at iteration 1000, 1.8e4 at 2000, true
+  sd 0.30) until the curvature check stopped the run.
+
+The sd update therefore uses the second moment about the mean, `sd^2 <- sd^2 (mean E[e^2] - (mean E[e])^2)`: it is
+the EM update for a prior with a free mean, applied while the E-step keeps the prior mean at 0. The sd measures
+the spread of the contrast; the global gain does not feed it, and the prior pin stays as strong as the spread
+says. Variants that remove the freedom altogether are tested alongside it: a fixed sd, and switching the contrast
+on only after the mean volume's amplitude has settled (`--contrast-start`). A hard recentring (move the mean of
+`e` into the mean volume every update, `mu <- (1 + sd mean(e)) mu`, `sd <- sd / (1 + sd mean(e))`) is the next
+step if these are not enough; it makes the mean volume carry the whole gain, as it does without contrast.
