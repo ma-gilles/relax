@@ -15,10 +15,10 @@ tested, and performs to a satisfactory level on simulated data with and without 
 
 | Step | What | Status |
 | --- | --- | --- |
-| 1 | Math: sufficient statistics, exact prior, quantization | derived, [ppca_contrast.md](../math/ppca_contrast.md) |
-| 2 | Implementation shared by initial model and refinement | not started |
-| 3a | Contrast-spread simulated datasets with a paired control | not started |
-| 3b | Cost of ignoring contrast (baseline runs) | not started |
+| 1 | Math: sufficient statistics, exact prior, quantization | done, [ppca_contrast.md](../math/ppca_contrast.md); model A matches the exact model B (section 8) |
+| 2 | Implementation shared by initial model and refinement | model A in the initial model (`--contrast latent`) and in `contrast.py` for any engine; CPU tests pass; GPU smoke run in progress |
+| 3a | Contrast-spread simulated datasets with a paired control | done: C n1 box 64 at sd 0, 0.15, 0.30 |
+| 3b | Cost of ignoring contrast (baseline runs) | running (VDAM and momentum SGD at the default settings, seed 11) |
 | 3c | Contrast model vs baseline; harm check at unit contrast | not started |
 | 4 | Heuristics (when to switch contrast on, prior width) and revisit | not started |
 
@@ -51,3 +51,30 @@ tested, and performs to a satisfactory level on simulated data with and without 
   model assumes. The suite builder passes ones; the contrast-spread datasets will be built from a suite
   dataset's own truth (volumes, rotations, CTF, noise spectrum) with the contrast drawn from a truncated
   normal.
+
+### 2026-11-09 model, code and first data
+
+- **Model A against the exact model B** (math document, section 8, `scripts/ppca_contrast/model_a_vs_exact.py`, four
+  unit tests). At a known pose, model A's contrast posterior equals the exact one (correlation 0.998-0.999, same
+  width) at every loading ratio tried, its latent divided by the contrast estimate recovers B's accuracy to 0.01, and
+  the pose evidence agrees to 0.5 percent. Unit contrast loses 0.05-0.07 of latent R^2 at contrast sd 0.3. Modelling
+  a contrast that is absent costs nothing. Decision: model A is the model; B is not built into the stream.
+- **Implementation.** `relax/ppca_refinement/contrast.py` (tied column, gradient and metric fold, contrast split,
+  EM update of the sd; usable by any engine whose statistics have the augmented layout). In the stream, pass 2 now
+  sums `gamma E[alpha_p^2]` per latent. The initial model has `--contrast latent`, `--contrast-sd`,
+  `--no-contrast-estimate-sd`, `--contrast-start` (State and checkpoint carry the sd; old checkpoints resume).
+  Tests: the engine on the tied column against an explicit Gaussian, the folded gradient against finite differences
+  of the model A likelihood, `T^T L T`, EM recovering the true sd, the single-pose second moments through the real
+  stream, the controller's sd update and checkpoint round trip (31 new tests). The existing stream, checkpoint,
+  tile-plan and oversampling tests pass (97 passed, 16 GPU-only skipped).
+- **Datasets.** `simulate_contrast_dataset.py` re-simulates a suite dataset from its truth (volumes, rotations, CTF,
+  noise spectrum, simulator seed) with the signal of particle `i` scaled by `c_i ~ N(1, sd^2)` (redrawn below
+  0.2). C n1, box 64 (the `C__realistic__noise1__b128crop64` truth), 100,000 particles, sd 0, 0.15 and 0.30. Paired
+  by construction and checked: `img(sd 0.30) - img(sd 0) = 2 (img(sd 0.15) - img(sd 0))` to 7.5e-7 relative on
+  the particles that were not redrawn, so only the signal scale differs.
+- **Evaluation.** The suite scorer infers with its own unit-contrast code, so a contrast-trained model is scored
+  through `scripts/ppca_contrast/infer_for_suite.py`: the run's own E-step on the scorer's images and protocol grid
+  writes the scorer's `inference.npz` (z of the scorer's sign, divided by the contrast estimate by default, best
+  poses) and the scorer reuses it. The baseline arms use the scorer's own inference (this is the "ignoring contrast"
+  case). The Snakefile passes the options for any arm whose `--contrast` is not `none`.
+- Baseline runs launched (round 1): `s3_vdam_uniform` and `s3_scale1_4_uniform`, seed 11, on the three datasets.

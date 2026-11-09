@@ -149,3 +149,33 @@ GEMMs.
   a particle is of order 10^2, so `sd(c | y, phi)` is about `nu^-1/2`, a few percent to ten percent. A
   quadrature grid built on the prior alone would then miss the likelihood; model B needs nodes adapted to
   each pose.
+
+## 8. Measured: model A against the exact model B
+
+[model_a_vs_exact.py](../../scripts/ppca_contrast/model_a_vs_exact.py) draws images from the physical model
+(`y = c (a + B z) + noise`, white noise, one known pose, `nu = 200`, three latents, 1,500 images), computes the exact
+posterior of model B by quadrature (801 nodes on `1 +- 6 sd`, `z` in closed form), model A's closed form and the
+unit-contrast model, and also ranks the true pose against 12 wrong poses whose images correlate with the true one by
+0.95 (a neighbouring pose of the grid). Loading-to-mean energy ratio `r`, contrast sd `sd`:
+
+| r | sd | corr(c_A, c_B) | sd of c given y, A / B | R^2 of z: B / A over c / unit | pose margin (nats): unit / A / B | true pose wins: unit / A / B |
+| --- | --- | --- | --- | --- | --- | --- |
+| 0.1 | 0.30 | 0.999 | 0.069 / 0.068 | 0.839 / 0.816 / 0.807 | 3.31 / 4.20 / 4.21 | 0.779 / 0.777 / 0.777 |
+| 0.3 | 0.30 | 0.999 | 0.069 / 0.068 | 0.933 / 0.926 / 0.878 | 4.71 / 5.63 / 5.66 | 0.824 / 0.823 / 0.827 |
+| 1.0 | 0.30 | 0.999 | 0.069 / 0.068 | 0.975 / 0.972 / 0.906 | 10.19 / 11.14 / 11.16 | 0.889 / 0.896 / 0.895 |
+| 3.0 | 0.30 | 0.999 | 0.069 / 0.068 | 0.988 / 0.986 / 0.914 | 27.35 / 28.31 / 28.34 | 0.945 / 0.953 / 0.953 |
+| 1.0 | 0.15 | 0.998 | 0.064 / 0.063 | 0.981 / 0.981 / 0.965 | 9.81 / 9.98 / 9.99 | 0.955 / 0.956 / 0.957 |
+| 0.3 | 0 (model sd 0.15) | 0.987 | 0.064 / 0.063 | 0.950 / 0.950 / 0.953 | 4.64 / 4.62 / 4.63 | 0.915 / 0.917 / 0.917 |
+
+- Model A's contrast posterior is the exact one to three digits in correlation and in width, at every ratio:
+  the dropped term `delta * A W z` does not change what the image says about `c`.
+- The latent of model A, divided by its contrast estimate, recovers model B's accuracy to 0.01 (0.023 where the
+  loadings are weak, `r = 0.1`); the unit-contrast latent loses 0.05 to 0.07 of R^2 at sd 0.3, and model A's
+  undivided latent `u` is as bad as the unit one, so the division is what carries the gain.
+- The pose evidence of models A and B agree to 0.5 percent. Modelling the contrast adds 0.2 to 1.0 nats of
+  margin at sd 0.3; the fraction of images whose true pose wins moves by less than 0.01, so in this toy the
+  contrast changes how confident the pose posterior is more than which pose wins.
+- With no contrast spread in the data and a model prior sd of 0.15, nothing changes (margins within 0.5 percent,
+  same latent accuracy): modelling an absent contrast is harmless at a known pose.
+
+Model B is therefore not built into the stream. It stays the reference of these tables.
