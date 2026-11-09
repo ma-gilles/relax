@@ -264,6 +264,84 @@ def estimate_core_scales(
     return core_scale(a, b, prior_sd=prior_sd)
 
 
+def estimate_core_spectrum(
+    particles: TiltParticles,
+    core: FixedCore,
+    noise,
+    scales,
+    *,
+    offsets=None,
+    max_particles: int = 2000,
+    batch_particles: int = 64,
+    free_offset: bool = False,
+    min_power: float = 1e-3,
+    clip: tuple = (0.2, 5.0),
+) -> tuple[np.ndarray, dict]:
+    """The core's spectral gain per image shell, ``(S,)`` float64, and a record of the fit.
+
+    ``g_s = sum Re(conj(c_i p) y) w / sigma^2 / sum |c_i p|^2 w / sigma^2`` over the pixels of shell ``s`` of the
+    images of up to ``max_particles`` particles spread over the set, with ``p`` the core prediction and ``c_i``
+    the particles' scales (:func:`estimate_core_scales`). A single scale is set by the shells where the core is
+    strong; when the data's core has another spectral shape than the map (a map's B-factor or mask, measured on
+    Dogic s376: 0.84 / 1.25 / 1.16 of the scale at 104-621 / 52-104 / 25-52 A) the others keep a shared core
+    leftover. Shells whose core power is below ``min_power`` of the strongest shell's (and the DC pixel with
+    ``free_offset``) take the nearest determined shell's gain; the gains are smoothed over three shells and
+    clipped to ``clip``. Apply with :func:`relax.ppca_initial_model.fixed_core.filter_core_spectrum`, then refit
+    the scales.
+    """
+    from relax.fourier.half_spectrum import make_shell_indices_half
+
+    if particles.core_subtraction is not None:
+        raise ValueError("The core spectrum is fitted to the observed images, not to residuals")
+    precision = _image_precision(particles, noise)
+    if free_offset:
+        precision = _drop_dc(precision, particles.image_shape)
+    n = particles.n_images
+    offsets = np.zeros((n, 3)) if offsets is None else np.asarray(offsets, np.float64)
+    scales = np.asarray(scales, np.float64)
+    if offsets.shape != (n, 3) or scales.shape != (n,):
+        raise ValueError(f"Need one 3D core offset and one core scale per particle ({n})")
+    shells = np.asarray(make_shell_indices_half(particles.image_shape))
+    n_shells = int(shells.max()) + 1
+    chosen_all = np.unique(np.linspace(0, n - 1, min(n, int(max_particles))).round().astype(np.int64))
+    num, den = np.zeros(n_shells), np.zeros(n_shells)
+    for start in range(0, chosen_all.size, int(batch_particles)):
+        chosen = chosen_all[start : start + int(batch_particles)]
+        images, position = particles.particle_images(chosen)
+        _, half, ctf = particles.read(images)
+        projections = particles.image_projections(images)
+        prediction = (
+            np.asarray(
+                core_prediction(
+                    core,
+                    particles.image_shape,
+                    projections,
+                    _core_ctf(particles, core, images, ctf),
+                    image_core_shifts(projections, offsets[chosen[position]]),
+                )
+            )
+            * scales[chosen[position], None]
+        )
+        weight = precision[particles.particle_noise_group[chosen[position]]]
+        num += np.bincount(shells, np.sum((prediction.conj() * np.asarray(half)).real * weight, axis=0), n_shells)
+        den += np.bincount(shells, np.sum(np.abs(prediction) ** 2 * weight, axis=0), n_shells)
+    determined = den > min_power * den.max()
+    if not determined.any():
+        raise ValueError("No shell carries core power")
+    raw = np.where(determined, num / np.where(determined, den, 1.0), np.nan)
+    index = np.arange(n_shells)
+    filled = np.interp(index, index[determined], raw[determined])  # nearest determined values held at the ends
+    smooth = np.convolve(np.pad(filled, 1, mode="edge"), np.ones(3) / 3, mode="valid")
+    gains = np.clip(smooth, *clip)
+    record = {
+        "raw": raw.tolist(),
+        "determined": determined.tolist(),
+        "gains": gains.tolist(),
+        "particles": int(chosen_all.size),
+    }
+    return gains, record
+
+
 def _image_precision(particles: TiltParticles, noise) -> np.ndarray:
     """The stream's image metric per noise group, ``(G, F)`` float64: Hermitian half-image weights over the
     group's shell noise ``noise`` ``(G, S)`` expanded to pixels."""

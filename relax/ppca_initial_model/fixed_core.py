@@ -214,6 +214,22 @@ def core_scale(a, b, *, prior_sd: float | None = None) -> np.ndarray:
     return (a + precision) / (b + precision)
 
 
+def filter_core_spectrum(volume, gains, image_size: int) -> np.ndarray:
+    """The real-space core ``volume`` (an ``M``-cube) with each 3D frequency ``k`` multiplied by ``gains`` at its
+    radius in the ``image_size`` image's shells (``|k| N / M``, linearly interpolated, the last gain held beyond).
+
+    By the projection-slice theorem every projection's image shell ``s`` is then scaled by ``gains[s]``: the
+    correction :func:`relax.ppca_initial_model.tomo.estimate_core_spectrum` measures. ``float32``.
+    """
+    volume = np.asarray(volume, np.float64)
+    m = volume.shape[0]
+    gains = np.asarray(gains, np.float64)
+    k = [np.fft.fftfreq(m) * m] * 2 + [np.fft.rfftfreq(m) * m]
+    radius = np.sqrt(k[0][:, None, None] ** 2 + k[1][None, :, None] ** 2 + k[2][None, None, :] ** 2)
+    factor = np.interp(radius * image_size / m, np.arange(gains.size), gains)
+    return np.fft.irfftn(np.fft.rfftn(volume) * factor, s=volume.shape).astype(np.float32)
+
+
 def core_basis_volumes(volume) -> list[np.ndarray]:
     """The core and its first-order shape-error directions, real-space float32 volumes in the internal frame
     (axis 0 = RELION x, 1 = y, 2 = z = the filament axis; relax/io/map_io.py): ``[C, x dC/dx + y dC/dy, dC/dx,

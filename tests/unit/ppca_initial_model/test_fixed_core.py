@@ -24,6 +24,7 @@ from relax.ppca_initial_model.fixed_core import (
     core_basis_volumes,
     core_prediction,
     extend_axial_core,
+    filter_core_spectrum,
     image_core_shifts,
     symmetrize_core,
 )
@@ -31,6 +32,7 @@ from relax.ppca_initial_model.tomo import (
     TiltParticles,
     estimate_core_coefficients,
     estimate_core_scales,
+    estimate_core_spectrum,
     estimate_residual_background,
     load_tilt_tile,
     subtract_fixed_core,
@@ -59,6 +61,12 @@ OFFSETS = np.array([[0.7, -1.3, 0.4], [-0.5, 0.9, 1.6], [1.2, 0.3, -0.8], [-1.1,
 # 6.4e-7 to 1.39e-6 over problem seeds 3-7 (the removed core 6.5e-7 to 1.38e-6, the tiles' Y1 differences 7.5e-7
 # to 1.46e-6); 3e-6 leaves a 2x margin. A residual inherits this error in the core's units, not its own.
 PROJECTOR_RTOL = 3e-6
+# The fitted shell gains against the true radial gain (both smoothed over three shells), relative to the gains'
+# scale: measured 1.46e-2 to 2.63e-2 over seeds 3-7 (linear interpolation does not commute with the 3D filter);
+# 5e-2 leaves a 1.9x margin. The refitted core leaves 0.155 to 0.206 of the unfiltered core's mismatch (the smoothing
+# of a gain that changes fast over 9 shells); 0.3 leaves a 1.45x margin.
+RTOL_SPECTRUM = 5e-2
+RESIDUAL_FRACTION = 0.3
 
 
 def _half_volume(rng, scale):
@@ -527,3 +535,37 @@ def test_residual_background_absorbs_a_shared_leftover_the_core_misses():
     both = subtract_fixed_core(observed, basis, scales=coefficients)
     left = [float(np.sum(np.abs(np.asarray(x.read(every)[1])) ** 2)) for x in (core_only, both)]
     assert left[1] < 0.2 * left[0], left
+
+
+def test_core_spectrum_recovers_a_radial_gain_and_its_filter_applies_it():
+    """Noiseless images of the core filtered by a smooth radial gain ``g``: the spectrum fit against the unfiltered
+    core returns ``g`` per image shell, and filtering the core by the fit leaves (almost) no core in the images."""
+    rng = np.random.default_rng(5)
+    _, _, owner, projections = _layout()
+    ctf = rng.uniform(0.3, 1.2, (owner.size, N_HALF)).astype(np.float32)
+    grid = np.indices(VOLUME_SHAPE) - N // 2
+    volume = np.exp(-np.sum(grid**2, axis=0) / (2 * 3.0**2)) * (1 + 0.3 * rng.standard_normal(VOLUME_SHAPE))
+    gain = 1.0 + 0.5 * np.sin(np.arange(N // 2 + 1) / 3.0)  # 0.5 to 1.5 over the shells
+    fixed = FixedCore.from_volume(volume, volume_shape=VOLUME_SHAPE, voxel_size=2.0, volume_domain="real")
+    filtered = FixedCore.from_volume(
+        filter_core_spectrum(volume, gain, N), volume_shape=VOLUME_SHAPE, voxel_size=2.0, volume_domain="real"
+    )
+    shifts = np.zeros((owner.size, 2), np.float32)
+    images = np.asarray(core_prediction(filtered, IMAGE_SHAPE, projections.astype(np.float32), ctf, shifts))
+    particles = _particles(images, ctf)
+    white = np.ones((particles.n_noise_groups, N // 2 + 1), np.float32)
+    fitted, record = estimate_core_spectrum(particles, fixed, white, np.ones(len(IMAGE_FRAMES)))
+    # Shells 1 to N/2 - 2 (the corner shells beyond the slice's max_r carry no core): the fitted gain, smoothed
+    # over three shells, against the true gain smoothed the same way.
+    smooth = np.convolve(np.pad(gain, 1, mode="edge"), np.ones(3) / 3, mode="valid")
+    assert record["particles"] == len(IMAGE_FRAMES)
+    assert_matches(
+        fitted[1 : N // 2 - 1].astype(np.float32), smooth[1 : N // 2 - 1].astype(np.float32), rtol=RTOL_SPECTRUM
+    )
+    # The refitted core removes the filtered core: residual power at most a small fraction of the images'.
+    refit = FixedCore.from_volume(
+        filter_core_spectrum(volume, fitted, N), volume_shape=VOLUME_SHAPE, voxel_size=2.0, volume_domain="real"
+    )
+    residual = images - np.asarray(core_prediction(refit, IMAGE_SHAPE, projections.astype(np.float32), ctf, shifts))
+    before = images - np.asarray(core_prediction(fixed, IMAGE_SHAPE, projections.astype(np.float32), ctf, shifts))
+    assert np.sum(np.abs(residual) ** 2) < RESIDUAL_FRACTION * np.sum(np.abs(before) ** 2)

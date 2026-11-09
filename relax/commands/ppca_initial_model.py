@@ -144,6 +144,12 @@ def add_args(parser):
         help="after the core, fit the residual's mean (averaged along / about the filament) as a second core component",
     )
     parser.add_argument(
+        "--fixed-core-spectrum",
+        action="store_true",
+        help="fit the core's spectral shape to the data (one gain per image shell), filter the map by it and refit "
+        "the per-particle scales (--fixed-core-scale particle)",
+    )
+    parser.add_argument(
         "--occupancy",
         type=float,
         help="Prior probability that a particle holds the model, against an explicit empty component (needs "
@@ -615,6 +621,7 @@ def main(args=None):
         fixed_core_box=args.fixed_core_box,
         fixed_core_free_offset=args.fixed_core_free_offset,
         fixed_core_background=args.fixed_core_background,
+        fixed_core_spectrum=args.fixed_core_spectrum,
     )
     if (args.ios is None) == (args.particles is None):
         raise ValueError("Give either a particle STAR (--i) or an optimisation set (--ios)")
@@ -658,6 +665,22 @@ def main(args=None):
                 scales = estimate_core_scales(data, core, white, free_offset=offset)
                 np.save(output / "core_scales.npy", scales)
                 logger.info("fixed-core scales: %s", np.percentile(scales, [1, 25, 50, 75, 99]).round(3).tolist())
+                if config.fixed_core_spectrum:
+                    from relax.ppca_initial_model.fixed_core import filter_core_spectrum
+                    from relax.ppca_initial_model.tomo import estimate_core_spectrum
+
+                    gains, record = estimate_core_spectrum(data, core, white, scales, free_offset=offset)
+                    (output / "core_spectrum.json").write_text(json.dumps(record))
+                    volume = filter_core_spectrum(volume, gains, data.grid_size)
+                    core = as_core(volume)
+                    scales = estimate_core_scales(data, core, white, free_offset=offset)
+                    np.save(output / "core_scales.npy", scales)
+                    logger.info(
+                        "fixed-core spectrum: gains %s at shells %s; refitted scales %s",
+                        np.round(gains[:: max(1, gains.size // 8)], 3).tolist(),
+                        list(range(0, gains.size, max(1, gains.size // 8))),
+                        np.percentile(scales, [1, 25, 50, 75, 99]).round(3).tolist(),
+                    )
             elif config.fixed_core_scale == "basis":
                 core = tuple(as_core(v) for v in core_basis_volumes(volume))
                 scales = estimate_core_coefficients(data, core, white, free_offset=offset)
