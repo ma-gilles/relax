@@ -79,6 +79,8 @@ def test_config_band_needs_its_own_full_grid_and_occupancy_needs_the_band():
     assert Config().band() is None
     with pytest.raises(ValueError, match="own full grid"):
         Config(band_length_ang=240.0, oversampling=1)
+    with pytest.raises(ValueError, match="own full grid"):
+        Config(band_length_ang=240.0, tilt_coarse_pass=True)
     with pytest.raises(ValueError, match="filament band"):
         Config(occupancy=0.1)
     with pytest.raises(ValueError, match="Occupancy"):
