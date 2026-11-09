@@ -106,7 +106,7 @@ def simulate(base: Path, output: Path, contrast: np.ndarray, spread: dict, batch
     )
     np.save(training / "particle_ids.npy", np.arange(n_images, dtype=np.int64))
     manifest = json.loads((base / "training" / "manifest.json").read_text())
-    manifest.update(n_images=n_images, contrast=1.0, contrast_spread=spread)
+    manifest.update(n_images=n_images, contrast=1.0)  # no other key: the suite's loader refuses unexpected metadata
     manifest["files"] = {name: file_sha256(training / name) for name in sorted(manifest["files"])}
     (training / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
     return consistency(base, training / "particles.mrcs", contrast)
