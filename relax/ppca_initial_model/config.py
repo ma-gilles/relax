@@ -166,10 +166,10 @@ class Config:
     def __post_init__(self):
         if self.band_length_ang is not None:
             self.band()  # validates the band
-            if self.oversampling or not self.stream_coarse_recompute or self.shift_schedule:
+            if self.oversampling or not self.stream_coarse_recompute or self.shift_schedule or self.tilt_coarse_pass:
                 raise ValueError(
                     "The filament band searches its own full grid: oversampling 0, the streamed engine, "
-                    "no shift schedule"
+                    "no shift schedule, no tilt coarse pass"
                 )
         if self.fixed_core_neighbours is not None and self.fixed_core_scale != "particle":
             raise ValueError("fixed_core_neighbours needs fixed_core_scale 'particle'")
