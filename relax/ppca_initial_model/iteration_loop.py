@@ -822,6 +822,10 @@ def run(
             theta = _with_active_columns(state.theta, theta)
             moments = _with_active_moments(state.moments, moments)
             momentum = None
+        if config.contrast_orthogonal and contrast_sd_for(config, state, iteration) is not None:
+            theta = theta.at[:, 1:].set(contrast_latent.orthogonalize_loadings(theta[:, 1:], theta[:, 0]))
+            if momentum is not None:
+                momentum = momentum.at[:, 1:].set(contrast_latent.orthogonalize_loadings(momentum[:, 1:], theta[:, 0]))
         numerator = sum(s.residual_num for s in stats)
         denominator = sum(s.residual_den for s in stats)
         # Noise rows (one per noise group for subtomograms) padded to the statistics' shell count.

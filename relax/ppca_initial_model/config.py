@@ -125,6 +125,9 @@ class Config:
     # The population mean follows the batch mean of the latent's posterior mean at contrast_gain_rate per update.
     contrast_center: bool = True
     contrast_gain_rate: float = 0.2
+    # After each update the loadings (and the SGD velocity of the loadings) lose their component along the mean volume, so
+    # the contrast is carried by the contrast latent alone (docs/math/ppca_contrast.md, section 10).
+    contrast_orthogonal: bool = False
 
     def __post_init__(self):
         if isinstance(self.q, bool) or not isinstance(self.q, (int, np.integer)) or self.q <= 0 or self.seed <= 0 or self.iterations <= 0:

@@ -414,11 +414,11 @@ def test_tiles_keep_one_tilt_group():
     assert [t.tolist() for t in tiles] == [[3, 0], [2], [1]]
 
 
-@pytest.mark.parametrize("contrast", ["none", "latent"])
+@pytest.mark.parametrize("contrast", ["none", "latent", "latent_orthogonal"])
 @pytest.mark.parametrize("optimizer", ["vdam", "momentum_sgd"])
 def test_controller_runs_subtomogram_particles(tmp_path, optimizer, contrast):
     """Two all-particle updates and the final embedding through the InitialModel controller; with the contrast
-    latent, one contrast per particle for all its tilts."""
+    latent, one contrast per particle for all its tilts, and, orthogonal, loadings orthogonal to the mean volume."""
     import json
 
     from relax.ppca_initial_model import iteration_loop
@@ -457,7 +457,8 @@ def test_controller_runs_subtomogram_particles(tmp_path, optimizer, contrast):
         image_batch_size=3,
         rotation_block_size=32,
         optimizer=optimizer,
-        contrast=contrast,
+        contrast="none" if contrast == "none" else "latent",
+        contrast_orthogonal=contrast == "latent_orthogonal",
     )
     try:
         state = run(particles, config, tmp_path, {"test": True}, diameter_ang=120.0)
@@ -472,7 +473,12 @@ def test_controller_runs_subtomogram_particles(tmp_path, optimizer, contrast):
     embeddings = np.load(tmp_path / "embeddings.npz")
     np.testing.assert_array_equal(np.sort(embeddings["particle_ids"]), np.arange(n_particles))
     assert embeddings["z"].shape == (n_particles, 2)
-    if contrast == "latent":
+    if contrast == "latent_orthogonal":
+        theta = np.asarray(state.theta)
+        norms = np.linalg.norm(theta, axis=0)
+        overlap = np.real(np.conj(theta[:, :1]) * theta[:, 1:]).sum(axis=0) / (norms[0] * norms[1:])
+        assert np.all(norms[1:] > 0) and np.max(np.abs(overlap)) < 1e-5
+    if contrast != "none":
         assert embeddings["contrast"].shape == (n_particles,) and np.all(np.isfinite(embeddings["contrast"]))
         assert embeddings["z_scaled"].shape == (n_particles, 2)
         assert all(0 < row["contrast"]["sd"] <= config.contrast_sd_max for row in rows)

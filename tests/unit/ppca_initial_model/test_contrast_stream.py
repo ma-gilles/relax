@@ -117,7 +117,7 @@ def test_checkpoint_identity_ignores_default_contrast_settings_and_keeps_the_sd(
     metadata = json.loads(str(arrays["metadata"]))
     for key in (
         "contrast", "contrast_sd", "contrast_estimate_sd", "contrast_start", "contrast_sd_min", "contrast_sd_max",
-        "contrast_center", "contrast_gain_rate",
+        "contrast_center", "contrast_gain_rate", "contrast_orthogonal",
     ):
         metadata["config"].pop(key)  # a checkpoint written before the contrast settings existed
     arrays["metadata"] = json.dumps(metadata)

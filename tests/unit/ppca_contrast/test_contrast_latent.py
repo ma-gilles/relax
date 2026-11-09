@@ -241,3 +241,18 @@ def test_the_centred_gradient_is_the_gradient_of_the_objective_without_the_globa
             12 * step
         )
     np.testing.assert_allclose(folded, reference, rtol=1e-4, atol=1e-4)
+
+
+def test_orthogonalize_loadings_removes_the_mean_component_and_keeps_the_rest():
+    rng = np.random.default_rng(8)
+    n, k = 40, 3
+    mean = (rng.normal(size=n) + 1j * rng.normal(size=n)).astype(np.complex64)
+    other = (rng.normal(size=(n, k)) + 1j * rng.normal(size=(n, k))).astype(np.complex64)
+    other -= mean[:, None] * (np.real(np.conj(mean) @ other) / np.real(np.vdot(mean, mean)))[None, :]  # orthogonal to it
+    columns = other + mean[:, None] * np.array([0.7, -1.3, 0.0], np.float32)[None, :]
+    projected = np.asarray(contrast.orthogonalize_loadings(jnp.asarray(columns), jnp.asarray(mean)))
+    assert projected.dtype == np.complex64
+    np.testing.assert_allclose(projected, other, atol=1e-5)
+    np.testing.assert_allclose(np.real(np.conj(mean) @ projected), 0.0, atol=1e-4)
+    zero = np.asarray(contrast.orthogonalize_loadings(jnp.asarray(columns), jnp.zeros(n, jnp.complex64)))
+    np.testing.assert_array_equal(zero, columns)  # a zero mean has no direction to remove

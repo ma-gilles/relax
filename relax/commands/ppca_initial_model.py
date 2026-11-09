@@ -245,6 +245,12 @@ def add_args(parser):
         "mean volume; docs/math/ppca_contrast.md, section 9)",
     )
     parser.add_argument("--contrast-gain-rate", type=float, default=Config().contrast_gain_rate)
+    parser.add_argument(
+        "--contrast-orthogonal",
+        action="store_true",
+        help="--contrast latent: keep the loadings orthogonal to the mean volume after every update, so the contrast "
+        "latent alone carries the contrast (docs/math/ppca_contrast.md, section 10)",
+    )
     parser.add_argument("--contrast-sd-min", type=float, default=Config().contrast_sd_min)
     parser.add_argument("--contrast-sd-max", type=float, default=Config().contrast_sd_max)
     parser.add_argument("--resume")
@@ -545,6 +551,7 @@ def main(args=None):
         contrast_sd_max=args.contrast_sd_max,
         contrast_center=args.contrast_center,
         contrast_gain_rate=args.contrast_gain_rate,
+        contrast_orthogonal=args.contrast_orthogonal,
     )
     if (args.ios is None) == (args.particles is None):
         raise ValueError("Give either a particle STAR (--i) or an optimisation set (--ios)")

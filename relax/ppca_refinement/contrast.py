@@ -73,6 +73,20 @@ def center_last_latent_moments(weights, sums, center):
     return weights.at[last].set(weights[last] - center * weights[0]), centered
 
 
+def orthogonalize_loadings(columns, mean):
+    """``columns`` ``(n_voxel, k)`` with their component along ``mean`` ``(n_voxel,)`` removed.
+
+    Under the contrast latent a loading parallel to the mean volume is a second contrast latent: the likelihood is
+    unchanged by moving variance between it and ``e``, so the sd of ``e`` is not identified and can decay while the loading
+    carries the contrast. Projecting the loadings off the mean (a real coefficient per column, the inner product of the
+    stored Fourier coefficients) restricts the model to heterogeneity independent of the contrast.
+    """
+    mean = jnp.asarray(mean)
+    norm = jnp.real(jnp.vdot(mean, mean))
+    coefficient = jnp.real(jnp.einsum("v,vk->k", jnp.conj(mean), columns)) / jnp.where(norm > 0, norm, 1.0)
+    return columns - mean[:, None] * coefficient[None, :]
+
+
 def fold_gradient(gradient, sd: float):
     """Chain rule of a per-column gradient ``(..., q + 2)`` onto ``[mu, W]``: ``(..., q + 1)``, the mean's entry
     plus ``sd`` times the tied column's."""
