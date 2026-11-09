@@ -212,3 +212,15 @@ def test_mean_gate_scales_the_mean_by_its_half_batch_correlation_only():
     assert info["mean_gate_shell"][3] == pytest.approx(0.1)
     with pytest.raises(ValueError):
         Config(optimizer="momentum_sgd", sgd_momentum=0.0, sgd_direction="coupled", sgd_mean_gate_floor=0.1)
+
+
+def test_checkpoints_without_the_stabiliser_fields_keep_their_identity():
+    """A checkpoint written before the Newton SGD stabilisers existed holds the model their defaults give."""
+    import dataclasses
+
+    from relax.ppca_initial_model import checkpoint
+
+    added = ("sgd_pc_min_shell", "sgd_eig_floor_rel", "sgd_mean_gate_floor")
+    full = dataclasses.asdict(Config())
+    old = {k: v for k, v in full.items() if k not in added}
+    assert checkpoint._identity_config(old) == checkpoint._identity_config(full)
