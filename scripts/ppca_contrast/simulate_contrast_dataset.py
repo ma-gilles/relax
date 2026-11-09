@@ -3,7 +3,7 @@
 
 A contrast-spread twin of a suite dataset: the same states, labels, rotations, translations, CTF, noise spectrum and
 noise realisation (same simulator seed), with each particle's noiseless image multiplied by its own contrast
-``c_i ~ N(1, sd^2)`` (redrawn where ``c_i < --min-contrast``) before the noise is added, as the simulator's
+``c_i ~ N(1, sd^2)`` (redrawn where ``c_i < --min-contrast``; or log-normal with ``--distribution lognormal``) before the noise is added, as the simulator's
 ``per_image_contrast`` does. With ``--contrast-sd 0`` it writes the paired control: the same images with unit contrast
 simulated by the same code. The evaluation files of the base dataset are hard-linked, and ``contrast.npy`` holds the
 true contrasts next to them.
@@ -25,9 +25,18 @@ import numpy as np
 CONSISTENCY_IMAGES = 256
 
 
-def draw_contrast(n_images: int, sd: float, minimum: float, seed: int) -> np.ndarray:
-    """``n_images`` contrasts from N(1, sd^2), each redrawn until it is at least ``minimum``; float32."""
+def draw_contrast(n_images: int, sd: float, minimum: float, seed: int, distribution: str = "normal") -> np.ndarray:
+    """``n_images`` contrasts of mean 1 and standard deviation ``sd``; float32.
+
+    ``normal``: N(1, sd^2), each redrawn until it is at least ``minimum``. ``lognormal``: exp(s z - s^2 / 2) with
+    ``s^2 = ln(1 + sd^2)`` (mean 1, skewed, always positive).
+    """
     rng = np.random.default_rng(seed)
+    if distribution == "lognormal":
+        scale = np.sqrt(np.log1p(sd**2))
+        return np.exp(scale * rng.standard_normal(n_images) - scale**2 / 2).astype(np.float32)
+    if distribution != "normal":
+        raise ValueError(f"unknown contrast distribution {distribution!r}")
     contrast = 1.0 + sd * rng.standard_normal(n_images)
     while True:
         low = contrast < minimum
@@ -129,7 +138,8 @@ def main() -> None:
     parser.add_argument("--base", required=True, type=Path, help="suite dataset folder (training/ and evaluation/)")
     parser.add_argument("--output", required=True, type=Path, help="new dataset folder (must not exist)")
     parser.add_argument("--contrast-sd", required=True, type=float, help="sd of the contrast about 1; 0 = unit contrast")
-    parser.add_argument("--min-contrast", type=float, default=0.2, help="contrasts below this are redrawn")
+    parser.add_argument("--distribution", choices=("normal", "lognormal"), default="normal")
+    parser.add_argument("--min-contrast", type=float, default=0.2, help="normal: contrasts below this are redrawn")
     parser.add_argument("--contrast-seed", type=int, default=9000, help="seed of the contrast stream")
     parser.add_argument("--noise-scale", type=float, default=1.0, help="multiplier on the base noise variance")
     parser.add_argument("--n-images", type=int, default=None, help="simulate only the first N images (smoke tests)")
@@ -139,9 +149,9 @@ def main() -> None:
         sys.exit(f"{args.output} exists")
     n_all = len(np.load(args.base / "evaluation" / "truth.npz")["labels"])
     n_images = n_all if args.n_images is None else min(int(args.n_images), n_all)
-    contrast = draw_contrast(n_images, args.contrast_sd, args.min_contrast, args.contrast_seed)
+    contrast = draw_contrast(n_images, args.contrast_sd, args.min_contrast, args.contrast_seed, args.distribution)
     spread = {
-        "sd": args.contrast_sd, "minimum": args.min_contrast, "seed": args.contrast_seed,
+        "distribution": args.distribution, "sd": args.contrast_sd, "minimum": args.min_contrast, "seed": args.contrast_seed,
         "realised_mean": float(contrast.mean()), "realised_sd": float(contrast.std()),
         "noise_scale": args.noise_scale, "file": "evaluation/contrast.npy",
     }

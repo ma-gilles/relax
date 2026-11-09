@@ -22,3 +22,11 @@ def test_contrast_is_reproducible_truncated_and_centred():
 
 def test_zero_spread_is_exactly_unit_contrast():
     np.testing.assert_array_equal(draw_contrast(100, 0.0, 0.2, seed=1), np.ones(100, np.float32))
+
+
+def test_lognormal_contrast_has_unit_mean_the_requested_sd_and_is_skewed():
+    contrast = draw_contrast(200_000, 0.3, 0.2, seed=2, distribution="lognormal")
+    assert contrast.min() > 0 and abs(contrast.mean() - 1.0) < 0.005 and abs(contrast.std() - 0.3) < 0.005
+    assert np.mean((contrast - contrast.mean()) ** 3) > 0  # right-skewed
+    with pytest.raises(ValueError, match="unknown contrast distribution"):
+        draw_contrast(10, 0.3, 0.2, seed=1, distribution="uniform")
