@@ -1,0 +1,10 @@
+# Arms of the per-particle contrast experiments (docs/development/ppca_contrast_progress.md), merged into
+# scripts/ppca_schedule/config.yaml with a second --configfile. Each pairs with a baseline arm of that file:
+# s3_vdam_uniform (VDAM) and s3_scale1_4_uniform (momentum SGD, loading scale 1/4), both with the uniform direction prior.
+# --contrast latent: the contrast scales the mean, c = 1 + sd e with a Gaussian latent e (docs/math/ppca_contrast.md).
+arms:
+  c_vdam_latent:
+    args: ["--optimizer", "vdam", "--direction-prior", "uniform", "--contrast", "latent", "--contrast-sd", "0.2"]
+  c_sgd_latent:
+    args: ["--optimizer", "momentum_sgd", "--sgd-learning-rate", "2.4", "--sgd-loading-scale", "0.25",
+           "--direction-prior", "uniform", "--contrast", "latent", "--contrast-sd", "0.2"]

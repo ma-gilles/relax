@@ -135,6 +135,12 @@ def arm_q(arm):
     return int(args[args.index("--q") + 1]) if "--q" in args else int(TRAIN["q"])
 
 
+def arm_uses_contrast(arm):
+    """Whether an arm trains with the contrast latent: its --contrast names a model other than none."""
+    args = [str(a) for a in ARMS[arm]["args"]]
+    return "--contrast" in args and args[args.index("--contrast") + 1] != "none"
+
+
 def arm_optimizer(arm):
     """The optimizer an arm trains with: its own --optimizer, else the shared one."""
     args = [str(a) for a in ARMS[arm]["args"]]
@@ -470,6 +476,11 @@ if DATASET:
             datasets_root=SUITE["datasets_root"],
             tools=SUITE_OPTIONS,
             checkpoints=" ".join(map(str, SUITE["checkpoints"])),
+            # An arm with the contrast latent is scored on its own E-step's latents and poses (the scorer's own inference
+            # has unit contrast).
+            inference=lambda wildcards: (
+                f"--inference-star {TRAIN_STAR} --inference-natives {NATIVES} " if arm_uses_contrast(wildcards.arm) else ""
+            ),
             run_dir=lambda wildcards, input: str(Path(input.embeddings).parent),
         resources:
             gpu=1,
@@ -483,6 +494,7 @@ if DATASET:
             "--seed {wildcards.seed} "
             "--datasets-root {params.datasets_root} "
             "{params.tools} "
+            "{params.inference}"
             "--checkpoints {params.checkpoints} "
             "-o {output.scores} "
             "> {log} 2>&1"

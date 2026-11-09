@@ -362,15 +362,26 @@ def _streams_groups(config):
     return config.stream_coarse_recompute
 
 
-def expectation(dataset, state, config, ids, iteration, *, embeddings_only=False, diameter_ang=None):
+def expectation(dataset, state, config, ids, iteration, *, embeddings_only=False, diameter_ang=None, keep_poses=False):
     """Posterior statistics (or embeddings) of the images ``ids`` at ``iteration``.
 
     ``diameter_ang`` sizes adaptive oversampling's pass-1 window (RELION's coarse image size); None takes the box.
+    ``keep_poses`` adds each image's best rotation and translation index (``best_rotation_idx`` and
+    ``best_translation_idx`` in the diagnostics, in the order of ``original_image_ids``); the streamed engine only.
     """
     if _streams_groups(config):
         return _expectation(
-            dataset, state, config, [ids], iteration, embeddings_only=embeddings_only, diameter_ang=diameter_ang
+            dataset,
+            state,
+            config,
+            [ids],
+            iteration,
+            embeddings_only=embeddings_only,
+            diameter_ang=diameter_ang,
+            keep_poses=keep_poses,
         )[0]
+    if keep_poses:
+        raise ValueError("Best poses are kept by the streamed engine only")
     return _expectation(dataset, state, config, ids, iteration, embeddings_only=embeddings_only)
 
 
@@ -407,7 +418,9 @@ def _prior_offset_variance(dataset, state: State, config: Config) -> float:
 
 
 @full_float32
-def _expectation(dataset, state, config, ids, iteration, *, embeddings_only=False, diameter_ang=None):
+def _expectation(
+    dataset, state, config, ids, iteration, *, embeddings_only=False, diameter_ang=None, keep_poses=False
+):
     hp = order_for(config, state, iteration)
     # full-box default projector excludes unpaired Nyquist, as existing PPCA.
     radius = radius_for(config, state, iteration, dataset.grid_size)
@@ -601,10 +614,14 @@ def _expectation(dataset, state, config, ids, iteration, *, embeddings_only=Fals
                     "supported_image_rows": sum(part.diagnostics["supported_image_rows"] for part in group_parts),
                 }
             )
-            if config.order_rule == "accuracy":
+            if config.order_rule == "accuracy" or keep_poses:
                 # Each image's best pose on the order's grid, in the order of ``original_image_ids``.
                 stats.diagnostics["best_rotation_idx"] = np.concatenate(
                     [part.diagnostics["best_rotation_idx"] for part in group_parts]
+                )
+            if keep_poses:
+                stats.diagnostics["best_translation_idx"] = np.concatenate(
+                    [part.diagnostics["best_translation_idx"] for part in group_parts]
                 )
             if oversampled:
                 stats.diagnostics["oversampling"] = {

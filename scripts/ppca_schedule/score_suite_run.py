@@ -23,6 +23,7 @@ Run (on a GPU node, with the pixi python of this checkout):
 
 import argparse
 import json
+import os
 import shlex
 import subprocess
 import sys
@@ -59,6 +60,22 @@ def environment_file(given: Path | None, tools: Path, name: str) -> Path | None:
 def set_python(python: Path | None) -> str:
     """The shell line that makes ``python`` the interpreter ``$PY``; empty to keep the sourced file's ``$PY``."""
     return f"export PY={shlex.quote(str(python))}\n" if python else ""
+
+
+def run_contrast_inference(args, work: Path, evaluation: Path, checkpoint: int) -> None:
+    """Infer one checkpoint with the run's own E-step, contrast latent included (scripts/ppca_contrast/infer_for_suite.py),
+    so the scorer, called with ``--reuse-inference``, scores those latents and poses. Raises when the inference fails."""
+    command = [
+        sys.executable, str(Path(__file__).resolve().parents[1] / "ppca_contrast" / "infer_for_suite.py"), str(work),
+        "--run", str(args.run.resolve()), "--star", str(args.inference_star), "--evaluation", str(evaluation),
+        "--checkpoints", str(checkpoint), "--latent", args.inference_latent,
+    ]
+    env = {**os.environ, "RELAX_CUDA_LIB": str(args.inference_natives / "librelax_cuda.so")}
+    log = work / f"checkpoint_{checkpoint:04d}.infer.log"
+    with open(log, "w") as stream:
+        status = subprocess.run(command, env=env, stdout=stream, stderr=subprocess.STDOUT, check=False).returncode
+    if status != 0:
+        raise RuntimeError(f"The contrast-aware inference failed on checkpoint {checkpoint} (status {status}); see {log}")
 
 
 def check_inputs(needed: dict[str, Path | None]) -> None:
@@ -137,7 +154,16 @@ def main(argv=None) -> int:
     parser.add_argument(
         "--fit-python", type=Path, help="interpreter of the direct fit (default: PY of the CPU environment file)"
     )
+    parser.add_argument(
+        "--inference-star", type=Path,
+        help="infer with the run's own E-step (contrast latent included) on this RELION-sign particle STAR, "
+        "instead of the scorer's own unit-contrast inference",
+    )
+    parser.add_argument("--inference-natives", type=Path, help="the directory of librelax_cuda.so for that inference")
+    parser.add_argument("--inference-latent", choices=("scaled", "unscaled"), default="unscaled")
     args = parser.parse_args(argv)
+    if (args.inference_star is None) != (args.inference_natives is None):
+        parser.error("--inference-star and --inference-natives go together")
 
     evaluation = args.datasets_root / args.dataset / "evaluation"
     check_inputs({"--datasets-root/--dataset evaluation manifest": evaluation / "manifest.json"})
@@ -169,13 +195,16 @@ def main(argv=None) -> int:
         write_mean_negated_copy(args.run / f"{name}.npz", work, mean_only=args.mean_only)
         # A rank-0 dataset has no true PCs to stack, so the scorer ends nonzero after writing its inference.
         done = scored / ("inference.npz" if rank_zero else "summary.json")
+        if args.inference_star is not None and not (scored / "inference.npz").exists():
+            run_contrast_inference(args, work, evaluation, checkpoint)
         if not done.exists():
             status = run_in_environment(
                 gpu_env,
                 f"{scratch}{set_python(args.scorer_python)}"
                 f'exec "${{PY:?no interpreter: pass --scorer-python or set PY in the GPU environment file}}" '
                 f"{shlex.quote(str(suite_score))} --run {shlex.quote(str(work))} "
-                f"--eval {shlex.quote(str(evaluation))} --checkpoint {shlex.quote(str(work / (name + '.npz')))}",
+                f"--eval {shlex.quote(str(evaluation))} --checkpoint {shlex.quote(str(work / (name + '.npz')))}"
+                + (" --reuse-inference" if args.inference_star is not None else ""),
                 work / f"{name}.score.log",
             )
             if not done.exists():
