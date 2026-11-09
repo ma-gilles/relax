@@ -74,7 +74,7 @@ def infer_checkpoint(dataset, run_checkpoint: Path, ids: np.ndarray, args) -> di
 
     from relax.ppca_initial_model.iteration_loop import contrast_sd_for, expectation
     from relax.ppca_initial_model.state import State
-    from relax.ppca_refinement.contrast import split_embeddings
+    from relax.ppca_refinement.contrast import latents_over_contrast, split_embeddings
 
     with np.load(run_checkpoint, allow_pickle=False) as saved:
         theta, noise, prior = saved["theta"], saved["noise"], saved["direction_prior"]
@@ -93,10 +93,11 @@ def infer_checkpoint(dataset, run_checkpoint: Path, ids: np.ndarray, args) -> di
         latent, estimate = embeddings, np.ones(len(embeddings), np.float32)
     else:
         latent, estimate = (np.asarray(x) for x in split_embeddings(embeddings, sd))
+    unscaled, n_floored = latents_over_contrast(latent, estimate)
     if not np.array_equal(np.asarray(stats.original_image_ids), ids):
         raise ValueError("The E-step returned the images in another order than requested")
     return dict(
-        order=order, scaled=latent, unscaled=latent / estimate[:, None], contrast=estimate, contrast_sd=sd,
+        order=order, scaled=latent, unscaled=unscaled, contrast=estimate, contrast_sd=sd, n_below_floor=n_floored,
         rotation_idx=np.asarray(stats.diagnostics["best_rotation_idx"], np.int32),
         translation_idx=np.asarray(stats.diagnostics["best_translation_idx"], np.int32),
     )
@@ -144,7 +145,7 @@ def main(argv=None) -> int:
             latent=args.latent,
         )
         print(f"checkpoint {number}: order {result['order']}, contrast sd {result['contrast_sd']}, "
-              f"{len(ids)} images -> {output / 'inference.npz'}")
+              f"{len(ids)} images ({result['n_below_floor']} with a contrast below the floor) -> {output / 'inference.npz'}")
     return 0
 
 

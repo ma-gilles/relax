@@ -93,6 +93,21 @@ def split_embeddings(embeddings, sd: float):
     return embeddings[:, :-1], 1.0 + sd * embeddings[:, -1]
 
 
+CONTRAST_FLOOR = 0.1
+
+
+def latents_over_contrast(scaled, estimate, floor: float = CONTRAST_FLOOR):
+    """``(z, n_floored)``: the estimate ``u / c`` of the latent coordinates and how many particles' contrast estimate
+    was below ``floor``.
+
+    ``scaled`` is ``u`` ``(n, q)`` and ``estimate`` the contrast estimate ``(n,)`` of :func:`split_embeddings`. A
+    particle with almost no signal can have an estimate near or below zero, where ``u / c`` has no meaning: it is
+    divided by ``floor`` instead, and the count is returned so the caller can report it.
+    """
+    estimate = np.asarray(estimate)
+    return np.asarray(scaled) / np.maximum(estimate, floor)[:, None], int(np.sum(estimate < floor))
+
+
 def updated_sd(sd: float, second_moment: float, *, previous_weight: float, sd_min: float, sd_max: float) -> float:
     """The next prior sd of the contrast from the batch's mean second moment of ``e`` (EM for ``sd^2 = E[delta^2]``).
 

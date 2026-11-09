@@ -156,3 +156,13 @@ def test_em_recovers_the_contrast_sd_from_single_pose_images():
     theta = np.concatenate([mu[None], w.T, sd * mu[None]])
     _, estimate = contrast.split_embeddings(np.asarray(_engine(y, theta, variance).alpha[:, 0, 0, 1:]), sd)
     assert np.corrcoef(estimate, 1 + delta)[0, 1] > 0.85
+
+
+def test_latents_over_contrast_divides_and_floors_and_counts():
+    scaled = np.array([[2.0, 4.0], [1.0, 1.0], [3.0, 6.0]])
+    estimate = np.array([2.0, 0.05, -0.4])
+    latents, floored = contrast.latents_over_contrast(scaled, estimate, floor=0.1)
+    np.testing.assert_allclose(latents, [[1.0, 2.0], [10.0, 10.0], [30.0, 60.0]])
+    assert floored == 2
+    _, none = contrast.latents_over_contrast(scaled, np.array([1.0, 1.1, 0.9]))
+    assert none == 0

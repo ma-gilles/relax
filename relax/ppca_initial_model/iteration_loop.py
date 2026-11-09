@@ -1067,13 +1067,16 @@ def run(
             raise ValueError("Final embedding does not cover every particle exactly once")
         # Per-image scores of the same pass (DensePPCAEmbeddings), aligned with particle_ids. Under the contrast latent
         # the engine's last latent is the contrast: contrast is the estimate 1 + sd E[e], z_scaled the heterogeneity
-        # coordinates u = c z that keep the particle's contrast scale, and z the estimate u / c of z.
+        # coordinates u = c z that keep the particle's contrast scale, and z the estimate u / c of z (the contrast
+        # taken as at least CONTRAST_FLOOR; n_contrast_below_floor counts the particles below it).
         latents, contrast_fields = np.asarray(final.embeddings), {}
         final_sd = contrast_sd_for(config, state, config.iterations)
         if final_sd is not None:
             scaled, estimate = (np.asarray(x) for x in contrast_latent.split_embeddings(latents, final_sd))
-            latents = scaled / estimate[:, None]
-            contrast_fields = dict(contrast=estimate, z_scaled=scaled, contrast_sd=final_sd)
+            latents, n_floored = contrast_latent.latents_over_contrast(scaled, estimate)
+            contrast_fields = dict(
+                contrast=estimate, z_scaled=scaled, contrast_sd=final_sd, n_contrast_below_floor=n_floored
+            )
         np.savez(
             output / "embeddings.npz",
             particle_ids=final.original_image_ids,
