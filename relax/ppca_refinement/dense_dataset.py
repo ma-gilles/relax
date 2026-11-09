@@ -27,6 +27,7 @@ from relax.ppca_refinement.config import (
     ScoringConfig,
     SparsePass2Config,
 )
+from relax.ppca_refinement.contrast import center_last_latent_moments
 from relax.ppca_refinement.dense_blocks import coerce_augmented_half_volumes, iter_dense_ppca_dataset_block_groups
 from relax.ppca_refinement.diagnostics import build_iteration_diagnostics, resolve_image_scale_range
 from relax.ppca_refinement.engine import (
@@ -119,10 +120,14 @@ def accumulate_dense_ppca_statistics(
     skip_empty_pose_blocks: bool = False,
     top_pose_count: int = 1,
     pose_selection: PoseSelectionConfig | None = None,
+    latent_center: float | None = None,
 ) -> AugmentedPPCAStats:
     """Accumulate unregularized PPCA statistics without solving or postprocessing.
 
-    Model geometry determines sizes; no artificial prior arrays are needed.
+    Model geometry determines sizes; no artificial prior arrays are needed. ``latent_center`` (the contrast latent's
+    population mean) makes the M-step statistics those of the last latent taken about it
+    (:func:`relax.ppca_refinement.contrast.center_last_latent_moments`); the embeddings and the posterior diagnostics
+    keep the unshifted latent. It needs the cached-moment path (sparse pass 2 off, or one block per group).
     """
     geometry = geometry if geometry is not None else GeometryConfig()
     schedule = schedule if schedule is not None else ScheduleConfig()
@@ -242,7 +247,11 @@ def accumulate_dense_ppca_statistics(
         cache_moments = (not sparse_pass2_enabled) or len(group) == 1
         block_alphas: list = []
         block_G_tris: list = []
+        block_alphas_m: list = []  # the moments the M-step uses: those of the last latent about latent_center
+        block_G_tris_m: list = []
         block_scores: list = []
+        if latent_center is not None and not cache_moments:
+            raise ValueError("A latent centre needs the cached-moment path (sparse pass 2 off, or one block per group)")
         for block in group:
             if cache_moments:
                 score_function = (
@@ -264,6 +273,15 @@ def accumulate_dense_ppca_statistics(
                 )
                 block_alphas.append(full.alpha)
                 block_G_tris.append(full.G_tri)
+                if latent_center is None:
+                    block_alphas_m.append(full.alpha)
+                    block_G_tris_m.append(full.G_tri)
+                else:
+                    first, second = center_last_latent_moments(
+                        jnp.moveaxis(full.alpha, -1, 0), jnp.moveaxis(full.G_tri, -1, 0), latent_center
+                    )
+                    block_alphas_m.append(jnp.moveaxis(first, 0, -1))
+                    block_G_tris_m.append(jnp.moveaxis(second, 0, -1))
                 block_scores.append(full.score)
                 top_scores, top_rot, top_trans = top_p_from_score_block(
                     full.score,
@@ -310,6 +328,8 @@ def accumulate_dense_ppca_statistics(
                     )
                 block_alphas.append(None)
                 block_G_tris.append(None)
+                block_alphas_m.append(None)
+                block_G_tris_m.append(None)
                 block_scores.append(None)
             block_score_stats.append(score_stats)
             block_logZ.append(score_stats.logZ)
@@ -408,13 +428,17 @@ def accumulate_dense_ppca_statistics(
 
                 residual_images, correction, embedding = residual_image_statistics(
                     block_scores[block_idx] - score_center[:, None, None],
-                    block_alphas[block_idx],
-                    block_G_tris[block_idx],
+                    block_alphas_m[block_idx],
+                    block_G_tris_m[block_idx],
                     centered_logZ,
                     block.Y1,
                     block.ctf2_over_noise,
                     block.proj_aug,
                 )
+                if latent_center is not None:
+                    # The shifted last latent's mean is the unshifted one less latent_center; the embedding is the unshifted.
+                    mass = jnp.sum(jnp.exp(block_scores[block_idx] - score_center[:, None, None] - centered_logZ[:, None, None]), axis=(1, 2))
+                    embedding = embedding.at[:, -1].add(latent_center * mass)
                 indices = block.score_window_indices
                 weights = make_half_image_weights(image_shape)
                 weights = weights if indices is None else weights[indices]
@@ -460,8 +484,8 @@ def accumulate_dense_ppca_statistics(
                 # `fused_dense_pose_ppca_block` would otherwise redo.
                 rhs_block, lhs_block, n_sig_block, _pmax_block = accumulate_pose_ppca_block_cached(
                     block_scores[block_idx] - score_center[:, None, None],
-                    block_alphas[block_idx],
-                    block_G_tris[block_idx],
+                    block_alphas_m[block_idx],
+                    block_G_tris_m[block_idx],
                     centered_logZ,
                     block.Y1_recon if block.Y1_recon is not None else block.Y1,
                     block.ctf2_over_noise_recon if block.ctf2_over_noise_recon is not None else block.ctf2_over_noise,

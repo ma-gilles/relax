@@ -9,6 +9,7 @@ import numpy as np
 import pytest
 
 from relax.ppca_refinement import contrast
+from relax.ppca_refinement.contrast import center_last_latent_moments
 from relax.ppca_refinement.engine import dense_pose_ppca_score_with_moments_blocked
 from relax.ppca_refinement.residual_statistics import full_float32, residual_image_statistics
 
@@ -170,8 +171,6 @@ def test_latents_over_contrast_divides_and_floors_and_counts():
 
 def test_centred_moments_are_those_of_the_shifted_latent():
     """``center_last_latent_moments`` equals the moments of ``alpha_last - c alpha_0`` formed directly."""
-    from relax.ppca_refinement.full_row_kernels import center_last_latent_moments
-
     rng = np.random.default_rng(4)
     size, n_samples, centre = 5, 40, 0.7
     alpha = np.concatenate([np.ones((n_samples, 1)), rng.normal(size=(n_samples, size - 1))], axis=1)

@@ -26,14 +26,18 @@ def with_contrast_column(mean, loadings, sd: float):
     return jnp.concatenate([jnp.reshape(mean, (-1, 1)), loadings, jnp.reshape(sd * mean, (-1, 1))], axis=1)
 
 
-def accumulate_dense_with_contrast(dataset, mean, loadings, sd: float, **kwargs) -> AugmentedPPCAStats:
+def accumulate_dense_with_contrast(
+    dataset, mean, loadings, sd: float, latent_center: float | None = None, **kwargs
+) -> AugmentedPPCAStats:
     """The host-mask dense engine's statistics of ``[mu, W]`` under the contrast latent.
 
     ``kwargs`` are those of :func:`relax.ppca_refinement.dense_dataset.accumulate_dense_ppca_statistics` (it needs
     ``collect_residuals=True`` for the residual gradient and the latent second moments); the engine runs on
     ``[mu, W, sd mu]`` and its statistics are folded to ``[mu, W]``. The contrast latent is the last embedding and the
-    last entry of ``diagnostics["latent_second_moment_sum"]``, the input of :func:`updated_sd`. The refinement loop's
-    dense and exact-local owners call this in place of the plain engine.
+    last entry of ``diagnostics["latent_second_moment_sum"]``, the input of :func:`updated_sd`. ``latent_center`` is the
+    contrast latent's population mean: the engine's M-step then uses the moments of ``e - latent_center``
+    (:func:`center_last_latent_moments`; docs/math/ppca_contrast.md, section 9), which keeps the global gain from moving
+    the mean volume. The refinement loop's dense and exact-local owners call this in place of the plain engine.
     """
     from relax.ppca_refinement.dense_dataset import accumulate_dense_ppca_statistics
 
@@ -41,7 +45,32 @@ def accumulate_dense_with_contrast(dataset, mean, loadings, sd: float, **kwargs)
     if geometry is not None:
         kwargs["geometry"] = dataclasses.replace(geometry, q=geometry.q + 1)  # the engine now has one more loading
     columns = with_contrast_column(mean, loadings, sd)
-    return fold_statistics(accumulate_dense_ppca_statistics(dataset, columns[:, 0], columns[:, 1:], **kwargs), sd)
+    stats = accumulate_dense_ppca_statistics(
+        dataset, columns[:, 0], columns[:, 1:], latent_center=latent_center, **kwargs
+    )
+    return fold_statistics(stats, sd)
+
+
+def center_last_latent_moments(weights, sums, center):
+    """The moments of the last latent taken about ``center``: ``alpha_last -> alpha_last - center alpha_0``.
+
+    ``weights`` is ``(P, ...)`` (first moments ``alpha_p``, possibly times a posterior weight) and ``sums`` the packed
+    upper ``(tri(P), ...)`` (second moments ``alpha_p alpha_q``, summed with the same weights); the component axis comes
+    first. The new moments are those of the shifted latent, ``S alpha`` with ``S = I - center e_last e_0^T``: row and
+    column ``last`` of the second moments lose ``center`` times those of the constant ``alpha_0 = 1``. The shift is
+    linear, so it may be applied before or after weighting and summing. The streamed engine applies it to its pass-2
+    sums, the dense engine to each pose's moments.
+    """
+    last = weights.shape[0] - 1
+    index = {(int(i), int(j)): k for k, (i, j) in enumerate(zip(*np.triu_indices(weights.shape[0])))}
+    cross = np.asarray([index[(p, last)] for p in range(last)])
+    with_constant = np.asarray([index[(0, p)] for p in range(last)])
+    last_last, last_constant, constant = index[(last, last)], index[(0, last)], index[(0, 0)]
+    centered = sums.at[cross].set(sums[cross] - center * sums[with_constant])
+    centered = centered.at[last_last].set(
+        sums[last_last] - 2 * center * sums[last_constant] + center**2 * sums[constant]
+    )
+    return weights.at[last].set(weights[last] - center * weights[0]), centered
 
 
 def fold_gradient(gradient, sd: float):

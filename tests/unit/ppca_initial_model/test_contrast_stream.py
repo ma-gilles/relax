@@ -262,3 +262,21 @@ def test_centring_the_stream_shifts_the_metric_and_zero_changes_nothing():
     assert_matches(np.asarray(moved.embeddings), np.asarray(base.embeddings))  # the posterior is not shifted
     assert_matches(np.asarray(moved.diagnostics["latent_second_moment_sum"]), np.asarray(base.diagnostics["latent_second_moment_sum"]))
     assert not np.allclose(np.asarray(moved.residual_gradient), np.asarray(base.residual_gradient))
+
+
+def test_dense_and_streamed_engines_agree_when_the_latent_is_centred():
+    """Both engines form the M-step statistics of the last latent about the same centre; the embeddings stay unshifted."""
+    centre = 0.6
+    dataset, mu, W, stream, host = make_tile_problem(q=3, latent_center=centre)
+    dense = full_float32(accumulate_dense_ppca_statistics)(
+        dataset, mu, W, sparse_pass2=SparsePass2Config(enabled=False), collect_residuals=True, latent_center=centre, **host
+    )
+    streamed = accumulate_full_row_tile(stream, np.arange(3), SIGNIFICANT)
+    plain = full_float32(accumulate_dense_ppca_statistics)(
+        dataset, mu, W, sparse_pass2=SparsePass2Config(enabled=False), collect_residuals=True, **host
+    )
+    for name in ("lhs_tri", "residual_gradient", "embeddings", "residual_num"):
+        assert_matches(np.asarray(getattr(streamed, name)), np.asarray(getattr(dense, name)))
+    assert_matches(np.asarray(dense.embeddings), np.asarray(plain.embeddings))  # unshifted
+    assert_matches(np.asarray(dense.diagnostics["latent_second_moment_sum"]), np.asarray(plain.diagnostics["latent_second_moment_sum"]))
+    assert not np.allclose(np.asarray(dense.lhs_tri), np.asarray(plain.lhs_tri))  # the M-step statistics are shifted

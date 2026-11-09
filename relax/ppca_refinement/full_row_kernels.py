@@ -27,6 +27,7 @@ from relax.cuda.ppca import (
     ppca_posterior_prep_f32,
     ppca_window_project_f32,
 )
+from relax.ppca_refinement.contrast import center_last_latent_moments
 from relax.ppca_refinement.engine import compensated_add
 from relax.ppca_refinement.residual_statistics import residual_statistics_from_moment_images
 from relax.projection.adjoint import batch_adjoint_slice_volume_maybe_windowed
@@ -523,26 +524,6 @@ def _normalize_partials(kept, rows, *, n_blocks, block_size):
         top_rotation=rows[block * block_size + rest % block_size],
         top_translation=(rest // block_size).astype(jnp.int32),
     )
-
-
-def center_last_latent_moments(weights, sums, center):
-    """The pass-2 moments of the last latent taken about ``center``: ``alpha_last -> alpha_last - center alpha_0``.
-
-    ``weights`` is ``(P, R, B, T)`` (``gamma alpha_p``) and ``sums`` the packed upper ``(tri(P), R, B)``
-    (``sum_t gamma alpha_p alpha_q``). The new moments are those of the shifted latent, ``S alpha`` with
-    ``S = I - center e_last e_0^T``: row and column ``last`` of the second moments lose ``center`` times those of the
-    constant ``alpha_0 = 1``.
-    """
-    last = weights.shape[0] - 1
-    index = {(int(i), int(j)): k for k, (i, j) in enumerate(zip(*np.triu_indices(weights.shape[0])))}
-    cross = np.asarray([index[(p, last)] for p in range(last)])
-    with_constant = np.asarray([index[(0, p)] for p in range(last)])
-    last_last, last_constant, constant = index[(last, last)], index[(0, last)], index[(0, 0)]
-    centered = sums.at[cross].set(sums[cross] - center * sums[with_constant])
-    centered = centered.at[last_last].set(
-        sums[last_last] - 2 * center * sums[last_constant] + center**2 * sums[constant]
-    )
-    return weights.at[last].set(weights[last] - center * weights[0]), centered
 
 
 def second_moment_sums(gamma, mean, covariance):

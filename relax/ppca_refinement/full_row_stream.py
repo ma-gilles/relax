@@ -165,7 +165,7 @@ def prepare_full_row_stream(
     that carry less posterior mass than it for every image of a tile.
 
     ``latent_center`` (the contrast latent's population mean) makes pass 2 take the M-step moments of the last latent
-    about it (:func:`full_row_kernels.center_last_latent_moments`); ``None`` leaves them as they are.
+    about it (:func:`relax.ppca_refinement.contrast.center_last_latent_moments`); ``None`` leaves them as they are.
 
     ``tile_loader`` reads the tiles of a dataset that is not a single-particle image dataset
     (:attr:`FullRowStream.tile_loader`); ``experiment_dataset`` then only supplies the image and
