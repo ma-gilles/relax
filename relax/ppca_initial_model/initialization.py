@@ -193,6 +193,26 @@ def seed_model(rhs, lhs, volume_shape, voxel_size, diameter_ang, radius, rng, ba
     return theta
 
 
+def with_initial_mean(theta, path, scale, volume_shape, voxel_size, diameter_ang, band=None):
+    """``theta`` with its mean (column 0) replaced by the RELION-convention map at ``path`` times ``scale``, masked
+    as :func:`seed_model` masks the seed (the attachment support with a band, else the particle sphere) and kept at
+    every frequency (the stages band-limit the model as they go). The loadings are unchanged."""
+    from recovar.utils.helpers import load_relion_volume
+
+    from relax.ppca_initial_model.filament_band import attachment_support_mask
+
+    volume, map_voxel = load_relion_volume(str(path), return_voxel_size=True)
+    volume = np.asarray(volume, np.float32)
+    map_voxel = float(np.asarray(map_voxel.tolist() if hasattr(map_voxel, "tolist") else map_voxel).reshape(-1)[0])
+    if volume.shape != tuple(volume_shape) or not np.isclose(map_voxel, voxel_size, rtol=1e-4):
+        raise ValueError(f"{path}: {volume.shape} at {map_voxel} A, the model is {tuple(volume_shape)} at {voxel_size} A")
+    n = volume_shape[0]
+    mask = support_mask(n, diameter_ang / voxel_size) if band is None else attachment_support_mask(n, voxel_size, band)
+    mean = ftu.get_dft3_real(jnp.asarray(volume * np.float32(scale))[None]).reshape(1, -1).T
+    mean = bandlimit_and_mask(mean, volume_shape, n // 2, mask)
+    return jnp.asarray(theta).at[:, 0].set(mean[:, 0].astype(theta.dtype))
+
+
 def _bootstrap_sign(volume, volume_shape) -> int:
     """-1 when the bootstrap density is negative where the particle is, else 1: RECOVAR's sign test
     (``recovar.commands.pipeline``, ``uninvert_data='automatic'``), the cubed density summed inside the sphere of

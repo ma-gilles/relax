@@ -60,6 +60,8 @@ _ADDED_CONFIG_DEFAULTS = {
     "fixed_core_background": "none",
     "fixed_core_spectrum": False,
     "fixed_core_neighbours": None,
+    "initial_mean": None,
+    "initial_mean_scale": 1.0,
 }
 
 
