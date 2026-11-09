@@ -148,6 +148,7 @@ def test_the_controller_updates_the_sd_from_the_second_moment_and_logs_it(tmp_pa
                 residual_num=jnp.ones(3, jnp.float32),
                 residual_den=jnp.ones(3, jnp.float32),
                 original_image_ids=np.asarray(ids),
+                embeddings=jnp.zeros((len(ids), 3)),
                 n_images=len(ids),
                 log_likelihood=0.0,
                 diagnostics={
@@ -189,6 +190,7 @@ def test_the_controller_updates_the_sd_from_the_second_moment_and_logs_it(tmp_pa
         expected = float(np.sqrt(blended))
         assert record["contrast"]["next_sd"] == pytest.approx(expected)
         assert record["contrast"]["latent_second_moment"] == pytest.approx(second_moment)
+        assert record["contrast"]["estimate_mean"] == pytest.approx(1.0) and record["contrast"]["estimate_sd"] == 0.0
     assert final.contrast_sd == pytest.approx(expected)
     assert checkpoint.load(tmp_path / "checkpoint_0003.npz", config, identity).contrast_sd == pytest.approx(expected)
 

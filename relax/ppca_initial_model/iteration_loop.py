@@ -866,7 +866,14 @@ def run(
                     sd_min=config.contrast_sd_min,
                     sd_max=config.contrast_sd_max,
                 )
-            contrast_record = {"sd": contrast_sd, "latent_second_moment": e_second, "next_sd": next_contrast_sd}
+            estimates = 1 + contrast_sd * np.concatenate([np.asarray(s.embeddings)[:, -1] for s in stats])
+            contrast_record = {
+                "sd": contrast_sd,
+                "latent_second_moment": e_second,
+                "next_sd": next_contrast_sd,
+                "estimate_mean": float(estimates.mean()),
+                "estimate_sd": float(estimates.std()),
+            }
         if (
             theta.dtype != jnp.complex64
             or (moments is not None and (moments.first.dtype != jnp.complex64 or moments.second.dtype != jnp.float32))
@@ -1059,13 +1066,14 @@ def run(
         if not np.array_equal(np.sort(final.original_image_ids), ids):
             raise ValueError("Final embedding does not cover every particle exactly once")
         # Per-image scores of the same pass (DensePPCAEmbeddings), aligned with particle_ids. Under the contrast latent
-        # the engine's last latent is the contrast: z keeps the particle's contrast scale (u = c z), z_over_contrast is
-        # u / c, and contrast is the estimate 1 + sd E[e].
+        # the engine's last latent is the contrast: contrast is the estimate 1 + sd E[e], z_scaled the heterogeneity
+        # coordinates u = c z that keep the particle's contrast scale, and z the estimate u / c of z.
         latents, contrast_fields = np.asarray(final.embeddings), {}
         final_sd = contrast_sd_for(config, state, config.iterations)
         if final_sd is not None:
-            latents, estimate = (np.asarray(x) for x in contrast_latent.split_embeddings(latents, final_sd))
-            contrast_fields = dict(contrast=estimate, z_over_contrast=latents / estimate[:, None], contrast_sd=final_sd)
+            scaled, estimate = (np.asarray(x) for x in contrast_latent.split_embeddings(latents, final_sd))
+            latents = scaled / estimate[:, None]
+            contrast_fields = dict(contrast=estimate, z_scaled=scaled, contrast_sd=final_sd)
         np.savez(
             output / "embeddings.npz",
             particle_ids=final.original_image_ids,
