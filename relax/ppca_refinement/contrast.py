@@ -26,6 +26,24 @@ def with_contrast_column(mean, loadings, sd: float):
     return jnp.concatenate([jnp.reshape(mean, (-1, 1)), loadings, jnp.reshape(sd * mean, (-1, 1))], axis=1)
 
 
+def accumulate_dense_with_contrast(dataset, mean, loadings, sd: float, **kwargs) -> AugmentedPPCAStats:
+    """The host-mask dense engine's statistics of ``[mu, W]`` under the contrast latent.
+
+    ``kwargs`` are those of :func:`relax.ppca_refinement.dense_dataset.accumulate_dense_ppca_statistics` (it needs
+    ``collect_residuals=True`` for the residual gradient and the latent second moments); the engine runs on
+    ``[mu, W, sd mu]`` and its statistics are folded to ``[mu, W]``. The contrast latent is the last embedding and the
+    last entry of ``diagnostics["latent_second_moment_sum"]``, the input of :func:`updated_sd`. The refinement loop's
+    dense and exact-local owners call this in place of the plain engine.
+    """
+    from relax.ppca_refinement.dense_dataset import accumulate_dense_ppca_statistics
+
+    geometry = kwargs.get("geometry")
+    if geometry is not None:
+        kwargs["geometry"] = dataclasses.replace(geometry, q=geometry.q + 1)  # the engine now has one more loading
+    columns = with_contrast_column(mean, loadings, sd)
+    return fold_statistics(accumulate_dense_ppca_statistics(dataset, columns[:, 0], columns[:, 1:], **kwargs), sd)
+
+
 def fold_gradient(gradient, sd: float):
     """Chain rule of a per-column gradient ``(..., q + 2)`` onto ``[mu, W]``: ``(..., q + 1)``, the mean's entry
     plus ``sd`` times the tied column's."""

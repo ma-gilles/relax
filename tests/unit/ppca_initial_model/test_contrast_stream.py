@@ -9,14 +9,23 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 from helpers.full_row_tile import accumulate_full_row_tile
-from test_full_fine_streaming import IMAGE_SHAPE, VOLUME_SHAPE, _half_volume, _TinyData
+from test_full_fine_streaming import (
+    IMAGE_SHAPE,
+    SIGNIFICANT,
+    VOLUME_SHAPE,
+    _half_volume,
+    _TinyData,
+    make_tile_problem,
+)
 
 from relax.ppca_initial_model import checkpoint, iteration_loop
 from relax.ppca_initial_model.config import Config
 from relax.ppca_initial_model.state import State
 from relax.ppca_refinement import contrast
-from relax.ppca_refinement.config import GeometryConfig, ScheduleConfig, ScoringConfig
+from relax.ppca_refinement.config import GeometryConfig, ScheduleConfig, ScoringConfig, SparsePass2Config
+from relax.ppca_refinement.dense_dataset import accumulate_dense_ppca_statistics
 from relax.ppca_refinement.full_row_stream import prepare_full_row_stream
+from relax.ppca_refinement.residual_statistics import full_float32
 
 pytestmark = pytest.mark.unit
 
@@ -182,3 +191,36 @@ def test_the_controller_updates_the_sd_from_the_second_moment_and_logs_it(tmp_pa
         assert record["contrast"]["latent_second_moment"] == pytest.approx(second_moment)
     assert final.contrast_sd == pytest.approx(expected)
     assert checkpoint.load(tmp_path / "checkpoint_0003.npz", config, identity).contrast_sd == pytest.approx(expected)
+
+
+def test_dense_and_streamed_engines_agree_on_the_second_moments_and_the_folded_statistics():
+    """The host-mask dense engine reports the same per-latent second moments as the stream, and folds the same way."""
+    dataset, mu, W, stream, host = make_tile_problem(q=3)
+    dense = full_float32(accumulate_dense_ppca_statistics)(
+        dataset, mu, W, sparse_pass2=SparsePass2Config(enabled=False), collect_residuals=True, **host
+    )
+    streamed = accumulate_full_row_tile(stream, np.arange(3), SIGNIFICANT)
+    assert_matches(
+        np.asarray(streamed.diagnostics["latent_second_moment_sum"]),
+        np.asarray(dense.diagnostics["latent_second_moment_sum"]),
+    )
+    assert_matches(np.asarray(dense.diagnostics["latent_second_moment_sum"])[0], np.float32(3.0))
+    sd = 0.3
+    folded_dense, folded_streamed = contrast.fold_statistics(dense, sd), contrast.fold_statistics(streamed, sd)
+    for name in ("lhs_tri", "residual_gradient", "embeddings"):
+        assert_matches(np.asarray(getattr(folded_streamed, name)), np.asarray(getattr(folded_dense, name)))
+    assert folded_dense.lhs_tri.shape[1] == 6 and folded_dense.residual_gradient.shape[1] == 3  # [mu, W_1, W_2]
+
+
+def test_the_dense_helper_runs_the_engine_on_the_tied_model_and_folds_it():
+    dataset, mu, W, _stream, host = make_tile_problem(q=2)
+    options = dict(sparse_pass2=SparsePass2Config(enabled=False), collect_residuals=True, **host)
+    folded = full_float32(contrast.accumulate_dense_with_contrast)(dataset, mu, W, 0.3, **options)
+    tied_options = {**options, "geometry": dataclasses.replace(host["geometry"], q=3)}
+    tied = full_float32(accumulate_dense_ppca_statistics)(
+        dataset, mu, np.asarray(contrast.with_contrast_column(mu, W, 0.3))[:, 1:], **tied_options
+    )
+    expected = contrast.fold_statistics(tied, 0.3)
+    for name in ("lhs_tri", "residual_gradient", "embeddings"):
+        assert_matches(np.asarray(getattr(folded, name)), np.asarray(getattr(expected, name)))
+    assert folded.lhs_tri.shape[1] == 6 and folded.embeddings.shape[1] == 3  # [mu, W_1, W_2] and the contrast latent

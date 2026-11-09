@@ -193,6 +193,7 @@ def accumulate_dense_ppca_statistics(
     offset_second_sum = jnp.float32(0)
     rotation_mass = jnp.zeros(len(rotations), jnp.float32)
     latent_covariance_trace_sum = jnp.float32(0)
+    latent_second_moment_sum = jnp.zeros(P, jnp.float32)
     pose_entropy_sum = jnp.float32(0)
     log_likelihood = 0.0
     n_images = 0
@@ -445,6 +446,8 @@ def accumulate_dense_ppca_statistics(
                     block_G_tris[block_idx], block_alphas[block_idx], P
                 )
                 latent_covariance_trace_sum += jnp.sum(gamma * latent_covariance_trace)
+                diagonal = np.flatnonzero(np.equal(*np.triu_indices(P)))
+                latent_second_moment_sum += jnp.einsum("btr,btrp->p", gamma, block_G_tris[block_idx][..., diagonal])
                 centered_score = block_scores[block_idx] - score_center[:, None, None] - centered_logZ[:, None, None]
                 pose_entropy_sum -= jnp.sum(jnp.where(gamma > 0, gamma * centered_score, 0))
                 start = block.rotation_start
@@ -586,6 +589,7 @@ def accumulate_dense_ppca_statistics(
         diagnostics["offset_second_sum_px2"] = float(offset_second_sum)
         diagnostics["rotation_mass"] = np.asarray(rotation_mass)
         diagnostics["latent_covariance_trace_mean"] = float(latent_covariance_trace_sum / n_images)
+        diagnostics["latent_second_moment_sum"] = np.asarray(latent_second_moment_sum)
         diagnostics["pose_entropy_mean"] = float(pose_entropy_sum / n_images)
     return stats
 
