@@ -101,7 +101,7 @@ MUTATIONS = (
      "the run starts with half VDAM's offset variance"),
     ("bootstrap_images", "ids = rng.permutation(dataset.n_images)[:1000]", "ids = rng.permutation(dataset.n_images)[1:1000]",
      "the bootstrap reconstruction drops one image"),
-    ("stage_radius", "radius = min(radius, dataset.grid_size // 2 - 1)", "radius = min(radius, dataset.grid_size // 2 - 1) - 1",
+    ("stage_radius", "return min(config.stage(iteration)[0], cap)", "return min(config.stage(iteration)[0], cap) - 1",
      "every E-step projects one shell short"),
 )
 
