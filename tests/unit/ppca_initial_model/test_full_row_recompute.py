@@ -200,6 +200,10 @@ def test_coarse_route_uses_one_parent_and_keeps_default_dense(monkeypatch):
             best_pose_log_score=np.zeros(len(tile_ids), np.float32),
             max_posterior=np.ones(len(tile_ids), np.float32),
             null_log_likelihood=np.zeros(len(tile_ids), np.float32),
+            # As DensePPCAEmbeddings without an empty component; a full-grid stream reports its top pose.
+            p_occupied=None,
+            best_rotation=np.zeros(len(tile_ids), np.int32),
+            best_translation=np.zeros(len(tile_ids), np.int32),
         ),
     )
     embedded = iteration_loop.expectation(data, state, config, ids, 1, embeddings_only=True)
@@ -207,6 +211,7 @@ def test_coarse_route_uses_one_parent_and_keeps_default_dense(monkeypatch):
     assert embedded.embeddings.shape == (5, 2)
     assert embedded.log_evidence.shape == embedded.best_pose_log_score.shape == embedded.max_posterior.shape == (5,)
     assert embedded.null_log_likelihood.shape == (5,)
+    assert embedded.p_occupied is None and embedded.best_rotation.shape == (5,)
 
     dense_called = []
     monkeypatch.setattr(
