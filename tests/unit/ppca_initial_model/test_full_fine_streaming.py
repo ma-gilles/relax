@@ -1003,6 +1003,8 @@ def test_empty_component_weights_each_image_by_its_occupied_probability(occupanc
     assert_matches(mixed_embeddings.log_evidence, np.logaddexp(occupied, empty).astype(np.float32))
     # E[z | occupied] is the one-component embedding: the empty component changes no pose's relative weight.
     assert_matches(np.asarray(mixed_embeddings.embeddings), np.asarray(plain_embeddings.embeddings))
+    # The top pose keeps its share of the occupied mass: P(occupied, top pose) = P(occupied) P(top pose | occupied).
+    assert_matches(mixed_embeddings.max_posterior, (p * plain_embeddings.max_posterior).astype(np.float32))
 
     plain_tiles = [accumulate_full_row_tile(stream, np.asarray([i]), [SIGNIFICANT[i]]) for i in range(3)]
     mixed_tile = accumulate_full_row_tile(mixed, np.arange(3), SIGNIFICANT)
