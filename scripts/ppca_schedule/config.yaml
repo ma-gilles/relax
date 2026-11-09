@@ -303,9 +303,3 @@ arms:
   s3_scale1_4_uniform_noshift:
     args: ["--optimizer", "momentum_sgd", "--sgd-learning-rate", "2.4", "--sgd-loading-scale", "0.25",
            "--direction-prior", "uniform", "--shift-range", "0", "--shift-step", "1"]
-  # Round 20, the VDAM gate's noise reference (docs/math/vdam_ppca_algorithm.md section 3.3): s3_vdam_uniform compares the
-  # halves' disagreement with the noise of full-data half maps; g4_vdam_uniform_power_seen with half maps of the particles
-  # seen so far, min(iterations * batch, dataset), which is the batch's own noise at iteration 1 and the full-data one
-  # from the end of the first epoch (333 iterations of 300 on the 100,000-particle suite datasets).
-  g4_vdam_uniform_power_seen:
-    args: ["--optimizer", "vdam", "--direction-prior", "uniform", "--gate-noise-images", "seen"]

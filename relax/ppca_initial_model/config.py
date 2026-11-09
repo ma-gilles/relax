@@ -36,10 +36,6 @@ class Config:
     # A fudge of 1 with the scheme plain keeps the gate at its strongest shrinkage throughout.
     tau2_fudge: float | None = None
     tau2_fudge_scheme: str | None = None
-    # The particles whose half maps' noise the VDAM gate compares the halves' disagreement with: "dataset" (all of them,
-    # update.full_data_disagreement_scale) or "seen" (the particles of the iterations so far, at most the dataset;
-    # docs/math/vdam_ppca_algorithm.md section 3.3).
-    gate_noise_images: str = "dataset"
     # The iteration count VDAM's phases (step size, tau2 fudge, subset size) are laid out for; None: the run's iterations.
     # A run of more iterations than this continues the last phase: iterations past it take the values of the schedule's
     # last but one, so a run can be extended from its final checkpoint without re-warming the schedule.
@@ -179,8 +175,6 @@ class Config:
                 raise ValueError("Shift stages need a nonnegative range and a positive step")
         if self.offset_sigma_angstrom is not None and not self.offset_sigma_angstrom > 0:
             raise ValueError("The offset sigma must be positive")
-        if self.gate_noise_images not in ("dataset", "seen"):
-            raise ValueError("The gate's noise images must be dataset or seen")
         if self.schedule_iterations is not None and not 1 < self.schedule_iterations <= self.iterations:
             raise ValueError("The schedule's iterations must be more than 1 and at most the run's iterations")
         if self.optimizer not in ("vdam", "momentum_sgd"):

@@ -221,9 +221,10 @@ Theta averages the first moments with the step `eta` (`theta <- (1-eta) theta + 
 `N_eff`, the batch over the noise reduction of the two cascaded filters: for the C n1 recipe (`b = 300`, the step from
 `iterations.jsonl`) `N_eff / N` is .06 up to iteration 500, .08 at 1000, .22 at 1500, .35 at 2000 and .45 from 2500.
 Early in a run the gate is therefore more open than the noise left in theta warrants, late it is close to it. A scale
-from that window instead gave the amplitude gate's results (section 18.16). `--gate-noise-images seen` (opt-in) takes
-`N_ref = min(particles of the iterations so far, N)` in place of `N`, so the scale is `4 / (N_ref w)`: the batch's own noise
-at iteration 1 and the full-data scale once the batches have covered the dataset; section 18.17 has its result.
+from that window instead gave the amplitude gate's results (section 18.16). A reference of `N_ref = min(particles of the
+iterations so far, N)` in place of `N`, so that the scale is `4 / (N_ref w)` (the batch's own noise at iteration 1 and the
+full-data scale once the batches have covered the dataset), was tried as the opt-in `--gate-noise-images seen` and removed
+(section 18.17 has its result; rebuild the commit "ppca_initial_model: opt-in gate noise reference of the images seen so far").
 
 ### 3.4 Reference power, SSNR and resolution are a different mechanism
 
@@ -3743,10 +3744,10 @@ Question (owner). At a large `N` the full-data scale `(b/N)/e` is small and the 
 (the particles of the iterations so far, at most the dataset; the code sums the batches, which is `t b` for a constant batch)
 instead of `N`, so that early iterations are not left unshrunk. The six synthetic datasets of 18.16 are the test.
 
-Implementation. `--gate-noise-images dataset|seen` (default `dataset`, the gate of 18.16), `Config.gate_noise_images`,
-`update.noise_reference_images`, logged per iteration as `gate_noise_images`; the count is rebuilt from the batch schedule on
-resume. Tests: `tests/unit/ppca_initial_model/test_gate_statistic.py` (the reference, the noise power the scaled disagreement
-recovers for 10, 100 and 170 batches, a straight run against a resumed one, the checkpoint identity). The commit is "ppca_initial_model: opt-in gate noise reference of the images seen so far".
+Implementation (removed, see the decision below). `--gate-noise-images dataset|seen` (default `dataset`, the gate of 18.16),
+`Config.gate_noise_images`, `update.noise_reference_images`, logged per iteration as `gate_noise_images`; the count was rebuilt from
+the batch schedule on resume. It was the commit "ppca_initial_model: opt-in gate noise reference of the images seen so far"; the study arm `g4_vdam_uniform_power_seen` of `scripts/ppca_schedule/config.yaml`
+and the runs of `gate_power4` came from that commit's snapshot.
 
 Runs. The same VDAM runs of 18.16 (uniform direction prior, `b = 300`, 3000 iterations, the recipe schedule) on C n1, C n3, H1 n3,
 D40 n1, D20 n1 and T10 n1, seeds 11, 12, 13, from the frozen snapshot `snapshots/gate_runs4` (HEAD: that commit): the arm
@@ -3797,6 +3798,13 @@ its states solved (4 to 5 against 3) hold in all six runs.
 Not established. Whether the .010 to .015 state FSC gain is more than the trajectory scatter of a change that moves only the first
 hundred iterations (it is one seed spread, 12 pairs, 8 metrics looked at); no loading-quality metric (subspace, energy, PC outside
 span, R2) improves, and D20's mean FSC and T10's R2 are lower.
+
+Decision (owner, November 9, 2026). The gate keeps the power statistic with the full-data noise scale as its only behavior, with no
+option (as decided in 18.16), and `--gate-noise-images` is removed: the option gave no gain beyond the seed spread on the synthetic
+suites apart from the direct-fit state FSC. A checkpoint written with the option at `dataset` still
+resumes (`gate_noise_images` is among the retired settings of `checkpoint.py`); one written at `seen` does not. Rebuild the commit "ppca_initial_model: opt-in gate noise reference of the images seen so far"
+for the option. The owner weighs the ARI and FSC metrics above the loading subspace angle, which is where the full-data power gate
+of 18.16 loses to the amplitude gate (49 and 39 degrees against 37 and 27 on C n1 and C n3) and wins on T10 states solved and C n3 ARI and state FSC.
 
 ## 19. Translation search of the best-v1 recipe (November 6, 2026)
 

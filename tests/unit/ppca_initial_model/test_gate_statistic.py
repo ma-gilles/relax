@@ -1,4 +1,4 @@
-"""The VDAM gate: shell means of the power (the half-map FSC under independent noise) and its noise scale."""
+"""The VDAM gate: shell means of the power (the half-map FSC under independent noise) and the full-data noise scale."""
 
 import dataclasses
 
@@ -16,7 +16,6 @@ from relax.ppca_initial_model.update import (
     advance_noise_weight,
     empty_moments,
     full_data_disagreement_scale,
-    noise_reference_images,
     stochastic_update,
 )
 
@@ -177,78 +176,8 @@ def test_the_scale_reaches_the_update_and_a_resumed_run_keeps_it(monkeypatch, tm
         assert_matches(resumed[t]["gates"], straight[t]["gates"])
 
 
-def test_the_seen_reference_counts_the_particles_of_the_iterations_so_far_up_to_the_dataset():
-    """``seen`` is min(seen, n_images); ``dataset`` ignores how many were seen."""
-    assert noise_reference_images(300, 100_000, "seen") == 300
-    assert noise_reference_images(99_999, 100_000, "seen") == 99_999
-    assert noise_reference_images(250_000, 100_000, "seen") == 100_000
-    assert noise_reference_images(300, 100_000, "dataset") == 100_000
-    assert noise_reference_images(250_000, 100_000, "dataset") == 100_000
-
-
-@pytest.mark.parametrize(
-    ("counts", "reference_images"),
-    [([300] * 10, 3_000), ([300] * 100, 30_000), ([300] * 150 + [1200] * 20, 50_000)],
-    ids=["10 batches of 300", "100 batches of 300", "past the dataset"],
-)
-def test_the_scaled_disagreement_recovers_the_noise_of_half_maps_of_the_images_seen(counts, reference_images):
-    """Halves of noise power v / count per iteration, v = sigma^2 * n_images: the full-data half has sigma^2.
-
-    With the ``seen`` reference the half maps whose noise the scaled disagreement recovers have the particles seen
-    so far, at most n_images = 50,000, so the disagreement is 2 sigma^2 * n_images / reference_images. The mean of 2e4
-    voxels has a sampling error of 0.7%; over 6 seeds of this construction the largest error is 2.4%, so rtol is 0.05.
-    """
-    n, n_images, sigma2 = 20_000, 50_000, 1.0
-    rng = np.random.default_rng(37)
-    theta = jnp.zeros((n, 2), jnp.complex64)
-    moments, weight, seen = empty_moments(theta), None, 0
-    for count in counts:
-        weight = advance_noise_weight(weight, count)
-        seen += count
-        scale = full_data_disagreement_scale(weight, noise_reference_images(seen, n_images, "seen"))
-        noise = np.zeros((2, n, 2), np.complex64)
-        for half in range(2):
-            noise[half, :, 0] = _complex_gaussian(rng, sigma2 * n_images / count, n)
-        theta, moments, info = stochastic_update(
-            theta, moments, jnp.asarray(noise), np.ones((2, n), bool), np.zeros(n, np.int32),
-            step=0.5, fudge=1.0, image_size=BOX, disagreement_scale=scale,
-        )  # fmt: skip
-    assert noise_reference_images(seen, n_images, "seen") == reference_images
-    assert float(info["disagreement"][0, 0]) == pytest.approx(2 * sigma2 * n_images / reference_images, rel=0.05)
-
-
-def test_the_seen_reference_reaches_the_update_and_a_resumed_run_keeps_it(monkeypatch, tmp_path):
-    """16 images in batches of 8: iteration t's reference is min(8 t, 16) and its scale 4 / (reference * weight)."""
-    monkeypatch.setenv("SLURM_JOB_ID", "test")
-    star = write_star(tmp_path / "data", 16)
-    run_command(star, tmp_path / "straight", "--gate-noise-images", "seen")
-    run_command(star, tmp_path / "resumed", "--gate-noise-images", "seen", "--stop-after", "4")
-    run_command(
-        star,
-        tmp_path / "resumed",
-        "--gate-noise-images",
-        "seen",
-        "--resume",
-        str(tmp_path / "resumed" / "checkpoint_0004.npz"),
-    )
-    straight, resumed = (rows(tmp_path / name) for name in ("straight", "resumed"))
-
-    for t in range(1, 9):
-        weight = FIRST_MOMENT_DECAY ** (2 * (t - 1)) * 4 / 8 + sum(
-            FIRST_MOMENT_WEIGHT**2 * FIRST_MOMENT_DECAY ** (2 * (t - i)) * 4 / 8 for i in range(2, t + 1)
-        )
-        assert straight[t]["gate_noise_images"] == min(8 * t, 16)
-        assert_matches(straight[t]["disagreement_scale"], 4 / (min(8 * t, 16) * weight), rtol=1e-9)
-    for t in range(5, 9):
-        assert resumed[t]["gate_noise_images"] == straight[t]["gate_noise_images"]
-        assert_matches(resumed[t]["disagreement_scale"], straight[t]["disagreement_scale"], rtol=1e-12)
-        assert_matches(resumed[t]["gates"], straight[t]["gates"])
-
-
-def test_the_gate_reference_is_part_of_a_checkpoints_identity_only_when_it_is_not_the_default():
-    """A checkpoint written before the option resumes at ``dataset``; ``seen`` is another model."""
+def test_a_checkpoint_of_the_retired_noise_images_option_resumes_at_its_default_only():
+    """``gate_noise_images`` is retired: ``dataset`` is the behavior left, ``seen`` was another model."""
     config = dataclasses.asdict(Config())
-    assert "gate_noise_images" not in checkpoint._identity_config(config)
+    assert checkpoint._identity_config({**config, "gate_noise_images": "dataset"}) == checkpoint._identity_config(config)
     assert checkpoint._identity_config({**config, "gate_noise_images": "seen"}) != checkpoint._identity_config(config)
-    with pytest.raises(ValueError, match="noise images"):
-        Config(gate_noise_images="batch")

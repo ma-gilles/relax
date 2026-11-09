@@ -45,7 +45,6 @@ from relax.ppca_initial_model.update import (
     empty_moments,
     full_data_disagreement_scale,
     metric_floor,
-    noise_reference_images,
     stochastic_update,
 )
 from relax.ppca_refinement.config import GeometryConfig, ScheduleConfig, ScoringConfig, SparsePass2Config
@@ -691,14 +690,11 @@ def run(
     end = config.iterations if stop_after is None else min(config.iterations, stop_after)
     stage_tile_sizes = {}  # compiled tile shapes seen per stage (radius, HEALPix order)
     log = _ModelLog(output / "iterations.jsonl")
-    # The first moments' noise weight (update.advance_noise_weight) and the particles of the iterations so far, which
-    # scale the gate's disagreement.
-    noise_weight, images_seen = None, 0
+    # The first moments' noise weight (update.advance_noise_weight), which scales the gate's disagreement.
+    noise_weight = None
     if config.optimizer == "vdam":
         for past in range(1, state.iteration + 1):
-            past_count = config.schedule(past, dataset.n_images)[0]
-            noise_weight = advance_noise_weight(noise_weight, past_count)
-            images_seen += past_count
+            noise_weight = advance_noise_weight(noise_weight, config.schedule(past, dataset.n_images)[0])
     for iteration in range(state.iteration + 1, end + 1):
         started = time.monotonic()
         count, step, fudge = config.schedule(iteration, dataset.n_images)
@@ -769,9 +765,7 @@ def run(
                 covered = jnp.sum(jnp.asarray(result.lhs_tri)[:, diagonal], axis=-1) > 0  # the metric's trace
                 coverage.append(covered & jnp.asarray(support))
             noise_weight = advance_noise_weight(noise_weight, count)
-            images_seen += count
-            reference_images = noise_reference_images(images_seen, dataset.n_images, config.gate_noise_images)
-            disagreement_scale = full_data_disagreement_scale(noise_weight, reference_images)
+            disagreement_scale = full_data_disagreement_scale(noise_weight, dataset.n_images)
             theta, moments, diagnostics = stochastic_update(
                 theta_in,
                 _active_moments(state.moments, 1 + active),
@@ -784,7 +778,6 @@ def run(
                 disagreement_scale=disagreement_scale,
             )
             diagnostics["disagreement_scale"] = disagreement_scale
-            diagnostics["gate_noise_images"] = reference_images
             theta = bandlimit_and_mask(theta, dataset.volume_shape, radius, mask)
             theta = _with_active_columns(state.theta, theta)
             moments = _with_active_moments(state.moments, moments)

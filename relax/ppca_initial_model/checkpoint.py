@@ -34,7 +34,7 @@ RUNTIME_CONFIG_FIELDS = ("gemm_precision", "preread_images", "pass2_mass_floor")
 # resumes; one written with the setting changed holds a different model and does not.
 _RETIRED_CONFIG_DEFAULTS = {
     "contrast_estimate": False, "contrast_prior_sd": 0.3, "contrast_range": [0.5, 2.0], "fine_image_tile_size": 1,
-    "gate_statistic": "power", "gate_noise_reference": "full_data",
+    "gate_statistic": "power", "gate_noise_reference": "full_data", "gate_noise_images": "dataset",
 }
 
 # Model settings added later and the value that gives the model of a checkpoint written before they existed (a setting's
@@ -43,8 +43,7 @@ _ADDED_CONFIG_DEFAULTS = {"max_significant": 100, "pc_stages": None, "pc_birth_s
     "tau2_fudge": None, "tau2_fudge_scheme": None, "radius_rule": "stages", "incr_size": 10, "direction_prior": "learned",
     "order_rule": "stages", "order_max": 4, "final_order_max": None, "accuracy_interval": 10,
     "accuracy_signal": "divergence", "accuracy_kl_threshold": None, "init_mean_map": None,
-    "sgd_loading_scale": 1.0, "shift_stages": None, "offset_sigma_angstrom": None,
-    "gate_noise_images": "dataset"}
+    "sgd_loading_scale": 1.0, "shift_stages": None, "offset_sigma_angstrom": None}
 
 
 def _identity_config(config_dict):
