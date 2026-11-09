@@ -109,6 +109,17 @@ class Config:
     # (0: visit every row), when that leaves at most half the rows. A runtime setting;
     # full_row_kernels._pass2_rows has the bound; section 14 of docs/math/vdam_ppca_algorithm.md the evidence.
     pass2_mass_floor: float = 1e-10
+    # Per-particle contrast (docs/math/ppca_contrast.md). "none": every particle has unit contrast. "latent": the contrast
+    # scales the mean, c = 1 + sd e with e ~ N(0, 1) a Gaussian latent tied to the mean (relax/ppca_refinement/contrast.py),
+    # from iteration contrast_start on. contrast_sd is the prior sd of c about 1 (its first value when it is estimated);
+    # with contrast_estimate_sd it follows the posterior second moment of e each update (EM), within
+    # [contrast_sd_min, contrast_sd_max], and stays at contrast_sd otherwise.
+    contrast: str = "none"
+    contrast_sd: float = 0.2
+    contrast_estimate_sd: bool = True
+    contrast_start: int = 1
+    contrast_sd_min: float = 0.01
+    contrast_sd_max: float = 0.5
 
     def __post_init__(self):
         if isinstance(self.q, bool) or not isinstance(self.q, (int, np.integer)) or self.q <= 0 or self.seed <= 0 or self.iterations <= 0:
@@ -199,6 +210,20 @@ class Config:
             raise ValueError("Image preread must be auto, on or off")
         if not 0 <= self.pass2_mass_floor < 1:
             raise ValueError("The pass-2 mass floor must be in [0, 1)")
+        self._validate_contrast()
+
+    def _validate_contrast(self) -> None:
+        """Refuse a contrast model that is unknown, out of range or that the engine cannot run."""
+        if self.contrast not in ("none", "latent"):
+            raise ValueError("The contrast model must be none or latent")
+        if self.contrast == "none":
+            return
+        if not self.stream_coarse_recompute or self.oversampling:
+            raise ValueError("The contrast latent runs on the streamed engine without oversampling")
+        if isinstance(self.contrast_start, bool) or not isinstance(self.contrast_start, (int, np.integer)) or self.contrast_start < 1:
+            raise ValueError("contrast_start must be a positive integer")
+        if not 0 < self.contrast_sd_min <= self.contrast_sd <= self.contrast_sd_max:
+            raise ValueError("Need 0 < contrast_sd_min <= contrast_sd <= contrast_sd_max")
 
     def _validate_order_rule(self) -> None:
         """Refuse an order rule other than the table or the accuracy rule, or an accuracy rule it cannot run."""

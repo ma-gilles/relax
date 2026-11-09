@@ -25,3 +25,5 @@ class State:
     # Under the accuracy order rule, the HEALPix order of the next E-step (the final embeddings after the last
     # iteration); None under the stages table.
     next_order: int | None = None
+    # Under the contrast latent, the prior sd of the contrast used by the next E-step; None without it.
+    contrast_sd: float | None = None

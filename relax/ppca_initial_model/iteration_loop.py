@@ -47,6 +47,7 @@ from relax.ppca_initial_model.update import (
     metric_floor,
     stochastic_update,
 )
+from relax.ppca_refinement import contrast as contrast_latent
 from relax.ppca_refinement.config import GeometryConfig, ScheduleConfig, ScoringConfig, SparsePass2Config
 from relax.ppca_refinement.dense_dataset import (
     DensePPCAEmbeddings,
@@ -204,6 +205,11 @@ def _merge_statistics(parts, totals=None):
         log_likelihood=sum(s.log_likelihood for s in parts),
         diagnostics={
             "offset_second_sum_px2": sum(s.diagnostics["offset_second_sum_px2"] for s in parts),
+            **(
+                {"latent_second_moment_sum": sum(s.diagnostics["latent_second_moment_sum"] for s in parts)}
+                if all("latent_second_moment_sum" in s.diagnostics for s in parts)
+                else {}
+            ),
             **{
                 key: sum(s.diagnostics[key] * s.n_images for s in parts) / sum(s.n_images for s in parts)
                 for key in ("latent_covariance_trace_mean", "pose_entropy_mean", "pmax_mean")
@@ -268,6 +274,13 @@ def _oversampling_record(stats, config, iteration):
 def _curvature(stats, p):
     """Momentum SGD's per-frequency ``(mean, loading trace)`` curvature of the metric summed over the halves."""
     return metric_curvature(sum(s.lhs_tri for s in stats), p)
+
+
+def contrast_sd_for(config, state, iteration):
+    """The prior sd of the contrast latent in the E-step of ``iteration``; None when that E-step has unit contrast."""
+    if config.contrast == "none" or iteration < config.contrast_start:
+        return None
+    return state.contrast_sd
 
 
 def _active_columns(array, width):
@@ -399,7 +412,11 @@ def _expectation(dataset, state, config, ids, iteration, *, embeddings_only=Fals
     # full-box default projector excludes unpaired Nyquist, as existing PPCA.
     radius = radius_for(config, state, iteration, dataset.grid_size)
     active = config.active_pcs(iteration)
-    geometry = GeometryConfig(current_size=2 * radius, q=active, volume_domain="fourier_half")
+    contrast_sd = contrast_sd_for(config, state, iteration)
+    # The contrast latent is one more loading of the engine, tied to the mean (relax/ppca_refinement/contrast.py).
+    geometry = GeometryConfig(
+        current_size=2 * radius, q=active + (contrast_sd is not None), volume_domain="fourier_half"
+    )
     schedule = ScheduleConfig(image_batch_size=config.image_batch_size, rotation_block_size=config.rotation_block_size)
     scoring = ScoringConfig(relion_texture_interp=False, full_real_observation=True)
     rotations = _rotation_grid(hp)
@@ -428,6 +445,8 @@ def _expectation(dataset, state, config, ids, iteration, *, embeddings_only=Fals
     nv = nvs[0]
     common = dict(noise_variance=nv, geometry=geometry, schedule=schedule, scoring=scoring, image_indices=ids)
     mu, W = state.theta[:, 0], state.theta[:, 1 : 1 + active]
+    if contrast_sd is not None:
+        W = contrast_latent.with_contrast_column(mu, W, contrast_sd)[:, 1:]
     if config.stream_coarse_recompute:
         # One artificial coarse parent represents the full coarse pose grid.
         # It keeps the shared full-row mask Bx1x1 instead of BxRxT. Each noise group has its
@@ -547,6 +566,8 @@ def _expectation(dataset, state, config, ids, iteration, *, embeddings_only=Fals
                 )
                 continue
             stats = _merge_statistics(group_parts, sums[group].totals)
+            if contrast_sd is not None:
+                stats = contrast_latent.fold_statistics(stats, contrast_sd)
             if tilts:
                 # Noise sums per noise group, (G, S); a group without images in this id group adds zeros.
                 owners = [owner for (half, _), owner in zip(tiles, noise_owner) if half == group]
@@ -676,6 +697,7 @@ def run(
             0,
             info,
             sgd_momentum=jnp.zeros_like(theta) if config.optimizer == "momentum_sgd" else None,
+            contrast_sd=config.contrast_sd if config.contrast != "none" else None,
         )
         checkpoint.save(output / "checkpoint_0000.npz", state, config, identity)
     if state.theta.ndim != 2 or state.theta.shape[1] != config.q + 1:
@@ -812,6 +834,22 @@ def run(
             beta,
             MIN_SIGMA2_OFFSET_ANGSTROM2 / dataset.voxel_size**2,
         )
+        contrast_sd = contrast_sd_for(config, state, iteration)
+        next_contrast_sd, contrast_record = state.contrast_sd, None
+        if contrast_sd is not None:
+            # Mean second moment of the contrast latent e over the batch; entry p of the per-latent sums is latent p's.
+            e_second = float(
+                sum(s.diagnostics["latent_second_moment_sum"][-1] for s in stats) / sum(s.n_images for s in stats)
+            )
+            if config.contrast_estimate_sd:
+                next_contrast_sd = contrast_latent.updated_sd(
+                    contrast_sd,
+                    e_second,
+                    previous_weight=beta,
+                    sd_min=config.contrast_sd_min,
+                    sd_max=config.contrast_sd_max,
+                )
+            contrast_record = {"sd": contrast_sd, "latent_second_moment": e_second, "next_sd": next_contrast_sd}
         if (
             theta.dtype != jnp.complex64
             or (moments is not None and (moments.first.dtype != jnp.complex64 or moments.second.dtype != jnp.float32))
@@ -890,6 +928,7 @@ def run(
             momentum,
             planned_radius,
             planned_order,
+            next_contrast_sd,
         )
         stage_key = (
             config.stage(iteration) if config.radius_rule == config.order_rule == "stages" else (radius, hp)
@@ -913,6 +952,7 @@ def run(
                     else {}
                 ),
                 **({"loading_data_vs_prior": loading_dvp} if loading_dvp is not None else {}),
+                **({"contrast": contrast_record} if contrast_record is not None else {}),
                 **(
                     {
                         "next_order": planned_order,
@@ -1001,11 +1041,19 @@ def run(
         )
         if not np.array_equal(np.sort(final.original_image_ids), ids):
             raise ValueError("Final embedding does not cover every particle exactly once")
-        # Per-image scores of the same pass (DensePPCAEmbeddings), aligned with particle_ids.
+        # Per-image scores of the same pass (DensePPCAEmbeddings), aligned with particle_ids. Under the contrast latent
+        # the engine's last latent is the contrast: z keeps the particle's contrast scale (u = c z), z_over_contrast is
+        # u / c, and contrast is the estimate 1 + sd E[e].
+        latents, contrast_fields = np.asarray(final.embeddings), {}
+        final_sd = contrast_sd_for(config, state, config.iterations)
+        if final_sd is not None:
+            latents, estimate = (np.asarray(x) for x in contrast_latent.split_embeddings(latents, final_sd))
+            contrast_fields = dict(contrast=estimate, z_over_contrast=latents / estimate[:, None], contrast_sd=final_sd)
         np.savez(
             output / "embeddings.npz",
             particle_ids=final.original_image_ids,
-            z=np.asarray(final.embeddings),
+            z=latents,
+            **contrast_fields,
             log_evidence=final.log_evidence,
             best_pose_log_score=final.best_pose_log_score,
             max_posterior=final.max_posterior,

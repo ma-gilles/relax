@@ -183,6 +183,9 @@ class _MomentCarry(NamedTuple):
     pose_entropy_sum: jax.Array
     offset_second_sum: jax.Array
     n_significant: jax.Array  # (B,)
+    # (P,) sum over images and poses of gamma E[alpha_p^2], the diagonal of the packed second moments: entry 0 is the
+    # number of images, entry p the second moment of latent p summed over images (the contrast latent's, for its update).
+    second_moment_diagonal: jax.Array
 
 
 class FullRowStream(NamedTuple):
@@ -541,9 +544,13 @@ def moment_block(carry, arrays, tile, kept, posterior, start, *, static, block_s
         )
     else:
         weights, sums, carry = _posterior_block(carry, arrays, kept, posterior, start, block_size)
+    P = static.basis_size
+    diagonal = np.flatnonzero(np.equal(*np.triu_indices(P)))
+    carry = carry._replace(
+        second_moment_diagonal=carry.second_moment_diagonal + jnp.sum(sums[diagonal], axis=(1, 2))
+    )
     if not moments:
         return carry
-    P = static.basis_size
     # One image per (rotation, frame), frame minor: the GEMM outputs' rows split into frames.
     R = block_size * n_frames(tile)
     F = tile.ctf2_recon.shape[1] // n_frames(tile)
@@ -783,6 +790,7 @@ def empty_carry(stream, n_images, observation_power):
         pose_entropy_sum=jnp.float32(0),
         offset_second_sum=jnp.float32(0),
         n_significant=jnp.zeros((n_images,), jnp.int32),
+        second_moment_diagonal=jnp.zeros((P,), jnp.float32),
     )
 
 

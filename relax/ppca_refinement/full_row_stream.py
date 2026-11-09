@@ -563,6 +563,7 @@ def finish_full_row_tile(stream, image_indices, tile, layout, posterior, carry, 
             "latent": carry.latent_covariance_trace_sum,
             "entropy": carry.pose_entropy_sum,
             "offset": carry.offset_second_sum,
+            "second_moment_diagonal": carry.second_moment_diagonal,
         }
     )
     pmax = _top_pose_posterior(host["top_centered_score"][:, None], host["centered_logZ"])[:, 0]
@@ -584,6 +585,8 @@ def finish_full_row_tile(stream, image_indices, tile, layout, posterior, carry, 
         "best_rotation_idx": np.where(finite, host["rotation"], -1).astype(np.int32),
         "best_translation_idx": np.where(finite, host["translation"], -1).astype(np.int32),
         "offset_second_sum_px2": float(host["offset"]),
+        # (P,) per-latent sum over the tile's images of E[alpha_p^2] (entry 0: the image count).
+        "latent_second_moment_sum": np.asarray(host["second_moment_diagonal"]),
         "rotation_mass": rotation_mass,
         "tile_size": int(tile.y_norm.shape[0]),  # with padding: the compiled tile shape
         "scored_image_rows": n_images * layout["scored_rows"],

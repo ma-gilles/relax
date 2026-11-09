@@ -44,7 +44,9 @@ _ADDED_CONFIG_DEFAULTS = {"max_significant": 100, "pc_stages": None, "pc_birth_s
     "tau2_fudge": None, "tau2_fudge_scheme": None, "radius_rule": "stages", "incr_size": 10, "direction_prior": "learned",
     "order_rule": "stages", "order_max": 4, "final_order_max": None, "accuracy_interval": 10,
     "accuracy_signal": "divergence", "accuracy_kl_threshold": None, "init_mean_map": None,
-    "sgd_loading_scale": 1.0, "shift_stages": None, "offset_sigma_angstrom": None}
+    "sgd_loading_scale": 1.0, "shift_stages": None, "offset_sigma_angstrom": None,
+    "contrast": "none", "contrast_sd": 0.2, "contrast_estimate_sd": True, "contrast_start": 1,
+    "contrast_sd_min": 0.01, "contrast_sd_max": 0.5}
 
 
 def _identity_config(config_dict):
@@ -93,6 +95,7 @@ def save(path, state, config, identity):
         "direction_order": state.direction_order,
         "next_radius": state.next_radius,
         "next_order": state.next_order,
+        "contrast_sd": state.contrast_sd,
     }
     temporary = path.with_suffix(".tmp")
     arrays = {"theta": np.asarray(state.theta)}
@@ -161,4 +164,5 @@ def load(path, config, identity):
             momentum,
             meta.get("next_radius"),
             meta.get("next_order"),
+            meta.get("contrast_sd"),
         )

@@ -209,6 +209,36 @@ def add_args(parser):
         help="momentum SGD: the loading columns' learning rate as a multiple of --sgd-learning-rate (the mean's; "
         "default: %(default)s)",
     )
+    parser.add_argument(
+        "--contrast",
+        choices=("none", "latent"),
+        default=Config().contrast,
+        help="per-particle contrast: none (unit contrast), or latent: the contrast scales the mean, c = 1 + sd e with a "
+        "Gaussian latent e tied to the mean (docs/math/ppca_contrast.md)",
+    )
+    parser.add_argument(
+        "--contrast-sd",
+        type=float,
+        default=Config().contrast_sd,
+        help="--contrast latent: the prior sd of the contrast about 1 (its first value when it is estimated; "
+        "default: %(default)s)",
+    )
+    parser.add_argument(
+        "--no-contrast-estimate-sd",
+        dest="contrast_estimate_sd",
+        action="store_false",
+        help="--contrast latent: keep the prior sd at --contrast-sd instead of following the posterior second moment of "
+        "the contrast latent each update",
+    )
+    parser.add_argument(
+        "--contrast-start",
+        type=int,
+        default=Config().contrast_start,
+        help="--contrast latent: the first iteration with the contrast latent; the E-steps before it have unit contrast "
+        "(default: %(default)s)",
+    )
+    parser.add_argument("--contrast-sd-min", type=float, default=Config().contrast_sd_min)
+    parser.add_argument("--contrast-sd-max", type=float, default=Config().contrast_sd_max)
     parser.add_argument("--resume")
     parser.add_argument("--stop-after", type=int, help="Checkpoint stop without changing the scientific schedule")
     parser.add_argument("--stop-file", help="Stop between iterations after an atomic checkpoint")
@@ -499,6 +529,12 @@ def main(args=None):
         accuracy_kl_threshold=args.accuracy_kl_threshold,
         tau2_fudge=args.tau2_fudge,
         tau2_fudge_scheme=args.tau2_fudge_scheme,
+        contrast=args.contrast,
+        contrast_sd=args.contrast_sd,
+        contrast_estimate_sd=args.contrast_estimate_sd,
+        contrast_start=args.contrast_start,
+        contrast_sd_min=args.contrast_sd_min,
+        contrast_sd_max=args.contrast_sd_max,
     )
     if (args.ios is None) == (args.particles is None):
         raise ValueError("Give either a particle STAR (--i) or an optimisation set (--ios)")
