@@ -19,7 +19,7 @@ tested, and performs to a satisfactory level on simulated data with and without 
 | 2 | Implementation shared by initial model and refinement | model A in the initial model (`--contrast latent`; the loadings are kept orthogonal to the mean by default) and, as helpers (tied column, fold, centring, projection), in `contrast.py` for any engine; the dense refinement loop has no production controller for it yet; CPU tests pass |
 | 3a | Contrast-spread simulated datasets with a paired control | done: C n1 box 64 at sd 0, 0.15, 0.30 |
 | 3b | Cost of ignoring contrast (baseline runs) | done for seed 11: at sd 0.30 kmeans ARI falls from 0.99 to 0.57-0.63, poses and FSC hold |
-| 3c | Contrast model vs baseline; harm check at unit contrast | done (rounds 3 to 7): at sd 0.30 kmeans ARI 0.57-0.66 to 0.93-0.98 over 3 to 20 seeds (noise 1), noise 3 and log-normal; no change at sd 0; cryo-ET fixture: SGD calibrated, VDAM not settled |
+| 3c | Contrast model vs baseline; harm check at unit contrast | done (rounds 3 to 7): at sd 0.30 and noise 1 kmeans ARI 0.57-0.66 to 0.93-0.98 (3 seeds for VDAM, 14 for constrained SGD), noise 3 and log-normal one to two seeds; no change at sd 0; cryo-ET fixture: SGD calibrated, VDAM not settled |
 | 4 | Heuristics (when to switch contrast on, prior width) and revisit | not needed: both failures found were gauges, fixed structurally (math note sections 9 and 10); a late start and a fixed sd did not help |
 
 ## Decisions so far
@@ -291,7 +291,7 @@ cost; the failure is an ab-initio basin of that seed (bad at iteration 1000, nor
 **Decision**: under `--contrast latent` the loadings are kept orthogonal to the mean by default (`--no-contrast-orthogonal` turns it
 off; decided once at the command boundary, `contrast_orthogonal_setting`; the `Config` default stays off, so the identity of runs without the
 latent and of old checkpoints does not change). Basis: SGD's sd collapse at noise 3 is gone (kmeans ARI +0.15 and +0.24 over the baseline on two
-seeds), SGD on the cryo-ET fixture is calibrated, VDAM is unchanged within run-to-run noise in every comparison (13 pairs), and the constraint
+seeds), SGD on the cryo-ET fixture is calibrated, VDAM is unchanged within run-to-run noise on the six simulated comparisons (kmeans ARI differences -0.08 to +0.01; on the cryo-ET fixture the VDAM sd stays at its cap with and without it), and the constraint
 is the identifiability condition of the model (math note section 10). The `cg_*` arms pass `--no-contrast-orthogonal` and keep their meaning.
 
 **Unit tests** (CPU, `tests/unit/{ppca_contrast,ppca_initial_model,ppca_refinement}`, `test_ppca_initial_model_momentum_sgd.py`,
