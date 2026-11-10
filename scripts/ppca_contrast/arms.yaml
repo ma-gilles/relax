@@ -53,3 +53,25 @@ arms:
   co_sgd:
     args: ["--optimizer", "momentum_sgd", "--sgd-learning-rate", "2.4", "--sgd-loading-scale", "0.25",
            "--direction-prior", "uniform", "--contrast", "latent", "--contrast-sd", "0.2", "--contrast-orthogonal"]
+
+# t_<family>_<table>: the momentum SGD arms (baseline without the contrast latent, cg_sgd, co_sgd) with the HEALPix order of the
+# stages table moved: no3 keeps order 2 to the end, early3 opens order 3 at iteration 1001 (radius 19), late3 at 2376
+# (radius 30); the default opens it at 1626 (radius 24). The radius ramp is the default's. Round 8 of the progress log.
+  t_base_no3:
+    args: ["--optimizer", "momentum_sgd", "--sgd-learning-rate", "2.4", "--sgd-loading-scale", "0.25", "--direction-prior", "uniform", "--stages", "[[1,11,1],[126,12,2],[251,13,2],[376,14,2],[501,15,2],[626,16,2],[751,17,2],[876,18,2],[1001,19,2],[1126,20,2],[1251,21,2],[1376,22,2],[1501,23,2],[1626,24,2],[1751,25,2],[1876,26,2],[2001,27,2],[2126,28,2],[2251,29,2],[2376,30,2],[2500,31,2]]"]
+  t_base_early3:
+    args: ["--optimizer", "momentum_sgd", "--sgd-learning-rate", "2.4", "--sgd-loading-scale", "0.25", "--direction-prior", "uniform", "--stages", "[[1,11,1],[126,12,2],[251,13,2],[376,14,2],[501,15,2],[626,16,2],[751,17,2],[876,18,2],[1001,19,3],[1126,20,3],[1251,21,3],[1376,22,3],[1501,23,3],[1626,24,3],[1751,25,3],[1876,26,3],[2001,27,3],[2126,28,3],[2251,29,3],[2376,30,3],[2500,31,3]]"]
+  t_base_late3:
+    args: ["--optimizer", "momentum_sgd", "--sgd-learning-rate", "2.4", "--sgd-loading-scale", "0.25", "--direction-prior", "uniform", "--stages", "[[1,11,1],[126,12,2],[251,13,2],[376,14,2],[501,15,2],[626,16,2],[751,17,2],[876,18,2],[1001,19,2],[1126,20,2],[1251,21,2],[1376,22,2],[1501,23,2],[1626,24,2],[1751,25,2],[1876,26,2],[2001,27,2],[2126,28,2],[2251,29,2],[2376,30,3],[2500,31,3]]"]
+  t_cg_no3:
+    args: ["--optimizer", "momentum_sgd", "--sgd-learning-rate", "2.4", "--sgd-loading-scale", "0.25", "--direction-prior", "uniform", "--contrast", "latent", "--contrast-sd", "0.2", "--no-contrast-orthogonal", "--stages", "[[1,11,1],[126,12,2],[251,13,2],[376,14,2],[501,15,2],[626,16,2],[751,17,2],[876,18,2],[1001,19,2],[1126,20,2],[1251,21,2],[1376,22,2],[1501,23,2],[1626,24,2],[1751,25,2],[1876,26,2],[2001,27,2],[2126,28,2],[2251,29,2],[2376,30,2],[2500,31,2]]"]
+  t_cg_early3:
+    args: ["--optimizer", "momentum_sgd", "--sgd-learning-rate", "2.4", "--sgd-loading-scale", "0.25", "--direction-prior", "uniform", "--contrast", "latent", "--contrast-sd", "0.2", "--no-contrast-orthogonal", "--stages", "[[1,11,1],[126,12,2],[251,13,2],[376,14,2],[501,15,2],[626,16,2],[751,17,2],[876,18,2],[1001,19,3],[1126,20,3],[1251,21,3],[1376,22,3],[1501,23,3],[1626,24,3],[1751,25,3],[1876,26,3],[2001,27,3],[2126,28,3],[2251,29,3],[2376,30,3],[2500,31,3]]"]
+  t_cg_late3:
+    args: ["--optimizer", "momentum_sgd", "--sgd-learning-rate", "2.4", "--sgd-loading-scale", "0.25", "--direction-prior", "uniform", "--contrast", "latent", "--contrast-sd", "0.2", "--no-contrast-orthogonal", "--stages", "[[1,11,1],[126,12,2],[251,13,2],[376,14,2],[501,15,2],[626,16,2],[751,17,2],[876,18,2],[1001,19,2],[1126,20,2],[1251,21,2],[1376,22,2],[1501,23,2],[1626,24,2],[1751,25,2],[1876,26,2],[2001,27,2],[2126,28,2],[2251,29,2],[2376,30,3],[2500,31,3]]"]
+  t_co_no3:
+    args: ["--optimizer", "momentum_sgd", "--sgd-learning-rate", "2.4", "--sgd-loading-scale", "0.25", "--direction-prior", "uniform", "--contrast", "latent", "--contrast-sd", "0.2", "--contrast-orthogonal", "--stages", "[[1,11,1],[126,12,2],[251,13,2],[376,14,2],[501,15,2],[626,16,2],[751,17,2],[876,18,2],[1001,19,2],[1126,20,2],[1251,21,2],[1376,22,2],[1501,23,2],[1626,24,2],[1751,25,2],[1876,26,2],[2001,27,2],[2126,28,2],[2251,29,2],[2376,30,2],[2500,31,2]]"]
+  t_co_early3:
+    args: ["--optimizer", "momentum_sgd", "--sgd-learning-rate", "2.4", "--sgd-loading-scale", "0.25", "--direction-prior", "uniform", "--contrast", "latent", "--contrast-sd", "0.2", "--contrast-orthogonal", "--stages", "[[1,11,1],[126,12,2],[251,13,2],[376,14,2],[501,15,2],[626,16,2],[751,17,2],[876,18,2],[1001,19,3],[1126,20,3],[1251,21,3],[1376,22,3],[1501,23,3],[1626,24,3],[1751,25,3],[1876,26,3],[2001,27,3],[2126,28,3],[2251,29,3],[2376,30,3],[2500,31,3]]"]
+  t_co_late3:
+    args: ["--optimizer", "momentum_sgd", "--sgd-learning-rate", "2.4", "--sgd-loading-scale", "0.25", "--direction-prior", "uniform", "--contrast", "latent", "--contrast-sd", "0.2", "--contrast-orthogonal", "--stages", "[[1,11,1],[126,12,2],[251,13,2],[376,14,2],[501,15,2],[626,16,2],[751,17,2],[876,18,2],[1001,19,2],[1126,20,2],[1251,21,2],[1376,22,2],[1501,23,2],[1626,24,2],[1751,25,2],[1876,26,2],[2001,27,2],[2126,28,2],[2251,29,2],[2376,30,3],[2500,31,3]]"]
