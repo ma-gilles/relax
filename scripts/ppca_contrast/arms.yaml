@@ -8,7 +8,8 @@
 # taken about its population mean (--contrast-center, the default from round 3; math note section 9). cgf_*: the same with
 # the sd fixed at 0.3. co_*: cg_* with --contrast-orthogonal (the loadings kept orthogonal to the mean volume; math note
 # section 10), which is the default of --contrast latent from round 5 on, so the cg_* and cgf_* arms pass
-# --no-contrast-orthogonal to stay the unconstrained arms of rounds 3 to 6.
+# --no-contrast-orthogonal to stay the unconstrained arms of rounds 3 to 6. cof_*: cgf_* with --contrast-orthogonal (the sd
+# fixed at 0.3 and the loadings kept orthogonal to the mean; round 9).
 arms:
   c_vdam_latent:
     args: ["--optimizer", "vdam", "--direction-prior", "uniform", "--contrast", "latent", "--contrast-sd", "0.2"]
@@ -75,3 +76,10 @@ arms:
     args: ["--optimizer", "momentum_sgd", "--sgd-learning-rate", "2.4", "--sgd-loading-scale", "0.25", "--direction-prior", "uniform", "--contrast", "latent", "--contrast-sd", "0.2", "--contrast-orthogonal", "--stages", "[[1,11,1],[126,12,2],[251,13,2],[376,14,2],[501,15,2],[626,16,2],[751,17,2],[876,18,2],[1001,19,3],[1126,20,3],[1251,21,3],[1376,22,3],[1501,23,3],[1626,24,3],[1751,25,3],[1876,26,3],[2001,27,3],[2126,28,3],[2251,29,3],[2376,30,3],[2500,31,3]]"]
   t_co_late3:
     args: ["--optimizer", "momentum_sgd", "--sgd-learning-rate", "2.4", "--sgd-loading-scale", "0.25", "--direction-prior", "uniform", "--contrast", "latent", "--contrast-sd", "0.2", "--contrast-orthogonal", "--stages", "[[1,11,1],[126,12,2],[251,13,2],[376,14,2],[501,15,2],[626,16,2],[751,17,2],[876,18,2],[1001,19,2],[1126,20,2],[1251,21,2],[1376,22,2],[1501,23,2],[1626,24,2],[1751,25,2],[1876,26,2],[2001,27,2],[2126,28,2],[2251,29,2],[2376,30,3],[2500,31,3]]"]
+  cof_vdam:
+    args: ["--optimizer", "vdam", "--direction-prior", "uniform", "--contrast", "latent", "--contrast-sd", "0.3",
+           "--no-contrast-estimate-sd", "--contrast-orthogonal"]
+  cof_sgd:
+    args: ["--optimizer", "momentum_sgd", "--sgd-learning-rate", "2.4", "--sgd-loading-scale", "0.25",
+           "--direction-prior", "uniform", "--contrast", "latent", "--contrast-sd", "0.3", "--no-contrast-estimate-sd",
+           "--contrast-orthogonal"]
