@@ -237,18 +237,23 @@ mean contrast estimate drifted to a gain of -0.74, the contrast estimates' corre
 loadings of the final model kept 8 to 18 percent of their power along the mean volume. Every contrast run that worked (VDAM
 throughout; SGD at noise level 1) had loadings with 0.0 to 0.3 percent along the mean.
 
-Timeline of that run, from its checkpoints (`scripts/ppca_contrast/contrast_variance_split.py`; the coefficient of a loading on
-the mean is the real part of the unweighted half-space inner product over `<mu, mu>`, so the sums are approximate). The loadings did not
-start the decay. Until iteration 1600 the latent carried the contrast: the summed squared coefficient of the loadings on the mean fell from 0.126 to 0.029
-while `sd` rose to 0.28. The sd fell at the stage change to healpix order 3 (iteration 1626) in every noise-3 run, with and without the constraint
-(0.294 to 0.268 at iteration 1800 with it): the mean volume's power rose from 0.256 to 0.289, the gain went from -0.2 to -0.3 and the
-mean contrast from 0.946 to 0.916, a motion of the mean's amplitude against the contrasts along the gauge of section 9. Only after that did the
-unconstrained loadings take over: from iteration 1800 to 3000 the latent's variance `sd^2` went from 0.055 to 0.008 and the loadings'
-parallel variance from 0.029 to 0.091, while their sum stayed at 0.084 to 0.099 (spread relative to the mean contrast 0.29 to 0.34 throughout, true 0.30).
-In seed 12 the transfer is smaller (0.006 to 0.043) and the total falls from 0.075 to 0.058 (relative spread 0.30 to 0.27). With the constraint no
-transfer is possible and `sd` stops at 0.23 (relative spread 0.27). So the constraint stops the continued decay, a drift along a flat
-direction; it does not remove the jolt at the stage change, which is of the same size in both arms and leaves the constrained spread about 10 percent
-below the truth. Why the stage change moves the gauge has not been studied.
+Timeline of that run, from its checkpoints (`scripts/ppca_contrast/contrast_variance_split.py`). The coefficient of a loading on
+the mean is the real part of the inner product over `<mu, mu>`; the figures below use the unweighted sum over the stored half-space, which
+differs from the Hermitian-weighted one by 2 percent and from the noise-weighted one (Hermitian weights over the radial noise variance,
+the metric of the likelihood) by up to a factor 1.8, so they are indicative. The loadings did not start the decay. Until iteration 1600
+the latent carried the contrast: the summed squared coefficient of the loadings on the mean fell from 0.126 to 0.029 while `sd` rose to 0.28.
+The sd fell after the stage change to healpix order 3 (iteration 1626) in every noise-3 momentum SGD run, with and without the constraint
+(0.294 to 0.268 at iteration 1800 with it), the gain went from -0.2 to -0.3 and the mean contrast from 0.946 to 0.916. This is not the
+gauge of this section moving. The mean volume's total power rose 6 to 9 percent at that stage, in the baseline without a contrast latent
+too and not under VDAM, but the rise is in shells 11 to 24 (a factor 1.1 to 2.3); shells 1 to 10, the amplitude a per-particle scale acts
+on, did not change (projection of the new mean on the old 1.00 baseline, 0.99 with the latent). The mean contrast estimate is biased
+and differs by optimizer: at iteration 3000 the orthogonal SGD run's estimate has mean 0.874 and slope 0.56 against the true contrast
+(mean 1.004, sd 0.296), VDAM's 1.055 and 0.85. Only after the stage change did the unconstrained loadings take variance from the latent:
+from iteration 1800 to 3000 `sd^2` went from 0.055 to 0.008 and the loadings' parallel variance from 0.029 to 0.091 (flat sum), a total of
+0.084 and 0.099; with the noise-weighted product the parallel variance is 0.022 and 0.050 and the total falls from 0.077 to 0.058, as it does
+in seed 12 (0.075 to 0.058). So the transfer is real and partial, not a conserved total. With the constraint it is impossible and `sd` stops
+at 0.23 (spread relative to the mean contrast 0.27 against the true 0.30), so the constraint stops the continued decay; it does not remove
+the fall that follows the stage change, which has the same size in both arms. What causes that fall is open (progress log, round 8).
 
 The fix is a constraint, not a heuristic: after each update the loadings lose their component along the mean volume,
 `W <- W - mu (mu^H W) / (mu^H mu)` (real coefficient per column, the inner product of the stored half-space Fourier

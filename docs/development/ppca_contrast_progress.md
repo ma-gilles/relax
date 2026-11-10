@@ -224,10 +224,18 @@ component prevents the decay (the round 5 below does).
 constrained arm). The diagnosis above put the loadings first; the checkpoints do not. (1) Until iteration 1600 the loadings left the mean
 direction (summed squared coefficient 0.126 to 0.029) while `sd` rose to 0.28, as the latent should make them. (2) The sd fall starts at the
 stage change to order 3 (iteration 1626) in all four noise-3 SGD runs, including both constrained ones (0.294 to 0.268 by iteration 1800), with a
-jump in the mean power (0.256 to 0.289) and in the gain: a gauge motion, not the loadings. (3) Afterwards the unconstrained run moves variance from the
-latent to the parallel loadings (`sd^2` 0.055 to 0.008, parallel 0.029 to 0.091, sum 0.084 to 0.099 in seed 11; in seed 12 the sum falls 0.075 to
-0.058), and the constrained runs, which cannot, stop at 0.23. So the constraint is supported for the continued decay by an intervention; the
-onset is a separate effect, not explained, that also leaves the constrained sd about 10 percent low.
+fall of the gain (-0.2 to -0.3). It is not the loadings. It is not a motion of the scale gauge either (I first wrote that, and the shells
+refute it): at that stage the mean's total power rises 6 to 9 percent in SGD, in the baseline without a latent too, and by 0.5 percent
+in VDAM, but the rise is in shells 11 to 24 (x1.1 to 2.3) while shells 1 to 10 do not change (projection 1.00 baseline, 0.99 with the
+latent). At the other 16 stage starts, where only the radius opens, the power moves 0 to 3 percent. (3) Afterwards the unconstrained
+run moves variance from the latent to the parallel loadings (`sd^2` 0.055 to 0.008, parallel 0.029 to 0.091 with the flat inner product, sum
+0.084 to 0.099 in seed 11; with the noise-weighted product 0.022 to 0.050 and the sum falls 0.077 to 0.058; in seed 12 the sum falls 0.075 to
+0.058), and the constrained runs, which cannot, stop at 0.23. So the constraint is supported for the continued decay by an intervention.
+(4) The contrast estimates are biased in both optimizers' final models: against the true contrast (mean 1.004, sd 0.296) the orthogonal SGD
+run has mean 0.874 and slope 0.56, VDAM 1.055 and 0.85, so the mean contrast of 0.87 is not a free gauge: it is an E-step amplitude bias that
+the centred M-step (which fits the mean to the images' own amplitude whatever the population gain) does not correct. Round 8
+(the order change moved: arms `t_*` of `arms.yaml`) and a radius probe (the E-step re-run at radii 8 to 31,
+`scripts/ppca_contrast/radius_probe_table.py`) were submitted to test what moves it; their results are not in yet.
 
 **Cryo-ET fixture** (`cryoet_ppca_k3conf_contrast30_box64`: 399 subtomograms, 3 states, contrast sd 0.30 shared by the tilts of
 a particle; q = 2, 200 iterations, seeds 11 and 12, scored with `scripts/ppca_contrast/eval_tomo_fixture.py`):
