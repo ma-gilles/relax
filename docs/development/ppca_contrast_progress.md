@@ -233,9 +233,32 @@ run moves variance from the latent to the parallel loadings (`sd^2` 0.055 to 0.0
 0.058), and the constrained runs, which cannot, stop at 0.23. So the constraint is supported for the continued decay by an intervention.
 (4) The contrast estimates are biased in both optimizers' final models: against the true contrast (mean 1.004, sd 0.296) the orthogonal SGD
 run has mean 0.874 and slope 0.56, VDAM 1.055 and 0.85, so the mean contrast of 0.87 is not a free gauge: it is an E-step amplitude bias that
-the centred M-step (which fits the mean to the images' own amplitude whatever the population gain) does not correct. Round 8
-(the order change moved: arms `t_*` of `arms.yaml`) and a radius probe (the E-step re-run at radii 8 to 31,
-`scripts/ppca_contrast/radius_probe_table.py`) were submitted to test what moves it; their results are not in yet.
+the centred M-step (which fits the mean to the images' own amplitude whatever the population gain) does not correct.
+
+**Radius probe** (2026-11-10, job 17255539, `$R/radius_probe`, `scripts/ppca_contrast/radius_probe_table.py`): the run's own E-step
+(`infer_for_suite.py`, order 3, the scorer's protocol grid, 2538 evaluation images) re-run on a checkpoint at Fourier radii 8 to 31,
+estimate against the true contrast (mean 1.004, sd 0.296), seed 11, noise level 3, sd 0.30:
+
+| checkpoint | radius | mean | sd | estimate = a + b truth | corr |
+| --- | --- | --- | --- | --- | --- |
+| co_sgd 3000 | 8 | 0.998 | 0.142 | 0.669 + 0.330 | 0.691 |
+| | 12 | 1.001 | 0.192 | 0.471 + 0.530 | 0.820 |
+| | 16 | 0.989 | 0.216 | 0.364 + 0.626 | 0.860 |
+| | 20 | 0.971 | 0.216 | 0.346 + 0.626 | 0.861 |
+| | 24 | 0.940 | 0.209 | 0.337 + 0.603 | 0.858 |
+| | 31 | 0.871 | 0.198 | 0.307 + 0.565 | 0.849 |
+| co_sgd 1600 | 8 / 16 / 24 | 1.009 / 1.011 / 0.986 | 0.192 / 0.263 / 0.260 | slope 0.449 / 0.762 / 0.757 | 0.693 / 0.860 / 0.866 |
+| co_vdam 3000 | 8 | 1.032 | 0.216 | 0.526 + 0.506 | 0.697 |
+| | 16 | 1.034 | 0.270 | 0.234 + 0.801 | 0.880 |
+| | 31 | 1.052 | 0.280 | 0.197 + 0.856 | 0.907 |
+
+The probe reproduces the training E-step at radius 31 (0.871 and slope 0.565 against 0.874 and 0.557 in the run's own embeddings). The
+momentum SGD model's mean contrast estimate is unbiased at radius 8 to 12 (1.00) and falls to 0.87 as the shells 20 to 31 enter, at the end
+of training but hardly at iteration 1600 (1.01 to 0.986); its slope and correlation stop improving past radius 16 to 20. VDAM's estimate
+does not fall with the radius (1.03 to 1.05) and its correlation keeps rising to 0.907. So the E-step's amplitude fit is attenuated by the
+high shells of the SGD mean. I read that as template power that does not match the images (the shells 11 to 24 that grow at the order 3
+stage; not shown directly, a misaligned but real signal would act the same way), which VDAM's regularised mean does not have. Whether the
+sd decay follows from it is what round 8 (order change moved, arms `t_*` of `arms.yaml`) tests.
 
 **Cryo-ET fixture** (`cryoet_ppca_k3conf_contrast30_box64`: 399 subtomograms, 3 states, contrast sd 0.30 shared by the tilts of
 a particle; q = 2, 200 iterations, seeds 11 and 12, scored with `scripts/ppca_contrast/eval_tomo_fixture.py`):
