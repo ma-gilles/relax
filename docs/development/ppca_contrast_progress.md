@@ -246,5 +246,27 @@ a particle; q = 2, 200 iterations, seeds 11 and 12, scored with `scripts/ppca_co
   still has the sd at its cap and a mean estimate of 1.6 (the gain drift), with ARI at the unit-contrast level (0.46, 0.39) and a lower R^2.
   Not resolved for VDAM on this short schedule.
 
-**Running**: round 5 (snapshot v7, `--contrast-orthogonal`: arms `co_vdam`, `co_sgd`; noise 3 seeds 11 and 12 with the baselines
-and `cg_*` at seed 12; noise 1 seeds 11 and 12; sd 0 at noise 3; log-normal).
+### 2026-11-10 round 5: orthogonal loadings (snapshot v7, `--contrast-orthogonal`)
+
+Arms `co_*` are `cg_*` plus the constraint. kmeans ARI (baseline = contrast ignored; `cg` = round 3 or 4, no constraint; `co` = constrained):
+
+| dataset | seed | VDAM baseline / cg / co | SGD baseline / cg / co |
+| --- | --- | --- | --- |
+| sd 0.30, noise 1 | 11 | 0.573 / 0.937 / 0.949 | 0.631 / 0.932 / 0.936 |
+| sd 0.30, noise 1 | 12 | 0.568 / 0.934 / 0.937 | 0.656 / 0.941 / **0.391** |
+| sd 0.30, noise 3 | 11 | 0.385 / 0.647 / 0.567 | 0.346 / 0.297 / 0.494 |
+| sd 0.30, noise 3 | 12 | 0.351 / 0.616 / 0.614 | 0.322 / 0.347 / 0.564 |
+| sd 0, noise 3 | 11 | 0.882 / 0.878 / 0.886 | 0.671 / 0.738 / 0.695 |
+| log-normal 0.30, noise 1 | 11 | 0.619 / 0.968 / 0.980 | 0.948 / 0.948 / 0.960 |
+
+- SGD at noise 3 and sd 0.30: the sd no longer collapses (estimated sd of the contrast 0.198 and 0.195, prior 0.23, against 0.031 and 0.056 with prior
+  0.09 and 0.12 without the constraint) and the kmeans ARI rises over the baseline by 0.15 and 0.24 (0.346 to 0.494, 0.322 to 0.564). The sd
+  still ends below the true 0.30. Two seeds.
+- VDAM: no change beyond the run-to-run level (noise 1: +0.012 and +0.003; noise 3: -0.080 and -0.002, with GMM ARI, nearest-centroid accuracy
+  and R^2 within 0.03 of the unconstrained run; kmeans ARI at noise 3 moves by 0.05 to 0.08 between runs of one arm). Unit contrast
+  (sd 0 at noise 3) and log-normal contrast: no harm.
+- **One SGD run is a failure that is not contrast-related in kind**: `co_sgd` at noise 1, seed 12 ended with state FSC 0.715, pose median 9.7 deg
+  (51 percent within 10 deg), mean FSC 0.82 and kmeans ARI 0.391. The contrast statistics of the run are normal (sd 0.26, gain -0.37, mean
+  power 0.29, the log-likelihood of the others) and the damage is already there at iteration 1000 (pose median 17.6 deg against 7.3 for
+  `cg_sgd` of that seed): the run settled in a worse ab-initio map. Whether the constraint made that more likely is open: one failure in four
+  SGD runs at noise 1 against none in the roughly twenty SGD runs of noise 1 without it. Round 6 runs seeds 13 to 16 of `co_sgd` and `cg_sgd` at this dataset.
