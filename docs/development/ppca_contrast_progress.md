@@ -270,3 +270,15 @@ Arms `co_*` are `cg_*` plus the constraint. kmeans ARI (baseline = contrast igno
   power 0.29, the log-likelihood of the others) and the damage is already there at iteration 1000 (pose median 17.6 deg against 7.3 for
   `cg_sgd` of that seed): the run settled in a worse ab-initio map. Whether the constraint made that more likely is open: one failure in three
   constrained SGD runs at noise 1 (state FSC 0.935, 0.715, 0.938) against none in the 18 SGD runs at noise 1 without it (state FSC 0.90 to 0.95, pose 4.95 to 5.96 deg). Round 6 runs seeds 13 to 16 of `co_sgd` and `cg_sgd` at this dataset.
+
+**Round 6** (seeds 13 to 16 of `cg_sgd` and `co_sgd` at sd 0.30, noise 1): all eight runs are healthy. kmeans ARI `co_sgd` 0.941, 0.956, 0.948, 0.949
+and `cg_sgd` 0.952, 0.848, 0.948, 0.941; state FSC 0.90 to 0.93 and pose median 5.6 to 5.96 deg in every run; estimated contrast sd
+0.264 to 0.272. `cg_sgd` seed 13 reproduces its round-4 run (kmeans ARI 0.952, state FSC 0.904, pose 5.96 deg both times). So the failure of
+seed 12 is one in seven constrained SGD runs at noise 1 (against none in 22 unconstrained): too few to say whether the constraint makes
+a bad ab-initio basin more likely. Round 7 runs `co_sgd` on seeds 17 to 24.
+
+**Default-path fingerprint** (`scripts/dev/ppca_fingerprint.py`, one host for both halves, four CPU cases: VDAM, momentum SGD, host-mask dense,
+oversampling; parent `ppca_schedule` 2fd7b0e8 against this branch at fe7ee1f2). Every checkpoint array, result and file is identical.
+The only differences: the new config keys and the key counts of `config` and `metadata` (39 to 48, 11 to 13: the contrast settings, the
+contrast gain in the metadata), the source identity, and three VDAM log lines of the tile plan whose counted stream memory moves by 0.01 GiB
+(0.64 to 0.63 GiB; the tile plan itself, 20 of 20 images, is the same). Not covered, as the tool says: the GPU kernels and subtomogram input.
