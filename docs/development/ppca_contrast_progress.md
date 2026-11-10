@@ -386,3 +386,75 @@ references are rounds 4, 5 and 5b):
 - With the constraint a fixed sd changes nothing (SGD 0.481 / 0.568 against 0.494 / 0.564), and VDAM moves within seed noise (the largest step,
   `co_vdam` seed 11 0.567 to 0.626, is one seed). The gain drift of SGD is not removed by fixing the sd, as the E-step attenuation explains
   (radius probe above).
+
+### 2026-11-10 (night) rebase onto the new VDAM gate of `ppca_schedule` and the regression check (snapshot v11, round 10)
+
+**The rebase.** `ppca_schedule` moved from 2fd7b0e8 to 801bd46b (17 commits: the power gate statistic with the full-data noise scale
+(`advance_noise_weight`, `full_data_disagreement_scale`, `stochastic_update(..., disagreement_scale)`), `--shift-stages`,
+`--offset-sigma-angstrom`, retired config keys, the math note's sections 18.16 and 18.17, fingerprint re-anchors). The 33 commits of this branch were
+replayed with `git rebase ppca_schedule` (backup branch `backup/ppca_contrast_pre_rebase_20261110`, old tip c3db2b08). The only conflicts were in
+`checkpoint.py` `_ADDED_CONFIG_DEFAULTS` (both sets of keys kept); `commands/ppca_initial_model.py`, `config.py` and `iteration_loop.py`
+merged without conflicts and were read: the contrast fold, the orthogonal projection and the new `disagreement_scale` argument sit side by side.
+
+Checks on the rebased tip (CPU): the unit suites of `ppca_contrast`, `ppca_initial_model`, `ppca_refinement`, the momentum SGD test and the
+subtomogram input test: 537 passed, 29 skipped (GPU-only tests and one RELION-binding test), no failures. Default-path fingerprint (job 17262291,
+base `ppca_schedule` against the rebased tip, same host): 248 differences, all metadata (the contrast config keys, key counts, `contrast_gain` and
+`contrast_sd` in checkpoint metadata), none in an array, result or status leaf, six log rows (tile-plan lines). The fingerprint does not cover GPU
+kernels or subtomogram input (the cryo-ET result below is why that matters).
+
+**Round 10** re-ran the recent matrix on the rebased tip (snapshot v11, 23 runs, then seeds 13 and 14 in round 10b, 10 runs; same datasets,
+arms and flags as rounds 3 to 7; `scripts/ppca_contrast/compare_rounds.py` pairs each run with the latest old run of the same dataset, arm and seed).
+The runs differ from the old ones from the first iteration (mean power at iteration 1: 0.1023 against 0.1009), because the gate differs; the radius,
+order, step and fudge schedules are identical. The momentum SGD arms do not use the gate: `co_sgd` seed 11 and the SGD baselines are identical to
+three decimals, so the rebase itself changed nothing for SGD.
+
+kmeans ARI, VDAM, new gate (old gate in brackets; baseline is `s3_vdam_uniform`):
+
+| dataset (true sd, noise) | baseline | `co_vdam` (default under `--contrast latent`) | `cg_vdam` (unconstrained) |
+| --- | --- | --- | --- |
+| C n1, sd 0.30, seeds 11 to 14 | 0.585 0.589 0.607 0.574 (old 0.568 0.580 on seeds 12, 13) | 0.941 0.956 0.949 0.960 (old 0.949 0.937 on seeds 11, 12) | 0.937 0.913 0.917 0.930 (old 0.937 0.934 0.952 on seeds 11 to 13) |
+| C n3, sd 0.30, seeds 11 to 14 | 0.392 0.370 0.402 0.387 (old 0.385 0.351) | 0.670 0.634 0.668 0.673 (old 0.567 0.614) | seeds 11, 12: 0.690 0.639 (old 0.647 0.616) |
+| C n1, sd 0 (unit contrast), seed 11 | 0.984 | 0.976 (SGD 0.992 against baseline 1.000) | |
+| C n1, log-normal sd 0.30, seed 11 | 0.940 (old 0.619) | 0.984 (old 0.980) | 0.956 (old 0.968) |
+
+- **Default arm (`co_vdam`)**: the gain over the baseline holds: +0.34 to +0.39 at noise 1 (old +0.37), +0.26 to +0.29 at noise 3 (old +0.18 to +0.26),
+  -0.008 at unit contrast (no harm). State FSC of `co_vdam` at C n1 is 0.926 0.953 0.957 0.948 (old 0.961 0.953), the baselines' state FSC also moves by 0.03
+  to 0.04 between the gates in both directions (log-normal 0.955 to 0.916, C n3 seed 11 0.925 to 0.897, seed 12 0.894 to 0.926), so this size of change is
+  not attributable to the contrast model. The log-normal case is the one place where the gain shrinks (+0.04): the baseline seed 11 went from 0.619 to 0.940
+  under the new gate; with one seed on that dataset it says nothing yet about the gain.
+- **Loading subspace** (owner's second-priority metric): under VDAM the angle of every contrast run is 10 to 25 degrees worse (C n1 `co_vdam`: 36.6 before, 47.6 to 55.2 now),
+  the true energy captured 0.93 to 0.90, and the loading power relative to the mean (`PC/mean`) 0.09 to 0.12 (C n3: 0.12 to 0.19; its baseline 0.18 to 0.25).
+  The same shift appears without contrast: on the unit-contrast dataset the VDAM baseline's angle went 35.3 (round 1) to 50.0 and `PC/mean` 0.089 to 0.122, so
+  it follows the new gate (in the C n1 contrast runs the loading power at iteration 500 is 0.11 against 0.017, six times larger). SGD unchanged.
+- **A new failure mode under VDAM** (mean FSC below 0.97 at iteration 3000): none in 30 older VDAM runs (11 baseline, 19 contrast, rounds 1 to 7), now 4
+  in 27: `cg_vdam` C n1 seeds 12 and 13 (mean FSC 0.952 and 0.900, energy captured 0.61 and 0.51, angle 89 degrees, state FSC 0.81 and 0.77), `co_vdam` C n3 seed 14
+  (mean FSC 0.736, energy 0.36) and the **baseline** C n3 seed 13 (mean FSC 0.735, energy 0.33). A round 9 run under the old gate (`cof_vdam` C n3 seed 12, 0.735)
+  had it once. For the `cg_vdam` seed 12 run the contrast side is healthy (sd 0.306, loadings' parallel variance 0.0004, gain +0.08), so it is not the loading gauge
+  of rounds 4 and 5; it is the mean map that degraded, as in the baseline run. The counts are too small to give rates; the unconstrained arm is not the default.
+- Momentum SGD: `co_sgd` C n1 seeds 11 and 12 equal the old values (0.936 and 0.404 against 0.936 and 0.391); the seed 12 failure of the earlier rounds is unchanged.
+
+**Cryo-ET fixtures, VDAM, 200 iterations, q 2** (nearest-centroid accuracy of the latents / kmeans ARI; chance is 0.33 / 0). Old: snapshot v6, old gate.
+
+| run | old gate (v6) | rebased tip (v11) | `ppca_schedule` tip, no contrast code (v12) | v12 with the disagreement scale set to 1 (v13, diagnostic) |
+| --- | --- | --- | --- | --- |
+| contrast-30 fixture, no contrast, seeds 11 / 12 | 0.855 / 0.907, 0.275 / 0.344 | 0.331 / 0.338, 0.001 / -0.002 | 0.331 / 0.338, 0.001 / -0.002 | 0.404 / 0.416, 0.005 / 0.002 |
+| contrast-30 fixture, `--contrast latent` | 0.880 / 0.865, 0.354 / 0.333 | 0.373 / 0.371, 0.003 / 0.004 | | |
+| unit-contrast fixture, no contrast | 0.915 / 0.905, 0.431 / 0.390 | 0.398 / 0.388, 0.004 / 0.006 | 0.398 / 0.388, 0.004 / 0.006 | 0.456 / 0.368, 0.035 / 0.001 |
+
+- The collapse is the new gate's, not the rebase's: the plain `ppca_schedule` tip (v12, no contrast code) reproduces the rebased runs without contrast to three decimals.
+- In the logs the loadings die: at iteration 200 the singular values are [80.9, 0.0] (old gate [813, 657]). The disagreement scale reaches 19 from iteration 100 (1/e with e = 0.0526, the formula's
+  limit for a batch equal to the data), because the batch is then the whole 399-particle dataset (half counts 200 and 199); the gate of the loading channel in shells 3 and 4 (counted from 0) falls
+  to 0.05 to 0.16 by iteration 35 to 50 while the mean's stays at 0.92 and above. The scale is derived for independent batches (`full_data_disagreement_scale`: 4 / (n_images weight)); with a
+  batch equal to the data, consecutive iterations carry the same noise, so the moving average does not reduce it.
+- Diagnostic (v13 only: the scale returns 1; not committed anywhere): the gates stay near 1 and the loadings survive (singular values [159, 103] and [149, 101] at iteration 200),
+  but the state recovery stays near chance (accuracy 0.37 to 0.46, ARI 0 to 0.04). So the scale is what shuts the loading channel off, and removing it alone does not restore the old
+  result; what else differs from the old gate (the power statistic instead of the amplitude one) is not isolated.
+- The contrast latent on this fixture now ends at sd 0.300 and mean contrast 1.11 with correlation 0.82 (old VDAM runs ended at the cap, mean 1.5 to 1.6), but with the loadings dead the
+  model is a mean-only one and the states are not found, so this is not an improvement of the contrast model.
+
+**Status.** Contrast on simulated suites: the default arm holds its ARI and FSC gains under the new gate and does no harm at unit contrast; SGD is unchanged. Open: the
+VDAM loading metrics moved with the gate (also in the baseline), the mean-map failure mode under VDAM at noise 3 and in the unconstrained arm, and the cryo-ET collapse under VDAM,
+which belongs to the gate (to be decided by its owner). No smoke or medium tier was run on the rebased branch; nothing is pushed.
+
+Run directories: `$R/round10`, `$R/round10b`, `$R/tomo_r10`, `$R/tomo_r10_base`, `$R/tomo_r10_noscale` with `$R` = `/scratch/gpfs/CRYOEM/gilleslab/ry2228/data/ppca_contrast`; the old-against-new
+tables are `$R/round10_compare.md`.
