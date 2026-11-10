@@ -177,4 +177,74 @@ oversampling): every checkpoint array, result and file is identical; the only di
 sizes (176 leaf differences, all in `metadata/config`, `run.json` config or the key counts), checked before the centring commit; to be
 re-run at the end.
 
-Next: round 4 (seeds 12 and 13 at true sd 0.30 and 0; noise level 3; log-normal contrast) is running.
+Next: round 4 (seeds 12 and 13 at true sd 0.30 and 0; noise level 3; log-normal contrast), below.
+
+### 2026-11-10 round 4 (seeds, noise level 3, log-normal), cryo-ET, and a loading parallel to the mean
+
+Round 4 ran snapshot v6 (the round-3 code) on the datasets C n1 box 64 with contrast sd 0.30 and 0 (seeds 12 and 13), the
+same two at noise level 3 (three times the injected noise variance; seed 11) and log-normal contrast of sd 0.30 (seed 11).
+Baselines are `s3_vdam_uniform` and `s3_scale1_4_uniform` (SGD) with the contrast ignored; `cg_*` are the contrast-latent arms
+of round 3. Per cell: kmeans ARI / state FSC / pose median (deg) are in `$R/table_r4r5.md`; the lines below are the reading.
+
+| dataset | seed | arm | kmeans ARI, baseline | kmeans ARI, contrast latent | corr(c) | estimated sd (true) |
+| --- | --- | --- | --- | --- | --- | --- |
+| sd 0.30, noise 1 | 12 | VDAM | 0.568 | 0.934 | 0.959 | 0.302 (0.30) |
+| sd 0.30, noise 1 | 13 | VDAM | 0.580 | 0.952 | 0.959 | 0.307 |
+| sd 0.30, noise 1 | 12 | SGD | 0.656 | 0.941 | 0.930 | 0.276 |
+| sd 0.30, noise 1 | 13 | SGD | 0.645 | 0.952 | 0.919 | 0.284 |
+| sd 0, noise 1 | 12, 13 | VDAM | 0.992, 0.980 | 0.980, 0.984 | | 0.029 |
+| sd 0, noise 1 | 12, 13 | SGD | 0.984, 0.996 | 0.996, 1.000 | | 0.037 |
+| log-normal 0.30, noise 1 | 11 | VDAM | 0.619 | 0.968 | 0.961 | 0.310 |
+| log-normal 0.30, noise 1 | 11 | SGD | 0.948 | 0.948 | 0.928 | 0.285 |
+| sd 0.30, noise 3 | 11 | VDAM | 0.385 | 0.647 | 0.901 | 0.309 |
+| sd 0.30, noise 3 | 11 | SGD | 0.346 | **0.297** | **-0.103** | **0.089** |
+| sd 0, noise 3 | 11 | VDAM | 0.882 | 0.878 | | 0.034 |
+| sd 0, noise 3 | 11 | SGD | 0.671 | 0.738 | | 0.030 |
+
+- The round-3 result replicates on two more seeds (kmeans ARI 0.57-0.66 to 0.93-0.95 at sd 0.30, no change at sd 0, within
+  the 0.02 run-to-run level); state FSC and pose are unchanged; the sd estimates are 0.28-0.31 against the true 0.30.
+- Log-normal contrast (a skewed distribution; the model is Gaussian): VDAM 0.619 to 0.968; the SGD baseline was already at 0.948
+  on this dataset (single seed), so SGD gains nothing there.
+- Noise level 3 (SNR probe 0.041 against 0.124) with sd 0.30: VDAM 0.385 to 0.647 and a contrast correlation of 0.90, but the
+  unit-contrast reference at this noise level is 0.878 and 0.882 (VDAM) so about half of the loss remains; sd 0 at noise 3 shows
+  no harm.
+- **SGD at noise 3 and sd 0.30 fails**: the sd estimate decays from 0.28 (iteration 1600, order 2 to 3 stage change at 1700) to
+  0.09, the gain (mean of the latent) drifts to -0.74, the estimate has a correlation of -0.10 with the true contrast and
+  the kmeans ARI is below the baseline (0.297 against 0.346). The centred second moment of the latent stays at 0.97 to 1.02 during the
+  decay, a fixed point of the sd update, which loses 0.05 percent per step at 0.99 and compounds.
+
+**Diagnosis** (math note section 10). A loading parallel to the mean volume is a second contrast latent, and the likelihood is flat
+along the split of variance between it and the contrast latent. The cosine squared between each loading and the mean in the final
+checkpoints: contrast latent runs that work have 0.000-0.003 (all VDAM runs, SGD at noise 1); the baselines at sd 0.30 have
+0.2-0.5 on several loadings (the contrast variation is that direction); the failing SGD run keeps 0.18, 0.08 and 0.16 on three
+loadings and 0.0-0.003 on the others. This is the strongest evidence I have and not a proof: I have not shown that removing the parallel
+component prevents the decay (the round 5 below does).
+
+**Cryo-ET fixture** (`cryoet_ppca_k3conf_contrast30_box64`: 399 subtomograms, 3 states, contrast sd 0.30 shared by the tilts of
+a particle; q = 2, 200 iterations, seeds 11 and 12, scored with `scripts/ppca_contrast/eval_tomo_fixture.py`):
+
+| run | nn accuracy | kmeans ARI | R^2 states | corr(c) | estimated mean c | estimated sd (cap 0.5) |
+| --- | --- | --- | --- | --- | --- | --- |
+| VDAM, no contrast model, s11 / s12 | 0.855 / 0.907 | 0.275 / 0.344 | 0.482 / 0.556 | | | |
+| VDAM, contrast latent, s11 / s12 | 0.880 / 0.865 | 0.354 / 0.333 | 0.360 / 0.326 | 0.72 / 0.82 | 1.50 / 1.46 | 0.500 / 0.442 |
+| SGD, no contrast model, s11 / s12 | 0.822 / 0.872 | 0.229 / 0.317 | 0.426 / 0.434 | | | |
+| SGD, contrast latent, s11 / s12 | 0.920 / 0.905 | 0.470 / **0.014** | 0.364 / 0.162 | 0.82 / 0.75 | 1.08 / 1.06 | 0.360 / 0.419 |
+| VDAM, unit-contrast fixture, no model, s11 / s12 | 0.915 / 0.905 | 0.431 / 0.390 | 0.529 / 0.543 | | | |
+| SGD, unit-contrast fixture, no model, s11 / s12 | 0.875 / 0.782 | 0.587 / 0.243 | 0.555 / 0.330 | | | |
+| VDAM, contrast latent, orthogonal loadings, s11 / s12 | 0.825 / 0.867 | 0.462 / 0.390 | 0.237 / 0.402 | 0.80 / 0.82 | 1.62 / 1.60 | 0.500 / 0.500 |
+| SGD, contrast latent, orthogonal loadings, s11 / s12 | 0.915 / 0.872 | 0.388 / 0.594 | 0.372 / 0.488 | 0.89 / 0.93 | 1.02 / 1.03 | 0.308 / 0.309 |
+
+- The fixture is hard even without contrast: the unit-contrast fixture's kmeans ARI is 0.24-0.59 and varies with the seed by more
+  than the effect size, so latent scores on 399 particles cannot separate the arms except by large differences.
+- The plain contrast latent does not clearly help: the contrast estimate carries information (correlation 0.72-0.82), but the sd runs
+  to its cap with VDAM and swings with SGD, and one SGD run collapsed (ARI 0.014). These 200-iteration runs are not stationary: the
+  mean volume's power changes by a factor of 4 between iterations 110 and 200 (also without the latent), the contrast gain follows
+  it with swings of about 1 at each radius opening, and the sd rises with them.
+- With orthogonal loadings SGD is stable and calibrated: the estimated sd is 0.308 and 0.309 (true 0.30), the mean estimate 1.02,
+  the correlation with the true contrast 0.89 and 0.93 (0.82 and 0.75 without the constraint), and kmeans ARI 0.39 and 0.59, at the
+  unit-contrast fixture's level (0.59, 0.24; the no-model runs on the contrast fixture reach 0.23, 0.32). VDAM with orthogonal loadings
+  still has the sd at its cap and a mean estimate of 1.6 (the gain drift), with ARI at the unit-contrast level (0.46, 0.39) and a lower R^2.
+  Not resolved for VDAM on this short schedule.
+
+**Running**: round 5 (snapshot v7, `--contrast-orthogonal`: arms `co_vdam`, `co_sgd`; noise 3 seeds 11 and 12 with the baselines
+and `cg_*` at seed 12; noise 1 seeds 11 and 12; sd 0 at noise 3; log-normal).
