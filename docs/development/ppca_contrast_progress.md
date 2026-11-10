@@ -20,7 +20,7 @@ tested, and performs to a satisfactory level on simulated data with and without 
 | 3a | Contrast-spread simulated datasets with a paired control | done: C n1 box 64 at sd 0, 0.15, 0.30 |
 | 3b | Cost of ignoring contrast (baseline runs) | done for seed 11: at sd 0.30 kmeans ARI falls from 0.99 to 0.57-0.63, poses and FSC hold |
 | 3c | Contrast model vs baseline; harm check at unit contrast | done (rounds 3 to 7): at sd 0.30 and noise 1 kmeans ARI 0.57-0.66 to 0.93-0.98 (3 seeds for VDAM, 14 for constrained SGD), noise 3 and log-normal one to two seeds; no change at sd 0; cryo-ET fixture: SGD calibrated, VDAM not settled |
-| 4 | Heuristics (when to switch contrast on, prior width) and revisit | not needed: both failures found were gauges, fixed structurally (math note sections 9 and 10); a late start and a fixed sd did not help |
+| 4 | Heuristics (when to switch contrast on, prior width) and revisit | not needed so far: the two failures first found were fixed structurally (math note sections 9 and 10); a late start and a fixed sd did not help the first one (noise level 1, plain M-step); the fixed sd on the noise 3 case that still fails is round 9 |
 
 ## Decisions so far
 
@@ -125,6 +125,15 @@ Same data and settings as above (C n1 box 64, 100,000 particles, seed 11).
 Conclusion (math note, section 9): with the population mean of the contrast pinned to 1, the latent takes the difference
 between the regularised mean volume and the images, and the M-step lowers the mean volume to compensate. No sd rule or
 start time removes that.
+
+Why the fixed sd did not pin it (re-read 2026-11-10 from the round 2 traces; arguments, not new experiments). The ambiguity is between the
+mean volume's amplitude and the population mean `g` of the latent, and a fixed sd pins the spread of the contrast, not its mean: the
+`N(0, 1)` prior pulls on `g` with the share of the precision it holds, which is the posterior variance of `e` (0.07 to 0.09 at noise
+level 1, 0.19 to 0.29 at level 3, from the last 200 iterations of the round 3 to 5 runs), against a mean volume that is regularised or
+still growing. In `cf_vdam` the latent's mean went from +0.07 to +1.1 within 200 iterations on both datasets, and stayed at +0.9 to +1.4
+(mean contrast 1.26 to 1.42); at true sd 0 a fixed sd of 0.3 gives the latent the room (`c = 1 + 0.3 g`), whereas the estimated sd
+falls to 0.03 there and removes it. A fixed sd was run only at noise level 1 (`cf_*` with the plain M-step, `cgf_*` with the centred
+one, where it gave the maps of the estimated sd), never on the noise 3 case that fails; round 9 does (`cgf_*` and `cof_*`, seeds 11 and 12).
 
 **Round 3** (the fix: the M-step takes the moments of `e - m`, `m` the population mean of the latent; the E-step is
 unchanged; `--contrast-center`, on by default; implemented on the pass-2 moments of the stream and on each pose's moments of
