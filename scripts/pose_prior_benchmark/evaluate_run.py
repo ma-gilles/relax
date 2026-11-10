@@ -48,14 +48,22 @@ twice, as refined and aligned:
     to the truth of the truth transformed and transformed back, which is what the interpolation alone costs an aligned
     map. The per-iteration FSC (``fsc_by_iteration.csv``) is as refined.
 
+Translations: ``metrics.json`` ``origin_error_angstrom.half{1,2}`` is the distance in A between each particle's
+estimated origin (the run's last ``run_itNNN_data.star``) and its true origin (``particles.star``, non-zero for a dataset
+made by ``add_offsets.py``, zero otherwise): median, p90, p99 and the share of particles more than one pixel off, with
+the rms radius of the true origins beside them. The origins are as refined (the frame offset is a rotation of
+directions and does not apply to them); a rigid shift of the map from the truth's frame shows as a small error that varies
+with the particle's pose.
+
 Run::
 
     python scripts/pose_prior_benchmark/evaluate_run.py --dataset-dir DATASET --run-dir REFINE --out-dir OUT
 
 ``OUT`` receives ``metrics.json``, ``prior_by_iteration.csv``, ``fsc_by_iteration.csv``, ``fsc_curves.csv``,
 ``pose_errors.npz`` (every particle's final direction error, degrees, one array per half set as ``half1``, ``half2``
-and aligned as ``aligned_half1``, ``aligned_half2``; and its in-plane error as ``inplane_half1``, ``inplane_half2``
-and ``aligned_inplane_half1``, ``aligned_inplane_half2``), ``conical_fsc.npz`` (``axes``, and per pair ``<pair>_curves`` and
+and aligned as ``aligned_half1``, ``aligned_half2``; its in-plane error as ``inplane_half1``, ``inplane_half2``
+and ``aligned_inplane_half1``, ``aligned_inplane_half2``; every particle's origin error in A as ``origin_half1``,
+``origin_half2``), ``conical_fsc.npz`` (``axes``, and per pair ``<pair>_curves`` and
 ``<pair>_voxels``, one row per cone), ``conical_fsc.png`` and ``summary.png`` (the FSC curves and every learned-prior
 metric per iteration). The orientation-distribution plots are made by the Snakefile
 with ``angdist``.
@@ -111,6 +119,7 @@ PRIOR_BLOCK = "model_pdf_orient_class_1"
 GT_MAP_NAME = "reference_gt_relion.mrc"
 RUN_MAP_NAMES = {"merged": "final_merged.mrc", "half1": "final_half1_unfil.mrc", "half2": "final_half2_unfil.mrc"}
 HALVES = (1, 2)
+ORIGIN_COLUMNS = ("rlnOriginXAngst", "rlnOriginYAngst")
 PALETTE = {
     "surface": "#fcfcfb",
     "ink": "#0b0b0b",
@@ -135,11 +144,16 @@ def image_key(name: str) -> tuple[int, str]:
 
 
 def read_particles(star_path: Path) -> dict[str, Any]:
-    """Read image keys, optional half-set labels and Euler angles (rot, tilt, psi; degrees) of a particle STAR file."""
+    """Read image keys, optional half-set labels, Euler angles (rot, tilt, psi; degrees) and origins (A, shape (n, 2))
+    of a particle STAR file."""
     table = read_star_blocks(star_path)["particles"]
+    missing = [column for column in ORIGIN_COLUMNS if column not in table]
+    if missing:
+        raise ValueError(f"{star_path} has no {', '.join(missing)} column")
     out: dict[str, Any] = {"image_key": [image_key(name) for name in table["rlnImageName"]]}
     for label, column in (("rot", "rlnAngleRot"), ("tilt", "rlnAngleTilt"), ("psi", "rlnAnglePsi")):
         out[label] = np.asarray(table[column], dtype=np.float64)
+    out["origin"] = np.stack([np.asarray(table[column], dtype=np.float64) for column in ORIGIN_COLUMNS], axis=1)
     if "rlnRandomSubset" in table:
         out["half"] = np.asarray(table["rlnRandomSubset"], dtype=np.int64)
     return out
@@ -173,10 +187,10 @@ def read_direction_prior(model_star: Path) -> np.ndarray | None:
 
 
 def true_directions_per_half(run_dir: Path, iteration: int, dataset_dir: Path) -> dict[int, dict[str, np.ndarray]]:
-    """Split the true and the estimated (rot, tilt, psi) of the particles by the run's half sets.
+    """Split the true and the estimated (rot, tilt, psi) and origins of the particles by the run's half sets.
 
-    The run's ``run_itNNN_data.star`` gives each particle's half set and estimated angles; the dataset's
-    ``particles.star`` gives the true angles. Particles are matched by image name.
+    The run's ``run_itNNN_data.star`` gives each particle's half set, estimated angles and origin; the dataset's
+    ``particles.star`` gives the true ones. Particles are matched by image name.
     """
     truth = read_particles(dataset_dir / "particles.star")
     row_of = {key: i for i, key in enumerate(truth["image_key"])}
@@ -201,6 +215,8 @@ def true_directions_per_half(run_dir: Path, iteration: int, dataset_dir: Path) -
             "est_rot": run["rot"][keep],
             "est_tilt": run["tilt"][keep],
             "est_psi": run["psi"][keep],
+            "true_origin": truth["origin"][rows[keep]],
+            "est_origin": run["origin"][keep],
         }
     return halves
 
@@ -338,6 +354,23 @@ def direction_error_deg(
     """Angle (degrees) between true and estimated viewing directions."""
     cosine = np.sum(viewing_directions(true_rot, true_tilt) * viewing_directions(est_rot, est_tilt), axis=-1)
     return np.degrees(np.arccos(np.clip(cosine, -1.0, 1.0)))
+
+
+def origin_error_angstrom(true_origin: np.ndarray, est_origin: np.ndarray) -> np.ndarray:
+    """Distance (A) between each particle's true and estimated origin; both are (n, 2) arrays."""
+    return np.linalg.norm(est_origin - true_origin, axis=-1)
+
+
+def origin_error_summary(errors: np.ndarray, true_origin: np.ndarray, voxel: float) -> dict[str, float]:
+    """Median, p90 and p99 of the origin ``errors`` (A), the share above one pixel (``voxel`` A) and the rms radius of
+    the true origins (A)."""
+    return {
+        "median": float(np.median(errors)),
+        "p90": float(np.percentile(errors, 90)),
+        "p99": float(np.percentile(errors, 99)),
+        "fraction_over_pixel": float(np.mean(errors > voxel)),
+        "true_rms_radius": float(np.sqrt(np.mean(np.sum(true_origin**2, axis=-1)))),
+    }
 
 
 def aligned_direction_error_deg(
@@ -709,6 +742,7 @@ def evaluate(
         half: inplane_error_deg(true, est, np.asarray(offset["rotation_matrix"]))
         for half, (true, est) in eulers.items()
     }
+    origin_errors = {half: origin_error_angstrom(h["true_origin"], h["est_origin"]) for half, h in halves.items()}
     metrics = {
         "run": {
             "n_iterations": len(iterations),
@@ -741,6 +775,10 @@ def evaluate(
             )
         },
         "pose_frame_offset": offset,
+        "origin_error_angstrom": {
+            f"half{half}": origin_error_summary(origin_errors[half], halves[half]["true_origin"], voxel)
+            for half in halves
+        },
     }
     return {
         "metrics": metrics,
@@ -752,6 +790,7 @@ def evaluate(
         "aligned_pose_errors": aligned_errors,
         "inplane_errors": inplane_errors,
         "aligned_inplane_errors": aligned_inplane_errors,
+        "origin_errors": origin_errors,
         "voxel": voxel,
         "box": box,
     }
@@ -780,6 +819,7 @@ def write_tables(result: dict[str, Any], out_dir: Path) -> None:
         **{f"aligned_half{half}": e.astype(np.float32) for half, e in result["aligned_pose_errors"].items()},
         **{f"inplane_half{half}": e.astype(np.float32) for half, e in result["inplane_errors"].items()},
         **{f"aligned_inplane_half{half}": e.astype(np.float32) for half, e in result["aligned_inplane_errors"].items()},
+        **{f"origin_half{half}": e.astype(np.float32) for half, e in result["origin_errors"].items()},
     )
     cfscs = result["conical_fsc"]
     np.savez_compressed(

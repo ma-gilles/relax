@@ -71,7 +71,9 @@ run_scenarios: [kent_cap, uniform]
 # One entry per scenario: its own simulated dataset. `poses` selects RECOVAR's pose generator; `variants` lists
 # how the dataset is refined (the entries of `variants` below); optional `dataset:` and `refine:` entries override
 # the shared settings above. `dataset_from` names another scenario whose dataset this one refines instead of
-# simulating its own; `init` is the map the refinements start from: `ground_truth` (default: the ground truth
+# simulating its own; `shifted_from` names a scenario that simulates its own dataset, whose particles this scenario
+# displaces by random offsets (`offsets`, below: add_offsets.py) and refines instead; `init` is the map the refinements
+# start from: `ground_truth` (default: the ground truth
 # low-passed at refine.init_resolution) or `abinitio` (relax initial_model on the particles without their poses,
 # rigidly registered to the ground truth's frame and hand).
 scenarios:
@@ -103,6 +105,16 @@ scenarios:
   kent_cap_mild_abinitio:
     dataset_from: kent_cap_mild
     init: abinitio
+    variants: [learned, fixed_true, fixed_uniform]
+  # kent_cap's particles with translational offsets. The simulator centres every particle; here each one is displaced
+  # by an independent 2D Gaussian offset and its true origin is in particles.star. sigma_angstrom 7 per axis (rms radius
+  # 9.9 A, median 8.3 A, 99% within 21 A; 3.3 pixels at box 256) lies between the origins of two refined real data sets
+  # (EMPIAR-10096: 8.7 A per axis, |origin| median 10.6 A, 99% within 27 A; cahra_01: 5.8 A per axis, median 7.4 A, none
+  # beyond 14.7 A) and below relax's default Gaussian translation prior of 10 A (--offset_sigma_angstrom). The
+  # refinements use relax's default search range (5 pixels = 10.6 A around the previous origin), as a real refinement does.
+  kent_cap_offsets:
+    shifted_from: kent_cap
+    offsets: {sigma_angstrom: 7.0, seed: 29}
     variants: [learned, fixed_true, fixed_uniform]
   # Control: uniform viewing directions, where the true prior is flat (so a fixed uniform prior is the truth).
   uniform:

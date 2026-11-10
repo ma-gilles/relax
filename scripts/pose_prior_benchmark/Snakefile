@@ -6,6 +6,9 @@
 # output, e.g. <output_root>/kent_cap_abinitio/comparison/variants.png:
 #   1. simulate_dataset  RECOVAR simulates a K=1 PDB fixture; its viewing directions form a polar cap of
 #                        preferred views (RECOVAR's Kent option) or are uniform (control).       [GPU]
+#      add_offsets      (scenario with `offsets`, instead of simulate_dataset) the dataset of another scenario
+#                        (`shifted_from`) with every particle displaced by a random offset, whose true origins
+#                        particles.star records: the simulator's particles are all centred.      [CPU]
 #   2. write_fixed_prior (variants with a fixed prior) the prior file relax refine scores with.
 #   3. refine_k1         relax refine from the low-passed ground-truth map, a global search and no input
 #                        poses: --initial-pose-source none makes relax ignore the true angles and origins
@@ -18,7 +21,7 @@
 #                        the dataset's grid and register_initial_model rigidly registers it to the ground
 #                        truth's frame and hand (initial_model.py); a scenario with `dataset_from` refines
 #                        another scenario's dataset.                                             [GPU]
-#   4. evaluate_run      half-map and ground-truth FSC resolution, the pose error, and the accuracy of every
+#   4. evaluate_run      half-map and ground-truth FSC resolution, the pose and origin errors, and the accuracy of every
 #                        iteration's learned direction prior against the true viewing directions. The final
 #                        map is scored to the ground truth as refined and rigidly aligned to it, the poses'
 #                        direction error as refined and after removing their average offset (align_to_truth.py),
@@ -33,8 +36,8 @@
 #   7. compare_variants  the variants of one scenario side by side.
 #
 # Outputs, under config `output_root`:
-#   <scenario>/dataset/              particles.star (true angles), particles.<box>.mrcs, reference_*_relion.mrc,
-#                                    pose_distribution.json, angdist_true.png
+#   <scenario>/dataset/              particles.star (true angles and origins), particles.<box>.mrcs,
+#                                    reference_*_relion.mrc, pose_distribution.json, angdist_true.png
 #   <scenario>/initial_model/        (init: abinitio) particles/ (the cropped particles without poses),
 #                                    abinitio/run_it<N>_class001.mrc, initial_model_upsampled.mrc,
 #                                    initial_model_registered.mrc, registration.json
@@ -95,6 +98,7 @@ CONICAL_FSC = config["conical_fsc"]
 INITIAL_MODEL_MAP = f"run_it{INITIAL_MODEL['nr_iter']:03d}_class001.mrc"
 INITIAL_MODEL_STACK = f"particles.{INITIAL_MODEL['box']}.mrcs"
 SIMULATE_SCRIPT = str(BENCHMARK_DIR / "simulate_dataset.py")
+ADD_OFFSETS_SCRIPT = str(BENCHMARK_DIR / "add_offsets.py")
 WRITE_PRIOR_SCRIPT = str(BENCHMARK_DIR / "write_fixed_prior.py")
 EVALUATE_SCRIPT = str(BENCHMARK_DIR / "evaluate_run.py")
 COMPARE_SCRIPT = str(BENCHMARK_DIR / "compare_variants.py")
@@ -128,10 +132,21 @@ for scenario, entry in SCENARIOS.items():
     unknown = [variant for variant in entry["variants"] if variant not in VARIANTS]
     if unknown:
         raise WorkflowError(f"scenario {scenario} lists variants {unknown} that config.yaml does not define")
+
+# Scenarios whose dataset is another scenario's with offsets (add_offsets) and those that simulate their own.
+SHIFTED = [scenario for scenario, entry in SCENARIOS.items() if "shifted_from" in entry]
+SIMULATED = [scenario for scenario, entry in SCENARIOS.items() if not {"shifted_from", "dataset_from"} & entry.keys()]
 for scenario, entry in SCENARIOS.items():
     owner = entry.get("dataset_from")
-    if owner is not None and (owner not in SCENARIOS or "dataset_from" in SCENARIOS[owner]):
-        raise WorkflowError(f"scenario {scenario}: dataset_from must name a scenario that simulates its own dataset")
+    if owner is not None and (owner not in SCENARIOS or owner not in SIMULATED + SHIFTED):
+        raise WorkflowError(
+            f"scenario {scenario}: dataset_from must name a scenario that simulates or shifts its own dataset"
+        )
+    if "shifted_from" in entry:
+        if entry["shifted_from"] not in SIMULATED:
+            raise WorkflowError(f"scenario {scenario}: shifted_from must name a scenario that simulates its own dataset")
+        if "dataset_from" in entry or not {"sigma_angstrom", "seed"} <= entry.get("offsets", {}).keys():
+            raise WorkflowError(f"scenario {scenario}: shifted_from needs offsets: {{sigma_angstrom, seed}} and no dataset_from")
     if entry.get("init", "ground_truth") not in INIT_KINDS:
         raise WorkflowError(f"scenario {scenario}: init must be one of {INIT_KINDS}")
 for variant, entry in VARIANTS.items():
@@ -184,7 +199,7 @@ def has_fixed_prior(variant):
 
 
 def pose_flags(wildcards):
-    """simulate_dataset.py flags of the scenario's pose distribution."""
+    """simulate_dataset.py flags of the scenario's pose distribution (a scenario that simulates its own dataset)."""
     poses = SCENARIOS[wildcards.scenario]["poses"]
     if poses["kind"] == "uniform":
         return "--poses uniform"
@@ -256,6 +271,8 @@ rule all:
 rule simulate_dataset:
     message:
         "Simulating {wildcards.scenario}: {params.dataset[n_images]} particles, box {params.dataset[grid_size]}"
+    wildcard_constraints:
+        scenario="|".join(map(re.escape, SIMULATED)),
     input:
         script=SIMULATE_SCRIPT,
     output:
@@ -284,6 +301,50 @@ rule simulate_dataset:
         "--init-resolution-ang {params.dataset[init_resolution_ang]} "
         "--seed {params.dataset[seed]} "
         "{params.pose_flags} "
+        "> {log} 2>&1"
+
+
+rule add_offsets:
+    message:
+        "Displacing the particles of {wildcards.scenario}'s source dataset by random offsets (sigma {params.offsets[sigma_angstrom]} A)"
+    wildcard_constraints:
+        scenario="|".join(map(re.escape, SHIFTED)),
+    input:
+        particles_star=lambda wildcards: output_path(SCENARIOS[wildcards.scenario]["shifted_from"], "dataset", "particles.star"),
+        reference_gt=lambda wildcards: output_path(
+            SCENARIOS[wildcards.scenario]["shifted_from"], "dataset", "reference_gt_relion.mrc"
+        ),
+        reference_init=lambda wildcards: output_path(
+            SCENARIOS[wildcards.scenario]["shifted_from"], "dataset", "reference_init_relion.mrc"
+        ),
+        pose_distribution=lambda wildcards: output_path(
+            SCENARIOS[wildcards.scenario]["shifted_from"], "dataset", "pose_distribution.json"
+        ),
+        script=ADD_OFFSETS_SCRIPT,
+    output:
+        particles_star=output_path("{scenario}", "dataset", "particles.star"),
+        reference_gt=output_path("{scenario}", "dataset", "reference_gt_relion.mrc"),
+        reference_init=output_path("{scenario}", "dataset", "reference_init_relion.mrc"),
+        pose_distribution=output_path("{scenario}", "dataset", "pose_distribution.json"),
+    params:
+        offsets=lambda wildcards: SCENARIOS[wildcards.scenario]["offsets"],
+        env=CLEAN_ENV,
+        python=PYTHON,
+        source_dir=lambda wildcards, input: str(Path(input.particles_star).parent),
+        dataset_dir=lambda wildcards, output: str(Path(output.particles_star).parent),
+    threads: 8
+    resources:
+        mem="32G",
+        runtime=180,
+    log:
+        output_path("logs", "{scenario}.add_offsets.log"),
+    shell:
+        "{params.env} {params.python} {input.script} "
+        "--dataset-dir {params.source_dir} "
+        "--out-dir {params.dataset_dir} "
+        "--sigma-angstrom {params.offsets[sigma_angstrom]} "
+        "--seed {params.offsets[seed]} "
+        "--workers {threads} "
         "> {log} 2>&1"
 
 

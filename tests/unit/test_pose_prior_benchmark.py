@@ -1,5 +1,5 @@
-"""The pose-prior benchmark: evaluator metrics, the simulator's Kent guard, fixed priors, the variant comparison and the
-ab-initio start map."""
+"""The pose-prior benchmark: evaluator metrics, the simulator's Kent guard, fixed priors, the variant comparison, the
+ab-initio start map and the particles' translational offsets."""
 
 import csv
 import json
@@ -20,6 +20,7 @@ from relax.io.map_io import require_relion_convention_reference
 from relax.parity.fixed_direction_prior import PROVENANCE_FILE, FixedDirectionPrior
 from relax.sampling.healpix import euler_angles_to_matrix, euler_matrix_to_angles, n_pixels, pixel_rot_tilt
 from scripts.conical_fsc import ConicalFsc, cone_axes, conical_fsc, conical_fsc_summary
+from scripts.pose_prior_benchmark import add_offsets as ao
 from scripts.pose_prior_benchmark import align_to_truth as al
 from scripts.pose_prior_benchmark import compare_variants as cmp
 from scripts.pose_prior_benchmark import conical_fsc_plot as cfp
@@ -362,10 +363,10 @@ def _write_conical_fsc(directory):
     return {name: conical_fsc_summary(cfsc, voxel=2.0, box=8) for name, cfsc in cfscs.items()}
 
 
-def _evaluation(tmp_path, name, *, source, auc, median, js_skill, with_conical=True):
+def _evaluation(tmp_path, name, *, source, auc, median, js_skill, with_conical=True, origin_median=None):
     """A minimal evaluate_run output directory: the metrics, FSC curves, pose errors and cFSC the comparison reads.
     The aligned FSC area is ``auc`` and the aligned pose error ``median``; as refined they are 0.05 lower and 0.5
-    higher."""
+    higher. ``origin_median`` (A) adds the origin error of the two half sets, whose p90 is three times it."""
     directory = tmp_path / name
     directory.mkdir()
     pose = {"p90": 3 * median, "fraction_over_90": 0.01}
@@ -402,6 +403,11 @@ def _evaluation(tmp_path, name, *, source, auc, median, js_skill, with_conical=T
     }
     if with_conical:
         metrics["conical_fsc"] = _write_conical_fsc(directory)
+    if origin_median is not None:
+        metrics["origin_error_angstrom"] = {
+            "half1": {"median": origin_median, "p90": 3 * origin_median},
+            "half2": {"median": origin_median + 1.0, "p90": 3 * origin_median + 1.0},
+        }
     (directory / "metrics.json").write_text(json.dumps(metrics))
     with open(directory / "fsc_curves.csv", "w", newline="") as handle:
         writer = csv.writer(handle)
@@ -429,7 +435,7 @@ def _evaluation(tmp_path, name, *, source, auc, median, js_skill, with_conical=T
 
 
 def test_variants_are_compared_in_a_table_and_a_figure(tmp_path):
-    learned = _evaluation(tmp_path, "learned", source="learned", auc=0.8, median=2.0, js_skill=0.9)
+    learned = _evaluation(tmp_path, "learned", source="learned", auc=0.8, median=2.0, js_skill=0.9, origin_median=2.0)
     fixed = _evaluation(tmp_path, "fixed_true", source="fixed", auc=0.85, median=1.5, js_skill=0.9)
     out = tmp_path / "out"
     cmp.main(["--runs", f"learned={learned}", f"fixed_true={fixed}", "--out-dir", str(out), "--label", "test"])
@@ -446,6 +452,8 @@ def test_variants_are_compared_in_a_table_and_a_figure(tmp_path):
         [float(rows["learned"][k]) for k in ("pose_offset_deg", "map_offset_deg", "map_shift_A")], [0.45, 0.35, 0.1]
     )
     assert_matches(float(rows["learned"]["learned_prior_js_bits"]), 0.2)
+    assert_matches([float(rows["learned"][k]) for k in ("origin_error_median_A", "origin_error_p90_A")], [2.5, 6.5])
+    assert [rows["fixed_true"][k] for k in ("origin_error_median_A", "origin_error_p90_A")] == ["", ""]  # not measured
     # cFAR: the cone that crosses 0.143 never has the largest area; the smallest cone's curve ends at 0.3
     weights = 4.0 * math.pi * np.arange(3) ** 2
     gt_area = [weights[1:] @ np.nan_to_num(curve[1:]) for curve in _GT_CONE_CURVES]
@@ -605,6 +613,7 @@ def test_iteration_table_is_written_with_empty_cells_for_a_crossing_that_never_h
         "aligned_pose_errors": {1: np.array([0.4, 2.5]), 2: np.array([169.0])},
         "inplane_errors": {1: np.array([0.6, 1.5]), 2: np.array([20.0])},
         "aligned_inplane_errors": {1: np.array([0.5, 1.0]), 2: np.array([19.0])},
+        "origin_errors": {1: np.array([1.5, 0.25]), 2: np.array([2.0])},
         "box": 4,
         "voxel": 2.0,
     }
@@ -618,6 +627,8 @@ def test_iteration_table_is_written_with_empty_cells_for_a_crossing_that_never_h
         assert_matches(archive["inplane_half2"], np.array([20.0]))
         assert_matches(archive["aligned_inplane_half1"], np.array([0.5, 1.0]))
         assert_matches(archive["aligned_inplane_half2"], np.array([19.0]))
+        assert_matches(archive["origin_half1"], np.array([1.5, 0.25]))
+        assert_matches(archive["origin_half2"], np.array([2.0]))
     with np.load(tmp_path / "conical_fsc.npz") as archive:
         assert sorted(archive.files) == [
             "axes",
@@ -1222,3 +1233,174 @@ def test_expanded_star_reads_back_as_the_expanded_directions(tmp_path):
     snu.write_expanded_star(path, vectors)
     assert_matches(snu.read_viewing_directions(path), vectors, rtol=1e-6)
     assert set(starfile.read(path)) == {"optics", "particles"}  # the blocks angdist looks up by name
+
+
+def _band_limited_images(n, box, seed):
+    """Random images (n, box, box) without Nyquist-row or -column content, which a fractional shift cannot keep."""
+    spectrum = np.fft.fft2(np.random.default_rng(seed).standard_normal((n, box, box)))
+    spectrum[:, box // 2, :] = 0.0
+    spectrum[:, :, box // 2] = 0.0
+    return np.fft.ifft2(spectrum).real.astype(np.float32)
+
+
+def test_shift_images_moves_whole_pixels_like_np_roll_with_x_along_the_columns():
+    images = np.random.default_rng(0).standard_normal((3, 16, 16)).astype(np.float32)
+    shifts = np.array([[2.0, 0.0], [0.0, -3.0], [5.0, 4.0]])
+    expected = np.stack(
+        [np.roll(image, (int(sy), int(sx)), axis=(0, 1)) for image, (sx, sy) in zip(images, shifts)]
+    )
+    assert_matches(ao.shift_images(images, shifts), expected)
+
+
+def test_a_fractional_shift_is_undone_by_the_opposite_shift():
+    images = _band_limited_images(4, 32, seed=1)
+    shifts = np.array([[1.37, -2.61], [0.5, 0.5], [-7.25, 3.9], [0.0, 0.01]])
+    assert_matches(ao.shift_images(ao.shift_images(images, shifts), -shifts), images)
+
+
+def test_a_fractional_shift_keeps_white_noise_variance_up_to_the_nyquist_modes():
+    noise = np.random.default_rng(2).standard_normal((64, 64, 64)).astype(np.float32)
+    shifted = ao.shift_images(noise, np.random.default_rng(3).uniform(-5, 5, size=(64, 2)))
+    # the 2 box - 1 Nyquist-row and -column modes keep at most half their energy: at most 1.6% at box 64
+    assert 0.97 < shifted.var() / noise.var() <= 1.0
+
+
+def test_offsets_are_gaussian_with_the_requested_sigma_and_repeat_for_a_seed():
+    offsets = ao.draw_offsets(200000, 7.0, seed=3)
+    assert offsets.shape == (200000, 2)
+    assert offsets.std(axis=0) == pytest.approx([7.0, 7.0], rel=0.01)
+    assert np.abs(offsets.mean(axis=0)).max() < 0.05
+    assert_matches(ao.draw_offsets(200000, 7.0, seed=3), offsets)
+    assert not np.allclose(ao.draw_offsets(200000, 7.0, seed=4), offsets)
+
+
+def _centred_delta_dataset(directory, n, box=16, pixel=2.0):
+    """A dataset of ``n`` images that are a delta at the box centre, with zero origins and a pose-distribution record."""
+    images = np.zeros((n, box, box), dtype=np.float32)
+    images[:, box // 2, box // 2] = 1.0
+    with mrcfile.new(directory / "particles.16.mrcs", overwrite=True) as handle:
+        handle.set_data(images)
+        handle.voxel_size = pixel
+    optics = {"rlnOpticsGroup": [1], "rlnImagePixelSize": [pixel], "rlnImageSize": [box]}
+    particles = {
+        "rlnImageName": [f"{i + 1}@particles.16.mrcs" for i in range(n)],
+        "rlnDefocusU": [10000.0 + 1000 * i for i in range(n)],
+        "rlnAngleRot": [float(i) for i in range(n)],
+        "rlnOriginXAngst": [0.0] * n,
+        "rlnOriginYAngst": [0.0] * n,
+    }
+    starfile.write({"optics": pd.DataFrame(optics), "particles": pd.DataFrame(particles)}, directory / "particles.star")
+    for name in ao.COPIED_FILES:
+        (directory / name).write_bytes(name.encode())
+    (directory / "pose_distribution.json").write_text(json.dumps({"poses": "uniform", "n_images": n}))
+    return directory
+
+
+def test_add_offsets_displaces_each_particle_by_minus_its_origin_and_records_the_offsets(tmp_path, monkeypatch):
+    source = _centred_delta_dataset(tmp_path, n=4)
+    whole_pixels = np.array([[2.0, 0.0], [0.0, -3.0], [-1.0, 4.0], [0.0, 0.0]])
+    monkeypatch.setattr(ao, "draw_offsets", lambda n, sigma, seed: whole_pixels * 2.0)  # the pixel is 2 A
+    out = tmp_path / "shifted"
+    record = ao.add_offsets(source, out, sigma_angstrom=7.0, seed=5)
+    blocks = starfile.read(out / "particles.star", always_dict=True)
+    particles = blocks["particles"]
+    assert_matches(particles[list(ao.ORIGIN_COLUMNS)].to_numpy(), whole_pixels * 2.0)
+    original = starfile.read(source / "particles.star", always_dict=True)["particles"]
+    assert particles.drop(columns=list(ao.ORIGIN_COLUMNS)).equals(original.drop(columns=list(ao.ORIGIN_COLUMNS)))
+    with mrcfile.open(out / "particles.16.mrcs") as handle:
+        stack = np.asarray(handle.data)
+        assert handle.voxel_size.x == 2.0
+    for image, (ox, oy) in zip(stack, whole_pixels):
+        row, column = np.unravel_index(np.argmax(image), image.shape)
+        assert (column, row) == (8 - ox, 8 - oy)  # the delta sits at the centre minus the origin, in pixels
+        assert image.max() == pytest.approx(1.0, abs=1e-5)
+    # RELION moves each particle back by its origin: the centred images return
+    with mrcfile.open(source / "particles.16.mrcs") as handle:
+        assert_matches(ao.shift_images(stack, whole_pixels), np.asarray(handle.data))
+    assert [(out / name).read_bytes() for name in ao.COPIED_FILES] == [name.encode() for name in ao.COPIED_FILES]
+    stored = json.loads((out / "pose_distribution.json").read_text())
+    assert stored == {"poses": "uniform", "n_images": 4, "offsets": record}
+    assert record["sigma_angstrom"] == 7.0 and record["seed"] == 5
+    assert record["max_radius_angstrom"] == pytest.approx(np.hypot(*(whole_pixels * 2.0).T).max())
+
+
+def test_add_offsets_refuses_a_source_with_origins_a_bad_sigma_and_particles_out_of_stack_order(tmp_path):
+    source = _centred_delta_dataset(tmp_path, n=3)
+    with pytest.raises(ValueError, match="positive"):
+        ao.add_offsets(source, tmp_path / "a", sigma_angstrom=0.0, seed=1)
+    blocks = starfile.read(source / "particles.star", always_dict=True)
+    blocks["particles"]["rlnImageName"] = ["2@particles.16.mrcs", "1@particles.16.mrcs", "3@particles.16.mrcs"]
+    starfile.write(blocks, source / "particles.star", overwrite=True)
+    with pytest.raises(ValueError, match="row order"):
+        ao.add_offsets(source, tmp_path / "b", sigma_angstrom=7.0, seed=1)
+    blocks["particles"]["rlnImageName"] = [f"{i + 1}@particles.16.mrcs" for i in range(3)]
+    blocks["particles"]["rlnOriginXAngst"] = [0.0, 1.5, 0.0]
+    starfile.write(blocks, source / "particles.star", overwrite=True)
+    with pytest.raises(ValueError, match="non-zero origins"):
+        ao.add_offsets(source, tmp_path / "c", sigma_angstrom=7.0, seed=1)
+
+
+def test_origin_error_is_the_distance_between_true_and_estimated_origins():
+    true = np.array([[0.0, 0.0], [3.0, 4.0], [1.0, 1.0], [-6.0, 8.0]])
+    estimated = np.array([[0.0, 0.0], [0.0, 0.0], [1.0, 1.0], [-6.0, 0.0]])
+    errors = ev.origin_error_angstrom(true, estimated)
+    assert_matches(errors, np.array([0.0, 5.0, 0.0, 8.0]))
+    summary = ev.origin_error_summary(errors, true, voxel=2.0)
+    assert_matches(summary["median"], 2.5)
+    assert_matches(summary["fraction_over_pixel"], 0.5)  # 5 A and 8 A exceed one 2 A pixel
+    assert_matches(summary["true_rms_radius"], math.sqrt((0 + 25 + 2 + 100) / 4))
+    assert summary["p99"] == pytest.approx(np.percentile(errors, 99))
+
+
+def _origin_star(path, names, rot, origins, subset=None):
+    """A particle STAR with angles and origins (and half-set labels when ``subset`` is given)."""
+    optics = pd.DataFrame({"rlnOpticsGroup": [1], "rlnImagePixelSize": [2.0], "rlnImageSize": [8]})
+    particles = {
+        "rlnImageName": names,
+        "rlnAngleRot": rot,
+        "rlnAngleTilt": [10.0] * len(names),
+        "rlnAnglePsi": [0.0] * len(names),
+        "rlnOriginXAngst": [o[0] for o in origins],
+        "rlnOriginYAngst": [o[1] for o in origins],
+    }
+    if subset is not None:
+        particles["rlnRandomSubset"] = subset
+    starfile.write({"optics": optics, "particles": pd.DataFrame(particles)}, path, overwrite=True)
+
+
+def test_true_and_estimated_origins_are_matched_by_image_name_and_split_by_half(tmp_path):
+    dataset, run = tmp_path / "dataset", tmp_path / "run"
+    dataset.mkdir()
+    run.mkdir()
+    names = [f"{i}@a.mrcs" for i in (1, 2, 3, 4)]
+    true_origins = [(1.0, 2.0), (3.0, 4.0), (5.0, 6.0), (7.0, 8.0)]
+    _origin_star(dataset / "particles.star", names, [0.0, 1.0, 2.0, 3.0], true_origins)
+    order = [3, 0, 2, 1]  # the run lists the particles in another order
+    estimated = [(0.5, 0.5), (1.5, 1.5), (2.5, 2.5), (3.5, 3.5)]
+    _origin_star(
+        run / "run_it003_data.star",
+        [names[i] for i in order],
+        [float(i) for i in order],
+        [estimated[i] for i in order],
+        subset=[1, 2, 1, 2],
+    )
+    halves = ev.true_directions_per_half(run, 3, dataset)
+    assert_matches(halves[1]["true_origin"], np.array([true_origins[3], true_origins[2]]))
+    assert_matches(halves[1]["est_origin"], np.array([estimated[3], estimated[2]]))
+    assert_matches(halves[2]["true_origin"], np.array([true_origins[0], true_origins[1]]))
+    assert_matches(halves[2]["est_origin"], np.array([estimated[0], estimated[1]]))
+
+
+def test_a_particle_star_without_origins_is_refused(tmp_path):
+    path = tmp_path / "particles.star"
+    starfile.write(
+        {
+            "optics": pd.DataFrame({"rlnOpticsGroup": [1]}),
+            "particles": pd.DataFrame(
+                {"rlnImageName": ["1@a.mrcs"], "rlnAngleRot": [0.0], "rlnAngleTilt": [0.0], "rlnOriginXAngst": [0.0]}
+            ),
+        },
+        path,
+    )
+    with pytest.raises(ValueError, match="rlnOriginYAngst"):
+        ev.read_particles(path)

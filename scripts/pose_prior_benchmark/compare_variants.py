@@ -6,9 +6,11 @@ Each variant is one ``evaluate_run.py`` output directory (``metrics.json``, ``fs
 dataset. ``variants.csv`` has one row per variant: the prior that scored it, the iterations and final HEALPix order,
 the resolutions and area under the FSC curve against the ground truth and between the half maps, the pose
 direction error (``pose_error_*``: the angle between the true and the estimated viewing directions, the out-of-plane
-part of the pose error) and in-plane error (``inplane_error_*``: the angle about the viewing direction that remains
-once the directions agree; ``evaluate_run.py``), the final learned prior's accuracy and the frame offsets. The
-ground-truth FSC and the pose errors are those of the final map and poses aligned to the ground truth's frame (``_aligned``: the map rigidly aligned to the
+part of the pose error), the in-plane error (``inplane_error_*``: the angle about the viewing direction that remains
+once the directions agree; ``evaluate_run.py``), the median and p90 distance between the estimated and the true origins
+(``origin_error_*_A``; empty for a run evaluated before it was measured), the final learned prior's accuracy and the
+frame offsets. The ground-truth FSC and the pose errors are those of the final map and poses aligned to the ground
+truth's frame (``_aligned``: the map rigidly aligned to the
 truth, the poses turned back by their average offset), with the values as refined beside them (``_as_refined``), so
 runs that start from maps in different frames compare. The conical FSC (cFSC, ``scripts/conical_fsc.py``) adds the cFAR of
 the aligned map against the truth (``gt_cfar_aligned``; the smallest over the largest area under the cones' curves, 1 for
@@ -77,6 +79,8 @@ COLUMNS = (
     "pose_error_median_as_refined_deg",
     "inplane_error_median_aligned_deg",
     "inplane_error_p90_aligned_deg",
+    "origin_error_median_A",
+    "origin_error_p90_A",
     "pose_offset_deg",
     "map_offset_deg",
     "map_shift_A",
@@ -155,6 +159,7 @@ def summary_row(variant: str, metrics: dict[str, Any]) -> dict[str, Any]:
     inplane = metrics["pose_inplane_error_aligned_deg"]
     prior = metrics["prior_final"]
     used = metrics["run"]["direction_prior_used"]
+    origin = metrics.get("origin_error_angstrom")  # absent from runs evaluated before the origin error existed
     return {
         "variant": variant,
         "direction_prior": used["source"],
@@ -176,6 +181,8 @@ def summary_row(variant: str, metrics: dict[str, Any]) -> dict[str, Any]:
         "pose_error_median_as_refined_deg": half_mean(metrics["pose_direction_error_deg"], "median"),
         "inplane_error_median_aligned_deg": half_mean(inplane, "median"),
         "inplane_error_p90_aligned_deg": half_mean(inplane, "p90"),
+        "origin_error_median_A": None if origin is None else half_mean(origin, "median"),
+        "origin_error_p90_A": None if origin is None else half_mean(origin, "p90"),
         "pose_offset_deg": metrics["pose_frame_offset"]["angle_deg"],
         "map_offset_deg": resolution["alignment"]["angle_deg"],
         "map_shift_A": resolution["alignment"]["shift_A"],
