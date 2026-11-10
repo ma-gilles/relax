@@ -345,3 +345,44 @@ is the identifiability condition of the model (math note section 10). The `cg_*`
 
 **Unit tests** (CPU, `tests/unit/{ppca_contrast,ppca_initial_model,ppca_refinement}`, `test_ppca_initial_model_momentum_sgd.py`,
 `test_tomo_input.py`; run before the default flip): all pass except the GPU tests and one test needing the RELION binding, which skip.
+
+### 2026-11-10 (evening) rounds 8 and 9 (snapshots v9 and v10, the gate of `ppca_schedule` 2fd7b0e8)
+
+Both rounds ran before the rebase onto the new VDAM gate; C n3 box 64, true sd 0.30, momentum SGD unless stated.
+
+**Round 8: the HEALPix order change moved** (arms `t_*`: the stages table with order 3 never opened, opened at iteration 1001 or at 2376; the default
+opens it at 1626; the radius ramp is the same; seed 11; kmeans ARI, state FSC, the sd the run ended at, the correlation of its contrast estimate):
+
+| arm | order 3 at | kmeans ARI | state FSC | sd prior at the end | corr(c) |
+| --- | --- | --- | --- | --- | --- |
+| baseline | never / 1001 / 2376 / 1626 (default) | 0.265 / 0.345 / 0.306 / 0.346 | 0.897 / 0.904 / 0.900 / 0.902 | | |
+| `cg_sgd` (unconstrained) | never / 1001 / 2376 / 1626 | 0.317 / 0.333 / 0.299 / 0.297 | 0.865 / 0.868 / 0.863 / 0.865 | 0.135 / 0.080 / 0.088 / 0.089 | 0.33 / -0.15 / -0.02 / -0.10 |
+| `co_sgd` (orthogonal) | never / 1001 / 2376 / 1626 | 0.431 / 0.473 / 0.461 / 0.494 | 0.875 / 0.879 / 0.876 / 0.879 | 0.262 / 0.227 / 0.232 / 0.232 | 0.83 / 0.83 / 0.83 / 0.83 |
+
+- The mean power jump of the baseline follows the order change wherever it is: x1.060 at 1001, x1.072 at 2376, x1.060 at 1626, and x1.01 in the
+  run where it never opens. So the order change causes the jump (shells 11 to 24, see above), for SGD.
+- The sd decline is not only the order change. With the order never opened the orthogonal run's sd still falls from 0.294 (iteration 1600) to
+  0.262, the order change takes it to 0.23, and the unconstrained run's sd collapses in all three tables (0.135 with no order change, 0.08 to 0.09
+  with it); in the unconstrained runs the steepest fall starts at the order change (iteration 1200 in the 1001 table, 2400 in the 2376 one). So the
+  radius ramp (more high shells entering the E-step, the radius probe above) drives a part of the drift, and the order change accelerates it.
+- The orthogonal arm is better than the unconstrained one in every table (kmeans ARI +0.11 to +0.20), as in rounds 5 to 7.
+
+**Round 9: the sd fixed at 0.3** (`cgf_*` unconstrained loadings, `cof_*` orthogonal; centred M-step; seeds 11 and 12; the old-gate
+references are rounds 4, 5 and 5b):
+
+| arm | seed | kmeans ARI | state FSC | corr(c) | est. sd of c | reference: estimated-sd arm ARI |
+| --- | --- | --- | --- | --- | --- | --- |
+| SGD `cgf_sgd` | 11 / 12 | 0.203 / 0.393 | 0.882 / 0.910 | 0.07 / 0.51 | 0.171 / 0.190 | `cg_sgd` 0.297 / 0.347 |
+| SGD `cof_sgd` | 11 / 12 | 0.481 / 0.568 | 0.877 / 0.915 | 0.84 / 0.83 | 0.230 / 0.229 | `co_sgd` 0.494 / 0.564 |
+| VDAM `cgf_vdam` | 11 / 12 | 0.656 / 0.635 | 0.920 / 0.906 | 0.90 / 0.90 | 0.276 / 0.276 | `cg_vdam` 0.647 / 0.616 |
+| VDAM `cof_vdam` | 11 / 12 | 0.626 / 0.621 | 0.891 / 0.905 | 0.90 / 0.90 | 0.276 / 0.276 | `co_vdam` 0.567 / 0.614 |
+
+(baselines: SGD 0.346 / 0.322, VDAM 0.385 / 0.351.)
+- A fixed sd does not substitute for the constraint. Unconstrained, the loadings still grow a component along the mean on top of the fixed
+  latent: seed 11 has `sd^2` held at 0.09 and the loadings' parallel variance rising from 0.022 (iteration 1800) to 0.072 (3000), a total 1.8 times the true
+  0.09; the gain drifts to -0.89 (mean contrast 0.73; orthogonal: -0.49 and 0.85) and the contrast correlation is 0.07. Seed 12 is milder
+  (parallel 0.006 to 0.021, correlation 0.51). The kmeans ARI is worse on seed 11 and better on seed 12 than the estimated-sd arm: no consistent
+  gain from fixing the sd, and a contrast estimate that does not follow the truth on one seed.
+- With the constraint a fixed sd changes nothing (SGD 0.481 / 0.568 against 0.494 / 0.564), and VDAM moves within seed noise (the largest step,
+  `co_vdam` seed 11 0.567 to 0.626, is one seed). The gain drift of SGD is not removed by fixing the sd, as the E-step attenuation explains
+  (radius probe above).

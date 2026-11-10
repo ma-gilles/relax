@@ -68,7 +68,7 @@ def collect(rounds: list[Path], datasets_root: Path, checkpoint: str) -> list[di
             dataset, arm, seed = run.parents[1].name, run.parent.name, run.name.removeprefix("seed")
             suite = (read_json(run / "suite_scores.json") or {}).get("checkpoints", {}).get(checkpoint, {})
             latent = read_json(run / "latent_scores.json") or {}
-            row = {"dataset": dataset.split("__")[1], "arm": arm, "seed": seed}
+            row = {"dataset": "__".join(dataset.split("__")[1:3]), "arm": arm, "seed": seed}
             for name, source, key in COLUMNS:
                 row[name] = (suite if source == "suite" else latent).get(key)
             row["wall (min)"] = wall_minutes(run)
