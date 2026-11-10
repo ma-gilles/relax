@@ -268,5 +268,5 @@ Arms `co_*` are `cg_*` plus the constraint. kmeans ARI (baseline = contrast igno
 - **One SGD run is a failure that is not contrast-related in kind**: `co_sgd` at noise 1, seed 12 ended with state FSC 0.715, pose median 9.7 deg
   (51 percent within 10 deg), mean FSC 0.82 and kmeans ARI 0.391. The contrast statistics of the run are normal (sd 0.26, gain -0.37, mean
   power 0.29, the log-likelihood of the others) and the damage is already there at iteration 1000 (pose median 17.6 deg against 7.3 for
-  `cg_sgd` of that seed): the run settled in a worse ab-initio map. Whether the constraint made that more likely is open: one failure in four
-  SGD runs at noise 1 against none in the roughly twenty SGD runs of noise 1 without it. Round 6 runs seeds 13 to 16 of `co_sgd` and `cg_sgd` at this dataset.
+  `cg_sgd` of that seed): the run settled in a worse ab-initio map. Whether the constraint made that more likely is open: one failure in three
+  constrained SGD runs at noise 1 (state FSC 0.935, 0.715, 0.938) against none in the 18 SGD runs at noise 1 without it (state FSC 0.90 to 0.95, pose 4.95 to 5.96 deg). Round 6 runs seeds 13 to 16 of `co_sgd` and `cg_sgd` at this dataset.
