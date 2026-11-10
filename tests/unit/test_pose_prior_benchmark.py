@@ -18,7 +18,7 @@ from scipy.spatial.transform import Rotation
 from relax.diagnostics.gt_registration import apply_rigid_volume_transform
 from relax.io.map_io import require_relion_convention_reference
 from relax.parity.fixed_direction_prior import PROVENANCE_FILE, FixedDirectionPrior
-from relax.sampling.healpix import n_pixels, pixel_rot_tilt
+from relax.sampling.healpix import euler_angles_to_matrix, euler_matrix_to_angles, n_pixels, pixel_rot_tilt
 from scripts.conical_fsc import ConicalFsc, cone_axes, conical_fsc, conical_fsc_summary
 from scripts.pose_prior_benchmark import align_to_truth as al
 from scripts.pose_prior_benchmark import compare_variants as cmp
@@ -189,6 +189,79 @@ def test_direction_error_is_the_angle_between_viewing_directions():
     assert_matches(error, [90.0, 0.0, 0.0])
 
 
+def test_the_viewing_direction_is_the_third_row_of_the_pose_matrix():
+    rng = np.random.default_rng(0)
+    rot, tilt, psi = rng.uniform(-180, 180, 50), rng.uniform(0, 180, 50), rng.uniform(-180, 180, 50)
+    matrices = euler_angles_to_matrix(np.stack([rot, tilt, psi], axis=-1))
+    assert_matches(matrices[:, 2, :], ev.viewing_directions(rot, tilt))
+
+
+def _within(actual, desired, tolerance_deg):
+    """The angles agree within ``tolerance_deg`` (arccos resolves a cosine within 1e-16 of 1 to about 1e-6 degrees)."""
+    assert np.abs(np.asarray(actual, float) - np.asarray(desired, float)).max() < tolerance_deg
+
+
+def _inplane(true, est, rotation=None):
+    return ev.inplane_error_deg(np.asarray(true, float).reshape(-1, 3), np.asarray(est, float).reshape(-1, 3), rotation)
+
+
+def test_inplane_error_of_poses_that_differ_only_in_psi_is_the_psi_difference_wrapped():
+    true = [[20.0, 60.0, 10.0], [20.0, 60.0, 170.0], [-130.0, 100.0, 0.0]]
+    est = [[20.0, 60.0, 40.0], [20.0, 60.0, -170.0], [-130.0, 100.0, 0.0]]
+    _within(_inplane(true, est), [30.0, 20.0, 0.0], 1e-6)
+    _within(ev.direction_error_deg(*np.asarray(true).T[:2], *np.asarray(est).T[:2]), [0.0, 0.0, 0.0], 1e-4)
+
+
+def test_inplane_error_of_poses_that_differ_only_in_tilt_is_zero():
+    # a tilt change at fixed psi is a rotation about an axis in the image plane: all of it is out of plane
+    true = [[30.0, 50.0, 25.0], [-100.0, 120.0, -60.0]]
+    est = [[30.0, 58.0, 25.0], [-100.0, 112.0, -60.0]]
+    _within(_inplane(true, est), [0.0, 0.0], 1e-6)
+    _within(ev.direction_error_deg(*np.asarray(true).T[:2], *np.asarray(est).T[:2]), [8.0, 8.0], 1e-4)
+
+
+def test_a_pose_at_the_pole_that_differs_in_rot_differs_in_plane_only():
+    # at tilt 0 the viewing direction does not depend on rot: rot and psi both turn the image
+    _within(_inplane([0.0, 0.0, 0.0], [30.0, 0.0, 0.0]), [30.0], 1e-6)
+    _within(ev.direction_error_deg(0.0, 0.0, 30.0, 0.0), 0.0, 1e-4)
+
+
+def test_inplane_error_is_the_image_turn_whatever_the_out_of_plane_swing():
+    rng = np.random.default_rng(1)
+    n = 200
+    true = rng.uniform([-180, 10, -180], [180, 170, 180], (n, 3))
+    true_matrix = euler_angles_to_matrix(true)
+    gamma = rng.uniform(-40, 40, n)
+    image_turn = Rotation.from_euler("z", gamma, degrees=True).as_matrix()
+    # a volume rotation about an axis perpendicular to the true viewing direction moves the direction and adds no twist
+    axis = rng.normal(size=(n, 3))
+    direction = true_matrix[:, 2, :]
+    axis -= np.sum(axis * direction, axis=-1, keepdims=True) * direction
+    axis /= np.linalg.norm(axis, axis=-1, keepdims=True)
+    swing_deg = rng.uniform(1.0, 60.0, n)
+    swing = Rotation.from_rotvec(axis * np.radians(swing_deg)[:, None]).as_matrix()
+    est = euler_matrix_to_angles(image_turn @ true_matrix @ swing)
+    _within(_inplane(true, est), np.abs(gamma), 1e-6)
+    _within(ev.direction_error_deg(true[:, 0], true[:, 1], est[:, 0], est[:, 1]), swing_deg, 1e-4)
+
+
+def test_inplane_error_is_defined_for_opposite_directions():
+    error = _inplane([[0.0, 90.0, 0.0], [10.0, 0.0, 5.0]], [[180.0, 90.0, 0.0], [10.0, 180.0, 5.0]])
+    assert np.all(np.isfinite(error))
+
+
+def test_turning_the_estimates_back_by_the_frame_offset_removes_its_inplane_part_too():
+    rng = np.random.default_rng(2)
+    true = rng.uniform([-180, 10, -180], [180, 170, 180], (300, 3))
+    offset = Rotation.from_rotvec(np.radians([3.0, -2.0, 4.0])).as_matrix()
+    gamma = 7.0
+    image_turn = Rotation.from_euler("z", gamma, degrees=True).as_matrix()
+    est = euler_matrix_to_angles(image_turn @ euler_angles_to_matrix(true) @ offset.T)  # est = offset true, then gamma
+    _within(_inplane(true, est, offset), np.full(300, gamma), 1e-6)
+    assert np.abs(_inplane(true, est) - gamma).max() > 0.5  # without the alignment the offset adds to the error
+    _within(ev.aligned_direction_error_deg(*true.T[:2], *est.T[:2], offset), np.zeros(300), 1e-4)
+
+
 def test_kent_guard_stops_the_simulation_when_the_sampler_falls_back():
     logger = logging.getLogger("test_pose_prior_benchmark.simulator")
     guard = sim.KentFallbackGuard()
@@ -316,6 +389,14 @@ def _evaluation(tmp_path, name, *, source, auc, median, js_skill, with_conical=T
             "half1": {"median": median + 0.5, **refined_pose},
             "half2": {"median": median + 1.5, **refined_pose},
         },
+        "pose_inplane_error_aligned_deg": {
+            "half1": {"median": 0.5 * median, **pose},
+            "half2": {"median": 0.5 * median + 1.0, **pose},
+        },
+        "pose_inplane_error_deg": {
+            "half1": {"median": 0.5 * median + 0.5, **refined_pose},
+            "half2": {"median": 0.5 * median + 1.5, **refined_pose},
+        },
         "pose_frame_offset": {"angle_deg": 0.45},
         "prior_final": {"half1": {"js_bits": 0.1, "js_skill": js_skill}, "half2": {"js_bits": 0.3, "js_skill": None}},
     }
@@ -339,6 +420,10 @@ def _evaluation(tmp_path, name, *, source, auc, median, js_skill, with_conical=T
         half2=(errors[1] + 0.5).astype(np.float32),
         aligned_half1=errors[0].astype(np.float32),
         aligned_half2=errors[1].astype(np.float32),
+        inplane_half1=(0.5 * errors[0] + 0.5).astype(np.float32),
+        inplane_half2=(0.5 * errors[1] + 0.5).astype(np.float32),
+        aligned_inplane_half1=(0.5 * errors[0]).astype(np.float32),
+        aligned_inplane_half2=(0.5 * errors[1]).astype(np.float32),
     )
     return directory
 
@@ -354,6 +439,7 @@ def test_variants_are_compared_in_a_table_and_a_figure(tmp_path):
     assert [rows[v]["direction_prior"] for v in rows] == ["learned", "fixed"]
     assert_matches(float(rows["learned"]["pose_error_median_aligned_deg"]), 2.5)  # the mean of the two halves
     assert_matches(float(rows["learned"]["pose_error_median_as_refined_deg"]), 3.0)
+    assert_matches(float(rows["learned"]["inplane_error_median_aligned_deg"]), 1.5)
     assert_matches(float(rows["fixed_true"]["gt_fsc_auc_aligned"]), 0.85)
     assert_matches(float(rows["fixed_true"]["gt_fsc_auc_as_refined"]), 0.80)
     assert_matches(
@@ -389,6 +475,17 @@ def test_the_cone_curve_of_a_variant_is_the_mean_and_sd_over_its_cones(tmp_path)
     assert_matches(curve.mean[1:], _GT_CONE_CURVES[:, 1:].mean(axis=0))
     assert_matches(curve.std[1:], _GT_CONE_CURVES[:, 1:].std(axis=0))
     assert np.isnan(curve.mean[0]) and np.isnan(curve.std[0])  # shell 0 is in no cone
+    # the best and the worst cone are those of the largest and the smallest wAuC: curves 0 and 2 of the fixture
+    assert_matches(curve.best[1:], _GT_CONE_CURVES[0, 1:])
+    assert_matches(curve.worst[1:], _GT_CONE_CURVES[2, 1:])
+
+
+def test_the_best_and_worst_cone_are_refused_when_the_metrics_name_other_axes(tmp_path):
+    directory = _evaluation(tmp_path, "learned", source="learned", auc=0.8, median=2.0, js_skill=0.9)
+    metrics = json.loads((directory / "metrics.json").read_text())
+    metrics["conical_fsc"]["gt_merged_aligned"]["max_axis"]["tilt_deg"] += 10.0
+    with pytest.raises(ValueError, match="disagree on the cone of max_axis"):
+        cmp.read_conical_curve(directory, metrics)
 
 
 def test_a_variant_evaluated_before_the_conical_fsc_is_refused_not_compared_without_it(tmp_path):
@@ -406,6 +503,32 @@ def test_aligned_pose_errors_of_both_halves_are_read_in_order(tmp_path):
         aligned_half2=np.array([3.0], np.float32),
     )
     assert_matches(cmp.read_pose_errors(tmp_path), np.array([1.0, 2.0, 3.0]))
+
+
+def test_aligned_inplane_errors_of_both_halves_are_read_in_order(tmp_path):
+    np.savez(
+        tmp_path / "pose_errors.npz",
+        aligned_half1=np.array([9.0, 9.0], np.float32),
+        aligned_half2=np.array([9.0], np.float32),
+        inplane_half1=np.array([8.0, 8.0], np.float32),
+        inplane_half2=np.array([8.0], np.float32),
+        aligned_inplane_half1=np.array([1.5, 2.5], np.float32),
+        aligned_inplane_half2=np.array([3.5], np.float32),
+    )
+    assert_matches(cmp.read_inplane_errors(tmp_path), np.array([1.5, 2.5, 3.5]))
+
+
+def test_a_variant_evaluated_before_the_inplane_error_is_refused_not_compared_without_it(tmp_path):
+    old = _evaluation(tmp_path, "old", source="learned", auc=0.5, median=2.0, js_skill=0.7)
+    with np.load(old / "pose_errors.npz") as archive:
+        kept = {k: archive[k] for k in archive.files if "inplane" not in k}
+    np.savez(old / "pose_errors.npz", **kept)
+    with pytest.raises(ValueError, match="pose_errors.npz has no in-plane errors; rerun evaluate_run.py"):
+        cmp.read_inplane_errors(old)
+    metrics = json.loads((old / "metrics.json").read_text())
+    del metrics["pose_inplane_error_aligned_deg"]
+    with pytest.raises(ValueError, match="old: metrics.json has no in-plane pose error; rerun evaluate_run.py"):
+        cmp.summary_row("old", metrics)
 
 
 def test_error_density_integrates_to_one_and_peaks_at_the_typical_error():
@@ -480,6 +603,8 @@ def test_iteration_table_is_written_with_empty_cells_for_a_crossing_that_never_h
         },
         "pose_errors": {1: np.array([0.5, 3.0]), 2: np.array([170.0])},
         "aligned_pose_errors": {1: np.array([0.4, 2.5]), 2: np.array([169.0])},
+        "inplane_errors": {1: np.array([0.6, 1.5]), 2: np.array([20.0])},
+        "aligned_inplane_errors": {1: np.array([0.5, 1.0]), 2: np.array([19.0])},
         "box": 4,
         "voxel": 2.0,
     }
@@ -489,6 +614,10 @@ def test_iteration_table_is_written_with_empty_cells_for_a_crossing_that_never_h
         assert_matches(archive["half2"], np.array([170.0]))
         assert_matches(archive["aligned_half1"], np.array([0.4, 2.5]))
         assert_matches(archive["aligned_half2"], np.array([169.0]))
+        assert_matches(archive["inplane_half1"], np.array([0.6, 1.5]))
+        assert_matches(archive["inplane_half2"], np.array([20.0]))
+        assert_matches(archive["aligned_inplane_half1"], np.array([0.5, 1.0]))
+        assert_matches(archive["aligned_inplane_half2"], np.array([19.0]))
     with np.load(tmp_path / "conical_fsc.npz") as archive:
         assert sorted(archive.files) == [
             "axes",

@@ -35,6 +35,12 @@ twice, as refined and aligned:
     share of particles within 15 degrees of it) that best maps the true viewing directions onto the estimated ones.
     ``pose_direction_error_aligned_deg`` is the direction error after turning the estimated directions back by it;
     ``pose_direction_error_deg`` is the error as refined.
+  * The direction error is the angle between the true and the estimated viewing directions, the out-of-plane part of
+    the pose error; it does not see the in-plane angle. ``pose_inplane_error_aligned_deg`` and
+    ``pose_inplane_error_deg`` (aligned and as refined) are the in-plane part: the angle about the viewing direction
+    that remains between the true pose and the estimated pose after the estimated pose is turned by the shortest
+    rotation that brings its viewing direction onto the true one. A particle whose direction is far off has an
+    arbitrary in-plane error.
   * ``resolution.alignment`` is the rotation and shift that bring the final merged map onto the ground truth
     (``align_to_truth.py``, fitted on both maps low-passed at ``ALIGN_RESOLUTION_A``); ``gt_merged_aligned`` and
     ``gt_half{1,2}_aligned`` are the FSC to the truth of the final maps after that transform, ``gt_merged`` and
@@ -48,7 +54,8 @@ Run::
 
 ``OUT`` receives ``metrics.json``, ``prior_by_iteration.csv``, ``fsc_by_iteration.csv``, ``fsc_curves.csv``,
 ``pose_errors.npz`` (every particle's final direction error, degrees, one array per half set as ``half1``, ``half2``
-and aligned as ``aligned_half1``, ``aligned_half2``), ``conical_fsc.npz`` (``axes``, and per pair ``<pair>_curves`` and
+and aligned as ``aligned_half1``, ``aligned_half2``; and its in-plane error as ``inplane_half1``, ``inplane_half2``
+and ``aligned_inplane_half1``, ``aligned_inplane_half2``), ``conical_fsc.npz`` (``axes``, and per pair ``<pair>_curves`` and
 ``<pair>_voxels``, one row per cone), ``conical_fsc.png`` and ``summary.png`` (the FSC curves and every learned-prior
 metric per iteration). The orientation-distribution plots are made by the Snakefile
 with ``angdist``.
@@ -71,6 +78,7 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
+from relax.sampling.healpix import euler_angles_to_matrix  # noqa: E402
 from relax.sampling.orientation_priors import infer_direction_prior_healpix_order  # noqa: E402
 from relax.star.blocks import read_star_blocks  # noqa: E402
 from scripts.conical_fsc import (  # noqa: E402
@@ -127,10 +135,10 @@ def image_key(name: str) -> tuple[int, str]:
 
 
 def read_particles(star_path: Path) -> dict[str, Any]:
-    """Read image keys, optional half-set labels and Euler angles (degrees) of a particle STAR file."""
+    """Read image keys, optional half-set labels and Euler angles (rot, tilt, psi; degrees) of a particle STAR file."""
     table = read_star_blocks(star_path)["particles"]
     out: dict[str, Any] = {"image_key": [image_key(name) for name in table["rlnImageName"]]}
-    for label, column in (("rot", "rlnAngleRot"), ("tilt", "rlnAngleTilt")):
+    for label, column in (("rot", "rlnAngleRot"), ("tilt", "rlnAngleTilt"), ("psi", "rlnAnglePsi")):
         out[label] = np.asarray(table[column], dtype=np.float64)
     if "rlnRandomSubset" in table:
         out["half"] = np.asarray(table["rlnRandomSubset"], dtype=np.int64)
@@ -165,7 +173,7 @@ def read_direction_prior(model_star: Path) -> np.ndarray | None:
 
 
 def true_directions_per_half(run_dir: Path, iteration: int, dataset_dir: Path) -> dict[int, dict[str, np.ndarray]]:
-    """Split the true and the estimated (rot, tilt) of the particles by the run's half sets.
+    """Split the true and the estimated (rot, tilt, psi) of the particles by the run's half sets.
 
     The run's ``run_itNNN_data.star`` gives each particle's half set and estimated angles; the dataset's
     ``particles.star`` gives the true angles. Particles are matched by image name.
@@ -189,8 +197,10 @@ def true_directions_per_half(run_dir: Path, iteration: int, dataset_dir: Path) -
         halves[half] = {
             "true_rot": truth["rot"][rows[keep]],
             "true_tilt": truth["tilt"][rows[keep]],
+            "true_psi": truth["psi"][rows[keep]],
             "est_rot": run["rot"][keep],
             "est_tilt": run["tilt"][keep],
+            "est_psi": run["psi"][keep],
         }
     return halves
 
@@ -339,6 +349,44 @@ def aligned_direction_error_deg(
         viewing_directions(true_rot, true_tilt) * (viewing_directions(est_rot, est_tilt) @ rotation), axis=-1
     )
     return np.degrees(np.arccos(np.clip(cosine, -1.0, 1.0)))
+
+
+def inplane_error_deg(
+    true_eulers: np.ndarray, est_eulers: np.ndarray, rotation: np.ndarray | None = None
+) -> np.ndarray:
+    """The in-plane angle (degrees, 0 to 180) between true and estimated poses, ``(n, 3)`` rows of (rot, tilt, psi).
+
+    The estimated pose is first turned by the shortest rotation about an axis perpendicular to both that brings its
+    viewing direction onto the true one (which removes the direction error); the angle about the viewing direction
+    that is left between it and the true pose is the in-plane error. It is 0 when the poses differ only in the
+    direction. With ``rotation`` (the ``rotation_matrix`` of ``frame_offset``, ``est = rotation true``) the estimate is
+    first turned back by the frame offset, as ``aligned_direction_error_deg`` does. The angle is undefined for exactly
+    opposite directions, where the axis is taken perpendicular to the true direction.
+    """
+    true_a = euler_angles_to_matrix(true_eulers)
+    est_a = euler_angles_to_matrix(est_eulers)
+    if rotation is not None:
+        est_a = est_a @ rotation
+    a, b = true_a[:, 2, :], est_a[:, 2, :]  # viewing directions: the third row of each pose matrix
+    cross = np.cross(a, b)
+    sin_angle = np.linalg.norm(cross, axis=-1)
+    cos_angle = np.sum(a * b, axis=-1)
+    least_aligned = np.eye(3)[np.argmin(np.abs(a), axis=-1)]  # an axis away from a, for the opposite-direction case
+    perpendicular = np.cross(a, least_aligned)
+    axis = np.where(
+        (sin_angle > 1e-12)[:, None],
+        cross / np.maximum(sin_angle, 1e-12)[:, None],
+        perpendicular / np.linalg.norm(perpendicular, axis=-1, keepdims=True),
+    )
+    angle = np.where(sin_angle > 1e-12, np.arctan2(sin_angle, cos_angle), np.where(cos_angle < 0, np.pi, 0.0))
+    skew = np.zeros((len(a), 3, 3))
+    skew[:, 0, 1], skew[:, 0, 2], skew[:, 1, 2] = -axis[:, 2], axis[:, 1], -axis[:, 0]
+    skew = skew - skew.transpose(0, 2, 1)
+    arc = (  # Rodrigues: the rotation by ``angle`` about ``axis``, taking a to b
+        np.eye(3) + np.sin(angle)[:, None, None] * skew + (1.0 - np.cos(angle))[:, None, None] * skew @ skew
+    )
+    residual = (est_a @ arc) @ true_a.transpose(0, 2, 1)  # a rotation about the beam axis
+    return np.abs(np.degrees(np.arctan2(residual[:, 1, 0], residual[:, 0, 0])))
 
 
 def frame_offset(true_directions: np.ndarray, est_directions: np.ndarray) -> dict[str, Any]:
@@ -649,6 +697,18 @@ def evaluate(
         )
         for half, h in halves.items()
     }
+    eulers = {
+        half: (
+            np.stack([h["true_rot"], h["true_tilt"], h["true_psi"]], axis=-1),
+            np.stack([h["est_rot"], h["est_tilt"], h["est_psi"]], axis=-1),
+        )
+        for half, h in halves.items()
+    }
+    inplane_errors = {half: inplane_error_deg(true, est) for half, (true, est) in eulers.items()}
+    aligned_inplane_errors = {
+        half: inplane_error_deg(true, est, np.asarray(offset["rotation_matrix"]))
+        for half, (true, est) in eulers.items()
+    }
     metrics = {
         "run": {
             "n_iterations": len(iterations),
@@ -676,6 +736,8 @@ def evaluate(
             for key, per_half in (
                 ("pose_direction_error_deg", errors),
                 ("pose_direction_error_aligned_deg", aligned_errors),
+                ("pose_inplane_error_deg", inplane_errors),
+                ("pose_inplane_error_aligned_deg", aligned_inplane_errors),
             )
         },
         "pose_frame_offset": offset,
@@ -688,6 +750,8 @@ def evaluate(
         "conical_fsc": cfscs,
         "pose_errors": errors,
         "aligned_pose_errors": aligned_errors,
+        "inplane_errors": inplane_errors,
+        "aligned_inplane_errors": aligned_inplane_errors,
         "voxel": voxel,
         "box": box,
     }
@@ -714,6 +778,8 @@ def write_tables(result: dict[str, Any], out_dir: Path) -> None:
         out_dir / "pose_errors.npz",
         **{f"half{half}": e.astype(np.float32) for half, e in result["pose_errors"].items()},
         **{f"aligned_half{half}": e.astype(np.float32) for half, e in result["aligned_pose_errors"].items()},
+        **{f"inplane_half{half}": e.astype(np.float32) for half, e in result["inplane_errors"].items()},
+        **{f"aligned_inplane_half{half}": e.astype(np.float32) for half, e in result["aligned_inplane_errors"].items()},
     )
     cfscs = result["conical_fsc"]
     np.savez_compressed(

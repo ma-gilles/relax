@@ -5,15 +5,18 @@ Each variant is one ``evaluate_run.py`` output directory (``metrics.json``, ``fs
 ``fsc_by_iteration.csv``, ``pose_errors.npz`` and ``conical_fsc.npz``) of the same
 dataset. ``variants.csv`` has one row per variant: the prior that scored it, the iterations and final HEALPix order,
 the resolutions and area under the FSC curve against the ground truth and between the half maps, the pose
-direction error, the final learned prior's accuracy and the frame offsets. The ground-truth FSC and the pose error are
-those of the final map and poses aligned to the ground truth's frame (``_aligned``: the map rigidly aligned to the
+direction error (``pose_error_*``: the angle between the true and the estimated viewing directions, the out-of-plane
+part of the pose error) and in-plane error (``inplane_error_*``: the angle about the viewing direction that remains
+once the directions agree; ``evaluate_run.py``), the final learned prior's accuracy and the frame offsets. The
+ground-truth FSC and the pose errors are those of the final map and poses aligned to the ground truth's frame (``_aligned``: the map rigidly aligned to the
 truth, the poses turned back by their average offset), with the values as refined beside them (``_as_refined``), so
 runs that start from maps in different frames compare. The conical FSC (cFSC, ``scripts/conical_fsc.py``) adds the cFAR of
 the aligned map against the truth (``gt_cfar_aligned``; the smallest over the largest area under the cones' curves, 1 for
 an isotropic map), the resolution of its worst cone and the half maps' cFAR. ``variants.png`` shows the
-aligned ground-truth FSC curves, the FSC area, the aligned map's cFSC (mean +- 1 SD over the cones) and cFAR (hollow:
-the half maps'), the distribution of the particles' aligned direction errors, the learned prior's divergence from the true
-prior and, per iteration, the half maps' FSC area to the truth (as refined) and to each other and the refinement's
+aligned ground-truth FSC curves, the FSC area, the aligned map's cFSC (mean +- 1 SD over the cones; dashed, the best and the worst cone: the largest and the smallest area
+under the cone's curve, whose ratio is the cFAR) and cFAR (hollow:
+the half maps'), the distributions of the particles' aligned direction (out-of-plane) and in-plane errors, the learned
+prior's divergence from the true prior (a distribution over viewing directions, so out of plane only) and, per iteration, the half maps' FSC area to the truth (as refined) and to each other and the refinement's
 Fourier radius (so runs that stop at different iterations or orders compare at equal iteration).
 
 ``--reconstructions`` (relion_reconstruct maps from each variant's final poses), ``--angle-reconstructions`` (from
@@ -42,7 +45,7 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
-from scripts.conical_fsc import ConicalFsc  # noqa: E402
+from scripts.conical_fsc import ConicalFsc, axes_rot_tilt_deg, cone_areas, measured_curves  # noqa: E402
 from scripts.pose_prior_benchmark.conical_fsc_plot import curve_statistics  # noqa: E402
 from scripts.pose_prior_benchmark.evaluate_run import HALVES, PALETTE  # noqa: E402
 
@@ -72,6 +75,8 @@ COLUMNS = (
     "pose_error_p90_aligned_deg",
     "pose_error_fraction_over_90_aligned",
     "pose_error_median_as_refined_deg",
+    "inplane_error_median_aligned_deg",
+    "inplane_error_p90_aligned_deg",
     "pose_offset_deg",
     "map_offset_deg",
     "map_shift_A",
@@ -94,11 +99,14 @@ class IterationCurve(NamedTuple):
 
 class ConicalCurve(NamedTuple):
     """The aligned final map's cFSC to the ground truth over the cones: spatial frequency (1/A), mean and SD per
-    shell, NaN in the shells a cone does not measure."""
+    shell over the cones every cone measures, and the curves of the best and the worst cone (the largest and the
+    smallest wAuC, whose ratio is the cFAR); NaN in the shells where a cone is not measured."""
 
     frequency: np.ndarray
     mean: np.ndarray
     std: np.ndarray
+    best: np.ndarray
+    worst: np.ndarray
 
 
 class Reconstruction(NamedTuple):
@@ -142,6 +150,9 @@ def summary_row(variant: str, metrics: dict[str, Any]) -> dict[str, Any]:
         raise ValueError(f"{variant}: metrics.json has no conical_fsc; rerun evaluate_run.py on the run")
     conical = metrics["conical_fsc"]
     pose = metrics["pose_direction_error_aligned_deg"]
+    if "pose_inplane_error_aligned_deg" not in metrics:
+        raise ValueError(f"{variant}: metrics.json has no in-plane pose error; rerun evaluate_run.py on the run")
+    inplane = metrics["pose_inplane_error_aligned_deg"]
     prior = metrics["prior_final"]
     used = metrics["run"]["direction_prior_used"]
     return {
@@ -163,6 +174,8 @@ def summary_row(variant: str, metrics: dict[str, Any]) -> dict[str, Any]:
         "pose_error_p90_aligned_deg": half_mean(pose, "p90"),
         "pose_error_fraction_over_90_aligned": half_mean(pose, "fraction_over_90"),
         "pose_error_median_as_refined_deg": half_mean(metrics["pose_direction_error_deg"], "median"),
+        "inplane_error_median_aligned_deg": half_mean(inplane, "median"),
+        "inplane_error_p90_aligned_deg": half_mean(inplane, "p90"),
         "pose_offset_deg": metrics["pose_frame_offset"]["angle_deg"],
         "map_offset_deg": resolution["alignment"]["angle_deg"],
         "map_shift_A": resolution["alignment"]["shift_A"],
@@ -183,7 +196,7 @@ def read_gt_curve(evaluation_dir: Path, metrics: dict[str, Any]) -> tuple[np.nda
 
 def read_conical_curve(evaluation_dir: Path, metrics: dict[str, Any]) -> ConicalCurve:
     """The aligned final map's cFSC to the ground truth from ``conical_fsc.npz``: its mean and SD over the cones
-    in the shells every cone measures."""
+    in the shells every cone measures, and the curves of its best and worst cone (the axes ``metrics.json`` names)."""
     summary = metrics["conical_fsc"]["gt_merged_aligned"]
     with np.load(evaluation_dir / "conical_fsc.npz", allow_pickle=False) as archive:
         cfsc = ConicalFsc(
@@ -193,8 +206,15 @@ def read_conical_curve(evaluation_dir: Path, metrics: dict[str, Any]) -> Conical
             voxels=archive["gt_merged_aligned_voxels"],
         )
     stats = curve_statistics(cfsc, summary["min_cone_voxels"], summary["first_shell_measured_by_all_cones"])
+    wauc, _ = cone_areas(cfsc, summary["threshold"], summary["min_cone_voxels"])
+    worst, best = int(np.argmin(wauc)), int(np.argmax(wauc))
+    rot, tilt = axes_rot_tilt_deg(cfsc.axes)
+    for index, axis in ((worst, "min_axis"), (best, "max_axis")):
+        if not np.allclose([rot[index], tilt[index]], [summary[axis]["rot_deg"], summary[axis]["tilt_deg"]]):
+            raise ValueError(f"{evaluation_dir}: conical_fsc.npz and metrics.json disagree on the cone of {axis}")
+    curves = measured_curves(cfsc, summary["min_cone_voxels"])
     frequency = np.arange(cfsc.curves.shape[1]) / (metrics["resolution"]["box"] * metrics["resolution"]["voxel_size_A"])
-    return ConicalCurve(frequency, stats["mean"], stats["std"])
+    return ConicalCurve(frequency, stats["mean"], stats["std"], curves[best], curves[worst])
 
 
 def read_iteration_curve(evaluation_dir: Path) -> IterationCurve:
@@ -244,6 +264,17 @@ def read_pose_errors(evaluation_dir: Path) -> np.ndarray:
     offset, both half sets, from ``pose_errors.npz``."""
     with np.load(evaluation_dir / "pose_errors.npz", allow_pickle=False) as archive:
         return np.concatenate([archive[f"aligned_half{half}"] for half in HALVES]).astype(np.float64)
+
+
+def read_inplane_errors(evaluation_dir: Path) -> np.ndarray:
+    """Every particle's final in-plane error (degrees) of the run after its poses are turned back by their average
+    offset, both half sets, from ``pose_errors.npz``."""
+    with np.load(evaluation_dir / "pose_errors.npz", allow_pickle=False) as archive:
+        if "aligned_inplane_half1" not in archive.files:
+            raise ValueError(
+                f"{evaluation_dir}: pose_errors.npz has no in-plane errors; rerun evaluate_run.py on the run"
+            )
+        return np.concatenate([archive[f"aligned_inplane_half{half}"] for half in HALVES]).astype(np.float64)
 
 
 def error_density(errors: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -363,13 +394,14 @@ def plot_comparison(
     conical_curves: dict[str, ConicalCurve],
     iteration_curves: dict[str, IterationCurve],
     pose_errors: dict[str, np.ndarray],
+    inplane_errors: dict[str, np.ndarray],
     reconstructions: Reconstructions | None,
     label: str,
     path: Path,
 ) -> None:
     """The comparison figure of ``rows`` (one per variant), their ground-truth FSC ``curves``, the mean and SD of
     their cFSC over the cones (``conical_curves``), their per-iteration half-map FSC areas and Fourier radii (``iteration_curves``), their particles' direction errors
-    (``pose_errors``, degrees) and, when given, the relion_reconstruct maps from their poses (``reconstructions``)."""
+    (``pose_errors``) and in-plane errors (``inplane_errors``), degrees, and, when given, the relion_reconstruct maps from their poses (``reconstructions``)."""
     import matplotlib
 
     matplotlib.use("Agg")
@@ -384,11 +416,15 @@ def plot_comparison(
     colors = dict(zip(variants, VARIANT_COLORS))
     n_rows = 3 + (reconstructions is not None)
     fig = plt.figure(figsize=(11, 4.07 * (n_rows + 1.45)), facecolor=PALETTE["surface"])
-    grid = fig.add_gridspec(n_rows + 2, 2, height_ratios=[1] * n_rows + [0.85, 0.6])
-    axes = np.array([[fig.add_subplot(grid[row, col]) for col in range(2)] for row in range(n_rows)])
+    grid = fig.add_gridspec(n_rows + 2, 6, height_ratios=[1] * n_rows + [0.85, 0.6])
+    spans = {2: ((0, 2), (4, 6))}  # the third row also holds the in-plane error between its two panels
+    axes = np.array(
+        [[fig.add_subplot(grid[row, a:b]) for a, b in spans.get(row, ((0, 3), (3, 6)))] for row in range(n_rows)]
+    )
+    inplane_ax = fig.add_subplot(grid[2, 2:4])
     trace_ax = fig.add_subplot(grid[n_rows, :])
     radius_ax = fig.add_subplot(grid[n_rows + 1, :], sharex=trace_ax)
-    for ax in (*axes.flat, trace_ax, radius_ax):
+    for ax in (*axes.flat, inplane_ax, trace_ax, radius_ax):
         ax.set_facecolor(PALETTE["surface"])
         ax.tick_params(colors=PALETTE["ink2"])
     fig.suptitle(f"{label}: refinement variants", x=0.01, ha="left", color=PALETTE["ink"])
@@ -427,9 +463,14 @@ def plot_comparison(
         cone = conical_curves[variant]
         ax.fill_between(cone.frequency, cone.mean - cone.std, cone.mean + cone.std, color=colors[variant], alpha=0.18)
         ax.plot(cone.frequency, cone.mean, color=colors[variant], linewidth=2)
+        for extreme in (cone.best, cone.worst):
+            ax.plot(cone.frequency, extreme, color=colors[variant], linewidth=1.2, linestyle="--")
     for threshold in GT_FSC_THRESHOLDS:
         ax.axhline(threshold, color=PALETTE["reference"], linewidth=1, linestyle=":")
-    ax.set_title("cFSC to the ground truth, aligned: mean \N{PLUS-MINUS SIGN}1 SD over cones", color=PALETTE["ink"])
+    ax.set_title(
+        "cFSC to the ground truth, aligned: mean \N{PLUS-MINUS SIGN}1 SD over cones\n(dashed: the best and the worst cone)",
+        color=PALETTE["ink"],
+    )
     ax.set_xlabel("spatial frequency (1/A)", color=PALETTE["ink2"])
     ax.set_ylabel("FSC", color=PALETTE["ink2"])
 
@@ -455,50 +496,59 @@ def plot_comparison(
     ax.set_ylabel("cFAR", color=PALETTE["ink2"])
     ax.set_ylim(0, 1.45 * max(gt_cfar.max(), half_cfar.max()))  # cFAR is 1 only for an isotropic map
 
-    ax = axes[2, 0]
-    style_axes(ax)
-    densities = {variant: error_density(pose_errors[variant]) for variant in variants}
-    half_width = 0.42 / max(density.max() for _, density in densities.values())
-    for position, variant in zip(x, variants):
-        grid, density = densities[variant]
-        errors = pose_errors[variant]
-        inside = (grid >= errors.min()) & (grid <= errors.max())
-        ax.fill_betweenx(
-            grid[inside],
-            position - half_width * density[inside],
-            position + half_width * density[inside],
-            facecolor=colors[variant],
-            edgecolor=colors[variant],
-            alpha=0.35,
-            linewidth=1.5,
-        )
-        median, p90 = np.median(errors), np.percentile(errors, 90)
-        ax.plot(position, median, "o", color=colors[variant], markeredgecolor=PALETTE["surface"], markersize=8)
-        ax.plot(position, p90, "o", markerfacecolor=PALETTE["surface"], markeredgecolor=colors[variant], markersize=8)
-        ax.text(
-            position,
-            1.01,
-            f"{100 * np.mean(errors > GROSS_POSE_ERROR_DEG):.1f}% > {GROSS_POSE_ERROR_DEG:g}\N{DEGREE SIGN}",
-            transform=ax.get_xaxis_transform(),
-            ha="center",
-            va="bottom",
-            color=PALETTE["ink2"],
-            fontsize=8,
-        )
-    ax.axhline(GROSS_POSE_ERROR_DEG, color=PALETTE["reference"], linewidth=1, linestyle=":")
-    ax.set_yscale("log")
-    ax.set_ylim(POSE_ERROR_RANGE_DEG)
-    ax.yaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(lambda value, _: f"{value:g}"))
-    ax.yaxis.set_minor_formatter(matplotlib.ticker.NullFormatter())
-    ax.set_xticks(x, labels)
-    ax.set_xlim(-0.6, len(variants) - 0.4)
-    ax.set_title("Direction error of the final poses, average offset removed", color=PALETTE["ink"], pad=18)
-    ax.set_ylabel("degrees (log scale)", color=PALETTE["ink2"])
+    def error_violins(ax, errors_by_variant: dict[str, np.ndarray], title: str) -> None:
+        """The error distribution of every variant: a violin on a log axis, the median (filled dot) and the 90th
+        percentile (hollow), and the share of particles above ``GROSS_POSE_ERROR_DEG``."""
+        style_axes(ax)
+        densities = {variant: error_density(errors_by_variant[variant]) for variant in variants}
+        half_width = 0.42 / max(density.max() for _, density in densities.values())
+        for position, variant in zip(x, variants):
+            grid, density = densities[variant]
+            errors = errors_by_variant[variant]
+            inside = (grid >= errors.min()) & (grid <= errors.max())
+            ax.fill_betweenx(
+                grid[inside],
+                position - half_width * density[inside],
+                position + half_width * density[inside],
+                facecolor=colors[variant],
+                edgecolor=colors[variant],
+                alpha=0.35,
+                linewidth=1.5,
+            )
+            median, p90 = np.median(errors), np.percentile(errors, 90)
+            ax.plot(position, median, "o", color=colors[variant], markeredgecolor=PALETTE["surface"], markersize=8)
+            ax.plot(
+                position, p90, "o", markerfacecolor=PALETTE["surface"], markeredgecolor=colors[variant], markersize=8
+            )
+            ax.text(
+                position,
+                1.01,
+                f"{100 * np.mean(errors > GROSS_POSE_ERROR_DEG):.1f}% > {GROSS_POSE_ERROR_DEG:g}\N{DEGREE SIGN}",
+                transform=ax.get_xaxis_transform(),
+                ha="center",
+                va="bottom",
+                color=PALETTE["ink2"],
+                fontsize=8,
+            )
+        ax.axhline(GROSS_POSE_ERROR_DEG, color=PALETTE["reference"], linewidth=1, linestyle=":")
+        ax.set_yscale("log")
+        ax.set_ylim(POSE_ERROR_RANGE_DEG)
+        ax.yaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(lambda value, _: f"{value:g}"))
+        ax.yaxis.set_minor_formatter(matplotlib.ticker.NullFormatter())
+        ax.set_xticks(x, labels)
+        ax.set_xlim(-0.6, len(variants) - 0.4)
+        ax.set_title(title, color=PALETTE["ink"], pad=18)
+        ax.set_ylabel("degrees (log scale)", color=PALETTE["ink2"])
+
+    error_violins(axes[2, 0], pose_errors, "Out-of-plane error (viewing direction)\nof the final poses, offset removed")
+    error_violins(
+        inplane_ax, inplane_errors, "In-plane error (about the viewing direction)\nof the final poses, offset removed"
+    )
 
     bars(
         axes[2, 1],
         "learned_prior_js_bits",
-        "Learned prior: divergence from the true prior",
+        "Learned prior (viewing directions):\ndivergence from the true prior",
         "JS (bits); fixed runs: estimated, not used",
         title_pad=18,
     )
@@ -536,6 +586,7 @@ def plot_comparison(
     legend = [Line2D([], [], color=colors[v], linewidth=2, label=v) for v in variants] + [
         Line2D([], [], color=PALETTE["ink2"], linewidth=2, label="half maps vs ground truth, as refined"),
         Line2D([], [], color=PALETTE["ink2"], linewidth=2, linestyle="--", label="half map vs other half map"),
+        Line2D([], [], color=PALETTE["ink2"], linewidth=1.2, linestyle="--", label="best and worst cone (cFSC panel)"),
         Line2D([], [], marker="o", color=PALETTE["ink2"], linestyle="", label="HEALPix order raised"),
         Line2D(
             [],
@@ -610,6 +661,7 @@ def main(argv: list[str] | None = None) -> None:
     conical_curves = {variant: read_conical_curve(directory, metrics[variant]) for variant, directory in runs.items()}
     iteration_curves = {variant: read_iteration_curve(directory) for variant, directory in runs.items()}
     pose_errors = {variant: read_pose_errors(directory) for variant, directory in runs.items()}
+    inplane_errors = {variant: read_inplane_errors(directory) for variant, directory in runs.items()}
     reconstructions = read_reconstructions(args, list(runs))
     args.out_dir.mkdir(parents=True, exist_ok=True)
     write_table(rows, args.out_dir / "variants.csv")
@@ -621,6 +673,7 @@ def main(argv: list[str] | None = None) -> None:
         conical_curves,
         iteration_curves,
         pose_errors,
+        inplane_errors,
         reconstructions,
         args.label,
         args.out_dir / "variants.png",
@@ -629,7 +682,8 @@ def main(argv: list[str] | None = None) -> None:
         print(
             f"{row['variant']}: {row['direction_prior']} prior, {row['iterations']} iterations, "
             f"aligned GT-FSC area {row['gt_fsc_auc_aligned']:.3f}, aligned cFAR {row['gt_cfar_aligned']:.3f}, "
-            f"aligned median pose error {row['pose_error_median_aligned_deg']:.2f} deg"
+            f"aligned median out-of-plane error {row['pose_error_median_aligned_deg']:.2f} deg, "
+            f"in-plane {row['inplane_error_median_aligned_deg']:.2f} deg"
         )
 
 
