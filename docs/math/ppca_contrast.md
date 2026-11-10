@@ -226,8 +226,8 @@ baseline's own, which is the model the optimizers are tuned for.
 Model A puts the contrast on the mean only, `y = A[(1 + sd e) mu + W z]`. The loadings `W` are free, so a column
 `w_k = a_k mu + w_k'` with `w_k'` orthogonal to `mu` gives `A[(1 + sd e + a_k z_k) mu + W' z]`: the latent `z_k` is then a
 second contrast latent. The likelihood is unchanged by moving variance between `sd e` and `a_k z_k`, so `sd` is not identified
-once such a column exists, and the EM update of `sd` (section 9) is a random walk on a flat valley. A run without a contrast
-model shows why a column is attracted to `mu`: contrast variation is exactly that direction (the baseline loadings at true sd
+once such a column exists, and nothing restores it once the split has moved (the E-step is exact for the current split and cannot
+prefer another). A run without a contrast model shows why a column is attracted to `mu`: contrast variation is exactly that direction (the baseline loadings at true sd
 0.30 have 20-50 percent of their power along `mu`, against 0.1 percent at unit contrast).
 
 Observed in round 4 on C n1 at box 64 with noise level 3 (three times the injected noise variance of the datasets above; the scorer's SNR probe reads 0.041 against 0.124), true sd
@@ -236,6 +236,19 @@ Observed in round 4 on C n1 at box 64 with noise level 3 (three times the inject
 mean contrast estimate drifted to a gain of -0.74, the contrast estimates' correlation with the truth was -0.10, and several
 loadings of the final model kept 8 to 18 percent of their power along the mean volume. Every contrast run that worked (VDAM
 throughout; SGD at noise level 1) had loadings with 0.0 to 0.3 percent along the mean.
+
+Timeline of that run, from its checkpoints (`scripts/ppca_contrast/contrast_variance_split.py`; the coefficient of a loading on
+the mean is the real part of the unweighted half-space inner product over `<mu, mu>`, so the sums are approximate). The loadings did not
+start the decay. Until iteration 1600 the latent carried the contrast: the summed squared coefficient of the loadings on the mean fell from 0.126 to 0.029
+while `sd` rose to 0.28. The sd fell at the stage change to healpix order 3 (iteration 1626) in every noise-3 run, with and without the constraint
+(0.294 to 0.268 at iteration 1800 with it): the mean volume's power rose from 0.256 to 0.289, the gain went from -0.2 to -0.3 and the
+mean contrast from 0.946 to 0.916, a motion of the mean's amplitude against the contrasts along the gauge of section 9. Only after that did the
+unconstrained loadings take over: from iteration 1800 to 3000 the latent's variance `sd^2` went from 0.055 to 0.008 and the loadings'
+parallel variance from 0.029 to 0.091, while their sum stayed at 0.084 to 0.099 (spread relative to the mean contrast 0.29 to 0.34 throughout, true 0.30).
+In seed 12 the transfer is smaller (0.006 to 0.043) and the total falls from 0.075 to 0.058 (relative spread 0.30 to 0.27). With the constraint no
+transfer is possible and `sd` stops at 0.23 (relative spread 0.27). So the constraint stops the continued decay, a drift along a flat
+direction; it does not remove the jolt at the stage change, which is of the same size in both arms and leaves the constrained spread about 10 percent
+below the truth. Why the stage change moves the gauge has not been studied.
 
 The fix is a constraint, not a heuristic: after each update the loadings lose their component along the mean volume,
 `W <- W - mu (mu^H W) / (mu^H mu)` (real coefficient per column, the inner product of the stored half-space Fourier

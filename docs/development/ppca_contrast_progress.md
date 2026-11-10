@@ -209,7 +209,7 @@ of round 3. Per cell: kmeans ARI / state FSC / pose median (deg) are in `$R/tabl
   unit-contrast reference at this noise level is 0.878 and 0.882 (VDAM) so about half of the loss remains; sd 0 at noise 3 shows
   no harm.
 - **SGD at noise 3 and sd 0.30 fails**: the sd estimate decays from 0.28 (iteration 1600, order 2 to 3 stage change at 1700) to
-  0.09, the gain (mean of the latent) drifts to -0.74, the estimate has a correlation of -0.10 with the true contrast and
+  0.09 (the order 2 to 3 stage change is at iteration 1626), the gain (mean of the latent) drifts to -0.74, the estimate has a correlation of -0.10 with the true contrast and
   the kmeans ARI is below the baseline (0.297 against 0.346). The centred second moment of the latent stays at 0.97 to 1.02 during the
   decay, a fixed point of the sd update, which loses 0.05 percent per step at 0.99 and compounds.
 
@@ -219,6 +219,15 @@ checkpoints: contrast latent runs that work have 0.000-0.003 (all VDAM runs, SGD
 0.2-0.5 on several loadings (the contrast variation is that direction); the failing SGD run keeps 0.18, 0.08 and 0.16 on three
 loadings and 0.0-0.003 on the others. This is the strongest evidence I have and not a proof: I have not shown that removing the parallel
 component prevents the decay (the round 5 below does).
+
+**Timeline check** (2026-11-10, per-checkpoint, `scripts/ppca_contrast/contrast_variance_split.py` on the failing run, seed 12 and the
+constrained arm). The diagnosis above put the loadings first; the checkpoints do not. (1) Until iteration 1600 the loadings left the mean
+direction (summed squared coefficient 0.126 to 0.029) while `sd` rose to 0.28, as the latent should make them. (2) The sd fall starts at the
+stage change to order 3 (iteration 1626) in all four noise-3 SGD runs, including both constrained ones (0.294 to 0.268 by iteration 1800), with a
+jump in the mean power (0.256 to 0.289) and in the gain: a gauge motion, not the loadings. (3) Afterwards the unconstrained run moves variance from the
+latent to the parallel loadings (`sd^2` 0.055 to 0.008, parallel 0.029 to 0.091, sum 0.084 to 0.099 in seed 11; in seed 12 the sum falls 0.075 to
+0.058), and the constrained runs, which cannot, stop at 0.23. So the constraint is supported for the continued decay by an intervention; the
+onset is a separate effect, not explained, that also leaves the constrained sd about 10 percent low.
 
 **Cryo-ET fixture** (`cryoet_ppca_k3conf_contrast30_box64`: 399 subtomograms, 3 states, contrast sd 0.30 shared by the tilts of
 a particle; q = 2, 200 iterations, seeds 11 and 12, scored with `scripts/ppca_contrast/eval_tomo_fixture.py`):
