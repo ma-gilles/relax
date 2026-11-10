@@ -7,7 +7,8 @@
 # cf_*: the sd is fixed at 0.3. cs_*: centred sd, from iteration 800 on. cg_*: the M-step moments of the contrast latent are
 # taken about its population mean (--contrast-center, the default from round 3; math note section 9). cgf_*: the same with
 # the sd fixed at 0.3. co_*: cg_* with --contrast-orthogonal (the loadings kept orthogonal to the mean volume; math note
-# section 10).
+# section 10), which is the default of --contrast latent from round 5 on, so the cg_* and cgf_* arms pass
+# --no-contrast-orthogonal to stay the unconstrained arms of rounds 3 to 6.
 arms:
   c_vdam_latent:
     args: ["--optimizer", "vdam", "--direction-prior", "uniform", "--contrast", "latent", "--contrast-sd", "0.2"]
@@ -32,16 +33,20 @@ arms:
     args: ["--optimizer", "momentum_sgd", "--sgd-learning-rate", "2.4", "--sgd-loading-scale", "0.25",
            "--direction-prior", "uniform", "--contrast", "latent", "--contrast-sd", "0.2", "--contrast-start", "800"]
   cg_vdam:
-    args: ["--optimizer", "vdam", "--direction-prior", "uniform", "--contrast", "latent", "--contrast-sd", "0.2"]
+    args: ["--optimizer", "vdam", "--direction-prior", "uniform", "--contrast", "latent", "--contrast-sd", "0.2",
+           "--no-contrast-orthogonal"]
   cg_sgd:
     args: ["--optimizer", "momentum_sgd", "--sgd-learning-rate", "2.4", "--sgd-loading-scale", "0.25",
-           "--direction-prior", "uniform", "--contrast", "latent", "--contrast-sd", "0.2"]
+           "--direction-prior", "uniform", "--contrast", "latent", "--contrast-sd", "0.2",
+           "--no-contrast-orthogonal"]
   cgf_vdam:
     args: ["--optimizer", "vdam", "--direction-prior", "uniform", "--contrast", "latent", "--contrast-sd", "0.3",
-           "--no-contrast-estimate-sd"]
+           "--no-contrast-estimate-sd",
+           "--no-contrast-orthogonal"]
   cgf_sgd:
     args: ["--optimizer", "momentum_sgd", "--sgd-learning-rate", "2.4", "--sgd-loading-scale", "0.25",
-           "--direction-prior", "uniform", "--contrast", "latent", "--contrast-sd", "0.3", "--no-contrast-estimate-sd"]
+           "--direction-prior", "uniform", "--contrast", "latent", "--contrast-sd", "0.3", "--no-contrast-estimate-sd",
+           "--no-contrast-orthogonal"]
   co_vdam:
     args: ["--optimizer", "vdam", "--direction-prior", "uniform", "--contrast", "latent", "--contrast-sd", "0.2",
            "--contrast-orthogonal"]

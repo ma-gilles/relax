@@ -243,3 +243,8 @@ coefficients; `ppca_refinement.contrast.orthogonalize_loadings`), and so does th
 (`--contrast-orthogonal`). It restricts the model to heterogeneity that is independent of the contrast, which is the physical
 situation (the contrast of a particle does not depend on its conformation). The constraint changes nothing for a model whose loadings
 are already orthogonal to the mean, so VDAM, which is, is unaffected to first order.
+
+Round 5 to 7 of the progress log: with the constraint SGD's sd no longer decays at noise 3 (the estimated contrast sd 0.20 against 0.03 to 0.06;
+kmeans ARI 0.346 to 0.494 and 0.322 to 0.564, both above the baseline), SGD on the cryo-ET fixture reaches the true sd (0.308 and 0.309
+for 0.30), and VDAM and the unit-contrast datasets are unchanged. It is the default under `--contrast latent`.
+

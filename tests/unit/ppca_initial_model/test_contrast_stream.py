@@ -280,3 +280,19 @@ def test_dense_and_streamed_engines_agree_when_the_latent_is_centred():
     assert_matches(np.asarray(dense.embeddings), np.asarray(plain.embeddings))  # unshifted
     assert_matches(np.asarray(dense.diagnostics["latent_second_moment_sum"]), np.asarray(plain.diagnostics["latent_second_moment_sum"]))
     assert not np.allclose(np.asarray(dense.lhs_tri), np.asarray(plain.lhs_tri))  # the M-step statistics are shifted
+
+
+def test_orthogonal_loadings_default_on_with_the_contrast_latent_and_the_flag_overrides(monkeypatch):
+    import argparse
+
+    from relax.commands import ppca_initial_model
+
+    parser = argparse.ArgumentParser()
+    ppca_initial_model.add_args(parser)
+    required = ["--i", "particles.star", "--particle-diameter", "100", "-o", "out"]
+    setting = lambda *extra: ppca_initial_model.contrast_orthogonal_setting(parser.parse_args([*required, *extra]))
+    assert Config().contrast_orthogonal is False  # the config default keeps the identity of runs without the latent
+    assert setting() is False and setting("--contrast", "none") is False
+    assert setting("--contrast", "latent") is True
+    assert setting("--contrast", "latent", "--no-contrast-orthogonal") is False
+    assert setting("--contrast", "none", "--contrast-orthogonal") is True

@@ -247,9 +247,10 @@ def add_args(parser):
     parser.add_argument("--contrast-gain-rate", type=float, default=Config().contrast_gain_rate)
     parser.add_argument(
         "--contrast-orthogonal",
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
+        default=None,
         help="--contrast latent: keep the loadings orthogonal to the mean volume after every update, so the contrast "
-        "latent alone carries the contrast (docs/math/ppca_contrast.md, section 10)",
+        "latent alone carries the contrast (docs/math/ppca_contrast.md, section 10); default: on with --contrast latent",
     )
     parser.add_argument("--contrast-sd-min", type=float, default=Config().contrast_sd_min)
     parser.add_argument("--contrast-sd-max", type=float, default=Config().contrast_sd_max)
@@ -260,6 +261,11 @@ def add_args(parser):
 
 # Largest share of the job's memory that "auto" lets one host copy of the particle stack take.
 PREREAD_MEMORY_FRACTION = 0.25
+
+
+def contrast_orthogonal_setting(args) -> bool:
+    """Whether the loadings are kept orthogonal to the mean: the explicit flag, else on exactly when the contrast latent is."""
+    return args.contrast == "latent" if args.contrast_orthogonal is None else args.contrast_orthogonal
 
 
 def resolve_preread_images(setting, stack_bytes, memory_bytes):
@@ -551,7 +557,7 @@ def main(args=None):
         contrast_sd_max=args.contrast_sd_max,
         contrast_center=args.contrast_center,
         contrast_gain_rate=args.contrast_gain_rate,
-        contrast_orthogonal=args.contrast_orthogonal,
+        contrast_orthogonal=contrast_orthogonal_setting(args),
     )
     if (args.ios is None) == (args.particles is None):
         raise ValueError("Give either a particle STAR (--i) or an optimisation set (--ios)")

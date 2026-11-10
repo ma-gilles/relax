@@ -16,11 +16,11 @@ tested, and performs to a satisfactory level on simulated data with and without 
 | Step | What | Status |
 | --- | --- | --- |
 | 1 | Math: sufficient statistics, exact prior, quantization | done, [ppca_contrast.md](../math/ppca_contrast.md); model A matches the exact model B (section 8) |
-| 2 | Implementation shared by initial model and refinement | model A in the initial model (`--contrast latent`) and in `contrast.py` for any engine; CPU tests pass; GPU smoke run in progress |
+| 2 | Implementation shared by initial model and refinement | model A in the initial model (`--contrast latent`; the loadings are kept orthogonal to the mean by default) and, as helpers (tied column, fold, centring, projection), in `contrast.py` for any engine; the dense refinement loop has no production controller for it yet; CPU tests pass |
 | 3a | Contrast-spread simulated datasets with a paired control | done: C n1 box 64 at sd 0, 0.15, 0.30 |
 | 3b | Cost of ignoring contrast (baseline runs) | done for seed 11: at sd 0.30 kmeans ARI falls from 0.99 to 0.57-0.63, poses and FSC hold |
-| 3c | Contrast model vs baseline; harm check at unit contrast | done for seed 11 (round 3): contrast sd 0.30 kmeans ARI 0.57 to 0.94 (VDAM), no change at sd 0; seeds, noise 3 and log-normal contrast running (round 4) |
-| 4 | Heuristics (when to switch contrast on, prior width) and revisit | the failure was a scale gauge, fixed structurally (math note section 9); a late start and a fixed sd did not help and are not needed |
+| 3c | Contrast model vs baseline; harm check at unit contrast | done (rounds 3 to 7): at sd 0.30 kmeans ARI 0.57-0.66 to 0.93-0.98 over 3 to 20 seeds (noise 1), noise 3 and log-normal; no change at sd 0; cryo-ET fixture: SGD calibrated, VDAM not settled |
+| 4 | Heuristics (when to switch contrast on, prior width) and revisit | not needed: both failures found were gauges, fixed structurally (math note sections 9 and 10); a late start and a fixed sd did not help |
 
 ## Decisions so far
 
@@ -282,3 +282,17 @@ oversampling; parent `ppca_schedule` 2fd7b0e8 against this branch at fe7ee1f2). 
 The only differences: the new config keys and the key counts of `config` and `metadata` (39 to 48, 11 to 13: the contrast settings, the
 contrast gain in the metadata), the source identity, and three VDAM log lines of the tile plan whose counted stream memory moves by 0.01 GiB
 (0.64 to 0.63 GiB; the tile plan itself, 20 of 20 images, is the same). Not covered, as the tool says: the GPU kernels and subtomogram input.
+
+**Round 7** (`co_sgd`, seeds 17 to 24, sd 0.30, noise 1): all eight runs are healthy: kmeans ARI 0.925 to 0.952, state FSC 0.89 to 0.95,
+pose median 5.5 to 6.0 deg, estimated contrast sd 0.261 to 0.266. Over rounds 5 to 7 the constrained SGD arm at noise 1 has one failure in 15
+runs (seed 12) against none in 22 for the unconstrained SGD arm and the baseline: Fisher's exact test gives p about 0.4, no evidence of a
+cost; the failure is an ab-initio basin of that seed (bad at iteration 1000, normal contrast statistics).
+
+**Decision**: under `--contrast latent` the loadings are kept orthogonal to the mean by default (`--no-contrast-orthogonal` turns it
+off; decided once at the command boundary, `contrast_orthogonal_setting`; the `Config` default stays off, so the identity of runs without the
+latent and of old checkpoints does not change). Basis: SGD's sd collapse at noise 3 is gone (kmeans ARI +0.15 and +0.24 over the baseline on two
+seeds), SGD on the cryo-ET fixture is calibrated, VDAM is unchanged within run-to-run noise in every comparison (13 pairs), and the constraint
+is the identifiability condition of the model (math note section 10). The `cg_*` arms pass `--no-contrast-orthogonal` and keep their meaning.
+
+**Unit tests** (CPU, `tests/unit/{ppca_contrast,ppca_initial_model,ppca_refinement}`, `test_ppca_initial_model_momentum_sgd.py`,
+`test_tomo_input.py`; run before the default flip): all pass except the GPU tests and one test needing the RELION binding, which skip.
