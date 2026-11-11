@@ -522,7 +522,10 @@ def load_tilt_training(ios, output, preread_images="auto", *, particle_frame: bo
         tomograms_star,
         Path(output) / "particles_2d.star",
         datadir=str(Path(particles_star).resolve().parent),
-        lazy=False,
+        # Lazy: the dataset reads tilt images from disk on demand. An eager load holds every image as a complex64
+        # full grid (twice the real pixels' bytes; 266 GB for 2.0M images of 128 x 128); --ppca-preread-images
+        # decides whether the real pixels are held instead.
+        lazy=True,
         particle_frame=particle_frame,
     )
     identity = {
