@@ -1,5 +1,15 @@
 # lead-della (Princeton Della + Polar)
 
+## 2026-11-12 ~01:00 UTC
+
+- RESULT (synthetic shifted sets): relax K-class ab initio at RELION InitialModel defaults (K 1 / 4, seed 11) fails
+  all 7 shifted sets (poses 97-126° except C_shift n1 K1 55°); the default ±6 px / 2 px search never recovers the
+  offsets (error stays > 2 px from a 2.9 px start). relax matches real RELION 5 here (C_shift n1 K1 54.8° vs 54.9°),
+  and both solve the centred twins (2.8-3.6°). BEST_PRACTICE.md v1.72.
+- NOTE: v1.71 corrected. The C_shift pre-centred PPCA row (.662) is a hand split across states, not a centring bug.
+- CLAIM (update): CAHRA dataset 1 against its released truth (EMPIAR-13973): per-species oracle references and a
+  classify-against-known-maps ceiling, then single-factor PPCA arms and relax K-class K 4/6/10.
+
 ## 2026-11-12 ~00:10 UTC
 
 - RESULT (synthetic shifted sets, suite v3.2, seed 11 unless noted; refs mean only / true): "VDAM-simple, then SGD
