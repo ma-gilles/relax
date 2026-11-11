@@ -26,9 +26,11 @@ from scripts.pose_prior_benchmark import compare_variants as cmp
 from scripts.pose_prior_benchmark import conical_fsc_plot as cfp
 from scripts.pose_prior_benchmark import evaluate_run as ev
 from scripts.pose_prior_benchmark import initial_model as im
+from scripts.pose_prior_benchmark import mix_pools as mp
 from scripts.pose_prior_benchmark import reconstruct_with_poses as rwp
 from scripts.pose_prior_benchmark import simulate_dataset as sim
 from scripts.pose_prior_benchmark import star_nonuniformity as snu
+from scripts.pose_prior_benchmark import sweep
 from scripts.pose_prior_benchmark import true_prior
 from scripts.pose_prior_benchmark import write_fixed_prior as wfp
 
@@ -693,63 +695,39 @@ def test_iteration_table_is_written_with_empty_cells_for_a_crossing_that_never_h
 # ---- relion_reconstruct from given poses ----
 
 
-def _reconstruction(tmp_path, name, *, auc):
-    """A minimal reconstruct_with_poses output directory: the FSC summary and curve the comparison reads."""
-    directory = tmp_path / name
+def _true_pose_reconstruction(tmp_path, auc):
+    """A minimal reconstruct_with_poses output directory of the true poses: the FSC summary the comparison reads."""
+    directory = tmp_path / "true_poses"
     directory.mkdir()
     summary = {"auc": auc, "at_0.5": {"first_A": 12.0}, "at_0.143": {"first_A": None}}
     metrics = {"resolution": {"box": 8, "voxel_size_A": 2.0, "gt_reconstruction": summary}}
     (directory / "metrics.json").write_text(json.dumps(metrics))
-    with open(directory / "fsc_curve.csv", "w", newline="") as handle:
-        writer = csv.writer(handle)
-        writer.writerow(["shell", "resolution_A", "gt_reconstruction"])
-        for shell, fsc in enumerate([1.0, 0.8, 0.5, 0.3, 0.1]):
-            writer.writerow([shell, 8 * 2.0 / shell if shell else "inf", fsc * auc])
     return directory
 
 
-def test_reconstructions_are_compared_in_a_table_and_a_figure(tmp_path):
+def test_the_true_pose_ceiling_is_a_column_of_the_table_and_a_line_in_the_figure(tmp_path):
     learned = _evaluation(tmp_path, "learned", source="learned", auc=0.8, median=2.0, js_skill=0.9)
     fixed = _evaluation(tmp_path, "fixed_true", source="fixed", auc=0.85, median=1.5, js_skill=0.9)
-    estimated = [_reconstruction(tmp_path, f"est_{v}", auc=a) for v, a in (("learned", 0.5), ("fixed_true", 0.4))]
-    angles = [_reconstruction(tmp_path, f"ang_{v}", auc=a) for v, a in (("learned", 0.55), ("fixed_true", 0.45))]
-    true = _reconstruction(tmp_path, "true", auc=0.9)
+    true = _true_pose_reconstruction(tmp_path, auc=0.9)
     out = tmp_path / "out"
     cmp.main(
-        ["--runs", f"learned={learned}", f"fixed_true={fixed}"]
-        + ["--reconstructions", f"learned={estimated[0]}", f"fixed_true={estimated[1]}"]
-        + ["--angle-reconstructions", f"learned={angles[0]}", f"fixed_true={angles[1]}"]
-        + ["--true-reconstruction", str(true), "--out-dir", str(out), "--label", "test"]
+        ["--runs", f"learned={learned}", f"fixed_true={fixed}", "--true-reconstruction", str(true)]
+        + ["--out-dir", str(out), "--label", "test"]
     )
-    with open(out / "reconstructions.csv", newline="") as handle:
+    with open(out / "variants.csv", newline="") as handle:
         rows = list(csv.DictReader(handle))
-    assert [(r["poses"], r["variant"]) for r in rows] == [
-        ("estimated", "learned"),
-        ("estimated", "fixed_true"),
-        ("estimated_angles", "learned"),
-        ("estimated_angles", "fixed_true"),
-        ("true", ""),
-    ]
-    assert_matches([float(r["gt_fsc_auc"]) for r in rows], [0.5, 0.4, 0.55, 0.45, 0.9])
-    assert rows[0]["gt_resolution_0.143_A"] == ""  # the curve never crossed
+    assert_matches([float(r["gt_fsc_auc_true_poses"]) for r in rows], [0.9, 0.9])
     assert (out / "variants.png").stat().st_size > 0
-    reconstruction = cmp.read_reconstruction(estimated[0])
-    assert_matches(reconstruction.frequency, np.arange(5) / (8 * 2.0))
-    assert_matches(reconstruction.fsc, 0.5 * np.array([1.0, 0.8, 0.5, 0.3, 0.1]))
+    assert not (out / "reconstructions.csv").exists()
+    assert cmp.read_true_pose_auc(true) == 0.9
 
 
-def test_reconstructions_must_be_given_together_and_cover_every_run(tmp_path):
+def test_without_a_true_pose_reconstruction_the_ceiling_column_is_empty(tmp_path):
     learned = _evaluation(tmp_path, "learned", source="learned", auc=0.8, median=2.0, js_skill=0.9)
-    only = _reconstruction(tmp_path, "est", auc=0.5)
-    base = ["--runs", f"learned={learned}", "--out-dir", str(tmp_path / "out")]
-    with pytest.raises(SystemExit):
-        cmp.main(base + ["--reconstructions", f"learned={only}"])
-    with pytest.raises(SystemExit):
-        cmp.main(
-            base
-            + ["--reconstructions", f"other={only}", "--angle-reconstructions", f"other={only}"]
-            + ["--true-reconstruction", str(only)]
-        )
+    out = tmp_path / "out"
+    cmp.main(["--runs", f"learned={learned}", "--out-dir", str(out), "--label", "test"])
+    with open(out / "variants.csv", newline="") as handle:
+        assert [r["gt_fsc_auc_true_poses"] for r in csv.DictReader(handle)] == [""]
 
 
 def test_zero_origin_star_keeps_every_other_column(tmp_path):
@@ -1447,3 +1425,193 @@ def test_a_particle_star_without_origins_is_refused(tmp_path):
     )
     with pytest.raises(ValueError, match="rlnOriginYAngst"):
         ev.read_particles(path)
+
+
+# ---- the sweep: mixtures of pools ----
+
+KENT_RECORD = {"poses": "kent", "dataset_params_option": [4.0, 1.0, [1.0, 1.0, 0.0], [0.0, 0.0, 1.0]]}
+
+
+def test_a_mixture_prior_is_the_weighted_sum_of_its_components_priors():
+    record = {
+        "poses": "mixture",
+        "components": [{"weight": 0.25, "poses": KENT_RECORD}, {"weight": 0.75, "poses": {"poses": "uniform"}}],
+    }
+    expected = 0.25 * true_prior.population_prior(KENT_RECORD, 2) + 0.75 * np.full(n_pixels(2), 1.0 / n_pixels(2))
+    prior = true_prior.population_prior(record, 2)
+    assert_matches(prior, expected)
+    assert_matches(prior.sum(), 1.0)
+
+
+def test_a_mixture_of_one_component_is_that_component_and_bad_mixtures_are_refused():
+    single = {"poses": "mixture", "components": [{"weight": 1.0, "poses": KENT_RECORD}]}
+    assert_matches(true_prior.population_prior(single, 2), true_prior.population_prior(KENT_RECORD, 2))
+    uniform = {"poses": "uniform"}
+    for weights in ([0.5, 0.4], [1.2, -0.2], [0.0, 1.0]):
+        record = {"poses": "mixture", "components": [{"weight": w, "poses": uniform} for w in weights]}
+        with pytest.raises(ValueError, match="weights must be positive and sum to 1"):
+            true_prior.population_prior(record, 2)
+    with pytest.raises(ValueError, match="unknown pose distribution"):
+        true_prior.population_prior({"poses": "belt"}, 2)
+
+
+def test_the_evaluator_reads_a_mixture_record(tmp_path):
+    record = {"poses": "mixture", "components": [{"weight": 1.0, "poses": {"poses": "uniform"}}]}
+    (tmp_path / "pose_distribution.json").write_text(json.dumps(record))
+    assert ev.read_pose_distribution(tmp_path) == record
+    (tmp_path / "pose_distribution.json").write_text(json.dumps({"poses": "belt"}))
+    with pytest.raises(ValueError, match="unknown pose distribution"):
+        ev.read_pose_distribution(tmp_path)
+
+
+def _reference_map(path, data):
+    with mrcfile.new(path, overwrite=True) as handle:
+        handle.set_data(np.asarray(data, dtype=np.float32))
+
+
+def _pool(tmp_path, name, n, record, defocus0=10000.0):
+    """A pool: the centred delta dataset of ``n`` images with its own pose record, micrograph names 1..n and the
+    reference maps every pool shares."""
+    directory = tmp_path / name
+    directory.mkdir()
+    _centred_delta_dataset(directory, n)
+    blocks = starfile.read(directory / "particles.star", always_dict=True)
+    blocks["particles"]["rlnMicrographName"] = [str(i + 1) for i in range(n)]
+    blocks["particles"]["rlnDefocusU"] = defocus0 + np.arange(n)
+    starfile.write(blocks, directory / "particles.star", overwrite=True)
+    (directory / "pose_distribution.json").write_text(json.dumps({**record, "n_images": n, "pose_seed": 0}))
+    for i, file in enumerate(mp.REFERENCE_FILES):
+        _reference_map(directory / file, np.random.default_rng(i).standard_normal((4, 4, 4)))
+    return directory
+
+
+def test_a_mixture_takes_the_first_particles_of_each_pool_and_links_their_stacks(tmp_path):
+    kent = _pool(tmp_path, "kent_pool", 5, KENT_RECORD)
+    uniform = _pool(tmp_path, "uniform_pool", 6, {"poses": "uniform", "dataset_params_option": "uniform"}, 20000.0)
+    out = tmp_path / "mix"
+    record = mp.mix_pools([mp.Pool("kent", kent, 2), mp.Pool("uniform", uniform, 3)], out)
+    particles = starfile.read(out / "particles.star", always_dict=True)["particles"]
+    assert particles["rlnImageName"].tolist() == [
+        "1@kent.particles.16.mrcs",
+        "2@kent.particles.16.mrcs",
+        "1@uniform.particles.16.mrcs",
+        "2@uniform.particles.16.mrcs",
+        "3@uniform.particles.16.mrcs",
+    ]
+    assert particles["rlnMicrographName"].tolist() == ["kent_1", "kent_2", "uniform_1", "uniform_2", "uniform_3"]
+    assert_matches(particles["rlnDefocusU"].to_numpy(), [10000.0, 10001.0, 20000.0, 20001.0, 20002.0])
+    for label, pool in (("kent", kent), ("uniform", uniform)):
+        link = out / f"{label}.particles.16.mrcs"
+        assert link.is_symlink() and link.resolve() == (pool / "particles.16.mrcs").resolve()
+    assert (out / mp.REFERENCE_FILES[0]).read_bytes() == (kent / mp.REFERENCE_FILES[0]).read_bytes()
+    assert record["poses"] == "mixture" and record["n_images"] == 5
+    assert [(c["weight"], c["poses"]["poses"]) for c in record["components"]] == [(0.4, "kent"), (0.6, "uniform")]
+    assert "n_images" not in record["components"][0]["poses"]  # only what the true prior needs
+    assert json.loads((out / "pose_distribution.json").read_text()) == record
+    expected = 0.4 * true_prior.population_prior(KENT_RECORD, 1) + 0.6 * np.full(n_pixels(1), 1.0 / n_pixels(1))
+    assert_matches(true_prior.population_prior(record, 1), expected)
+
+
+def test_a_mixture_of_a_prefix_is_a_subset_of_a_larger_mixture(tmp_path):
+    kent = _pool(tmp_path, "kent_pool", 6, KENT_RECORD)
+    uniform = _pool(tmp_path, "uniform_pool", 6, {"poses": "uniform"})
+    small = mp.mix_pools([mp.Pool("kent", kent, 2), mp.Pool("uniform", uniform, 2)], tmp_path / "small")
+    large = mp.mix_pools([mp.Pool("kent", kent, 4), mp.Pool("uniform", uniform, 4)], tmp_path / "large")
+    names = {n: starfile.read(tmp_path / n / "particles.star", always_dict=True)["particles"] for n in ("small", "large")}
+    assert set(names["small"]["rlnImageName"]) <= set(names["large"]["rlnImageName"])
+    assert small["n_images"] == 4 and large["n_images"] == 8
+
+
+def test_mixing_pools_refuses_a_count_beyond_the_pool_other_optics_other_references_and_repeated_labels(tmp_path):
+    kent = _pool(tmp_path, "kent_pool", 4, KENT_RECORD)
+    uniform = _pool(tmp_path, "uniform_pool", 4, {"poses": "uniform"})
+    out = tmp_path / "mix"
+    with pytest.raises(ValueError, match="has 4 particles, 5 asked"):
+        mp.mix_pools([mp.Pool("kent", kent, 5)], out)
+    with pytest.raises(ValueError, match="labels must be distinct"):
+        mp.mix_pools([mp.Pool("a", kent, 1), mp.Pool("a", uniform, 1)], out)
+    with pytest.raises(ValueError, match="no pools"):
+        mp.mix_pools([], out)
+    other = _pool(tmp_path, "other_optics", 4, {"poses": "uniform"})
+    blocks = starfile.read(other / "particles.star", always_dict=True)
+    blocks["optics"]["rlnImagePixelSize"] = 3.0
+    starfile.write(blocks, other / "particles.star", overwrite=True)
+    with pytest.raises(ValueError, match="optics of pool other differ"):
+        mp.mix_pools([mp.Pool("kent", kent, 1), mp.Pool("other", other, 1)], out)
+    for directory, scale in ((kent, 1.0), (uniform, 1.01)):
+        for i, name in enumerate(mp.REFERENCE_FILES):
+            _reference_map(directory / name, scale * np.random.default_rng(i).standard_normal((4, 4, 4)))
+    with pytest.raises(ValueError, match="differs from that of pool kent"):
+        mp.mix_pools([mp.Pool("kent", kent, 1), mp.Pool("uniform", uniform, 1)], out)
+
+
+SWEEP = {
+    "kent": {"kappa": 4.0, "beta": 1.0, "mu": [1.0, 1.0, 0.0], "mu0": [0.0, 0.0, 1.0]},
+    "kent_weights": [0.0, 0.33, 1.0],
+    "noise_levels": [0.5, 2.0],
+    "n_images": [50000, 100000],
+    "pool_seeds": {"kent": 17, "uniform": 18},
+    "variants": ["learned", "fixed_true", "fixed_uniform"],
+    "offsets": {"noise_level": 2.0, "sigma_angstrom": 7.0, "seed": 29},
+}
+
+
+def test_the_sweep_names_its_scenarios_by_share_count_and_noise():
+    assert sweep.mixture_name(0.33, 50000, 0.5) == "mix_w033_n50k_nz0p5"
+    assert sweep.mixture_name(1.0, 100000, 2.0) == "mix_w100_n100k_nz2"
+    assert sweep.pool_name("kent", 1.0) == "pool_kent_nz1"
+    assert sweep.offsets_name(0.5) == "offsets_kent_nz0p5"
+    with pytest.raises(ValueError, match="multiples of 1000"):
+        sweep.count_tag(1500)
+
+
+def test_the_sweep_has_two_pools_per_noise_level_and_a_mixture_per_cell():
+    scenarios = sweep.sweep_scenarios(SWEEP)
+    pools = {name: entry for name, entry in scenarios.items() if name.startswith("pool_")}
+    assert sorted(pools) == ["pool_kent_nz0p5", "pool_kent_nz2", "pool_uniform_nz0p5", "pool_uniform_nz2"]
+    assert pools["pool_kent_nz2"]["dataset"] == {"noise_level": 2.0, "n_images": 100000, "seed": 17}
+    assert pools["pool_uniform_nz2"]["dataset"]["seed"] == 18 and pools["pool_uniform_nz2"]["poses"] == {"kind": "uniform"}
+    assert pools["pool_kent_nz0p5"]["poses"] == {"kind": "kent", **SWEEP["kent"]}
+    assert all(entry["variants"] == [] for entry in pools.values())
+    mixtures = {name: entry for name, entry in scenarios.items() if name.startswith("mix_")}
+    assert len(mixtures) == 3 * 2 * 2
+    middle = mixtures["mix_w033_n50k_nz2"]["mixture_of"]
+    assert middle == [
+        {"label": "kent", "scenario": "pool_kent_nz2", "count": 16500},
+        {"label": "uniform", "scenario": "pool_uniform_nz2", "count": 33500},
+    ]
+
+
+def test_a_pure_mixture_has_one_pool_and_a_uniform_one_has_no_fixed_true_variant():
+    scenarios = sweep.sweep_scenarios(SWEEP)
+    assert scenarios["mix_w100_n100k_nz0p5"]["mixture_of"] == [
+        {"label": "kent", "scenario": "pool_kent_nz0p5", "count": 100000}
+    ]
+    assert scenarios["mix_w000_n50k_nz0p5"]["mixture_of"] == [
+        {"label": "uniform", "scenario": "pool_uniform_nz0p5", "count": 50000}
+    ]
+    assert scenarios["mix_w000_n50k_nz0p5"]["variants"] == ["learned", "fixed_uniform"]
+    assert scenarios["mix_w033_n50k_nz0p5"]["variants"] == ["learned", "fixed_true", "fixed_uniform"]
+
+
+def test_the_sweep_has_an_offsets_scenario_of_the_kent_pool_when_asked_for_one():
+    scenarios = sweep.sweep_scenarios(SWEEP)
+    assert scenarios["offsets_kent_nz2"] == {
+        "shifted_from": "pool_kent_nz2",
+        "offsets": {"sigma_angstrom": 7.0, "seed": 29},
+        "variants": ["learned", "fixed_true", "fixed_uniform"],
+    }
+    without = sweep.sweep_scenarios({**SWEEP, "offsets": None})
+    assert not [name for name in without if name.startswith("offsets_")]
+
+
+def test_the_sweep_runs_every_mixture_then_the_offsets_scenario():
+    names = sweep.sweep_run_scenarios(SWEEP)
+    assert len(names) == 3 * 2 * 2 + 1 and names[-1] == "offsets_kent_nz2"
+    assert set(names[:-1]) == {n for n in sweep.sweep_scenarios(SWEEP) if n.startswith("mix_")}
+    assert sweep.sweep_run_scenarios({**SWEEP, "offsets": None}) == names[:-1]
+
+
+def test_the_sweep_refuses_a_kent_share_outside_zero_and_one():
+    with pytest.raises(ValueError, match="kent_weights must lie in"):
+        sweep.sweep_scenarios({**SWEEP, "kent_weights": [0.5, 1.2]})

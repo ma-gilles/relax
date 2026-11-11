@@ -22,16 +22,14 @@ pixels) and the learned prior's divergence from the true prior (a distribution o
 only) and, per iteration, the half maps' FSC area to the truth (as refined) and to each other and the refinement's
 Fourier radius (so runs that stop at different iterations or orders compare at equal iteration).
 
-``--reconstructions`` (relion_reconstruct maps from each variant's final poses), ``--angle-reconstructions`` (from
-their angles alone, with zero origins) and ``--true-reconstruction`` (from the true poses) take
-``reconstruct_with_poses.py`` output directories. Given together they write ``reconstructions.csv`` with those maps'
-resolutions and FSC areas to the ground truth; the figure does not show them.
+``--true-reconstruction`` takes the ``reconstruct_with_poses.py`` output directory of the true poses: the FSC area of
+the map they give, the ceiling of the poses' FSC area, goes into ``variants.csv`` and is drawn as a dotted line in the
+area panel.
 
 Run::
 
     python scripts/pose_prior_benchmark/compare_variants.py --runs learned=EVAL_DIR fixed_true=EVAL_DIR \\
-        --out-dir OUT --label kent_cap [--reconstructions learned=DIR ... --angle-reconstructions learned=DIR ...
-        --true-reconstruction DIR]
+        --out-dir OUT --label kent_cap [--true-reconstruction DIR]
 """
 
 from __future__ import annotations
@@ -72,6 +70,7 @@ COLUMNS = (
     "gt_resolution_0.5_A_aligned",
     "gt_resolution_0.143_A_aligned",
     "gt_fsc_auc_as_refined",
+    "gt_fsc_auc_true_poses",
     "half_map_resolution_0.143_A",
     "half_map_fsc_auc",
     "gt_cfar_aligned",
@@ -92,7 +91,6 @@ COLUMNS = (
     "learned_prior_js_bits",
     "learned_prior_js_skill",
 )
-RECONSTRUCTION_COLUMNS = ("poses", "variant", "gt_fsc_auc", "gt_resolution_0.5_A", "gt_resolution_0.143_A")
 
 
 class IterationCurve(NamedTuple):
@@ -116,23 +114,6 @@ class ConicalCurve(NamedTuple):
     std: np.ndarray
     best: np.ndarray
     worst: np.ndarray
-
-
-class Reconstruction(NamedTuple):
-    """A ``reconstruct_with_poses.py`` map's FSC to the ground truth: its summary and curve (1/A, FSC)."""
-
-    summary: dict[str, Any]
-    frequency: np.ndarray
-    fsc: np.ndarray
-
-
-class Reconstructions(NamedTuple):
-    """The relion_reconstruct maps of a scenario: from each variant's final poses (with their origins, and the
-    angles alone with zero origins) and from the true poses."""
-
-    estimated: dict[str, Reconstruction]
-    angles: dict[str, Reconstruction]
-    true: Reconstruction
 
 
 def parse_runs(items: list[str]) -> dict[str, Path]:
@@ -245,33 +226,10 @@ def read_iteration_curve(evaluation_dir: Path) -> IterationCurve:
     )
 
 
-def read_reconstruction(directory: Path) -> Reconstruction:
-    """A ``reconstruct_with_poses.py`` output directory: ``metrics.json`` and ``fsc_curve.csv``."""
-    metrics = json.loads((directory / "metrics.json").read_text())["resolution"]
-    with open(directory / "fsc_curve.csv", newline="") as handle:
-        rows = list(csv.DictReader(handle))
-    shells = np.array([int(row["shell"]) for row in rows], dtype=float)
-    fsc = np.array([float(row["gt_reconstruction"]) for row in rows])
-    return Reconstruction(metrics["gt_reconstruction"], shells / (metrics["box"] * metrics["voxel_size_A"]), fsc)
-
-
-def reconstruction_rows(reconstructions: Reconstructions) -> list[dict[str, Any]]:
-    """One row of ``RECONSTRUCTION_COLUMNS`` per map: each variant's poses with and without origins, then the truth."""
-    labelled = [
-        *(("estimated", variant, r) for variant, r in reconstructions.estimated.items()),
-        *(("estimated_angles", variant, r) for variant, r in reconstructions.angles.items()),
-        ("true", "", reconstructions.true),
-    ]
-    return [
-        {
-            "poses": poses,
-            "variant": variant,
-            "gt_fsc_auc": r.summary["auc"],
-            "gt_resolution_0.5_A": r.summary["at_0.5"]["first_A"],
-            "gt_resolution_0.143_A": r.summary["at_0.143"]["first_A"],
-        }
-        for poses, variant, r in labelled
-    ]
+def read_true_pose_auc(directory: Path) -> float:
+    """The FSC area to the ground truth of the map ``reconstruct_with_poses.py`` made from the true poses, from its
+    ``metrics.json`` in ``directory``."""
+    return float(json.loads((directory / "metrics.json").read_text())["resolution"]["gt_reconstruction"]["auc"])
 
 
 def read_pose_errors(evaluation_dir: Path) -> np.ndarray:
@@ -350,13 +308,15 @@ def plot_comparison(
     inplane_errors: dict[str, np.ndarray],
     origin_errors: dict[str, np.ndarray],
     pixel_size_A: float,
+    true_auc: float | None,
     label: str,
     path: Path,
 ) -> None:
     """The comparison figure of ``rows`` (one per variant), their ground-truth FSC ``curves``, the mean and SD of
     their cFSC over the cones (``conical_curves``), their per-iteration half-map FSC areas and Fourier radii
     (``iteration_curves``), their particles' direction errors (``pose_errors``) and in-plane errors (``inplane_errors``),
-    degrees, and origin errors (``origin_errors``, pixels of ``pixel_size_A``)."""
+    degrees, and origin errors (``origin_errors``, pixels of ``pixel_size_A``); ``true_auc`` is the FSC area of the map
+    from the true poses (a dotted line in the area panel), None when not measured."""
     import matplotlib
 
     matplotlib.use("Agg")
@@ -406,6 +366,18 @@ def plot_comparison(
         ax.margins(y=0.15)
 
     bars(axes[0, 1], "gt_fsc_auc_aligned", "Area under the aligned ground-truth FSC curve", "normalized area")
+    if true_auc is not None:
+        axes[0, 1].axhline(true_auc, color=PALETTE["ink2"], linewidth=1.5, linestyle=":")
+        axes[0, 1].text(
+            axes[0, 1].get_xlim()[1],
+            true_auc,
+            f"true poses {true_auc:.3g}",
+            ha="right",
+            va="bottom",
+            color=PALETTE["ink2"],
+            fontsize=8,
+        )
+        axes[0, 1].set_ylim(top=max(axes[0, 1].get_ylim()[1], 1.12 * true_auc))
 
     ax = axes[1, 0]
     style_axes(ax)
@@ -583,35 +555,14 @@ def plot_comparison(
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--runs", nargs="+", required=True, help="LABEL=EVALUATION_DIR of each variant")
-    parser.add_argument("--reconstructions", nargs="+", help="LABEL=DIR of each variant's relion_reconstruct map")
-    parser.add_argument(
-        "--angle-reconstructions", nargs="+", help="LABEL=DIR of each variant's map from the angles with zero origins"
-    )
     parser.add_argument("--true-reconstruction", type=Path, help="DIR of the map from the true poses")
     parser.add_argument("--out-dir", type=Path, required=True)
     parser.add_argument("--label", default="scenario")
-    args = parser.parse_args(argv)
-    given = [args.reconstructions, args.angle_reconstructions, args.true_reconstruction]
-    if any(item is not None for item in given) and any(item is None for item in given):
-        parser.error("--reconstructions, --angle-reconstructions and --true-reconstruction go together")
-    return args
-
-
-def read_reconstructions(args: argparse.Namespace, variants: list[str]) -> Reconstructions | None:
-    """The reconstructions named on the command line, None when there are none; each must cover ``variants``."""
-    if args.reconstructions is None:
-        return None
-    sets = []
-    for items in (args.reconstructions, args.angle_reconstructions):
-        directories = parse_runs(items)
-        if list(directories) != variants:
-            raise SystemExit(f"reconstructions for {list(directories)}, the runs are {variants}")
-        sets.append({variant: read_reconstruction(directory) for variant, directory in directories.items()})
-    return Reconstructions(sets[0], sets[1], read_reconstruction(args.true_reconstruction))
+    return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> None:
-    """Write ``variants.csv``, ``variants.png`` and, with reconstructions, ``reconstructions.csv``."""
+    """Write ``variants.csv`` and ``variants.png``."""
     args = parse_args(argv)
     runs = parse_runs(args.runs)
     metrics = {variant: json.loads((directory / "metrics.json").read_text()) for variant, directory in runs.items()}
@@ -626,11 +577,10 @@ def main(argv: list[str] | None = None) -> None:
         raise SystemExit(f"the runs have different pixel sizes: {sorted(pixel_sizes)}")
     pixel_size_A = pixel_sizes.pop()
     origin_errors = {variant: read_origin_errors(directory, pixel_size_A) for variant, directory in runs.items()}
-    reconstructions = read_reconstructions(args, list(runs))
+    true_auc = None if args.true_reconstruction is None else read_true_pose_auc(args.true_reconstruction)
+    rows = [{**row, "gt_fsc_auc_true_poses": true_auc} for row in rows]
     args.out_dir.mkdir(parents=True, exist_ok=True)
     write_table(rows, args.out_dir / "variants.csv")
-    if reconstructions is not None:
-        write_table(reconstruction_rows(reconstructions), args.out_dir / "reconstructions.csv", RECONSTRUCTION_COLUMNS)
     plot_comparison(
         rows,
         curves,
@@ -640,6 +590,7 @@ def main(argv: list[str] | None = None) -> None:
         inplane_errors,
         origin_errors,
         pixel_size_A,
+        true_auc,
         args.label,
         args.out_dir / "variants.png",
     )

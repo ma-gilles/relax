@@ -9,6 +9,9 @@
 #      add_offsets      (scenario with `offsets`, instead of simulate_dataset) the dataset of another scenario
 #                        (`shifted_from`) with every particle displaced by a random offset, whose true origins
 #                        particles.star records: the simulator's particles are all centred.      [CPU]
+#      mix_pools        (scenario with `mixture_of`, instead of simulate_dataset) a dataset of the first particles
+#                        of several simulated pools (a Kent cap, uniform), whose true viewing-direction
+#                        distribution is the pools' mixture; the sweep's scenarios (config `sweep`).  [CPU]
 #   2. write_fixed_prior (variants with a fixed prior) the prior file relax refine scores with.
 #   3. refine_k1         relax refine from the low-passed ground-truth map, a global search and no input
 #                        poses: --initial-pose-source none makes relax ignore the true angles and origins
@@ -30,14 +33,16 @@
 #                        final map against the truth gives each run's cFAR, how unequally its cones
 #                        correlate (1: isotropic), and its cone curves and heatmap.
 #   5. plot_*_angles     angdist plots of the true angles and of the final estimated poses.
-#   6. reconstruct_*     relion_reconstruct with the final estimated poses of each variant (with their origins, or
-#                        the angles alone) and with the true poses; each map's FSC to the ground truth shows what
-#                        the poses allow without the refinement's regularization and soft assignments.
+#   6. reconstruct_*     relion_reconstruct with the true poses (the ceiling of the FSC area in the comparison) and,
+#                        when requested, with the final estimated poses of each variant (with their origins, or
+#                        the angles alone); each map's FSC to the ground truth shows what the poses allow without
+#                        the refinement's regularization and soft assignments.
 #   7. compare_variants  the variants of one scenario side by side.
 #
 # Outputs, under config `output_root`:
-#   <scenario>/dataset/              particles.star (true angles and origins), particles.<box>.mrcs,
-#                                    reference_*_relion.mrc, pose_distribution.json, angdist_true.png
+#   <scenario>/dataset/              particles.star (true angles and origins), particles.<box>.mrcs (a mixture:
+#                                    links to its pools' stacks), reference_*_relion.mrc, pose_distribution.json,
+#                                    angdist_true.png
 #   <scenario>/initial_model/        (init: abinitio) particles/ (the cropped particles without poses),
 #                                    abinitio/run_it<N>_class001.mrc, initial_model_upsampled.mrc,
 #                                    initial_model_registered.mrc, registration.json
@@ -48,7 +53,7 @@
 #                                    angdist_estimated.png
 #   <scenario>/<variant>/reconstruction_{estimated,angles}/  reconstruction.mrc, metrics.json, fsc_curve.csv
 #   <scenario>/true_poses/           the same for the true poses
-#   <scenario>/comparison/           variants.csv, reconstructions.csv, variants.png
+#   <scenario>/comparison/           variants.csv, variants.png
 #   logs/                            one log per rule, scenario and variant
 #
 # Run (the profile submits the GPU rules to Slurm). --directory keeps Snakemake's metadata and the Slurm logs
@@ -83,13 +88,21 @@ def required_path(key):
 
 BENCHMARK_DIR = Path(workflow.basedir).resolve()
 REPO = BENCHMARK_DIR.parents[1]
+sys.path.insert(0, str(REPO))
+
+from scripts.pose_prior_benchmark.sweep import SWEEP_KEYWORD, sweep_run_scenarios, sweep_scenarios  # noqa: E402
 PYTHON = config["python"] or str(REPO / ".pixi/envs/default/bin/python")
 OUTPUT_ROOT = required_path("output_root")
 NATIVES = required_path("natives_dir")
 # angdist runs in the Snakemake environment (it is not part of the pixi environment).
 ANGDIST = config["angdist"] or str(Path(sys.executable).parent / "angdist")
-SCENARIOS = config["scenarios"]
-RUN_SCENARIOS = config["run_scenarios"]
+SWEEP = config["sweep"]
+SCENARIOS = {**config["scenarios"], **sweep_scenarios(SWEEP)}
+RUN_SCENARIOS = [
+    name
+    for entry in config["run_scenarios"]
+    for name in (sweep_run_scenarios(SWEEP) if entry == SWEEP_KEYWORD else [entry])
+]
 VARIANTS = config["variants"]
 FIXED_PRIOR_KINDS = ("truth", "uniform", "kent")
 INIT_KINDS = ("ground_truth", "abinitio")
@@ -99,6 +112,7 @@ INITIAL_MODEL_MAP = f"run_it{INITIAL_MODEL['nr_iter']:03d}_class001.mrc"
 INITIAL_MODEL_STACK = f"particles.{INITIAL_MODEL['box']}.mrcs"
 SIMULATE_SCRIPT = str(BENCHMARK_DIR / "simulate_dataset.py")
 ADD_OFFSETS_SCRIPT = str(BENCHMARK_DIR / "add_offsets.py")
+MIX_POOLS_SCRIPT = str(BENCHMARK_DIR / "mix_pools.py")
 WRITE_PRIOR_SCRIPT = str(BENCHMARK_DIR / "write_fixed_prior.py")
 EVALUATE_SCRIPT = str(BENCHMARK_DIR / "evaluate_run.py")
 COMPARE_SCRIPT = str(BENCHMARK_DIR / "compare_variants.py")
@@ -133,15 +147,30 @@ for scenario, entry in SCENARIOS.items():
     if unknown:
         raise WorkflowError(f"scenario {scenario} lists variants {unknown} that config.yaml does not define")
 
-# Scenarios whose dataset is another scenario's with offsets (add_offsets) and those that simulate their own.
+# Scenarios whose dataset is another scenario's with offsets (add_offsets), a mixture of pools (mix_pools) and those that
+# simulate their own.
 SHIFTED = [scenario for scenario, entry in SCENARIOS.items() if "shifted_from" in entry]
-SIMULATED = [scenario for scenario, entry in SCENARIOS.items() if not {"shifted_from", "dataset_from"} & entry.keys()]
+MIXED = [scenario for scenario, entry in SCENARIOS.items() if "mixture_of" in entry]
+SIMULATED = [
+    scenario
+    for scenario, entry in SCENARIOS.items()
+    if not {"shifted_from", "dataset_from", "mixture_of"} & entry.keys()
+]
 for scenario, entry in SCENARIOS.items():
     owner = entry.get("dataset_from")
-    if owner is not None and (owner not in SCENARIOS or owner not in SIMULATED + SHIFTED):
+    if owner is not None and (owner not in SCENARIOS or owner not in SIMULATED + SHIFTED + MIXED):
         raise WorkflowError(
-            f"scenario {scenario}: dataset_from must name a scenario that simulates or shifts its own dataset"
+            f"scenario {scenario}: dataset_from must name a scenario that simulates, shifts or mixes its own dataset"
         )
+    if "mixture_of" in entry:
+        pools = entry["mixture_of"]
+        labels = [pool["label"] for pool in pools]
+        if not pools or len(set(labels)) != len(labels) or any(pool["scenario"] not in SIMULATED for pool in pools):
+            raise WorkflowError(
+                f"scenario {scenario}: mixture_of needs distinct labels and pools that are scenarios simulating their own dataset"
+            )
+        if {"shifted_from", "dataset_from"} & entry.keys():
+            raise WorkflowError(f"scenario {scenario}: mixture_of excludes shifted_from and dataset_from")
     if "shifted_from" in entry:
         if entry["shifted_from"] not in SIMULATED:
             raise WorkflowError(f"scenario {scenario}: shifted_from must name a scenario that simulates its own dataset")
@@ -220,16 +249,6 @@ def fixed_prior_flags(wildcards):
     return f"--kind {prior['kind']}"
 
 
-def reconstruction_files(scenario, name):
-    """The file `name` of every reconstruction of a scenario: each variant's final poses (with and without their
-    origins) and the true poses."""
-    variants = SCENARIOS[scenario]["variants"]
-    return [
-        *[output_path(scenario, v, f"reconstruction_{poses}", name) for poses in ("estimated", "angles") for v in variants],
-        output_path(dataset_scenario(scenario), "true_poses", name),
-    ]
-
-
 def fixed_prior_input(wildcards):
     """The prior file a run scores with: [] for a variant that learns its prior."""
     if not has_fixed_prior(wildcards.variant):
@@ -245,6 +264,7 @@ wildcard_constraints:
 
 localrules:
     all,
+    mix_pools,
     write_fixed_prior,
     upsample_initial_model,
     plot_true_angles,
@@ -345,6 +365,50 @@ rule add_offsets:
         "--sigma-angstrom {params.offsets[sigma_angstrom]} "
         "--seed {params.offsets[seed]} "
         "--workers {threads} "
+        "> {log} 2>&1"
+
+
+rule mix_pools:
+    message:
+        "Mixing the pools of {wildcards.scenario}: {params.composition}"
+    wildcard_constraints:
+        scenario="|".join(map(re.escape, MIXED)),
+    input:
+        pool_particles=lambda wildcards: [
+            output_path(pool["scenario"], "dataset", "particles.star") for pool in SCENARIOS[wildcards.scenario]["mixture_of"]
+        ],
+        pool_references=lambda wildcards: [
+            output_path(pool["scenario"], "dataset", name)
+            for pool in SCENARIOS[wildcards.scenario]["mixture_of"]
+            for name in ("reference_gt_relion.mrc", "reference_init_relion.mrc")
+        ],
+        pool_poses=lambda wildcards: [
+            output_path(pool["scenario"], "dataset", "pose_distribution.json")
+            for pool in SCENARIOS[wildcards.scenario]["mixture_of"]
+        ],
+        script=MIX_POOLS_SCRIPT,
+    output:
+        particles_star=output_path("{scenario}", "dataset", "particles.star"),
+        reference_gt=output_path("{scenario}", "dataset", "reference_gt_relion.mrc"),
+        reference_init=output_path("{scenario}", "dataset", "reference_init_relion.mrc"),
+        pose_distribution=output_path("{scenario}", "dataset", "pose_distribution.json"),
+    params:
+        pool_flags=lambda wildcards: " ".join(
+            f"--pool {pool['label']} {output_path(pool['scenario'], 'dataset')} {pool['count']}"
+            for pool in SCENARIOS[wildcards.scenario]["mixture_of"]
+        ),
+        composition=lambda wildcards: ", ".join(
+            f"{pool['count']} {pool['label']}" for pool in SCENARIOS[wildcards.scenario]["mixture_of"]
+        ),
+        env=CLEAN_ENV,
+        python=PYTHON,
+        dataset_dir=lambda wildcards, output: str(Path(output.particles_star).parent),
+    log:
+        output_path("logs", "{scenario}.mix_pools.log"),
+    shell:
+        "{params.env} {params.python} {input.script} "
+        "--out-dir {params.dataset_dir} "
+        "{params.pool_flags} "
         "> {log} 2>&1"
 
 
@@ -714,12 +778,10 @@ rule compare_variants:
         conical_fsc=lambda wildcards: [
             output_path(wildcards.scenario, v, "evaluation", "conical_fsc.npz") for v in SCENARIOS[wildcards.scenario]["variants"]
         ],
-        reconstruction_metrics=lambda wildcards: reconstruction_files(wildcards.scenario, "metrics.json"),
-        reconstruction_fsc_curves=lambda wildcards: reconstruction_files(wildcards.scenario, "fsc_curve.csv"),
+        true_reconstruction=lambda wildcards: output_path(dataset_scenario(wildcards.scenario), "true_poses", "metrics.json"),
         script=COMPARE_SCRIPT,
     output:
         table=output_path("{scenario}", "comparison", "variants.csv"),
-        reconstruction_table=output_path("{scenario}", "comparison", "reconstructions.csv"),
         figure=output_path("{scenario}", "comparison", "variants.png"),
     params:
         env=CLEAN_ENV,
@@ -727,22 +789,14 @@ rule compare_variants:
         runs=lambda wildcards: " ".join(
             f"{v}={output_path(wildcards.scenario, v, 'evaluation')}" for v in SCENARIOS[wildcards.scenario]["variants"]
         ),
-        reconstructions=lambda wildcards: " ".join(
-            f"{v}={output_path(wildcards.scenario, v, 'reconstruction_estimated')}" for v in SCENARIOS[wildcards.scenario]["variants"]
-        ),
-        angle_reconstructions=lambda wildcards: " ".join(
-            f"{v}={output_path(wildcards.scenario, v, 'reconstruction_angles')}" for v in SCENARIOS[wildcards.scenario]["variants"]
-        ),
-        true_reconstruction=lambda wildcards: output_path(dataset_scenario(wildcards.scenario), "true_poses"),
+        true_reconstruction_dir=lambda wildcards, input: str(Path(input.true_reconstruction).parent),
         out_dir=lambda wildcards, output: str(Path(output.table).parent),
     log:
         output_path("logs", "{scenario}.compare.log"),
     shell:
         "{params.env} JAX_PLATFORMS=cpu {params.python} {input.script} "
         "--runs {params.runs} "
-        "--reconstructions {params.reconstructions} "
-        "--angle-reconstructions {params.angle_reconstructions} "
-        "--true-reconstruction {params.true_reconstruction} "
+        "--true-reconstruction {params.true_reconstruction_dir} "
         "--out-dir {params.out_dir} "
         "--label {wildcards.scenario} "
         "> {log} 2>&1"

@@ -1,7 +1,8 @@
 """The true direction prior of a pose-prior benchmark dataset, in closed form.
 
 The probability per HEALPix direction (NEST order) of the viewing directions the simulator draws, from the
-simulator's pose-distribution record (``simulate_dataset.py``'s ``pose_distribution.json``). The evaluator scores
+simulator's pose-distribution record (``simulate_dataset.py``'s ``pose_distribution.json``, or ``mix_pools.py``'s
+mixture of such records). The evaluator scores
 learned priors against it, and ``write_fixed_prior.py`` writes it for ``relax refine --fixed-direction-prior``.
 """
 
@@ -17,6 +18,7 @@ import numpy as np
 POPULATION_FINE_ORDERS = 3
 POPULATION_TILT_SAMPLES = 4096
 POPULATION_AZIMUTH_SAMPLES = 360
+POSE_KINDS = ("uniform", "kent", "mixture")  # the ``poses`` values of a pose-distribution record
 
 
 def kent_population_prior(kappa: float, beta: float, mu: list[float], mu0: list[float], order: int) -> np.ndarray:
@@ -48,9 +50,22 @@ def kent_population_prior(kappa: float, beta: float, mu: list[float], mu0: list[
 
 
 def population_prior(poses: dict[str, Any], order: int) -> np.ndarray:
-    """Probability per HEALPix direction of the simulated viewing directions, from the pose-distribution record."""
-    if poses["poses"] == "uniform":
+    """Probability per HEALPix direction of the simulated viewing directions, from the pose-distribution record.
+
+    A ``mixture`` record lists ``components``, each a ``weight`` and the ``poses`` record of one pool; its prior is
+    the weighted sum of theirs.
+    """
+    kind = poses["poses"]
+    if kind not in POSE_KINDS:
+        raise ValueError(f"unknown pose distribution {kind!r}")
+    if kind == "uniform":
         n = hp.nside2npix(1 << int(order))
         return np.full(n, 1.0 / n)
+    if kind == "mixture":
+        weights = np.array([component["weight"] for component in poses["components"]], dtype=np.float64)
+        if np.any(weights <= 0) or not np.isclose(weights.sum(), 1.0, rtol=1e-9):
+            raise ValueError(f"mixture weights must be positive and sum to 1, got {weights.tolist()}")
+        priors = [population_prior(component["poses"], order) for component in poses["components"]]
+        return sum(weight * prior for weight, prior in zip(weights, priors))
     kappa, beta, mu, mu0 = poses["dataset_params_option"]
     return kent_population_prior(kappa, beta, mu, mu0, order)

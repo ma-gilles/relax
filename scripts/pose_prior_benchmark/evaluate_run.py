@@ -107,7 +107,7 @@ from scripts.pose_prior_benchmark.align_to_truth import (  # noqa: E402
     rotation_angle_deg,
 )
 from scripts.pose_prior_benchmark.conical_fsc_plot import plot_conical_fsc  # noqa: E402
-from scripts.pose_prior_benchmark.true_prior import population_prior  # noqa: E402
+from scripts.pose_prior_benchmark.true_prior import POSE_KINDS, population_prior  # noqa: E402
 
 HALF_FSC_THRESHOLD = 0.143
 GT_FSC_THRESHOLDS = (0.5, 0.143)
@@ -222,9 +222,9 @@ def true_directions_per_half(run_dir: Path, iteration: int, dataset_dir: Path) -
 
 
 def read_pose_distribution(dataset_dir: Path) -> dict[str, Any]:
-    """Read the simulator's pose-distribution record (``simulate_dataset.py``)."""
+    """Read the dataset's pose-distribution record (``simulate_dataset.py``, ``mix_pools.py``)."""
     record = json.loads((dataset_dir / "pose_distribution.json").read_text())
-    if record["poses"] not in ("uniform", "kent"):
+    if record["poses"] not in POSE_KINDS:
         raise ValueError(f"unknown pose distribution {record['poses']!r}")
     return record
 

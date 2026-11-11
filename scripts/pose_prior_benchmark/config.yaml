@@ -66,13 +66,37 @@ conical_fsc:
 # Scenarios the default target runs; any other scenario below is run by requesting its output, e.g.
 # <output_root>/kent_cap_abinitio/comparison/variants.png, or by listing it here in an override file. The default run
 # starts from the ground truth only: the scenario that starts from an ab-initio map is a separate, explicit run.
+# The keyword `sweep` stands for every scenario of the `sweep` section below (its mixtures and its offsets scenario).
 run_scenarios: [kent_cap, uniform]
+
+# The sweep (sweep.py generates its scenarios; run it with `run_scenarios: [sweep]`): mixtures of a Kent cap and
+# uniform viewing directions over the noise level and the number of particles, refined with every variant of
+# `variants`. Per noise level two pools of max(n_images) particles are simulated (their noise seeds differ); a
+# mixture takes the first round(kent_weights * n) particles of the Kent pool and the rest of the uniform pool
+# (mix_pools.py), so a smaller mixture is a subset of a larger one and the true prior is the weighted mixture.
+#   kent:         the cap of the Kent pool: the mild cap of kent_cap_mild (kappa 4, beta 1: KL 1.47 bits from uniform at
+#                 HEALPix order 3, median tilt 36 deg), the polar cap of preferred views.
+#   kent_weights: the Kent share of the particles; 0 is a uniform dataset (without fixed_true, which equals fixed_uniform
+#                 there), 1 the Kent pool alone.
+#   offsets:      optional, the displaced copy (add_offsets.py) of the Kent pool at that noise level, refined like a
+#                 mixture; its centred counterpart is the mixture of Kent share 1, if the sweep has it. sigma_angstrom 7
+#                 per axis is 3.3 pixels at box 256 (see kent_cap_offsets below).
+sweep:
+  kent: {kappa: 4.0, beta: 1.0, mu: [1.0, 1.0, 0.0], mu0: [0.0, 0.0, 1.0]}
+  kent_weights: [0.0, 0.33, 0.66, 1.0]
+  noise_levels: [0.5, 1.0, 2.0]
+  n_images: [50000, 100000]
+  pool_seeds: {kent: 17, uniform: 18}   # noise seeds of the pools
+  variants: [learned, fixed_true, fixed_uniform]
+  offsets: {noise_level: 1.0, sigma_angstrom: 7.0, seed: 29}
 
 # One entry per scenario: its own simulated dataset. `poses` selects RECOVAR's pose generator; `variants` lists
 # how the dataset is refined (the entries of `variants` below); optional `dataset:` and `refine:` entries override
 # the shared settings above. `dataset_from` names another scenario whose dataset this one refines instead of
 # simulating its own; `shifted_from` names a scenario that simulates its own dataset, whose particles this scenario
-# displaces by random offsets (`offsets`, below: add_offsets.py) and refines instead; `init` is the map the refinements
+# displaces by random offsets (`offsets`, below: add_offsets.py) and refines instead; `mixture_of` lists pools, each a
+# `label`, a scenario that simulates its own dataset and the `count` of its first particles to take (mix_pools.py;
+# the sweep's scenarios are of this kind); `init` is the map the refinements
 # start from: `ground_truth` (default: the ground truth
 # low-passed at refine.init_resolution) or `abinitio` (relax initial_model on the particles without their poses,
 # rigidly registered to the ground truth's frame and hand).
