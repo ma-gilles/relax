@@ -377,5 +377,5 @@ STANDARD:
   - Decoded score can mislead: rd_s3hi on D5_shift decodes .870 / .907 with pose 89.5° (12% < 10; oracle frame 72.9°). Report pose next to decoded, always.
   - RELION 5 on Ribosembly n3, correctly signed stacks: Class3D fails even centred (42.9°, ARI .127, best-class FSC .660), so this set is beyond RELION regardless of shifts; shifts still break RELION's K=1 InitialModel (3.6° → 114.5°).
   - T7late on Ribo_shift n3 fails (.172, 122°).
-  - PPCA on C_shift pre-centred with the external consensus poses' offsets scored .662 / 116° (below mean only .837 and below as-picked .840). Treated as a probable convention bug in the centring step, under check; not a result.
+  - PPCA on C_shift pre-centred with the external consensus poses' offsets scored .662 / 116° (below mean only .837 and below as-picked .840). Not a centring bug (sign, units and the centre-of-mass check all pass; training offsets settle to 0.25 px rms vs 3.57 raw): the run split its 11 states between the two hands (6 in one frame at 4.8° / 93% < 10°, 5 in the mirror frame at 4.6° / 93%), so a single-frame suite registration fails. A per-hand rescore (with own-hand baselines for the raw C_shift and C n1 rows) decides whether pre-centring lifts PPCA; one seed cannot say whether pre-centring caused the split.
 
