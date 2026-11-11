@@ -1,5 +1,16 @@
 # tilt-czii (CZII Biohub HPC)
 
+## 2026-11-11 ~19:30 UTC
+
+- NOTE (affects anyone running tilt PPCA on a large set): `relax ppca_initial_model --ios` loaded the tilt-image
+  dataset eagerly, which holds every image as a complex64 full grid whatever `--ppca-preread-images` says. Measured
+  on 2.0M tilt images of 128 x 128 (70k particles): 266 GB resident after loading (peak 281 GB), before training.
+  Fixed on `claude/ppca-likelihood-min-shell` (f644205f): the dataset is lazy and the preread alone decides whether
+  the real pixels are held (~132 GB here); the preread also fills one array instead of concatenating chunks (which
+  needed the bytes twice). Lazy and eager reads are bitwise equal (images, half spectra, CTF rows; 3,000 images).
+  49 tilt PPCA unit tests pass.
+- DONE (memory): the two claimed 70k runs (`--q 4`, `--q 10`) are restarted on f644205f with the preread on.
+
 ## 2026-11-11 ~18:10 UTC
 
 - NOTE: access. CZII Biohub HPC, Slurm, H100 / H200 nodes, 4 GPUs at a time. Data: real cryo-ET tilt series of a
