@@ -10,7 +10,7 @@ import pytest
 from helpers.contrast_b_reference import reference_pose, unpack_gram
 from helpers.float_compare import assert_matches
 from helpers.full_row_tile import accumulate_full_row_tile
-from test_full_fine_streaming import IMAGE_SHAPE, _half_volume, _TinyData
+from test_full_fine_streaming import IMAGE_SHAPE, SIGNIFICANT, _half_volume, _TinyData, make_tile_problem
 
 from relax.ppca_initial_model import checkpoint, iteration_loop
 from relax.ppca_initial_model.config import Config
@@ -82,6 +82,20 @@ def test_the_integrated_contrast_without_spread_gives_the_statistics_of_the_plai
     assert_matches(np.asarray(integrated.diagnostics["latent_second_moment_sum"]), np.asarray(plain.diagnostics["latent_second_moment_sum"]), rtol=1e-4)
 
 
+def test_the_integrated_contrast_without_spread_matches_the_plain_stream_over_many_poses():
+    """Several rotation blocks, nine translations and a coarse support: the layouts of pass 1, pass 2 and the GEMMs."""
+    _, _, _, plain, _ = make_tile_problem(q=2)
+    _, _, _, integrated, _ = make_tile_problem(q=2, contrast_b=contrast_b.ContrastPrior(3, 1.0, 1e-4, True))
+    expected = accumulate_full_row_tile(plain, np.arange(3), SIGNIFICANT)
+    actual = accumulate_full_row_tile(integrated, np.arange(3), SIGNIFICANT)
+    assert_matches(np.asarray(actual.embeddings)[:, :2], np.asarray(expected.embeddings), rtol=1e-4)
+    for name in ("lhs_tri", "residual_gradient", "residual_num"):
+        assert_matches(np.asarray(getattr(actual, name)), np.asarray(getattr(expected, name)), rtol=1e-4)
+    assert_matches(np.float32(actual.log_likelihood), np.float32(expected.log_likelihood), rtol=1e-4)
+    assert_matches(np.asarray(actual.diagnostics["rotation_mass"]), np.asarray(expected.diagnostics["rotation_mass"]), rtol=1e-4)
+    assert np.array_equal(actual.diagnostics["best_rotation_idx"], expected.diagnostics["best_rotation_idx"])
+
+
 @full_float32
 def _kept_and_moments(stream):
     """The pass-1 buffers of one tile of 3 images and the pass-2 moments of its only rotation block."""
@@ -105,12 +119,12 @@ def test_pass_two_recomputes_the_node_posteriors_the_dense_reference_gives():
     for b in range(3):
         nu, h, H = unpack_gram(gram, q, 0, b)
         _, e_c, e_c2, e_cz, e_c2z, e_c2zz, e_z = reference_pose(inner[0, b, 0], inner[1:, b, 0].astype(np.float64), nu, h, H, kappa, sigma)
-        assert_matches(np.asarray(weights)[0, 0, b, 0], np.float32(e_c), rtol=2e-3)  # gamma = 1 at the only pose
-        assert_matches(np.asarray(weights)[1:, 0, b, 0], e_cz.astype(np.float32), rtol=2e-3)
-        assert_matches(np.asarray(sums)[index[(0, 0)], 0, b], np.float32(e_c2), rtol=2e-3)
-        assert_matches(np.asarray(sums)[index[(1, 2)], 0, b], np.float32(e_c2zz[0, 1]), rtol=3e-3)
-        assert_matches(np.asarray(sums)[index[(0, 1)], 0, b], np.float32(e_c2z[0]), rtol=3e-3)
-        assert_matches(np.asarray(carry.embedding)[b], np.concatenate([e_z, [e_c]]).astype(np.float32), rtol=2e-3)
+        assert_matches(np.asarray(weights)[0, 0, b, 0], np.float32(e_c), rtol=1e-3)  # gamma = 1 at the only pose
+        assert_matches(np.asarray(weights)[1:, 0, b, 0], e_cz.astype(np.float32), rtol=1e-3)
+        assert_matches(np.asarray(sums)[index[(0, 0)], 0, b], np.float32(e_c2), rtol=1e-3)
+        assert_matches(np.asarray(sums)[index[(1, 2)], 0, b], np.float32(e_c2zz[0, 1]), rtol=1e-3)
+        assert_matches(np.asarray(sums)[index[(0, 1)], 0, b], np.float32(e_c2z[0]), rtol=1e-3)
+        assert_matches(np.asarray(carry.embedding)[b], np.concatenate([e_z, [e_c]]).astype(np.float32), rtol=1e-3)
 
 
 def test_the_stream_refuses_two_contrast_models_and_a_degenerate_prior():

@@ -11,7 +11,8 @@ form, float64, independent code). Three node placements are compared with it, ea
 * ``prior``: Gauss-Hermite nodes on the prior ``N(1, sd^2)``, the same for every pose;
 * ``grid``: equally spaced trapezoid nodes on ``1 +- 4 sd``.
 
-Per setting and scheme: the largest and mean error of the pose log-evidence (nats), the total-variation distance of the posterior
+Per setting and scheme: the largest error of the pose log-evidence over the poses within ``RELEVANT_NATS`` of their image's best pose
+and the mean error over all poses (nats), the total-variation distance of the posterior
 over poses of an image, the relative errors of the moments the M-step reads at the true pose (``E[c]``, ``E[c z]``,
 ``E[c^2 z z^T]``), and the quantization residual: the distance from the true posterior mean of ``c`` to the nearest node, in units
 of the posterior sd. ``nu`` is the integrated signal-to-noise ``<a, a>``; the posterior sd of ``c`` is about ``nu^-1/2``.
@@ -37,6 +38,7 @@ if str(Path(__file__).resolve().parents[2]) not in sys.path:
 from relax.ppca_refinement import contrast_b  # noqa: E402
 
 N_PIXELS, N_REFERENCE = 600, 4001
+RELEVANT_NATS = 15.0  # a pose within this many nats of its image's best pose counts as carrying posterior mass
 CORRELATIONS = (0.99, 0.95, 0.8, 0.5, 0.0)  # of the wrong poses' mean and loadings with the true pose's
 SETTINGS = [(q, ratio, nu) for q in (3, 10) for ratio in (0.1, 1.0) for nu in (20.0, 200.0, 2000.0)]
 SCHEMES = (
@@ -150,8 +152,9 @@ def evaluate(scheme: str, n_nodes: int, inner, gram, ref, sd: float, q: int) -> 
         return np.linalg.norm((x - y).reshape(len(x), -1)) / np.linalg.norm(y.reshape(len(y), -1))
 
     err = np.abs(log_z - ref["log_z"])
+    relevant = log_post_ref > -RELEVANT_NATS  # poses that carry posterior mass for their image
     return {
-        "max |dlogZ|": float(err.max()),
+        "max |dlogZ| (relevant)": float(err[relevant].max()),
         "mean |dlogZ|": float(err.mean()),
         "mean TV": float(tv.mean()),
         "E[c] err / sd": float(np.mean(np.abs(e_c[0] - ref["e_c"][0]) / ref["post_sd"][0])),

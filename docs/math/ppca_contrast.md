@@ -178,7 +178,7 @@ unit-contrast model, and also ranks the true pose against 12 wrong poses whose i
 - With no contrast spread in the data and a model prior sd of 0.15, nothing changes (margins within 0.5 percent,
   same latent accuracy): modelling an absent contrast is harmless at a known pose.
 
-Model B is therefore not built into the stream. It stays the reference of these tables.
+Model B is therefore the reference of these tables; section 11 builds it into the stream as an option.
 
 ## 9. The scale gauge: the M-step takes the contrast latent about its population mean
 
@@ -265,4 +265,89 @@ are already orthogonal to the mean, so VDAM, which is, is unaffected to first or
 Round 5 to 7 of the progress log: with the constraint SGD's sd no longer decays at noise 3 (the estimated contrast sd 0.20 against 0.03 to 0.06;
 kmeans ARI 0.346 to 0.494 and 0.322 to 0.564, both above the baseline), SGD on the cryo-ET fixture reaches the true sd (0.308 and 0.309
 for 0.30), and VDAM and the unit-contrast datasets are unchanged. It is the default under `--contrast latent`.
+
+## 11. Model B in the stream: Gauss-Hermite nodes on model A's posterior
+
+`--contrast quadrature` is the physical model of section 1, `y = c A (mu + W z) + noise` with `c ~ N(kappa, sigma^2)` and
+`sigma = kappa tau`, with the contrast integrated per pose. The engine's columns are the plain `[mu, W]` (no tied column), so the
+two GEMMs of pass 1 are those of unit contrast: `inner` `(q + 1, R, B, T)` holds `t` and `g` per pose and the packed Gram
+`(tri(q + 1), R, B)` holds `nu`, `h`, `H` per rotation and image
+([contrast_b.py](../../relax/ppca_refinement/contrast_b.py)).
+
+**Per-pose cost.** In the eigenbasis `H = U diag(lam) U^T` (one `eigh` per rotation and image) section 3 reads, with `g~ = U^T g`,
+`h~ = U^T h`,
+
+```
+log p(y | c, pose) = -1/2 [ c^2 nu - 2 c t - sum_j c^2 (g~_j - c h~_j)^2 / (1 + c^2 lam_j) + sum_j log(1 + c^2 lam_j) ] + const,
+z~_j | c, y  ~  N( c (g~_j - c h~_j) / (1 + c^2 lam_j),  1 / (1 + c^2 lam_j) ).
+```
+
+One node costs `O(q)` per pose; `g~` costs `O(q^2)` per pose. No node needs a Cholesky factor.
+
+**Discretization.** The contrast's posterior given a pose has sd `s ~ nu^(-1/2)`: 0.07 at `nu = 200`, 0.02 at `nu = 2000`, against a prior sd of
+0.3, and its centre moves with the pose (a wrong pose has another best contrast). Nodes on the prior (or on a grid over `kappa +- 4 sigma`)
+therefore need a spacing of about `s` to resolve it, that is 100 or more nodes at high `nu`. Instead the nodes follow the pose: model A's
+posterior of the contrast is a closed form (section 5; eliminating `z`, `c = kappa + sigma e`)
+
+```
+Pi = 1 + sigma^2 (nu - sum_j h~_j^2 / (1 + lam_j)),
+m  = kappa + sigma^2 [ (t - kappa nu) - sum_j h~_j (g~_j - kappa h~_j) / (1 + lam_j) ] / Pi,        s = sigma / sqrt(Pi),
+```
+
+and it matches B's to 0.999 in correlation (section 8). The integral is taken by `K` Gauss-Hermite nodes `c_k = m + s x_k` with the integrand
+over the proposal, `f(c) / N(c; m, s^2)`, which is smooth and constant when A equals B (for `q = 0` it is exact for every `K`):
+
+```
+Z ~ s sqrt(2 pi) sum_k w_k exp(x_k^2 / 2) exp(f(c_k)),       rho_k = w_k exp(x_k^2 / 2) exp(f(c_k)) / (the same sum),
+```
+
+with `f(c) = log p(y | c, pose) + log N(c; kappa, sigma^2)`, `x_k, w_k` the Gauss-Hermite rule for the standard normal and `rho_k` the
+node responsibilities. `log Z` is the pose's score (the pose posterior is over `Z`); at `sigma -> 0` it is the unit-contrast score.
+
+**How many nodes.** [quadrature_accuracy.py](../../scripts/ppca_contrast/quadrature_accuracy.py) draws images from the physical model
+(`c ~ N(1, 0.3^2)`, white noise), scores them at the true pose and at five wrong poses whose mean and loadings correlate with the true ones by 0.99
+to 0, and compares each placement with a dense reference (4001 trapezoid nodes on `1 +- 6 sd`, direct solves, float64). Twelve settings:
+`q = 3, 10`, loading-to-mean energy ratio 0.1 and 1, `nu = 20, 200, 2000`. Worst case over the twelve (100 images each):
+
+| placement | nodes | pose log-score error, poses within 15 nats of the best (nats) | total variation of the posterior over poses | `E[c]` error / posterior sd | `E[c z]` rel. | `E[c^2 z z^T]` rel. |
+| --- | --- | --- | --- | --- | --- | --- |
+| adaptive (model A's posterior) | 1 | 1.5 | 8.7e-3 | 0.38 | 5.4e-2 | 9.6e-2 |
+| adaptive | 2 | 9.2e-2 | 1.3e-3 | 0.055 | 7.3e-3 | 1.1e-2 |
+| adaptive | **3** | 2.6e-2 | 2.9e-4 | 0.012 | 1.8e-3 | 2.9e-3 |
+| adaptive | 4 | 8.0e-3 | 7.2e-5 | 2.6e-3 | 4.5e-4 | 7.2e-4 |
+| adaptive | 5 | 2.7e-3 | 2.0e-5 | 6.0e-4 | 1.2e-4 | 1.9e-4 |
+| prior, Gauss-Hermite on `N(1, sd^2)` | 9 | 23 | 1.4e-2 | 3.5 | 5.0e-2 | 6.6e-2 |
+| prior | 33 | 5.7 | 3.2e-3 | 1.7 | 1.9e-2 | 2.3e-2 |
+| equally spaced, `1 +- 4 sd` | 17 | 4.0 | 2.8e-3 | 1.5 | 1.7e-2 | 1.9e-2 |
+| equally spaced | 33 | 0.46 | 1.3e-3 | 0.44 | 4.6e-3 | 5.2e-3 |
+| equally spaced | 65 | 5.7e-2 | 8.1e-6 | 4.6e-3 | 5.0e-5 | 7.0e-5 |
+| equally spaced | 129 | 6.3e-2 | 9.1e-6 | 1.5e-4 | 2.8e-5 | 8.5e-5 |
+
+Three adaptive nodes reach the accuracy of 65 equally spaced ones in the quantities the M-step and the pose posterior read, at a twentieth
+of the cost, and the worst case is the low-signal, strong-loading corner (`nu = 20`, `q = 10`, ratio 1; the error shrinks with `nu`, since the
+posterior of `c` narrows toward a Gaussian). Five adaptive nodes are within 3e-3 nats. `--contrast-nodes` sets `K` (default 3).
+The "quantization residual" of a placement, the distance from the true posterior mean of `c` to the nearest node in units of the posterior sd,
+is 0.37 at worst for the adaptive nodes (odd `K`: the centre node sits on A's mean, which differs from B's by that much) and 0.4 to 0.9 for the
+equally spaced ones, and it does not predict the accuracy: a smooth integrand is integrated to far better than the node spacing suggests
+(the trapezoid rule at spacing `s` is accurate to `exp(-2 pi^2)`).
+
+**Moments.** With `rho_k` and the node posteriors `m_k` (eigenbasis), pass 2 forms per pose `E[c] = sum_k rho_k c_k`, `E[c z~] = sum_k rho_k c_k m_k`
+and per rotation and image, summed over translations with the pose posterior `gamma`, `E[c^2] = sum gamma rho_k c_k^2`,
+`E[c^2 z~] = sum gamma rho_k c_k^2 m_k`, `E[c^2 z~ z~^T] = sum gamma rho_k c_k^2 (m_k m_k^T + diag(1 / (1 + c_k^2 lam)))`, rotated
+back with `U` once per (rotation, image). These are the `(a~, G~)` of section 4, laid out as the stream's pass 2 expects: the RHS GEMM, the
+metric GEMM and the backprojections are the unit-contrast ones. Pass 1 keeps `inner` and the Gram (the same memory as model A's kept latent
+means and covariances) and pass 2 recomputes the nodes: no per-node state is stored. The embedding of a particle is `[E z, E c]`.
+
+**Gauge.** Model B has the scale gauge of section 9 (the mean volume against the contrast's population mean) and, with a loading parallel
+to the mean, the second contrast latent of section 10. The same two fixes apply: the M-step takes the moments of `c / kappa` (`a~ / kappa`,
+`G~ / kappa^2`) with `kappa` the population mean of the contrast, followed at `--contrast-gain-rate` per update from the batch mean of `E[c]`
+and used as the prior mean of the next E-step (`State.contrast_gain` holds `kappa - 1`); the prior sd is `kappa tau` with the relative spread
+`tau^2 = (mean E[c^2] - mean E[c]^2) / mean E[c]^2` of the batch; and the loadings are kept orthogonal to the mean (`--contrast-orthogonal`, on by
+default). Whether B needs them as A does is measured in the progress log.
+
+**Cost.** The XLA per-pose stage of model B on an A100 for one rotation block (64 rotations, 150 images, 25 translations, `q = 5`): 0.4 ms for
+pass 1 and 0.75 ms for pass 1 and pass 2 together (one program), against 0.10 and 0.12 ms for model A's XLA stage and 0.12 ms for the pass-1
+inner-product GEMM (microbenchmark on random operands, indicative; the engine's model A uses relax's CUDA epilogue, which is faster than
+its XLA form). There is no extra GEMM channel (model A
+has `q + 1`, B has `q`). The measured per-iteration cost is in the progress log.
 

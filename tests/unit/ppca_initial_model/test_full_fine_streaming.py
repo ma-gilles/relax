@@ -141,7 +141,9 @@ def _half_volume(rng, scale=1.0):
     return (scale * np.asarray(ftu.full_volume_to_half_volume(full, VOLUME_SHAPE)).reshape(-1)).astype(np.complex64)
 
 
-def make_tile_problem(device=None, q=2, metric_trace_only=False, gemm_precision="fp32", latent_center=None):
+def make_tile_problem(
+    device=None, q=2, metric_trace_only=False, gemm_precision="fp32", latent_center=None, contrast_b=None
+):
     reference, shared, parent = _layouts()
     rng = np.random.default_rng(3)
     images = (rng.standard_normal((3, N_HALF)) + 1j * rng.standard_normal((3, N_HALF))).astype(np.complex64)
@@ -175,6 +177,7 @@ def make_tile_problem(device=None, q=2, metric_trace_only=False, gemm_precision=
         metric_trace_only=metric_trace_only,
         gemm_precision=gemm_precision,
         latent_center=latent_center,
+        contrast_b=contrast_b,
         **common,
     )
     host = dict(

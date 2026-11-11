@@ -621,6 +621,9 @@ def moment_block(carry, arrays, tile, kept, posterior, start, *, static, block_s
     """Pass 2 for one rotation block: posterior weights, M-step images, residuals and diagnostics."""
     if static.contrast_nodes:
         weights, sums, carry = _posterior_block_contrast(carry, arrays, kept, posterior, start, block_size, static)
+        # The CUDA stream pads the (image, translation) axis of its GEMM operands: pad the weights as its kernel does.
+        weights = weights.reshape(weights.shape[0], weights.shape[1], -1)
+        weights = jnp.pad(weights, ((0, 0), (0, 0), (0, tile.Y1_recon.shape[0] - weights.shape[-1])))
     elif static.cuda_kernels:
         weights, sums, carry = _posterior_block_cuda(
             carry, arrays, kept, posterior, start, static, block_size, tile.Y1_recon.shape[0]

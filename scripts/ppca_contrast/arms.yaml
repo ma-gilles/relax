@@ -83,3 +83,18 @@ arms:
     args: ["--optimizer", "momentum_sgd", "--sgd-learning-rate", "2.4", "--sgd-loading-scale", "0.25",
            "--direction-prior", "uniform", "--contrast", "latent", "--contrast-sd", "0.3", "--no-contrast-estimate-sd",
            "--contrast-orthogonal"]
+
+# qo_*: --contrast quadrature (model B: the contrast scales the whole signal and is integrated per pose by Gauss-Hermite nodes on
+# model A's posterior; math note section 11) with the loadings kept orthogonal to the mean (the default) and 3 nodes; qo1_* and qo5_*
+# use 1 and 5 nodes per pose. Compare with co_* (model A) and the baselines.
+  qo_vdam:
+    args: ["--optimizer", "vdam", "--direction-prior", "uniform", "--contrast", "quadrature", "--contrast-sd", "0.2"]
+  qo1_vdam:
+    args: ["--optimizer", "vdam", "--direction-prior", "uniform", "--contrast", "quadrature", "--contrast-sd", "0.2",
+           "--contrast-nodes", "1"]
+  qo5_vdam:
+    args: ["--optimizer", "vdam", "--direction-prior", "uniform", "--contrast", "quadrature", "--contrast-sd", "0.2",
+           "--contrast-nodes", "5"]
+  qo_sgd:
+    args: ["--optimizer", "momentum_sgd", "--sgd-learning-rate", "2.4", "--sgd-loading-scale", "0.25",
+           "--direction-prior", "uniform", "--contrast", "quadrature", "--contrast-sd", "0.2"]

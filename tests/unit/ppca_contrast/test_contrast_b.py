@@ -14,6 +14,7 @@ pytestmark = pytest.mark.unit
 
 @pytest.mark.parametrize("q", [1, 3])
 def test_scores_and_moments_match_a_dense_reference(q):
+    # Seven nodes: the worst relative difference from the float64 dense reference is 1.4e-6 (float32 arithmetic).
     kappa, sigma = 1.0, 0.3
     inner, gram = make_statistics(q)
     rule = contrast_b.hermite_rule(7)
@@ -31,22 +32,22 @@ def test_scores_and_moments_match_a_dense_reference(q):
                 log_z, e_c, e_c2, e_cz, e_c2z, e_c2zz, e_z = reference_pose(
                     inner[0, r, b, t_index], inner[1:, r, b, t_index].astype(np.float64), nu, h, H, kappa, sigma
                 )
-                assert_matches(score[r, b, t_index], np.float32(log_z), rtol=2e-4)
-                assert_matches(np.asarray(moments.weights)[0, r, b, t_index], np.float32(0.5 * e_c), rtol=1e-3)
-                assert_matches(np.asarray(moments.weights)[1:, r, b, t_index], (0.5 * e_cz).astype(np.float32), rtol=2e-3)
+                assert_matches(score[r, b, t_index], np.float32(log_z), rtol=1e-5)
+                assert_matches(np.asarray(moments.weights)[0, r, b, t_index], np.float32(0.5 * e_c), rtol=1e-5)
+                assert_matches(np.asarray(moments.weights)[1:, r, b, t_index], (0.5 * e_cz).astype(np.float32), rtol=1e-5)
                 expected_sums[index[(0, 0)]] += 0.5 * e_c2
                 expected_embedding += 0.5 * np.concatenate([e_z, [e_c]])
                 for i in range(1, q + 1):
                     expected_sums[index[(0, i)]] += 0.5 * e_c2z[i - 1]
                     for j in range(i, q + 1):
                         expected_sums[index[(i, j)]] += 0.5 * e_c2zz[i - 1, j - 1]
-            assert_matches(np.asarray(moments.sums)[:, r, b], expected_sums.astype(np.float32), rtol=2e-3)
-            assert_matches(np.asarray(moments.embedding)[:, r, b], expected_embedding.astype(np.float32), rtol=2e-3)
+            assert_matches(np.asarray(moments.sums)[:, r, b], expected_sums.astype(np.float32), rtol=1e-5)
+            assert_matches(np.asarray(moments.embedding)[:, r, b], expected_embedding.astype(np.float32), rtol=1e-5)
 
 
 def test_more_nodes_converge_to_the_dense_reference():
     q, kappa, sigma = 3, 1.0, 0.3
-    inner, gram = make_statistics(q, nu=400.0)
+    inner, gram = make_statistics(q, nu=30.0)  # a wide posterior of the contrast: the nodes matter
     prior = jnp.zeros((N_IMAGES, N_POSES, N_TRANSLATIONS))
     errors = []
     for n_nodes in (1, 3, 5):
@@ -61,8 +62,9 @@ def test_more_nodes_converge_to_the_dense_reference():
                     reference = reference_pose(inner[0, r, b, t_index], inner[1:, r, b, t_index].astype(np.float64), nu, h, H, kappa, sigma)[0]
                     worst = max(worst, abs(float(score[r, b, t_index]) - reference))
         errors.append(worst)
-    assert errors[0] > errors[1] > errors[2] or errors[2] < 1e-3
-    assert errors[1] < 0.1 and errors[2] < 0.03
+    # Largest log-evidence error over all poses, incl. wrong ones (docs/math/ppca_contrast.md section 11 for the nodes).
+    assert errors[0] > errors[1] > errors[2]
+    assert errors[1] < 0.01 and errors[2] < 2e-3  # measured: 0.24, 6.4e-3 and 7.5e-4 nats for 1, 3 and 5 nodes
 
 
 def test_without_contrast_spread_the_score_is_the_unit_contrast_score_and_the_moments_are_the_posterior_moments():

@@ -414,11 +414,12 @@ def test_tiles_keep_one_tilt_group():
     assert [t.tolist() for t in tiles] == [[3, 0], [2], [1]]
 
 
-@pytest.mark.parametrize("contrast", ["none", "latent", "latent_orthogonal"])
+@pytest.mark.parametrize("contrast", ["none", "latent", "latent_orthogonal", "quadrature"])
 @pytest.mark.parametrize("optimizer", ["vdam", "momentum_sgd"])
 def test_controller_runs_subtomogram_particles(tmp_path, optimizer, contrast):
     """Two all-particle updates and the final embedding through the InitialModel controller; with the contrast
-    latent, one contrast per particle for all its tilts, and, orthogonal, loadings orthogonal to the mean volume."""
+    latent (``latent``, ``latent_orthogonal``) or the integrated contrast (``quadrature``, orthogonal loadings), one
+    contrast per particle for all its tilts, and, orthogonal, loadings orthogonal to the mean volume."""
     import json
 
     from relax.ppca_initial_model import iteration_loop
@@ -457,8 +458,8 @@ def test_controller_runs_subtomogram_particles(tmp_path, optimizer, contrast):
         image_batch_size=3,
         rotation_block_size=32,
         optimizer=optimizer,
-        contrast="none" if contrast == "none" else "latent",
-        contrast_orthogonal=contrast == "latent_orthogonal",
+        contrast={"none": "none", "quadrature": "quadrature"}.get(contrast, "latent"),
+        contrast_orthogonal=contrast in ("latent_orthogonal", "quadrature"),
     )
     try:
         state = run(particles, config, tmp_path, {"test": True}, diameter_ang=120.0)
@@ -473,7 +474,7 @@ def test_controller_runs_subtomogram_particles(tmp_path, optimizer, contrast):
     embeddings = np.load(tmp_path / "embeddings.npz")
     np.testing.assert_array_equal(np.sort(embeddings["particle_ids"]), np.arange(n_particles))
     assert embeddings["z"].shape == (n_particles, 2)
-    if contrast == "latent_orthogonal":
+    if contrast in ("latent_orthogonal", "quadrature"):
         theta = np.asarray(state.theta)
         norms = np.linalg.norm(theta, axis=0)
         overlap = np.real(np.conj(theta[:, :1]) * theta[:, 1:]).sum(axis=0) / (norms[0] * norms[1:])
