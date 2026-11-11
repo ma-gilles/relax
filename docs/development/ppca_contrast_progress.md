@@ -20,6 +20,8 @@ tested, and performs to a satisfactory level on simulated data with and without 
 | 3a | Contrast-spread simulated datasets with a paired control | done: C n1 box 64 at sd 0, 0.15, 0.30 |
 | 3b | Cost of ignoring contrast (baseline runs) | done for seed 11: at sd 0.30 kmeans ARI falls from 0.99 to 0.57-0.63, poses and FSC hold |
 | 3c | Contrast model vs baseline; harm check at unit contrast | done (rounds 3 to 7): at sd 0.30 and noise 1 kmeans ARI 0.57-0.66 to 0.93-0.98 (3 seeds for VDAM, 14 for constrained SGD), noise 3 and log-normal one to two seeds; no change at sd 0; cryo-ET fixture: SGD calibrated, VDAM not settled |
+| 5 | Model B (contrast on the whole signal, integrated per pose) in the stream | implemented 2026-11-11 (`--contrast quadrature`, math note section 11): unit tests (CPU and GPU) and the node study pass; not yet run on the suites (arms `qo_*`) |
+| 6 | VDAM with the latent on the real data set cahra_01 at three tau2 fudges, with paired runs without it | submitted 2026-11-11, queued (per-user job limit); report script ready |
 | 4 | Heuristics (when to switch contrast on, prior width) and revisit | not needed so far: the two failures first found were fixed structurally (math note sections 9 and 10); a late start and a fixed sd did not help the first one (noise level 1, plain M-step); the fixed sd on the noise 3 case that still fails is round 9 |
 
 ## Decisions so far
@@ -476,3 +478,59 @@ which belongs to the gate (to be decided by its owner). No smoke or medium tier 
 
 Run directories: `$R/round10`, `$R/round10b`, `$R/tomo_r10`, `$R/tomo_r10_base`, `$R/tomo_r10_noscale` with `$R` = `/scratch/gpfs/CRYOEM/gilleslab/ry2228/data/ppca_contrast`; the old-against-new
 tables are `$R/round10_compare.md`.
+
+### 2026-11-11 audit of the earlier contrast failures, model B, and the cahra_01 runs
+
+The owner asked to move away from the cryo-ET fixtures (the gate there is theirs), to run VDAM with the latent on cahra_01 at three tau2 fudges, and to
+build model B with a discretization that is accurate without a large node count.
+
+**Audit** (the notes in this repository and RECOVAR that say contrast fails, against what happened here). Per-run numbers come from
+`scripts/ppca_contrast/contrast_sd_trajectory.py` on rounds 10 and 10b; the cryo-ET numbers are the table of round 4/5 (old gate).
+
+- Section 16.10 of `vdam_ppca_algorithm.md` (October 2026: a point estimate of the contrast from a random start gives low contrasts to misaligned particles, the
+  estimated spread inflates (0.415 against 0.288) and the poses do not converge, pose median 24 deg against 5.7 deg). *SPA suites, VDAM*: the final state is
+  fine (sd 0.29 to 0.31 against 0.30, pose median 3.97 against 4.04 deg), but the mechanism shows as a transient: in 9 of the 10 noise-1 VDAM runs of rounds 10 and 10b
+  (and the log-normal one) the sd rises to 0.40 to 0.50 between about iteration 450 and 1020 (the stage changes of the radius ramp) and comes back (peak 0.50, at the
+  cap for two iterations, in `co_vdam` seed 12); at noise 3 the peak is 0.34 in all six runs, SGD 0.32. *Cryo-ET fixture, VDAM, old gate*: the full symptom: the sd sits at
+  the cap, the mean contrast estimate is 1.5 to 1.6 and the state R^2 is lower than without the latent (0.36 and 0.33, or 0.24 and 0.40 with the orthogonal loadings, against
+  0.48 and 0.56); poses were not measured there (the outputs hold no estimated poses). On the rebased tip that fixture collapses with and without the latent (the base gate), and in
+  the collapsed contrast runs the contrast estimate with the true contrast regressed out correlates +0.38 and +0.39 with the pose posterior's maximum (poorly determined poses
+  get lower contrasts), the same signature, but there the poses are collapsed anyway.
+- RECOVAR's warm-up (random loadings make `H >> I` and the contrast collapses to the grid boundary; the contrast is skipped for 3 iterations): there is no grid here; the
+  analogue is the sd cap, reached on the cryo-ET VDAM runs and for two iterations on one SPA run. `--contrast-start` defaults to 1.
+- RECOVAR's profile-MAP over-estimate (no log-determinant term): not present, model A integrates the contrast and its second moments enter the M-step; the bias here is the opposite
+  one under SGD (the estimate shrinks toward 1: slope 0.33 at radius 8, 0.63 at 16).
+- RECOVAR's sign mismatch (contrasts pegged at the minimum): not seen (mean estimates 1.015 to 1.024 under VDAM); no flipped-image test was run.
+- RECOVAR's inflated variance estimate under unknown contrast, and the identifiability remark of section 6: seen and fixed (the baseline's loadings carry the contrast: subspace angle
+  90 deg and energy 0.871 against 34.8 deg and 0.932 with the latent; the loading parallel to the mean is a second contrast latent, math note section 10). The orthogonality
+  constraint has not been tested where it costs (oracle shares along the mean: Ribosembly 25 percent, K4 17, D40 7).
+- Section 16.10's other finding, no gain in the maps, still holds: the gain is in the latents' clustering (ARI), not in state FSC, mean FSC or poses.
+
+**Model B** (`--contrast quadrature`; math note section 11; `relax/ppca_refinement/contrast_b.py`). The contrast scales the whole signal, `c ~ N(kappa, (kappa tau)^2)`, and is
+integrated per pose: the stream's columns are `[mu, W]` (no tied column, no extra GEMM channel), the latent `z` is integrated in closed form per node in the eigenbasis of `H`, and the
+nodes are Gauss-Hermite nodes on model A's closed-form posterior of the contrast. Pass 1 keeps the inner products and the Gram, pass 2 recomputes the nodes and forms
+`E[c alpha]`, `E[c^2 alpha alpha^T]` in the layout of the unit-contrast M-step. XLA elementwise stage on CPU and GPU (the CUDA projector and GEMMs of the stream are used on GPU).
+Same two gauge fixes as model A, in their B form (M-step moments of `c / kappa`, prior sd `kappa tau` with the relative spread of the batch; orthogonal loadings by default).
+Embeddings are `[E z, E c]`; `infer_for_suite.py` and the final embeddings use `iteration_loop.contrast_latents` for both models.
+
+- Node study (`scripts/ppca_contrast/quadrature_accuracy.py`, twelve settings, results in the math note): 3 adaptive nodes keep the pose posterior within 3e-4 total variation of a
+  dense reference, `E[c]` within 1.2 percent of its posterior sd and the M-step moments within 0.3 percent; equally spaced nodes need 65 for the same, nodes on the prior more than 33
+  and still miss (`E[c]` off by 1.7 sd). Default 3 nodes; 5 nodes are within 3e-3 nats of the reference.
+- Tests: `test_contrast_b.py` (dense reference, no spread equals the unit-contrast score and posterior moments, no loadings equals the conjugate Gaussian, more nodes converge),
+  `test_contrast_b_stream.py` (the stream at no spread equals the plain stream on one pose and over many rotation blocks and translations; pass 2 against the dense reference; config,
+  prior, controller update) and the subtomogram controller test with model B (VDAM and SGD). All pass on CPU and on one A100 (the CUDA projector path; the padded `weights` layout
+  of the GPU stream was a bug found there).
+- Cost, indicative only (microbenchmark of the elementwise stage on random operands, one A100, one rotation block of 64 rotations, 150 images, 25 translations, `q = 5`): model B's XLA stage
+  0.39 ms in pass 1 and 0.75 ms for passes 1 and 2 together, model A's XLA stage 0.10 and 0.12 ms, the pass-1 inner-product GEMM 0.12 ms. At 99 translations B is 2.0 ms for both passes.
+  The engine's model A uses relax's CUDA epilogue, so the real ratio is not this one; the per-iteration cost on the suites (`qo_*` against `co_*`) is not measured yet.
+- Not done: the suites with `qo_vdam`, `qo1_vdam`, `qo5_vdam`, `qo_sgd` (arms in `arms.yaml`), the cost on the engine, whether B needs the gauge fixes, refinement (no controller),
+  smoke and medium tiers.
+
+**cahra_01** (real data, 1,613,664 particles, box 128; no ground truth; the dataset's poses and consensus are not used). Six VDAM runs on the recipe schedule of `cahra_01_fixed/gate_only` with
+the flags of that run, seed 11, the same code (snapshot v14 = branch tip `1ca90083`): `none_default`, `latent_default`, `none_0.1`, `latent_0.1`, `none_0.01`, `latent_0.01`
+(`--tau2-fudge F --tau2-fudge-scheme plain` for 0.1 and 0.01, VDAM's 1 rising to 4 for default; `--contrast latent` with its defaults: centred M-step, orthogonal loadings). The runs without
+the latent are on the same snapshot so that a difference is not the 17 gate commits. Scripts and outputs under
+`/scratch/gpfs/CRYOEM/gilleslab/ry2228/data/ppca_real_data/cahra_01_contrast/` (`run_vdam.sbatch ARM`, `smoke.sbatch`); report with `scripts/ppca_contrast/cahra_contrast_report.py`
+(final state, sd, gain and estimate trajectories, the intraclass correlation of the contrast estimate over micrographs, whether the latents of a run without the latent carry the contrast).
+Jobs 17337515 (smoke), 17337517 to 17337522; all still pending at the time of writing: the per-user running-job limit (16) is held by the owner's other project.
+
