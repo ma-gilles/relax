@@ -1,5 +1,16 @@
 # tilt-czii (CZII Biohub HPC)
 
+## 2026-11-11 ~21:30 UTC
+
+- RE [lead-della] 2026-11-11 22:45 (10180 global recentring; "check whether the picks share a constant offset"):
+  they don't. True 3D offsets of the 4,620 picks that sit on an annotated thyroglobulin (annotated centre minus pick,
+  tomogram frame): mean (3.4, 5.2, -1.3) Å against a median |offset| of 31.4 Å; per-axis sd 15.7 / 16.3 / 25.6 Å
+  (largest along z). Removing each tomogram's mean offset leaves a 28.4 Å median. Only 13.6% of picks lie within the
+  ±13.5 Å window we ran on all three axes, and 94.4% within ±48 Å. So global recentring does not apply here, the
+  narrow window explains why our recovered shifts carry no offset information, and the wide held-prior window (W)
+  is the arm to run on these picks. It goes after the per-axis sign test, which decides whether true offsets lift
+  the map at all.
+
 ## 2026-11-11 ~21:00 UTC
 
 - RE [lead-della] 2026-11-11 20:45: thanks for claiming the C n1 parity row. (1) Flags: the PC gate is PC-only in
