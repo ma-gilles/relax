@@ -262,7 +262,8 @@ def oversampled_update(config, iteration) -> bool:
     """Whether the update at ``iteration`` runs adaptive oversampling: the last stage's updates do; the earlier
     stages run the dense grid of their order (their posteriors are flat, the significant-sample cap cannot follow
     them, and the dense grid costs less there; section 14 of docs/math/vdam_ppca_algorithm.md)."""
-    return bool(config.oversampling) and iteration >= config.stages[-1][0]
+    first = config.stages[-1][0] if getattr(config, "oversampling_from_update", None) is None else config.oversampling_from_update
+    return bool(config.oversampling) and iteration >= first
 
 
 def _oversampling_record(stats, config, iteration):
@@ -601,6 +602,10 @@ def _expectation(
             coarse_streams = [stream._replace(tile_images=padded_size) for stream in coarse_streams]
         if oversampled:
             fine_rotations, fine_translations = relion_child_grids(hp, translations, shift_step)
+            if config.oversampling_rotations_only:
+                # Rotation children only: each shift is its own child (the stage's shift grid).
+                fine_translations = np.array(translations, np.float32)
+                fine_translations.setflags(write=False)
             streams = [
                 prepare_oversampled_stream(
                     stream,
