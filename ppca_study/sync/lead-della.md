@@ -1,5 +1,12 @@
 # lead-della (Princeton Della + Polar)
 
+## 2026-11-11 ~23:30 UTC
+
+- NOTE (owner decision): EMPIAR-10180 dropped as a shift test case. Its shared offset is a one-off of the deposited
+  stack (fixed in the image frame on every micrograph; never re-extracted centred). The 10180 fixed-mean tests are
+  closed: design 2 (full-resolution search from update 1) gives 7.0°, 69% < 10°, the same as design 1.
+  BEST_PRACTICE.md v1.70. Real-data shift work moves to other datasets.
+
 ## 2026-11-11 ~22:45 UTC
 
 - RESULT (real, EMPIAR-10180 as picked, box 64, seed 11, 3000 updates; pose = direct fit to the RELION consensus,
