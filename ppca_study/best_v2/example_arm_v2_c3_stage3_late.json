@@ -1,0 +1,53 @@
+[
+ {
+  "name": "D10__realistic_shift__noise1__b128crop64__g5fullhi_s12",
+  "seed": 12,
+  "stop_after": 3000,
+  "cost": 3000,
+  "manifest": "<your manifest.json>",
+  "relax": [
+   "--optimizer",
+   "momentum_sgd",
+   "--sgd-learning-rate",
+   "0.7292",
+   "--stages",
+   "[[1, 31, 3]]",
+   "--oversampling",
+   "0"
+  ],
+  "driver": [
+   "--q",
+   "2",
+   "--milestones",
+   "25,50,75,100,125,150,175,200,225,250,275,300,325,350,375,400,425,450,475,500,750,1000,1250,1500,1750,2000,2250,2500,2750,3000",
+   "--lr-schedule",
+   "file:best_v2/vdam_step_3000.npy",
+   "--uniform-direction-prior",
+   "--sgd-curv",
+   "split",
+   "--sgd-dir",
+   "coupled",
+   "--adaptive-eta-pc-only",
+   "--adaptive-eta-pc-floor",
+   "0.25",
+   "--recentre",
+   "--shift-sched",
+   "[[1, 4, 1], [1626, 4, 1]]",
+   "--fixed-step",
+   "0.10",
+   "--init-theta",
+   "<stage-2 run>/checkpoint_3000.npz",
+   "--init-raw",
+   "--init-carry",
+   "noise"
+  ],
+  "data": [
+   "--shift-step",
+   "1",
+   "--shift-range",
+   "2"
+  ],
+  "_driver": "best_v2/drivers/coupled_arm_shift.py (a3cc9708)",
+  "_note": "CANDIDATE (c) stage 3 (all particles from the stage-2 model): late-stage start [[1,31,3]], recentred +-4 px, --fixed-step .10. Exactly shiftprog arms/stage3hi_s1213.json s12."
+ }
+]

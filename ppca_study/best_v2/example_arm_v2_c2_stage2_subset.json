@@ -1,0 +1,45 @@
+[
+ {
+  "name": "D10__realistic_shift__noise1__b128crop64__g5sel_s12",
+  "seed": 12,
+  "stop_after": 3000,
+  "cost": 3000,
+  "manifest": "<your manifest.json>",
+  "relax": [
+   "--optimizer",
+   "momentum_sgd",
+   "--sgd-learning-rate",
+   "0.7",
+   "--stages",
+   "[[1, 11, 1], [126, 12, 2], [251, 13, 2], [376, 14, 2], [501, 15, 2], [626, 16, 2], [751, 17, 2], [876, 18, 2], [1001, 19, 2], [1126, 20, 2], [1251, 21, 2], [1376, 22, 2], [1501, 23, 2], [1626, 24, 3], [1751, 25, 3], [1876, 26, 3], [2001, 27, 3], [2126, 28, 3], [2251, 29, 3], [2376, 30, 3], [2500, 31, 3]]",
+   "--oversampling",
+   "0"
+  ],
+  "driver": [
+   "--q",
+   "2",
+   "--milestones",
+   "25,50,75,100,125,150,175,200,225,250,275,300,325,350,375,400,425,450,475,500,750,1000,1250,1500,1750,2000,2250,2500,2750,3000",
+   "--lr-schedule",
+   "file:best_v2/vdam_step_3000.npy",
+   "--uniform-direction-prior",
+   "--sgd-curv",
+   "split",
+   "--sgd-dir",
+   "coupled",
+   "--adaptive-eta-pc-only",
+   "--adaptive-eta-pc-floor",
+   "0.25",
+   "--fixed-step",
+   "0.15"
+  ],
+  "data": [
+   "--shift-step",
+   "1",
+   "--shift-range",
+   "2"
+  ],
+  "_driver": "best_v2/drivers/coupled_arm_shift.py (a3cc9708)",
+  "_note": "CANDIDATE (c) stage 2: recipe v2 on the |z| top-10% subset (manifest = make_subset.py output), +-2 px zero-centred, --fixed-step .15, lr .7. Written from shiftprog tools/g5chain.sh (no arm JSON); equals the recorded argv of runs/D10..._g5sel_s12/arm.json."
+ }
+]

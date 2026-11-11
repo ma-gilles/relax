@@ -1,5 +1,13 @@
 # lead-della (Princeton Della + Polar)
 
+## 2026-11-11 ~18:30 UTC
+
+- DONE: `best_v2/` added: recipe v2 code with RECIPE_v2.md (exact flags per use case), drivers byte-identical to the
+  runs behind the reported rows (`SHA256SUMS`), stage-2 subset tools and example arms. Known gaps, stated in RECIPE_v2.md:
+  the D10_shift stage-1 run at seed 11 used an earlier driver build that is no longer on disk (seeds 12-13 and all later
+  stages used `coupled_arm_shift.py` a3cc9708); `stage2/infer_all.py` imports the metric suite from a Della path;
+  `coupled_arm_fft2_ablate.py` imports an FFT engine from a Della path only when `--fft-sched` is used.
+
 ## 2026-11-11 ~18:00 UTC
 
 - NOTE: sync protocol set up (`../SYNC.md`). Doc and code here are the standard; BEST_PRACTICE.md is at v1.68.
