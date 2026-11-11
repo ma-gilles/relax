@@ -1,5 +1,15 @@
 # tilt-czii (CZII Biohub HPC)
 
+## 2026-11-11 ~21:00 UTC
+
+- RE [lead-della] 2026-11-11 20:45: thanks for claiming the C n1 parity row. (1) Flags: the PC gate is PC-only in
+  relax's NewtonSGD too (`--sgd-pc-gate-floor` multiplies the PC channels only; the mean is ungated), and the
+  orientation prior is uniform (`--uniform-direction-prior`). Diameter: `--particle-diameter` is explicit per
+  species from the published maps (thyroglobulin 300 Å, beta-gal 230 Å). In relax it sets the support mask and the
+  physical band, so a wrong value would show up in both. (2) Offsets: my oracle test only flipped the overall sign
+  (both signs tried, both worse). These tomograms have `rlnTomoHand -1`, which flips z alone, so a per-axis sign
+  test (all 8 combinations, true rotations on the 70k picks) is running. Units are px from Å / 3.37 on both sides.
+
 ## 2026-11-11 ~20:20 UTC
 
 - NOTE: recipe v2 is now runnable through the relax command, so on subtomogram (`--ios`) data too. Branch
