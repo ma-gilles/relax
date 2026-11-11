@@ -426,11 +426,29 @@ kmeans ARI, VDAM, new gate (old gate in brackets; baseline is `s3_vdam_uniform`)
   the true energy captured 0.93 to 0.90, and the loading power relative to the mean (`PC/mean`) 0.09 to 0.12 (C n3: 0.12 to 0.19; its baseline 0.18 to 0.25).
   The same shift appears without contrast: on the unit-contrast dataset the VDAM baseline's angle went 35.3 (round 1) to 50.0 and `PC/mean` 0.089 to 0.122, so
   it follows the new gate (in the C n1 contrast runs the loading power at iteration 500 is 0.11 against 0.017, six times larger). SGD unchanged.
-- **A new failure mode under VDAM** (mean FSC below 0.97 at iteration 3000): none in 30 older VDAM runs (11 baseline, 19 contrast, rounds 1 to 7), now 4
-  in 27: `cg_vdam` C n1 seeds 12 and 13 (mean FSC 0.952 and 0.900, energy captured 0.61 and 0.51, angle 89 degrees, state FSC 0.81 and 0.77), `co_vdam` C n3 seed 14
-  (mean FSC 0.736, energy 0.36) and the **baseline** C n3 seed 13 (mean FSC 0.735, energy 0.33). A round 9 run under the old gate (`cof_vdam` C n3 seed 12, 0.735)
-  had it once. For the `cg_vdam` seed 12 run the contrast side is healthy (sd 0.306, loadings' parallel variance 0.0004, gain +0.08), so it is not the loading gauge
-  of rounds 4 and 5; it is the mean map that degraded, as in the baseline run. The counts are too small to give rates; the unconstrained arm is not the default.
+- **Low mean FSC under VDAM** (raw mean FSC over shells 1 to 15 below 0.97 at iteration 3000): none in 30 older VDAM runs (11 baseline, 19 contrast, rounds 1 to 7), now 4
+  in 27, and they are two different things (all at iteration 3000, siblings are the other seeds of the same arm):
+
+  | run | kmeans ARI | state FSC | pose <10 deg | pose median | mean FSC (shell 1 / 8 / 15) | energy captured |
+  | --- | --- | --- | --- | --- | --- | --- |
+  | C n3 `co_vdam` seed 14 | 0.673 (sibling 0.668) | 0.904 (0.919) | 0.885 (0.881) | 4.75 (4.72) | 1.00 / 0.79 / 0.16 (1.00 / 1.00 / 0.99) | 0.36 (0.91) |
+  | C n3 baseline seed 13 | 0.402 (0.387) | 0.902 (0.909) | 0.876 (0.877) | 4.82 (4.78) | 1.00 / 0.79 / 0.16 | 0.33 (0.83) |
+  | C n3 `cof_vdam` seed 12, round 9, old gate | 0.621 | 0.905 | 0.881 | 4.83 | 1.00 / 0.79 / 0.16 | 0.37 |
+  | C n1 `cg_vdam` seed 12 | 0.913 (0.930 to 0.937) | 0.806 (0.926 to 0.938) | 0.650 (0.98) | 5.09 (4.05 to 4.14) | 1.00 / 0.94 / 0.91 | 0.61 (0.90) |
+  | C n1 `cg_vdam` seed 13 | 0.917 | 0.770 | 0.551 | 6.05 | 1.00 / 0.89 / 0.78 | 0.51 |
+
+  The three noise 3 runs (baseline, default contrast arm, and one old-gate run) have the same raw mean FSC curve to two decimals, although they differ in seed, arm and gate;
+  the scores that are measured in the frame of the direct pose fit (ARI, state FSC, pose) are unchanged, and only the raw mean FSC and the energy captured against the true span move.
+  That points to the frame in which the model is reported rather than to a worse map, but it is an inference: the mean map and the frame were not compared directly, and the
+  direct fit's `mirror` flag does not line up with the failures (it is true in good runs too). The two unconstrained `cg_vdam` runs at noise 1 are a real but moderate degradation:
+  state FSC 0.77 to 0.81 against 0.93, fewer poses within 10 degrees (0.55 to 0.65 against 0.98), the mean off by 0.05 to 0.10 in FSC, ARI 0.02 lower and still far above the
+  baseline's 0.59. For `cg_vdam` seed 12 the contrast side is healthy (sd 0.306, loadings' parallel variance 0.0004, gain +0.08), so it is not the loading gauge of rounds 4 and 5.
+  The default arm `co_vdam` has 0 of 4 such runs at noise 1 and 1 of 4 at noise 3 (the frame kind); the counts are too small to give rates.
+- **Overall effect of the gate on these suites** (paired runs, same dataset, arm and seed; 7 baseline and 11 contrast VDAM runs): baseline kmeans ARI +0.057 on average (6 of 7
+  higher; +0.014 without the log-normal seed whose baseline went 0.619 to 0.940), contrast arms +0.012 (7 of 11; `co_vdam` at C n3 seed 11 +0.103); state FSC -0.007 (baseline) and -0.036
+  (contrast, driven by the two `cg_vdam` runs); pose median +0.04 and +0.32 degrees; the loading subspace angle +2 and +22 degrees and the energy captured -0.03 and -0.09. ARI is
+  slightly better, the rest is within the gate-to-gate spread except the loading metrics and the two `cg_vdam` runs. Only simulated suites were run here, not the real-data or schedule
+  cases the gate was written for.
 - Momentum SGD: `co_sgd` C n1 seeds 11 and 12 equal the old values (0.936 and 0.404 against 0.936 and 0.391); the seed 12 failure of the earlier rounds is unchanged.
 
 **Cryo-ET fixtures, VDAM, 200 iterations, q 2** (nearest-centroid accuracy of the latents / kmeans ARI; chance is 0.33 / 0). Old: snapshot v6, old gate.
