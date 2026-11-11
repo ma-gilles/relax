@@ -6,6 +6,10 @@ share, the noise level and the number of particles (``mix_pools.py``). Per noise
 particles of the Kent pool and the first ``n - that`` of the uniform pool. An optional ``offsets`` entry adds the
 displaced copy of one Kent pool (``add_offsets.py``), refined like a mixture.
 
+The uniform pool is a Kent pool of concentration and ovalness 0 (exactly uniform viewing directions), not the
+simulator's ``uniform`` option: that option draws its CTF parameters from another real data set than the Kent option
+does (amplitude contrast 0.07 against 0.1, other defoci), and a mixture needs one CTF distribution in both pools.
+
 ``sweep_scenarios`` returns scenario entries in the format of ``config.yaml``'s ``scenarios``: the pools (no variants,
 so they only simulate), the mixtures and the offsets scenario. The Snakefile adds them to the scenarios it reads.
 """
@@ -65,7 +69,7 @@ def sweep_scenarios(sweep: dict[str, Any]) -> dict[str, dict[str, Any]]:
     scenarios: dict[str, dict[str, Any]] = {}
     for noise in noises:
         for kind in POOL_KINDS:
-            poses = {"kind": "uniform"} if kind == "uniform" else {"kind": "kent", **sweep["kent"]}
+            poses = {"kind": "kent", **sweep["kent"], **({"kappa": 0.0, "beta": 0.0} if kind == "uniform" else {})}
             scenarios[pool_name(kind, noise)] = {
                 "poses": poses,
                 "dataset": {"noise_level": noise, "n_images": pool_size, "seed": seeds[kind]},

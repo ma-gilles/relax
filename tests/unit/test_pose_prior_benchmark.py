@@ -30,6 +30,7 @@ from scripts.pose_prior_benchmark import mix_pools as mp
 from scripts.pose_prior_benchmark import reconstruct_with_poses as rwp
 from scripts.pose_prior_benchmark import simulate_dataset as sim
 from scripts.pose_prior_benchmark import star_nonuniformity as snu
+from scripts.pose_prior_benchmark import summarize_sweep as ss
 from scripts.pose_prior_benchmark import sweep
 from scripts.pose_prior_benchmark import true_prior
 from scripts.pose_prior_benchmark import write_fixed_prior as wfp
@@ -1570,7 +1571,8 @@ def test_the_sweep_has_two_pools_per_noise_level_and_a_mixture_per_cell():
     pools = {name: entry for name, entry in scenarios.items() if name.startswith("pool_")}
     assert sorted(pools) == ["pool_kent_nz0p5", "pool_kent_nz2", "pool_uniform_nz0p5", "pool_uniform_nz2"]
     assert pools["pool_kent_nz2"]["dataset"] == {"noise_level": 2.0, "n_images": 100000, "seed": 17}
-    assert pools["pool_uniform_nz2"]["dataset"]["seed"] == 18 and pools["pool_uniform_nz2"]["poses"] == {"kind": "uniform"}
+    assert pools["pool_uniform_nz2"]["dataset"]["seed"] == 18
+    assert pools["pool_uniform_nz2"]["poses"] == {**pools["pool_kent_nz2"]["poses"], "kappa": 0.0, "beta": 0.0}
     assert pools["pool_kent_nz0p5"]["poses"] == {"kind": "kent", **SWEEP["kent"]}
     assert all(entry["variants"] == [] for entry in pools.values())
     mixtures = {name: entry for name, entry in scenarios.items() if name.startswith("mix_")}
@@ -1580,6 +1582,11 @@ def test_the_sweep_has_two_pools_per_noise_level_and_a_mixture_per_cell():
         {"label": "kent", "scenario": "pool_kent_nz2", "count": 16500},
         {"label": "uniform", "scenario": "pool_uniform_nz2", "count": 33500},
     ]
+
+
+def test_a_kent_pool_without_concentration_or_ovalness_is_uniform():
+    flat = {"poses": "kent", "dataset_params_option": [0.0, 0.0, [1.0, 1.0, 0.0], [0.0, 0.0, 1.0]]}
+    assert_matches(true_prior.population_prior(flat, 3), np.full(n_pixels(3), 1.0 / n_pixels(3)))
 
 
 def test_a_pure_mixture_has_one_pool_and_a_uniform_one_has_no_fixed_true_variant():
@@ -1615,3 +1622,89 @@ def test_the_sweep_runs_every_mixture_then_the_offsets_scenario():
 def test_the_sweep_refuses_a_kent_share_outside_zero_and_one():
     with pytest.raises(ValueError, match="kent_weights must lie in"):
         sweep.sweep_scenarios({**SWEEP, "kent_weights": [0.5, 1.2]})
+
+
+def _fake_variants_csv(root, scenario, auc, ceiling=0.9, variants=("learned", "fixed_true", "fixed_uniform")):
+    """A comparison/variants.csv of ``scenario`` with the columns the summary reads, one row per variant."""
+    directory = root / scenario / "comparison"
+    directory.mkdir(parents=True)
+    columns = (
+        "variant", "iterations", "final_healpix_order", "gt_fsc_auc_aligned", "gt_fsc_auc_true_poses",
+        "gt_resolution_0.143_A_aligned", "pose_error_median_aligned_deg", "pose_error_fraction_over_90_aligned",
+        "inplane_error_median_aligned_deg", "gt_cfar_aligned", "origin_error_median_A",
+    )
+    with open(directory / "variants.csv", "w", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=columns)
+        writer.writeheader()
+        for i, variant in enumerate(variants):
+            writer.writerow({
+                "variant": variant, "iterations": 15, "final_healpix_order": 5, "gt_fsc_auc_aligned": auc + 0.01 * i,
+                "gt_fsc_auc_true_poses": ceiling, "gt_resolution_0.143_A_aligned": "" if i == 0 else 7.5,
+                "pose_error_median_aligned_deg": 2.0 + i, "pose_error_fraction_over_90_aligned": 0.01 * (i + 1),
+                "inplane_error_median_aligned_deg": 0.5, "gt_cfar_aligned": 0.01, "origin_error_median_A": 1.3,
+            })
+
+
+SMALL_SWEEP = {
+    "kent_weights": [0.0, 1.0],
+    "noise_levels": [0.5, 1.0],
+    "n_images": [50000, 100000],
+    "variants": ["learned", "fixed_true", "fixed_uniform"],
+    "offsets": {"noise_level": 1.0, "sigma_angstrom": 7.0, "seed": 29},
+}
+
+
+def test_the_summary_collects_every_scenario_with_its_coordinates_and_the_ceiling_fraction(tmp_path):
+    for cell in ss.sweep_cells(SMALL_SWEEP):
+        _fake_variants_csv(tmp_path, cell["scenario"], auc=0.5)
+    rows, missing = ss.collect_rows(tmp_path, SMALL_SWEEP)
+    assert missing == [] and len(rows) == (2 * 2 * 2 + 1) * 3
+    first = rows[0]
+    assert (first["scenario"], first["kent_weight"], first["n_images"], first["noise_level"]) == ("mix_w000_n50k_nz0p5", 0.0, 50000, 0.5)
+    assert_matches(first["gt_fsc_auc_fraction_of_true_poses"], 0.5 / 0.9)
+    assert first["gt_resolution_0.143_A_aligned"] is None  # an empty cell stays empty
+    shifted = [row for row in rows if "offsets_sigma_A" in row]
+    assert {row["scenario"] for row in shifted} == {"offsets_kent_nz1"} and shifted[0]["n_images"] == 100000
+
+
+def test_the_summary_lists_the_scenarios_that_have_no_comparison_and_draws_the_rest(tmp_path):
+    cells = ss.sweep_cells(SMALL_SWEEP)
+    for cell in cells[:-2]:
+        _fake_variants_csv(tmp_path, cell["scenario"], auc=0.5)
+    rows, missing = ss.collect_rows(tmp_path, SMALL_SWEEP)
+    assert missing == [cell["scenario"] for cell in cells[-2:]]
+    out = tmp_path / "out"
+    with pytest.raises(SystemExit, match="allow-missing"):
+        ss.main(["--output-root", str(tmp_path), "--out-dir", str(out), "--config", str(_sweep_yaml(tmp_path))])
+    ss.main(["--output-root", str(tmp_path), "--out-dir", str(out), "--config", str(_sweep_yaml(tmp_path)), "--allow-missing"])
+    assert (out / "summary.csv").stat().st_size > 0
+    assert all((out / f"summary_{column}.png").stat().st_size > 0 for column, *_ in ss.METRICS)
+    assert not (out / "summary_offsets.png").exists()  # the offsets scenario did not finish
+
+
+def _sweep_yaml(tmp_path):
+    """An override file that gives the summary ``SMALL_SWEEP``."""
+    import yaml
+
+    path = tmp_path / "small_sweep.yaml"
+    path.write_text(yaml.safe_dump({"sweep": {k: v for k, v in SMALL_SWEEP.items()}}))
+    return path
+
+
+def test_the_summary_draws_the_offsets_scenario_against_its_centred_counterpart(tmp_path):
+    for cell in ss.sweep_cells(SMALL_SWEEP):
+        _fake_variants_csv(tmp_path, cell["scenario"], auc=0.5)
+    out = tmp_path / "out"
+    ss.main(["--output-root", str(tmp_path), "--out-dir", str(out), "--config", str(_sweep_yaml(tmp_path))])
+    assert (out / "summary_offsets.png").stat().st_size > 0
+    with open(out / "summary.csv", newline="") as handle:
+        rows = list(csv.DictReader(handle))
+    assert len(rows) == 27 and "offsets_sigma_A" in rows[0]
+
+
+def test_override_files_are_merged_over_the_default_sweep(tmp_path):
+    path = tmp_path / "override.yaml"
+    path.write_text("sweep:\n  noise_levels: [3.0]\n  offsets: null\n")
+    merged = ss.load_sweep([path])
+    assert merged["noise_levels"] == [3.0] and merged["offsets"] is None
+    assert merged["kent"]["kappa"] == 4.0 and merged["n_images"] == [50000, 100000]  # untouched entries stay
