@@ -215,6 +215,7 @@ def test_latent_epilogue_and_posterior_prep_match_xla(q, T, gpu_device):
                 dtype(0),
                 dtype(0),
                 jnp.zeros((B,), jnp.int32),
+                jnp.zeros((q + 1,), dtype),
             )
             arrays = full_row_kernels.StreamArrays(**dict.fromkeys(full_row_kernels.StreamArrays._fields))._replace(
                 shift_squared=jnp.asarray(shift2, dtype)

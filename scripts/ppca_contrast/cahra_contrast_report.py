@@ -7,15 +7,16 @@ Reads, per run directory, ``iterations.jsonl`` and ``embeddings.npz`` (all parti
   last update, wall time;
 * for a run with the contrast latent: the trajectory of the prior sd, of the population gain and of the estimates' mean and
   spread, the histogram of the contrast estimates, the share of particles below the contrast floor;
-* ``--star`` (a RELION STAR with ``_rlnMicrographName``): the intraclass correlation of the contrast estimate and of every latent
-  coordinate over micrographs, ``(between - within) / (between + (n - 1) within)`` by one-way ANOVA. Ice thickness is shared by the
+* ``--star`` (a RELION STAR) and ``--group-column`` (default ``_rlnMicrographName``; cahra_01's micrograph names are all one, its
+  ``_rlnDefocusAngle`` takes 4308 values of about 330 particles each, one per micrograph): the intraclass correlation of the contrast
+  estimate and of every latent coordinate over the groups, ``(between - within) / (between + (n - 1) within)`` by one-way ANOVA. Ice thickness is shared by the
   particles of a micrograph, so a contrast estimate that tracks it has a high ICC; a latent coordinate that carries contrast in
   a run without the latent has one too;
 * for every pair (run without the latent, run with it, same label suffix): how well the contrast estimate of the second is
   predicted linearly by the latents of the first (R^2), and the canonical correlations of the two latent spaces.
 
 Run (CPU; a few GB of memory for 1.6 million particles):
-    python scripts/ppca_contrast/cahra_contrast_report.py RUN [RUN ...] --star particles.star -o report_dir
+    python scripts/ppca_contrast/cahra_contrast_report.py RUN [RUN ...] --star particles.star [--group-column _rlnDefocusAngle] -o report_dir
 Runs are named by their directory; a pair is ``none_X`` and ``latent_X``.
 """
 
@@ -31,8 +32,9 @@ import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 
 
-def read_micrographs(star: Path) -> np.ndarray:
-    """The ``_rlnMicrographName`` of every row of the STAR's particle table, in row order, as integer codes."""
+def read_groups(star: Path, column: str) -> np.ndarray:
+    """The ``column`` (a STAR label such as ``_rlnMicrographName``) of every row of the STAR's particle table, in row order, as integer
+    codes of its distinct values."""
     columns, skip = [], 0
     with open(star) as stream:
         in_particles = False
@@ -46,7 +48,7 @@ def read_micrographs(star: Path) -> np.ndarray:
                 skip = number + 1
             elif in_particles and columns and text and not text.startswith(("#", "loop_")):
                 break
-    index = columns.index("_rlnMicrographName")
+    index = columns.index(column)
     names = pd.read_csv(star, sep=r"\s+", header=None, skiprows=skip, usecols=[index], dtype=str, comment="#").iloc[:, 0]
     return pd.factorize(names)[0]
 
@@ -146,12 +148,13 @@ def main() -> None:
     """Write the report."""
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("runs", type=Path, nargs="+")
-    parser.add_argument("--star", type=Path, help="particle STAR with _rlnMicrographName, in the order the runs read it")
+    parser.add_argument("--star", type=Path, help="particle STAR in the order the runs read it")
+    parser.add_argument("--group-column", default="_rlnMicrographName", help="STAR label whose values are the groups of the ICC")
     parser.add_argument("-o", "--output", type=Path, required=True)
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
     runs = [load_run(path) for path in args.runs]
-    groups = read_micrographs(args.star) if args.star else None
+    groups = read_groups(args.star, args.group_column) if args.star else None
     lines = ["## Final state", ""]
     rows = [final_state_row(run) for run in runs]
     columns = list(dict.fromkeys(key for row in rows for key in row))
@@ -159,7 +162,7 @@ def main() -> None:
     for row in rows:
         lines.append("| " + " | ".join("" if row.get(c) is None else (f"{row[c]:.4g}" if isinstance(row[c], float) else str(row[c])) for c in columns) + " |")
     if groups is not None:
-        lines += ["", "## Intraclass correlation over micrographs", "", "| run | quantity | ICC |", "| --- | --- | --- |"]
+        lines += ["", f"## Intraclass correlation over {args.group_column}", "", "| run | quantity | ICC |", "| --- | --- | --- |"]
         for run in runs:
             ids = run["embeddings"]["particle_ids"]
             if "contrast" in run["embeddings"]:
