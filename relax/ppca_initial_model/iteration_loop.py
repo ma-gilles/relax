@@ -49,6 +49,7 @@ from relax.ppca_initial_model.update import (
 )
 from relax.ppca_refinement import contrast as contrast_latent
 from relax.ppca_refinement.config import GeometryConfig, ScheduleConfig, ScoringConfig, SparsePass2Config
+from relax.ppca_refinement.contrast_b import ContrastPrior
 from relax.ppca_refinement.dense_dataset import (
     DensePPCAEmbeddings,
     accumulate_dense_ppca_statistics,
@@ -276,11 +277,42 @@ def _curvature(stats, p):
     return metric_curvature(sum(s.lhs_tri for s in stats), p)
 
 
+# The integrated contrast's prior mean never goes below this: the population mean of a contrast is positive.
+MIN_CONTRAST_MEAN = 0.1
+
+
 def contrast_sd_for(config, state, iteration):
     """The prior sd of the contrast latent in the E-step of ``iteration``; None when that E-step has unit contrast."""
     if config.contrast == "none" or iteration < config.contrast_start:
         return None
     return state.contrast_sd
+
+
+def contrast_prior_for(config, state, iteration):
+    """The integrated contrast's prior in the E-step of ``iteration`` (:class:`ContrastPrior`); None unless ``--contrast
+    quadrature`` is on at that iteration. The prior mean ``kappa = 1 + state.contrast_gain`` is the population mean of the
+    contrast, the prior sd ``kappa * state.contrast_sd`` follows it."""
+    sd = contrast_sd_for(config, state, iteration)
+    if sd is None or config.contrast != "quadrature":
+        return None
+    kappa = max(1.0 + state.contrast_gain, MIN_CONTRAST_MEAN)
+    return ContrastPrior(config.contrast_nodes, kappa, kappa * sd, config.contrast_center)
+
+
+def contrast_latents(config, sd, embeddings):
+    """``(z, scaled, estimate, n_floored)`` from the engine's embeddings under a contrast model with prior sd ``sd``.
+
+    The tied latent (model A) stores ``[u, e]`` with ``u = c z``: ``scaled = u``, ``estimate = 1 + sd E[e]`` and ``z = u / c``
+    with the contrast taken as at least the floor. The integrated contrast (model B) stores ``[E z, E c]``: ``z`` is
+    the first columns, ``estimate`` the last, ``scaled = E[c] E[z]`` and no particle is floored.
+    """
+    embeddings = np.asarray(embeddings)
+    if config.contrast == "quadrature":
+        latents, estimate = embeddings[:, :-1], embeddings[:, -1]
+        return latents, latents * estimate[:, None], estimate, 0
+    scaled, estimate = (np.asarray(x) for x in contrast_latent.split_embeddings(embeddings, sd))
+    latents, n_floored = contrast_latent.latents_over_contrast(scaled, estimate)
+    return latents, scaled, estimate, n_floored
 
 
 def _active_columns(array, width):
@@ -426,10 +458,11 @@ def _expectation(
     radius = radius_for(config, state, iteration, dataset.grid_size)
     active = config.active_pcs(iteration)
     contrast_sd = contrast_sd_for(config, state, iteration)
-    # The contrast latent is one more loading of the engine, tied to the mean (relax/ppca_refinement/contrast.py).
-    geometry = GeometryConfig(
-        current_size=2 * radius, q=active + (contrast_sd is not None), volume_domain="fourier_half"
-    )
+    # Model A's contrast latent is one more loading of the engine, tied to the mean (relax/ppca_refinement/contrast.py);
+    # model B's contrast is integrated per pose inside the stream (relax/ppca_refinement/contrast_b.py).
+    tied = contrast_sd is not None and config.contrast == "latent"
+    contrast_b = contrast_prior_for(config, state, iteration)
+    geometry = GeometryConfig(current_size=2 * radius, q=active + tied, volume_domain="fourier_half")
     schedule = ScheduleConfig(image_batch_size=config.image_batch_size, rotation_block_size=config.rotation_block_size)
     scoring = ScoringConfig(relion_texture_interp=False, full_real_observation=True)
     rotations = _rotation_grid(hp)
@@ -458,7 +491,7 @@ def _expectation(
     nv = nvs[0]
     common = dict(noise_variance=nv, geometry=geometry, schedule=schedule, scoring=scoring, image_indices=ids)
     mu, W = state.theta[:, 0], state.theta[:, 1 : 1 + active]
-    if contrast_sd is not None:
+    if tied:
         W = contrast_latent.with_contrast_column(mu, W, contrast_sd)[:, 1:]
     if config.stream_coarse_recompute:
         # One artificial coarse parent represents the full coarse pose grid.
@@ -485,7 +518,8 @@ def _expectation(
                     gemm_precision=config.gemm_precision,
                     tile_loader=load_tilt_tile if tilts else None,
                     pass2_mass_floor=config.pass2_mass_floor,
-                    latent_center=state.contrast_gain if contrast_sd is not None and config.contrast_center else None,
+                    latent_center=state.contrast_gain if tied and config.contrast_center else None,
+                    contrast_b=contrast_b,
                 )
                 for group_nv in nvs
             ]
@@ -580,7 +614,7 @@ def _expectation(
                 )
                 continue
             stats = _merge_statistics(group_parts, sums[group].totals)
-            if contrast_sd is not None:
+            if tied:
                 stats = contrast_latent.fold_statistics(stats, contrast_sd)
             if tilts:
                 # Noise sums per noise group, (G, S); a group without images in this id group adds zeros.
@@ -858,7 +892,34 @@ def run(
         )
         contrast_sd = contrast_sd_for(config, state, iteration)
         next_contrast_sd, next_contrast_gain, contrast_record = state.contrast_sd, state.contrast_gain, None
-        if contrast_sd is not None:
+        if contrast_sd is not None and config.contrast == "quadrature":
+            # The integrated contrast: the batch's mean and second moment of c. The prior mean kappa follows the mean (the
+            # gain the volumes carry) and the prior sd is the contrast's relative spread about it.
+            estimates = np.concatenate([np.asarray(s.embeddings)[:, -1] for s in stats])
+            c_second = float(
+                sum(s.diagnostics["latent_second_moment_sum"][0] for s in stats) / sum(s.n_images for s in stats)
+            )
+            c_mean = float(estimates.mean())
+            relative_variance = max(c_second - c_mean**2, 0.0) / c_mean**2
+            if config.contrast_estimate_sd:
+                next_contrast_sd = contrast_latent.updated_sd(
+                    contrast_sd,
+                    relative_variance / contrast_sd**2,
+                    previous_weight=beta,
+                    sd_min=config.contrast_sd_min,
+                    sd_max=config.contrast_sd_max,
+                )
+            if config.contrast_center:
+                next_contrast_gain = (1 - config.contrast_gain_rate) * state.contrast_gain + config.contrast_gain_rate * (c_mean - 1.0)
+            contrast_record = {
+                "sd": contrast_sd,
+                "gain": state.contrast_gain,
+                "contrast_second_moment": c_second,
+                "next_sd": next_contrast_sd,
+                "estimate_mean": c_mean,
+                "estimate_sd": float(estimates.std()),
+            }
+        elif contrast_sd is not None:
             # The contrast latent's second moment over the batch, taken about its mean: the mean of e is the global gain
             # between the model's mean volume and the images, which the mean volume itself must carry, so the sd measures
             # the spread of the contrast and not that gain (docs/math/ppca_contrast.md, section 9).
@@ -1086,8 +1147,7 @@ def run(
         latents, contrast_fields = np.asarray(final.embeddings), {}
         final_sd = contrast_sd_for(config, state, config.iterations)
         if final_sd is not None:
-            scaled, estimate = (np.asarray(x) for x in contrast_latent.split_embeddings(latents, final_sd))
-            latents, n_floored = contrast_latent.latents_over_contrast(scaled, estimate)
+            latents, scaled, estimate, n_floored = contrast_latents(config, final_sd, latents)
             contrast_fields = dict(
                 contrast=estimate, z_scaled=scaled, contrast_sd=final_sd, n_contrast_below_floor=n_floored
             )

@@ -27,6 +27,7 @@ from relax.cuda.ppca import (
     ppca_posterior_prep_f32,
     ppca_window_project_f32,
 )
+from relax.ppca_refinement import contrast_b
 from relax.ppca_refinement.contrast import center_last_latent_moments
 from relax.ppca_refinement.engine import compensated_add
 from relax.ppca_refinement.residual_statistics import residual_statistics_from_moment_images
@@ -105,6 +106,10 @@ class StreamStatic(NamedTuple):
     # Pass 2 forms the M-step moments of the last latent about ``StreamArrays.latent_center`` (the contrast latent's
     # population mean), so the M-step does not chase the global gain; the posterior itself is unchanged.
     center_last_latent: bool = False
+    # Contrast on the whole signal, integrated per pose by this many Gauss-Hermite nodes (relax/ppca_refinement/contrast_b.py);
+    # 0 is unit contrast (or model A, whose latent is one more loading). Then the basis is [mu, W], the kept buffers hold
+    # the pose inner products and the Gram instead of the latent moments, and pass 2 recomputes the node posteriors.
+    contrast_nodes: int = 0
 
 
 class StreamArrays(NamedTuple):
@@ -124,6 +129,9 @@ class StreamArrays(NamedTuple):
     coefficient_noise: jax.Array  # (n_half,) noise variance per half-image pixel
     shift_squared: jax.Array  # (T,) squared fine shift length in px^2
     latent_center: jax.Array | None = None  # () float32 centre of the last latent (StreamStatic.center_last_latent)
+    # (2,) float32 prior mean and sd of the contrast (StreamStatic.contrast_nodes); with center_last_latent pass 2 divides
+    # the M-step's first moments by the mean and the second moments by its square.
+    contrast: jax.Array | None = None
 
 
 class TileArrays(NamedTuple):
@@ -159,8 +167,8 @@ class _Kept(NamedTuple):
     """Pass-1 results of every tile pose, rotation-major over the row table."""
 
     score: jax.Array  # (capacity, B, T) pose log-scores without the image energy; -inf unsupported
-    latent_mean: jax.Array  # (q, capacity, B, T) posterior latent means
-    latent_covariance: jax.Array  # (capacity, B, tri(q)) packed upper (I + H_zz)^-1
+    latent_mean: jax.Array  # (q, capacity, B, T) posterior latent means; with contrast_nodes the (q + 1, ...) inner products
+    latent_covariance: jax.Array  # (capacity, B, tri(q)) packed upper (I + H_zz)^-1; with contrast_nodes the (.., tri(q + 1)) Gram
     # Per (row, image) over translations, written by the CUDA epilogue: maximum score, first
     # maximizing translation and sum of exp(score - maximum). The XLA path leaves them unused.
     part_max: jax.Array  # (capacity, B)
@@ -282,6 +290,12 @@ def _latent_block(Y1, ctf2, proj, pose_log_prior, n_images: int):
     score ``(R, B, T)``, means ``(q, R, B, T)`` and packed covariances
     ``(R, B, tri(q))``.
     """
+    inner, gram = _pose_operands(Y1, ctf2, proj, n_images)
+    return latent_scores(inner, gram, pose_log_prior)
+
+
+def _pose_operands(Y1, ctf2, proj, n_images: int):
+    """The two pass-1 GEMMs of :func:`_latent_block`: ``inner`` ``(P, R, B, T)`` and the packed Gram ``(tri(P), R, B)``."""
     P, R = proj.shape[:2]
     B = n_images
     T = Y1.shape[1] // B
@@ -291,7 +305,7 @@ def _latent_block(Y1, ctf2, proj, pose_log_prior, n_images: int):
     real, imag = proj.real, proj.imag
     products = jnp.stack([real[i] * real[j] + imag[i] * imag[j] for i, j in zip(first.tolist(), second.tolist())])
     gram = jnp.dot(products.reshape(first.size * R, -1), ctf2, precision=HIGHEST).reshape(first.size, R, B)
-    return latent_scores(inner, gram, pose_log_prior)
+    return inner, gram
 
 
 def latent_scores(inner, gram, pose_log_prior):
@@ -414,6 +428,8 @@ def frame_rotations(tile, rotations):
 def score_block(arrays, tile, kept, start, *, static, block_size):
     """Pass 1 for one rotation block, written into the kept tile results."""
     rows = _block_rows(tile, start, block_size)
+    if static.contrast_nodes:
+        return _score_block_contrast(arrays, tile, kept, start, rows, static)
     if static.cuda_kernels:
         return _score_block_cuda(arrays, tile, kept, start, rows, static)
     prior = full_row_pose_log_prior(
@@ -474,6 +490,66 @@ def _score_block_cuda(arrays, tile, kept, start, rows, static):
         tile.coarse_mask,
     )
     return _Kept(*ppca_latent_epilogue_f32(inner, gram, rows, tables, start, kept))
+
+
+def _score_block_contrast(arrays, tile, kept, start, rows, static):
+    """Pass 1 with the contrast integrated per pose (:func:`relax.ppca_refinement.contrast_b.latent_scores_b`).
+
+    The projections and the two GEMMs are the stream's own (the CUDA projector on GPUs); the per-pose stage is XLA. The
+    kept buffers get the pose scores, the inner products ``[t, g]`` and the Gram, from which pass 2 recomputes the nodes.
+    """
+    P = static.basis_size
+    n_images = tile.y_norm.shape[0]
+    n_translations = arrays.translation_log_prior.shape[0]
+    prior = full_row_pose_log_prior(
+        tile.coarse_mask,
+        arrays.rotation_parent[rows],
+        arrays.translation_parent,
+        arrays.rotation_log_prior[rows],
+        arrays.translation_log_prior,
+    )
+    if static.cuda_kernels:
+        planar, products = ppca_window_project_f32(
+            arrays.augmented_voxel_major,
+            arrays.gemm_window,
+            frame_rotations(tile, arrays.rotations[rows]),
+            image_shape=static.image_shape,
+            volume_shape=static.volume_shape,
+            max_r=static.projection_max_r,
+            with_products=True,
+            basis_size=P,
+        )
+        R = rows.shape[0]
+        inner = jnp.dot(planar.reshape(P * R, -1), tile.Y1, precision=gemm(static)).reshape(P, R, -1)
+        inner = inner[..., : n_images * n_translations].reshape(P, R, n_images, n_translations)
+        gram = jnp.dot(products.reshape(products.shape[0] * R, -1), tile.ctf2, precision=gemm(static)).reshape(
+            -1, R, tile.ctf2.shape[1]
+        )
+    else:
+        proj = project(arrays, frame_rotations(tile, arrays.rotations[rows]), static)
+        proj = proj.reshape(P, rows.shape[0], n_frames(tile), proj.shape[-1])
+        inner, gram = _pose_operands(tile.Y1, tile.ctf2, proj, n_images)
+    rule = contrast_b.hermite_rule(static.contrast_nodes)
+    score = contrast_b.latent_scores_b(inner, gram, prior, arrays.contrast[0], arrays.contrast[1], rule, P - 1)
+    update = jax.lax.dynamic_update_slice_in_dim
+    kept = kept._replace(
+        score=update(kept.score, score, start, axis=0),
+        latent_mean=update(kept.latent_mean, inner, start, axis=1),
+        latent_covariance=update(kept.latent_covariance, jnp.transpose(gram, (1, 2, 0)), start, axis=0),
+    )
+    if not static.cuda_kernels:
+        return kept
+    # The GPU normalization reads the per-(row, image) partials over translations.
+    part_max = jnp.max(score, axis=-1)
+    finite = jnp.isfinite(part_max)
+    part_sum = jnp.where(
+        finite, jnp.sum(jnp.exp(score - jnp.where(finite, part_max, 0.0)[..., None]), axis=-1), 0.0
+    )
+    return kept._replace(
+        part_max=update(kept.part_max, part_max, start, axis=0),
+        part_arg=update(kept.part_arg, jnp.argmax(score, axis=-1).astype(jnp.int32), start, axis=0),
+        part_sum=update(kept.part_sum, part_sum, start, axis=0),
+    )
 
 
 @partial(jax.jit, static_argnames=("n_blocks", "block_size"))
@@ -543,7 +619,9 @@ def second_moment_sums(gamma, mean, covariance):
 @partial(jax.jit, static_argnames=("static", "block_size", "moments"), donate_argnums=(0,))
 def moment_block(carry, arrays, tile, kept, posterior, start, *, static, block_size, moments):
     """Pass 2 for one rotation block: posterior weights, M-step images, residuals and diagnostics."""
-    if static.cuda_kernels:
+    if static.contrast_nodes:
+        weights, sums, carry = _posterior_block_contrast(carry, arrays, kept, posterior, start, block_size, static)
+    elif static.cuda_kernels:
         weights, sums, carry = _posterior_block_cuda(
             carry, arrays, kept, posterior, start, static, block_size, tile.Y1_recon.shape[0]
         )
@@ -556,7 +634,10 @@ def moment_block(carry, arrays, tile, kept, posterior, start, *, static, block_s
     )
     if not moments:
         return carry
-    if static.center_last_latent:
+    if static.contrast_nodes:
+        if static.center_last_latent:  # the M-step sees the contrast relative to its population mean
+            weights, sums = weights / arrays.contrast[0], sums / arrays.contrast[0] ** 2
+    elif static.center_last_latent:
         weights, sums = center_last_latent_moments(weights, sums, arrays.latent_center)
     # One image per (rotation, frame), frame minor: the GEMM outputs' rows split into frames.
     R = block_size * n_frames(tile)
@@ -645,6 +726,30 @@ def _posterior_block(carry, arrays, kept, posterior, start, block_size):
     )
     weights = jnp.concatenate([gamma[None], gamma[None] * mean], axis=0)
     return weights, second_moment_sums(gamma, mean, covariance), carry
+
+
+def _posterior_block_contrast(carry, arrays, kept, posterior, start, block_size, static):
+    """:func:`_posterior_block` with the contrast integrated: the node posteriors are recomputed from the kept inner products
+    and Gram (:func:`relax.ppca_refinement.contrast_b.posterior_moments_b`). The embedding is ``[E z, E c]``."""
+    update = jax.lax.dynamic_update_slice_in_dim
+    score = jax.lax.dynamic_slice_in_dim(kept.score, start, block_size, axis=0)
+    inner = jax.lax.dynamic_slice_in_dim(kept.latent_mean, start, block_size, axis=1)
+    gram = jnp.transpose(jax.lax.dynamic_slice_in_dim(kept.latent_covariance, start, block_size, axis=0), (2, 0, 1))
+    centered_score = (score - posterior.center[None, :, None]) - posterior.centered_logZ[None, :, None]
+    gamma = jnp.exp(centered_score)  # (R, B, T)
+    rule = contrast_b.hermite_rule(static.contrast_nodes)
+    moments = contrast_b.posterior_moments_b(
+        inner, gram, gamma, arrays.contrast[0], arrays.contrast[1], rule, static.basis_size - 1
+    )
+    carry = carry._replace(
+        embedding=carry.embedding + jnp.sum(moments.embedding, axis=1).T,
+        rotation_mass=update(carry.rotation_mass, jnp.sum(gamma, axis=(1, 2)), start, 0),
+        latent_covariance_trace_sum=carry.latent_covariance_trace_sum + jnp.sum(moments.latent_trace),
+        pose_entropy_sum=carry.pose_entropy_sum - jnp.sum(jnp.where(gamma > 0, gamma * centered_score, 0)),
+        offset_second_sum=carry.offset_second_sum + jnp.sum(gamma * arrays.shift_squared),
+        n_significant=carry.n_significant + jnp.sum(gamma > 1e-3, axis=(0, 2)).astype(jnp.int32),
+    )
+    return moments.weights, moments.sums, carry
 
 
 def _posterior_block_cuda(carry, arrays, kept, posterior, start, static, block_size, row_length):
@@ -737,10 +842,11 @@ def score_tile(stream: FullRowStream, tile: TileArrays, n_blocks: int, kept: _Ke
     """
     n_images = int(tile.y_norm.shape[0])
     T = int(stream.translations.shape[0])
-    q = stream.static.basis_size - 1
+    # With contrast_nodes the buffers hold the inner products [t, g] and the Gram of all P columns.
+    channels = stream.static.basis_size - (0 if stream.static.contrast_nodes else 1)
     capacity = len(stream.block_starts) * stream.rotation_block_size
     if kept is None or kept.score.shape != (capacity, n_images, T):
-        kept = empty_kept(capacity, n_images, T, q, jnp.float32)
+        kept = empty_kept(capacity, n_images, T, channels, jnp.float32)
     for start in stream.block_starts[:n_blocks]:
         kept = score_block(
             stream.arrays, tile, kept, start, static=stream.static, block_size=stream.rotation_block_size
@@ -791,7 +897,7 @@ def empty_carry(stream, n_images, observation_power):
         moments=jnp.zeros(moments, dtype=jnp.float32),
         moments_compensation=jnp.zeros(moments, dtype=jnp.float32),
         residual_power=jnp.zeros(arrays.coefficient_noise.shape, jnp.float32) + observation_power,
-        embedding=jnp.zeros((n_images, P - 1), jnp.float32),
+        embedding=jnp.zeros((n_images, P if static.contrast_nodes else P - 1), jnp.float32),
         rotation_mass=jnp.zeros((capacity,), jnp.float32),
         latent_covariance_trace_sum=jnp.float32(0),
         pose_entropy_sum=jnp.float32(0),

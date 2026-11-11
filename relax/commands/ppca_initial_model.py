@@ -211,10 +211,17 @@ def add_args(parser):
     )
     parser.add_argument(
         "--contrast",
-        choices=("none", "latent"),
+        choices=("none", "latent", "quadrature"),
         default=Config().contrast,
-        help="per-particle contrast: none (unit contrast), or latent: the contrast scales the mean, c = 1 + sd e with a "
-        "Gaussian latent e tied to the mean (docs/math/ppca_contrast.md)",
+        help="per-particle contrast: none (unit contrast); latent: the contrast scales the mean, c = 1 + sd e with a "
+        "Gaussian latent e tied to the mean; quadrature: the contrast scales the whole signal and is integrated per pose "
+        "by --contrast-nodes nodes (docs/math/ppca_contrast.md)",
+    )
+    parser.add_argument(
+        "--contrast-nodes",
+        type=int,
+        default=Config().contrast_nodes,
+        help="--contrast quadrature: Gauss-Hermite nodes per pose (default: %(default)s)",
     )
     parser.add_argument(
         "--contrast-sd",
@@ -264,8 +271,8 @@ PREREAD_MEMORY_FRACTION = 0.25
 
 
 def contrast_orthogonal_setting(args) -> bool:
-    """Whether the loadings are kept orthogonal to the mean: the explicit flag, else on exactly when the contrast latent is."""
-    return args.contrast == "latent" if args.contrast_orthogonal is None else args.contrast_orthogonal
+    """Whether the loadings are kept orthogonal to the mean: the explicit flag, else on exactly when a contrast model is."""
+    return args.contrast != "none" if args.contrast_orthogonal is None else args.contrast_orthogonal
 
 
 def resolve_preread_images(setting, stack_bytes, memory_bytes):
@@ -550,6 +557,7 @@ def main(args=None):
         tau2_fudge=args.tau2_fudge,
         tau2_fudge_scheme=args.tau2_fudge_scheme,
         contrast=args.contrast,
+        contrast_nodes=args.contrast_nodes,
         contrast_sd=args.contrast_sd,
         contrast_estimate_sd=args.contrast_estimate_sd,
         contrast_start=args.contrast_start,

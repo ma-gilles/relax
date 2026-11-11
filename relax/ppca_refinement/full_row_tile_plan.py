@@ -107,9 +107,9 @@ def tile_program_bytes(stream: FullRowStream, n_images: int) -> int:
     if key not in _PROGRAM_BYTES:
         static, block = stream.static, stream.rotation_block_size
         capacity = len(stream.block_starts) * block
-        T, q = int(stream.translations.shape[0]), static.basis_size - 1
+        T, channels = int(stream.translations.shape[0]), static.basis_size - (0 if static.contrast_nodes else 1)
         tile = tile_spec(stream, n_images)
-        kept = jax.eval_shape(lambda: empty_kept(capacity, int(n_images), T, q, jnp.float32))
+        kept = jax.eval_shape(lambda: empty_kept(capacity, int(n_images), T, channels, jnp.float32))
         carry = jax.eval_shape(lambda: empty_carry(stream, int(n_images), jnp.float32(0)))
         vector = jax.ShapeDtypeStruct((int(n_images),), jnp.float32)
         index = jax.ShapeDtypeStruct((int(n_images),), jnp.int32)
@@ -143,7 +143,8 @@ def stream_tile_bytes(stream: FullRowStream, n_images: int) -> int:
     P = static.basis_size
     T = int(stream.translations.shape[0])
     capacity = len(stream.block_starts) * stream.rotation_block_size
-    kept = capacity * (T * P + tri_size(P - 1) + 3)
+    # With contrast_nodes the kept buffers hold the inner products and the Gram of all P columns.
+    kept = capacity * (T * (P + 1) + tri_size(P) + 3 if static.contrast_nodes else T * P + tri_size(P - 1) + 3)
     if stream.pass2_mass_floor > 0:
         kept = kept + kept // 2  # the compacted pass-2 copy of at most half the rows (_compact_capacity)
     accumulators = 2 * moment_groups(static) * int(stream.arrays.augmented.shape[1]) * 32
@@ -285,6 +286,7 @@ def plan_shape_key(stream: FullRowStream) -> tuple:
         int(stream.arrays.augmented.shape[1]),
         static.basis_size,
         static.metric_trace_only,
+        static.contrast_nodes,
         tile_frames(stream),
         stream.tile_loader,
     )

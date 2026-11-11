@@ -47,7 +47,7 @@ _ADDED_CONFIG_DEFAULTS = {"max_significant": 100, "pc_stages": None, "pc_birth_s
     "sgd_loading_scale": 1.0, "shift_stages": None, "offset_sigma_angstrom": None,
     "contrast": "none", "contrast_sd": 0.2, "contrast_estimate_sd": True, "contrast_start": 1,
     "contrast_sd_min": 0.01, "contrast_sd_max": 0.5, "contrast_center": True, "contrast_gain_rate": 0.2,
-    "contrast_orthogonal": False}
+    "contrast_orthogonal": False, "contrast_nodes": 3}
 
 
 def _identity_config(config_dict):

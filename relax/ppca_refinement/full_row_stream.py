@@ -60,6 +60,7 @@ from recovar.reconstruction import noise as noise_utils
 from relax.cuda.ppca import voxel_major_volumes
 from relax.fourier.half_spectrum import make_half_image_weights, make_shell_indices_half
 from relax.ppca_refinement.config import GeometryConfig, ScheduleConfig, ScoringConfig
+from relax.ppca_refinement.contrast_b import ContrastPrior
 from relax.ppca_refinement.dense_blocks import prepare_dense_ppca_dataset_inputs, prepare_dense_ppca_image_batch
 from relax.ppca_refinement.dense_dataset import DensePPCAEmbeddings, image_scores
 from relax.ppca_refinement.engine import (
@@ -158,6 +159,7 @@ def prepare_full_row_stream(
     tile_loader=None,
     pass2_mass_floor: float = 0.0,
     latent_center: float | None = None,
+    contrast_b: ContrastPrior | None = None,
 ) -> FullRowStream:
     """Upload the model, fine grids and priors once to ``device`` for an expectation's tiles.
 
@@ -166,6 +168,9 @@ def prepare_full_row_stream(
 
     ``latent_center`` (the contrast latent's population mean) makes pass 2 take the M-step moments of the last latent
     about it (:func:`relax.ppca_refinement.contrast.center_last_latent_moments`); ``None`` leaves them as they are.
+
+    ``contrast_b`` puts the contrast on the whole signal, integrated per pose (:mod:`relax.ppca_refinement.contrast_b`);
+    ``mu`` and ``W`` are then the plain model (no tied column) and the embeddings are ``[E z, E c]``.
 
     ``tile_loader`` reads the tiles of a dataset that is not a single-particle image dataset
     (:attr:`FullRowStream.tile_loader`); ``experiment_dataset`` then only supplies the image and
@@ -203,6 +208,7 @@ def prepare_full_row_stream(
             device=device,
             tile_loader=tile_loader,
             latent_center=latent_center,
+            contrast_b=contrast_b,
         )._replace(pass2_mass_floor=float(pass2_mass_floor))
 
 
@@ -229,8 +235,13 @@ def _prepare_full_row_stream(
     device,
     tile_loader,
     latent_center=None,
+    contrast_b=None,
 ) -> FullRowStream:
     gemm_precision = resolve_gemm_precision(gemm_precision, device)
+    if contrast_b is not None and latent_center is not None:
+        raise ValueError("The tied contrast latent and the integrated contrast are two models: pass one")
+    if contrast_b is not None and not (contrast_b.nodes >= 1 and contrast_b.sd > 0 and contrast_b.mean > 0):
+        raise ValueError("The integrated contrast needs at least one node, a positive prior mean and a positive sd")
     if scoring.image_scale_corrections is not None or scoring.class_log_prior != 0.0:
         raise ValueError("Full-row streaming supports unit image scale and no class prior")
     if scoring.score_with_masked_images or scoring.relion_unit_half_weights or not scoring.full_real_observation:
@@ -293,6 +304,7 @@ def _prepare_full_row_stream(
         coefficient_noise=noise_variance_half,
         shift_squared=jnp.sum(jnp.asarray(translations, jnp.float32) ** 2, axis=-1),
         latent_center=None if latent_center is None else jnp.float32(latent_center),
+        contrast=None if contrast_b is None else jnp.asarray([contrast_b.mean, contrast_b.sd], jnp.float32),
     )
     static = StreamStatic(
         image_shape=tuple(resolved.image_shape),
@@ -305,7 +317,8 @@ def _prepare_full_row_stream(
         metric_trace_only=bool(metric_trace_only),
         cuda_kernels=cuda_kernels,
         gemm_precision=str(gemm_precision),
-        center_last_latent=latent_center is not None,
+        center_last_latent=latent_center is not None or (contrast_b is not None and contrast_b.normalise),
+        contrast_nodes=0 if contrast_b is None else int(contrast_b.nodes),
     )
     if static.cuda_kernels and (decide_order(static.disc_type) != 1 or static.relion_texture_interp):
         raise ValueError("The CUDA stream kernels support linear interpolation without RELION texture lookup only")

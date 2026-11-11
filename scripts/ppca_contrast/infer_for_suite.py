@@ -72,9 +72,8 @@ def infer_checkpoint(dataset, run_checkpoint: Path, ids: np.ndarray, args) -> di
     """The run's E-step on the images ``ids`` at one checkpoint: ``z`` (both latents), the contrast estimate and poses."""
     import jax.numpy as jnp
 
-    from relax.ppca_initial_model.iteration_loop import contrast_sd_for, expectation
+    from relax.ppca_initial_model.iteration_loop import contrast_latents, contrast_sd_for, expectation
     from relax.ppca_initial_model.state import State
-    from relax.ppca_refinement.contrast import latents_over_contrast, split_embeddings
 
     with np.load(run_checkpoint, allow_pickle=False) as saved:
         theta, noise, prior = saved["theta"], saved["noise"], saved["direction_prior"]
@@ -84,16 +83,16 @@ def infer_checkpoint(dataset, run_checkpoint: Path, ids: np.ndarray, args) -> di
     state = State(
         jnp.asarray(theta), None, jnp.asarray(noise), meta["iteration"], np.zeros(0, np.int64), {},
         float(meta["offset_variance"]), meta["radius"], {}, prior if prior.size else None, meta["direction_order"],
-        None, None, None, meta.get("contrast_sd"),
+        None, None, None, meta.get("contrast_sd"), meta.get("contrast_gain", 0.0),
     )
     stats = expectation(dataset, state, config, ids, 1, keep_poses=True)
     embeddings = np.asarray(stats.embeddings)
     sd = contrast_sd_for(config, state, 1)
     if sd is None:
-        latent, estimate = embeddings, np.ones(len(embeddings), np.float32)
+        latent = unscaled = embeddings
+        estimate, n_floored = np.ones(len(embeddings), np.float32), 0
     else:
-        latent, estimate = (np.asarray(x) for x in split_embeddings(embeddings, sd))
-    unscaled, n_floored = latents_over_contrast(latent, estimate)
+        unscaled, latent, estimate, n_floored = contrast_latents(config, sd, embeddings)
     if not np.array_equal(np.asarray(stats.original_image_ids), ids):
         raise ValueError("The E-step returned the images in another order than requested")
     return dict(
