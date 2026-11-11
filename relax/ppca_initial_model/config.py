@@ -24,6 +24,10 @@ class Config:
     # (each image's significant coarse samples, then their children; relax/ppca_refinement/oversampled_stream.py)
     # and the earlier stages dense (iteration_loop.oversampled_update).
     oversampling: int = 0
+    # With oversampling 1: the first update that oversamples (None: the last stage's first update), and whether the
+    # children are rotations only (the shifts keep the stage's grid).
+    oversampling_from_update: int | None = None
+    oversampling_rotations_only: bool = False
     # The adaptive fraction of the posterior mass the significant samples hold (RELION's --adaptive_fraction).
     target_mass: float = 0.999
     # Significant coarse samples kept per image at most (RELION's --maxsig: 100 per class for gradient runs).
@@ -89,6 +93,9 @@ class Config:
     # sgd_lr_match M: the base rate is set at the first update to M c_mean / max tr H, so the mean's step equals
     # the shared-trace step at rate M there (None: sgd_learning_rate).
     sgd_lr_match: float | None = None
+    # sgd_fixed_step T (coupled direction): the step is T s(t) / s(1) times the damped Newton direction H^-1 G, s the
+    # sgd_lr_schedule's steps (T throughout without one); no update-1 norm match (k) and no learning rate.
+    sgd_fixed_step: float | None = None
     # Newton SGD stabilisers (opt-in). sgd_pc_min_shell N: no PC step on shells below N (1 freezes the PCs' DC term).
     # sgd_eig_floor_rel r: floor every frequency's metric eigenvalues at r times the band's largest eigenvalue too.
     sgd_pc_min_shell: int = 0
@@ -290,6 +297,15 @@ class Config:
             raise ValueError("The PC minimum shell must be >= 0 and the relative eigenvalue floor in (0, 1)")
         if (self.sgd_pc_min_shell or self.sgd_eig_floor_rel is not None) and self.sgd_direction != "coupled":
             raise ValueError("The PC minimum shell and relative eigenvalue floor need the coupled direction")
+        if self.sgd_fixed_step is not None and not (
+            np.isfinite(self.sgd_fixed_step) and self.sgd_fixed_step > 0 and self.sgd_direction == "coupled"
+            and self.sgd_lr_match is None
+        ):
+            raise ValueError("The fixed step must be finite and positive, with the coupled direction and no matched rate")
+        if (self.oversampling_from_update is not None or self.oversampling_rotations_only) and not self.oversampling:
+            raise ValueError("--oversampling-from-update and --oversampling-rotations-only need --oversampling 1")
+        if self.oversampling_from_update is not None and self.oversampling_from_update < 1:
+            raise ValueError("The first oversampled update must be >= 1")
         if self.likelihood_min_shell < 0:
             raise ValueError("The likelihood minimum shell must be >= 0")
         if self.sgd_mean_gate_floor is not None and (
@@ -310,6 +326,7 @@ class Config:
             or self.sgd_pc_gate_floor is not None
             or self.sgd_lr_schedule is not None
             or self.sgd_lr_match is not None
+            or self.sgd_fixed_step is not None
         )
 
     def shifts(self, iteration):

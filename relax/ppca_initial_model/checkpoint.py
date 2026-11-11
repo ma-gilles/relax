@@ -66,6 +66,9 @@ _ADDED_CONFIG_DEFAULTS = {
     "sgd_eig_floor_rel": None,
     "sgd_mean_gate_floor": None,
     "likelihood_min_shell": 0,
+    "sgd_fixed_step": None,
+    "oversampling_from_update": None,
+    "oversampling_rotations_only": False,
 }
 
 

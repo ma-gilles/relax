@@ -139,6 +139,7 @@ class NewtonSGD:
             base = float(state["lr0"])
         self.lr = LearningRateSchedule(base, config.sgd_lr_schedule)
         self.lr_match = config.sgd_lr_match
+        self.fixed_step = getattr(config, "sgd_fixed_step", None)
         self.k = None if state is None or state["k"] is None else float(state["k"])
         gate_state = None if state is None else {key[5:]: state[key] for key in state if key.startswith("gate_")}
         self.gate = (
@@ -171,10 +172,16 @@ class NewtonSGD:
         diagnostics = {"learning_rate_used": lr, "learning_rate_base": self.lr.base, "c_mean": c_mean, "c_pc": c_pc}
         if self.direction == "coupled":
             direction, info = damped_newton_direction(lhs, gradient, active, floor, self.relative_floor)
-            if self.k is None:
-                self.k = float(jnp.linalg.norm(split) / jnp.maximum(lr * jnp.linalg.norm(direction), 1e-30))
-            step = jnp.float32(lr * self.k) * direction
-            diagnostics.update(info, coupled_k=self.k)
+            if self.fixed_step is not None:
+                # Fixed step: T s(t) / s(1); the learning rate cancels (lr(t) / lr0 is the schedule's shape).
+                size = self.fixed_step * (lr / self.lr.base if self.lr.base else 1.0)
+                step = jnp.float32(size) * direction
+                diagnostics.update(info, fixed_step_used=size)
+            else:
+                if self.k is None:
+                    self.k = float(jnp.linalg.norm(split) / jnp.maximum(lr * jnp.linalg.norm(direction), 1e-30))
+                step = jnp.float32(lr * self.k) * direction
+                diagnostics.update(info, coupled_k=self.k)
         else:
             step = split
         if self.gate is not None:
@@ -223,6 +230,7 @@ def describe(config):
             "direction": config.sgd_direction,
             "pc_gate_floor": config.sgd_pc_gate_floor,
             "learning_rate": config.sgd_learning_rate if config.sgd_lr_match is None else f"matched x{config.sgd_lr_match}",
+            "fixed_step": getattr(config, "sgd_fixed_step", None),
             "lr_schedule": config.sgd_lr_schedule,
             "uniform_direction_prior": config.uniform_direction_prior,
             "shift_schedule": config.shift_schedule,

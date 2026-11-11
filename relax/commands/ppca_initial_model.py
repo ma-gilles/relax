@@ -267,6 +267,22 @@ def add_args(parser):
         "rate (rate M c_mean / max tr H; replaces --sgd-learning-rate; needs --sgd-momentum 0)",
     )
     parser.add_argument(
+        "--sgd-fixed-step",
+        type=float,
+        help="Coupled direction: step T s(t) / s(1) times the damped Newton direction (s the --sgd-lr-schedule steps; "
+        "T throughout without one), with no update-1 norm match; the learning rate cancels",
+    )
+    parser.add_argument(
+        "--oversampling-from-update",
+        type=int,
+        help="With --oversampling 1: oversample from this update on (default: the last stage)",
+    )
+    parser.add_argument(
+        "--oversampling-rotations-only",
+        action="store_true",
+        help="With --oversampling 1: the children are rotations only; the shifts keep the stage's grid",
+    )
+    parser.add_argument(
         "--sgd-pc-min-shell",
         type=int,
         help="Coupled direction: no PC step on Fourier shells below N (1 freezes the PCs' zero-frequency term)",
@@ -355,6 +371,8 @@ def resolve_sgd_options(args):
         options["sgd_pc_gate_floor"] = args.sgd_pc_gate_floor
     if args.sgd_lr_match is not None:
         options["sgd_lr_match"] = args.sgd_lr_match
+    if args.sgd_fixed_step is not None:
+        options["sgd_fixed_step"] = args.sgd_fixed_step
     if args.sgd_pc_min_shell is not None:
         options["sgd_pc_min_shell"] = args.sgd_pc_min_shell
     if args.sgd_eig_floor_rel is not None:
@@ -652,6 +670,8 @@ def main(args=None):
         seed=args.seed,
         iterations=args.iterations,
         oversampling=args.oversampling,
+        oversampling_from_update=args.oversampling_from_update,
+        oversampling_rotations_only=args.oversampling_rotations_only,
         max_significant=args.maxsig,
         shift_range=args.shift_range,
         shift_step=args.shift_step,
