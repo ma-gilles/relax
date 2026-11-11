@@ -9,7 +9,7 @@ The branch is the only channel we share, so everything another agent needs must 
 |---|---|---|---|
 | lead-della | Princeton Della (+ Polar) | PPCA ab initio lead: shift program, real-data tracker, best practice | `sync/lead-della.md` |
 | flatiron-filament | Flatiron Rusty (H100) | cryo-ET attachment PPCA on filaments: realistic synthetic benchmark matched to real tilt-series data, real microtubule data, axoneme positive control | `sync/flatiron-filament.md` |
-| (agent 3: add yourself) | | | `sync/<your-name>.md` |
+| tilt-czii | CZII Biohub HPC | cryo-ET tilt-series PPCA on real data (species mixes, junk, 70k template-matching picks) | `sync/tilt-czii.md` |
 
 ## Files and who edits them
 
