@@ -7,8 +7,8 @@ dataset. ``variants.csv`` has one row per variant: the prior that scored it, the
 the resolutions and area under the FSC curve against the ground truth and between the half maps, the pose
 direction error (``pose_error_*``: the angle between the true and the estimated viewing directions, the out-of-plane
 part of the pose error), the in-plane error (``inplane_error_*``: the angle about the viewing direction that remains
-once the directions agree; ``evaluate_run.py``), the median and p90 distance between the estimated and the true origins
-(``origin_error_*_A``; empty for a run evaluated before it was measured), the final learned prior's accuracy and the
+once the directions agree; ``evaluate_run.py``), the distance between the estimated and the true origins
+(``origin_error_*``: the median and p90 in A and the share over one pixel), the final learned prior's accuracy and the
 frame offsets. The ground-truth FSC and the pose errors are those of the final map and poses aligned to the ground
 truth's frame (``_aligned``: the map rigidly aligned to the
 truth, the poses turned back by their average offset), with the values as refined beside them (``_as_refined``), so
@@ -17,14 +17,15 @@ the aligned map against the truth (``gt_cfar_aligned``; the smallest over the la
 an isotropic map), the resolution of its worst cone and the half maps' cFAR. ``variants.png`` shows the
 aligned ground-truth FSC curves, the FSC area, the aligned map's cFSC (mean +- 1 SD over the cones; dashed, the best and the worst cone: the largest and the smallest area
 under the cone's curve, whose ratio is the cFAR) and cFAR (hollow:
-the half maps'), the distributions of the particles' aligned direction (out-of-plane) and in-plane errors, the learned
-prior's divergence from the true prior (a distribution over viewing directions, so out of plane only) and, per iteration, the half maps' FSC area to the truth (as refined) and to each other and the refinement's
+the half maps'), the distributions of the particles' aligned direction (out-of-plane) and in-plane errors, of their origin error (in
+pixels) and the learned prior's divergence from the true prior (a distribution over viewing directions, so out of plane
+only) and, per iteration, the half maps' FSC area to the truth (as refined) and to each other and the refinement's
 Fourier radius (so runs that stop at different iterations or orders compare at equal iteration).
 
 ``--reconstructions`` (relion_reconstruct maps from each variant's final poses), ``--angle-reconstructions`` (from
 their angles alone, with zero origins) and ``--true-reconstruction`` (from the true poses) take
-``reconstruct_with_poses.py`` output directories. Given together they add a figure row with those maps' FSC to the
-ground truth beside the refinement's own maps, and write ``reconstructions.csv`` with their resolutions and FSC areas.
+``reconstruct_with_poses.py`` output directories. Given together they write ``reconstructions.csv`` with those maps'
+resolutions and FSC areas to the ground truth; the figure does not show them.
 
 Run::
 
@@ -55,9 +56,12 @@ from scripts.pose_prior_benchmark.evaluate_run import HALVES, PALETTE  # noqa: E
 VARIANT_COLORS = ("#2a78d6", "#eb6834", "#2f9e6e", "#8a5cd6")
 GT_FSC_THRESHOLDS = (0.5, 0.143)
 POSE_ERROR_RANGE_DEG = (0.1, 180.0)  # the error axis; a smaller error counts in its first bin
+ORIGIN_ERROR_RANGE_PX = (0.05, 50.0)  # the origin error axis, pixels
 POSE_ERROR_BINS = 200
 POSE_ERROR_SMOOTHING_DECADES = 0.05
 GROSS_POSE_ERROR_DEG = 90.0
+GROSS_ORIGIN_ERROR_PX = 1.0
+ROW_TITLE_SIZE = 10  # the four panels of the third row are narrow
 COLUMNS = (
     "variant",
     "direction_prior",
@@ -81,6 +85,7 @@ COLUMNS = (
     "inplane_error_p90_aligned_deg",
     "origin_error_median_A",
     "origin_error_p90_A",
+    "origin_error_fraction_over_pixel",
     "pose_offset_deg",
     "map_offset_deg",
     "map_shift_A",
@@ -159,7 +164,9 @@ def summary_row(variant: str, metrics: dict[str, Any]) -> dict[str, Any]:
     inplane = metrics["pose_inplane_error_aligned_deg"]
     prior = metrics["prior_final"]
     used = metrics["run"]["direction_prior_used"]
-    origin = metrics.get("origin_error_angstrom")  # absent from runs evaluated before the origin error existed
+    if "origin_error_angstrom" not in metrics:
+        raise ValueError(f"{variant}: metrics.json has no origin error; rerun evaluate_run.py on the run")
+    origin = metrics["origin_error_angstrom"]
     return {
         "variant": variant,
         "direction_prior": used["source"],
@@ -181,8 +188,9 @@ def summary_row(variant: str, metrics: dict[str, Any]) -> dict[str, Any]:
         "pose_error_median_as_refined_deg": half_mean(metrics["pose_direction_error_deg"], "median"),
         "inplane_error_median_aligned_deg": half_mean(inplane, "median"),
         "inplane_error_p90_aligned_deg": half_mean(inplane, "p90"),
-        "origin_error_median_A": None if origin is None else half_mean(origin, "median"),
-        "origin_error_p90_A": None if origin is None else half_mean(origin, "p90"),
+        "origin_error_median_A": half_mean(origin, "median"),
+        "origin_error_p90_A": half_mean(origin, "p90"),
+        "origin_error_fraction_over_pixel": half_mean(origin, "fraction_over_pixel"),
         "pose_offset_deg": metrics["pose_frame_offset"]["angle_deg"],
         "map_offset_deg": resolution["alignment"]["angle_deg"],
         "map_shift_A": resolution["alignment"]["shift_A"],
@@ -284,16 +292,27 @@ def read_inplane_errors(evaluation_dir: Path) -> np.ndarray:
         return np.concatenate([archive[f"aligned_inplane_half{half}"] for half in HALVES]).astype(np.float64)
 
 
-def error_density(errors: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    """The density of ``errors`` (degrees) per decade on a log-spaced grid over ``POSE_ERROR_RANGE_DEG``.
+def read_origin_errors(evaluation_dir: Path, voxel_size_A: float) -> np.ndarray:
+    """Every particle's final origin error (pixels: the distance between its estimated and true origin, A, over the
+    pixel size), both half sets, from ``pose_errors.npz``."""
+    with np.load(evaluation_dir / "pose_errors.npz", allow_pickle=False) as archive:
+        if "origin_half1" not in archive.files:
+            raise ValueError(f"{evaluation_dir}: pose_errors.npz has no origin errors; rerun evaluate_run.py on the run")
+        return np.concatenate([archive[f"origin_half{half}"] for half in HALVES]).astype(np.float64) / voxel_size_A
 
-    Returns the grid (degrees) and the density, a Gaussian-smoothed histogram of log10(error) that integrates to 1
-    over log10(degrees); the ends reflect, so the mass at 0 and 180 degrees stays on the axis.
+
+def error_density(
+    errors: np.ndarray, value_range: tuple[float, float] = POSE_ERROR_RANGE_DEG
+) -> tuple[np.ndarray, np.ndarray]:
+    """The density of ``errors`` per decade on a log-spaced grid over ``value_range`` (degrees by default).
+
+    Returns the grid and the density, a Gaussian-smoothed histogram of log10(error) that integrates to 1
+    over log10(error); the ends reflect, so the mass beyond the range stays on the axis.
     """
-    low, high = np.log10(POSE_ERROR_RANGE_DEG)
+    low, high = np.log10(value_range)
     edges = np.linspace(low, high, POSE_ERROR_BINS + 1)
     step = edges[1] - edges[0]
-    counts, _ = np.histogram(np.log10(np.clip(errors, POSE_ERROR_RANGE_DEG[0], POSE_ERROR_RANGE_DEG[1])), bins=edges)
+    counts, _ = np.histogram(np.log10(np.clip(errors, value_range[0], value_range[1])), bins=edges)
     reach = int(np.ceil(4 * POSE_ERROR_SMOOTHING_DECADES / step))
     kernel = np.exp(-0.5 * (np.arange(-reach, reach + 1) * step / POSE_ERROR_SMOOTHING_DECADES) ** 2)
     smooth = np.convolve(
@@ -322,79 +341,6 @@ def style_axes(ax) -> None:
     ax.set_axisbelow(True)
 
 
-def draw_reconstructions(
-    curve_ax,
-    bar_ax,
-    rows: list[dict[str, Any]],
-    colors: dict[str, str],
-    labels: list[str],
-    reconstructions: Reconstructions,
-) -> None:
-    """The relion_reconstruct maps' FSC to the ground truth, in the frame of the poses (not aligned): the curves of
-    the variants' final poses (dotted: the true poses) and, per variant, the FSC area of the maps from the poses with
-    and without origins, against the area of the refinement's own final map as refined (black line) and of the true
-    poses (dotted line)."""
-    variants = [row["variant"] for row in rows]
-    x = np.arange(len(variants))
-    style_axes(curve_ax)
-    for variant in variants:
-        curve = reconstructions.estimated[variant]
-        curve_ax.plot(curve.frequency, curve.fsc, color=colors[variant], linewidth=2)
-    true = reconstructions.true
-    curve_ax.plot(true.frequency, true.fsc, color=PALETTE["ink2"], linewidth=1.5, linestyle=":")
-    for threshold in GT_FSC_THRESHOLDS:
-        curve_ax.axhline(threshold, color=PALETTE["reference"], linewidth=1, linestyle=":")
-    curve_ax.set_title("relion_reconstruct maps: FSC to the ground truth", color=PALETTE["ink"])
-    curve_ax.set_xlabel("spatial frequency (1/A)", color=PALETTE["ink2"])
-    curve_ax.set_ylabel("FSC", color=PALETTE["ink2"])
-
-    style_axes(bar_ax)
-    width = 0.36
-    for offset, source, alpha in (
-        (-width / 2, reconstructions.estimated, 1.0),
-        (width / 2, reconstructions.angles, 0.45),
-    ):
-        for position, variant in zip(x, variants):
-            auc = source[variant].summary["auc"]
-            bar_ax.bar(
-                position + offset,
-                auc,
-                width=width,
-                color=colors[variant],
-                alpha=alpha,
-                edgecolor=colors[variant],
-                linewidth=1.2,
-            )
-            bar_ax.text(
-                position + offset,
-                0.01,
-                f"{auc:.3g}",
-                rotation=90,
-                ha="center",
-                va="bottom",
-                color=PALETTE["ink"],
-                fontsize=8,
-            )
-    for position, row in zip(x, rows):
-        bar_ax.plot(
-            [position - 0.4, position + 0.4], [row["gt_fsc_auc_as_refined"]] * 2, color=PALETTE["ink"], linewidth=2
-        )
-    bar_ax.axhline(true.summary["auc"], color=PALETTE["ink2"], linewidth=1.5, linestyle=":")
-    bar_ax.text(
-        bar_ax.get_xlim()[1],
-        true.summary["auc"],
-        f"true poses {true.summary['auc']:.3g}",
-        ha="right",
-        va="bottom",
-        color=PALETTE["ink2"],
-        fontsize=8,
-    )
-    bar_ax.set_xticks(x, labels)
-    bar_ax.set_title("Area under that FSC curve", color=PALETTE["ink"])
-    bar_ax.set_ylabel("normalized area", color=PALETTE["ink2"])
-    bar_ax.margins(y=0.15)
-
-
 def plot_comparison(
     rows: list[dict[str, Any]],
     curves: dict[str, tuple[np.ndarray, np.ndarray]],
@@ -402,36 +348,33 @@ def plot_comparison(
     iteration_curves: dict[str, IterationCurve],
     pose_errors: dict[str, np.ndarray],
     inplane_errors: dict[str, np.ndarray],
-    reconstructions: Reconstructions | None,
+    origin_errors: dict[str, np.ndarray],
+    pixel_size_A: float,
     label: str,
     path: Path,
 ) -> None:
     """The comparison figure of ``rows`` (one per variant), their ground-truth FSC ``curves``, the mean and SD of
-    their cFSC over the cones (``conical_curves``), their per-iteration half-map FSC areas and Fourier radii (``iteration_curves``), their particles' direction errors
-    (``pose_errors``) and in-plane errors (``inplane_errors``), degrees, and, when given, the relion_reconstruct maps from their poses (``reconstructions``)."""
+    their cFSC over the cones (``conical_curves``), their per-iteration half-map FSC areas and Fourier radii
+    (``iteration_curves``), their particles' direction errors (``pose_errors``) and in-plane errors (``inplane_errors``),
+    degrees, and origin errors (``origin_errors``, pixels of ``pixel_size_A``)."""
     import matplotlib
 
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     import matplotlib.ticker
     from matplotlib.lines import Line2D
-    from matplotlib.patches import Patch
 
     if len(rows) > len(VARIANT_COLORS):
         raise ValueError(f"{len(rows)} variants; the palette is validated for {len(VARIANT_COLORS)}")
     variants = [row["variant"] for row in rows]
     colors = dict(zip(variants, VARIANT_COLORS))
-    n_rows = 3 + (reconstructions is not None)
-    fig = plt.figure(figsize=(11, 4.07 * (n_rows + 1.45)), facecolor=PALETTE["surface"])
-    grid = fig.add_gridspec(n_rows + 2, 6, height_ratios=[1] * n_rows + [0.85, 0.6])
-    spans = {2: ((0, 2), (4, 6))}  # the third row also holds the in-plane error between its two panels
-    axes = np.array(
-        [[fig.add_subplot(grid[row, a:b]) for a, b in spans.get(row, ((0, 3), (3, 6)))] for row in range(n_rows)]
-    )
-    inplane_ax = fig.add_subplot(grid[2, 2:4])
-    trace_ax = fig.add_subplot(grid[n_rows, :])
-    radius_ax = fig.add_subplot(grid[n_rows + 1, :], sharex=trace_ax)
-    for ax in (*axes.flat, inplane_ax, trace_ax, radius_ax):
+    fig = plt.figure(figsize=(14, 4.07 * 4.45), facecolor=PALETTE["surface"])
+    grid = fig.add_gridspec(5, 12, height_ratios=[1, 1, 1, 0.85, 0.6])
+    axes = np.array([[fig.add_subplot(grid[row, a:b]) for a, b in ((0, 6), (6, 12))] for row in range(2)])
+    outplane_ax, inplane_ax, origin_ax, js_ax = (fig.add_subplot(grid[2, a : a + 3]) for a in (0, 3, 6, 9))
+    trace_ax = fig.add_subplot(grid[3, :])
+    radius_ax = fig.add_subplot(grid[4, :], sharex=trace_ax)
+    for ax in (*axes.flat, outplane_ax, inplane_ax, origin_ax, js_ax, trace_ax, radius_ax):
         ax.set_facecolor(PALETTE["surface"])
         ax.tick_params(colors=PALETTE["ink2"])
     fig.suptitle(f"{label}: refinement variants", x=0.01, ha="left", color=PALETTE["ink"])
@@ -450,7 +393,7 @@ def plot_comparison(
     ax.set_xlabel("spatial frequency (1/A)", color=PALETTE["ink2"])
     ax.set_ylabel("FSC", color=PALETTE["ink2"])
 
-    def bars(ax, key: str, title: str, ylabel: str, title_pad: float = 6.0) -> None:
+    def bars(ax, key: str, title: str, ylabel: str, title_pad: float = 6.0, title_size: float | None = None) -> None:
         style_axes(ax)
         values = [row[key] for row in rows]
         ax.bar(x, [np.nan if v is None else v for v in values], color=[colors[v] for v in variants], width=0.6)
@@ -458,7 +401,7 @@ def plot_comparison(
             if value is not None:
                 ax.text(position, value, f"{value:.3g}", ha="center", va="bottom", color=PALETTE["ink2"], fontsize=9)
         ax.set_xticks(x, labels)
-        ax.set_title(title, color=PALETTE["ink"], pad=title_pad)
+        ax.set_title(title, color=PALETTE["ink"], pad=title_pad, **({} if title_size is None else {"fontsize": title_size}))
         ax.set_ylabel(ylabel, color=PALETTE["ink2"])
         ax.margins(y=0.15)
 
@@ -503,11 +446,19 @@ def plot_comparison(
     ax.set_ylabel("cFAR", color=PALETTE["ink2"])
     ax.set_ylim(0, 1.45 * max(gt_cfar.max(), half_cfar.max()))  # cFAR is 1 only for an isotropic map
 
-    def error_violins(ax, errors_by_variant: dict[str, np.ndarray], title: str) -> None:
-        """The error distribution of every variant: a violin on a log axis, the median (filled dot) and the 90th
-        percentile (hollow), and the share of particles above ``GROSS_POSE_ERROR_DEG``."""
+    def error_violins(
+        ax,
+        errors_by_variant: dict[str, np.ndarray],
+        title: str,
+        value_range: tuple[float, float],
+        gross: float,
+        unit: str,
+        unit_label: str,
+    ) -> None:
+        """The error distribution of every variant: a violin on a log axis over ``value_range``, the median (filled
+        dot) and the 90th percentile (hollow), and the share of particles above ``gross`` (``unit`` in the note)."""
         style_axes(ax)
-        densities = {variant: error_density(errors_by_variant[variant]) for variant in variants}
+        densities = {variant: error_density(errors_by_variant[variant], value_range) for variant in variants}
         half_width = 0.42 / max(density.max() for _, density in densities.values())
         for position, variant in zip(x, variants):
             grid, density = densities[variant]
@@ -530,38 +481,46 @@ def plot_comparison(
             ax.text(
                 position,
                 1.01,
-                f"{100 * np.mean(errors > GROSS_POSE_ERROR_DEG):.1f}% > {GROSS_POSE_ERROR_DEG:g}\N{DEGREE SIGN}",
+                f"{100 * np.mean(errors > gross):.1f}% > {gross:g}{unit}",
                 transform=ax.get_xaxis_transform(),
                 ha="center",
                 va="bottom",
                 color=PALETTE["ink2"],
-                fontsize=8,
+                fontsize=7.5,
             )
-        ax.axhline(GROSS_POSE_ERROR_DEG, color=PALETTE["reference"], linewidth=1, linestyle=":")
+        ax.axhline(gross, color=PALETTE["reference"], linewidth=1, linestyle=":")
         ax.set_yscale("log")
-        ax.set_ylim(POSE_ERROR_RANGE_DEG)
+        ax.set_ylim(value_range)
         ax.yaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(lambda value, _: f"{value:g}"))
         ax.yaxis.set_minor_formatter(matplotlib.ticker.NullFormatter())
         ax.set_xticks(x, labels)
         ax.set_xlim(-0.6, len(variants) - 0.4)
-        ax.set_title(title, color=PALETTE["ink"], pad=18)
-        ax.set_ylabel("degrees (log scale)", color=PALETTE["ink2"])
+        ax.set_title(title, color=PALETTE["ink"], pad=18, fontsize=ROW_TITLE_SIZE)
+        ax.set_ylabel(f"{unit_label} (log scale)", color=PALETTE["ink2"])
 
-    error_violins(axes[2, 0], pose_errors, "Out-of-plane error (viewing direction)\nof the final poses, offset removed")
+    degree = "\N{DEGREE SIGN}"
+    pose_args = (POSE_ERROR_RANGE_DEG, GROSS_POSE_ERROR_DEG, degree, "degrees")
     error_violins(
-        inplane_ax, inplane_errors, "In-plane error (about the viewing direction)\nof the final poses, offset removed"
+        outplane_ax, pose_errors, "Out-of-plane error (viewing\ndirection), offset removed", *pose_args
     )
-
+    error_violins(inplane_ax, inplane_errors, "In-plane error (about the\nviewing direction), offset removed", *pose_args)
+    error_violins(
+        origin_ax,
+        origin_errors,
+        f"Origin error of the final poses\n(1 pixel = {pixel_size_A:.4g} A)",
+        ORIGIN_ERROR_RANGE_PX,
+        GROSS_ORIGIN_ERROR_PX,
+        " px",
+        "pixels",
+    )
     bars(
-        axes[2, 1],
+        js_ax,
         "learned_prior_js_bits",
         "Learned prior (viewing directions):\ndivergence from the true prior",
         "JS (bits); fixed runs: estimated, not used",
         title_pad=18,
+        title_size=ROW_TITLE_SIZE,
     )
-
-    if reconstructions is not None:
-        draw_reconstructions(axes[3, 0], axes[3, 1], rows, colors, labels, reconstructions)
 
     style_axes(trace_ax)
     style_axes(radius_ax)
@@ -615,15 +574,8 @@ def plot_comparison(
             label="90th percentile",
         ),
     ]
-    if reconstructions is not None:
-        legend += [
-            Patch(facecolor=PALETTE["ink2"], label="reconstruction from the final poses"),
-            Patch(facecolor=PALETTE["ink2"], alpha=0.45, label="... with zero origins"),
-            Line2D([], [], color=PALETTE["ink"], linewidth=2, label="the refinement's final map, as refined"),
-            Line2D([], [], color=PALETTE["ink2"], linewidth=1.5, linestyle=":", label="true poses"),
-        ]
     fig.legend(handles=legend, loc="lower center", ncol=5, frameon=False, labelcolor=PALETTE["ink2"])
-    fig.tight_layout(rect=(0, 0.07 if reconstructions is None else 0.09, 1, 0.97))
+    fig.tight_layout(rect=(0, 0.07, 1, 0.97))
     fig.savefig(path, dpi=150, bbox_inches="tight", facecolor=PALETTE["surface"])
     plt.close(fig)
 
@@ -669,6 +621,11 @@ def main(argv: list[str] | None = None) -> None:
     iteration_curves = {variant: read_iteration_curve(directory) for variant, directory in runs.items()}
     pose_errors = {variant: read_pose_errors(directory) for variant, directory in runs.items()}
     inplane_errors = {variant: read_inplane_errors(directory) for variant, directory in runs.items()}
+    pixel_sizes = {metrics[variant]["resolution"]["voxel_size_A"] for variant in runs}
+    if len(pixel_sizes) != 1:
+        raise SystemExit(f"the runs have different pixel sizes: {sorted(pixel_sizes)}")
+    pixel_size_A = pixel_sizes.pop()
+    origin_errors = {variant: read_origin_errors(directory, pixel_size_A) for variant, directory in runs.items()}
     reconstructions = read_reconstructions(args, list(runs))
     args.out_dir.mkdir(parents=True, exist_ok=True)
     write_table(rows, args.out_dir / "variants.csv")
@@ -681,7 +638,8 @@ def main(argv: list[str] | None = None) -> None:
         iteration_curves,
         pose_errors,
         inplane_errors,
-        reconstructions,
+        origin_errors,
+        pixel_size_A,
         args.label,
         args.out_dir / "variants.png",
     )
@@ -690,7 +648,8 @@ def main(argv: list[str] | None = None) -> None:
             f"{row['variant']}: {row['direction_prior']} prior, {row['iterations']} iterations, "
             f"aligned GT-FSC area {row['gt_fsc_auc_aligned']:.3f}, aligned cFAR {row['gt_cfar_aligned']:.3f}, "
             f"aligned median out-of-plane error {row['pose_error_median_aligned_deg']:.2f} deg, "
-            f"in-plane {row['inplane_error_median_aligned_deg']:.2f} deg"
+            f"in-plane {row['inplane_error_median_aligned_deg']:.2f} deg, "
+            f"origin {row['origin_error_median_A']:.2f} A"
         )
 
 

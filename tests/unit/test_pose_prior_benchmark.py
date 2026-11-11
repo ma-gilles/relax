@@ -363,10 +363,12 @@ def _write_conical_fsc(directory):
     return {name: conical_fsc_summary(cfsc, voxel=2.0, box=8) for name, cfsc in cfscs.items()}
 
 
-def _evaluation(tmp_path, name, *, source, auc, median, js_skill, with_conical=True, origin_median=None):
+def _evaluation(tmp_path, name, *, source, auc, median, js_skill, with_conical=True, origin_median=2.0):
     """A minimal evaluate_run output directory: the metrics, FSC curves, pose errors and cFSC the comparison reads.
     The aligned FSC area is ``auc`` and the aligned pose error ``median``; as refined they are 0.05 lower and 0.5
-    higher. ``origin_median`` (A) adds the origin error of the two half sets, whose p90 is three times it."""
+    higher. ``origin_median`` (A) is the origin error of the first half set, 1 A more in the second; the p90 is three
+    times it and the share over a pixel 0.5 (first half) and 0.25 (second); the particles' origin errors are
+    ``origin_median`` and ``origin_median + 1`` A."""
     directory = tmp_path / name
     directory.mkdir()
     pose = {"p90": 3 * median, "fraction_over_90": 0.01}
@@ -403,11 +405,10 @@ def _evaluation(tmp_path, name, *, source, auc, median, js_skill, with_conical=T
     }
     if with_conical:
         metrics["conical_fsc"] = _write_conical_fsc(directory)
-    if origin_median is not None:
-        metrics["origin_error_angstrom"] = {
-            "half1": {"median": origin_median, "p90": 3 * origin_median},
-            "half2": {"median": origin_median + 1.0, "p90": 3 * origin_median + 1.0},
-        }
+    metrics["origin_error_angstrom"] = {
+        "half1": {"median": origin_median, "p90": 3 * origin_median, "fraction_over_pixel": 0.5},
+        "half2": {"median": origin_median + 1.0, "p90": 3 * origin_median + 1.0, "fraction_over_pixel": 0.25},
+    }
     (directory / "metrics.json").write_text(json.dumps(metrics))
     with open(directory / "fsc_curves.csv", "w", newline="") as handle:
         writer = csv.writer(handle)
@@ -430,13 +431,15 @@ def _evaluation(tmp_path, name, *, source, auc, median, js_skill, with_conical=T
         inplane_half2=(0.5 * errors[1] + 0.5).astype(np.float32),
         aligned_inplane_half1=(0.5 * errors[0]).astype(np.float32),
         aligned_inplane_half2=(0.5 * errors[1]).astype(np.float32),
+        origin_half1=np.full(200, origin_median, np.float32),
+        origin_half2=np.full(200, origin_median + 1.0, np.float32),
     )
     return directory
 
 
 def test_variants_are_compared_in_a_table_and_a_figure(tmp_path):
-    learned = _evaluation(tmp_path, "learned", source="learned", auc=0.8, median=2.0, js_skill=0.9, origin_median=2.0)
-    fixed = _evaluation(tmp_path, "fixed_true", source="fixed", auc=0.85, median=1.5, js_skill=0.9)
+    learned = _evaluation(tmp_path, "learned", source="learned", auc=0.8, median=2.0, js_skill=0.9)
+    fixed = _evaluation(tmp_path, "fixed_true", source="fixed", auc=0.85, median=1.5, js_skill=0.9, origin_median=1.0)
     out = tmp_path / "out"
     cmp.main(["--runs", f"learned={learned}", f"fixed_true={fixed}", "--out-dir", str(out), "--label", "test"])
     with open(out / "variants.csv", newline="") as handle:
@@ -452,8 +455,9 @@ def test_variants_are_compared_in_a_table_and_a_figure(tmp_path):
         [float(rows["learned"][k]) for k in ("pose_offset_deg", "map_offset_deg", "map_shift_A")], [0.45, 0.35, 0.1]
     )
     assert_matches(float(rows["learned"]["learned_prior_js_bits"]), 0.2)
-    assert_matches([float(rows["learned"][k]) for k in ("origin_error_median_A", "origin_error_p90_A")], [2.5, 6.5])
-    assert [rows["fixed_true"][k] for k in ("origin_error_median_A", "origin_error_p90_A")] == ["", ""]  # not measured
+    origin_keys = ("origin_error_median_A", "origin_error_p90_A", "origin_error_fraction_over_pixel")
+    assert_matches([float(rows["learned"][k]) for k in origin_keys], [2.5, 6.5, 0.375])
+    assert_matches([float(rows["fixed_true"][k]) for k in origin_keys], [1.5, 3.5, 0.375])
     # cFAR: the cone that crosses 0.143 never has the largest area; the smallest cone's curve ends at 0.3
     weights = 4.0 * math.pi * np.arange(3) ** 2
     gt_area = [weights[1:] @ np.nan_to_num(curve[1:]) for curve in _GT_CONE_CURVES]
@@ -537,6 +541,45 @@ def test_a_variant_evaluated_before_the_inplane_error_is_refused_not_compared_wi
     del metrics["pose_inplane_error_aligned_deg"]
     with pytest.raises(ValueError, match="old: metrics.json has no in-plane pose error; rerun evaluate_run.py"):
         cmp.summary_row("old", metrics)
+
+
+def test_origin_errors_of_both_halves_are_read_in_order_in_pixels(tmp_path):
+    np.savez(
+        tmp_path / "pose_errors.npz",
+        origin_half1=np.array([1.5, 0.25], np.float32),
+        origin_half2=np.array([3.0], np.float32),
+    )
+    assert_matches(cmp.read_origin_errors(tmp_path, 0.5), np.array([3.0, 0.5, 6.0]))
+
+
+def test_a_variant_evaluated_before_the_origin_error_is_refused_not_compared_without_it(tmp_path):
+    old = _evaluation(tmp_path, "old", source="learned", auc=0.5, median=2.0, js_skill=0.7)
+    with np.load(old / "pose_errors.npz") as archive:
+        kept = {k: archive[k] for k in archive.files if "origin" not in k}
+    np.savez(old / "pose_errors.npz", **kept)
+    with pytest.raises(ValueError, match="pose_errors.npz has no origin errors; rerun evaluate_run.py"):
+        cmp.read_origin_errors(old, 2.0)
+    metrics = json.loads((old / "metrics.json").read_text())
+    del metrics["origin_error_angstrom"]
+    with pytest.raises(ValueError, match="old: metrics.json has no origin error; rerun evaluate_run.py"):
+        cmp.summary_row("old", metrics)
+
+
+def test_runs_of_different_pixel_sizes_are_not_compared(tmp_path):
+    first = _evaluation(tmp_path, "first", source="learned", auc=0.5, median=2.0, js_skill=0.7)
+    second = _evaluation(tmp_path, "second", source="learned", auc=0.5, median=2.0, js_skill=0.7)
+    metrics = json.loads((second / "metrics.json").read_text())
+    metrics["resolution"]["voxel_size_A"] = 3.0
+    (second / "metrics.json").write_text(json.dumps(metrics))
+    with pytest.raises(SystemExit, match="different pixel sizes"):
+        cmp.main(["--runs", f"first={first}", f"second={second}", "--out-dir", str(tmp_path / "out")])
+
+
+def test_error_density_follows_the_given_range():
+    grid, density = cmp.error_density(np.array([1.0, 1.0, 1.0]), cmp.ORIGIN_ERROR_RANGE_PX)
+    low, high = cmp.ORIGIN_ERROR_RANGE_PX
+    assert low < grid[0] < 1.1 * low and high / 1.1 < grid[-1] < high  # the grid spans the range, not the degrees one
+    assert abs(np.log10(grid[np.argmax(density)])) < 0.05
 
 
 def test_error_density_integrates_to_one_and_peaks_at_the_typical_error():
