@@ -540,3 +540,7 @@ commit that added the field). The two failures are resume tests that compare a r
 `test_pc_schedule.py::..._resumes_to_the_same_model`. They fail the same way on the base `ppca_schedule` tip `801bd46b` (four runs each, same GPU model: radius rule 4 of 4 on the base and 4 of 4
 on this branch, PC schedule 1 of 4 and 2 of 4), so they are not from the contrast changes; the radius-rule test is the known GPU flake of the gate merge. No tolerance was changed (the owner's call).
 
+**cahra_01 smoke (job 17337515, snapshot v14, 3,000 random particles, 60 VDAM iterations, stage change at 31, q 5, `--contrast latent`):** the real-data path runs end to end (0.22 s per
+iteration, final embeddings written). Contrast estimates at the end: mean 1.001, sd 0.109, range 0.63 to 2.17, none below the floor; the prior sd rose from 0.20 to 0.23 and the gain stayed
+within -0.26 to +0.06 (poses are still random at this point, so this says only that nothing breaks). The six full runs are still queued.
+
