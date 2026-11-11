@@ -23,7 +23,13 @@ from recovar.reconstruction.noise import make_radial_noise
 
 from relax.ppca_initial_model import checkpoint
 from relax.ppca_initial_model.filament_band import attachment_support_mask, uniform_log_prior
-from relax.ppca_initial_model.initialization import bandlimit_and_mask, initialize, support_mask, with_initial_mean
+from relax.ppca_initial_model.initialization import (
+    bandlimit_and_mask,
+    initialize,
+    support_mask,
+    with_initial_mean,
+    zero_low_shells,
+)
 from relax.ppca_initial_model.noise import update_noise
 from relax.ppca_initial_model.sgd_recipe import NewtonSGD
 from relax.ppca_initial_model.sgd_recipe import describe as describe_newton
@@ -358,6 +364,14 @@ def _update_rule_measured(config, diagnostics):
         f"second-moment scaling {'on' if diagnostics['second_moment_scaling'] else 'off'}, direction divisor mean "
         f"{diagnostics['direction_divisor_mean']}, second moment mean {diagnostics['second_moment_mean']}"
     )
+
+
+def _frozen_noise_shells(dataset):
+    """Noise shells the data carry no information on: the DC pixel of DC-free particles, the shells below K of
+    :func:`relax.ppca_initial_model.tomo.free_low_shells`."""
+    if not isinstance(dataset, TiltParticles):
+        return ()
+    return tuple(range(max(int(dataset.free_shells), 1 if dataset.dc_free else 0)))
 
 
 def _gemm_precision_used(config):
@@ -757,6 +771,8 @@ def run(
                 diameter_ang, band=config.band(),
             )
             info = {**info, "initial_mean": config.initial_mean, "initial_mean_scale": config.initial_mean_scale}
+        if config.likelihood_min_shell:
+            theta = zero_low_shells(theta, dataset.volume_shape, config.likelihood_min_shell)
         rng = np.random.default_rng(config.seed + 1)
         order = rng.permutation(dataset.n_images)
         state = State(
@@ -852,8 +868,8 @@ def run(
             proposed_momentum, diagnostics = newton.step(
                 stats, support, shells, iteration, metric_floor(dataset.grid_size), config.q
             )
-            momentum = bandlimit_and_mask(proposed_momentum, dataset.volume_shape, radius, mask)
-            theta = bandlimit_and_mask(state.theta + proposed_momentum, dataset.volume_shape, radius, mask)
+            momentum = bandlimit_and_mask(proposed_momentum, dataset.volume_shape, radius, mask, config.likelihood_min_shell)
+            theta = bandlimit_and_mask(state.theta + proposed_momentum, dataset.volume_shape, radius, mask, config.likelihood_min_shell)
             diagnostics["velocity_l2_after_support"] = float(jnp.linalg.norm(momentum))
         elif config.optimizer == "momentum_sgd":
             gradient = sum(result.residual_gradient for result in stats)
@@ -884,8 +900,8 @@ def run(
             )
             if config.sgd_halfset_gate:
                 diagnostics.update(gates.diagnostics())
-            momentum = bandlimit_and_mask(proposed_momentum, dataset.volume_shape, radius, mask)
-            theta = bandlimit_and_mask(state.theta + proposed_momentum, dataset.volume_shape, radius, mask)
+            momentum = bandlimit_and_mask(proposed_momentum, dataset.volume_shape, radius, mask, config.likelihood_min_shell)
+            theta = bandlimit_and_mask(state.theta + proposed_momentum, dataset.volume_shape, radius, mask, config.likelihood_min_shell)
             diagnostics["velocity_l2_after_support"] = float(jnp.linalg.norm(momentum))
         else:
             theta, moments, diagnostics = stochastic_update(
@@ -899,7 +915,7 @@ def run(
                 image_size=dataset.grid_size,
                 second_moment=config.vdam_second_moment,
             )
-            theta = bandlimit_and_mask(theta, dataset.volume_shape, radius, mask)
+            theta = bandlimit_and_mask(theta, dataset.volume_shape, radius, mask, config.likelihood_min_shell)
             momentum = None
         numerator = sum(s.residual_num for s in stats)
         denominator = sum(s.residual_den for s in stats)
@@ -914,7 +930,7 @@ def run(
                 numerator,
                 denominator,
                 full_data=count == dataset.n_images,
-                frozen_shells=(0,) if isinstance(dataset, TiltParticles) and dataset.dc_free else (),
+                frozen_shells=_frozen_noise_shells(dataset),
             )
         except ValueError:
             checkpoint.save(output / f"failure_before_{iteration:04d}.npz", state, config, identity)

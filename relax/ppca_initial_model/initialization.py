@@ -61,12 +61,21 @@ def _spherical_support(shape, radius):
     return jnp.asarray((radii <= radius)[:, None], jnp.float32)
 
 
-def bandlimit_and_mask(theta, shape, radius, mask):
-    """Common real-space mask and common spherical support for all channels."""
+def bandlimit_and_mask(theta, shape, radius, mask, min_shell=0):
+    """Common real-space mask and common spherical support for all channels. ``min_shell`` K > 0 also zeroes every
+    channel's shells below K (rounded radius, the noise shells' convention), after the mask: the model has no
+    content where the likelihood gives the data no weight (``TiltParticles.free_shells``)."""
     half_shape = ftu.volume_shape_to_half_volume_shape(shape)
     real = ftu.get_idft3_real(theta.T.reshape((-1,) + half_shape), shape)
     spectrum = ftu.get_dft3_real(real * mask).reshape(theta.shape[1], -1).T
-    return spectrum * _spherical_support(tuple(int(n) for n in shape), radius).astype(spectrum.real.dtype)
+    spectrum = spectrum * _spherical_support(tuple(int(n) for n in shape), radius).astype(spectrum.real.dtype)
+    return spectrum if not min_shell else zero_low_shells(spectrum, shape, min_shell)
+
+
+def zero_low_shells(theta, shape, min_shell):
+    """``theta`` (half volume, channels) with the shells below ``min_shell`` (rounded radius) zeroed."""
+    shells = np.asarray(ftu.get_grid_of_radial_distances_real(tuple(int(n) for n in shape)), np.int64).reshape(-1)
+    return theta * jnp.asarray((shells >= int(min_shell))[:, None], theta.real.dtype)
 
 
 def _blob_field(amplitude, diameter, rng, center=None):

@@ -96,6 +96,12 @@ class Config:
     # sgd_mean_gate_floor F: multiply the mean's step per shell by clip(rho, F, 1), rho the PC gate's moving
     # half-batch gradient correlation computed on the mean channel.
     sgd_mean_gate_floor: float | None = None
+    # likelihood_min_shell K > 0 (subtomogram particles): no likelihood weight on image shells below K
+    # (tomo.free_low_shells): the images are zeroed there, the model's mean and PCs held at zero on 3D shells below
+    # K and those noise shells fixed. For low-frequency content shared by a particle's tilts that is not the
+    # particle (per-image offsets and gradients, ice, surrounding density); K = ceil(box / particle diameter in px)
+    # keeps every shell finer than the particle.
+    likelihood_min_shell: int = 0
     # Keep the orientation prior uniform (the learned direction prior is never used or kept).
     uniform_direction_prior: bool = False
     # Translation search per update: ((first update, range px, step px), ...) replacing shift_range and
@@ -284,6 +290,8 @@ class Config:
             raise ValueError("The PC minimum shell must be >= 0 and the relative eigenvalue floor in (0, 1)")
         if (self.sgd_pc_min_shell or self.sgd_eig_floor_rel is not None) and self.sgd_direction != "coupled":
             raise ValueError("The PC minimum shell and relative eigenvalue floor need the coupled direction")
+        if self.likelihood_min_shell < 0:
+            raise ValueError("The likelihood minimum shell must be >= 0")
         if self.sgd_mean_gate_floor is not None and (
             not 0 < self.sgd_mean_gate_floor <= 1 or self.sgd_pc_gate_floor is None
         ):

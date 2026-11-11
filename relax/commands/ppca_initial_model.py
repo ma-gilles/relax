@@ -162,6 +162,13 @@ def add_args(parser):
         "--initial-mean-scale", type=float, default=1.0, help="factor on --initial-mean (map units to image units)"
     )
     parser.add_argument(
+        "--likelihood-min-shell",
+        type=int,
+        default=0,
+        help="subtomogram particles: no likelihood weight on image shells below K (zeroed images, model and noise "
+        "held there); for low-frequency content shared by a particle's tilts that is not the particle (default 0)",
+    )
+    parser.add_argument(
         "--occupancy",
         type=float,
         help="Prior probability that a particle holds the model, against an explicit empty component (needs "
@@ -679,6 +686,7 @@ def main(args=None):
         fixed_core_neighbours=args.fixed_core_neighbours,
         initial_mean=args.initial_mean,
         initial_mean_scale=args.initial_mean_scale,
+        likelihood_min_shell=args.likelihood_min_shell,
     )
     if (args.ios is None) == (args.particles is None):
         raise ValueError("Give either a particle STAR (--i) or an optimisation set (--ios)")
@@ -795,7 +803,14 @@ def main(args=None):
                 )
                 data = subtract_fixed_core(observed, basis, scales=scales, free_offset=offset)
             identity["fixed_core_sha256"] = file_hash(config.fixed_core)
+        if config.likelihood_min_shell:
+            from relax.ppca_initial_model.tomo import free_low_shells
+
+            data = free_low_shells(data, config.likelihood_min_shell)
+            logger.info("no likelihood weight on image shells below %d", config.likelihood_min_shell)
     else:
+        if config.likelihood_min_shell:
+            raise ValueError("--likelihood-min-shell is for subtomogram particles (--ios)")
         data, identity, image_reading = load_training(args.particles, config.preread_images)
     if args.physical_band:
         stages = physical_band_stages(data.grid_size, data.voxel_size, args.band_target_resolution)
