@@ -75,6 +75,9 @@ class TiltParticles:
     # True when ``read`` returns half spectra whose DC pixel carries no information (zeroed: a free per-image
     # offset, subtract_fixed_core(free_offset=True)); the controller then keeps noise shell 0 (the DC pixel) fixed.
     dc_free: bool = False
+    # K > 0 when ``read`` returns half spectra zeroed on the shells below K (:func:`free_low_shells`); the controller
+    # keeps those noise shells fixed and the model zero there (``Config.likelihood_min_shell``).
+    free_shells: int = 0
 
     @property
     def particle_noise_group(self) -> np.ndarray:
@@ -171,6 +174,31 @@ def _drop_dc(precision_or_half, image_shape):
     out = np.array(precision_or_half, copy=True)
     out[..., half_spectrum_dc_index(image_shape)] = 0
     return out
+
+
+def free_low_shells(particles: TiltParticles, min_shell: int) -> TiltParticles:
+    """The particles with no likelihood weight on image shells below ``min_shell`` K: ``read`` returns half spectra
+    and CTF rows zeroed there (so the prediction ``CTF P(Aproj) V`` is zero there too, whatever the interpolation
+    spills from the model's shells K and above), and the controller (``Config.likelihood_min_shell``) holds the model's mean and PCs at zero on the
+    3D shells below K and the noise of those shells fixed. Each such pixel then adds the same constant to every
+    pose's and every latent's log-likelihood: the same as an infinite noise there, or a free per-image term of that
+    band (projection-slice: a volume with no shells below K projects to images with none). Use it when the images
+    carry low-frequency content the particle model should not explain: per-image offsets and gradients shared by a
+    particle's tilts (background normalisation, ice thickness, the surrounding density). Apply after any fixed-core
+    subtraction."""
+    K = int(min_shell)
+    if K <= 0:
+        return particles
+    from relax.fourier.half_spectrum import make_shell_indices_half
+
+    keep = jnp.asarray(np.asarray(make_shell_indices_half(particles.image_shape)).reshape(-1) >= K)
+    inner = particles.read
+
+    def read(image_ids):
+        images, half, ctf = inner(image_ids)
+        return images, jnp.where(keep[None, :], half, 0).astype(half.dtype), jnp.where(keep[None, :], ctf, 0).astype(ctf.dtype)
+
+    return dataclasses.replace(particles, read=read, free_shells=K)
 
 
 def subtract_fixed_core(

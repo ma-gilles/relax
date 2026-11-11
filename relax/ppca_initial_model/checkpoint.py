@@ -65,6 +65,7 @@ _ADDED_CONFIG_DEFAULTS = {
     "sgd_pc_min_shell": 0,
     "sgd_eig_floor_rel": None,
     "sgd_mean_gate_floor": None,
+    "likelihood_min_shell": 0,
 }
 
 
