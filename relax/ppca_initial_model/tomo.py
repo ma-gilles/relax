@@ -584,9 +584,13 @@ def tilt_particles_from_tomo_dataset(tomo, *, preread: bool = False) -> TiltPart
         rows = image_rows[image_ids]
         if preread:
             if "images" not in held:
-                held["images"] = np.concatenate(
-                    [fetch(image_rows[start : start + 4096]) for start in range(0, image_rows.size, 4096)]
-                )
+                # One array filled chunk by chunk: a concatenation of the chunks would need the stack's bytes twice.
+                first = fetch(image_rows[:4096])
+                stack = np.empty((image_rows.size,) + first.shape[1:], first.dtype)
+                stack[: len(first)] = first
+                for start in range(4096, image_rows.size, 4096):
+                    stack[start : start + 4096] = fetch(image_rows[start : start + 4096])
+                held["images"] = stack
             images = held["images"][image_ids]
         else:
             images = fetch(rows)
