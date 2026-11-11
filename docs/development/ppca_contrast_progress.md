@@ -534,3 +534,9 @@ the latent are on the same snapshot so that a difference is not the 17 gate comm
 (final state, sd, gain and estimate trajectories, the intraclass correlation of the contrast estimate over micrographs, whether the latents of a run without the latent carry the contrast).
 Jobs 17337515 (smoke), 17337517 to 17337522; all still pending at the time of writing: the per-user running-job limit (16) is held by the owner's other project.
 
+**Local GPU test run (one A100, outside Slurm, unit tests only), tip `ab6532a6`:** `tests/unit/ppca_contrast`, `tests/unit/ppca_initial_model` and the momentum SGD file: 468 passed, 3 skipped, 2 failed;
+`tests/unit/ppca_refinement`: all pass once `test_ppca_stream_kernels.py` builds the moment carry with its `second_moment_diagonal` field (four failures before, from the earlier
+commit that added the field). The two failures are resume tests that compare a resumed and a full run at rtol 1e-6 on float32: `test_radius_rule.py::..._resumes_to_the_same_radii_and_model` and
+`test_pc_schedule.py::..._resumes_to_the_same_model`. They fail the same way on the base `ppca_schedule` tip `801bd46b` (four runs each, same GPU model: radius rule 4 of 4 on the base and 4 of 4
+on this branch, PC schedule 1 of 4 and 2 of 4), so they are not from the contrast changes; the radius-rule test is the known GPU flake of the gate merge. No tolerance was changed (the owner's call).
+
