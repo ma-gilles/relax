@@ -166,6 +166,8 @@ def plot_metric(
     mixtures = [row for row in rows if "offsets_sigma_A" not in row]
     noises, counts = sweep["noise_levels"], sorted(sweep["n_images"], reverse=True)
     values = [row[column] for row in mixtures if row[column] is not None]
+    if column == "gt_fsc_auc_aligned":  # the true-pose ceilings are drawn in these panels too
+        values += [row["gt_fsc_auc_true_poses"] for row in mixtures if row.get("gt_fsc_auc_true_poses") is not None]
     fig, axes = plt.subplots(
         len(counts), len(noises), figsize=(3.6 * len(noises) + 0.8, 2.9 * len(counts) + 1.2), squeeze=False,
         sharex=True, sharey=True, facecolor=PALETTE["surface"],
@@ -184,10 +186,11 @@ def plot_metric(
                     x, y = zip(*points)
                     ax.plot(x, y, color=colors[variant], marker=MARKERS[variant], markersize=7, linewidth=2,
                             markeredgecolor=PALETTE["surface"], markeredgewidth=1.5)
-            ceilings = {row["gt_fsc_auc_true_poses"] for row in cell if row.get("gt_fsc_auc_true_poses") is not None}
+            ceilings = sorted(
+                {(row["kent_weight"], row["gt_fsc_auc_true_poses"]) for row in cell if row.get("gt_fsc_auc_true_poses") is not None}
+            )
             if column == "gt_fsc_auc_aligned" and ceilings:
-                for ceiling in ceilings:
-                    ax.axhline(ceiling, color=PALETTE["ink2"], linewidth=1.2, linestyle=":")
+                ax.plot(*zip(*ceilings), color=PALETTE["ink2"], linewidth=1.5, linestyle=":", marker="_", markersize=9)
             if log:
                 ax.set_yscale("log")
             ax.set_title(f"{n // 1000}k particles, noise {noise:g}", color=PALETTE["ink"], fontsize=10)
@@ -207,7 +210,7 @@ def plot_metric(
         for v in VARIANT_ORDER
     ]
     if column == "gt_fsc_auc_aligned":
-        legend.append(Line2D([], [], color=PALETTE["ink2"], linewidth=1.2, linestyle=":", label="true poses"))
+        legend.append(Line2D([], [], color=PALETTE["ink2"], linewidth=1.5, linestyle=":", label="true poses"))
     fig.suptitle(title, x=0.01, ha="left", color=PALETTE["ink"])
     fig.legend(handles=legend, loc="lower center", ncol=len(legend), frameon=False, labelcolor=PALETTE["ink2"])
     fig.tight_layout(rect=(0, 0.06, 1, 0.95))
