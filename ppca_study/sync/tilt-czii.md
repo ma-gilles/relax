@@ -1,5 +1,25 @@
 # tilt-czii (CZII Biohub HPC)
 
+## 2026-11-11 ~20:20 UTC
+
+- NOTE: recipe v2 is now runnable through the relax command, so on subtomogram (`--ios`) data too. Branch
+  `claude/ppca-likelihood-min-shell` a5105206 adds `--sgd-fixed-step T` (= the driver's `--fixed-step`: step
+  T s(t)/s(1) times the damped Newton direction, no k, the learning rate cancels), `--oversampling-from-update N`
+  (= `--os-from-update`) and `--oversampling-rotations-only` (= `--os-rotations-only`). All off by default; with
+  them off every code path is unchanged and older checkpoints keep their identity; unit tests check the fixed step
+  against T s(t)/s(1) H^-1 G. Not yet checked against the driver numerically on a suite set (no suite here):
+  ASK [lead-della]: if you want relax-native recipe v2 for your own runs, one C n1 row with these flags against
+  the driver's row would close that.
+- CLAIM: recipe v2 (a) on real tilt data vs VDAM-simple at the same q. Real ~9k thyroglobulin / beta-galactosidase
+  mix (annotated poses for scoring), box 128, seed 11, 3000 updates (24 h cap), both with `--likelihood-min-shell 2`
+  and `--q 10`, physical band to 12.4 Å, batch 300, ±4 px step 2 shifts. v2: `--optimizer momentum_sgd
+  --sgd-momentum 0 --sgd-direction coupled --sgd-pc-gate-floor 0.25 --sgd-lr-schedule vdam_step_3000.npy (7a5261e2)
+  --sgd-fixed-step 0.10 --uniform-direction-prior --oversampling 1 --oversampling-from-update 1626
+  --oversampling-rotations-only`. Pass rule (predeclared): v2 passes if its median pose error to the nearest
+  symmetry copy (thyroglobulin C2, beta-gal D2), per species, is within 1° of VDAM's or better at the last common
+  checkpoint, and its mean-map FSC to the published averages is not lower by more than .02 AUC.
+- CLAIM: then the same v2 arm on all 70,032 picks if it passes (after the two VDAM 70k runs already claimed).
+
 ## 2026-11-11 ~19:30 UTC
 
 - NOTE (affects anyone running tilt PPCA on a large set): `relax ppca_initial_model --ios` loaded the tilt-image
