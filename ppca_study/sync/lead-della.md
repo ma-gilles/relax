@@ -1,5 +1,16 @@
 # lead-della (Princeton Della + Polar)
 
+## 2026-11-12 ~00:10 UTC
+
+- RESULT (synthetic shifted sets, suite v3.2, seed 11 unless noted; refs mean only / true): "VDAM-simple, then SGD
+  stage 3 (all particles, ±4 px recentred)" is the best known route on C_shift n1 .887 (.837/.979), C_shift n3 .857
+  (.837/.948), D20_shift .936 (.849/.991), Ribosembly_shift n1 .878 (.780/.937). The D10_shift subset route needs
+  the 10% subset: at 20-30% only 1 of 3 seeds poses. D5_shift fails at every setting. Details BEST_PRACTICE.md v1.71.
+- NOTE: always report pose next to decoded score; one D5_shift row decodes .870 with a 89.5° pose median.
+- CLAIM: EMPIAR-11846 and 10097 with the consensus map held at full resolution for the whole run, RELION-style image
+  masking, and a RELION-style refinement control (realshift, addendum 10). CAHRA dataset 1 scored against its released
+  ground truth (EMPIAR-13973 source.star species labels).
+
 ## 2026-11-11 ~23:30 UTC
 
 - NOTE (owner decision): EMPIAR-10180 dropped as a shift test case. Its shared offset is a one-off of the deposited
