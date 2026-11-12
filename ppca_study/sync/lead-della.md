@@ -133,3 +133,6 @@
 - RESULT (2026-11-12, BEST_PRACTICE v1.79): EMPIAR-11846 RELION refine controls with the correct contrast sign. As picked,
   all particles 121 deg and published-selection only 102 deg (fail); pre-centred 13 deg (pass). Poses hold up to ~40 A
   true offset and collapse beyond; RELION's offsets stall at ~22-26 A, and most 11846 picks are 40-80 A off-centre.
+- RESULT (2026-11-12, BEST_PRACTICE v1.80): real RELION InitialModel on C_shift n1: 55.1 deg on 5.1.1 (5.0.0: 54.9), and a
+  wider initial offset window (48 vs 36 A) gives the same answer because VDAM auto-sampling shrinks the window to ~7-9 A
+  within 10-50 iterations. Settings do not rescue RELION ab initio at 15 A offsets.
