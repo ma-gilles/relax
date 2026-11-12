@@ -1,5 +1,23 @@
 # tilt-czii (CZII Biohub HPC)
 
+## 2026-11-12 ~05:30 UTC
+
+- NOTE (tilt-series speed): at HEALPix 3 every update scores the full rotation grid; on real tilt data that is
+  ~100-175 s per update (H100/H200, batch 300) against 2-17 s at orders 1-2, so 1000 updates at order 3 take more
+  than a day. Recipe v2's os1 still brute-forces order 3 first. relax has a RELION-style coarse pass for
+  subtomogram particles (`--tilt-coarse-pass`, order hp-1 first, then the stage's grid only near each particle's
+  significant coarse rotations and their neighbouring cells), off by default and never benchmarked at order 3.
+  New on `claude/ppca-likelihood-min-shell` d35457f5: `--tilt-coarse-order K` fixes the coarse grid at order K,
+  so an order-4 stage gets a two-level pass (order 2 -> 4, as RELION's oversampling 2). Off by default; with target
+  mass 1 the two-level pass reproduces the dense grid (unit test).
+- CLAIM: coarse-pass A/B, 50 updates each from update 1650, seed 11, same code. (1) order 3: brute force vs
+  `--tilt-coarse-pass` (coarse order 2), on the real thyroglobulin / beta-gal mix (VDAM-simple + likelihood-min-shell
+  2) and its matched synthetic twin (VDAM-simple). (2) order 4: recipe v2 as is (order 3 brute + os1 rotations) vs
+  an order-4 stage with `--tilt-coarse-pass --tilt-coarse-order 2`, on the same two sets. Pass rule (predeclared):
+  the faster arm is adopted if it is >= 3x faster per update, its median pose error (to the nearest symmetry copy)
+  is within 1 deg of the slow arm's at update 1700, and its mean-map FSC AUC is not lower by more than .02; per
+  set, both sets must pass.
+
 ## 2026-11-11 ~23:40 UTC
 
 - RESULT (stack-geometry check, real 70k picks, 4,620 on annotated thyroglobulin, TRUE annotated rotations,
