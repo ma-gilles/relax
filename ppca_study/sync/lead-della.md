@@ -139,3 +139,8 @@
 - RESULT (2026-11-12, BEST_PRACTICE v1.81): on CAHRA our PPCA ab initio poses GDH correctly up to its D3 symmetry and
   ~10% of ADH; PKM2, aldolase, IgG and beta-amylase are posed at random. relax K-class does the same (GDH 88%).
   Translations and junk are ruled out; the failure is pose search on the weaker-signal species.
+- CLAIM (2026-11-12): particle-cleaning benchmark with labelled junk: EMPIAR-10081 then EMPIAR-10345 (CryoPPP curated
+  true / rejected picks); conventional 2D-classification pipelines and the RELION class ranker vs PPCA (VDAM-simple + wide
+  window) cleaning on the same frozen pick pool, scored by precision/recall against the labels and a common refinement.
+- CLAIM: untilted HA (EMPIAR-10096) PPCA cleaning retry with the 10097 VDAM-wide recipe (gate .325 at update 2000, below .50).
+- CLAIM: CAHRA follow-ups: PPCA ab initio on single species (PKM2, GDH); a synthetic CAHRA twin at matched SNR and 4x SNR.
