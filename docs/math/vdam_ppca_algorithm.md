@@ -1839,6 +1839,32 @@ coarse parent). The oversampled path needs a coarse significance pass; the
 SPA one runs the host-mask dense engine, which has no tilt axis. A coarse pass
 through the same tilt stream is the follow-up, if the full grid is too slow.
 
+**Two low-pass limits, for two different reasons (keep them apart).**
+
+1. *Optimisation schedule* (`stages`, `--physical-band`): each stage's Fourier
+   radius is the band the model may use at that point of the run, marched up
+   with the HEALPix order (frequency marching). It shapes the optimisation
+   landscape; it is part of the method, and every pass that updates the model
+   (the fine pass, the M-step, the noise) uses it.
+2. *Search bound* (pass 1 of a coarse-to-fine pose search: adaptive
+   oversampling, `--tilt-coarse-pass`): a coarse rotation cell is scored at its
+   centre only, so pass 1 uses only the frequencies up to which every pose
+   inside the cell scores close to the centre: RELION's coarse image size for
+   the coarse grid's angular step and the particle diameter
+   (`pass1_image_size`; rotated distance `step/360 * pi * D`, resolution that
+   over 1.2), capped at the stage's window. It only decides which poses the
+   fine pass visits; it never limits the model.
+
+A change to one must not move the other: a coarser search grid lowers the
+pass-1 window, not the stage's radius; a new stage schedule changes the
+model's band, not the pass-1 window (except through the cap).
+
+`--tilt-coarse-pass` (subtomogram particles, from order 2): pass 1 on the
+order `hp - 1` grid (or `--tilt-coarse-order K`) at the search-bound window,
+then the stage's grid at the stage's window on the rows whose nearest coarse
+rotation is significant for the particle (posterior mass `target_mass`, at
+most `max_significant`) or within 1.5 coarse steps of one.
+
 ### 16.6 First-version limits
 
 Approved for the first version (October 2, 2026), each to be lifted separately:
