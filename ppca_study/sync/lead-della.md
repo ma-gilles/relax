@@ -119,3 +119,7 @@
 - RESULT (2026-11-12, BEST_PRACTICE v1.76): CAHRA relax K-class at 600 iterations levels off at ARI .15-.17 (K4 .174,
   K6 .161, K8 .150; best PPCA .083); class maps are mask-filling speckled balls, not proteins, so the separation is
   from coarse 2D features. Species were imaged on separate micrographs, so micrograph-level features can leak labels.
+- RESULT (2026-11-12, BEST_PRACTICE v1.77): CAHRA oracle RECOVAR (poses from per-species refinements, box 64) separates
+  the six species (macro-AUC .999) vs our PPCA .791: resolution and the linear model are not the limit, pose/frame is.
+  Template re-picking: NO-GO (single-particle detection ~2 sigma; even oracle templates fail the null test).
+- NOTE: relax PPCA CUDA kernels cap q at 16 (basis size P = q+1 <= 17).
