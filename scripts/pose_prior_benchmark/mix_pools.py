@@ -8,7 +8,8 @@ a ``particles.star`` that names the pools' stacks through symbolic links (``LABE
 copied. The micrograph name of a particle gets ``LABEL_`` in front, so particles of different pools never share a
 micrograph (RELION's scale group), as the particles of one pool never do. The true viewing-direction distribution of
 the mixture, the pools' distributions weighted by ``COUNT / total``, is recorded in ``pose_distribution.json``
-(``true_prior.population_prior`` reads it).
+(``true_prior.population_prior`` reads it). Pools displaced by ``add_offsets.py`` mix like any other, and the
+mixture's record then holds their offsets; every pool must be displaced by the same sigma, or none.
 
 Run (CPU node)::
 
@@ -95,17 +96,35 @@ def pool_pose_record(pool: Pool) -> dict[str, Any]:
     return {key: record[key] for key in POSE_RECORD_KEYS if key in record}
 
 
+def pools_offsets_record(pools: list[Pool]) -> dict[str, Any] | None:
+    """The offsets record of a mixture of displaced pools, None for centred pools.
+
+    Holds the common standard deviation and each pool's own record. Raises when only some pools are displaced or the
+    standard deviations differ.
+    """
+    records = {pool.label: json.loads((pool.directory / "pose_distribution.json").read_text()).get("offsets") for pool in pools}
+    if all(record is None for record in records.values()):
+        return None
+    if any(record is None for record in records.values()):
+        raise ValueError("some pools are displaced and some are centred")
+    sigmas = {record["sigma_angstrom"] for record in records.values()}
+    if len(sigmas) != 1:
+        raise ValueError(f"the pools are displaced by different sigmas: {sorted(sigmas)}")
+    return {"kind": "gaussian", "sigma_angstrom": sigmas.pop(), "pools": records}
+
+
 def mix_pools(pools: list[Pool], out_dir: Path) -> dict[str, Any]:
     """Write the mixture of ``pools`` to ``out_dir``; returns its pose-distribution record.
 
-    Refuses pools whose optics differ (the same CTF model, voxel size and box) or whose reference maps differ, and
-    duplicate labels.
+    Refuses pools whose optics differ (the same CTF model, voxel size and box) or whose reference maps differ,
+    duplicate labels, and a mix of displaced and centred pools or of different offset sigmas.
     """
     if not pools:
         raise ValueError("no pools to mix")
     if len({pool.label for pool in pools}) != len(pools):
         raise ValueError("pool labels must be distinct")
     check_references(pools)
+    offsets = pools_offsets_record(pools)
     selected = [select_pool(pool) for pool in pools]
     for pool, (optics, _) in zip(pools[1:], selected[1:]):
         if not optics.equals(selected[0][0]):
@@ -123,6 +142,7 @@ def mix_pools(pools: list[Pool], out_dir: Path) -> dict[str, Any]:
         "components": [{"weight": pool.count / total, "poses": pool_pose_record(pool)} for pool in pools],
         "n_images": total,
         "pools": [{"label": pool.label, "directory": str(pool.directory), "count": pool.count} for pool in pools],
+        **({"offsets": offsets} if offsets else {}),
     }
     (out_dir / "pose_distribution.json").write_text(json.dumps(record, indent=2) + "\n")
     return record

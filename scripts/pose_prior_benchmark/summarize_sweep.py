@@ -2,22 +2,24 @@
 """Summarise the pose-prior sweep across its datasets: one table and one figure per metric.
 
 Reads ``<scenario>/comparison/variants.csv`` (``compare_variants.py``) of every scenario of the sweep that
-``config.yaml``'s ``sweep`` section (plus the override files the run used) describes, and writes to ``--out-dir``:
+``config.yaml``'s ``sweep`` section (plus the override files the run used) describes, from the first of the output
+roots that has it (a run that added cells later has its own root), and writes to ``--out-dir``:
 
 * ``summary.csv``: one row per scenario and variant with the sweep coordinates (``kent_weight``, ``n_images``,
-  ``noise_level``; the offsets scenario has ``offsets_sigma_A``) beside the comparison's columns and
+  ``noise_level``; a cell with offsets has ``offsets_sigma_A``) beside the comparison's columns and
   ``gt_fsc_auc_fraction_of_true_poses``, the aligned FSC area over the area of the map from the true poses;
 * ``summary_<metric>.png``: a panel per noise level (columns) and particle count (rows), the metric against the
   Kent share with one line per variant;
-* ``summary_offsets.png``: the offsets scenario against its centred counterpart (the mixture of Kent share 1 with the
-  same noise level and particle count), per variant.
+* ``summary_offsets.png``: the cells with offsets against their centred counterparts (the mixture of the same Kent
+  share, noise level and particle count), a column per noise level and particle count and a row per metric, the metric
+  against the Kent share with one line per variant, solid centred and dashed with offsets.
 
 A scenario without a ``variants.csv`` is a gap in the figures; the script stops unless ``--allow-missing`` is given,
 and lists the gaps either way.
 
 Run::
 
-    python scripts/pose_prior_benchmark/summarize_sweep.py --output-root ROOT --out-dir ROOT/sweep_summary \\
+    python scripts/pose_prior_benchmark/summarize_sweep.py --output-root ROOT [ROOT ...] --out-dir ROOT/sweep_summary \\
         [--config OVERRIDE.yaml ...]
 """
 
@@ -54,12 +56,12 @@ METRICS = (
     ("final_healpix_order", "Final HEALPix order", "order", False),
     ("iterations", "Iterations", "iterations", False),
 )
-# the offsets figure: (column, title, y label)
+# the offsets figure: (column, title, y label, log axis)
 OFFSET_METRICS = (
-    ("gt_fsc_auc_aligned", "Aligned FSC area", "normalized area"),
-    ("pose_error_fraction_over_90_aligned", "Out-of-plane error over 90 degrees", "share"),
-    ("pose_error_median_aligned_deg", "Median out-of-plane error", "degrees"),
-    ("origin_error_median_A", "Median origin error", "A"),
+    ("gt_fsc_auc_aligned", "Aligned FSC area", "normalized area", False),
+    ("pose_error_fraction_over_90_aligned", "Out-of-plane error over 90 degrees", "share", False),
+    ("pose_error_median_aligned_deg", "Median out-of-plane error", "degrees (log scale)", True),
+    ("origin_error_median_A", "Median origin error", "A (log scale)", True),
 )
 
 
@@ -97,34 +99,35 @@ def _number(value: str) -> Any:
 
 
 def sweep_cells(sweep: dict[str, Any]) -> list[dict[str, Any]]:
-    """Every scenario of the sweep with its coordinates: the mixtures, then the offsets scenario."""
+    """Every scenario of the sweep with its coordinates: the mixtures, then the mixtures with offsets."""
     cells = [
         {"scenario": sweep_lib.mixture_name(share, n, noise), "kent_weight": share, "n_images": n, "noise_level": noise}
         for noise in sweep["noise_levels"]
         for n in sweep["n_images"]
         for share in sweep["kent_weights"]
     ]
-    offsets = sweep.get("offsets")
-    if offsets:
+    for share, n, noise in sweep_lib.offsets_cells(sweep):
         cells.append(
             {
-                "scenario": sweep_lib.offsets_name(offsets["noise_level"]),
-                "kent_weight": 1.0,
-                "n_images": max(sweep["n_images"]),
-                "noise_level": offsets["noise_level"],
-                "offsets_sigma_A": offsets["sigma_angstrom"],
+                "scenario": sweep_lib.offsets_mixture_name(share, n, noise),
+                "kent_weight": share,
+                "n_images": n,
+                "noise_level": noise,
+                "offsets_sigma_A": sweep["offsets"]["sigma_angstrom"],
             }
         )
     return cells
 
 
-def collect_rows(output_root: Path, sweep: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
-    """The rows of every scenario's ``variants.csv`` with the sweep coordinates added, and the scenarios without one."""
+def collect_rows(output_roots: list[Path], sweep: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
+    """The rows of every scenario's ``variants.csv`` (the first output root that has it) with the sweep coordinates
+    added, and the scenarios without one."""
     rows: list[dict[str, Any]] = []
     missing: list[str] = []
     for cell in sweep_cells(sweep):
-        path = output_root / cell["scenario"] / "comparison" / "variants.csv"
-        if not path.is_file():
+        paths = [root / cell["scenario"] / "comparison" / "variants.csv" for root in output_roots]
+        path = next((p for p in paths if p.is_file()), None)
+        if path is None:
             missing.append(cell["scenario"])
             continue
         for row in read_variants(path):
@@ -219,53 +222,68 @@ def plot_metric(
 
 
 def plot_offsets(rows: list[dict[str, Any]], path: Path) -> bool:
-    """The offsets scenario against its centred counterpart, per variant, one bar panel per metric; False when the
-    sweep has no offsets scenario or its counterpart ran."""
+    """The cells with offsets against their centred counterparts: a column per (particle count, noise level) and a row
+    per metric, the metric against the Kent share with a line per variant (solid centred, dashed and hollow with
+    offsets); False when no cell with offsets has a centred counterpart."""
     import matplotlib
 
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
+    from matplotlib.lines import Line2D
 
     shifted = [row for row in rows if "offsets_sigma_A" in row]
-    if not shifted:
+    centred = [row for row in rows if "offsets_sigma_A" not in row]
+    cells = sorted(
+        {(row["n_images"], row["noise_level"]) for row in shifted
+         if any(c["n_images"] == row["n_images"] and c["noise_level"] == row["noise_level"] for c in centred)},
+        key=lambda cell: (cell[1], -cell[0]),
+    )
+    if not cells:
         return False
-    first = shifted[0]
-    centred = [
-        row for row in rows
-        if "offsets_sigma_A" not in row and row["kent_weight"] == 1.0 and row["n_images"] == first["n_images"]
-        and row["noise_level"] == first["noise_level"]
-    ]
-    if not centred:
-        return False
-    variants = [v for v in VARIANT_ORDER if any(row["variant"] == v for row in shifted)]
+    sigma = shifted[0]["offsets_sigma_A"]
     colors = dict(zip(VARIANT_ORDER, VARIANT_COLORS))
-    fig, axes = plt.subplots(1, len(OFFSET_METRICS), figsize=(3.4 * len(OFFSET_METRICS), 3.8), facecolor=PALETTE["surface"])
-    width = 0.38
-    for ax, (column, title, ylabel) in zip(axes, OFFSET_METRICS):
-        _style(ax)
-        for k, (group, alpha, label) in enumerate(((centred, 1.0, "centred"), (shifted, 0.45, "with offsets"))):
-            for i, variant in enumerate(variants):
-                value = next((row[column] for row in group if row["variant"] == variant), None)
-                if value is None:
-                    continue
-                ax.bar(i + (k - 0.5) * width, value, width=width, color=colors[variant], alpha=alpha,
-                       edgecolor=colors[variant], linewidth=1.2)
-                ax.text(i + (k - 0.5) * width, value, f"{value:.3g}", ha="center", va="bottom", color=PALETTE["ink2"], fontsize=8)
-        ax.set_xticks(range(len(variants)), [v.replace("fixed_", "fixed\n") for v in variants])
-        ax.set_title(title, color=PALETTE["ink"], fontsize=10)
-        ax.set_ylabel(ylabel, color=PALETTE["ink2"])
-        ax.margins(y=0.15)
-    from matplotlib.patches import Patch
-
-    fig.suptitle(
-        f"Offsets (sigma {first['offsets_sigma_A']:g} A per axis) against centred particles: {first['n_images'] // 1000}k "
-        f"particles, noise {first['noise_level']:g}", x=0.01, ha="left", color=PALETTE["ink"],
+    fig, axes = plt.subplots(
+        len(OFFSET_METRICS), len(cells), figsize=(3.3 * len(cells) + 0.8, 2.6 * len(OFFSET_METRICS) + 1.2),
+        squeeze=False, sharex=True, sharey="row", facecolor=PALETTE["surface"],
     )
-    fig.legend(
-        handles=[Patch(facecolor=PALETTE["ink2"], label="centred"), Patch(facecolor=PALETTE["ink2"], alpha=0.45, label="with offsets")],
-        loc="lower center", ncol=2, frameon=False, labelcolor=PALETTE["ink2"],
-    )
-    fig.tight_layout(rect=(0, 0.07, 1, 0.93))
+    for c, (n, noise) in enumerate(cells):
+        in_cell = [row for row in rows if row["n_images"] == n and row["noise_level"] == noise]
+        shares = {row["kent_weight"] for row in in_cell if "offsets_sigma_A" in row}
+        for r, (column, title, ylabel, log) in enumerate(OFFSET_METRICS):
+            ax = axes[r, c]
+            _style(ax)
+            for variant in VARIANT_ORDER:
+                for group, style, hollow in (("centred", "-", False), ("offsets", "--", True)):
+                    points = sorted(
+                        (row["kent_weight"], row[column]) for row in in_cell
+                        if row["variant"] == variant and row[column] is not None and row["kent_weight"] in shares
+                        and (("offsets_sigma_A" in row) == (group == "offsets"))
+                    )
+                    if points:
+                        x, y = zip(*points)
+                        ax.plot(x, y, color=colors[variant], linestyle=style, marker=MARKERS[variant], markersize=7,
+                                linewidth=2, markeredgecolor=colors[variant] if hollow else PALETTE["surface"],
+                                markerfacecolor=PALETTE["surface"] if hollow else colors[variant], markeredgewidth=1.5)
+            if log:
+                ax.set_yscale("log")
+            if r == 0:
+                ax.set_title(f"{n // 1000}k particles, noise {noise:g}", color=PALETTE["ink"], fontsize=10)
+            if c == 0:
+                ax.set_ylabel(f"{title}\n{ylabel}", color=PALETTE["ink2"], fontsize=9)
+            ax.set_xticks(sorted(shares))
+            ax.set_xticklabels([f"{100 * w:g}" for w in sorted(shares)])
+            if r == len(OFFSET_METRICS) - 1:
+                ax.set_xlabel("Kent share of the particles (%)", color=PALETTE["ink2"])
+    legend = [
+        Line2D([], [], color=colors[v], marker=MARKERS[v], markersize=7, linewidth=2, markeredgecolor=PALETTE["surface"], label=v)
+        for v in VARIANT_ORDER
+    ] + [
+        Line2D([], [], color=PALETTE["ink2"], linewidth=2, linestyle="-", label="centred"),
+        Line2D([], [], color=PALETTE["ink2"], linewidth=2, linestyle="--", label="with offsets"),
+    ]
+    fig.suptitle(f"Offsets (sigma {sigma:g} A per axis) against centred particles", x=0.01, ha="left", color=PALETTE["ink"])
+    fig.legend(handles=legend, loc="lower center", ncol=len(legend), frameon=False, labelcolor=PALETTE["ink2"])
+    fig.tight_layout(rect=(0, 0.05, 1, 0.96))
     fig.savefig(path, dpi=150, bbox_inches="tight", facecolor=PALETTE["surface"])
     plt.close(fig)
     return True
@@ -274,7 +292,7 @@ def plot_offsets(rows: list[dict[str, Any]], path: Path) -> bool:
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     """Parse the command line."""
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--output-root", type=Path, required=True, help="the run's output_root")
+    parser.add_argument("--output-root", type=Path, nargs="+", required=True, help="the run's output_root(s), searched in order")
     parser.add_argument("--out-dir", type=Path, required=True)
     parser.add_argument("--config", type=Path, nargs="*", default=[], help="override files merged over config.yaml, in order")
     parser.add_argument("--allow-missing", action="store_true", help="draw the scenarios that finished, list the others")

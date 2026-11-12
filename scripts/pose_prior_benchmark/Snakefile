@@ -10,7 +10,7 @@
 #                        (`shifted_from`) with every particle displaced by a random offset, whose true origins
 #                        particles.star records: the simulator's particles are all centred.      [CPU]
 #      mix_pools        (scenario with `mixture_of`, instead of simulate_dataset) a dataset of the first particles
-#                        of several simulated pools (a Kent cap, uniform), whose true viewing-direction
+#                        of several simulated or displaced pools (a Kent cap, uniform), whose true viewing-direction
 #                        distribution is the pools' mixture; the sweep's scenarios (config `sweep`).  [CPU]
 #   2. write_fixed_prior (variants with a fixed prior) the prior file relax refine scores with.
 #   3. refine_k1         relax refine from the low-passed ground-truth map, a global search and no input
@@ -165,9 +165,9 @@ for scenario, entry in SCENARIOS.items():
     if "mixture_of" in entry:
         pools = entry["mixture_of"]
         labels = [pool["label"] for pool in pools]
-        if not pools or len(set(labels)) != len(labels) or any(pool["scenario"] not in SIMULATED for pool in pools):
+        if not pools or len(set(labels)) != len(labels) or any(pool["scenario"] not in SIMULATED + SHIFTED for pool in pools):
             raise WorkflowError(
-                f"scenario {scenario}: mixture_of needs distinct labels and pools that are scenarios simulating their own dataset"
+                f"scenario {scenario}: mixture_of needs distinct labels and pools that are scenarios simulating or shifting their own dataset"
             )
         if {"shifted_from", "dataset_from"} & entry.keys():
             raise WorkflowError(f"scenario {scenario}: mixture_of excludes shifted_from and dataset_from")

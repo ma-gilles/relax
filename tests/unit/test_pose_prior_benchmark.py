@@ -1553,7 +1553,10 @@ SWEEP = {
     "n_images": [50000, 100000],
     "pool_seeds": {"kent": 17, "uniform": 18},
     "variants": ["learned", "fixed_true", "fixed_uniform"],
-    "offsets": {"noise_level": 2.0, "sigma_angstrom": 7.0, "seed": 29},
+    "offsets": {
+        "sigma_angstrom": 7.0, "noise_levels": [2.0], "kent_weights": [0.0, 1.0], "n_images": [50000],
+        "pool_seeds": {"kent": 29, "uniform": 30},
+    },
 }
 
 
@@ -1561,14 +1564,15 @@ def test_the_sweep_names_its_scenarios_by_share_count_and_noise():
     assert sweep.mixture_name(0.33, 50000, 0.5) == "mix_w033_n50k_nz0p5"
     assert sweep.mixture_name(1.0, 100000, 2.0) == "mix_w100_n100k_nz2"
     assert sweep.pool_name("kent", 1.0) == "pool_kent_nz1"
-    assert sweep.offsets_name(0.5) == "offsets_kent_nz0p5"
+    assert sweep.offsets_pool_name("uniform", 0.5) == "pool_uniform_off_nz0p5"
+    assert sweep.offsets_mixture_name(0.66, 100000, 1.0) == "off_w066_n100k_nz1"
     with pytest.raises(ValueError, match="multiples of 1000"):
         sweep.count_tag(1500)
 
 
 def test_the_sweep_has_two_pools_per_noise_level_and_a_mixture_per_cell():
     scenarios = sweep.sweep_scenarios(SWEEP)
-    pools = {name: entry for name, entry in scenarios.items() if name.startswith("pool_")}
+    pools = {name: entry for name, entry in scenarios.items() if name.startswith("pool_") and "_off_" not in name}
     assert sorted(pools) == ["pool_kent_nz0p5", "pool_kent_nz2", "pool_uniform_nz0p5", "pool_uniform_nz2"]
     assert pools["pool_kent_nz2"]["dataset"] == {"noise_level": 2.0, "n_images": 100000, "seed": 17}
     assert pools["pool_uniform_nz2"]["dataset"]["seed"] == 18
@@ -1601,22 +1605,40 @@ def test_a_pure_mixture_has_one_pool_and_a_uniform_one_has_no_fixed_true_variant
     assert scenarios["mix_w033_n50k_nz0p5"]["variants"] == ["learned", "fixed_true", "fixed_uniform"]
 
 
-def test_the_sweep_has_an_offsets_scenario_of_the_kent_pool_when_asked_for_one():
+def test_the_sweep_displaces_the_pools_of_the_offsets_cells_and_mixes_them_like_the_centred_ones():
     scenarios = sweep.sweep_scenarios(SWEEP)
-    assert scenarios["offsets_kent_nz2"] == {
+    assert scenarios["pool_kent_off_nz2"] == {
         "shifted_from": "pool_kent_nz2",
         "offsets": {"sigma_angstrom": 7.0, "seed": 29},
-        "variants": ["learned", "fixed_true", "fixed_uniform"],
+        "variants": [],
     }
+    assert scenarios["pool_uniform_off_nz2"]["offsets"]["seed"] == 30
+    assert not [name for name in scenarios if "_off_nz0p5" in name]  # only the noise levels of the offsets entry
+    mixtures = {name: entry for name, entry in scenarios.items() if name.startswith("off_")}
+    assert sorted(mixtures) == ["off_w000_n50k_nz2", "off_w100_n50k_nz2"]
+    assert mixtures["off_w100_n50k_nz2"]["mixture_of"] == [
+        {"label": "kent", "scenario": "pool_kent_off_nz2", "count": 50000}
+    ]
+    assert mixtures["off_w000_n50k_nz2"]["variants"] == ["learned", "fixed_uniform"]
+    for share_tag in ("w000", "w100"):  # the same particle counts as the centred cell
+        assert [p["count"] for p in mixtures[f"off_{share_tag}_n50k_nz2"]["mixture_of"]] == [
+            p["count"] for p in scenarios[f"mix_{share_tag}_n50k_nz2"]["mixture_of"]
+        ]
     without = sweep.sweep_scenarios({**SWEEP, "offsets": None})
-    assert not [name for name in without if name.startswith("offsets_")]
+    assert not [name for name in without if name.startswith("off_") or "_off_" in name]
 
 
-def test_the_sweep_runs_every_mixture_then_the_offsets_scenario():
+def test_the_offsets_cells_must_be_cells_of_the_sweep():
+    for key, value in (("noise_levels", [3.0]), ("kent_weights", [0.5]), ("n_images", [70000])):
+        with pytest.raises(ValueError, match=f"offsets {key}"):
+            sweep.sweep_scenarios({**SWEEP, "offsets": {**SWEEP["offsets"], key: value}})
+
+
+def test_the_sweep_runs_every_mixture_then_the_mixtures_with_offsets():
     names = sweep.sweep_run_scenarios(SWEEP)
-    assert len(names) == 3 * 2 * 2 + 1 and names[-1] == "offsets_kent_nz2"
-    assert set(names[:-1]) == {n for n in sweep.sweep_scenarios(SWEEP) if n.startswith("mix_")}
-    assert sweep.sweep_run_scenarios({**SWEEP, "offsets": None}) == names[:-1]
+    assert len(names) == 3 * 2 * 2 + 2 and names[-2:] == ["off_w000_n50k_nz2", "off_w100_n50k_nz2"]
+    assert set(names[:-2]) == {n for n in sweep.sweep_scenarios(SWEEP) if n.startswith("mix_")}
+    assert sweep.sweep_run_scenarios({**SWEEP, "offsets": None}) == names[:-2]
 
 
 def test_the_sweep_refuses_a_kent_share_outside_zero_and_one():
@@ -1650,28 +1672,32 @@ SMALL_SWEEP = {
     "noise_levels": [0.5, 1.0],
     "n_images": [50000, 100000],
     "variants": ["learned", "fixed_true", "fixed_uniform"],
-    "offsets": {"noise_level": 1.0, "sigma_angstrom": 7.0, "seed": 29},
+    "offsets": {
+        "sigma_angstrom": 7.0, "noise_levels": [1.0], "kent_weights": [0.0, 1.0], "n_images": [100000],
+        "pool_seeds": {"kent": 29, "uniform": 30},
+    },
 }
 
 
 def test_the_summary_collects_every_scenario_with_its_coordinates_and_the_ceiling_fraction(tmp_path):
     for cell in ss.sweep_cells(SMALL_SWEEP):
         _fake_variants_csv(tmp_path, cell["scenario"], auc=0.5)
-    rows, missing = ss.collect_rows(tmp_path, SMALL_SWEEP)
-    assert missing == [] and len(rows) == (2 * 2 * 2 + 1) * 3
+    rows, missing = ss.collect_rows([tmp_path], SMALL_SWEEP)
+    assert missing == [] and len(rows) == (2 * 2 * 2 + 2) * 3
     first = rows[0]
     assert (first["scenario"], first["kent_weight"], first["n_images"], first["noise_level"]) == ("mix_w000_n50k_nz0p5", 0.0, 50000, 0.5)
     assert_matches(first["gt_fsc_auc_fraction_of_true_poses"], 0.5 / 0.9)
     assert first["gt_resolution_0.143_A_aligned"] is None  # an empty cell stays empty
     shifted = [row for row in rows if "offsets_sigma_A" in row]
-    assert {row["scenario"] for row in shifted} == {"offsets_kent_nz1"} and shifted[0]["n_images"] == 100000
+    assert {row["scenario"] for row in shifted} == {"off_w000_n100k_nz1", "off_w100_n100k_nz1"}
+    assert {row["n_images"] for row in shifted} == {100000}
 
 
 def test_the_summary_lists_the_scenarios_that_have_no_comparison_and_draws_the_rest(tmp_path):
     cells = ss.sweep_cells(SMALL_SWEEP)
     for cell in cells[:-2]:
         _fake_variants_csv(tmp_path, cell["scenario"], auc=0.5)
-    rows, missing = ss.collect_rows(tmp_path, SMALL_SWEEP)
+    rows, missing = ss.collect_rows([tmp_path], SMALL_SWEEP)
     assert missing == [cell["scenario"] for cell in cells[-2:]]
     out = tmp_path / "out"
     with pytest.raises(SystemExit, match="allow-missing"):
@@ -1679,7 +1705,7 @@ def test_the_summary_lists_the_scenarios_that_have_no_comparison_and_draws_the_r
     ss.main(["--output-root", str(tmp_path), "--out-dir", str(out), "--config", str(_sweep_yaml(tmp_path)), "--allow-missing"])
     assert (out / "summary.csv").stat().st_size > 0
     assert all((out / f"summary_{column}.png").stat().st_size > 0 for column, *_ in ss.METRICS)
-    assert not (out / "summary_offsets.png").exists()  # the offsets scenario did not finish
+    assert not (out / "summary_offsets.png").exists()  # the cells with offsets did not finish
 
 
 def _sweep_yaml(tmp_path):
@@ -1691,7 +1717,7 @@ def _sweep_yaml(tmp_path):
     return path
 
 
-def test_the_summary_draws_the_offsets_scenario_against_its_centred_counterpart(tmp_path):
+def test_the_summary_draws_the_cells_with_offsets_against_their_centred_counterparts(tmp_path):
     for cell in ss.sweep_cells(SMALL_SWEEP):
         _fake_variants_csv(tmp_path, cell["scenario"], auc=0.5)
     out = tmp_path / "out"
@@ -1699,7 +1725,7 @@ def test_the_summary_draws_the_offsets_scenario_against_its_centred_counterpart(
     assert (out / "summary_offsets.png").stat().st_size > 0
     with open(out / "summary.csv", newline="") as handle:
         rows = list(csv.DictReader(handle))
-    assert len(rows) == 27 and "offsets_sigma_A" in rows[0]
+    assert len(rows) == 30 and "offsets_sigma_A" in rows[0]
 
 
 def test_override_files_are_merged_over_the_default_sweep(tmp_path):
@@ -1708,3 +1734,31 @@ def test_override_files_are_merged_over_the_default_sweep(tmp_path):
     merged = ss.load_sweep([path])
     assert merged["noise_levels"] == [3.0] and merged["offsets"] is None
     assert merged["kent"]["kappa"] == 4.0 and merged["n_images"] == [50000, 100000]  # untouched entries stay
+
+
+def test_the_summary_takes_each_scenario_from_the_first_root_that_has_it(tmp_path):
+    cells = ss.sweep_cells(SMALL_SWEEP)
+    first, second = tmp_path / "first", tmp_path / "second"
+    for cell in cells:
+        _fake_variants_csv(second if cell["scenario"].startswith("off_") else first, cell["scenario"], auc=0.5)
+    rows, missing = ss.collect_rows([second, first], SMALL_SWEEP)
+    assert missing == [] and len(rows) == 30
+    rows, missing = ss.collect_rows([first], SMALL_SWEEP)
+    assert missing == [cell["scenario"] for cell in cells if cell["scenario"].startswith("off_")]
+
+
+def test_a_mixture_of_displaced_pools_records_the_offsets_and_refuses_a_mix_with_centred_pools(tmp_path):
+    offsets = {"kind": "gaussian", "sigma_angstrom": 7.0, "seed": 29}
+    kent = _pool(tmp_path, "kent_off", 4, {**KENT_RECORD, "offsets": offsets})
+    uniform = _pool(tmp_path, "uniform_off", 4, {"poses": "uniform", "offsets": {**offsets, "seed": 30}})
+    record = mp.mix_pools([mp.Pool("kent", kent, 2), mp.Pool("uniform", uniform, 2)], tmp_path / "mix")
+    assert record["offsets"]["sigma_angstrom"] == 7.0
+    assert [record["offsets"]["pools"][label]["seed"] for label in ("kent", "uniform")] == [29, 30]
+    assert json.loads((tmp_path / "mix" / "pose_distribution.json").read_text()) == record
+    centred = _pool(tmp_path, "centred", 4, {"poses": "uniform"})
+    assert "offsets" not in mp.mix_pools([mp.Pool("centred", centred, 2)], tmp_path / "plain")
+    with pytest.raises(ValueError, match="some pools are displaced"):
+        mp.mix_pools([mp.Pool("kent", kent, 1), mp.Pool("centred", centred, 1)], tmp_path / "bad")
+    wide = _pool(tmp_path, "wide", 4, {"poses": "uniform", "offsets": {**offsets, "sigma_angstrom": 9.0}})
+    with pytest.raises(ValueError, match="different sigmas"):
+        mp.mix_pools([mp.Pool("kent", kent, 1), mp.Pool("wide", wide, 1)], tmp_path / "bad")
