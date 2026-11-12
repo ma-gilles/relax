@@ -630,6 +630,67 @@ def test_coarse_pass_keeping_every_pose_changes_nothing():
         assert_matches(np.asarray(getattr(coarse, name)), np.asarray(getattr(plain, name)), rtol=rtol)
 
 
+def test_two_level_coarse_pass_keeping_every_pose_changes_nothing():
+    """A coarse pass two orders below the stage (order 3 stage, --tilt-coarse-order 1) with target mass 1 keeps
+    every fine pose: the update's statistics equal those of the dense order 3 grid."""
+    from relax.ppca_initial_model import iteration_loop
+    from relax.ppca_initial_model.config import Config
+    from relax.ppca_initial_model.state import State
+
+    particles, _stream, arrays = make_problem(seed=9)
+    theta = np.stack([arrays["mu"], *arrays["W"].T], axis=1).astype(np.complex64)
+    state = State(jnp.asarray(theta), None, jnp.full((1, 5), 40.0, jnp.float32), 0, np.arange(3), {}, 2.0, 0, {})
+
+    def statistics(**options):
+        config = Config(
+            q=2,
+            stages=((1, 3, 3),),
+            oversampling=0,
+            stream_coarse_recompute=True,
+            shift_range=1,
+            shift_step=1,
+            image_batch_size=3,
+            rotation_block_size=256,
+            gemm_precision="fp32",
+            **options,
+        )
+        iteration_loop._rotation_grid.cache_clear()
+        iteration_loop._direction_ids.cache_clear()
+        try:
+            return iteration_loop.expectation_groups(particles, state, config, [np.arange(3)], 1)[0]
+        finally:
+            iteration_loop._rotation_grid.cache_clear()
+            iteration_loop._direction_ids.cache_clear()
+
+    plain = statistics()
+    coarse = statistics(tilt_coarse_pass=True, tilt_coarse_order=1, target_mass=1.0)
+    order_a, order_b = np.argsort(plain.original_image_ids), np.argsort(coarse.original_image_ids)
+    rtol = 1e-5
+    assert_matches(np.float32(coarse.log_likelihood), np.float32(plain.log_likelihood), rtol=rtol)
+    assert_matches(np.asarray(coarse.embeddings)[order_b], np.asarray(plain.embeddings)[order_a], rtol=rtol)
+    for name in ("lhs_tri", "residual_gradient", "residual_num", "residual_den"):
+        assert_matches(np.asarray(getattr(coarse, name)), np.asarray(getattr(plain, name)), rtol=rtol)
+
+
+def test_coarse_parents_at_a_fixed_coarse_order():
+    """``_coarse_parents(hp, k)`` maps each order-hp rotation to its nearest order-k rotation; the default k is hp-1;
+    a nonpositive or fractional tilt_coarse_order is refused."""
+    from scipy.spatial.transform import Rotation
+
+    from relax.ppca_initial_model import iteration_loop
+    from relax.ppca_initial_model.config import Config
+
+    assert np.array_equal(iteration_loop._coarse_parents(2), iteration_loop._coarse_parents(2, 1))
+    parents = iteration_loop._coarse_parents(3, 1)
+    fine = Rotation.from_matrix(iteration_loop._rotation_grid(3)[:500].astype(np.float64))
+    coarse = Rotation.from_matrix(iteration_loop._rotation_grid(1).astype(np.float64))
+    angles = np.stack([(fine.inv() * coarse[k]).magnitude() for k in range(len(coarse))], axis=1)
+    np.testing.assert_allclose(angles[np.arange(500), parents[:500]], angles.min(axis=1), atol=1e-6)
+    for bad in (0, 1.5, True):
+        with pytest.raises(ValueError, match="tilt_coarse_order"):
+            Config(tilt_coarse_order=bad)
+
+
 def test_coarse_support_is_whole_rotations_with_their_neighbours():
     """The coarse pass supports each significant coarse rotation at every shift, and its neighbouring cells."""
     from relax.ppca_refinement.full_row_stream import _significant_rotations

@@ -82,6 +82,10 @@ class Config:
     # holding target_mass, at most max_significant) or a neighbouring cell of one (iteration_loop._expectation).
     # A runtime setting, like pass2_mass_floor; off by default.
     tilt_coarse_pass: bool = False
+    # With tilt_coarse_pass: the coarse grid's HEALPix order for every stage above it (None: each stage's hp - 1).
+    # 2 gives order 3 stages a coarse pass at order 2 (one level, as RELION's oversampling 1) and order 4 stages
+    # one at order 2 too (two levels, as RELION's oversampling 2). A runtime setting, like tilt_coarse_pass.
+    tilt_coarse_order: int | None = None
     # Newton SGD (docs/math/ppca_momentum_sgd.md, "Newton SGD"; momentum SGD with momentum 0). sgd_direction "coupled" steps
     # along the per-frequency H_f^-1 G_f, scaled at the first update to the split-curvature step's norm.
     # sgd_pc_gate_floor F multiplies the PC step per shell by clip(rho, F, 1), rho the moving correlation of the
@@ -215,6 +219,11 @@ class Config:
                 "PPCA supports oversampling 0 and 1; the --stream-full-fine-rows / --fine-devices fine pass is "
                 "retired (section 14 of docs/math/vdam_ppca_algorithm.md)"
             )
+        if self.tilt_coarse_order is not None and (
+            isinstance(self.tilt_coarse_order, bool) or not isinstance(self.tilt_coarse_order, (int, np.integer))
+            or self.tilt_coarse_order < 1
+        ):
+            raise ValueError(f"tilt_coarse_order must be a positive integer, got {self.tilt_coarse_order}")
         if self.max_significant <= 0:
             raise ValueError("max_significant must be positive")
         if min(self.image_batch_size, self.rotation_block_size, self.checkpoint_interval) <= 0:

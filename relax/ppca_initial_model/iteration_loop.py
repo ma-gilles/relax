@@ -94,12 +94,14 @@ def _rotation_grid(hp):
 
 
 @functools.lru_cache(maxsize=4)
-def _coarse_parents(hp):
-    """Each order-``hp`` rotation's nearest order-``hp - 1`` rotation (largest |quaternion dot|), int32 (read-only)."""
+def _coarse_parents(hp, coarse_order=None):
+    """Each order-``hp`` rotation's nearest rotation of order ``coarse_order`` (default ``hp - 1``; largest
+    |quaternion dot|), int32 (read-only)."""
     from scipy.spatial.transform import Rotation
 
+    coarse_order = hp - 1 if coarse_order is None else coarse_order
     fine = Rotation.from_matrix(_rotation_grid(hp).astype(np.float64)).as_quat()
-    coarse = Rotation.from_matrix(_rotation_grid(hp - 1).astype(np.float64)).as_quat()
+    coarse = Rotation.from_matrix(_rotation_grid(coarse_order).astype(np.float64)).as_quat()
     parents = np.concatenate(
         [np.argmax(np.abs(fine[start : start + 2048] @ coarse.T), axis=1) for start in range(0, len(fine), 2048)]
     ).astype(np.int32)
@@ -547,14 +549,16 @@ def _expectation(
         # Adaptive oversampling scores pass 1 on RELION's coarse image window and pass 2 at the stage's.
         oversampled = oversampled_update(config, iteration)
         pass1_size = pass1_image_size(hp, dataset, 2 * radius, diameter_ang) if oversampled else 2 * radius
-        # Subtomogram coarse pass (config.tilt_coarse_pass): pass 1 on the order hp - 1 grid gives each particle its
-        # significant (coarse rotation, shift) poses (target_mass, max_significant); the stage's grid is then
-        # scored only on the rows whose nearest coarse rotation is significant (_coarse_parents).
+        # Subtomogram coarse pass (config.tilt_coarse_pass): pass 1 on the order hp - 1 grid (or the fixed
+        # config.tilt_coarse_order) gives each particle its significant (coarse rotation, shift) poses (target_mass,
+        # max_significant); the stage's grid is then scored only on the rows whose nearest coarse rotation is
+        # significant or a neighbouring cell of one (_coarse_parents, _coarse_neighbors).
         # Order 1's coarse grid (order 0) is too coarse to prune; the pass runs from order 2.
-        coarse_pass = tilts and config.tilt_coarse_pass and not oversampled and hp >= 2
+        coarse_order = hp - 1 if config.tilt_coarse_order is None else config.tilt_coarse_order
+        coarse_pass = tilts and config.tilt_coarse_pass and not oversampled and hp >= 2 and 1 <= coarse_order < hp
         if coarse_pass:
-            parents = _coarse_parents(hp)
-            coarse_rotations = _rotation_grid(hp - 1)
+            parents = _coarse_parents(hp, coarse_order)
+            coarse_rotations = _rotation_grid(coarse_order)
             coarse_log_prior = np.full(len(coarse_rotations), -np.inf, np.float64)
             np.logaddexp.at(coarse_log_prior, parents, rotation_log_prior.astype(np.float64))
             streams = make_streams(
@@ -637,7 +641,7 @@ def _expectation(
                         tiles[k][2],
                         target_mass=config.target_mass,
                         max_significant=config.max_significant,
-                        neighbors=_coarse_neighbors(hp - 1),
+                        neighbors=_coarse_neighbors(coarse_order),
                     )
                     if coarse_pass
                     else [None] * len(tiles[k][2]),
