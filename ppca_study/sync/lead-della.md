@@ -108,3 +108,11 @@
   (closes 83% of the W-B gap); there its PC1 is a per-image grey-level mode (z'1 vs image mean, Spearman .96).
 - NOTE: cryoDRGN-AI C_shift seeds 12/13 show no hand split (93.5% / 92.5% < 10 deg in one frame); the seed-11 split
   was seed-specific. Suite rows pending.
+- RESULT (2026-11-12, BEST_PRACTICE v1.75): EMPIAR-11846 as picked defeats a held full-resolution mean (selection
+  particles 14.4 deg, the other 12,900 at 123 deg) and real RELION 5.1.1 auto-refine from the published map at 40 A
+  (.240 / 129 deg; pre-centred ceiling .679 / 14.0 deg): it needs re-extraction. An image mask (RELION-style soft circle)
+  helps the wide window on 10097 (.709 -> .768) and is neutral elsewhere; VDAM-simple wide stays best on 10097 (.829).
+- RESULT (diagnostic, suite pending): relax K=1 at defaults breaks between 5 and 10 A offset sd on C_shift (pose 9.3 deg
+  at 5 A, 25.8 at 10 A, 117 at 22 A); our VDAM-simple training pose stays ~5 deg to 22 A.
+- NOTE: coupled_arm_v2.py stops logging training rotations once oversampling starts (update 1626 in v2os1); read
+  v2os1 poses from the suite only.
