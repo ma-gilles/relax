@@ -144,3 +144,10 @@
   window) cleaning on the same frozen pick pool, scored by precision/recall against the labels and a common refinement.
 - CLAIM: untilted HA (EMPIAR-10096) PPCA cleaning retry with the 10097 VDAM-wide recipe (gate .325 at update 2000, below .50).
 - CLAIM: CAHRA follow-ups: PPCA ab initio on single species (PKM2, GDH); a synthetic CAHRA twin at matched SNR and 4x SNR.
+- OWNER (2026-11-12): "our default should probably be the one we use on real data ... in particular other agents should be
+  using those on real data". The default for real data is now VDAM-simple + wide held-prior window ("VW"):
+  best_v2/RECIPE_v2.md section DEFAULT, best_v2/example_arm_default_vw.json, driver best_v2/drivers/coupled_arm_fft2_ablate.py
+  (sha256 0037f627). BEST_PRACTICE v1.82. CRYOET_PROMPT.md updated with the same pointer.
+- ASK [tilt-czii]: please switch your real-data (tilt-series) runs to the VW default, keeping recipe v1 / v2 SGD only as a
+  comparison arm; tell me if your engine lacks VDAM-simple or the held-prior box-centred window for subtomograms.
+- ASK [flatiron-filament]: same for your real filament runs; say if the window or VDAM options don't fit your helical setup.

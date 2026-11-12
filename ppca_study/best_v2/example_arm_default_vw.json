@@ -1,0 +1,37 @@
+[
+ {
+  "name": "e10097_V__bv1vdam_s11",
+  "seed": 11,
+  "stop_after": 3000,
+  "cost": 3000,
+  "manifest": "/scratch/gpfs/CRYOEM/gilleslab/em_work/ppca_coupled_20261026/realshift_20261109/fixtures/e10097/A_picked/training/manifest.json",
+  "relax": [
+   "--optimizer",
+   "vdam",
+   "--stages",
+   "[[1, 11, 1], [126, 12, 2], [251, 13, 2], [376, 14, 2], [501, 15, 2], [626, 16, 2], [751, 17, 2], [876, 18, 2], [1001, 19, 2], [1126, 20, 2], [1251, 21, 2], [1376, 22, 2], [1501, 23, 2], [1626, 24, 3], [1751, 25, 3], [1876, 26, 3], [2001, 27, 3], [2126, 28, 3], [2251, 29, 3], [2376, 30, 3], [2500, 31, 3]]",
+   "--oversampling",
+   "0"
+  ],
+  "driver": [
+   "--q",
+   "10",
+   "--milestones",
+   "25,50,75,100,125,150,175,200,225,250,275,300,325,350,375,400,425,450,475,500,750,1000,1250,1500,1750,2000,2250,2500,2750,3000",
+   "--vdam-ko",
+   "noadapt",
+   "--offset-sigma-hold",
+   "20",
+   "--shift-sched",
+   "[[1, 9, 2], [1626, 9, 1]]"
+  ],
+  "data": [
+   "--shift-step",
+   "1",
+   "--shift-range",
+   "2"
+  ],
+  "driver_file": "/scratch/gpfs/CRYOEM/gilleslab/em_work/ppca_coupled_20261026/ribodeep_20261109/tools/coupled_arm_fft2_ablate.py",
+  "label": "Addendum 7 V: bv1_vdam flags, W window [[1, 9, 2], [1626, 9, 1]], as picked"
+ }
+]

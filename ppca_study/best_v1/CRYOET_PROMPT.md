@@ -1,5 +1,13 @@
 # Prompt: run the current best PPCA ab-initio recipe on a real cryo-ET dataset
 
+> **Update 2026-11-12 (owner decision): the default recipe for real data is now VDAM-simple + the wide held-prior
+> translation window ("VW"), not the SGD recipe v1 below.** See `best_v2/RECIPE_v2.md`, section DEFAULT, and
+> `best_v2/example_arm_default_vw.json` (driver `best_v2/drivers/coupled_arm_fft2_ablate.py`). Settings: VDAM optimizer with
+> `--vdam-ko noadapt`, q 10, 3000 updates, a fixed window centred on the box centre of about ±45-50 Å (coarse 2-px steps, then
+> 1 px from HEALPix order 3 at update 1626), shift prior held at 20 Å. For subtomograms, widen the window if your measured
+> per-particle shift spread exceeds it, as below. Keep the SGD recipe v1 only as a comparison arm.
+
+
 You are working for Marc A. Gilles on PPCA ab-initio reconstruction with relax (github.com/ma-gilles/relax, public)
 and RECOVAR (public). The single-particle team has settled a "current best" recipe (v1). Your job is to run it on
 real cryo-ET (tilt-series) data on your cluster, implementing what's missing for tilt data. Report what works and

@@ -38,6 +38,35 @@ $PY best_v2/drivers/<driver> --source $RELAX_SRC --manifest <manifest.json> --ev
 Memory: one wide-window or recentred q-10 arm per A100 80 GB (relax sizes HEALPix-3 tiles to free GPU memory; 68.7 GB peak seen).
 `--iterations` (default 6000) caps runs silently; pass `--iterations <stop>` for longer runs.
 
+## DEFAULT (2026-11-12, owner decision): VDAM-simple + wide held-prior translation window "VW" (driver coupled_arm_fft2_ablate.py)
+
+Use this for any real dataset, and as the starting point for anything new. Sections (a)-(d) below are notes for special cases.
+```
+--q 10 --milestones 25,...,500,750,...,3000 --vdam-ko noadapt --offset-sigma-hold 20 --shift-sched [[1, R, 2], [1626, R, 1]]
+-- --optimizer vdam --stages <stock 21-stage table, shell 11->31, HEALPix 1->2->3 at 1626> --oversampling 0
+data: --shift-step 1 --shift-range 2; stop at 3000
+```
+- Translation search: a fixed window centred on the box centre (not on each particle's previous offset), radius R px chosen in
+  Angstrom: about 45-50 A (R = 8 at 6 A/px, 9 at 5.2 A/px, 5 at 9 A/px), coarse 2 px steps to update 1625, then 1 px once the
+  angular search reaches HEALPix 3. The Gaussian shift prior is held at 20 A instead of learned (a learned prior shrinks early and
+  pins the offsets). The window must cover the dataset's offsets: check the consensus or refined offsets when available (11846's
+  reach 80 A and exceed it).
+- 3D support (relax diameter) = particle size plus the pick offsets; images are not masked.
+- Example arm: example_arm_default_vw.json (= ribodeep a7_e10097_V, the EMPIAR-10097 row).
+- Evidence: real data as picked, mean-map FSC vs consensus: EMPIAR-10097 .829 (SGD wide window .709; pre-centred ceiling .853);
+  10073 / 10345 / 10076 .942 / .894 / .914 (SGD wide window .963 / .916 / .947). Synthetic shift ladder on C_shift (suite decoded;
+  mean only .837): .875 at 5 and 10 A, poses held to 22 A, where SGD v2 falls to .801 at 15 A and relax/RELION break at 5-10 A.
+- Cost of the wide window: about 3x more translations per update in the coarse stage; one arm per 80 GB GPU.
+- Open check: whether VW costs anything on already-centred synthetic sets against (a). Until that lands, keep (a) for centred
+  synthetic benchmarks.
+
+Notes for special cases:
+- Centred synthetic benchmarks (suite sets without shifts): (a) v2os1 is the measured best (C n1 .937).
+- Real data where VW leaves a large gap to pre-centred: also run (b), the SGD wide window, which is higher by .02-.03 on 10073 / 10345 / 10076.
+- Synthetic shifted minority (D10_shift-type): (c), the three-stage route.
+- Offsets beyond the window (e.g. 11846): recentre first (2D-classification offsets under test); per-particle centring against an
+  average image fails at low SNR (HA, 2026-11-12).
+
 ## (a) STANDARD: v2os1, centred data (driver coupled_arm_v2.py)
 
 ```
