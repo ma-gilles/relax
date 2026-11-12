@@ -12,6 +12,10 @@ particle on the stage's full pose grid and keeps
 - ``z`` (P, q): the posterior latent mean, the PPCA embedding (``embeddings.npz``'s ``z`` for the last checkpoint);
 - ``particle_ids`` (row of the particle STAR the run read) and ``particle_names`` (``rlnTomoParticleName``).
 
+``--star FILE`` also writes the run's input particle STAR (all its blocks) with each particle's ``rlnAngleRot/Tilt/Psi``,
+``rlnOriginX/Y/ZAngst`` (the 3D shift times the image pixel size, the convention relax and RELION read back as the
+particle's offset) and ``rlnMaxValueProbDistribution`` (pmax) set from this pass.
+
 The rotations are in the frame of the run's own map (ab initio: arbitrary up to one global rotation and hand).
 Run it on a GPU node in relax's environment; it reads the run's run.json for the input and config.
 """
@@ -33,6 +37,7 @@ def main(argv=None):
     parser.add_argument("run_dir", type=Path)
     parser.add_argument("--checkpoint", type=Path, help="default: the run's latest checkpoint_NNNN.npz")
     parser.add_argument("--out", type=Path, help="default: RUN_DIR/export_NNNN.npz")
+    parser.add_argument("--star", type=Path, help="also write the input particle STAR with these poses")
     parser.add_argument("--preread-images", default="auto", choices=("auto", "on", "off"))
     a = parser.parse_args(argv)
 
@@ -136,6 +141,20 @@ def main(argv=None):
         pmax=np.concatenate([k["pmax"] for k in keep]), llr=np.concatenate([k["llr"] for k in keep]),
         iteration=state.iteration, healpix_order=hp, radius=radius, checkpoint=str(ckpt),
     )
+    if a.star is not None:
+        blocks = starfile.read(read_optimisation_set(ios)[0], always_dict=True)
+        table = blocks["particles"].copy()
+        order = np.argsort(ids)
+        eulers = euler_matrix_to_angles(R)[order]
+        origins = (translations[trans] * particles.voxel_size)[order]
+        for k, column in enumerate(("rlnAngleRot", "rlnAngleTilt", "rlnAnglePsi")):
+            table[column] = eulers[:, k]
+        for k, column in enumerate(("rlnOriginXAngst", "rlnOriginYAngst", "rlnOriginZAngst")):
+            table[column] = origins[:, k]
+        table["rlnMaxValueProbDistribution"] = np.concatenate([k["pmax"] for k in keep])[order]
+        blocks["particles"] = table
+        starfile.write(blocks, a.star, overwrite=True)
+        print(f"wrote {a.star}", flush=True)
     print(f"wrote {out}: {len(ids)} particles, q {z.shape[1]}, {time.monotonic() - t0:.0f} s", flush=True)
 
 
