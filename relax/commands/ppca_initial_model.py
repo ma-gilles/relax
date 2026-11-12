@@ -202,6 +202,12 @@ def add_args(parser):
         "particle's significant coarse poses (target mass, max significant; a runtime setting)",
     )
     parser.add_argument(
+        "--tilt-coarse-order",
+        type=int,
+        help="with --tilt-coarse-pass: the coarse grid's HEALPix order for every stage above it (default: each "
+        "stage's order - 1); 2 gives order 3 stages a one-level and order 4 stages a two-level coarse pass",
+    )
+    parser.add_argument(
         "--sgd-learning-rate",
         type=float,
         help="Momentum SGD step factor on the gradient over the band maximum of the metric trace, which sums the "
@@ -691,6 +697,7 @@ def main(args=None):
         preread_images=args.ppca_preread_images,
         pass2_mass_floor=args.ppca_pass2_mass_floor,
         tilt_coarse_pass=args.tilt_coarse_pass,
+        tilt_coarse_order=args.tilt_coarse_order,
         stages=tuple(tuple(stage) for stage in json.loads(args.stages)) if args.stages else Config().stages,
         uniform_direction_prior=args.uniform_direction_prior,
         band_length_ang=args.filament_band_length,
