@@ -5,6 +5,8 @@ import csv
 import json
 import logging
 import math
+import sys
+from pathlib import Path
 
 import mrcfile
 import numpy as np
@@ -28,6 +30,7 @@ from scripts.pose_prior_benchmark import evaluate_run as ev
 from scripts.pose_prior_benchmark import initial_model as im
 from scripts.pose_prior_benchmark import mix_pools as mp
 from scripts.pose_prior_benchmark import reconstruct_with_poses as rwp
+from scripts.pose_prior_benchmark import render_volume as rv
 from scripts.pose_prior_benchmark import simulate_dataset as sim
 from scripts.pose_prior_benchmark import star_nonuniformity as snu
 from scripts.pose_prior_benchmark import summarize_sweep as ss
@@ -1762,3 +1765,170 @@ def test_a_mixture_of_displaced_pools_records_the_offsets_and_refuses_a_mix_with
     wide = _pool(tmp_path, "wide", 4, {"poses": "uniform", "offsets": {**offsets, "sigma_angstrom": 9.0}})
     with pytest.raises(ValueError, match="different sigmas"):
         mp.mix_pools([mp.Pool("kent", kent, 1), mp.Pool("wide", wide, 1)], tmp_path / "bad")
+
+
+# ---- renders of the final maps ----
+
+
+def test_the_preferred_axis_is_the_cap_centre_and_a_distribution_without_one_gives_z():
+    axis = rv.preferred_axis(KENT_RECORD)
+    assert abs(axis[2]) > 0.999 and axis[2] > 0
+    flat = {"poses": "kent", "dataset_params_option": [0.0, 0.0, [1.0, 1.0, 0.0], [0.0, 0.0, 1.0]]}
+    assert_matches(rv.preferred_axis(flat), np.array([0.0, 0.0, 1.0]))
+
+
+def test_a_view_turns_the_map_about_its_centre_so_the_direction_faces_the_viewer_and_up_is_up():
+    rng = np.random.default_rng(0)
+    center = np.array([100.0, 120.0, 90.0])
+    for _ in range(5):
+        direction, up = rng.standard_normal(3), rng.standard_normal(3)
+        matrix = np.array(rv.view_matrix(direction, up, center)).reshape(3, 4)
+        rotation, translation = matrix[:, :3], matrix[:, 3]
+        assert_matches(rotation @ rotation.T, np.eye(3))
+        assert_matches(np.linalg.det(rotation), 1.0)
+        unit = direction / np.linalg.norm(direction)
+        perpendicular_up = up - unit * (unit @ up)
+        assert_matches(rotation @ unit, [0.0, 0.0, 1.0])
+        assert_matches(rotation @ (perpendicular_up / np.linalg.norm(perpendicular_up)), [0.0, 1.0, 0.0])
+        assert_matches(rotation @ center + translation, center)
+
+
+def test_the_front_view_looks_down_the_axis_and_the_side_view_across_it_with_the_axis_up():
+    for axis in (np.array([0.0, 0.0, 1.0]), np.array([0.0, 1.0, 0.0]), np.array([1.0, 1.0, 1.0]) / np.sqrt(3.0)):
+        views = rv.view_directions(axis)
+        assert_matches(views["front"][0], axis)
+        assert abs(views["front"][0] @ views["front"][1]) < 1e-12
+        assert abs(views["side"][0] @ axis) < 1e-12
+        assert_matches(views["side"][1], axis)
+        for direction, up in views.values():
+            assert_matches(np.linalg.norm(direction), 1.0)
+            assert_matches(np.linalg.norm(up), 1.0)
+
+
+def test_a_map_is_drawn_at_the_level_that_encloses_the_reference_volume():
+    rng = np.random.default_rng(1)
+    reference = rng.random((12, 12, 12))
+    n_voxels = rv.enclosed_voxels(reference, 0.7)
+    other = 5.0 * rng.random((12, 12, 12)) - 1.0  # another scale and offset
+    level = rv.matched_level(other, n_voxels)
+    assert np.count_nonzero(other > level) == n_voxels
+    assert rv.enclosed_voxels(reference) == np.count_nonzero(reference > rv.GT_LEVEL_FRACTION * reference.max())
+
+
+def _fake_xvfb_run(tmp_path):
+    """An ``xvfb-run`` stand-in that runs the driver script with a ChimeraX ``run`` that makes the PNG of every save
+    command and fails on a command that contains FAILME."""
+    path = tmp_path / "fake_xvfb_run"
+    path.write_text(
+        f"#!{sys.executable}\n"
+        "import pathlib, sys, types\n"
+        "def run(session, command):\n"
+        "    if 'FAILME' in command:\n"
+        "        raise RuntimeError('boom')\n"
+        "    if command.startswith('save '):\n"
+        "        pathlib.Path(command.split()[1]).write_bytes(b'png')\n"
+        "modules = {name: types.ModuleType(name) for name in ('chimerax', 'chimerax.core', 'chimerax.core.commands')}\n"
+        "modules['chimerax.core.commands'].run = run\n"
+        "sys.modules.update(modules)\n"
+        "exec(pathlib.Path(sys.argv[-1]).read_text(), {'session': None})\n"
+    )
+    path.chmod(0o755)
+    return path
+
+
+def _render_dataset(tmp_path, box=8, voxel=2.0):
+    """A dataset directory with a pose record and a ground-truth map, and a second map of the same grid."""
+    dataset = tmp_path / "dataset"
+    dataset.mkdir()
+    (dataset / "pose_distribution.json").write_text(json.dumps(KENT_RECORD))
+    volume = np.random.default_rng(2).random((box, box, box)).astype(np.float32)
+    for name in ("reference_gt_relion.mrc", "refined.mrc"):
+        with mrcfile.new(dataset / name) as handle:
+            handle.set_data(volume)
+            handle.voxel_size = voxel
+    return dataset
+
+
+def test_a_render_job_writes_a_front_and_a_side_image_through_chimerax(tmp_path):
+    dataset = _render_dataset(tmp_path)
+    prefix = tmp_path / "out" / "learned"
+    written = rv.render_maps(
+        dataset, [(dataset / "refined.mrc", prefix)], "chimerax-not-run", str(_fake_xvfb_run(tmp_path)), image_pixels=64
+    )
+    assert written == [tmp_path / "out" / "learned_front.png", tmp_path / "out" / "learned_side.png"]
+    assert all(path.read_bytes() == b"png" for path in written)
+
+
+def test_a_failed_chimerax_command_a_missing_image_and_another_grid_are_refused(tmp_path):
+    dataset = _render_dataset(tmp_path)
+    fake = str(_fake_xvfb_run(tmp_path))
+    with pytest.raises(RuntimeError, match="failed commands"):
+        rv.render_maps(dataset, [(dataset / "refined.mrc", tmp_path / "FAILME")], "chimerax", fake)
+    silent = tmp_path / "silent_xvfb_run"
+    silent.write_text("#!/bin/sh\nexit 0\n")
+    silent.chmod(0o755)
+    with pytest.raises(RuntimeError, match="missing images"):
+        rv.render_maps(dataset, [(dataset / "refined.mrc", tmp_path / "out")], "chimerax", str(silent))
+    with mrcfile.new(dataset / "other.mrc") as handle:
+        handle.set_data(np.zeros((8, 8, 8), np.float32))
+        handle.voxel_size = 3.0
+    with pytest.raises(ValueError, match="voxel size"):
+        rv.render_maps(dataset, [(dataset / "other.mrc", tmp_path / "out")], "chimerax", fake)
+
+
+def test_the_chimerax_commands_draw_every_map_in_every_view_with_one_camera():
+    geometry = rv.MapGeometry(256, 2.125)
+    matrices = {view: [1.0] * 12 for view in rv.VIEWS}
+    commands = rv.chimerax_commands(
+        [(Path("/a.mrc"), Path("/out/a"), 0.5), (Path("/b.mrc"), Path("/out/b"), 0.25)], geometry, matrices, 800
+    )
+    assert sum(command.startswith("save ") for command in commands) == 4
+    assert sum(command.startswith("view matrix models #1,") for command in commands) == 4
+    assert sum(command.startswith("camera mono") for command in commands) == 1
+    assert any("level 0.25 " in command for command in commands)
+    assert "save /out/b_side.png width 800 height 800 supersample 3" in commands
+    compile(rv.driver_script(commands, Path("/log")), "driver", "exec")
+
+
+def test_the_crop_of_a_view_holds_every_image_and_blank_images_are_refused():
+    first, second = np.ones((100, 100, 3)), np.ones((100, 100, 3))
+    first[20:30, 40:50] = 0.2
+    second[60:70, 10:20] = 0.2
+    top, bottom, left, right = cmp.render_crop([first, second])
+    assert (top, bottom, left, right) == (20 - 4, 70 + 4, 10 - 4, 50 + 4)
+    with pytest.raises(ValueError, match="blank"):
+        cmp.render_crop([np.ones((10, 10, 3))])
+
+
+def test_the_comparison_figure_has_a_render_block_when_the_images_exist(tmp_path):
+    import matplotlib.image
+
+    learned = _evaluation(tmp_path, "learned", source="learned", auc=0.8, median=2.0, js_skill=0.9)
+    fixed = _evaluation(tmp_path, "fixed_true", source="fixed", auc=0.85, median=1.5, js_skill=0.9)
+    image = np.ones((60, 60, 3))
+    image[15:45, 10:50] = 0.3
+    truth = tmp_path / "render_truth"
+    for directory, stem in ((tmp_path, "render_truth"), (learned, "render"), (fixed, "render")):
+        for view in rv.VIEWS:
+            matplotlib.image.imsave(directory / f"{stem}_{view}.png", image)
+    plain, drawn = tmp_path / "plain", tmp_path / "drawn"
+    arguments = ["--runs", f"learned={learned}", f"fixed_true={fixed}", "--label", "test"]
+    cmp.main([*arguments, "--out-dir", str(plain)])
+    cmp.main([*arguments, "--out-dir", str(drawn), "--renders", str(truth)])
+    assert matplotlib.image.imread(drawn / "variants.png").shape[0] > matplotlib.image.imread(plain / "variants.png").shape[0]
+    (learned / "render_side.png").unlink()
+    with pytest.raises(SystemExit, match="missing render images"):
+        cmp.main([*arguments, "--out-dir", str(tmp_path / "again"), "--renders", str(truth)])
+
+
+def test_chimerax_gets_the_library_directory_beside_its_executable(tmp_path, monkeypatch):
+    library = tmp_path / "usr" / "libexec" / "UCSF-ChimeraX" / "lib"
+    library.mkdir(parents=True)
+    (tmp_path / "usr" / "bin").mkdir()
+    executable = tmp_path / "usr" / "bin" / "chimerax"
+    executable.write_text("")
+    monkeypatch.setenv("LD_LIBRARY_PATH", "/already/there")
+    assert rv.chimerax_environment(str(executable))["LD_LIBRARY_PATH"] == f"{library}:/already/there"
+    monkeypatch.delenv("LD_LIBRARY_PATH")
+    assert rv.chimerax_environment(str(executable))["LD_LIBRARY_PATH"] == str(library)
+    assert "LD_LIBRARY_PATH" not in rv.chimerax_environment(str(tmp_path / "elsewhere" / "chimerax"))

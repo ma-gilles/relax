@@ -26,10 +26,15 @@ Fourier radius (so runs that stop at different iterations or orders compare at e
 the map they give, the ceiling of the poses' FSC area, goes into ``variants.csv`` and is drawn as a dotted line in the
 area panel.
 
+``--renders PREFIX`` adds a block of ChimeraX images (``render_volume.py``) on top of the figure: the final map of every
+variant (``<evaluation dir>/render_front.png`` and ``render_side.png``) beside the ground truth's
+(``PREFIX_front.png`` and ``PREFIX_side.png``), seen down the dataset's preferred viewing direction and from the side.
+Every image must exist.
+
 Run::
 
     python scripts/pose_prior_benchmark/compare_variants.py --runs learned=EVAL_DIR fixed_true=EVAL_DIR \\
-        --out-dir OUT --label kent_cap [--true-reconstruction DIR]
+        --out-dir OUT --label kent_cap [--true-reconstruction DIR] [--renders DATASET_DIR/render_truth]
 """
 
 from __future__ import annotations
@@ -49,6 +54,7 @@ sys.path.insert(0, str(ROOT))
 from scripts.conical_fsc import ConicalFsc, axes_rot_tilt_deg, cone_areas, measured_curves  # noqa: E402
 from scripts.pose_prior_benchmark.conical_fsc_plot import curve_statistics  # noqa: E402
 from scripts.pose_prior_benchmark.evaluate_run import HALVES, PALETTE  # noqa: E402
+from scripts.pose_prior_benchmark.render_volume import RENDER_NAME, VIEWS  # noqa: E402
 
 # One colour per variant in the order given (validated for colour-vision deficiency on the light surface).
 VARIANT_COLORS = ("#2a78d6", "#eb6834", "#2f9e6e", "#8a5cd6")
@@ -58,6 +64,13 @@ ORIGIN_ERROR_RANGE_PX = (0.05, 50.0)  # the origin error axis, pixels
 POSE_ERROR_BINS = 200
 POSE_ERROR_SMOOTHING_DECADES = 0.05
 GROSS_POSE_ERROR_DEG = 90.0
+RENDER_ROW_LABELS = {"front": "front: down the preferred axis", "side": "side: preferred axis up"}
+RENDER_CAPTION = (
+    "Final maps drawn at the isosurface that encloses the ground truth's volume at 20% of its maximum; the front view "
+    "looks down the dataset's preferred viewing direction, the side view across it."
+)
+RENDER_MARGIN = 0.04  # of the image edge, around the pixels that are not background
+RENDER_LABEL_ALLOWANCE_IN = 0.9  # height of the column titles and the gaps of the render block, inches
 GROSS_ORIGIN_ERROR_PX = 1.0
 ROW_TITLE_SIZE = 10  # the four panels of the third row are narrow
 COLUMNS = (
@@ -299,6 +312,56 @@ def style_axes(ax) -> None:
     ax.set_axisbelow(True)
 
 
+def render_crop(images: list[np.ndarray]) -> tuple[int, int, int, int]:
+    """The (top, bottom, left, right) pixel box that holds every non-white pixel of ``images`` (RGB or RGBA floats in
+    [0, 1], one size), with ``RENDER_MARGIN`` around it, so the images of one view share one crop."""
+    drawn = np.zeros(images[0].shape[:2], dtype=bool)
+    for image in images:
+        drawn |= (image[..., :3] < 0.98).any(axis=-1)
+    if not drawn.any():
+        raise ValueError("the render images are blank")
+    rows, columns = np.flatnonzero(drawn.any(axis=1)), np.flatnonzero(drawn.any(axis=0))
+    pad = int(RENDER_MARGIN * drawn.shape[0])
+    return (
+        max(rows[0] - pad, 0), min(rows[-1] + 1 + pad, drawn.shape[0]),
+        max(columns[0] - pad, 0), min(columns[-1] + 1 + pad, drawn.shape[1]),
+    )
+
+
+def read_renders(renders: dict[str, dict[str, Path]]) -> dict[str, dict[str, np.ndarray]]:
+    """The images of ``renders`` (a column title to the PNG of each view) as arrays."""
+    import matplotlib.image
+
+    return {title: {view: matplotlib.image.imread(path) for view, path in files.items()} for title, files in renders.items()}
+
+
+def render_block_height(images: dict[str, dict[str, np.ndarray]], unit_height_in: float) -> float:
+    """The height of the render block in units of the figure's grid rows (of ``unit_height_in`` inches), for columns
+    that share the 14 inch figure width."""
+    boxes = [render_crop([columns[view] for columns in images.values()]) for view in VIEWS]
+    aspect = sum((b - t) / (r - l) for t, b, l, r in boxes)
+    return (aspect * 14.0 / len(images) + RENDER_LABEL_ALLOWANCE_IN) / unit_height_in
+
+
+def draw_renders(fig, spec, images: dict[str, dict[str, np.ndarray]]) -> None:
+    """Draw ``images`` (a column title to the image of each view) in ``spec``: a row per view, a column per title, each
+    view cropped to the box that holds all its images."""
+    boxes = {view: render_crop([columns[view] for columns in images.values()]) for view in VIEWS}
+    heights = [(boxes[view][1] - boxes[view][0]) / (boxes[view][3] - boxes[view][2]) for view in VIEWS]
+    cells = spec.subgridspec(len(VIEWS), len(images), height_ratios=heights, wspace=0.02, hspace=0.04)
+    for r, view in enumerate(VIEWS):
+        top, bottom, left, right = boxes[view]
+        for c, (title, columns) in enumerate(images.items()):
+            ax = fig.add_subplot(cells[r, c])
+            ax.set_axis_off()
+            ax.imshow(columns[view][top:bottom, left:right])
+            if r == 0:
+                ax.set_title(title, color=PALETTE["ink"])
+            if c == 0:
+                ax.text(-0.03, 0.5, RENDER_ROW_LABELS[view], transform=ax.transAxes, rotation=90, ha="right", va="center",
+                        color=PALETTE["ink2"], fontsize=9)
+
+
 def plot_comparison(
     rows: list[dict[str, Any]],
     curves: dict[str, tuple[np.ndarray, np.ndarray]],
@@ -311,12 +374,14 @@ def plot_comparison(
     true_auc: float | None,
     label: str,
     path: Path,
+    renders: dict[str, dict[str, Path]] | None = None,
 ) -> None:
     """The comparison figure of ``rows`` (one per variant), their ground-truth FSC ``curves``, the mean and SD of
     their cFSC over the cones (``conical_curves``), their per-iteration half-map FSC areas and Fourier radii
     (``iteration_curves``), their particles' direction errors (``pose_errors``) and in-plane errors (``inplane_errors``),
     degrees, and origin errors (``origin_errors``, pixels of ``pixel_size_A``); ``true_auc`` is the FSC area of the map
-    from the true poses (a dotted line in the area panel), None when not measured."""
+    from the true poses (a dotted line in the area panel), None when not measured; ``renders`` (the ground truth under
+    the title ``ground truth`` and each variant: the PNG of each view) adds the image block on top of the figure."""
     import matplotlib
 
     matplotlib.use("Agg")
@@ -328,16 +393,26 @@ def plot_comparison(
         raise ValueError(f"{len(rows)} variants; the palette is validated for {len(VARIANT_COLORS)}")
     variants = [row["variant"] for row in rows]
     colors = dict(zip(variants, VARIANT_COLORS))
-    fig = plt.figure(figsize=(14, 4.07 * 4.45), facecolor=PALETTE["surface"])
-    grid = fig.add_gridspec(5, 12, height_ratios=[1, 1, 1, 0.85, 0.6])
-    axes = np.array([[fig.add_subplot(grid[row, a:b]) for a, b in ((0, 6), (6, 12))] for row in range(2)])
-    outplane_ax, inplane_ax, origin_ax, js_ax = (fig.add_subplot(grid[2, a : a + 3]) for a in (0, 3, 6, 9))
-    trace_ax = fig.add_subplot(grid[3, :])
-    radius_ax = fig.add_subplot(grid[4, :], sharex=trace_ax)
+    unit_height_in = 4.07
+    ratios = [1, 1, 1, 0.85, 0.6]
+    images = read_renders(renders) if renders else None
+    if images:
+        ratios = [render_block_height(images, unit_height_in)] + ratios
+    shift = len(ratios) - 5  # 1 when the render block is the first row
+    fig = plt.figure(figsize=(14, unit_height_in * sum(ratios)), facecolor=PALETTE["surface"])
+    grid = fig.add_gridspec(len(ratios), 12, height_ratios=ratios)
+    if images:
+        draw_renders(fig, grid[0, :], images)
+    axes = np.array([[fig.add_subplot(grid[shift + row, a:b]) for a, b in ((0, 6), (6, 12))] for row in range(2)])
+    outplane_ax, inplane_ax, origin_ax, js_ax = (fig.add_subplot(grid[shift + 2, a : a + 3]) for a in (0, 3, 6, 9))
+    trace_ax = fig.add_subplot(grid[shift + 3, :])
+    radius_ax = fig.add_subplot(grid[shift + 4, :], sharex=trace_ax)
     for ax in (*axes.flat, outplane_ax, inplane_ax, origin_ax, js_ax, trace_ax, radius_ax):
         ax.set_facecolor(PALETTE["surface"])
         ax.tick_params(colors=PALETTE["ink2"])
     fig.suptitle(f"{label}: refinement variants", x=0.01, ha="left", color=PALETTE["ink"])
+    if images:
+        fig.text(0.01, 1.0 - 0.4 / fig.get_figheight(), RENDER_CAPTION, ha="left", va="top", color=PALETTE["ink2"], fontsize=8)
     x = np.arange(len(variants))
     labels = [tick_label(variant) for variant in variants]
 
@@ -547,7 +622,8 @@ def plot_comparison(
         ),
     ]
     fig.legend(handles=legend, loc="lower center", ncol=5, frameon=False, labelcolor=PALETTE["ink2"])
-    fig.tight_layout(rect=(0, 0.07, 1, 0.97))
+    top = 1.0 - 0.75 / fig.get_figheight() if images else 0.97
+    fig.tight_layout(rect=(0, 0.07, 1, top))
     fig.savefig(path, dpi=150, bbox_inches="tight", facecolor=PALETTE["surface"])
     plt.close(fig)
 
@@ -556,9 +632,25 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--runs", nargs="+", required=True, help="LABEL=EVALUATION_DIR of each variant")
     parser.add_argument("--true-reconstruction", type=Path, help="DIR of the map from the true poses")
+    parser.add_argument(
+        "--renders", help="PREFIX of the ground truth's render images (PREFIX_front.png, PREFIX_side.png); draws the "
+        f"render block with each variant's <evaluation dir>/{RENDER_NAME}_<view>.png"
+    )
     parser.add_argument("--out-dir", type=Path, required=True)
     parser.add_argument("--label", default="scenario")
     return parser.parse_args(argv)
+
+
+def collect_renders(prefix: str, runs: dict[str, Path]) -> dict[str, dict[str, Path]]:
+    """The render images of the ground truth (``prefix``) and of every variant, by column title; exits when any is
+    missing."""
+    renders = {"ground truth": {view: Path(f"{prefix}_{view}.png") for view in VIEWS}}
+    for variant, directory in runs.items():
+        renders[variant] = {view: directory / f"{RENDER_NAME}_{view}.png" for view in VIEWS}
+    missing = [str(path) for files in renders.values() for path in files.values() if not path.is_file()]
+    if missing:
+        raise SystemExit(f"missing render images (render_volume.py): {missing}")
+    return renders
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -578,6 +670,7 @@ def main(argv: list[str] | None = None) -> None:
     pixel_size_A = pixel_sizes.pop()
     origin_errors = {variant: read_origin_errors(directory, pixel_size_A) for variant, directory in runs.items()}
     true_auc = None if args.true_reconstruction is None else read_true_pose_auc(args.true_reconstruction)
+    renders = None if args.renders is None else collect_renders(args.renders, runs)
     rows = [{**row, "gt_fsc_auc_true_poses": true_auc} for row in rows]
     args.out_dir.mkdir(parents=True, exist_ok=True)
     write_table(rows, args.out_dir / "variants.csv")
@@ -593,6 +686,7 @@ def main(argv: list[str] | None = None) -> None:
         true_auc,
         args.label,
         args.out_dir / "variants.png",
+        renders,
     )
     for row in rows:
         print(

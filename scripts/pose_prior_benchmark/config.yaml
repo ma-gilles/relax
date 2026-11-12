@@ -17,6 +17,12 @@ relion_module: relion/5.0.1/gcc-14.2.1-cpu
 # angdist executable that plots the orientation distributions. null: the one beside the Python running Snakemake.
 angdist: null
 
+# ChimeraX renders (render_volume.py) of every final map and of the ground truth, in the comparison figure: the root of
+# a ChimeraX install (usr/bin/chimerax, usr/libexec/UCSF-ChimeraX/lib). It draws offscreen under xvfb-run with
+# software OpenGL.
+render:
+  chimerax_dir: /projects/MOLBIO/local/src/chimerax-1.11
+
 # Simulation recipe shared by every scenario: the canonical K=1 PDB fixture of
 # scripts/prepare_pdb_k1_relion_sanity_benchmark.py (5nrl atoms, white noise, total B-factor 80 A^2).
 # The defaults are the 100k-particle, box-256 milestone fixture.

@@ -37,7 +37,9 @@
 #                        when requested, with the final estimated poses of each variant (with their origins, or
 #                        the angles alone); each map's FSC to the ground truth shows what the poses allow without
 #                        the refinement's regularization and soft assignments.
-#   7. compare_variants  the variants of one scenario side by side.
+#   7. render_*          ChimeraX images of each variant's final map and of the ground truth, seen down the
+#                        dataset's preferred viewing direction and from the side (render_volume.py).      [CPU]
+#   8. compare_variants  the variants of one scenario side by side, the renders on top.
 #
 # Outputs, under config `output_root`:
 #   <scenario>/dataset/              particles.star (true angles and origins), particles.<box>.mrcs (a mixture:
@@ -116,6 +118,9 @@ MIX_POOLS_SCRIPT = str(BENCHMARK_DIR / "mix_pools.py")
 WRITE_PRIOR_SCRIPT = str(BENCHMARK_DIR / "write_fixed_prior.py")
 EVALUATE_SCRIPT = str(BENCHMARK_DIR / "evaluate_run.py")
 COMPARE_SCRIPT = str(BENCHMARK_DIR / "compare_variants.py")
+RENDER_SCRIPT = str(BENCHMARK_DIR / "render_volume.py")
+CHIMERAX = Path(config["render"]["chimerax_dir"]) / "usr" / "bin" / "chimerax"
+RENDER_VIEWS = ("front", "side")  # render_volume.VIEWS: the images a render job writes, named <prefix>_<view>.png
 RECONSTRUCT_SCRIPT = str(BENCHMARK_DIR / "reconstruct_with_poses.py")
 ALIGN_SCRIPT = str(BENCHMARK_DIR / "align_to_truth.py")
 CONICAL_FSC_SCRIPT = str(REPO / "scripts" / "conical_fsc.py")
@@ -758,6 +763,72 @@ rule reconstruct_true_poses:
 # ----------------------------------------------------------------------------------------------------------------
 
 
+rule render_final_map:
+    message:
+        "Rendering the final map of {wildcards.scenario} / {wildcards.variant} in ChimeraX"
+    wildcard_constraints:
+        scenario="|".join(map(re.escape, SCENARIOS)),
+        variant="|".join(map(re.escape, VARIANTS)),
+    input:
+        final_map=output_path("{scenario}", "{variant}", "refine", "final_merged.mrc"),
+        reference_gt=lambda wildcards: output_path(dataset_scenario(wildcards.scenario), "dataset", "reference_gt_relion.mrc"),
+        pose_distribution=lambda wildcards: output_path(dataset_scenario(wildcards.scenario), "dataset", "pose_distribution.json"),
+        script=RENDER_SCRIPT,
+    output:
+        front=output_path("{scenario}", "{variant}", "evaluation", "render_front.png"),
+        side=output_path("{scenario}", "{variant}", "evaluation", "render_side.png"),
+    params:
+        env=CLEAN_ENV,
+        python=PYTHON,
+        chimerax=str(CHIMERAX),
+        dataset_dir=lambda wildcards, input: str(Path(input.reference_gt).parent),
+        prefix=lambda wildcards, output: str(Path(output.front).parent / "render"),
+    threads: 4
+    resources:
+        mem="16G",
+        runtime=60,
+    log:
+        output_path("logs", "{scenario}.{variant}.render.log"),
+    shell:
+        "{params.env} JAX_PLATFORMS=cpu {params.python} {input.script} "
+        "--dataset-dir {params.dataset_dir} "
+        "--chimerax {params.chimerax} "
+        "--job {input.final_map} {params.prefix} "
+        "> {log} 2>&1"
+
+
+rule render_truth:
+    message:
+        "Rendering the ground-truth map of {wildcards.scenario} in ChimeraX"
+    wildcard_constraints:
+        scenario="|".join(map(re.escape, SIMULATED + SHIFTED + MIXED)),
+    input:
+        reference_gt=output_path("{scenario}", "dataset", "reference_gt_relion.mrc"),
+        pose_distribution=output_path("{scenario}", "dataset", "pose_distribution.json"),
+        script=RENDER_SCRIPT,
+    output:
+        front=output_path("{scenario}", "dataset", "render_truth_front.png"),
+        side=output_path("{scenario}", "dataset", "render_truth_side.png"),
+    params:
+        env=CLEAN_ENV,
+        python=PYTHON,
+        chimerax=str(CHIMERAX),
+        dataset_dir=lambda wildcards, input: str(Path(input.reference_gt).parent),
+        prefix=lambda wildcards, output: str(Path(output.front).parent / "render_truth"),
+    threads: 4
+    resources:
+        mem="16G",
+        runtime=60,
+    log:
+        output_path("logs", "{scenario}.render_truth.log"),
+    shell:
+        "{params.env} JAX_PLATFORMS=cpu {params.python} {input.script} "
+        "--dataset-dir {params.dataset_dir} "
+        "--chimerax {params.chimerax} "
+        "--job {input.reference_gt} {params.prefix} "
+        "> {log} 2>&1"
+
+
 rule compare_variants:
     message:
         "Comparing the variants of {wildcards.scenario}"
@@ -779,6 +850,14 @@ rule compare_variants:
             output_path(wildcards.scenario, v, "evaluation", "conical_fsc.npz") for v in SCENARIOS[wildcards.scenario]["variants"]
         ],
         true_reconstruction=lambda wildcards: output_path(dataset_scenario(wildcards.scenario), "true_poses", "metrics.json"),
+        renders=lambda wildcards: [
+            output_path(wildcards.scenario, v, "evaluation", f"render_{view}.png")
+            for v in SCENARIOS[wildcards.scenario]["variants"]
+            for view in RENDER_VIEWS
+        ],
+        truth_renders=lambda wildcards: [
+            output_path(dataset_scenario(wildcards.scenario), "dataset", f"render_truth_{view}.png") for view in RENDER_VIEWS
+        ],
         script=COMPARE_SCRIPT,
     output:
         table=output_path("{scenario}", "comparison", "variants.csv"),
@@ -790,6 +869,7 @@ rule compare_variants:
             f"{v}={output_path(wildcards.scenario, v, 'evaluation')}" for v in SCENARIOS[wildcards.scenario]["variants"]
         ),
         true_reconstruction_dir=lambda wildcards, input: str(Path(input.true_reconstruction).parent),
+        truth_prefix=lambda wildcards: output_path(dataset_scenario(wildcards.scenario), "dataset", "render_truth"),
         out_dir=lambda wildcards, output: str(Path(output.table).parent),
     log:
         output_path("logs", "{scenario}.compare.log"),
@@ -797,6 +877,7 @@ rule compare_variants:
         "{params.env} JAX_PLATFORMS=cpu {params.python} {input.script} "
         "--runs {params.runs} "
         "--true-reconstruction {params.true_reconstruction_dir} "
+        "--renders {params.truth_prefix} "
         "--out-dir {params.out_dir} "
         "--label {wildcards.scenario} "
         "> {log} 2>&1"
