@@ -96,3 +96,22 @@ def test_checkpoints_without_the_recipe_v2_fields_keep_their_identity():
     full = dataclasses.asdict(Config())
     old = {k: v for k, v in full.items() if k not in added}
     assert checkpoint._identity_config(old) == checkpoint._identity_config(full)
+
+
+def test_fixed_step_newton_state_resumes(tmp_path):
+    """A fixed-step run never sets k; its saved state still resumes (and a missing file or a coupled run without k
+    is refused)."""
+    from types import SimpleNamespace
+
+    from relax.ppca_initial_model.iteration_loop import _check_newton_resume
+
+    saved = tmp_path / "newton_sgd_0050.npz"
+    saved.write_bytes(b"x")
+    resume = str(tmp_path / "checkpoint_0050.npz")
+    _check_newton_resume(SimpleNamespace(k=None, fixed_step=0.1), saved, resume, 50)
+    _check_newton_resume(SimpleNamespace(k=2.0, fixed_step=None), saved, resume, 50)
+    _check_newton_resume(SimpleNamespace(k=None, fixed_step=None), None, None, 0)  # fresh run
+    with pytest.raises(FileNotFoundError):
+        _check_newton_resume(SimpleNamespace(k=None, fixed_step=None), saved, resume, 50)
+    with pytest.raises(FileNotFoundError):
+        _check_newton_resume(SimpleNamespace(k=None, fixed_step=0.1), tmp_path / "missing.npz", resume, 50)
