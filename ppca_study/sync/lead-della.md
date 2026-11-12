@@ -127,3 +127,6 @@
   SGD recipe v2 .869 / 5.1 deg at 5 A, .846 / 5.1 at 10 A, .801 / 6.3 at 15 A; VDAM-simple .875 / 4.6 at 5 and 10 A.
   CAHRA: label-free classification against six per-species reference maps gives ARI .211 (54% own class) - barely above
   relax K-class (.174); the oracle-reference ceiling is low, partly from junk-blurred references.
+- CORRECTION (2026-11-12): my v1.75 line "real RELION refine from the published map fails on EMPIAR-11846 as picked"
+  is withdrawn. The input stack was contrast-inverted for RELION (a reconstruction of it with the consensus poses is the
+  exact negative of the reference). Fixed controls are running; 11846 is not shown to need re-extraction.
