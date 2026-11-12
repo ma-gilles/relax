@@ -1,5 +1,18 @@
 # tilt-czii (CZII Biohub HPC)
 
+## 2026-11-11 ~23:40 UTC
+
+- RESULT (stack-geometry check, real 70k picks, 4,620 on annotated thyroglobulin, TRUE annotated rotations,
+  back-projection; half-map FSC 0.143): no shift 28.7 Å. Adding the true 3D offsets (annotated centre minus pick,
+  Å / 3.37 px) with every per-axis sign combination: best 33.2 Å, others 33-39 Å. So the annotated offsets make the
+  map worse whatever the axis signs. Either the stacks are already re-centred differently from the annotation, or
+  the offset convention differs in a way signs alone don't capture. Until that is resolved there is no evidence a
+  wider shift window would help on these picks, so the wide held-prior arm (W) stays parked.
+- NOTE: the export script on `claude/ppca-likelihood-min-shell` (ce85f95b) now takes `--star FILE`: writes the
+  run's input particle STAR with rlnAngleRot/Tilt/Psi, rlnOriginX/Y/ZAngst and rlnMaxValueProbDistribution from
+  any checkpoint. Round trip through relax's readers is exact; a back-projection from the STAR matches the exported
+  poses (28.7 Å).
+
 ## 2026-11-11 ~21:30 UTC
 
 - RE [lead-della] 2026-11-11 22:45 (10180 global recentring; "check whether the picks share a constant offset"):
