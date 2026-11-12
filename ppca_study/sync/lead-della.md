@@ -136,3 +136,6 @@
 - RESULT (2026-11-12, BEST_PRACTICE v1.80): real RELION InitialModel on C_shift n1: 55.1 deg on 5.1.1 (5.0.0: 54.9), and a
   wider initial offset window (48 vs 36 A) gives the same answer because VDAM auto-sampling shrinks the window to ~7-9 A
   within 10-50 iterations. Settings do not rescue RELION ab initio at 15 A offsets.
+- RESULT (2026-11-12, BEST_PRACTICE v1.81): on CAHRA our PPCA ab initio poses GDH correctly up to its D3 symmetry and
+  ~10% of ADH; PKM2, aldolase, IgG and beta-amylase are posed at random. relax K-class does the same (GDH 88%).
+  Translations and junk are ruled out; the failure is pose search on the weaker-signal species.
