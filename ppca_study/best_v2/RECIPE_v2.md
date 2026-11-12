@@ -88,8 +88,13 @@ C_shift n3 .834 (SGD v2 .818); Ribosembly_shift n3 .755, ~59% < 10 deg, below me
 The same arm on coupled_arm_fft2_ablate.py (A100) gives Ribosembly_shift n3 .755 / 59% (identical config dict).
 Fails D10_shift and D5_shift from scratch (direct fit 106 / 100 deg). For 9 A/px sets convert the window in A ([[1, 5, 1], [1626, 5, 1]]).
 
+Real data (2026-11-12, BEST_PRACTICE v1.74): VDAM-simple with the wide window (coupled_arm_fft2_ablate.py 0037f627) is the best
+as-picked row on EMPIAR-10097 (mean-map FSC .829 vs W .709, pre-centred .853); on 10073 / 10345 / 10076 it is .942 / .894 / .914
+(W .963 / .916 / .947). Run it next to W where W leaves a large gap to pre-centred.
+
 ## (e) NOT ADOPTED
 
 - Roey's VDAM shell gate (powers + full-data scale): neutral on shifted sets against his own plain arm; diverged in our VDAM-simple port.
 - Fixed mean (selection map, 30 A partial hold): fails on 11846 and synthetic Ribosembly_shift; on 10345 adds FSC but not pose; needs a reference.
 - VDAM as stage 3: destroys the D10_shift subset model (116 deg by update 500); on Ribosembly_shift n3 worse than SGD stage 3 (55% vs 62% < 10).
+- SGD stage 3 on real data (seeded from the VDAM-simple run with drivers/seed_offsets.py f0d810ae, --init-offsets; coupled_arm_shift.py a3cc9708): ties W on 10073 / 10345 / 10076 (-.006 to -.008) and lowers VDAM on 10097 (.829 -> .792); fails the transfer rule (1 PASS / 3 TIE).

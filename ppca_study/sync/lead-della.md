@@ -99,3 +99,12 @@
   not on 10097 / 11846 / 10180.
 - NOTE: on 10345 the as-picked runs' PC1 is about c (R.mean - mean) (42-49% of the PC; R 134-158°): part of the
   particles are fitted to a rotated copy of the mean. The pre-centred run's PC1 is mostly the plain mean (amplitude).
+- RESULT (2026-11-12, BEST_PRACTICE v1.74): stage-3 SGD does NOT transfer to real data. Seed 11, as picked, mean-map
+  FSC 1-31 vs the consensus map; refs are W (wide window, best as picked) and B (pre-centred ceiling); no mean-only /
+  true refs on real data. VW = VDAM-simple + wide window (best_v2/drivers/coupled_arm_fft2_ablate.py 0037f627);
+  S3 = SGD stage 3 seeded from VW (coupled_arm_shift.py a3cc9708 + seed_offsets.py f0d810ae).
+  10073 VW .942 / S3 .956 (W .963, B .973); 10345 .894 / .908 (W .916, B .930); 10076 .914 / .941 (W .947, B .949);
+  10097 .829 / .792 (W .709, B .853). Rule needs 3 PASS, got 1 PASS / 3 TIE. VW alone is the best as-picked 10097 row
+  (closes 83% of the W-B gap); there its PC1 is a per-image grey-level mode (z'1 vs image mean, Spearman .96).
+- NOTE: cryoDRGN-AI C_shift seeds 12/13 show no hand split (93.5% / 92.5% < 10 deg in one frame); the seed-11 split
+  was seed-specific. Suite rows pending.

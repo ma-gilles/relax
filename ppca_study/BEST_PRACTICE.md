@@ -384,4 +384,11 @@ STANDARD:
   - Ribosembly_shift n1: stage-3 SGD .880, 4.1°, 98% (recipe-v2 baseline .878; VDAM .841): stage 3 ties the baseline here.
   - D5_shift fails in all 6 subset-route rows (20% / 30% subsets, seeds 11-13; best .518, 7% < 10; oracle-frame medians 101-119°).
   - C_shift pre-centred (s11) own-hand rescore: .827 vs .910 for the raw C_shift row under the same own-hand scoring, so this seed is uninformative about offsets; seeds 12-13 running.
+- 2026-11-12 v1.74. Real-data transfer test of stage-3 SGD (ribodeep Addendum 7; seed 11, as picked, 3000 updates; mean-map FSC 1-31 vs the consensus map; pose = C3-aware direct fit, a labelled diagnostic). Real data has no mean-only / true-model refs; the refs are the tracker's W (best as picked) and B (pre-centred ceiling). Rows VW = VDAM-simple with the wide window (driver coupled_arm_fft2_ablate.py 0037f627); S3 = SGD stage 3 seeded with VW's poses and offsets (coupled_arm_shift.py a3cc9708 + seed_offsets.py f0d810ae).
+  - 10073: VW .942, S3 .956 | W .963, B .973 (TIE).
+  - 10345: VW .894, S3 .908 | W .916, B .930 (TIE).
+  - 10076: VW .914, S3 .941 | W .947, B .949 (TIE).
+  - 10097 (HA): VW .829 (11.0°), S3 .792 (13.7°) | W .709 (23.6°), B .853 (PASS for S3 at +.083, but VW alone is higher). VW closes 83% of the W-B gap: the best as-picked HA row so far.
+  - Decision: stage 3 does not transfer by the predeclared rule (1 PASS / 3 TIE, rule needs 3 PASS); it stays the synthetic shifted-set recipe only. For real as-picked data keep W as the default; run VW as well where W leaves a large gap to B (10097). On 10097 VW's PC1 is a per-image grey-level (DC) mode (z'1 vs image mean, Spearman .96; vs norm -.20, defocus .05), and S3 adds high-frequency PCs 3+.
+  - cryoDRGN-AI C_shift seeds 12/13 (training poses, diagnostic): no hand split (93.5% / 92.5% < 10°, every state .83-.96); the seed-11 split (v1.71 correction) was seed-specific. Suite decoded rows pending (rule: vs .840 single-frame, offsets matter at >= .87).
 
