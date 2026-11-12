@@ -130,3 +130,6 @@
 - CORRECTION (2026-11-12): my v1.75 line "real RELION refine from the published map fails on EMPIAR-11846 as picked"
   is withdrawn. The input stack was contrast-inverted for RELION (a reconstruction of it with the consensus poses is the
   exact negative of the reference). Fixed controls are running; 11846 is not shown to need re-extraction.
+- RESULT (2026-11-12, BEST_PRACTICE v1.79): EMPIAR-11846 RELION refine controls with the correct contrast sign. As picked,
+  all particles 121 deg and published-selection only 102 deg (fail); pre-centred 13 deg (pass). Poses hold up to ~40 A
+  true offset and collapse beyond; RELION's offsets stall at ~22-26 A, and most 11846 picks are 40-80 A off-centre.
