@@ -77,7 +77,8 @@ class Config:
     # (0: visit every row), when that leaves at most half the rows. A runtime setting;
     # full_row_kernels._pass2_rows has the bound; section 14 of docs/math/vdam_ppca_algorithm.md the evidence.
     pass2_mass_floor: float = 1e-10
-    # Subtomogram particles from HEALPix order 2: score pass 1 on the order hp - 1 grid first and the stage's grid only
+    # Subtomogram particles from HEALPix order 2: score pass 1 on the order hp - 1 grid first (at RELION's coarse image
+    # size for its angular step, as adaptive oversampling's pass 1) and the stage's grid only
     # on the rows whose nearest coarse rotation is a particle's significant coarse rotation (those of its poses
     # holding target_mass, at most max_significant) or a neighbouring cell of one (iteration_loop._expectation).
     # A runtime setting, like pass2_mass_floor; off by default.

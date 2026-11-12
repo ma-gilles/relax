@@ -559,7 +559,7 @@ def _expectation(
         oversampled = oversampled_update(config, iteration)
         pass1_size = pass1_image_size(hp, dataset, 2 * radius, diameter_ang) if oversampled else 2 * radius
         # Subtomogram coarse pass (config.tilt_coarse_pass): pass 1 on the order hp - 1 grid (or the fixed
-        # config.tilt_coarse_order) gives each particle its significant (coarse rotation, shift) poses (target_mass,
+        # config.tilt_coarse_order), at RELION's coarse image size for that grid's step, gives each particle its significant (coarse rotation, shift) poses (target_mass,
         # max_significant); the stage's grid is then scored only on the rows whose nearest coarse rotation is
         # significant or a neighbouring cell of one (_coarse_parents, _coarse_neighbors).
         # Order 1's coarse grid (order 0) is too coarse to prune; the pass runs from order 2.
@@ -577,8 +577,17 @@ def _expectation(
                 n_coarse_rotations=len(coarse_rotations),
                 n_coarse_translations=len(translations),
             )
+            # Two separate low-pass limits. The stage's radius (2 * radius) is the optimisation schedule: the
+            # frequencies the model may use at this stage. The coarse pass's window is a search bound: the frequency
+            # up to which a pose anywhere in a coarse cell scores close to the cell's centre, so the coarse score
+            # stands for the whole cell (RELION's coarse image size for the coarse grid's angular step and the
+            # particle diameter, as adaptive oversampling's pass 1). It is capped at the stage's window and leaves
+            # the stage's radius, the fine pass and the model update unchanged.
+            coarse_size = pass1_image_size(coarse_order, dataset, 2 * radius, diameter_ang)
             coarse_streams = make_streams(
-                geometry, rotations=coarse_rotations, rotation_log_prior=coarse_log_prior.astype(np.float32)
+                dataclasses.replace(geometry, current_size=coarse_size),
+                rotations=coarse_rotations,
+                rotation_log_prior=coarse_log_prior.astype(np.float32),
             )
         else:
             streams = make_streams(dataclasses.replace(geometry, current_size=pass1_size))
