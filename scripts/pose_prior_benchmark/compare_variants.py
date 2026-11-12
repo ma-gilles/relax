@@ -64,10 +64,10 @@ ORIGIN_ERROR_RANGE_PX = (0.05, 50.0)  # the origin error axis, pixels
 POSE_ERROR_BINS = 200
 POSE_ERROR_SMOOTHING_DECADES = 0.05
 GROSS_POSE_ERROR_DEG = 90.0
-RENDER_ROW_LABELS = {"front": "front: down the preferred axis", "side": "side: preferred axis up"}
+RENDER_ROW_LABELS = {"front": "front: down the preferred axis", "side": "side: front turned 90 degrees"}
 RENDER_CAPTION = (
-    "Final maps drawn at the isosurface that encloses the ground truth's volume at 20% of its maximum; the front view "
-    "looks down the dataset's preferred viewing direction, the side view across it."
+    "Final maps drawn at the isosurface that encloses the ground truth's volume at 10% of its extreme density; the front view "
+    "looks down the dataset's preferred viewing direction, the side view is the front view turned 90 degrees about the vertical."
 )
 RENDER_MARGIN = 0.04  # of the image edge, around the pixels that are not background
 RENDER_LABEL_ALLOWANCE_IN = 0.9  # height of the column titles and the gaps of the render block, inches

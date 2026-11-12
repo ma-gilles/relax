@@ -5,10 +5,14 @@ Viewing directions that are not uniform leave a missing cone in Fourier space ar
 sharp in the plane perpendicular to it and smeared along it. The ``front`` view looks down the preferred axis (the
 eigenvector of the largest eigenvalue of the true viewing directions' second-moment matrix, from the simulator's
 pose distribution; +z when the distribution is uniform), where the image plane holds the well-sampled directions.
-The ``side`` view looks perpendicular to it with the preferred axis pointing up, so the smearing runs along the
-vertical. Every map is drawn at the isosurface level that encloses as many voxels as the ground-truth map does at
-``GT_LEVEL_FRACTION`` of its maximum, so maps of different scale are comparable, with one field of view (a distant
-camera of narrow angle, nearly orthographic).
+The ``side`` view is the front view turned 90 degrees about the image's vertical axis, so the structure stays
+upright and the preferred axis runs across the image, where the smearing shows.
+
+The molecule's density has the sign of the ground-truth map's larger extreme (negative in the simulator's maps: the
+GT map runs from -0.07 to +0.02). A negative molecule is drawn from a copy of the map with its sign turned (ChimeraX
+closes the surface of a negative level around the whole box instead). Every map is drawn at the level that encloses
+as many voxels as the ground-truth map does at ``GT_LEVEL_FRACTION`` of its extreme, so maps of different scale are
+comparable, with one field of view (a distant camera of narrow angle, nearly orthographic).
 
 ChimeraX draws offscreen only through OSMesa, which the cluster's build lacks; the script runs it under ``xvfb-run``
 with software OpenGL (about 15 s of start-up, then a few seconds per image). A Python driver runs the commands one
@@ -43,7 +47,7 @@ sys.path.insert(0, str(ROOT))
 VIEWS = ("front", "side")
 RENDER_NAME = "render"  # a variant's images are <evaluation dir>/render_<view>.png
 TRUTH_RENDER_NAME = "render_truth"  # the ground truth's are <dataset dir>/render_truth_<view>.png
-GT_LEVEL_FRACTION = 0.2  # of the ground-truth map's maximum: the surface whose enclosed volume every map matches
+GT_LEVEL_FRACTION = 0.1  # of the ground-truth map's extreme: the surface whose enclosed volume every map matches
 HEALPIX_ORDER = 4  # of the true prior whose second moment gives the preferred axis
 AXIS_TOLERANCE = 0.01  # a top eigenvalue this far above 1/3 is a preferred axis; below it the views use +z
 IMAGE_PIXELS = 800
@@ -52,6 +56,16 @@ FIELD_FRACTION = 0.75  # width of the field of view at the box centre over the b
 FIELD_OF_VIEW_DEG = 6.0  # of the camera: narrow, so the perspective is nearly orthographic
 DUST_SIZE_A = 12.0  # surface blobs smaller than this are hidden
 SURFACE_COLOR = "#7fa6cf"
+
+
+class RenderJob(NamedTuple):
+    """One map to draw: its file, the prefix of its images, the isosurface level of the map times ``sign`` and the
+    ``sign`` (-1 draws a copy of the map with its sign turned) of the molecule's density."""
+
+    volume_path: Path
+    prefix: Path
+    level: float
+    sign: float
 
 
 class MapGeometry(NamedTuple):
@@ -93,19 +107,15 @@ def preferred_axis(poses: dict[str, Any], order: int = HEALPIX_ORDER) -> np.ndar
 def view_directions(axis: np.ndarray) -> dict[str, tuple[np.ndarray, np.ndarray]]:
     """The camera direction (towards the viewer) and the up vector of each view, for the preferred ``axis``.
 
-    ``front`` looks down the axis with y up (the y axis made perpendicular to it); ``side`` looks along the x axis
-    made perpendicular to it, with the axis up.
+    ``front`` looks down the axis with y up (the y axis made perpendicular to it; x when the axis is along y).
+    ``side`` keeps that up vector and looks along the front view's right-hand direction: the front view turned 90
+    degrees about the vertical.
     """
     axis = axis / np.linalg.norm(axis)
-
-    def perpendicular(vector: np.ndarray) -> np.ndarray:
-        """``vector`` with its part along ``axis`` removed, as a unit vector."""
-        rest = vector - axis * (axis @ vector)
-        return rest / np.linalg.norm(rest)
-
-    reference = np.array([1.0, 0.0, 0.0]) if abs(axis[0]) < 0.9 else np.array([0.0, 1.0, 0.0])
-    up_front = perpendicular(np.array([0.0, 1.0, 0.0]) if abs(axis[1]) < 0.9 else np.array([1.0, 0.0, 0.0]))
-    return {"front": (axis, up_front), "side": (perpendicular(reference), axis)}
+    up = np.array([0.0, 1.0, 0.0]) if abs(axis[1]) < 0.9 else np.array([1.0, 0.0, 0.0])
+    up = up - axis * (axis @ up)
+    up = up / np.linalg.norm(up)
+    return {"front": (axis, up), "side": (np.cross(up, axis), up)}
 
 
 def view_matrix(direction: np.ndarray, up: np.ndarray, center: np.ndarray) -> list[float]:
@@ -117,6 +127,11 @@ def view_matrix(direction: np.ndarray, up: np.ndarray, center: np.ndarray) -> li
     rotation = np.stack([np.cross(up, direction), up, direction])  # rows: screen x, y, z in map coordinates
     translation = center - rotation @ center
     return [float(x) for x in np.concatenate([rotation, translation[:, None]], axis=1).ravel()]
+
+
+def molecule_sign(volume: np.ndarray) -> float:
+    """-1 when the larger extreme of ``volume`` is its minimum (the molecule is negative density), else +1."""
+    return -1.0 if abs(volume.min()) > abs(volume.max()) else 1.0
 
 
 def enclosed_voxels(volume: np.ndarray, fraction: float = GT_LEVEL_FRACTION) -> int:
@@ -141,9 +156,9 @@ def read_map(path: Path) -> tuple[np.ndarray, MapGeometry]:
 
 
 def chimerax_commands(
-    jobs: list[tuple[Path, Path, float]], geometry: MapGeometry, matrices: dict[str, list[float]], image_pixels: int
+    jobs: list[RenderJob], geometry: MapGeometry, matrices: dict[str, list[float]], image_pixels: int
 ) -> list[str]:
-    """The ChimeraX commands that render every ``(map, output prefix, level)`` job in every view.
+    """The ChimeraX commands that render every job in every view.
 
     ``matrices`` holds each view's model matrix; the camera sits on the z axis through the box centre, far enough that
     its field of view is ``FIELD_FRACTION`` of the box at the centre.
@@ -158,17 +173,19 @@ def chimerax_commands(
         "graphics silhouettes true width 1.5",
         f"camera mono fieldOfView {FIELD_OF_VIEW_DEG}",
     ]
-    for volume_path, prefix, level in jobs:
+    for volume_path, prefix, level, sign in jobs:
+        shown = "#1" if sign > 0 else "#2"
+        commands += ["close", f"open {volume_path} format mrc"]
+        if sign < 0:
+            commands += ["volume scale #1 factor -1 modelId 2", "hide #1 models"]
         commands += [
-            "close",
-            f"open {volume_path} format mrc",
-            f"volume #1 voxelSize {geometry.voxel_size} originIndex 0,0,0 level {level:.8g} style surface color {SURFACE_COLOR}",
-            f"surface dust #1 size {DUST_SIZE_A}",
+            f"volume {shown} voxelSize {geometry.voxel_size} originIndex 0,0,0 level {level:.8g} style surface color {SURFACE_COLOR}",
+            f"surface dust {shown} size {DUST_SIZE_A}",
         ]
         for view in VIEWS:
             numbers = ",".join(f"{x:.6f}" for x in matrices[view])
             commands += [
-                f"view matrix models #1,{numbers}",
+                f"view matrix models {shown},{numbers}",
                 f"view matrix camera {camera}",
                 f"save {prefix}_{view}.png width {image_pixels} height {image_pixels} supersample {SUPERSAMPLE}",
             ]
@@ -208,13 +225,15 @@ def render_maps(
 ) -> list[Path]:
     """Render each ``(map, output prefix)`` of ``jobs`` in the front and side views; returns the PNGs written.
 
-    The preferred axis comes from ``dataset_dir/pose_distribution.json`` and the isosurface level of every map from the
-    ground-truth map ``dataset_dir/reference_gt_relion.mrc`` (see the module docstring). All maps must share its box
+    The preferred axis comes from ``dataset_dir/pose_distribution.json``, the sign of the molecule's density and the
+    isosurface level of every map from the ground-truth map ``dataset_dir/reference_gt_relion.mrc`` (see the module
+    docstring). All maps must share its box
     and voxel size. Raises when a ChimeraX command fails or an image is missing.
     """
     poses = json.loads((dataset_dir / "pose_distribution.json").read_text())
     reference, geometry = read_map(dataset_dir / "reference_gt_relion.mrc")
-    n_voxels = enclosed_voxels(reference)
+    sign = molecule_sign(reference)
+    n_voxels = enclosed_voxels(sign * reference)
     directions = view_directions(preferred_axis(poses))
     matrices = {view: view_matrix(*directions[view], geometry.center) for view in VIEWS}
     planned = []
@@ -223,7 +242,7 @@ def render_maps(
         if other != geometry:
             raise ValueError(f"{volume_path} has box {other.box} and voxel size {other.voxel_size}, expected {geometry}")
         prefix.parent.mkdir(parents=True, exist_ok=True)
-        planned.append((volume_path.resolve(), prefix.resolve(), matched_level(volume, n_voxels)))
+        planned.append(RenderJob(volume_path.resolve(), prefix.resolve(), matched_level(sign * volume, n_voxels), sign))
     with tempfile.TemporaryDirectory() as scratch:
         log = Path(scratch) / "commands.log"
         script = Path(scratch) / "render.py"
@@ -231,7 +250,7 @@ def render_maps(
         command = [xvfb_run, "-a", "-s", "-screen 0 1280x1024x24", chimerax, "--exit", str(script)]
         done = subprocess.run(command, capture_output=True, text=True, env=chimerax_environment(chimerax))
         record = log.read_text() if log.is_file() else ""
-    written = [Path(f"{prefix}_{view}.png") for _, prefix, _ in planned for view in VIEWS]
+    written = [Path(f"{job.prefix}_{view}.png") for job in planned for view in VIEWS]
     failed = [line for line in record.splitlines() if line.startswith("FAIL")]
     missing = [str(path) for path in written if not path.is_file()]
     if done.returncode != 0 or failed or missing:

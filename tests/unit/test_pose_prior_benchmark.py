@@ -1793,16 +1793,19 @@ def test_a_view_turns_the_map_about_its_centre_so_the_direction_faces_the_viewer
         assert_matches(rotation @ center + translation, center)
 
 
-def test_the_front_view_looks_down_the_axis_and_the_side_view_across_it_with_the_axis_up():
+def test_the_side_view_is_the_front_view_turned_a_quarter_about_the_vertical():
     for axis in (np.array([0.0, 0.0, 1.0]), np.array([0.0, 1.0, 0.0]), np.array([1.0, 1.0, 1.0]) / np.sqrt(3.0)):
         views = rv.view_directions(axis)
-        assert_matches(views["front"][0], axis)
-        assert abs(views["front"][0] @ views["front"][1]) < 1e-12
-        assert abs(views["side"][0] @ axis) < 1e-12
-        assert_matches(views["side"][1], axis)
-        for direction, up in views.values():
-            assert_matches(np.linalg.norm(direction), 1.0)
-            assert_matches(np.linalg.norm(up), 1.0)
+        (front, front_up), (side, side_up) = views["front"], views["side"]
+        assert_matches(front, axis)
+        assert_matches(side_up, front_up)  # the structure stays upright
+        assert abs(front @ front_up) < 1e-12 and abs(side @ side_up) < 1e-12 and abs(side @ front) < 1e-12
+        for vector in (front, front_up, side):
+            assert_matches(np.linalg.norm(vector), 1.0)
+    front, up = rv.view_directions(np.array([0.0, 0.0, 1.0]))["front"]
+    assert_matches(up, [0.0, 1.0, 0.0])
+    side, _ = rv.view_directions(np.array([0.0, 0.0, 1.0]))["side"]
+    assert_matches(side, [1.0, 0.0, 0.0])
 
 
 def test_a_map_is_drawn_at_the_level_that_encloses_the_reference_volume():
@@ -1880,14 +1883,26 @@ def test_the_chimerax_commands_draw_every_map_in_every_view_with_one_camera():
     geometry = rv.MapGeometry(256, 2.125)
     matrices = {view: [1.0] * 12 for view in rv.VIEWS}
     commands = rv.chimerax_commands(
-        [(Path("/a.mrc"), Path("/out/a"), 0.5), (Path("/b.mrc"), Path("/out/b"), 0.25)], geometry, matrices, 800
+        [rv.RenderJob(Path("/a.mrc"), Path("/out/a"), 0.5, 1.0), rv.RenderJob(Path("/b.mrc"), Path("/out/b"), 0.25, -1.0)],
+        geometry,
+        matrices,
+        800,
     )
     assert sum(command.startswith("save ") for command in commands) == 4
-    assert sum(command.startswith("view matrix models #1,") for command in commands) == 4
+    assert sum(command.startswith("view matrix models #1,") for command in commands) == 2  # the positive map
+    assert sum(command.startswith("view matrix models #2,") for command in commands) == 2  # the sign-turned copy
     assert sum(command.startswith("camera mono") for command in commands) == 1
-    assert any("level 0.25 " in command for command in commands)
+    assert "volume scale #1 factor -1 modelId 2" in commands and sum("volume scale" in c for c in commands) == 1
+    assert any(c.startswith("volume #2 ") and "level 0.25 " in c for c in commands)  # a positive level on the copy
     assert "save /out/b_side.png width 800 height 800 supersample 3" in commands
     compile(rv.driver_script(commands, Path("/log")), "driver", "exec")
+
+
+def test_the_molecule_has_the_sign_of_the_larger_extreme_of_the_ground_truth_map():
+    volume = np.zeros((4, 4, 4))
+    volume[0, 0, 0], volume[1, 1, 1] = -0.07, 0.02
+    assert rv.molecule_sign(volume) == -1.0
+    assert rv.molecule_sign(-volume) == 1.0
 
 
 def test_the_crop_of_a_view_holds_every_image_and_blank_images_are_refused():
