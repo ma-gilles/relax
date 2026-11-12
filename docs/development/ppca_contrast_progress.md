@@ -544,3 +544,54 @@ on this branch, PC schedule 1 of 4 and 2 of 4), so they are not from the contras
 iteration, final embeddings written). Contrast estimates at the end: mean 1.001, sd 0.109, range 0.63 to 2.17, none below the floor; the prior sd rose from 0.20 to 0.23 and the gain stayed
 within -0.26 to +0.06 (poses are still random at this point, so this says only that nothing breaks). The six full runs are still queued.
 
+### 2026-11-12 pose errors with and without the contrast model (`scripts/ppca_contrast/pose_by_contrast.py`)
+
+The owner asked how much contrast disturbs the poses, and what the contrast latent and its fixes do about it. The pose metric is the suite scorer's direct fit (one global rotation and hand
+fitted on the inferred against the true poses, then the angle per particle) on the 2538 stratified evaluation particles, final checkpoint. The script recomputes the per-particle errors from
+`inference.npz` and `direct_fit.json` (the recomputed median equals the stored one in all 85 runs of rounds 4 to 11) and bins them by the particle's true contrast (`evaluation/contrast.npy`).
+The `c00` datasets have the same particles, true poses and states as the `c30` ones at the same noise level and unit contrast, so they are a control on the same particles. Tables of the eight
+groups: `$R/pose_by_contrast/*.md`. The runs are the arms of rounds 4 to 11 (later rounds win for a seed run twice); `cg_*` is the centred M-step, `co_*` adds the orthogonal loadings (the
+default), `qo_*` is model B. The early arms without the fixes (`c_*`, `cc_*`, `cf_*`, rounds 1c to 2) were never scored, so they have no pose number.
+
+Median error (deg) / share of particles below 10 deg, over all evaluation particles (number of runs):
+
+| | VDAM noise 1 | VDAM noise 3 | SGD noise 1 | SGD noise 3 |
+| --- | --- | --- | --- | --- |
+| control, unit contrast, baseline | 3.93 / 99.9% (3) | 4.50 / 96.8% (1) | 5.00 / 98.7% (3) | 6.61 / 83.7% (1) |
+| contrast sd 0.30, baseline (no contrast model) | 4.09 / 98.0% (4) | 4.78 / 87.8% (4) | 5.58 / 92.8% (3) | 7.32 / 68.2% (2) |
+| `cg` (centred M-step) | 4.05 / 98.0% and 4.14 / 98.3% (seeds 11, 14); seeds 12, 13: 5.09 / 65.0%, 6.05 / 55.1% | 4.68 / 88.4% (2) | 5.79 / 93.3% (5) | 7.63 / 67.1% (2) |
+| `co` (orthogonal loadings) | 4.08 / 98.1% (4) | 4.72 / 88.5% (4) | 5.84 / 90.3% (14); without seed 12: 93.4% (13); seed 12: 9.66 / 50.7% | 7.73 / 69.5% (2) |
+| `qo` (model B, 3 nodes) | 4.05 / 98.1% (1) | | | |
+
+The same by the true contrast of the particle (pooled over seeds; failed runs left out; 396, 542, 664, 533, 403 particles in the five bins):
+
+| | <0.7 | 0.7-0.9 | 0.9-1.1 | 1.1-1.3 | >1.3 |
+| --- | --- | --- | --- | --- | --- |
+| VDAM noise 3, control | 97.7% | 96.3% | 96.5% | 97.9% | 95.8% |
+| VDAM noise 3, baseline | 47.5% (11.8 deg) | 85.9% | 97.1% | 99.0% | 99.7% |
+| VDAM noise 3, `co` | 48.4% (10.7 deg) | 88.1% | 97.3% | 99.1% | 99.6% |
+| VDAM noise 1, control | 99.9% | 99.9% | 99.9% | 99.9% | 99.8% |
+| VDAM noise 1, baseline | 87.6% | 99.7% | 99.8% | 100% | 99.9% |
+| VDAM noise 1, `co` / `qo` | 88.1% / 88.4% | 99.8% / 100% | 99.9% / 100% | 100% / 100% | 99.9% / 99.8% |
+| SGD noise 3, control | 85.4% | 83.6% | 82.7% | 83.1% | 84.9% |
+| SGD noise 3, baseline | 16.5% | 54.8% | 77.9% | 88.7% | 94.0% |
+| SGD noise 3, `co` | 28.8% | 63.6% | 76.4% | 83.1% | 88.2% |
+| SGD noise 1, baseline | 69.8% | 94.9% | 96.7% | 98.2% | 98.9% |
+| SGD noise 1, `co` (without seed 12) | 78.3% | 94.8% | 96.3% | 96.6% | 97.2% |
+
+Reading:
+- *Unmodelled contrast costs poses, and only through the low-contrast particles.* At sd 0.30 the share below 10 deg falls by 1.9 points (VDAM, noise 1), 9.0 (VDAM, noise 3), 6 (SGD, noise 1) and 15.5 (SGD, noise 3)
+  against the unit-contrast control on the same particles, the median by 0.16 to 0.7 deg. The loss sits in the particles with a true contrast below 0.9; those above 1.1 are as accurate as in the control or more.
+  At noise 3 a particle with contrast below 0.7 (16 percent of them) has 47.5 percent (VDAM) and 16.5 percent (SGD) of its poses within 10 deg, against 97.7 and 85.4 in the control.
+- *The contrast model recovers little of it.* VDAM: +0.1 point overall at noise 1, +0.7 at noise 3 (four seeds each, seed spread of the baseline 87.6 to 88.1), +2 points in the 0.7 to 0.9 bin and +1 in the lowest;
+  the lowest bin stays 12 (noise 1) and 49 (noise 3) points under the control. SGD: the lowest bin gains 8 to 12 points but the two highest bins lose 1.6 to 5.8, so the overall share moves by +0.6 (noise 1, without the failed seed) and
+  +1.3 (noise 3, two seeds) and the median error is not better. Model B is not different from model A on its one seed. The orthogonality constraint does not change the poses (VDAM `cg` and `co` agree on the seeds that did not fail).
+- A reading, not a test: the pose likelihood of a particle depends on the signal power, `c^2` times the unit-contrast power, so a particle at `c = 0.5` has a quarter of the information about its pose whether or not `c` is modelled;
+  modelling `c` can only remove the bias of a wrong amplitude, not the lost information. The control being flat across the bins, and the `c > 1.3` bin at noise 3 being above it (99.7 against 95.8 percent), fit this.
+- *The only poses that are damaged beyond the information loss are in runs with the latent:* `cg_vdam` seeds 12 and 13 (65.0 and 55.1 percent below 10 deg; they were 98.3 and 98.1 on the older base of round 4, and the baselines of rounds 10 and 10b
+  have no failure) and `co_sgd` seed 12 (50.7; the same in rounds 5 and 10; its baseline is 92.2). In these runs the share below 10 deg is 40 to 63 percent in every contrast bin, so it is not a contrast-dependent
+  loss but a poor optimum. At noise 1 and sd 0.30, failures per seed: `co_vdam` 0 of 4, `cg_vdam` 2 of 4, `co_sgd` 1 of 14, `cg_sgd` 0 of 5; the baselines 0 of 4 (VDAM) and 0 of 3 (SGD).
+  The seeds are few, so the rates say that the latent arms can fail where the baselines did not, not how often.
+- Not separated: the scorer infers the poses of a contrast arm with the contrast marginalized (`infer_for_suite.py`) and of a baseline without it, so each arm is scored with its own inference; the table says how well each pipeline's
+  poses are, not how much the training alone changed them. Scoring each checkpoint with both inferences (GPU jobs, not run) would separate the two. The poses during training are not recorded, only the final ones.
+
