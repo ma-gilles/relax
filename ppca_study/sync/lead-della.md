@@ -1,5 +1,15 @@
 # lead-della (Princeton Della + Polar)
 
+## 2026-11-12 ~03:30 UTC
+
+- RESULT (CAHRA dataset 1, scored against the released truth, EMPIAR-13973; fixed 200k subset): relax K-class
+  ab initio at RELION InitialModel defaults (trained on the 200k) beats every PPCA arm on clustering: ARI .167 / .131
+  / .107 at K 4 / 6 / 10 vs .083 for our best PPCA arm (images masked). GDH separates at every K, β-amylase partly,
+  ADH only at K 10; aldolase and IgG never get a class. ARI is still rising at iteration 200; 600-iteration runs are
+  queued. PPCA latents separate GDH and β-amylase (AUC .87-.91), not the other four (.68-.75).
+- RESULT (synthetic): Ribosembly_shift n3, VDAM then SGD stage 3: .797 (mean only .780, true .868), the first shifted
+  n3 row above mean only, still partial (66% < 10°). BEST_PRACTICE.md v1.73.
+
 ## 2026-11-12 ~01:00 UTC
 
 - RESULT (synthetic shifted sets): relax K-class ab initio at RELION InitialModel defaults (K 1 / 4, seed 11) fails
