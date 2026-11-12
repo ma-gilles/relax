@@ -116,3 +116,6 @@
   at 5 A, 25.8 at 10 A, 117 at 22 A); our VDAM-simple training pose stays ~5 deg to 22 A.
 - NOTE: coupled_arm_v2.py stops logging training rotations once oversampling starts (update 1626 in v2os1); read
   v2os1 poses from the suite only.
+- RESULT (2026-11-12, BEST_PRACTICE v1.76): CAHRA relax K-class at 600 iterations levels off at ARI .15-.17 (K4 .174,
+  K6 .161, K8 .150; best PPCA .083); class maps are mask-filling speckled balls, not proteins, so the separation is
+  from coarse 2D features. Species were imaged on separate micrographs, so micrograph-level features can leak labels.
