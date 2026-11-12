@@ -123,3 +123,7 @@
   the six species (macro-AUC .999) vs our PPCA .791: resolution and the linear model are not the limit, pose/frame is.
   Template re-picking: NO-GO (single-particle detection ~2 sigma; even oracle templates fail the null test).
 - NOTE: relax PPCA CUDA kernels cap q at 16 (basis size P = q+1 <= 17).
+- RESULT (2026-11-12, BEST_PRACTICE v1.78): shift ladder on C_shift n1, suite decoded / pose (mean only .837, true 1.000):
+  SGD recipe v2 .869 / 5.1 deg at 5 A, .846 / 5.1 at 10 A, .801 / 6.3 at 15 A; VDAM-simple .875 / 4.6 at 5 and 10 A.
+  CAHRA: label-free classification against six per-species reference maps gives ARI .211 (54% own class) - barely above
+  relax K-class (.174); the oracle-reference ceiling is low, partly from junk-blurred references.
