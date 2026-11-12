@@ -260,6 +260,15 @@ OVERSAMPLING_CAP_MASS = 0.99
 OVERSAMPLING_CAP_WARNING = 0.05
 
 
+def _check_newton_resume(newton, saved, resume, iteration):
+    """A resumed Newton SGD run needs its saved state: the file, and the coupled step's scale k unless the step is
+    fixed (--sgd-fixed-step never sets k)."""
+    if not resume or iteration <= 0:
+        return
+    if not (saved and Path(saved).exists()) or (newton.k is None and newton.fixed_step is None):
+        raise FileNotFoundError(f"Newton SGD state {saved} of the resumed checkpoint")
+
+
 def oversampled_update(config, iteration) -> bool:
     """Whether the update at ``iteration`` runs adaptive oversampling: the last stage's updates do; the earlier
     stages run the dense grid of their order (their posteriors are flat, the significant-sample cap cannot follow
@@ -823,8 +832,7 @@ def run(
     if config.newton_sgd():
         saved = Path(resume).with_name(Path(resume).name.replace("checkpoint_", "newton_sgd_")) if resume else None
         newton = NewtonSGD(config, int(shells.max()) + 1, NewtonSGD.load(saved) if saved and saved.exists() else None)
-        if resume and newton.k is None and state.iteration > 0:
-            raise FileNotFoundError(f"Newton SGD state {saved} of the resumed checkpoint")
+        _check_newton_resume(newton, saved, resume, state.iteration)
         logger.info("Newton SGD: %s", describe_newton(config))
     stage_tile_sizes = {}  # compiled tile shapes seen per stage (radius, HEALPix order)
     log = _ModelLog(output / "iterations.jsonl")
