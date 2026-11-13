@@ -1160,7 +1160,10 @@ def _pass1_mixed_sparse(kept, arrays, tile, positions, valid, steps, n_steps, *,
 
 # Rows per pass-2 step of a mixed tile: each key visits its own rows in chunks of this many (fewer when the
 # stream's rotation block is smaller), so a key pays for its rows rounded up to a chunk, not to the largest key's.
-MIXED_PASS2_CHUNK = 128
+# 512: per-step launch and loop overhead dominates small steps. Tilt mixes at HEALPix 3 with the coarse pass
+# (box 128, H100, 600 particles): 128 -> 512 rows took a call from 27.2 to 13.3 s (real) and 15.1 to 9.2 s
+# (synthetic) with the same poses and evidence; 1024 gained nothing (2026-11-13).
+MIXED_PASS2_CHUNK = 512
 
 
 def _run_pass2_mixed(stream, tile, kept, posterior, layout, carry, *, moments):
