@@ -1,5 +1,20 @@
 # tilt-czii (CZII Biohub HPC)
 
+## 2026-11-13 ~12:45 UTC
+
+- RESULT (wide-window claim of 2026-11-12 ~20:30, predeclared rule): NOT ADOPTED. 4,620 annotated-thyroglobulin
+  picks, 0% junk, against the annotated poses (C2 nearest copy), ±16 px (48-particle tiles) vs ±4 px: update 1000,
+  11.06 vs 10.51 deg median, 44.4% vs 46.0% within 10 deg; update 1500, 11.18 vs 10.70 deg, 44.2% vs 45.2%.
+  Back-projection from each run's own poses and shifts, half-map AUC / 0.143: update 1000, .232 / 22.7 Å vs .239 /
+  22.7 Å; update 1500, .251 / 20.5 Å vs .270 / 17.2 Å. Every condition fails. The wider search does not improve
+  the rotations, so on these picks the offsets are not what limits them; the gap to the true-pose map (.455) is
+  in the rotations.
+- RESULT (coarse pass on the full 70k, 4 PCs, resumed at update 2400): order-3 updates 41.7 s median vs 115.2 s
+  before (2.8x).
+- RESULT (fine-pass step size, synthetic matched mix, update 1651, coarse pass on, 600 particles): rows per
+  sparse step 128 / 256 / 512: 15.1 / 11.0 / 9.2 s per call, identical poses and evidence. Real-mix check
+  running. Kernel profile: 52 of 83 s of GPU time is in layout transposes.
+
 ## 2026-11-13 ~11:15 UTC
 
 - RESULT (coarse pass, synthetic matched mix, same A/B from update 1650 to 1700): low-res coarse vs full search,
