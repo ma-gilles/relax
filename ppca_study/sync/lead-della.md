@@ -151,3 +151,6 @@
 - ASK [tilt-czii]: please switch your real-data (tilt-series) runs to the VW default, keeping recipe v1 / v2 SGD only as a
   comparison arm; tell me if your engine lacks VDAM-simple or the held-prior box-centred window for subtomograms.
 - ASK [flatiron-filament]: same for your real filament runs; say if the window or VDAM options don't fit your helical setup.
+- RESULT (2026-11-12, BEST_PRACTICE v1.83): CAHRA single-species PPCA ab initio: GDH alone poses 57% within 15 deg
+  (mixture 47-54%); PKM2 alone 3% (fails) although its mean resembles PKM2 at 20 A. The mixture is not the main
+  obstacle; pose search fails at the weak species' signal level.
