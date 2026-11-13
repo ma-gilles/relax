@@ -59,6 +59,7 @@ from relax.sampling.orientation_priors import (
     HalfDirectionLogPriors,
     HalfTranslationPriorInputs,
     make_relion_translation_log_prior,
+    pdf_offset_score_sigma,
     relion_direction_log_priors_for_half,
     relion_half_translation_prior_inputs,
     relion_local_search_sigmas,
@@ -728,9 +729,12 @@ def prepare_final_half(
     symmetry: str,
     dtype,
     projection_scale: float,
+    consistent_offset_prior: bool = False,
 ) -> PreparedFinalHalf:
     """Resolve SPA priors and optics in the final grid's image-pixel frame.
 
+    ``sigma_offset_angstrom`` is the width the score prior is evaluated with (``pdf_offset_score_sigma``);
+    ``consistent_offset_prior`` (``--offset_prior_units consistent``) centres it in pixels.
     See docs/math/relion_refinement_algorithm.md, section 7.
     """
     translations = relion_half_translation_prior_inputs(
@@ -739,6 +743,7 @@ def prepare_final_half(
         base_translations=sampling.base_translations,
         current_translations=sampling.grid.translations,
         dtype=dtype,
+        consistent_units=consistent_offset_prior,
     )
     translation_log_prior = make_relion_translation_log_prior(
         translations.prior_translations,
@@ -1023,11 +1028,16 @@ def score_final_half(
     else:
         # The final pass scores each half with its own priors on the grid rows it
         # actually uses; sealed rows apply only when the sealed grid is reused.
+        consistent_offset_prior = options.consistency.offset_prior_units == "consistent"
+        final_score_sigma_offset = pdf_offset_score_sigma(
+            final_sigma_offset_k, image_geometry.pixel_size_angstrom, consistent_units=consistent_offset_prior
+        )
         final_inputs = prepare_final_half(
             half,
             final_pass.sampling,
             image_geometry=image_geometry,
-            sigma_offset_angstrom=final_sigma_offset_k,
+            sigma_offset_angstrom=final_score_sigma_offset,
+            consistent_offset_prior=consistent_offset_prior,
             noise_radial=final_pass.noise_model.radial_per_half[half.index],
             direction_prior=final_pass.direction_priors[half.index],
             n_classes=options.k_class.n_classes,
@@ -1056,7 +1066,7 @@ def score_final_half(
                 priors=LocalPriorSpec(
                     trans_prior_center=final_inputs.translations.local_prior_center,
                     trans_prior_center_for_engine=final_inputs.translations.engine_prior_center,
-                    current_sigma_offset_angstrom=final_sigma_offset_k,
+                    current_sigma_offset_angstrom=final_score_sigma_offset,
                     translation_search_base=translation_search_base,
                     class_log_priors=final_pass.class_log_priors,
                 ),

@@ -93,7 +93,12 @@ def relion_translation_search_base(previous_best_translations, *, dtype: np.dtyp
 
 
 def relion_translation_prior_center(
-    previous_best_translations, voxel_size, prior_offsets=None, *, dtype: np.dtype = np.float32
+    previous_best_translations,
+    voxel_size,
+    prior_offsets=None,
+    *,
+    dtype: np.dtype = np.float32,
+    consistent_units: bool = False,
 ):
     """Return dense/local score-prior centers in RECOVAR search-grid pixels.
 
@@ -112,11 +117,15 @@ def relion_translation_prior_center(
     callers running a genuine double-precision comparison should pass
     ``np.float64`` explicitly. RELION itself never narrows this computation
     (RFLOAT/XFLOAT are both double under double-precision builds).
+
+    ``consistent_units`` (``--offset_prior_units consistent``) keeps the
+    center in pixels, ``prior - rounded_old_offset``, for the score prior of
+    :func:`pdf_offset_score_sigma`.
     """
     old_offset = relion_translation_search_base(previous_best_translations, dtype=dtype)
     if old_offset is None:
         return None
-    voxel_size = float(voxel_size if voxel_size > 0 else 1.0)
+    voxel_size = 1.0 if consistent_units else float(voxel_size if voxel_size > 0 else 1.0)
     if prior_offsets is None:
         prior = np.zeros_like(old_offset, dtype=dtype)
     else:
@@ -166,6 +175,20 @@ class HalfTranslationPriorInputs:
     prior_translations: np.ndarray
 
 
+def pdf_offset_score_sigma(sigma_offset_angstrom: float, voxel_size: float, *, consistent_units: bool) -> float:
+    """The width :func:`make_relion_translation_log_prior` scores the offset prior with (Angstrom).
+
+    That function multiplies the squared pixel distance by ``voxel_size**4 / sigma**2``, RELION's accelerated
+    ``pdf_offset``. ``consistent_units`` (``--offset_prior_units consistent``) asks for a Gaussian of width
+    ``sigma_offset_angstrom`` on the offset, ``voxel_size**2 / sigma_offset_angstrom**2``: the same formula at
+    ``sigma = sigma_offset_angstrom * voxel_size``, around the pixel center of
+    :func:`relion_translation_prior_center` with ``consistent_units``.
+    """
+    if not consistent_units:
+        return float(sigma_offset_angstrom)
+    return float(sigma_offset_angstrom) * float(voxel_size if voxel_size > 0 else 1.0)
+
+
 def relion_half_translation_prior_inputs(
     previous_best_translations,
     *,
@@ -173,6 +196,7 @@ def relion_half_translation_prior_inputs(
     base_translations,
     current_translations,
     dtype: np.dtype = np.float32,
+    consistent_units: bool = False,
 ):
     """Build one half-set's RELION translation prior inputs.
 
@@ -198,11 +222,15 @@ def relion_half_translation_prior_inputs(
     The score log-prior is evaluated on the base translation grid; when the
     current grid has a different size, a single current translation selects
     the central base translation and any other mismatch uses the current
-    grid itself.
+    grid itself. ``consistent_units`` selects the pixel center of ``--offset_prior_units consistent``.
     """
 
-    prior_center = relion_translation_prior_center(previous_best_translations, voxel_size, dtype=dtype)
-    local_prior_center = relion_translation_prior_center(previous_best_translations, voxel_size, dtype=dtype)
+    prior_center = relion_translation_prior_center(
+        previous_best_translations, voxel_size, dtype=dtype, consistent_units=consistent_units
+    )
+    local_prior_center = relion_translation_prior_center(
+        previous_best_translations, voxel_size, dtype=dtype, consistent_units=consistent_units
+    )
     sigma_center = relion_sigma_offset_prior_center(previous_best_translations, dtype=dtype)
     engine_prior_center = np.zeros(2, dtype=dtype) if sigma_center is None else sigma_center
     prior_translations = np.asarray(base_translations, dtype=dtype)
