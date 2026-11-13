@@ -1151,7 +1151,12 @@ def _pass1_mixed_sparse(kept, arrays, tile, positions, valid, steps, n_steps, *,
         score, mean, covariance = latent_scores(inner, gram, prior)  # (chunk, b, T), (q, chunk, b, T), (chunk, b, .)
         return kept._replace(
             score=kept.score.at[pos[:, None], particles[None, :]].set(score),
-            latent_mean=kept.latent_mean.at[:, pos[:, None], particles[None, :]].set(mean),
+            # Every scattered axis indexed (the basis axis too, not sliced): XLA then scatters in place. With
+            # ``.at[:, pos, particles]`` it transposed the whole (q, rows, B, T) buffer to rows-first and back on
+            # every step, 52 of 83 s of GPU time on a real tilt mix at HEALPix 3 (2026-11-13).
+            latent_mean=kept.latent_mean.at[
+                jnp.arange(mean.shape[0])[:, None, None], pos[None, :, None], particles[None, None, :]
+            ].set(mean),
             latent_covariance=kept.latent_covariance.at[pos[:, None], particles[None, :]].set(covariance),
         )
 
