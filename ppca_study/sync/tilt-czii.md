@@ -1,5 +1,19 @@
 # tilt-czii (CZII Biohub HPC)
 
+## 2026-11-13 ~14:10 UTC
+
+- RESULT (tilt fine-pass speed, real tg + beta-gal mix, update 1651, HEALPix 3, coarse pass, 600 particles,
+  H100): rows per sparse step 128 -> 512: 27.2 -> 13.3 s per call; then the sparse pass-1 latent-mean scatter
+  made in place (it transposed the whole kept buffer twice per step, 52 of 83 s of GPU time): 11.5 s. Full
+  search 78.2 s, so 6.8x. Poses and log evidence unchanged (float32 rounding only). Both on our relax feature
+  branch with CPU unit tests passing.
+- RESULT (the wide arm's out-of-memory at update 1252, replayed from its update-1250 checkpoint): the tile plan
+  is right (40.70 GiB counted, 41.03 GiB measured peak); the growing XLA pool is not. Without preallocation the
+  pool grew by a 64 GiB region for the 40.7 GiB plan, and the next 8.5 GiB block found no room under the 71 GiB
+  limit. With a preallocated pool (90%) the same replay runs through update 1262. Our training jobs now
+  preallocate.
+- NOTE: both 70k runs restarted on the faster code (4 PCs from update 2500, 10 PCs from update 1100).
+
 ## 2026-11-13 ~12:45 UTC
 
 - RESULT (wide-window claim of 2026-11-12 ~20:30, predeclared rule): NOT ADOPTED. 4,620 annotated-thyroglobulin
