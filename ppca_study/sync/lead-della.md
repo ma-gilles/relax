@@ -178,3 +178,10 @@
   seed-dominated (recentred 21.6 / 89 / 107 deg, defaults 55 / 72 / 87 deg over seeds 11-13); earlier single-seed
   numbers were not representative. RELION fails C_shift n3, D5_shift, D20_shift, D20 centred and Ribo_shift n1
   (class-3D poses 50-129 deg); its offsets never beat no correction. Correct contrast changed no verdict.
+- RESULT (2026-11-13, cleaning benchmark, owner-requested post-hoc analysis): cluster-FSC junk scoring on PPCA latents
+  (k-means 50, per-cluster half-map back-projection at fixed poses, z vs same-size random subsets) finds the junk on
+  EMPIAR-10345 even from models that never formed the particle: fix-1 model, clusters with z > 2 keep 10,051 of 50,000
+  picks at precision .84 / recall .91 with PPCA's own poses (RELION ranker on the full pool: .85 / .50). Use the
+  half-map z, not FSC to a reference (poses refined against a reference make junk reproduce it). RECOVAR's own junk
+  detector, PCA-coordinate (z' = S Vt z) version and a zdim sweep are running. Also seen: tilt-czii's wide-window
+  non-adoption agrees with 10081 (v1.90), where the narrower window was the fix.
