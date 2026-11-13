@@ -6,7 +6,7 @@
 # and command line but the gate:
 #   1. run_initial_model  relax initial_model, 200 iterations, the row's recorded arguments.                     [GPU]
 #   2. score_config       the scorer's config: the row's reference map, frozen mask and RELION runs
-#                         (docs/benchmarks/initialmodel_scores/config.json) and the runs of this workflow.
+#                         (docs/benchmarks/initialmodel_scores/config.json, tests/baselines/relion_vs_relax_benchmarks.json) and the runs of this workflow.
 #   3. score_maps         scripts/score_initialmodel_maps.py: every map rigidly registered to the reference; FSC-AUC
 #                         (masked and unmasked) to it, and between each pair of gates of one seed. All arms of a
 #                         dataset in one invocation, as the scorer requires.                                      [CPU]
@@ -56,6 +56,7 @@ SCORE_SCRIPT = str(REPO / "scripts" / "score_initialmodel_maps.py")
 SCORE_CONFIG_SCRIPT = str(BENCHMARK_DIR / "make_score_config.py")
 COMPARE_SCRIPT = str(BENCHMARK_DIR / "compare_gates.py")
 SCORE_CELLS = str(REPO / "docs" / "benchmarks" / "initialmodel_scores" / "config.json")
+BENCHMARK_ROWS = str(REPO / "tests" / "baselines" / "relion_vs_relax_benchmarks.json")
 
 unknown = [name for name in RUN_DATASETS if name not in DATASETS]
 if unknown:
@@ -177,6 +178,8 @@ rule score_config:
         clean_env=CLEAN_ENV,
         python=PYTHON,
         cell=lambda wildcards: DATASETS[wildcards.dataset]["score_cell"],
+        row=lambda wildcards: DATASETS[wildcards.dataset]["benchmark_row"],
+        rows=BENCHMARK_ROWS,
         gates=" ".join(GATES),
         seeds=lambda wildcards: " ".join(seeds_of(wildcards.dataset)),
         dataset_root=lambda wildcards: output_path(wildcards.dataset),
@@ -187,6 +190,8 @@ rule score_config:
         "{params.clean_env} {params.python} {input.script} "
         "--cells {input.cells} "
         "--cell {params.cell} "
+        "--rows {params.rows} "
+        "--row {params.row} "
         "--dataset-root {params.dataset_root} "
         "--gates {params.gates} "
         "--seeds {params.seeds} "

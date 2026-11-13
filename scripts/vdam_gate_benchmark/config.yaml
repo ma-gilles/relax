@@ -13,10 +13,12 @@ gpu_model: h100          # the benchmark rows' GPU (docs/benchmarks/relion_vs_re
 
 # The K=1 VDAM rows of docs/benchmarks/relion_vs_relax.md: each row's particles, diameter and extra arguments are those
 # of its recorded relax run (the RUN_SPEC.json of the frozen benchmark arm). `score_cell` is the cell of
-# docs/benchmarks/initialmodel_scores/config.json that holds the row's reference map, frozen mask and RELION runs.
+# docs/benchmarks/initialmodel_scores/config.json that holds the row's reference map and frozen mask; `benchmark_row` is
+# its id in tests/baselines/relion_vs_relax_benchmarks.json, whose evidence lists the RELION runs.
 datasets:
   noise1_50k:
     score_cell: noise1_50k_k1
+    benchmark_row: noise1_k1_50k256_initialmodel_vdam_200it
     star: /scratch/gpfs/GILLES/mg6942/em_relion_proj/data_noise1_50k_256_normalized/particles.star
     datadir: /scratch/gpfs/GILLES/mg6942/em_relion_proj/data_noise1_50k_256_normalized
     particle_diameter: 380
@@ -25,6 +27,7 @@ datasets:
     gpu_memory: 64G
   ribosembly_k1:
     score_cell: ribo_k1
+    benchmark_row: ribosembly_k4_100k256_initialmodel_vdam_k1_200it
     star: /scratch/gpfs/GILLES/mg6942/em_relion_proj/ribosembly_k4_g256_n100000_completion_20260512_171123/particles.star
     datadir: /scratch/gpfs/GILLES/mg6942/em_relion_proj/ribosembly_k4_g256_n100000_completion_20260512_171123
     particle_diameter: 380
@@ -33,6 +36,7 @@ datasets:
     gpu_memory: 128G
   empiar10097:
     score_cell: empiar10097
+    benchmark_row: empiar10097_initialmodel_vdam_200it
     star: /scratch/gpfs/CRYOEM/gilleslab/em_work/realdata_vdam_initialmodel_10097_20260921/prepared/particles.zeropose.star
     datadir: /scratch/gpfs/CRYOEM/gilleslab/em_work/realdata_vdam_initialmodel_10097_20260921/prepared
     particle_diameter: 220
@@ -41,6 +45,7 @@ datasets:
     gpu_memory: 64G
   empiar10076:
     score_cell: empiar10076
+    benchmark_row: empiar10076_100k256_initialmodel_vdam_200it
     star: /scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/vdam_relion_refs_20260926/fixtures/empiar10076_100k_20260910/data/particles.star
     datadir: /scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/vdam_relion_refs_20260926/fixtures/empiar10076_100k_20260910/data
     particle_diameter: 200
@@ -49,6 +54,7 @@ datasets:
     gpu_memory: 64G
   empiar10081_hcn1:
     score_cell: hcn1_c1run
+    benchmark_row: empiar10081_hcn1_initialmodel_vdam_200it_c1run_c4align
     star: /scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdambench_20260924/inputs/hcn1/particles.zeropose.star
     datadir: null
     particle_diameter: 180
