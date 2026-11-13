@@ -11,6 +11,7 @@ tile planner (``full_row_tile_plan``) call them; this module imports neither. Th
 
 from __future__ import annotations
 
+import logging
 from functools import partial
 from typing import NamedTuple
 
@@ -30,6 +31,8 @@ from relax.cuda.ppca import (
 from relax.ppca_refinement.engine import compensated_add
 from relax.ppca_refinement.residual_statistics import residual_statistics_from_moment_images
 from relax.projection.adjoint import batch_adjoint_slice_volume_maybe_windowed
+
+logger = logging.getLogger(__name__)
 
 HIGHEST = jax.lax.Precision.HIGHEST
 
@@ -1061,7 +1064,6 @@ def _score_tile_mixed_sparse(stream, tile, n_blocks):
     of :data:`MIXED_PASS2_CHUNK` rows, at its own frames; unsupported (row, particle) pairs keep -inf. Returns the
     kept results (scores, latent moments; the CUDA partials unused) and the tile posterior."""
     block = stream.rotation_block_size
-    chunk = min(block, MIXED_PASS2_CHUNK)
     capacity = len(stream.block_starts) * block
     G, b = int(tile.ctf2.shape[0]), int(tile.ctf2.shape[2])
     T = int(stream.translations.shape[0])
@@ -1075,11 +1077,15 @@ def _score_tile_mixed_sparse(stream, tile, n_blocks):
         n_keys=G,
         slots=b,
     )
-    table, n_steps = _step_table(np.asarray(jax.device_get(count)), -(-capacity // chunk), chunk)
-    kept = empty_kept(capacity, G * b, T, q, jnp.float32)
-    kept = _pass1_mixed_sparse(
-        kept, stream.arrays, tile, positions, valid, table, n_steps, static=stream.static, chunk=chunk
-    )
+    count = np.asarray(jax.device_get(count))
+
+    def operands(chunk):
+        table, n_steps = _step_table(count, -(-capacity // chunk), chunk)
+        kept = empty_kept(capacity, G * b, T, q, jnp.float32)
+        return (kept, stream.arrays, tile, positions, valid, table, n_steps)
+
+    program, args = _mixed_program(stream, _pass1_mixed_sparse, operands, static=stream.static)
+    kept = program(*args)
     return kept, _normalize(kept.score, tile.rows, n_blocks=len(stream.block_starts), block_size=block)
 
 
@@ -1171,45 +1177,85 @@ def _pass1_mixed_sparse(kept, arrays, tile, positions, valid, steps, n_steps, *,
 MIXED_PASS2_CHUNK = 512
 
 
+# Rows per step a mixed tile may fall back to when :data:`MIXED_PASS2_CHUNK` rows need more device memory than
+# the tile plan holds for its block programs.
+MIXED_CHUNKS = (MIXED_PASS2_CHUNK, 256, 128)
+_MIXED_PROGRAMS: dict = {}
+_MIXED_LOGGED: set = set()
+
+
+def _mixed_program(stream, program, operands, **static):
+    """``program`` (a mixed tile's device loop) compiled at the most rows per step that fit the device memory the
+    tile plan holds for the block programs (:func:`~relax.ppca_refinement.full_row_tile_plan.tile_program_bytes`),
+    and its operands: ``operands(chunk)`` builds them. The plan measures the one-key block programs only; a mixed
+    loop's steps grow with their rows, and at 512 rows a real tilt mix at HEALPix 4 asked for 13.8 GiB where the
+    plan held 13.5 (2026-11-13). Compiled once per program, shapes and chunk; the smallest chunk runs whatever
+    it needs. Returns the compiled program, called with the operands alone."""
+    from relax.ppca_refinement.full_row_tile_plan import tile_program_bytes
+
+    block = stream.rotation_block_size
+    chunks = [c for c in MIXED_CHUNKS if c <= block] or [block]
+    limit = None if stream.tile_images is None else tile_program_bytes(stream, stream.tile_images)
+    first_need = None
+    for k, chunk in enumerate(chunks):
+        args = operands(chunk)
+        leaves, tree = jax.tree_util.tree_flatten(args)
+        shapes = tuple((np.shape(x), str(np.result_type(x))) for x in leaves)
+        key = (program.__name__, tree, shapes, chunk, tuple(sorted(static.items())), getattr(stream.device, "id", None))
+        if key not in _MIXED_PROGRAMS:
+            compiled = program.lower(*args, chunk=chunk, **static).compile()
+            analysis = compiled.memory_analysis()
+            need = None
+            if analysis is not None:
+                need = analysis.temp_size_in_bytes + analysis.output_size_in_bytes - analysis.alias_size_in_bytes
+            _MIXED_PROGRAMS[key] = (compiled, need)
+        compiled, need = _MIXED_PROGRAMS[key]
+        if limit is None or need is None or need <= limit or k == len(chunks) - 1:
+            if k and key not in _MIXED_LOGGED:  # once per program and shapes
+                _MIXED_LOGGED.add(key)
+                logger.info(
+                    "%s: %d rows per step (%.2f GiB at %d rows exceeds the %.2f GiB the tile plan holds)",
+                    program.__name__,
+                    chunk,
+                    first_need / 2**30,
+                    chunks[0],
+                    limit / 2**30,
+                )
+            return compiled, args
+        if not k:
+            first_need = need
+    raise AssertionError("unreachable")
+
+
 def _run_pass2_mixed(stream, tile, kept, posterior, layout, carry, *, moments):
     """Pass 2 of a mixed tile: each key visits only the rows that carry posterior mass for its own particles
     (:attr:`FullRowStream.pass2_mass_floor`; every scored row with no floor), as a one-key tile does, so the
     tile keeps each particle's sparsity instead of the union over its keys. The device program runs one step per
     (key, chunk of that key's rows), so each key's work follows its own row count."""
     block = stream.rotation_block_size
-    chunk = min(block, MIXED_PASS2_CHUNK)
     n = len(stream.block_starts) * block  # the kept buffer's every row: one shape per stage
     limit = np.int32(layout["n_blocks"] * block)  # rows scored this tile
     G, b = int(tile.ctf2_recon.shape[0]), int(tile.ctf2_recon.shape[1])
     # Fixed shapes per stage and slot bucket (no recompiles after warm-up): every key's row table spans the whole
     # scored table in chunks, and the step table holds every (key, chunk); the device loop runs the real steps.
-    capacity = -(-n // chunk) * chunk
     # A sparse pass 1 fills scores only: the row masses come from them, not from the CUDA partials.
     cuda = stream.static.cuda_kernels and not sparse_mixed(stream, tile)
     mass = _key_row_mass(kept, posterior, tile.slots[1], limit, n_keys=G, slots=b, cuda=cuda)
     floor = stream.pass2_mass_floor if stream.pass2_mass_floor > 0 else -0.5  # no floor: every scored row
     positions, valid, count = _key_rows(mass >= floor)
     count = np.asarray(jax.device_get(count))
-    if capacity > n:  # pad the last chunk with invalid rows
-        positions = jnp.pad(positions, ((0, capacity - n), (0, 0)))
-        valid = jnp.pad(valid, ((0, capacity - n), (0, 0)))
     n_keys = int(layout.get("n_keys", G))
     layout["pass2_rows"] = float(np.sum(count[:n_keys])) / n_keys
-    table, n_steps = _step_table(count, capacity // chunk, chunk)
-    return _pass2_mixed(
-        carry,
-        stream.arrays,
-        tile,
-        kept,
-        posterior,
-        positions,
-        valid,
-        table,
-        n_steps,
-        static=stream.static,
-        chunk=chunk,
-        moments=moments,
-    )
+
+    def operands(chunk):
+        capacity = -(-n // chunk) * chunk  # pad the last chunk with invalid rows
+        padded = ((0, capacity - n), (0, 0))
+        table, n_steps = _step_table(count, capacity // chunk, chunk)
+        rows, real = jnp.pad(positions, padded), jnp.pad(valid, padded)
+        return (carry, stream.arrays, tile, kept, posterior, rows, real, table, n_steps)
+
+    program, args = _mixed_program(stream, _pass2_mixed, operands, static=stream.static, moments=moments)
+    return program(*args)
 
 
 @partial(jax.jit, static_argnames=("static", "chunk", "moments"), donate_argnums=(0,))
