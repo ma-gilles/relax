@@ -166,3 +166,7 @@
   everyone running VW on raw real pools: low-shell runaway (the mean's lowest Fourier shells absorb per-image background
   differences, since the model has no per-image offset/scale; seen as a uniform-tint PC1). Check PC1 and the mean's
   shells 0-15 if a real-data run stalls or goes non-finite.
+- RESULT (2026-11-13, CAHRA diagnosis, BEST_PRACTICE v1.87): model-limited. Under the trained model the true orientation
+  (translation-marginal evidence, same noise/CTF/mask) loses to the model's own wrong pose for > 98% of GDH and ADH
+  particles; RECOVAR with our poses (.716) is below our PPCA latents (.771), with reference-classification poses .806.
+  The weak species are posed wrongly early and the model fits those poses. VW default ties the masked arm (.789 / .791).
