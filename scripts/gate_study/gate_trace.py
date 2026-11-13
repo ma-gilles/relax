@@ -53,7 +53,8 @@ def summarise(trace: dict, oracle: dict, windows=((1, 100), (101, 500), (501, 15
         pick = np.flatnonzero((trace["iteration"] >= lo) & (trace["iteration"] <= hi))
         if not len(pick):
             continue
-        acc = {k: [] for k in ("gap", "gap_target", "signal_ratio", "noise_ratio", "gap_effective", "gap_masked")}
+        acc = {k: [] for k in ("gap", "gap_target", "signal_ratio", "noise_ratio", "gap_effective", "gap_masked",
+                               "sqrt_u_median", "gap_estimated")}
         for i in pick:
             radius = int(trace["radius"][i])
             shells = np.arange(1, min(radius, nshell - 1) + 1)
@@ -68,6 +69,9 @@ def summarise(trace: dict, oracle: dict, windows=((1, 100), (101, 500), (501, 15
             )
             if "effective_gate_mean" in trace:
                 acc["gap_effective"].append((trace["effective_gate_mean"][i, shells] - w[shells]).mean(0))
+                acc["sqrt_u_median"].append(np.nanmean(trace["sqrt_u_median"][i, shells], axis=0))
+            if "gates_estimated" in trace:  # oracle runs: what the estimator would have chosen on this trajectory
+                acc["gap_estimated"].append((trace["gates_estimated"][i, shells] - w[shells]).mean(0))
         row = {"window": f"{lo}-{hi}"}
         for key, values in acc.items():
             if values:
