@@ -19,6 +19,7 @@ from relax.steps.sgd_schedule import DEFAULT_GRAD_MU
 from relax.vdam.bootstrap_iref import initialise_denovo_state
 from relax.vdam.estep_common import estep_sums
 from relax.vdam.estep_setup import noise_variance_from_sigma2
+from relax.vdam.gate import RelionGate
 from relax.vdam.iteration_loop import MomentumSgdUpdate, VdamUpdate, run_vdam_iterations
 from relax.vdam.model_update import update_probabilities_from_estep
 from relax.vdam.native_options import NativeInitialModelOptions, VdamEnvironment, VdamPilotControls
@@ -390,6 +391,7 @@ def test_cli_and_both_optimizers_keep_same_coarse_grid_and_terminal_subset(monke
                     mstep_compute_dtype="float32",
                     probe=NoProbe(),
                     stable_window_quantum=DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM,
+                    gate=RelionGate(),
                 )
                 if optimizer == "vdam"
                 else MomentumSgdUpdate(learning_rate=1.0, padding_factor=1)

@@ -315,7 +315,10 @@ LOC_BUDGETS = {
     # rule 5 (2026-10-12): VdamEnvironment.scoring (ScoringOverrides, the diagnostic overrides the command reads
     # once, from relax/scoring's RECOVAR_K1_RELION_F32_COARSE_SUPPORT reader): native_options.py +4 lines (import,
     # field, its read, docstring line); relocation: ceiling +4.
-    "controller": (1793, (
+    # --vdam-gate (2026-11-13): the gate option, its refusals (native_options.py +9), the gate record in VdamUpdate and
+    # the batch-weight call in maximize (iteration_loop.py +11) and the driver's one call (driver.py +2): 1879 -> 1901
+    # on main 0d9565a6 (+22; ceiling +22). The gate's own arithmetic is in gate.py, its own budget below.
+    "controller": (1815, (
         "__init__.py", "driver.py", "iteration_loop.py", "native_options.py",
         "schedules.py", "subset_schedule.py", "ports.py",
     )),
@@ -366,6 +369,9 @@ LOC_BUDGETS = {
     # (apps/align_symmetry.cpp, 365 C++ lines) ported for a non-C1 --sym (2026-10-08, etvdam): before it relax
     # ignored --sym. Its own module; exact size reviewed at landing.
     "symmetry_alignment": (321, ("align_symmetry.py",)),
+    # The shrinkage gate's noise reference (RELION's and the full-data power gate, docs/math/vdam_gate_derivation.md):
+    # its own module (2026-11-13); exact size, the module's docstring and imports included.
+    "vdam_gate": (87, ("gate.py",)),
     # Scalar-curvature momentum and masked observation-noise adaptation are an
     # opt-in package with its own exact reviewed budget and complete inventory.
     # The package's three files (309 lines) are one module, vdam/sgd.py, since 2026-10-08 (e3).

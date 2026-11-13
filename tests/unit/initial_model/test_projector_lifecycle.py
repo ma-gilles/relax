@@ -12,6 +12,7 @@ from relax.steps.sgd_schedule import DEFAULT_GRAD_MU
 from relax.vdam import estep_setup as adapter
 from relax.vdam import iteration_loop as loop
 from relax.vdam.bootstrap_iref import initialise_denovo_state
+from relax.vdam.gate import RelionGate
 from relax.vdam.native_options import VdamEnvironment
 from relax.vdam.ports import NoProbe, VdamObserver
 
@@ -163,6 +164,7 @@ def test_loop_callback_is_once_before_estep(monkeypatch, mstep_compute_dtype):
             mstep_compute_dtype=mstep_compute_dtype,
             probe=NoProbe(),
             stable_window_quantum=DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM,
+            gate=RelionGate(),
         ),
         grad_ini_frac=0.3,
         grad_fin_frac=0.2,

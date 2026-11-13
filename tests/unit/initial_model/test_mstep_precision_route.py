@@ -16,6 +16,7 @@ from relax.runtime.engine_tuning import DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM
 from relax.steps.sgd_schedule import DEFAULT_GRAD_MU
 from relax.vdam import driver, estep_setup, initial_model_io, iteration_loop, m_step, native_options
 from relax.vdam.bootstrap_iref import initialise_denovo_state
+from relax.vdam.gate import RelionGate
 from relax.vdam.native_options import VdamEnvironment
 from relax.vdam.ports import NoProbe, VdamObserver
 
@@ -284,6 +285,7 @@ def test_publication_rejects_wrong_result_dtype_or_rounded_prior(bad_field, monk
             mstep_compute_dtype="float32",
             average_ctf2=None,
             stable_window_quantum=DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM,
+            disagreement_scale=None,
         )
 
 
@@ -317,6 +319,7 @@ def test_actual_loop_forwards_f32_to_m_without_changing_authoritative_state(monk
             single_class_m_step=step,
             probe=NoProbe(),
             stable_window_quantum=DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM,
+            gate=RelionGate(),
         ),
         grad_ini_frac=0.3,
         grad_fin_frac=0.2,

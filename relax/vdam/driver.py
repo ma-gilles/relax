@@ -50,6 +50,7 @@ from relax.vdam.bootstrap_iref import (
     load_raw_images,
 )
 from relax.vdam.estep_setup import run_initial_model_estep
+from relax.vdam.gate import vdam_gate
 from relax.vdam.initial_model_io import experiment_read_order
 from relax.vdam.iteration_loop import MomentumSgdUpdate, VdamUpdate, run_vdam_iterations
 from relax.vdam.m_step import prepare_mstep_state_precision, relion_solvent_flatten_state, relion_solvent_mask
@@ -705,6 +706,7 @@ def run_native_initial_model(
                     padding_factor=int(opts.padding_factor), mstep_compute_dtype=opts.mstep_compute_dtype,
                     probe=maximization_probe, single_class_m_step=source.single_class_m_step,
                     stable_window_quantum=opts.environment.engine.stable_window_quantum,
+                    gate=vdam_gate(opts.vdam_gate, n_particles),
                 )
                 if opts.optimizer == "vdam"
                 else MomentumSgdUpdate(learning_rate=float(opts.sgd_learning_rate), padding_factor=int(opts.padding_factor))

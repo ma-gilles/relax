@@ -40,6 +40,7 @@ from relax.steps.sgd_schedule import (
     compute_tau2_fudge,
 )
 from relax.vdam.estep_common import EstepSums, estep_sums
+from relax.vdam.gate import FullDataPowerGate, RelionGate
 from relax.vdam.m_step import vdam_m_step, vdam_m_step_single_class
 from relax.vdam.model_update import (
     NonFiniteNoiseSums,
@@ -168,17 +169,20 @@ class VdamUpdate:
     """RELION's VDAM model update: the gradient M-step, the noise blend and the data_vs_prior resolution.
 
     ``single_class_m_step``: each class's M-step, the run's input source's (``VdamInputSource``); ``probe`` the
-    run observer's model-update hooks, which see each noise update; ``stable_window_quantum`` the run's (EngineTuning).
+    run observer's model-update hooks, which see each noise update; ``stable_window_quantum`` the run's (EngineTuning);
+    ``gate`` the shrinkage gate's noise reference, RELION's or the full-data power gate (:mod:`relax.vdam.gate`).
     """
 
     padding_factor: int
     mstep_compute_dtype: Literal["float32", "float64"]
     probe: MaximizationProbe
     stable_window_quantum: int
+    gate: RelionGate | FullDataPowerGate
     single_class_m_step: Callable[..., InitialModelState] = vdam_m_step_single_class
 
     def maximize(self, current: InitialModelState, accumulators, sums: EstepSums, meta: dict) -> InitialModelState:
-        return vdam_m_step(
+        current, disagreement_scale = self.gate.advance(current)
+        updated = vdam_m_step(
             current,
             accumulators=accumulators,
             grad_current_stepsize=current.grad_current_stepsize,
@@ -187,8 +191,15 @@ class VdamUpdate:
             mstep_compute_dtype=self.mstep_compute_dtype,
             average_ctf2=sums.average_ctf2,
             stable_window_quantum=self.stable_window_quantum,
+            disagreement_scale=disagreement_scale,
             single_class_m_step=self.single_class_m_step,
         )
+        meta["vdam_gate"] = {
+            "gate": self.gate.name,
+            "disagreement_scale": disagreement_scale,
+            "noise_weight": current.gate_noise_weight,
+        }
+        return updated
 
     def update_noise(self, current, sums: EstepSums, meta: dict, *, do_grad: bool, mu: float) -> InitialModelState:
         try:

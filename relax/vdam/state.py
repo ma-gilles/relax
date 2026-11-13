@@ -75,6 +75,9 @@ class InitialModelState:
     has_converged: bool = False
     grad_has_converged: bool = False
 
+    # The full-data power gate's noise weight of the half first moments (relax.vdam.gate); None until its first iteration.
+    gate_noise_weight: Optional[float] = None
+
     @property
     def effective_current_size(self) -> int:
         """The Fourier box the iteration works at: ``current_size``, or the full box while none is set (<= 0)."""

@@ -40,6 +40,10 @@ def _compute_dtypes(compute_dtype):
     return real_dtype, jnp.dtype(jnp.complex64 if real_dtype == jnp.float32 else jnp.complex128)
 
 
+# RELION's first moment: first = FIRST_MOMENT_DECAY * first + (1 - FIRST_MOMENT_DECAY) * direction (getFristMoment).
+FIRST_MOMENT_DECAY = 0.9
+
+
 def _complex(real, imag):
     return jax.lax.complex(real, imag)
 
@@ -61,8 +65,8 @@ def _unpad_moment(moment, shape):
 
 def _first_moment(old, data, initialize, valid):
     # Separate product/add rounding like the native scalar EMA.
-    real = jax.lax.optimization_barrier(0.9 * old.real) + (1.0 - 0.9) * data.real
-    imag = jax.lax.optimization_barrier(0.9 * old.imag) + (1.0 - 0.9) * data.imag
+    real = jax.lax.optimization_barrier(FIRST_MOMENT_DECAY * old.real) + (1.0 - FIRST_MOMENT_DECAY) * data.real
+    imag = jax.lax.optimization_barrier(FIRST_MOMENT_DECAY * old.imag) + (1.0 - FIRST_MOMENT_DECAY) * data.imag
     updated = jnp.where(initialize, data, _complex(real, imag))
     return jnp.where(valid, updated, old)
 
@@ -90,6 +94,7 @@ def relion_vdam_m_step_device(
     first_initializes_h0,
     first_initializes_h1,
     average_ctf2=None,
+    disagreement_scale=None,
     *,
     box_size: int,
     padding_factor: int = 1,
@@ -104,6 +109,10 @@ def relion_vdam_m_step_device(
     real/complex precision. Unchanged authoritative tau2 retains its input dtype
     in F32 mode; shell geometry retains the original FP64 rounding rule.
     Radius <=0 means full, matching the native M-step binding.
+    ``disagreement_scale`` chooses the shrinkage gate. None: RELION's, a ratio of shell means of amplitudes. A scale:
+    the gate of docs/math/vdam_gate_derivation.md (section 7), a ratio of shell means of power whose half-moment
+    disagreement is multiplied by the scale (:mod:`relax.vdam.gate`); the FSC of two full-data half maps, for
+    independent noise. ``mom1_noise_power`` is the disagreement statistic (amplitudes or power, after the scale).
     The private invalid flags preserve native SSNR error conditions; the host
     wrapper raises after the one result transfer. No host operations occur here.
     """
@@ -190,7 +199,10 @@ def relion_vdam_m_step_device(
     imag_numerator = jax.lax.optimization_barrier(gradient.imag * denominator) - gradient.real * 0.0
     gradient = _complex(real_numerator / divisor, imag_numerator / divisor)
     gradient = jnp.where(valid, gradient, d0)
-    noise_power = shell_sum(jnp.sqrt(_norm(m10 - m11))) / safe_counts
+    if disagreement_scale is None:
+        noise_power = shell_sum(jnp.sqrt(_norm(m10 - m11))) / safe_counts
+    else:
+        noise_power = shell_sum(_norm(m10 - m11)) / safe_counts * jnp.asarray(disagreement_scale, real_dtype)
 
     # updateSSNRarrays(false,false,false): half-0 weight and unchanged tau2.
     inverse_sigma = shell_sum(float(padding_factor**3) * w0)
@@ -231,7 +243,10 @@ def relion_vdam_m_step_device(
             padding_factor=padding_factor,
             compute_dtype=real_dtype,
         )
-    previous_power = shell_sum(jnp.sqrt(_norm(projector))) / safe_counts
+    if disagreement_scale is None:
+        previous_power = shell_sum(jnp.sqrt(_norm(projector))) / safe_counts
+    else:
+        previous_power = shell_sum(_norm(projector)) / safe_counts
     snr = jnp.where(noise_power > 0.0, 2.0 * fudge * previous_power / noise_power, 0.0)
     # backprojector.cpp:2339 clamps with XMIPP_MIN(XMIPP_MAX(f, fsc), 1), and
     # macros.h:169/181 define both as ternaries: a NaN f (a NaN tau2_fudge in
@@ -373,6 +388,7 @@ def relion_vdam_m_step_host(
     device_volumes: bool = False,
     average_ctf2=None,
     stable_window_quantum: int,
+    disagreement_scale=None,
 ):
     """Host-facing adapter of the device VDAM M-step transaction (FFT grids of at least 16).
 
@@ -394,6 +410,7 @@ def relion_vdam_m_step_host(
     as RELION's ``updateSSNRarrays`` does; the reconstruction keeps the uncorrected tau2.
     ``stable_window_quantum`` (``EngineTuning.stable_window_quantum``): the window class step a host BPref
     slab is padded to (:func:`_pad_bpref_to_window_class`).
+    ``disagreement_scale``: the gate of :func:`relion_vdam_m_step_device` (None: RELION's).
     """
     real_dtype, complex_dtype = _compute_dtypes(compute_dtype)
     if box_size * padding_factor < 16:
@@ -449,6 +466,7 @@ def relion_vdam_m_step_host(
         np.bool_(first0),
         np.bool_(first1),
         None if average_ctf2 is None else np.asarray(average_ctf2, np.float64),
+        None if disagreement_scale is None else real_dtype.type(disagreement_scale),
         box_size=box_size,
         padding_factor=padding_factor,
         pseudo_halfsets=pseudo,

@@ -20,6 +20,7 @@ from relax.runtime.engine_tuning import DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM, E
 from relax.steps.sgd_schedule import DEFAULT_GRAD_MU
 from relax.vdam.bootstrap_iref import initialise_denovo_state
 from relax.vdam.estep_common import estep_sums
+from relax.vdam.gate import RelionGate
 from relax.vdam.iteration_loop import (
     VdamUpdate,
     _ave_pmax,
@@ -42,6 +43,7 @@ run_vdam_iterations = partial(
         mstep_compute_dtype="float64",
         probe=NoProbe(),
         stable_window_quantum=DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM,
+        gate=RelionGate(),
     ),
 )
 
@@ -542,6 +544,7 @@ class TestRunVdamIterations:
                 mstep_compute_dtype="float64",
                 probe=NoProbe(),
                 stable_window_quantum=DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM,
+                gate=RelionGate(),
             ),
             grad_ini_frac=0.3,
             grad_fin_frac=0.2,
@@ -850,6 +853,7 @@ class TestRunVdamIterations:
             mstep_compute_dtype="float64",
             probe=observer.maximization_probe(),
             stable_window_quantum=DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM,
+            gate=RelionGate(),
         )
         out = update.update_noise(state, estep_sums(meta), meta, do_grad=False, mu=DEFAULT_GRAD_MU)
 

@@ -175,6 +175,16 @@ def make_parser() -> argparse.ArgumentParser:
         help="Keep the joint class/direction prior uniform during InitialModel refinement",
     )
     parser.add_argument(
+        "--vdam-gate",
+        choices=("relion", "full_data_power"),
+        default=DEFAULTS.vdam_gate,
+        help=(
+            "VDAM's shrinkage gate: relion (shell means of amplitudes of the half-batch disagreement, as RELION), or "
+            "full_data_power (shell means of power, the disagreement rescaled to two full-data half maps; K=1; "
+            "docs/math/vdam_gate_derivation.md)"
+        ),
+    )
+    parser.add_argument(
         "--tau2-fudge",
         "--tau2_fudge",
         dest="tau2_fudge",
@@ -520,6 +530,7 @@ def _native_options_dict(args: argparse.Namespace) -> dict[str, object]:
         "fixed_healpix_order": args.fixed_healpix_order,
         "stochastic_all_iterations": args.stochastic_all_iterations,
         "uniform_class_direction_prior": args.uniform_class_direction_prior,
+        "vdam_gate": args.vdam_gate,
         "mstep_compute_dtype": args.mstep_compute_dtype,
         "diagnostic_continue_optimiser": args.diagnostic_continue_optimiser,
         "diagnostic_stop_after_iteration": args.diagnostic_stop_after_iteration,
