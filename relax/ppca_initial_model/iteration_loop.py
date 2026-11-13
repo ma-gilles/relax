@@ -692,6 +692,12 @@ def run(
     log = _ModelLog(output / "iterations.jsonl")
     # The first moments' noise weight (update.advance_noise_weight), which scales the gate's disagreement.
     noise_weight = None
+    # Gate study: the oracle gate table that replaces the estimated gate (config.gate_oracle), None to estimate it.
+    gate_override = None
+    if config.gate_oracle is not None:
+        with np.load(config.gate_oracle, allow_pickle=False) as tables:
+            gate_override = np.asarray(tables[config.gate_oracle_key], np.float64)
+        logger.info("gate oracle %s[%s]: %d shells", config.gate_oracle, config.gate_oracle_key, len(gate_override))
     if config.optimizer == "vdam":
         for past in range(1, state.iteration + 1):
             noise_weight = advance_noise_weight(noise_weight, config.schedule(past, dataset.n_images)[0])
@@ -776,6 +782,8 @@ def run(
                 fudge=fudge,
                 image_size=dataset.grid_size,
                 disagreement_scale=disagreement_scale,
+                gate_override=gate_override,
+                log_moments=config.gate_log,
             )
             diagnostics["disagreement_scale"] = disagreement_scale
             theta = bandlimit_and_mask(theta, dataset.volume_shape, radius, mask)

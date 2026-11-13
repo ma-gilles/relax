@@ -36,6 +36,13 @@ class Config:
     # A fudge of 1 with the scheme plain keeps the gate at its strongest shrinkage throughout.
     tau2_fudge: float | None = None
     tau2_fudge_scheme: str | None = None
+    # Gate study (docs/math/vdam_gate_study.md), VDAM only. gate_oracle: an npz of oracle gate tables (scripts/gate_study/
+    # oracle_gate.py, computed from a simulated dataset's ground truth); its [shells, 2] array named gate_oracle_key
+    # replaces the estimated gate on every update. None (the default) estimates the gate. gate_log: log per-shell
+    # summaries of the second moment and the effective gate (a runtime setting; no effect on the model).
+    gate_oracle: str | None = None
+    gate_oracle_key: str = "oracle"
+    gate_log: bool = False
     # The Fourier radius of each iteration. "stages": the stages table's. "data_vs_prior": RELION's InitialModel rule
     # (relax/ppca_initial_model/radius_rule.py): the table's first radius at iteration 1, then the last shell where the
     # mean's data_vs_prior stays at or above 1 plus incr_size shells (RELION's --incr_size), never decreasing. The
@@ -173,6 +180,8 @@ class Config:
             raise ValueError("The offset sigma must be positive")
         if self.optimizer not in ("vdam", "momentum_sgd"):
             raise ValueError("Optimizer must be vdam or momentum_sgd")
+        if self.gate_oracle is not None and self.optimizer != "vdam":
+            raise ValueError("The gate oracle replaces the VDAM gate; it needs optimizer vdam")
         if self.optimizer == "vdam":
             # RELION's tau2-fudge sigmoid has length grad_inbetween_iter // 4; for 4 and 5 iterations that is 0 and
             # the fudge at iteration grad_ini_iter is 0/0 = NaN (kept for RELION parity in relax.vdam.schedules).

@@ -127,6 +127,8 @@ def stochastic_update(
     fudge: float,
     image_size: int,
     disagreement_scale: float,
+    gate_override: np.ndarray | None = None,
+    log_moments: bool = False,
 ) -> tuple[jnp.ndarray, Moments, dict]:
     """Simultaneous old-model update; one scalar adaptation/gate for all PCs.
 
@@ -140,6 +142,11 @@ def stochastic_update(
     means of the amplitudes instead; docs/math/vdam_ppca_algorithm.md section 3.3). ``disagreement_scale`` multiplies the
     disagreement: full_data_disagreement_scale turns the noise of the applied direction into that of full-data half maps.
     The returned "signal" and "disagreement" are the shell means of the power, the disagreement after the scale.
+
+    Gate study (docs/math/vdam_gate_study.md; both off by default). ``gate_override``, a ``[shells, 2]`` table (mean,
+    shared loadings), replaces the estimated gate (the oracle arm); the estimate is still returned, as
+    "gates_estimated". ``log_moments`` adds per-shell summaries of the second moment u and of the effective gate
+    phi / (phi + (1 - phi) sqrt(u)), the weight on the average direction at the update's fixed point.
     """
     theta, directions = jnp.asarray(theta), jnp.asarray(directions)
     coverage = jnp.asarray(coverage, bool)
@@ -181,19 +188,64 @@ def stochastic_update(
     disagreement = shell_average(powers(first[0] - first[1])) * disagreement_scale
     safe_disagreement = jnp.where(disagreement > 0, disagreement, 1)
     rho = jnp.where(disagreement > 0, 2 * fudge * signal / safe_disagreement, 0)
-    gates = rho / (1 + rho)
-    gate = gates[shells]
-    gate = jnp.concatenate([gate[:, :1], jnp.broadcast_to(gate[:, 1:], (theta.shape[0], q))], axis=-1)
-    updated = jnp.where(active[:, None], theta + step * (gate * adapted - (1 - gate) * theta), theta)
-    return (
-        updated,
-        Moments(first, second, initialized),
-        {
-            "gates": np.asarray(gates),
-            "signal": np.asarray(signal),
-            "disagreement": np.asarray(disagreement),
-            "zero_disagreement_shell_channels": int(
-                np.sum((np.asarray(disagreement) == 0) & (np.asarray(counts)[:, None] > 0))
-            ),
-        },
+    estimated = rho / (1 + rho)
+    gates = estimated if gate_override is None else _override_table(gate_override, nshells, theta.real.dtype)
+    gate_channels = gates[shells]  # [frequency, 2]
+    gate = jnp.concatenate(
+        [gate_channels[:, :1], jnp.broadcast_to(gate_channels[:, 1:], (theta.shape[0], q))], axis=-1
     )
+    updated = jnp.where(active[:, None], theta + step * (gate * adapted - (1 - gate) * theta), theta)
+    info = {
+        "gates": np.asarray(gates),
+        "signal": np.asarray(signal),
+        "disagreement": np.asarray(disagreement),
+        "zero_disagreement_shell_channels": int(
+            np.sum((np.asarray(disagreement) == 0) & (np.asarray(counts)[:, None] > 0))
+        ),
+    }
+    if gate_override is not None:
+        info["gates_estimated"] = np.asarray(estimated)
+    if log_moments:
+        info.update(_moment_summaries(second, gate_channels, active, shells, nshells))
+    return updated, Moments(first, second, initialized), info
+
+
+def _override_table(table, nshells, dtype):
+    """A ``[shells, 2]`` gate table cut or zero-padded to ``nshells`` shells."""
+    table = np.asarray(table, np.float64)
+    if table.ndim != 2 or table.shape[1] != 2 or not np.all(np.isfinite(table)) or np.any(table < 0) or np.any(table > 1):
+        raise ValueError("A gate table is [shells, 2] (mean, loadings) with values in [0, 1]")
+    out = np.zeros((nshells, 2))
+    out[: min(nshells, len(table))] = table[:nshells]
+    return jnp.asarray(out, dtype)
+
+
+def _moment_summaries(second, gate_channels, active, shells, nshells):
+    """Per shell and channel over the updated voxels: mean and median of sqrt(u), mean of 1/sqrt(u), and the mean
+    effective gate phi / (phi + (1 - phi) sqrt(u)) (the fixed point of v + eta (phi m / sqrt(u) - (1 - phi) v) is
+    that weight times the average direction's target)."""
+    root = np.sqrt(np.asarray(second, np.float64))
+    phi = np.asarray(gate_channels, np.float64)
+    effective = phi / np.maximum(phi + (1 - phi) * root, 1e-30)
+    keep = np.asarray(active, bool)
+    shells = np.asarray(shells)[keep]
+    counts = np.bincount(shells, minlength=nshells).astype(np.float64)
+
+    def mean(value):
+        sums = np.stack([np.bincount(shells, value[keep, c], nshells) for c in range(2)], axis=-1)
+        return np.where(counts[:, None] > 0, sums / np.maximum(counts[:, None], 1), np.nan)
+
+    median = np.full((nshells, 2), np.nan)
+    order = np.argsort(shells, kind="stable")
+    sorted_shells = shells[order]
+    bounds = np.searchsorted(sorted_shells, np.arange(nshells + 1))
+    kept_root = root[keep][order]
+    for s in range(nshells):
+        if bounds[s + 1] > bounds[s]:
+            median[s] = np.median(kept_root[bounds[s] : bounds[s + 1]], axis=0)
+    return {
+        "sqrt_u_mean": mean(root),
+        "sqrt_u_median": median,
+        "inv_sqrt_u_mean": mean(1 / np.maximum(root, 1e-30)),
+        "effective_gate_mean": mean(effective),
+    }

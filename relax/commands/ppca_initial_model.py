@@ -201,6 +201,17 @@ def add_args(parser):
         "--tau2-fudge-scheme",
         help="RELION's --tau2_fudge_scheme: plain, or <deflate>-step (default: <fudge>-step)",
     )
+    parser.add_argument(
+        "--gate-oracle",
+        help="gate study, simulated data only: an npz of oracle gate tables (scripts/gate_study/oracle_gate.py) whose "
+        "--gate-oracle-key array [shells, 2] replaces the estimated VDAM gate (default: the estimated gate)",
+    )
+    parser.add_argument("--gate-oracle-key", default=Config().gate_oracle_key)
+    parser.add_argument(
+        "--gate-log",
+        action="store_true",
+        help="gate study: log per-shell summaries of the VDAM second moment and the effective gate",
+    )
     parser.add_argument("--sgd-learning-rate", type=float, default=0.4)
     parser.add_argument(
         "--sgd-loading-scale",
@@ -499,6 +510,9 @@ def main(args=None):
         accuracy_kl_threshold=args.accuracy_kl_threshold,
         tau2_fudge=args.tau2_fudge,
         tau2_fudge_scheme=args.tau2_fudge_scheme,
+        gate_oracle=str(Path(args.gate_oracle).resolve()) if args.gate_oracle else None,
+        gate_oracle_key=args.gate_oracle_key,
+        gate_log=args.gate_log,
     )
     if (args.ios is None) == (args.particles is None):
         raise ValueError("Give either a particle STAR (--i) or an optimisation set (--ios)")
@@ -516,6 +530,8 @@ def main(args=None):
 
         require_relion_convention_reference(args.init_mean_map, option="--init-mean-map")
         identity["init_mean_map_sha256"] = file_hash(args.init_mean_map)
+    if config.gate_oracle:
+        identity["gate_oracle_sha256"] = file_hash(config.gate_oracle)
     if not args.resume and list(output.glob("checkpoint_*.npz")):
         raise ValueError("Output already contains checkpoints; use --resume or a new directory")
     if args.resume:

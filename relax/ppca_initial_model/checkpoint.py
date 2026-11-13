@@ -27,7 +27,7 @@ def canonical(value):
 
 # Runtime settings: they change how later updates are computed, not the model a checkpoint
 # holds, so a run may resume under a different value (the controller logs the change).
-RUNTIME_CONFIG_FIELDS = ("gemm_precision", "preread_images", "pass2_mass_floor")
+RUNTIME_CONFIG_FIELDS = ("gemm_precision", "preread_images", "pass2_mass_floor", "gate_log")
 
 
 # Retired model settings and their only supported value: a checkpoint that recorded that value
@@ -44,7 +44,8 @@ _ADDED_CONFIG_DEFAULTS = {"max_significant": 100, "pc_stages": None, "pc_birth_s
     "tau2_fudge": None, "tau2_fudge_scheme": None, "radius_rule": "stages", "incr_size": 10, "direction_prior": "learned",
     "order_rule": "stages", "order_max": 4, "final_order_max": None, "accuracy_interval": 10,
     "accuracy_signal": "divergence", "accuracy_kl_threshold": None, "init_mean_map": None,
-    "sgd_loading_scale": 1.0, "shift_stages": None, "offset_sigma_angstrom": None}
+    "sgd_loading_scale": 1.0, "shift_stages": None, "offset_sigma_angstrom": None,
+    "gate_oracle": None, "gate_oracle_key": "oracle"}
 
 
 def _identity_config(config_dict):
