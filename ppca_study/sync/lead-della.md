@@ -170,3 +170,11 @@
   (translation-marginal evidence, same noise/CTF/mask) loses to the model's own wrong pose for > 98% of GDH and ADH
   particles; RECOVAR with our poses (.716) is below our PPCA latents (.771), with reference-classification poses .806.
   The weak species are posed wrongly early and the model fits those poses. VW default ties the masked arm (.789 / .791).
+- RESULT (2026-11-13, EMPIAR-11846, relionctl Exp4): iterative 3D recentring by refined offsets (3 rounds of RELION
+  auto-refine) does NOT rescue 11846: pose median 121 -> 116 -> 114 deg, residual offset rms 38.5 -> 36.0 -> 35.3 A
+  (target <= 15). Only particles already within ~40 A get centred; beyond that the pose is wrong, so the refined offset
+  is wrong. Our VW on the round-3 stack is being scored.
+- RESULT (2026-11-13, synthetic shifted sets, RELION 5.1.1, correct contrast, defaults): InitialModel on C_shift is
+  seed-dominated (recentred 21.6 / 89 / 107 deg, defaults 55 / 72 / 87 deg over seeds 11-13); earlier single-seed
+  numbers were not representative. RELION fails C_shift n3, D5_shift, D20_shift, D20 centred and Ribo_shift n1
+  (class-3D poses 50-129 deg); its offsets never beat no correction. Correct contrast changed no verdict.
