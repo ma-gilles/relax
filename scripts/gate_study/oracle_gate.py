@@ -74,6 +74,9 @@ def population_pcs(states: np.ndarray, weights: np.ndarray, q: int):
     order = np.argsort(values)[::-1][:q]
     values = np.clip(values[order], 0, None)
     loadings = vectors[:, order].T @ centred  # rows: sqrt(lambda_j) u_j
+    if len(order) < q:  # fewer states than q + 1 (H1: one state): the other loadings are zero
+        loadings = np.concatenate([loadings, np.zeros((q - len(order), flat.shape[1]))])
+        values = np.concatenate([values, np.zeros(q - len(order))])
     return mean.reshape(states.shape[1:]), loadings.reshape((q,) + states.shape[1:]), values
 
 
