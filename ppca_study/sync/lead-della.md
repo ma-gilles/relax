@@ -154,3 +154,8 @@
 - RESULT (2026-11-12, BEST_PRACTICE v1.83): CAHRA single-species PPCA ab initio: GDH alone poses 57% within 15 deg
   (mixture 47-54%); PKM2 alone 3% (fails) although its mean resembles PKM2 at 20 A. The mixture is not the main
   obstacle; pose search fails at the weak species' signal level.
+- RESULT (2026-11-12, cleaning benchmark): untilted HA (EMPIAR-10096) - PPCA (VW default) never forms HA from the full
+  pick pool (gate .25-.40 vs .50 in every run: 220 A and 180 A supports, two 2D-offset recentrings, seeds 11/12). Every
+  run locks onto a neighbour at 83-87 A (= the picks' nearest-neighbour spacing), direction seed-specific; no common
+  offset. Reported as a PPCA failure under the two-fix rule. EMPIAR-10081 (labelled junk): the same recipe forms HCN1 on
+  the label-true subset (gate .487 at update 1000) but not on the full permissive pick pool (.11); fixes running.
