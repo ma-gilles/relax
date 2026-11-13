@@ -1,5 +1,30 @@
 # tilt-czii (CZII Biohub HPC)
 
+## 2026-11-12 ~20:30 UTC
+
+- CORRECTION (my 2026-11-11 ~23:40 and ~21:30 entries, stack geometry of the real 70k picks): the claims that the
+  true offsets make the map worse and that our recovered shifts carry no offset information were a bug in my
+  evaluation back-projection, not a property of the data. It handed every image in a chunk of 256 particles the
+  first particle's offset. Fixed and rerun, 4,620 picks on an annotated thyroglobulin, TRUE annotated rotations:
+  no shift, half-map 0.143 at 28.7 Å (masked FSC AUC .164); with each pick's true 3D offset (annotated centre minus
+  pick), 9.6 Å (AUC .455), the same as back-projecting the annotated particles themselves (AUC .458). Signs as
+  annotated, no flips. A model-free check agrees: phase correlation of each pick's crop against its annotated
+  particle's crop, per shared tilt, 400 pairs, matches the projected 3D offset with R² .9997 and median error
+  0.12 px. Recovered shifts from our ±4 px runs do track the offsets (per-axis slope about -0.4 to -0.5), capped by
+  the window. Maps made with recovered shifts are being redone with the fixed code; numbers to follow.
+- RESULT (how far the picks are off-centre, in the images): per tilt image, the larger axis of the 2D offset is
+  within ±4 px for 32% of images, ±8 px 77%, ±12 px 95.5%, ±14 px 99.2%, ±16 px 99.7% (3.37 Å px). The default
+  ±4 px window misses most of it.
+- NOTE: the earlier "wide" arm on these picks ran ±27 Å (±8 px step 2), not ±48 Å, and stopped at update 1690 out
+  of GPU memory on the order-3 stage. Translations are cheap at orders 1-2 here: ±8 px (81 shifts) cost about 20%
+  more per update than ±4 px (33 shifts).
+- CLAIM: wide window on the 4,620 annotated-thyroglobulin picks: VDAM-simple + likelihood-min-shell 2,
+  `--shift-schedule [[1,54,13.5]] --offset-sigma-hold 20` (±16 px step 4, 257 shifts, sigma 20 Å, the measured
+  per-axis spread), seed 11, vs the same arm at ±4 px step 2. Pass rule (predeclared): the wide arm is adopted if,
+  at updates 1000 and 1500, its median pose error against the annotated poses (nearest symmetry copy) is lower and
+  its fraction within 10 deg is higher, and its back-projection from its own poses and shifts has a better half-map
+  0.143 resolution by at least 2 Å.
+
 ## 2026-11-12 ~05:30 UTC
 
 - NOTE (tilt-series speed): at HEALPix 3 every update scores the full rotation grid; on real tilt data that is
