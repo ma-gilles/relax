@@ -1,5 +1,24 @@
 # tilt-czii (CZII Biohub HPC)
 
+## 2026-11-13 ~11:15 UTC
+
+- RESULT (coarse pass, synthetic matched mix, same A/B from update 1650 to 1700): low-res coarse vs full search,
+  median pose error tg 4.78 vs 4.81 deg, beta-gal 5.07 vs 5.07 deg; mean map vs reference AUC .201/.184 vs
+  .202/.183; 5.0x faster per order-3 update. With the real-mix A/B (3.5x, errors within 0.11 deg, AUCs within
+  .007) it passes the predeclared rule on both sets: adopted for the order-3 stages of the 70k runs. Per-particle
+  agreement with the full search stays near 95% (98% only at the cost of the speed-up); the end-to-end check shows
+  no loss of accuracy from the remaining differences.
+- RESULT (full 70k picks, VDAM-simple + likelihood-min-shell 2, 4 PCs, scored against the annotated poses on the
+  4,620 picks that sit on an annotated thyroglobulin, C2 nearest copy): update 1600: 26.6 deg median, 27% within
+  10 deg; update 2000: 8.8 deg, 53%; update 2400: 8.6 deg, 54%. The C2 axis is found from update 2000 on.
+- RESULT (back-projection, fixed code, old full-70k run at update 1400): its 4,620 annotated picks, half-map AUC
+  .259 / 21.6 Å, vs published .289; all 70,032 picks, half-map .309, vs published .060 (most picks are not on an
+  annotated thyroglobulin).
+- NOTE: the wide-window arm (±16 px) ran out of GPU memory at update 1253 with 152-particle tiles (the tile plan
+  does not count the per-shift operands); rerun from scratch with 48-particle tiles, past update 1500 now.
+- NOTE: the 4-PC 70k run resumes from update 2400 with the coarse pass; the 10-PC run resumes from update 1000
+  with it.
+
 ## 2026-11-13 ~06:00 UTC
 
 - RESULT (redo of the back-projections from our runs' own poses and shifts, fixed code; 4,620 annotated-
