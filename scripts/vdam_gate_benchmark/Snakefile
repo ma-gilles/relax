@@ -2,19 +2,22 @@
 # RELION's gate gives on the ab initio benchmark datasets?
 #
 # The datasets are the K=1 VDAM rows of docs/benchmarks/relion_vs_relax.md (config.yaml: `datasets`). Each dataset
-# is run with both gates, `relion` and `full_data_power`, at the same seeds, from one checkout, native pack, GPU model
-# and command line but the gate:
-#   1. run_initial_model  relax initial_model, 200 iterations, the row's recorded arguments.                     [GPU]
+# is run with every gate of config `gates` at the same seeds, from one checkout, native pack, GPU model and command line
+# but the gate:
+#   1. run_initial_model  relax initial_model, 200 iterations, the row's recorded arguments, through
+#                         traced_initial_model.py, which records every M-step's gate statistics and batch.      [GPU]
 #   2. score_config       the scorer's config: the row's reference map, frozen mask and RELION runs
 #                         (docs/benchmarks/initialmodel_scores/config.json, tests/baselines/relion_vs_relax_benchmarks.json) and the runs of this workflow.
 #   3. score_maps         scripts/score_initialmodel_maps.py: every map rigidly registered to the reference; FSC-AUC
 #                         (masked and unmasked) to it, and between each pair of gates of one seed. All arms of a
 #                         dataset in one invocation, as the scorer requires.                                      [CPU]
-#   4. compare_gates      one table of the runs: gate difference per seed and dataset, wall times.
+#   4. analyze_gates      every gate recomputed on each run's trace (and checked against the gate it applied).
+#   5. compare_gates      one table of the runs: each gate's difference from the first per seed and dataset, walls.
 #
 # Outputs, under config `output_root`:
 #   <dataset>/<gate>/s<seed>/   run_it*_class001.mrc, run_it*_model.star, run_it*_recovar_meta.json (the gate's scale
-#                               and noise weight per written iteration), wall.tsv
+#                               and noise weight per written iteration), wall.tsv, trace/ (gate_trace.jsonl, batches.npz)
+#   <dataset>/gate_traces.json  the gates of every run of the dataset, recomputed from its trace
 #   <dataset>/scoring/          score_config.json, scores.json
 #   comparison/                 gate_comparison.csv, gate_comparison.md
 #   logs/                       one log per rule, dataset, gate and seed
@@ -55,6 +58,8 @@ FINAL_MAP = f"run_it{NR_ITER:03d}_class001.mrc"
 SCORE_SCRIPT = str(REPO / "scripts" / "score_initialmodel_maps.py")
 SCORE_CONFIG_SCRIPT = str(BENCHMARK_DIR / "make_score_config.py")
 COMPARE_SCRIPT = str(BENCHMARK_DIR / "compare_gates.py")
+TRACE_SCRIPT = str(BENCHMARK_DIR / "traced_initial_model.py")
+ANALYZE_SCRIPT = str(BENCHMARK_DIR / "analyze_gates.py")
 SCORE_CELLS = str(REPO / "docs" / "benchmarks" / "initialmodel_scores" / "config.json")
 BENCHMARK_ROWS = str(REPO / "tests" / "baselines" / "relion_vs_relax_benchmarks.json")
 
@@ -103,6 +108,7 @@ rule all:
     """Every dataset of `run_datasets` with both gates, scored, and the gate comparison."""
     input:
         comparison=output_path("comparison", "gate_comparison.md"),
+        gate_traces=expand(output_path("{dataset}", "gate_traces.json"), dataset=RUN_DATASETS),
 
 
 # ----------------------------------------------------------------------------------------------------------------
@@ -113,8 +119,11 @@ rule all:
 rule run_initial_model:
     message:
         "relax initial_model on {wildcards.dataset}, gate {wildcards.gate}, seed {wildcards.seed}"
+    input:
+        trace_script=TRACE_SCRIPT,
     output:
         final_map=output_path("{dataset}", "{gate}", "s{seed}", FINAL_MAP),
+        trace=output_path("{dataset}", "{gate}", "s{seed}", "trace", "gate_trace.jsonl"),
     params:
         env=RUN_ENV,
         python=PYTHON,
@@ -136,7 +145,7 @@ rule run_initial_model:
         output_path("logs", "{dataset}.{gate}.s{seed}.run_initial_model.log"),
     shell:
         "scratch=$(mktemp -d /tmp/vdam_gate_XXXXXX) && trap 'rm -rf $scratch' EXIT && "
-        "{params.env} {params.python} -m relax_cli initial_model "
+        "{params.env} {params.python} {input.trace_script} $(dirname {output.trace}) -- "
         "--i {params.star} "
         "{params.datadir} "
         "--o {params.prefix} "
@@ -227,6 +236,31 @@ rule score_maps:
         "--fit-threads {params.fit_threads} "
         "> {log} 2>&1 && "
         "cp {params.out_dir}/{params.cell}.json {output.scores}"
+
+
+rule analyze_gates:
+    message:
+        "Every gate recomputed on the traces of {wildcards.dataset}"
+    input:
+        traces=lambda wildcards: [
+            output_path(wildcards.dataset, gate, f"s{seed}", "trace", "gate_trace.jsonl")
+            for gate in GATES
+            for seed in seeds_of(wildcards.dataset)
+        ],
+        script=ANALYZE_SCRIPT,
+    output:
+        gate_traces=output_path("{dataset}", "gate_traces.json"),
+    params:
+        clean_env=CLEAN_ENV,
+        python=PYTHON,
+        runs=lambda wildcards, input: " ".join(str(Path(trace).parents[1]) for trace in input.traces),
+    log:
+        output_path("logs", "{dataset}.analyze_gates.log"),
+    shell:
+        "{params.clean_env} {params.python} {input.script} "
+        "--runs {params.runs} "
+        "--output {output.gate_traces} "
+        "> {log} 2>&1"
 
 
 # ----------------------------------------------------------------------------------------------------------------

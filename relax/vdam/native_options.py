@@ -188,7 +188,7 @@ class InitialModelDefaults:
     stochastic_all_iterations: bool = False
     uniform_class_direction_prior: bool = False
     # The shrinkage gate of VDAM's update (relax.vdam.gate); RELION's unless the full-data power gate is asked for.
-    vdam_gate: Literal["relion", "full_data_power"] = "relion"
+    vdam_gate: Literal["relion", "power", "full_data_power", "full_data_power_overlap"] = "relion"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -234,11 +234,11 @@ class NativeInitialModelOptions(InitialModelDefaults):
             raise ValueError("momentum_sgd requires a fixed coarse HEALPix grid")
         if self.optimizer == "momentum_sgd" and self.diagnostic_continue_optimiser is not None:
             raise ValueError("momentum_sgd cannot continue a VDAM optimizer checkpoint")
-        if self.vdam_gate == "full_data_power" and (
+        if self.vdam_gate != "relion" and (
             self.optimizer != "vdam" or self.nr_classes != 1 or self.diagnostic_continue_optimiser is not None
         ):
             raise ValueError(
-                "--vdam-gate full_data_power is the shrinkage gate of the vdam optimizer for K=1, from the first "
+                f"--vdam-gate {self.vdam_gate} is a shrinkage gate of the vdam optimizer for K=1, from the first "
                 "iteration (a RELION optimiser continuation has no batch history)"
             )
         if not (0.0 < self.sgd_learning_rate < float("inf")):

@@ -13,10 +13,14 @@ from relax.steps.sgd_schedule import DEFAULT_GRAD_MU
 from relax.vdam import relion_mstep
 from relax.vdam.bootstrap_iref import initialise_denovo_state
 from relax.vdam.gate import (
+    FullDataOverlapPowerGate,
     FullDataPowerGate,
+    PowerGate,
     RelionGate,
+    advance_noise_coefficients,
     advance_noise_weight,
     full_data_disagreement_scale,
+    overlap_disagreement_scale,
     vdam_gate,
 )
 from relax.vdam.iteration_loop import VdamUpdate, run_vdam_iterations
@@ -79,12 +83,90 @@ def test_an_iteration_without_pseudo_halfsets_leaves_the_weight_and_scales_by_on
     assert tail.gate_noise_weight == 0.02 and scale == 1.0
 
 
+def _halves(particle_ids):
+    """RELION's pseudo-halves: the parity of the particle id."""
+    return (np.asarray(particle_ids) % 2).astype(np.int8)
+
+
+def test_without_repeated_particles_the_overlap_scale_is_the_independent_batch_scale():
+    """Disjoint batches with halves of equal size (consecutive ids, even counts): both scales count the same noise.
+
+    The independent-batch weight takes each half as count / 2 particles; with unequal halves it is an approximation.
+    """
+    n = 10_000
+    order = np.arange(n)
+    coefficients, weight, start = None, None, 0
+    for count in (200, 200, 400, 600, 800):
+        ids = order[start : start + count]
+        start += count
+        coefficients = advance_noise_coefficients(coefficients, ids, _halves(ids), n)
+        weight = advance_noise_weight(weight, count)
+        assert_matches(overlap_disagreement_scale(coefficients, n), full_data_disagreement_scale(weight, n), rtol=1e-9)
+
+
+def test_when_every_batch_is_the_whole_data_set_the_running_average_reduces_nothing():
+    """All particles in every iteration: each one keeps the weight 1 / n_h of its half, the full-data half map's."""
+    n = 1001
+    ids = np.arange(n)
+    coefficients = None
+    for _ in range(30):
+        coefficients = advance_noise_coefficients(coefficients, ids, _halves(ids), n)
+        assert_matches(overlap_disagreement_scale(coefficients, n), 1.0, rtol=1e-12)
+    weight = None
+    for _ in range(30):
+        weight = advance_noise_weight(weight, n)
+    assert full_data_disagreement_scale(weight, n) > 18  # the independent-batch scale: 1 / e = 19
+
+
+@pytest.mark.parametrize("fraction", [0.02, 0.1, 0.5, 1.0])
+def test_the_overlap_scale_recovers_the_noise_of_two_full_data_half_maps_when_batches_repeat_particles(fraction):
+    """Monte Carlo: each particle carries one fixed noise vector; batches are random draws of ``fraction`` of them.
+
+    The halves' first moments are built as the M-step does (first = direction, then 0.9 first + 0.1 direction, the
+    direction of a half the mean of its particles), and their disagreement power times the scale is compared with that of
+    two full-data half maps (the two halves' means over all particles). 3000 voxels and 40 iterations; over 5 seeds the
+    largest relative error is 4.4%, so rtol is 0.1. The independent-batch scale is off by about 1 + 18 * fraction.
+    """
+    n, voxels, rng = 2000, 3000, np.random.default_rng(17)
+    noise = rng.standard_normal((n, voxels))
+    halves = _halves(np.arange(n))
+    batch = int(fraction * n)
+    first = coefficients = weight = None
+    for _ in range(40):
+        ids = np.sort(rng.choice(n, batch, replace=False))
+        direction = np.stack([noise[ids[halves[ids] == h]].mean(axis=0) for h in (0, 1)])
+        first = direction if first is None else 0.9 * first + 0.1 * direction
+        coefficients = advance_noise_coefficients(coefficients, ids, halves[ids], n)
+        weight = advance_noise_weight(weight, batch)
+    measured = np.mean((first[0] - first[1]) ** 2)
+    full_data = np.mean((noise[halves == 0].mean(axis=0) - noise[halves == 1].mean(axis=0)) ** 2)
+    assert_matches(measured * overlap_disagreement_scale(coefficients, n), full_data, rtol=0.1)
+    independent = measured * full_data_disagreement_scale(weight, n) / full_data
+    assert independent == pytest.approx(1 + 18 * fraction, rel=0.15)
+
+
+def test_the_overlap_gate_carries_the_coefficients_and_the_power_gate_scales_by_one():
+    gate, state = FullDataOverlapPowerGate(n_particles=1000), _state()
+    expected = None
+    for ids in (np.arange(0, 200), np.arange(100, 400), np.arange(0, 1000)):
+        expected = advance_noise_coefficients(expected, ids, _halves(ids), 1000)
+        state, scale = gate.advance(replace(state, subset_particle_ids=ids, subset_halfset_ids=_halves(ids)))
+        assert_matches(state.gate_noise_coefficients, expected, strict=True)
+        assert scale == overlap_disagreement_scale(expected, 1000)
+    tail, scale = gate.advance(replace(state, pseudo_halfsets=False))
+    assert scale == 1.0 and tail.gate_noise_coefficients is state.gate_noise_coefficients
+    unchanged, scale = PowerGate().advance(state)
+    assert unchanged is state and scale == 1.0
+
+
 def test_relion_gate_takes_no_scale_and_leaves_the_state():
     state = _state()
     unchanged, scale = RelionGate().advance(state)
     assert unchanged is state and scale is None
     assert vdam_gate("relion", 1000) == RelionGate()
     assert vdam_gate("full_data_power", 1000) == FullDataPowerGate(n_particles=1000)
+    assert vdam_gate("full_data_power_overlap", 1000) == FullDataOverlapPowerGate(n_particles=1000)
+    assert vdam_gate("power", 1000) == PowerGate()
     with pytest.raises(ValueError, match="unknown VDAM gate"):
         vdam_gate("fsc", 1000)
 
@@ -278,6 +360,28 @@ def test_the_loop_scales_each_iterations_disagreement_by_the_weight_of_the_batch
     assert final.gate_noise_weight == weight
 
 
+def test_the_loop_scales_the_overlap_gate_by_the_coefficients_of_the_drawn_batches():
+    """The scale each iteration logs is the one of the batches the loop drew (with the particles they share)."""
+    batches = []
+    original = FullDataOverlapPowerGate.advance
+
+    def recording(self, state):
+        batches.append((np.array(state.subset_particle_ids), np.array(state.subset_halfset_ids)))
+        return original(self, state)
+
+    FullDataOverlapPowerGate.advance = recording
+    try:
+        final, metas = _run(FullDataOverlapPowerGate(n_particles=200), nr_iter=4)
+    finally:
+        FullDataOverlapPowerGate.advance = original
+    coefficients = None
+    for (ids, halves), meta in zip(batches, metas):
+        coefficients = advance_noise_coefficients(coefficients, ids, halves, 200)
+        assert_matches(meta["vdam_gate"]["disagreement_scale"], overlap_disagreement_scale(coefficients, 200), rtol=1e-12)
+    assert_matches(final.gate_noise_coefficients, coefficients, strict=True)
+    assert len(set(batches[2][0]) & set(batches[3][0])) > 0  # the batches repeat particles
+
+
 def test_the_two_gates_give_different_references_and_relion_reports_no_scale():
     relion, relion_metas = _run(RelionGate())
     full_data, _ = _run(FullDataPowerGate(n_particles=200))
@@ -321,6 +425,7 @@ def test_the_command_defaults_to_relion_s_gate_and_takes_the_full_data_power_gat
         make_parser().parse_args(_ARGS + ["--vdam-gate", "fsc"])
 
 
+@pytest.mark.parametrize("gate", ["power", "full_data_power", "full_data_power_overlap"])
 @pytest.mark.parametrize(
     "extra, changes",
     [
@@ -330,7 +435,7 @@ def test_the_command_defaults_to_relion_s_gate_and_takes_the_full_data_power_gat
     ],
     ids=["K=2", "momentum SGD", "continuation of a RELION optimiser"],
 )
-def test_the_full_data_power_gate_is_refused_where_it_is_not_defined(extra, changes):
+def test_the_power_gates_are_refused_where_they_are_not_defined(gate, extra, changes):
     _options(*extra).validate_run()  # the same run with RELION's gate is valid
-    with pytest.raises(ValueError, match="--vdam-gate full_data_power"):
-        _options("--vdam-gate", "full_data_power", *extra, **changes).validate_run()
+    with pytest.raises(ValueError, match=f"--vdam-gate {gate} "):
+        _options("--vdam-gate", gate, *extra, **changes).validate_run()

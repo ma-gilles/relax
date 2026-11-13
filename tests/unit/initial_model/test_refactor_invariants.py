@@ -370,8 +370,9 @@ LOC_BUDGETS = {
     # ignored --sym. Its own module; exact size reviewed at landing.
     "symmetry_alignment": (321, ("align_symmetry.py",)),
     # The shrinkage gate's noise reference (RELION's and the full-data power gate, docs/math/vdam_gate_derivation.md):
-    # its own module (2026-11-13); exact size, the module's docstring and imports included.
-    "vdam_gate": (87, ("gate.py",)),
+    # its own module (2026-11-13); exact size, the module's docstring and imports included. The power gate without a
+    # rescale and the per-particle overlap gate (study variants of the same day): 87 -> 173.
+    "vdam_gate": (173, ("gate.py",)),
     # Scalar-curvature momentum and masked observation-noise adaptation are an
     # opt-in package with its own exact reviewed budget and complete inventory.
     # The package's three files (309 lines) are one module, vdam/sgd.py, since 2026-10-08 (e3).

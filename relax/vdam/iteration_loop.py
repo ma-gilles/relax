@@ -40,7 +40,7 @@ from relax.steps.sgd_schedule import (
     compute_tau2_fudge,
 )
 from relax.vdam.estep_common import EstepSums, estep_sums
-from relax.vdam.gate import FullDataPowerGate, RelionGate
+from relax.vdam.gate import VdamGate
 from relax.vdam.m_step import vdam_m_step, vdam_m_step_single_class
 from relax.vdam.model_update import (
     NonFiniteNoiseSums,
@@ -170,14 +170,14 @@ class VdamUpdate:
 
     ``single_class_m_step``: each class's M-step, the run's input source's (``VdamInputSource``); ``probe`` the
     run observer's model-update hooks, which see each noise update; ``stable_window_quantum`` the run's (EngineTuning);
-    ``gate`` the shrinkage gate's noise reference, RELION's or the full-data power gate (:mod:`relax.vdam.gate`).
+    ``gate`` the shrinkage gate's noise reference (:mod:`relax.vdam.gate`).
     """
 
     padding_factor: int
     mstep_compute_dtype: Literal["float32", "float64"]
     probe: MaximizationProbe
     stable_window_quantum: int
-    gate: RelionGate | FullDataPowerGate
+    gate: VdamGate
     single_class_m_step: Callable[..., InitialModelState] = vdam_m_step_single_class
 
     def maximize(self, current: InitialModelState, accumulators, sums: EstepSums, meta: dict) -> InitialModelState:

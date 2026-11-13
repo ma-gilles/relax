@@ -8,7 +8,7 @@ natives_dir: /scratch/gpfs/CRYOEM/gilleslab/em_work/relax_test_tiers/smoke_35477
 python: null
 
 nr_iter: 200
-gates: [relion, full_data_power]
+gates: [relion, power, full_data_power, full_data_power_overlap]   # the first is the reference of the comparison
 gpu_model: h100          # the benchmark rows' GPU (docs/benchmarks/relion_vs_relax.md): a gate pair runs on one model
 
 # The K=1 VDAM rows of docs/benchmarks/relion_vs_relax.md: each row's particles, diameter and extra arguments are those
