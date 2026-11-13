@@ -1,0 +1,65 @@
+# Settings of the VDAM gate benchmark (Snakefile). Paths that depend on the run are passed on the command line:
+#   --config output_root=<dir>
+# `natives_dir` holds the native pack (libcuda_backproject.so, librelax_cuda.so, librelax_host_math.so) built from the
+# source digest of this checkout's relax/cuda; `python` defaults to the checkout's pixi environment.
+
+output_root: null
+natives_dir: /scratch/gpfs/CRYOEM/gilleslab/em_work/relax_test_tiers/smoke_3547746f_20261111_134438/natives
+python: null
+
+nr_iter: 200
+gates: [relion, full_data_power]
+gpu_model: h100          # the benchmark rows' GPU (docs/benchmarks/relion_vs_relax.md): a gate pair runs on one model
+
+# The K=1 VDAM rows of docs/benchmarks/relion_vs_relax.md: each row's particles, diameter and extra arguments are those
+# of its recorded relax run (the RUN_SPEC.json of the frozen benchmark arm). `score_cell` is the cell of
+# docs/benchmarks/initialmodel_scores/config.json that holds the row's reference map, frozen mask and RELION runs.
+datasets:
+  noise1_50k:
+    score_cell: noise1_50k_k1
+    star: /scratch/gpfs/GILLES/mg6942/em_relion_proj/data_noise1_50k_256_normalized/particles.star
+    datadir: /scratch/gpfs/GILLES/mg6942/em_relion_proj/data_noise1_50k_256_normalized
+    particle_diameter: 380
+    extra_args: []
+    seeds: [29, 41, 53]
+    gpu_memory: 64G
+  ribosembly_k1:
+    score_cell: ribo_k1
+    star: /scratch/gpfs/GILLES/mg6942/em_relion_proj/ribosembly_k4_g256_n100000_completion_20260512_171123/particles.star
+    datadir: /scratch/gpfs/GILLES/mg6942/em_relion_proj/ribosembly_k4_g256_n100000_completion_20260512_171123
+    particle_diameter: 380
+    extra_args: [--preread_images]
+    seeds: [29, 41, 53]
+    gpu_memory: 128G
+  empiar10097:
+    score_cell: empiar10097
+    star: /scratch/gpfs/CRYOEM/gilleslab/em_work/realdata_vdam_initialmodel_10097_20260921/prepared/particles.zeropose.star
+    datadir: /scratch/gpfs/CRYOEM/gilleslab/em_work/realdata_vdam_initialmodel_10097_20260921/prepared
+    particle_diameter: 220
+    extra_args: []
+    seeds: [41, 29, 53]
+    gpu_memory: 64G
+  empiar10076:
+    score_cell: empiar10076
+    star: /scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/vdam_relion_refs_20260926/fixtures/empiar10076_100k_20260910/data/particles.star
+    datadir: /scratch/gpfs/CRYOEM/gilleslab/mg6942/em_fixtures/vdam_relion_refs_20260926/fixtures/empiar10076_100k_20260910/data
+    particle_diameter: 200
+    extra_args: []
+    seeds: [29, 41, 53]
+    gpu_memory: 64G
+  empiar10081_hcn1:
+    score_cell: hcn1_c1run
+    star: /scratch/gpfs/CRYOEM/gilleslab/em_work/relax_vdambench_20260924/inputs/hcn1/particles.zeropose.star
+    datadir: null
+    particle_diameter: 180
+    extra_args: [--preread_images]
+    seeds: [42, 29, 41]
+    gpu_memory: 128G
+
+# Datasets and seeds the default target runs (`all`); another subset is requested by its outputs.
+run_datasets: [noise1_50k, ribosembly_k1, empiar10097, empiar10076, empiar10081_hcn1]
+
+# The scorer (scripts/score_initialmodel_maps.py): CPU workers per dataset.
+scoring:
+  workers: 8
+  fit_threads: 1

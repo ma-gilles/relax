@@ -1,0 +1,256 @@
+# VDAM gate benchmark: does the full-data power gate (relax initial_model --vdam-gate full_data_power) change what
+# RELION's gate gives on the ab initio benchmark datasets?
+#
+# The datasets are the K=1 VDAM rows of docs/benchmarks/relion_vs_relax.md (config.yaml: `datasets`). Each dataset
+# is run with both gates, `relion` and `full_data_power`, at the same seeds, from one checkout, native pack, GPU model
+# and command line but the gate:
+#   1. run_initial_model  relax initial_model, 200 iterations, the row's recorded arguments.                     [GPU]
+#   2. score_config       the scorer's config: the row's reference map, frozen mask and RELION runs
+#                         (docs/benchmarks/initialmodel_scores/config.json) and the runs of this workflow.
+#   3. score_maps         scripts/score_initialmodel_maps.py: every map rigidly registered to the reference; FSC-AUC
+#                         (masked and unmasked) to it, and between each pair of gates of one seed. All arms of a
+#                         dataset in one invocation, as the scorer requires.                                      [CPU]
+#   4. compare_gates      one table of the runs: gate difference per seed and dataset, wall times.
+#
+# Outputs, under config `output_root`:
+#   <dataset>/<gate>/s<seed>/   run_it*_class001.mrc, run_it*_model.star, run_it*_recovar_meta.json (the gate's scale
+#                               and noise weight per written iteration), wall.tsv
+#   <dataset>/scoring/          score_config.json, scores.json
+#   comparison/                 gate_comparison.csv, gate_comparison.md
+#   logs/                       one log per rule, dataset, gate and seed
+#
+# Run (the profile submits the GPU rules to Slurm). Run the snapshot's copy of this file, not a worktree's, so that
+# an edit of the checkout cannot re-queue finished runs:
+#   mkdir -p <dir>
+#   snakemake --snakefile <snapshot>/scripts/vdam_gate_benchmark/Snakefile --directory <dir> --profile slurm \
+#       --config output_root=<dir>
+
+import os
+from pathlib import Path
+
+from snakemake.exceptions import WorkflowError
+
+
+configfile: os.path.join(workflow.basedir, "config.yaml")
+
+
+# ----------------------------------------------------------------------------------------------------------------
+# Settings
+# ----------------------------------------------------------------------------------------------------------------
+
+BENCHMARK_DIR = Path(workflow.basedir).resolve()
+REPO = BENCHMARK_DIR.parents[1]
+if not config["output_root"]:
+    raise WorkflowError("set output_root: --config output_root=<dir> (see config.yaml)")
+OUTPUT_ROOT = Path(config["output_root"])
+NATIVES = Path(config["natives_dir"])
+PYTHON = config["python"] or str(REPO / ".pixi/envs/default/bin/python")
+NR_ITER = config["nr_iter"]
+GATES = config["gates"]
+GPU_MODEL = config["gpu_model"]
+DATASETS = config["datasets"]
+RUN_DATASETS = config["run_datasets"]
+SCORING = config["scoring"]
+FINAL_MAP = f"run_it{NR_ITER:03d}_class001.mrc"
+SCORE_SCRIPT = str(REPO / "scripts" / "score_initialmodel_maps.py")
+SCORE_CONFIG_SCRIPT = str(BENCHMARK_DIR / "make_score_config.py")
+COMPARE_SCRIPT = str(BENCHMARK_DIR / "compare_gates.py")
+SCORE_CELLS = str(REPO / "docs" / "benchmarks" / "initialmodel_scores" / "config.json")
+
+unknown = [name for name in RUN_DATASETS if name not in DATASETS]
+if unknown:
+    raise WorkflowError(f"run_datasets names datasets that are not defined: {unknown}")
+
+# The pinned environment only, this checkout on the import path, and the native pack for the GPU rules.
+CLEAN_ENV = f"env -u PYTHONHOME -u CONDA_PREFIX -u VIRTUAL_ENV PYTHONNOUSERSITE=1 PYTHONPATH={REPO}"
+RUN_ENV = (
+    f"{CLEAN_ENV} "
+    f"RECOVAR_CUDA_LIB={NATIVES}/libcuda_backproject.so "
+    f"RELAX_CUDA_LIB={NATIVES}/librelax_cuda.so "
+    f"RELAX_HOST_MATH_LIB={NATIVES}/librelax_host_math.so "
+    "XLA_PYTHON_CLIENT_PREALLOCATE=false"
+)
+
+
+def output_path(*parts):
+    """A path under the output root."""
+    return str(OUTPUT_ROOT.joinpath(*parts))
+
+
+def seeds_of(dataset):
+    """The seeds of one dataset, as strings."""
+    return [str(seed) for seed in DATASETS[dataset]["seeds"]]
+
+
+def maps_of(dataset):
+    """Every final map of one dataset: each gate at each seed."""
+    return [output_path(dataset, gate, f"s{seed}", FINAL_MAP) for gate in GATES for seed in seeds_of(dataset)]
+
+
+wildcard_constraints:
+    dataset="|".join(DATASETS),
+    gate="|".join(GATES),
+    seed=r"\d+",
+
+
+# ----------------------------------------------------------------------------------------------------------------
+# Targets
+# ----------------------------------------------------------------------------------------------------------------
+
+
+rule all:
+    """Every dataset of `run_datasets` with both gates, scored, and the gate comparison."""
+    input:
+        comparison=output_path("comparison", "gate_comparison.md"),
+
+
+# ----------------------------------------------------------------------------------------------------------------
+# Stage 1: the runs
+# ----------------------------------------------------------------------------------------------------------------
+
+
+rule run_initial_model:
+    message:
+        "relax initial_model on {wildcards.dataset}, gate {wildcards.gate}, seed {wildcards.seed}"
+    output:
+        final_map=output_path("{dataset}", "{gate}", "s{seed}", FINAL_MAP),
+    params:
+        env=RUN_ENV,
+        python=PYTHON,
+        nr_iter=NR_ITER,
+        star=lambda wildcards: DATASETS[wildcards.dataset]["star"],
+        datadir=lambda wildcards: (
+            "--datadir " + DATASETS[wildcards.dataset]["datadir"] if DATASETS[wildcards.dataset]["datadir"] else ""
+        ),
+        particle_diameter=lambda wildcards: DATASETS[wildcards.dataset]["particle_diameter"],
+        extra_args=lambda wildcards: " ".join(DATASETS[wildcards.dataset]["extra_args"]),
+        prefix=lambda wildcards, output: str(Path(output.final_map).parent / "run"),
+    resources:
+        gpu=1,
+        gpu_model=GPU_MODEL,
+        mem=lambda wildcards: DATASETS[wildcards.dataset]["gpu_memory"],
+    benchmark:
+        output_path("{dataset}", "{gate}", "s{seed}", "wall.tsv")
+    log:
+        output_path("logs", "{dataset}.{gate}.s{seed}.run_initial_model.log"),
+    shell:
+        "scratch=$(mktemp -d /tmp/vdam_gate_XXXXXX) && trap 'rm -rf $scratch' EXIT && "
+        "{params.env} {params.python} -m relax_cli initial_model "
+        "--i {params.star} "
+        "{params.datadir} "
+        "--o {params.prefix} "
+        "--nr_iter {params.nr_iter} "
+        "--padding_factor 1 "
+        "--K 1 "
+        "--sym C1 "
+        "--particle_diameter {params.particle_diameter} "
+        "--oversampling 1 "
+        "--healpix_order 1 "
+        "--offset_range 6 "
+        "--offset_step 2 "
+        "--tau2_fudge 4 "
+        "--grad_write_iter 50 "
+        "--random_seed {wildcards.seed} "
+        "--j 8 "
+        "--gpu 0 "
+        "--vdam-gate {wildcards.gate} "
+        "{params.extra_args} "
+        "--scratch_dir $scratch "
+        "> {log} 2>&1"
+
+
+# ----------------------------------------------------------------------------------------------------------------
+# Stage 2 and 3: scoring
+# ----------------------------------------------------------------------------------------------------------------
+
+
+rule score_config:
+    message:
+        "The scorer's config of {wildcards.dataset}: the row's reference and RELION runs, and this workflow's maps"
+    input:
+        maps=lambda wildcards: maps_of(wildcards.dataset),
+        cells=SCORE_CELLS,
+        script=SCORE_CONFIG_SCRIPT,
+    output:
+        score_config=output_path("{dataset}", "scoring", "score_config.json"),
+    params:
+        clean_env=CLEAN_ENV,
+        python=PYTHON,
+        cell=lambda wildcards: DATASETS[wildcards.dataset]["score_cell"],
+        gates=" ".join(GATES),
+        seeds=lambda wildcards: " ".join(seeds_of(wildcards.dataset)),
+        dataset_root=lambda wildcards: output_path(wildcards.dataset),
+        final_map=FINAL_MAP,
+    log:
+        output_path("logs", "{dataset}.score_config.log"),
+    shell:
+        "{params.clean_env} {params.python} {input.script} "
+        "--cells {input.cells} "
+        "--cell {params.cell} "
+        "--dataset-root {params.dataset_root} "
+        "--gates {params.gates} "
+        "--seeds {params.seeds} "
+        "--final-map {params.final_map} "
+        "--output {output.score_config} "
+        "> {log} 2>&1"
+
+
+rule score_maps:
+    message:
+        "Scoring the maps of {wildcards.dataset} against the row's reference (one invocation, every arm)"
+    input:
+        score_config=rules.score_config.output.score_config,
+        script=SCORE_SCRIPT,
+    output:
+        scores=output_path("{dataset}", "scoring", "scores.json"),
+    params:
+        clean_env=CLEAN_ENV,
+        python=PYTHON,
+        out_dir=lambda wildcards, output: str(Path(output.scores).parent / "scorer_output"),
+        workers=SCORING["workers"],
+        fit_threads=SCORING["fit_threads"],
+        cell=lambda wildcards: DATASETS[wildcards.dataset]["score_cell"],
+    threads: SCORING["workers"]
+    resources:
+        mem="32G",
+    log:
+        output_path("logs", "{dataset}.score_maps.log"),
+    shell:
+        "{params.clean_env} {params.python} {input.script} {input.score_config} {params.out_dir} "
+        "--cells {params.cell} "
+        "--workers {params.workers} "
+        "--fit-threads {params.fit_threads} "
+        "> {log} 2>&1 && "
+        "cp {params.out_dir}/{params.cell}.json {output.scores}"
+
+
+# ----------------------------------------------------------------------------------------------------------------
+# Stage 4: the comparison
+# ----------------------------------------------------------------------------------------------------------------
+
+
+rule compare_gates:
+    message:
+        "The gate comparison table of the run datasets"
+    input:
+        scores=expand(output_path("{dataset}", "scoring", "scores.json"), dataset=RUN_DATASETS),
+        script=COMPARE_SCRIPT,
+    output:
+        table_csv=output_path("comparison", "gate_comparison.csv"),
+        table_md=output_path("comparison", "gate_comparison.md"),
+    params:
+        clean_env=CLEAN_ENV,
+        python=PYTHON,
+        output_root=str(OUTPUT_ROOT),
+        datasets=" ".join(RUN_DATASETS),
+        gates=" ".join(GATES),
+    log:
+        output_path("logs", "compare_gates.log"),
+    shell:
+        "{params.clean_env} {params.python} {input.script} "
+        "--output-root {params.output_root} "
+        "--datasets {params.datasets} "
+        "--gates {params.gates} "
+        "--csv {output.table_csv} "
+        "--markdown {output.table_md} "
+        "> {log} 2>&1"
