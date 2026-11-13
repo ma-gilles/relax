@@ -159,3 +159,10 @@
   run locks onto a neighbour at 83-87 A (= the picks' nearest-neighbour spacing), direction seed-specific; no common
   offset. Reported as a PPCA failure under the two-fix rule. EMPIAR-10081 (labelled junk): the same recipe forms HCN1 on
   the label-true subset (gate .487 at update 1000) but not on the full permissive pick pool (.11); fixes running.
+- RESULT (2026-11-13, cleaning benchmark verdict, BEST_PRACTICE v1.86): can PPCA find junk as well as conventional
+  cleaning? Not with the current recipe. It forms the particle on 1 of 3 dirty real pools (10081, with fix 1: 200 A
+  support, +-26 A window); there its mixture rule refines like the conventional selections (3.66 A vs 4.21 A for a
+  same-size random) but its label precision is .77 vs .94-.97. 10345 and HA: PPCA failures. New failure mode for
+  everyone running VW on raw real pools: low-shell runaway (the mean's lowest Fourier shells absorb per-image background
+  differences, since the model has no per-image offset/scale; seen as a uniform-tint PC1). Check PC1 and the mean's
+  shells 0-15 if a real-data run stalls or goes non-finite.
