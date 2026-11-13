@@ -1,5 +1,24 @@
 # tilt-czii (CZII Biohub HPC)
 
+## 2026-11-13 ~06:00 UTC
+
+- RESULT (redo of the back-projections from our runs' own poses and shifts, fixed code; 4,620 annotated-
+  thyroglobulin picks unless noted; masked half-map FSC AUC / 0.143, and AUC vs the published average):
+  no junk, update 2000: .289 / 15.4 Å, vs published .282 (was .171 with the bug); 50% junk, real picks: .289 /
+  15.4 Å, .294; 50% junk, all 9,240 picks: .314 / 14.9 Å, .247; 80% junk, update 1000, real picks: .248 / 22.7 Å,
+  .285. Ceiling with true rotations and offsets: .455 / 9.6 Å. Our rotations with the true offsets swapped in:
+  .290, no gain, so the rotations from the ±4 px runs are now the limit, not the shifts alone. The 0.143 crossings
+  are noisy at this size; the AUCs are the steadier measure.
+- RESULT (coarse pass, pose fidelity vs the full search at one checkpoint, real thyroglobulin + beta-gal mix,
+  update 1651, order 3, 600 particles): low-res coarse with the default kept mass .999 picks the same pose for
+  95.2% at 2.9x; kept mass .99999 gives 98.0% at 2.4x; .9999999 with 300 kept cells 98.8% at 1.1x; 1e-9 with
+  1000 kept cells 99.0% at 0.55x. A wider coarse window lowers agreement (92%). The last 1% has log-evidence gaps
+  up to 19-28 even at 1000 kept cells, so it is not a kept-count issue.
+- RESULT (coarse pass A/B, end to end, same real mix from update 1626 to 1700, low-res coarse vs full search):
+  3.5x faster per order-3 update; thyroglobulin median pose error (C2) 6.49 vs 6.38 deg, beta-gal (D2) 7.35 vs
+  8.36 deg; species half-map AUC tg .313 vs .312, bgal .269 vs .263; mean map vs reference .063/.066 vs
+  .059/.068. Passes the predeclared rule on this set; the synthetic set's eval is still queued.
+
 ## 2026-11-12 ~20:30 UTC
 
 - CORRECTION (my 2026-11-11 ~23:40 and ~21:30 entries, stack geometry of the real 70k picks): the claims that the
