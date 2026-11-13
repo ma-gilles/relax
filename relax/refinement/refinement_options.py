@@ -179,6 +179,7 @@ _CONSISTENCY_CHOICES = {
     "initial_noise_pair_counting": ("relion", "once"),
     "nyquist_column_counting": ("relion", "once"),
     "firstiter_cc_support": ("relion", "gaussian"),
+    "offset_prior_units": ("relion", "consistent"),
 }
 
 
@@ -217,6 +218,11 @@ class RelionConsistencyOptions:
     # pixel and the corners of the cropped rectangle are summed. "gaussian" scores the CC
     # iteration on the support and weights of the Gaussian iterations.
     firstiter_cc_support: Literal["relion", "gaussian"] = "relion"
+    # The Gaussian offset prior of the scores (pdf_offset): RELION's accelerated path adds the Angstrom
+    # sampling grid to the pixel offset and multiplies the squared distance by pixel_size**2, a prior of width
+    # sigma / pixel_size**2 pixels on the search shift centred on (1 - 1 / pixel_size) times the old offset;
+    # "consistent" scores the whole offset in pixels against a width of sigma / pixel_size pixels.
+    offset_prior_units: Literal["relion", "consistent"] = "relion"
 
     def __post_init__(self):
         for name, choices in _CONSISTENCY_CHOICES.items():
@@ -240,6 +246,7 @@ RELAX_MODE_CONSISTENCY = {
     "initial_noise_pair_counting": "once",
     "nyquist_column_counting": "once",
     "firstiter_cc_support": "gaussian",
+    "offset_prior_units": "consistent",
 }
 
 

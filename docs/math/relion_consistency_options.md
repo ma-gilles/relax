@@ -18,6 +18,7 @@ below keeps RELION's rule unless it is given by name. `relax` sets every option 
 | `--initial_noise_pair_counting` | `relion` | `once` |
 | `--nyquist_column_counting` | `relion` | `once` |
 | `--firstiter_cc_support` | `relion` | `gaussian` |
+| `--offset_prior_units` | `relion` | `consistent` |
 
 The bundle is one constant, `RELAX_MODE_CONSISTENCY` (`relax/refinement/refinement_options.py`). The command
 resolves the mode to options once (`resolve_consistency_options`, `relax/commands/refinement_arguments.py`); the
@@ -41,7 +42,7 @@ refinement sees the options only.
   to (`_relax_consistency_<name>`), and the start-up log prints them. A continuation must resolve to the
   recorded options; the mode itself is a label, so the same options given by name continue the run.
 
-Measured effect: no measurable effect on two synthetic K=1 fixtures (5,000 particles at box 128 and 10,000 at
+Measured effect of the six options before `--offset_prior_units`: no measurable effect on two synthetic K=1 fixtures (5,000 particles at box 128 and 10,000 at
 box 256, full auto-refinement, three or four seeds; ground-truth map FSC, pose error, reported resolution and
 iterations to convergence against the default's seed-to-seed spread). Not tested on real data or Class3D.
 
@@ -195,3 +196,25 @@ without DC. The first iteration therefore picks its poses on a different set of 
 The noise, norm and scale sums of the CC iteration and its backprojection are RELION's (they are
 not part of the score). Refused: a run without a CC iteration (`--no-firstiter_cc`), the
 experimental `gemm_dense` coarse engine, subtomograms and full-grid GEMM passes.
+
+## `--offset_prior_units {relion,consistent}`
+
+The Gaussian offset prior of the scores, `pdf_offset` (`acc_ml_optimiser_impl.h:2135-2167`), adds the
+sampled translation `sampling.translations_x[itrans]`, which is in Angstrom since RELION 3.1, to the rounded old
+offset `old_offset_x`, which is in pixels, subtracts the prior offset (pixels) and then multiplies the squared
+difference by `my_pixel_size^2` ("sigma_offsets are in Angstroms"). For a search shift `t` in pixels, pixel size
+`a`, old offset `o` and prior `p`, the log prior is therefore `-a^2 |a t + o - p|^2 / (2 sigma^2)`: a Gaussian on
+`t` of width `sigma / a^2` pixels centred on `(p - o) / a`, instead of width `sigma / a` centred on `p - o`. The
+two agree at 1 A per pixel. At larger pixels the prior pulls every offset towards `(1 - 1/a)` times its old
+value with a width the learned `sigma2_offset` cannot widen: on a box-128, 4.25 A/pixel simulation with Gaussian
+offsets of 15 A per axis and no input offsets, the default never moved the offsets (median error 4.2 px, the
+median true offset) and the refinement stalled at 27 A. The `wsum_sigma2_offset` statistic that updates
+`sigma2_offset` is in consistent units and is not affected.
+
+`consistent` scores `-|o + t - p|^2 a^2 / (2 sigma^2)`: the prior centre in pixels
+(`relion_translation_prior_center(consistent_units=True)`) and the width `sigma` passed to
+`make_relion_translation_log_prior` as `sigma * a` (`pdf_offset_score_sigma`,
+`relax/sampling/orientation_priors.py`), for the global and the local searches of every numbered iteration and
+of the final pass. Refused: subtomograms (their 3-D prior, `relion_offset_log_prior_3d`, has the same unit mix
+and is not changed) and optics groups on several image shapes.
+

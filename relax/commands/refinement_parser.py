@@ -253,6 +253,16 @@ def parse_refinement_args(argv=None):
         "corners); gaussian scores it on the support and weights of the Gaussian iterations.",
     )
     parser.add_argument(
+        "--offset_prior_units",
+        choices=("relion", "consistent"),
+        default=None,
+        help="Units of the Gaussian offset prior of the scores (pdf_offset). relion (default) adds RELION's "
+        "Angstrom translation grid to the pixel offset and multiplies the squared distance by pixel_size^2 "
+        "(acc_ml_optimiser_impl.h), a prior of width sigma_offset / pixel_size^2 pixels on each search shift, "
+        "centred on (1 - 1 / pixel_size) times the particle's offset; consistent scores the whole offset in "
+        "pixels, width sigma_offset / pixel_size. The two agree at 1 A per pixel.",
+    )
+    parser.add_argument(
         "--perturb_factor",
         type=float,
         default=0.5,
