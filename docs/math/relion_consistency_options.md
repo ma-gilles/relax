@@ -61,7 +61,8 @@ honoured:
 - a continuation (`--continue`) whose run files were written with other option values: the run
   files record the non-default options (`relax_consistency_<name>` in the optimiser STAR).
 
-`relax initial_model` (VDAM) and the PPCA commands do not take the options.
+`relax initial_model` (VDAM) and the PPCA commands do not take the options above; the InitialModel has its own
+opt-in, `--vdam-gate`, described at the end of this page.
 
 ## `--gridding_kernel {radial,separable}`
 
@@ -195,3 +196,18 @@ without DC. The first iteration therefore picks its poses on a different set of 
 The noise, norm and scale sums of the CC iteration and its backprojection are RELION's (they are
 not part of the score). Refused: a run without a CC iteration (`--no-firstiter_cc`), the
 experimental `gemm_dense` coarse engine, subtomograms and full-grid GEMM passes.
+
+## `relax initial_model --vdam-gate {relion,full_data_power}`
+
+VDAM replaces the FSC of the paper's equation 12 by a gate built from the disagreement of two pseudo-half
+first moments, because an InitialModel run reconstructs no half maps. RELION's gate takes the ratio of two shell
+means of amplitudes of the half-batch disagreement as measured. That is not the FSC of two half maps of the
+whole data set: the statistic is an amplitude, the noise is that of a mini-batch (`b` of `N` particles), and the
+first moments have averaged it down. The derivation, with the evidence, is
+[vdam_gate_derivation.md](vdam_gate_derivation.md).
+
+`relion` (the default) is RELION's gate. `full_data_power` takes shell means of power, rescales the disagreement
+to the noise of two full-data half maps and divides out the running average, which is the gate of the note's
+section 7. Where it applies, what it changes in the run, what it does not correct and the checks are in
+section 9 of the note. Refused, naming the option: K above 1, `--optimizer momentum_sgd` and a continuation of a
+RELION optimiser (`--diagnostic_continue_optimiser`).
