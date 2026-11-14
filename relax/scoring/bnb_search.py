@@ -84,7 +84,9 @@ class BnBSearchResult:
     ``candidates`` holds each image's kept rotations of the last level (sorted int32) and ``kept_counts``
     ``[L + 1, N]`` the number kept at every level. ``best_rotation`` and ``best_translation`` are the last level's best pose,
     ``translation_spread`` ``[N]`` the posterior standard deviation (pixels) of the offset and ``hold_radius`` ``[N]``
-    the radius (pixels) around the centre that holds 99% of its posterior mass.
+    the radius (pixels) around the centre that holds 99% of its posterior mass. ``final_mass`` ``[N, T]`` is the last
+    level's log posterior mass of its translations ``final_translations`` ``[T, 2]``, relative to each image's
+    ``final_base`` ``[N, 2]``: what the window rule (``relax.scoring.bnb_half``) recentres from.
     """
 
     centres: np.ndarray
@@ -94,6 +96,9 @@ class BnBSearchResult:
     best_translation: np.ndarray
     translation_spread: np.ndarray
     hold_radius: np.ndarray
+    final_mass: np.ndarray
+    final_translations: np.ndarray
+    final_base: np.ndarray
     seconds: float
 
 
@@ -461,8 +466,9 @@ def window_centres(
     recentre_gain: float = 0.0,
 ):
     """Each image's window centre: the whole pixel whose window (``radius``) holds the most posterior mass of the
-    offset, which is the mode of a sharp posterior and near the mean of a broad one; also the posterior standard
-    deviation (pixels) of the offset and the radius around the centre that holds ``hold`` of its mass.
+    offset (of several, the one nearest the posterior mean), which is the mode of a sharp posterior and near the mean of
+    a broad one; also the posterior standard deviation (pixels) of the offset and the radius around the centre that
+    holds ``hold`` of its mass.
 
     ``translation_mass`` ``[B, T]`` is the log posterior mass of every translation ``translations`` ``[T, 2]``;
     ``table`` is their :func:`centre_table` (None: built here). With ``previous`` ``[B, 2]`` (each image's previous
@@ -476,9 +482,9 @@ def window_centres(
     mass = np.asarray(translation_mass, dtype=np.float64)
     weights = np.exp(mass - mass.max(axis=1, keepdims=True))
     weights /= np.maximum(weights.sum(axis=1, keepdims=True), 1e-300)
-    captured = weights @ inside
-    # Ties (a flat posterior) go to the centre nearest the origin, the offset prior's centre.
-    captured -= 1e-12 * np.sum(centres**2, axis=1)[None, :]
+    mean = weights @ translations
+    # Windows holding the same mass (a wide window around a sharp peak) go to the one nearest the posterior mean.
+    captured = weights @ inside - 1e-9 * np.sum((centres[None, :, :] - mean[:, None, :]) ** 2, axis=2)
     choice = np.argmax(captured, axis=1)
     best = centres[choice]
     if previous is not None:
@@ -487,7 +493,6 @@ def window_centres(
         previous_mass = np.sum(np.where(within, weights, 0.0), axis=1)
         stay = captured[np.arange(mass.shape[0]), choice] < previous_mass + float(recentre_gain)
         best = np.where(stay[:, None], kept_at, best)
-    mean = weights @ translations
     spread = np.sqrt(np.maximum(np.sum(weights * np.sum((translations[None] - mean[:, None]) ** 2, axis=2), axis=1), 0))
     distance = np.sqrt(np.sum((translations[None, :, :] - best[:, None, :]) ** 2, axis=2))
     order = np.argsort(distance, axis=1)
@@ -511,17 +516,14 @@ def _level_pass(
     image_batch_size: int,
     precision: str,
     clock: dict,
-    previous: np.ndarray | None = None,
-    recentre_gain: float = 0.0,
 ):
     """One level over every image: each image's kept rotations, kept count, window centre (relative to its pre-shift),
     offset spread and hold radius, and best ``(rotation, translation)``.
 
     ``parents`` holds each image's kept rotations of the previous level (None at level 0, which scores every rotation);
     ``pre_shifts`` ``[N, 2]`` centre a local level's translations on each image (None: the absolute grid) and ``prior``
-    ``(pixel_size, sigma_offset_angstrom)`` gives them their offset prior, at ``pre_shift + t``. ``previous``
-    ``[N, 2]`` (absolute offsets, or None) keeps an image's window where it was unless recentring gains
-    ``recentre_gain`` of its posterior mass (:func:`window_centres`).
+    ``(pixel_size, sigma_offset_angstrom)`` gives them their offset prior, at ``pre_shift + t``. Also returns every
+    image's log posterior mass of the level's translations ``[N, T]`` (float32).
     """
 
     from relax.io.batch_fetch import iter_indexed_batches
@@ -536,6 +538,7 @@ def _level_pass(
     hold = np.zeros(n_images, dtype=np.float64)
     best_rotation = np.zeros(n_images, dtype=np.int64)
     best_translation = np.zeros((n_images, 2), dtype=np.float64)
+    masses = np.zeros((n_images, translations.shape[0]), dtype=np.float32)
     start = 0
     for batch_data, _, _, _, _, _, indices in iter_indexed_batches(dataset, np.arange(n_images), image_batch_size):
         end = start + len(indices)
@@ -574,18 +577,15 @@ def _level_pass(
         kept_counts[start:end] = np.asarray(n_kept)[:count]
         clock["keep"] += time.time() - tick
         tick = time.time()
-        relative = None
-        if previous is not None:
-            relative = previous[start:end] - (0.0 if pre_shifts is None else pre_shifts[start:end])
+        masses[start:end] = np.asarray(translation_mass)[:count]
         centres[start:end], spread[start:end], hold[start:end] = window_centres(
-            np.asarray(translation_mass)[:count], translations, centre_radius, table=table,
-            previous=relative, recentre_gain=recentre_gain,
+            masses[start:end], translations, centre_radius, table=table
         )
         best_rotation[start:end] = np.asarray(best[1])[:count]
         best_translation[start:end] = translations[np.asarray(best[2])[:count]]
         clock["centres"] += time.time() - tick
         start = end
-    return kept_rows, kept_counts, centres, spread, hold, best_rotation, best_translation
+    return kept_rows, kept_counts, centres, spread, hold, best_rotation, best_translation, masses
 
 
 def run_search(
@@ -598,8 +598,6 @@ def run_search(
     image_batch_size: int,
     pixel_size: float,
     sigma_offset_angstrom: float,
-    previous_offsets: np.ndarray | None = None,
-    recentre_gain: float = 0.0,
     precision: str = "float32",
 ) -> BnBSearchResult:
     """Search every image of ``request_fields["experiment_dataset"]`` over ``levels`` (see the module docstring).
@@ -612,8 +610,7 @@ def run_search(
     prior (``pixel_size``, ``sigma_offset_angstrom``) at the absolute offsets. ``centre_radius`` (pixels) is the
     RELION window the centres are chosen for. ``precision`` is the score products' algorithm (``"float32"`` or
     ``"tf32"``). Coarse levels keep at most ``pruning.max_kept`` rotations per image; the last level keeps every
-    rotation its rules keep. ``previous_offsets`` ``[N, 2]`` (pixels; None: the origin) stay the window centres
-    unless the search's best window holds ``recentre_gain`` more of the offset posterior.
+    rotation its rules keep.
     """
 
     t0 = time.time()
@@ -642,7 +639,9 @@ def run_search(
         tick = time.time()
         prepared = plan_level(level, fields, image_current_size=image_current_size)
         clock["plan"] += time.time() - tick
-        parents, kept_counts[index], local_centres, spread, hold, best_rotation, best_translation = _level_pass(
+        (
+            parents, kept_counts[index], local_centres, spread, hold, best_rotation, best_translation, masses
+        ) = _level_pass(
             prepared,
             dataset,
             parents=parents,
@@ -655,12 +654,6 @@ def run_search(
             image_batch_size=image_batch_size,
             precision=precision,
             clock=clock,
-            previous=(
-                (np.zeros((n_images, 2)) if previous_offsets is None else np.asarray(previous_offsets, np.float64))
-                if index == n_levels - 1
-                else None
-            ),
-            recentre_gain=recentre_gain,
         )
         base = np.zeros((n_images, 2)) if pre_shifts is None else pre_shifts
         pre_shifts = base + local_centres
@@ -686,6 +679,9 @@ def run_search(
         best_translation=best_translation,
         translation_spread=spread,
         hold_radius=hold,
+        final_mass=masses,
+        final_translations=used_levels[-1].translations,
+        final_base=base,
         seconds=seconds,
     )
 

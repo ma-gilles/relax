@@ -35,9 +35,11 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class HalfBnB:
-    """One half's search: its result, its last level (the iteration's coarse grid) and the pass-1 fields it used."""
+    """One half's search: its result (with the window centres the window rule chose), the window radius (pixels),
+    its last level (the iteration's coarse grid) and the pass-1 fields it used."""
 
     search: BnBSearchResult
+    window_radius: float
     final_level: BnBLevel
     request_fields: dict
     image_current_size: int | None
@@ -211,11 +213,18 @@ def search_half(
     window_radius: float,
     relion_translation_angle_scale: float,
 ) -> HalfBnB:
-    """Run the search on ``half`` (``NumberedHalfInputs``) at the iteration's ``sampling``.
+    """Run the search on ``half`` (``NumberedHalfInputs``) at the iteration's ``sampling`` and choose each image's
+    window.
 
-    ``window_radius`` (pixels) is the RELION translation window the centres are averaged over and the least
-    search radius.
+    ``window_radius`` (pixels) is RELION's translation window. The window widens, when needed, to the radius that
+    holds 99% of the offset posterior of ``window_quantile`` of the particles (at most the search radius); each image's
+    window then moves from its previous offset (the origin before any) to the search's best window only when that
+    holds ``recentre_gain`` more of its posterior (:func:`relax.scoring.bnb_search.window_centres`).
     """
+
+    from dataclasses import replace
+
+    from relax.scoring.bnb_search import window_centres
 
     settings = options.adaptive.bnb
     particles = half.data.particles
@@ -246,21 +255,29 @@ def search_half(
         image_batch_size=settings.image_batch_size,
         pixel_size=float(image_geometry.pixel_size_angstrom),
         sigma_offset_angstrom=float(half.sigma_offset_angstrom),
-        previous_offsets=particles.translations,
-        recentre_gain=settings.recentre_gain,
         precision=settings.search_precision,
     )
+    radius = max(float(window_radius), 1.0)
+    if settings.window_quantile > 0.0:
+        search_radius = float(np.max(np.linalg.norm(levels[0].translations, axis=1), initial=0.0))
+        radius = max(radius, min(float(np.quantile(result.hold_radius, settings.window_quantile)), search_radius))
     previous = particles.translations
-    if previous is not None:
-        moved = np.linalg.norm(result.centres - np.asarray(previous, dtype=np.float64), axis=1)
-        logger.info(
-            "BnB half %d: %.1f%% of the windows moved (more than 1 px), by median %.2f px, 90%% %.2f px, max %.2f px; "
-            "offset spread median %.2f px",
-            particles.index + 1, 100.0 * float(np.mean(moved > 1.0)), float(np.median(moved)),
-            float(np.quantile(moved, 0.9)), float(moved.max()), float(np.median(result.translation_spread)),
-        )
+    previous_offsets = np.zeros_like(result.final_base) if previous is None else np.asarray(previous, np.float64)
+    local, spread, hold = window_centres(
+        result.final_mass, result.final_translations, radius,
+        previous=previous_offsets - result.final_base, recentre_gain=settings.recentre_gain,
+    )
+    result = replace(result, centres=result.final_base + local, translation_spread=spread, hold_radius=hold)
+    moved = np.linalg.norm(result.centres - previous_offsets, axis=1)
+    logger.info(
+        "BnB half %d: window radius %.2f px; %.1f%% of the windows moved (more than 1 px), by median %.2f px, 90%% "
+        "%.2f px, max %.2f px; offset spread median %.2f px",
+        particles.index + 1, radius, 100.0 * float(np.mean(moved > 1.0)), float(np.median(moved)),
+        float(np.quantile(moved, 0.9)), float(moved.max()), float(np.median(result.translation_spread)),
+    )
     return HalfBnB(
         search=result,
+        window_radius=radius,
         final_level=levels[-1],
         request_fields=fields,
         image_current_size=sampling.image_window_size,
@@ -269,12 +286,9 @@ def search_half(
 
 
 def recentred_window(bnb: HalfBnB, sampling, options: RefinementOptions, *, voxel_size: float, dtype):
-    """The half's sampling with RELION's translation window widened, when needed, to hold the offset posterior
-    (``BnBSearchOptions.window_quantile``), and the window's perturbed translations.
-
-    A widened window keeps RELION's step unless the radius would span more than ``window_steps`` steps; it never
-    narrows RELION's window and never reaches past the search radius.
-    """
+    """The half's sampling with RELION's translation window widened to the search's window radius when that is
+    larger, and the window's perturbed translations. A widened window keeps RELION's step unless the radius would span
+    more than ``BnBSearchOptions.window_steps`` steps."""
 
     from dataclasses import replace
 
@@ -283,25 +297,18 @@ def recentred_window(bnb: HalfBnB, sampling, options: RefinementOptions, *, voxe
     from relax.sampling.grids import relion_base_translation_grid
     from relax.sampling.perturbation import apply_relion_translation_perturbation
 
-    settings = options.adaptive.bnb
     relion_radius = float(np.max(np.linalg.norm(np.asarray(sampling.base_translations), axis=1), initial=0.0))
-    if not settings.window_quantile > 0.0:
-        return sampling, sampling.current_translations
-    search_radius = float(np.max(np.linalg.norm(bnb.final_level.translations, axis=1), initial=0.0))
-    cover = float(np.quantile(bnb.search.hold_radius, settings.window_quantile))
-    radius = min(cover, search_radius)
+    radius = float(bnb.window_radius)
     if not radius > relion_radius + 1e-6:
         return sampling, sampling.current_translations
-    step = max(float(sampling.translation_step), radius / float(settings.window_steps))
+    step = max(float(sampling.translation_step), radius / float(options.adaptive.bnb.window_steps))
     base = relion_base_translation_grid(radius, step, n_classes=1, voxel_size=voxel_size)
     current = jnp.asarray(
         apply_relion_translation_perturbation(base, float(sampling.random_perturbation), step), dtype=dtype
     )
     logger.info(
-        "BnB window: radius %.2f -> %.2f px, step %.2f -> %.2f px (%d translations), to hold 99%% of the offset "
-        "posterior of %.0f%% of the particles",
+        "BnB window: radius %.2f -> %.2f px, step %.2f -> %.2f px (%d translations)",
         relion_radius, radius, float(sampling.translation_step), step, int(base.shape[0]),
-        100.0 * settings.window_quantile,
     )
     return replace(sampling, base_translations=base, current_translations=current, translation_step=step), current
 
