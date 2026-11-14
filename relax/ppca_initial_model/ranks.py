@@ -4,21 +4,26 @@ A multi-GPU run is one process per GPU (:mod:`relax_cli.launch`), as for ``relax
 controller (:func:`relax.ppca_initial_model.iteration_loop.run`): initialization, batch selection, the update,
 checkpoints and every output. The other ranks load the same particles and then :func:`serve_tile_ranks`: for
 each E-step rank 0 sends the model and the id groups (:class:`ExpectationTask`), every rank prepares the same
-streams, rank 0 sends the tile size it planned (:class:`TilePlan`), and every rank cuts the same tiles and scores
-the tiles :func:`assign_tiles` gives it. A rank returns its tiles' statistics without their volumes and its
-running volume sums per id group (:class:`TileShare`); rank 0 joins them in tile order and adds the volume sums
-in rank order (``iteration_loop._join_tile_shares``). Section 18 of ``docs/math/vdam_ppca_algorithm.md`` states
-what is summed where and how the result compares with one GPU.
+streams, rank 0 sends the tile size it planned (:class:`TilePlan`), and every rank cuts the same tiles. The tiles
+form fixed blocks (:func:`tile_blocks`: runs of consecutive tiles of about equal predicted cost), which the ranks
+take from rank 0's queue as they finish the previous one, heaviest first (:meth:`LeaderTiles.run_blocks`, one block
+sent ahead), so a rank whose tiles run slower than predicted takes fewer. A block returns its tiles' statistics
+without their volumes and its volume sums per id group in tile order (:class:`BlockShare`); rank 0 adds the blocks'
+volume sums in block order and puts every other statistic back in tile order (``iteration_loop._join_tile_shares``).
+Section 18 of ``docs/math/vdam_ppca_algorithm.md`` states what is summed where and how the result compares with one
+GPU.
 
-The assignment is static (a function of the tile costs and the number of ranks), and each sum has a fixed order,
-so a run is reproducible for a given number of GPUs: neither which rank finished first nor when changes it.
+The blocks are a function of the tile costs and the number of ranks, and every sum has a fixed order, so a run is
+reproducible for a given number of GPUs: neither which rank scored a block nor when changes it.
 """
 
 from __future__ import annotations
 
 import dataclasses
 import logging
+import threading
 import traceback
+from collections import deque
 from dataclasses import dataclass
 from multiprocessing.connection import Connection, Listener
 
@@ -53,15 +58,38 @@ class TilePlan:
 
 
 @dataclass(frozen=True)
-class TileShare:
-    """A rank's part of E-step ``key``: each of its tiles' statistics by tile index (without the volumes, which
-    ``totals`` holds: per id group, the volume sums over its tiles in tile order), its seconds and their breakdown."""
+class BlockTask:
+    """Score block ``block`` of E-step ``key``; the reply is a :class:`BlockShare`."""
 
     key: int
+    block: int
+
+
+@dataclass(frozen=True)
+class BlockShare:
+    """Block ``block`` of E-step ``key``: each of its tiles' statistics by tile index (without the volumes, which
+    ``totals`` holds: per id group, the volume sums over the block's tiles in tile order), and its seconds."""
+
+    key: int
+    block: int
     parts: dict
     totals: list
     seconds: float
-    timing: dict  # the rank's E-step breakdown (iteration_loop._Laps)
+
+
+@dataclass(frozen=True)
+class EndBlocks:
+    """No more blocks of E-step ``key``; the reply is a :class:`RankDone`."""
+
+    key: int
+
+
+@dataclass(frozen=True)
+class RankDone:
+    """A rank's E-step ``key`` is over: its phases (``iteration_loop._Laps``)."""
+
+    key: int
+    timing: dict
 
 
 @dataclass(frozen=True)
@@ -71,18 +99,26 @@ class TileFailure:
     text: str
 
 
-def assign_tiles(costs, world: int) -> np.ndarray:
-    """The rank of each tile: heaviest first, each to the rank with the least cost so far (the lowest rank on a
-    tie). A function of ``costs`` and ``world`` alone, so every rank computes the same assignment."""
+# Blocks per rank of an E-step: enough that the last blocks even out the ranks' measured speeds, few enough that a
+# block (one accumulate call, one reply) holds several tiles.
+BLOCKS_PER_RANK = 8
+
+
+def tile_blocks(costs, world: int) -> list[list[int]]:
+    """The E-step's blocks: ``min(tiles, BLOCKS_PER_RANK * world)`` runs of consecutive tiles, cut where the
+    cumulative predicted cost crosses each equal share. A function of ``costs`` and ``world`` alone."""
 
     costs = np.asarray(costs, np.float64)
-    owners = np.empty(costs.size, np.int64)
-    load = np.zeros(world)
-    for k in sorted(range(costs.size), key=lambda k: (-costs[k], k)):
-        rank = int(np.argmin(load))  # the first minimum: the lowest rank on a tie
-        owners[k] = rank
-        load[rank] += costs[k]
-    return owners
+    n = costs.size
+    count = min(n, BLOCKS_PER_RANK * world)
+    cumulative = np.cumsum(costs)
+    blocks, start = [], 0
+    for j in range(1, count + 1):
+        end = n if j == count else int(np.searchsorted(cumulative, cumulative[-1] * j / count, side="left")) + 1
+        end = min(max(end, start + 1), n - (count - j))  # every block keeps a tile, and so do the ones after it
+        blocks.append(list(range(start, end)))
+        start = end
+    return blocks
 
 
 def expectation_state(state):
@@ -154,44 +190,109 @@ class LeaderTiles:
         self._ranks = ranks
         self.key = key
         self.world = ranks.world
-        self._gather = None
-        self._clock = Stopwatch()
         self.record = None
 
     def plan(self, tile_size: int) -> int:
-        """Send the tile size planned here to every rank and start receiving their shares."""
+        """Send the tile size planned here to every rank."""
 
         channel.broadcast(self._ranks.connections, TilePlan(self.key, int(tile_size)), self._ranks.objects)
-        self._gather = channel.Gather(self._ranks.connections)
         return int(tile_size)
 
-    def exchange(self, share: TileShare, costs, owners) -> list[TileShare]:
-        """Every rank's share, rank 0's first, in rank order, once all arrived."""
+    def run_blocks(self, blocks, costs, run_block, laps) -> list[BlockShare]:
+        """Every block's share, in block order: rank 0 scores blocks on this thread (``run_block(b)`` returns the
+        block's parts and totals) while one thread per other rank hands that rank the next block, heaviest first,
+        one ahead of the block it is scoring. The threads only move frames; the replies are read here."""
 
-        own_seconds = self._clock.seconds
-        replies = self._gather.records(self._ranks.objects)
-        for rank, reply in replies.items():
-            if isinstance(reply, TileFailure):
-                raise channel.RankFailed(f"rank {rank} failed its tiles of an E-step:\n{reply.text}")
-            if reply.key != self.key:
-                raise channel.RankFailed(f"rank {rank} returned E-step {reply.key}, not {self.key}")
-        shares = [share, *replies.values()]
         costs = np.asarray(costs, np.float64)
+        block_cost = [float(costs[block].sum()) for block in blocks]
+        queue = deque(sorted(range(len(blocks)), key=lambda b: (-block_cost[b], b)))
+        lock, stop = threading.Lock(), threading.Event()
+        task_frames = [channel.encode(BlockTask(self.key, b), {}) for b in range(len(blocks))]
+        end_frames = channel.encode(EndBlocks(self.key), {})
+        received, done, failures = {}, {}, []
+        ran = {rank: [] for rank in range(self.world)}
+
+        def next_block():
+            with lock:
+                return None if stop.is_set() or not queue else queue.popleft()
+
+        def serve(rank, connection):
+            sent = deque()
+            try:
+                while True:
+                    while len(sent) < 2 and (b := next_block()) is not None:
+                        channel.send_frames(connection, task_frames[b])
+                        sent.append(b)
+                    if not sent:
+                        break
+                    received[sent[0]] = (rank, channel.receive_frames(connection, peer=f"rank {rank}"))
+                    ran[rank].append(sent.popleft())
+                channel.send_frames(connection, end_frames)
+                done[rank] = channel.receive_frames(connection, peer=f"rank {rank}")
+            except BaseException as error:
+                failures.append(error)
+                stop.set()
+
+        threads = [
+            threading.Thread(target=serve, args=(rank, connection), daemon=True)
+            for rank, connection in sorted(self._ranks.connections.items())
+        ]
+        for thread in threads:
+            thread.start()
+        own = {}
+        try:
+            while (b := next_block()) is not None:
+                clock = Stopwatch()
+                parts, totals = run_block(b)
+                own[b] = BlockShare(self.key, b, parts, totals, clock.seconds)
+                ran[0].append(b)
+        except BaseException:
+            stop.set()
+            raise
+        finally:
+            for thread in threads:
+                thread.join()
+        laps.mark("own_blocks_then_wait")
+        shares, timing = [], {0: laps.record()}
+        for b in range(len(blocks)):
+            if b in own:
+                shares.append(own.pop(b))
+                continue
+            if b not in received:
+                break
+            rank, frames = received.pop(b)
+            reply = channel.decode(frames, self._ranks.objects)
+            if isinstance(reply, TileFailure):
+                raise channel.RankFailed(f"rank {rank} failed a block of an E-step:\n{reply.text}")
+            if (reply.key, reply.block) != (self.key, b):
+                raise channel.RankFailed(f"rank {rank} returned block {reply.block} of E-step {reply.key}")
+            shares.append(reply)
+        if failures:
+            raise failures[0]
+        if len(shares) != len(blocks):
+            raise channel.RankFailed(f"E-step {self.key}: {len(blocks) - len(shares)} blocks never returned")
+        for rank, frames in sorted(done.items()):
+            reply = channel.decode(frames, {})
+            if not isinstance(reply, RankDone) or reply.key != self.key:
+                raise channel.RankFailed(f"rank {rank} ended E-step {self.key} with {reply!r}")
+            timing[rank] = reply.timing
+        seconds = {share.block: share.seconds for share in shares}
         self.record = {
             "world": self.world,
-            "tiles": [int(np.sum(owners == rank)) for rank in range(self.world)],
-            "cost": [float(costs[owners == rank].sum()) for rank in range(self.world)],
-            "seconds": [round(own_seconds, 3), *(round(reply.seconds, 3) for reply in replies.values())],
-            "joined_seconds": round(self._clock.seconds, 3),
+            "blocks": [len(ran[rank]) for rank in range(self.world)],
+            "tiles": [sum(len(blocks[b]) for b in ran[rank]) for rank in range(self.world)],
+            "cost": [round(sum(block_cost[b] for b in ran[rank])) for rank in range(self.world)],
+            "seconds": [round(sum(seconds[b] for b in ran[rank]), 3) for rank in range(self.world)],
+            "timing": [timing[rank] for rank in range(self.world)],
         }
         logger.info(
-            "E-step %d on %d ranks: tiles %s, cost %s, seconds %s; joined at %.1fs",
+            "E-step %d on %d ranks: blocks %s, tiles %s, cost %s, busy seconds %s",
             self.key,
             self.world,
+            self.record["blocks"],
             self.record["tiles"],
-            [round(c) for c in self.record["cost"]],
+            self.record["cost"],
             self.record["seconds"],
-            self.record["joined_seconds"],
         )
         return shares
 
@@ -239,7 +340,6 @@ class FollowerTiles:
         self.key = task.key
         self.rank = rank
         self.world = world
-        self._clock = Stopwatch()
 
     def begin(self, state, groups, iteration, **_) -> FollowerTiles:
         return self
@@ -256,11 +356,24 @@ class FollowerTiles:
             )
         return plan.tile_size
 
-    def exchange(self, share: TileShare, costs, owners) -> None:
-        """Send this rank's share to rank 0."""
+    def run_blocks(self, blocks, costs, run_block, laps) -> None:
+        """Score each block rank 0 sends and return its share, until rank 0 ends the E-step."""
 
-        channel.send(self._connection, dataclasses.replace(share, seconds=self._clock.seconds), self._objects)
-        return None
+        while True:
+            task = channel.receive(self._connection, self._objects, peer="rank 0")
+            if isinstance(task, EndBlocks) and task.key == self.key:
+                laps.mark("blocks_wait")
+                channel.send(self._connection, RankDone(self.key, laps.record()), self._objects)
+                return None
+            if not isinstance(task, BlockTask) or task.key != self.key:
+                raise channel.RankFailed(f"rank {self.rank} expected a block of E-step {self.key}, got {task!r}")
+            laps.mark("blocks_wait")
+            clock = Stopwatch()
+            parts, totals = run_block(task.block)
+            channel.send(
+                self._connection, BlockShare(self.key, task.block, parts, totals, clock.seconds), self._objects
+            )
+            laps.mark("blocks_send")
 
 
 def accept_tile_ranks(listener: Listener, world: int, objects: dict[str, object], fingerprint: dict) -> TileRanks:

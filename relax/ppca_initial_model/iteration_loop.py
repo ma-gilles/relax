@@ -217,8 +217,8 @@ class TileSums:
 
     @classmethod
     def joined(cls, order, stripped, totals):
-        """The sums of a group whose tiles (``order``) several ranks scored: ``stripped`` holds every tile's
-        statistics without volumes, ``totals`` each rank's volume sums over its tiles, in rank order; the group's
+        """The sums of a group whose tiles (``order``) were scored in blocks: ``stripped`` holds every tile's
+        statistics without volumes, ``totals`` each block's volume sums over its tiles, in block order; the group's
         sums add them in that order (:func:`relax.parallel.channel.ordered_sum`)."""
         sums = cls(order)
         sums.stripped = {k: stripped[k] for k in sums.order}
@@ -248,6 +248,21 @@ class _Laps:
         return {**self.seconds, "total": round(self.last - self.start, 4)}
 
 
+# On several GPUs each rank takes whole tiles, so a rank's load is a whole number of tiles: rank 0 halves the
+# planned tile size until the E-step has at least this many tiles per rank (a subtomogram batch of 200 particles
+# makes five mixed tiles at 150 particles per tile). Halving keeps a stage's compiled tile shapes few.
+TILES_PER_RANK = 4
+
+
+def _rank_tile_size(cut, planned, world):
+    """The tile size of a ``world``-rank E-step: ``planned`` halved until ``cut(size)`` makes
+    :data:`TILES_PER_RANK` tiles per rank, or one particle per tile."""
+    size = int(planned)
+    while size > 1 and len(cut(size)) < TILES_PER_RANK * world:
+        size //= 2
+    return size
+
+
 def _tile_cost(dataset, tile):
     """A tile's predicted cost for :func:`relax.ppca_initial_model.ranks.assign_tiles`: its images (a subtomogram
     particle's tilt images each)."""
@@ -257,8 +272,8 @@ def _tile_cost(dataset, tile):
 
 
 def _join_tile_shares(shares, tiles, n_groups, embeddings_only):
-    """Every tile's statistics in tile order and each group's sums from the ranks' shares (rank 0's first, in rank
-    order): rank 0's E-step continues as on one GPU from there."""
+    """Every tile's statistics in tile order and each group's sums from the blocks' shares (in block order; each
+    holds its tiles' statistics and its volume sums per group): rank 0's E-step continues as on one GPU from there."""
     stripped = {}
     for share in shares:
         stripped.update(share.parts)
@@ -707,6 +722,8 @@ def _expectation(
         laps.mark("plan")
         if share is not None:
             # The tile size orders the update's sums: every rank cuts the tiles with rank 0's plan.
+            if share.rank == 0:
+                tile_size = _rank_tile_size(cut, tile_size, share.world)
             tile_size = share.plan(tile_size)
             laps.mark("plan_exchange")
         # GPU streams pad a full tile's image axis with zero images to a multiple of SHIFT_ALIGN: the Gram and
@@ -741,66 +758,65 @@ def _expectation(
             accumulate, embed = accumulate_full_row_tiles, full_row_tile_embeddings
         laps.mark("prepare")
         tiles = cut(tile_size)
-        parts = [None] * len(tiles)
-        mine = set(range(len(tiles)))
-        if share is not None:
-            costs = [_tile_cost(dataset, tile_ids) for _, _, tile_ids in tiles]
-            owners = ranks_module.assign_tiles(costs, share.world)
-            mine = {k for k in range(len(tiles)) if owners[k] == share.rank}
-        # Each id group's volume statistics are summed as its tiles complete (device memory does not grow
-        # with the tile count, which RELION's full-set iteration takes to thousands).
-        sums = [
-            TileSums(k for k, (owner, _, _) in enumerate(tiles) if owner == group and k in mine)
-            for group in range(len(ids))
-        ]
-        for noise_group, stream in enumerate(streams):
-            members = [k for k, (_, owner, _) in enumerate(tiles) if owner == noise_group and k in mine]
-            items = [
-                (
-                    tiles[k][2],
-                    coarse_significant_rows(
-                        coarse_streams[noise_group],
+
+        def run_tiles(indices):
+            """The tiles ``indices`` (in tile order): their statistics by tile index, and each id group's
+            :class:`TileSums` over them (embeddings: no sums)."""
+            # Each id group's volume statistics are summed as its tiles complete (device memory does not grow
+            # with the tile count, which RELION's full-set iteration takes to thousands).
+            sums = [TileSums(k for k in indices if tiles[k][0] == group) for group in range(len(ids))]
+            done = {}
+            for noise_group, stream in enumerate(streams):
+                members = [k for k in indices if tiles[k][1] == noise_group]
+                items = [
+                    (
                         tiles[k][2],
-                        target_mass=config.target_mass,
-                        max_significant=config.max_significant,
-                        neighbors=_coarse_neighbors(coarse_order),
+                        coarse_significant_rows(
+                            coarse_streams[noise_group],
+                            tiles[k][2],
+                            target_mass=config.target_mass,
+                            max_significant=config.max_significant,
+                            neighbors=_coarse_neighbors(coarse_order),
+                        )
+                        if coarse_pass
+                        else [None] * len(tiles[k][2]),
                     )
-                    if coarse_pass
-                    else [None] * len(tiles[k][2]),
-                )
-                for k in members
-            ]
-            laps.mark("coarse")
-            if embeddings_only:
-                for k, part in zip(members, [embed(stream, *item) for item in items]):
-                    parts[k] = part
-            elif items:
+                    for k in members
+                ]
+                laps.mark("coarse")
+                if embeddings_only:
+                    for k, part in zip(members, [embed(stream, *item) for item in items]):
+                        done[k] = part
+                elif items:
 
-                def consume(position, part, members=members):
-                    sums[tiles[members[position]][0]].add(members[position], part)
+                    def consume(position, part, members=members):
+                        sums[tiles[members[position]][0]].add(members[position], part)
 
-                accumulate(stream, items, consume=consume)
-            laps.mark("tiles")
+                    accumulate(stream, items, consume=consume)
+                laps.mark("tiles")
+            return done, sums
+
         rank_record = None
-        if share is not None:
-            own = ranks_module.TileShare(
-                share.key,
-                {k: parts[k] for k in mine}
-                if embeddings_only
-                else {k: part for group_sums in sums for k, part in zip(group_sums.order, group_sums.parts())},
-                [{} if embeddings_only else group_sums.totals for group_sums in sums],
-                0.0,
-                laps.record(),
-            )
-            shares = share.exchange(own, costs, owners)
-            if shares is None:  # another rank: its share went to rank 0
+        if share is None:
+            done, sums = run_tiles(range(len(tiles)))
+            parts = [done.get(k) for k in range(len(tiles))]
+        else:
+
+            def run_block(b):
+                done, block_sums = run_tiles(blocks[b])
+                if embeddings_only:
+                    return done, [{} for _ in block_sums]
+                stripped = {k: part for sums_ in block_sums for k, part in zip(sums_.order, sums_.parts())}
+                return stripped, [sums_.totals for sums_ in block_sums]
+
+            costs = [_tile_cost(dataset, tile_ids) for _, _, tile_ids in tiles]
+            blocks = ranks_module.tile_blocks(costs, share.world)
+            shares = share.run_blocks(blocks, costs, run_block, laps)
+            if shares is None:  # another rank: its blocks went to rank 0
                 return None
-            laps.mark("gather")
-            joined_parts, joined_sums = _join_tile_shares(shares, tiles, len(ids), embeddings_only)
-            parts = joined_parts if embeddings_only else parts
-            sums = sums if embeddings_only else joined_sums
+            parts, sums = _join_tile_shares(shares, tiles, len(ids), embeddings_only)
             laps.mark("join")
-            rank_record = {**share.record, "timing": [laps.record(), *(s.timing for s in shares[1:])]}
+            rank_record = share.record
         tiles = [(group, tile_ids) for group, _, tile_ids in tiles]
         results = []
         for group in range(len(ids)):

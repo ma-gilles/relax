@@ -23,7 +23,7 @@ from helpers.float_compare import assert_matches
 
 from relax.parallel import channel
 from relax.ppca_initial_model import iteration_loop
-from relax.ppca_initial_model.ranks import assign_tiles
+from relax.ppca_initial_model.ranks import BLOCKS_PER_RANK, tile_blocks
 from relax_cli import launch
 
 pytestmark = pytest.mark.unit
@@ -71,17 +71,31 @@ def test_ordered_sum_adds_left_to_right_and_skips_ranks_without_a_value():
     assert channel.ordered_sum([None, None]) is None
 
 
-def test_tile_assignment_is_a_balanced_function_of_the_costs():
-    costs = [5, 9, 1, 9, 3, 3, 7, 2]
-    owners = assign_tiles(costs, 3)
-    # Heaviest first to the least loaded rank, the lower tile and the lower rank first on a tie.
-    np.testing.assert_array_equal(owners, [2, 0, 1, 1, 0, 1, 2, 0])
-    np.testing.assert_array_equal(assign_tiles(costs, 3), owners)
-    loads = np.bincount(owners, weights=costs, minlength=3)
-    assert loads.max() - loads.min() <= max(costs)
-    np.testing.assert_array_equal(assign_tiles(costs, 1), np.zeros(len(costs)))
-    # Fewer tiles than ranks: each tile has its own rank, the last ranks have none.
-    np.testing.assert_array_equal(assign_tiles([1, 4], 4), [1, 0])
+def test_tile_blocks_are_runs_of_about_equal_cost():
+    costs = [5, 9, 1, 9, 3, 3, 7, 2] * 3
+    blocks = tile_blocks(costs, 2)
+    assert len(blocks) == min(len(costs), 2 * BLOCKS_PER_RANK) == 16
+    assert [k for block in blocks for k in block] == list(range(len(costs)))  # consecutive, each tile once
+    assert all(block for block in blocks)
+    loads = [sum(costs[k] for k in block) for block in blocks]
+    assert max(loads) <= sum(costs) / len(blocks) + max(costs)
+    assert tile_blocks(costs, 2) == blocks  # a function of the costs and the rank count
+    # Fewer tiles than blocks: one tile each.
+    assert tile_blocks([1, 4, 2], 4) == [[0], [1], [2]]
+    assert tile_blocks([3.0], 2) == [[0]]
+
+
+def test_rank_tile_size_halves_until_each_rank_has_several_tiles():
+    """Rank 0 halves the planned tile size until the E-step has TILES_PER_RANK tiles per rank (or one particle
+    per tile); halving keeps the compiled tile sizes few."""
+
+    def cut(size):
+        return [ids[begin : begin + size] for ids in (np.arange(150), np.arange(150)) for begin in range(0, 150, size)]
+
+    assert iteration_loop._rank_tile_size(cut, 150, 1) == 75  # 2 tiles at 150, 4 at 75
+    assert iteration_loop._rank_tile_size(cut, 150, 2) == 37  # 10 tiles at 37
+    assert iteration_loop._rank_tile_size(cut, 10, 2) == 10  # 30 tiles already
+    assert iteration_loop._rank_tile_size(lambda size: [[0]], 150, 4) == 1
 
 
 @dataclass(frozen=True)
@@ -91,9 +105,9 @@ class _Part:
     n_images: int
 
 
-def test_joined_tile_sums_add_each_ranks_tile_order_sum_in_rank_order():
-    """A group's joined sums are each rank's running sum over its tiles (in tile order), added in rank order;
-    the stripped tiles come back in the group's tile order whichever rank scored them."""
+def test_joined_tile_sums_add_each_blocks_tile_order_sum_in_block_order():
+    """A group's joined sums are each block's running sum over its tiles (in tile order), added in block order;
+    the stripped tiles come back in the group's tile order whichever block held them."""
     rng = np.random.default_rng(0)
     n_tiles = 9
     parts = [
@@ -101,10 +115,11 @@ def test_joined_tile_sums_add_each_ranks_tile_order_sum_in_rank_order():
         for k in range(n_tiles)
     ]
     tiles = [(k % 2, 0, np.arange(k + 1)) for k in range(n_tiles)]  # (group, noise group, ids)
-    owners = assign_tiles([len(t[2]) for t in tiles], 3)
+    blocks = [[0, 1, 2], [3, 4, 5, 6], [7, 8]]
+    owners = {k: b for b, block in enumerate(blocks) for k in block}
     shares = []
     for rank in range(3):
-        mine = {k for k in range(n_tiles) if owners[k] == rank}
+        mine = set(blocks[rank])
         sums = [iteration_loop.TileSums(k for k in range(n_tiles) if tiles[k][0] == g and k in mine) for g in range(2)]
         for k in sorted(mine, key=lambda k: -k):  # completion order: largest first
             sums[tiles[k][0]].add(k, parts[k])
@@ -125,6 +140,7 @@ def test_joined_tile_sums_add_each_ranks_tile_order_sum_in_rank_order():
                     expected = rank_sum if expected is None else expected + rank_sum
             np.testing.assert_array_equal(joined[group].totals[name], expected)  # the same additions in order
             assert_matches(joined[group].totals[name], sum(getattr(parts[k], name) for k in order))
+    assert len(tile_blocks([1] * n_tiles, 1)) == min(n_tiles, BLOCKS_PER_RANK)
     with pytest.raises(ValueError, match="exactly once"):
         iteration_loop._join_tile_shares(shares[:2], tiles, 2, embeddings_only=False)
 
@@ -181,10 +197,10 @@ data = _TinyData(images)
 theta = np.stack([_half_volume(rng), _half_volume(rng, 0.3), _half_volume(rng, 0.2)], axis=1)
 state = State(jnp.asarray(theta), None, jnp.full(5, 40.0, jnp.float32), 1, np.arange(11), {}, 2.0, 0, {})
 config = {
-    "dense": Config(q=2, stages=((1, 3, 0),), shift_range=1, shift_step=1, image_batch_size=2,
+    "dense": Config(q=2, stages=((1, 3, 0),), shift_range=1, shift_step=1, image_batch_size=1,
                     rotation_block_size=32, gemm_precision="fp32"),
     "oversampled": Config(q=2, stages=((1, 3, 0),), oversampling=1, target_mass=0.9, shift_range=1, shift_step=1,
-                          image_batch_size=2, rotation_block_size=32, gemm_precision="fp32"),
+                          image_batch_size=1, rotation_block_size=32, gemm_precision="fp32"),
 }[extra[0]]
 groups = [np.asarray([0, 2, 4, 6, 8, 10]), np.asarray([1, 3, 5, 7, 9])]
 ranks_env = launch.rank_environment()
@@ -248,6 +264,8 @@ def test_single_particle_e_steps_on_two_ranks_match_one_rank(tmp_path, name):
         assert np.all(np.isfinite(ours))
         if key.endswith(("original_image_ids", "n_images")):
             np.testing.assert_array_equal(theirs, ours)
+        elif key.endswith("log_likelihood"):  # a float32 sum, returned as a Python float
+            assert_matches(np.float32(theirs), np.float32(ours))
         else:
             assert_matches(theirs, ours)
     # Both halves and the final pass covered every particle once.
@@ -302,8 +320,9 @@ def test_subtomogram_command_on_several_ranks_matches_one_rank(tmp_path, options
         for row, our_row in zip(rows, ours_rows):
             assert row["particle_ids"] == our_row["particle_ids"] and row["half_counts"] == our_row["half_counts"]
             assert "ranks" not in our_row
-            assert row["ranks"]["world"] == world and sum(row["ranks"]["tiles"]) >= world
-            assert all(tiles > 0 for tiles in row["ranks"]["tiles"])
+            assert row["ranks"]["world"] == world and sum(row["ranks"]["tiles"]) == 8  # one particle per tile
+            assert sum(row["ranks"]["blocks"]) == 8 and len(row["ranks"]["timing"]) == world
+            assert "timing" in row and "estep_phases" in row["timing"]
         embeddings, our_embeddings = np.load(output / "embeddings.npz"), np.load(reference / "embeddings.npz")
         np.testing.assert_array_equal(embeddings["particle_ids"], our_embeddings["particle_ids"])
         assert_matches(embeddings["z"], our_embeddings["z"])
