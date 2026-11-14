@@ -320,6 +320,14 @@ def add_args(parser):
         type=float,
         help="Hold the Gaussian offset prior's sigma per axis at this many Angstrom (default: learned)",
     )
+    parser.add_argument(
+        "--gpu",
+        default=None,
+        help="RELION's GPU device list: one process per listed device id, separated by ':' or ',' (e.g. 0:1:2:3, at "
+        "most four; the ids index CUDA_VISIBLE_DEVICES). Every process scores a share of each update's image tiles; "
+        "rank 0 runs the update and writes every output. Absent or one device runs on one GPU. The relax command "
+        "starts the processes before JAX (relax_cli)",
+    )
     parser.add_argument("--resume")
     parser.add_argument("--stop-after", type=int, help="Checkpoint stop without changing the scientific schedule")
     parser.add_argument("--stop-file", help="Stop between iterations after an atomic checkpoint")
@@ -412,12 +420,16 @@ def translation_options(args, voxel_size):
 PREREAD_MEMORY_FRACTION = 0.25
 
 
-def resolve_preread_images(setting, stack_bytes, memory_bytes):
-    """Whether to read the particle stack into host memory, and the record of that decision."""
+def resolve_preread_images(setting, stack_bytes, memory_bytes, ranks=1):
+    """Whether to read the particle stack into host memory, and the record of that decision.
+
+    ``ranks`` processes of a multi-GPU run share the job's memory and each holds its own copy (every rank reads
+    every particle over the run's random batches), so "auto" counts ``ranks`` copies.
+    """
     if setting not in ("auto", "on", "off"):
         raise ValueError("Image preread must be auto, on or off")
     if setting == "auto":
-        preread = stack_bytes <= PREREAD_MEMORY_FRACTION * memory_bytes
+        preread = ranks * stack_bytes <= PREREAD_MEMORY_FRACTION * memory_bytes
     else:
         preread = setting == "on"
     return preread, {
@@ -426,6 +438,7 @@ def resolve_preread_images(setting, stack_bytes, memory_bytes):
         "stack_gb": round(stack_bytes / 1e9, 3),
         "memory_gb": round(memory_bytes / 1e9, 3),
         "memory_fraction": PREREAD_MEMORY_FRACTION,
+        "ranks": ranks,
     }
 
 
@@ -458,13 +471,15 @@ def training_identity(particles_star, stacks):
     return {"particles_star_sha256": file_hash(particles_star), "particle_stacks_sha256": digest.hexdigest()}
 
 
-def training_image_reading(particles_star, preread_images, stacks=None):
+def training_image_reading(particles_star, preread_images, stacks=None, ranks=1):
     """:func:`resolve_preread_images` for the stacks a particle STAR reads (their whole file sizes) on this host."""
     stacks = training_stack_files(particles_star) if stacks is None else stacks
-    return resolve_preread_images(preread_images, sum(stack.stat().st_size for stack in stacks), available_memory_bytes())
+    return resolve_preread_images(
+        preread_images, sum(stack.stat().st_size for stack in stacks), available_memory_bytes(), ranks
+    )
 
 
-def load_training(particles_star, preread_images="auto"):
+def load_training(particles_star, preread_images="auto", ranks=1):
     """Single particles of a RELION particle STAR, read as ``relax refine`` and ``relax initial_model`` read them.
 
     The images are taken as stored (RELION sign, protein white; no inversion) with the CTF of the STAR's particle
@@ -476,7 +491,7 @@ def load_training(particles_star, preread_images="auto"):
     (:func:`relax.relion.ctf.refuse_generic_ctf_for_optics`).
 
     ``preread_images`` (``Config.preread_images``) decides whether the stacks are read into host memory once
-    (:func:`training_image_reading`); the decision is logged. Returns the dataset, its checkpoint identity
+    (:func:`training_image_reading`, for ``ranks`` processes on this host); the decision is logged. Returns the dataset, its checkpoint identity
     (:func:`training_identity`) and the reading record.
     """
     from recovar.data_io.cryoem_dataset import load_dataset
@@ -486,14 +501,16 @@ def load_training(particles_star, preread_images="auto"):
 
     particles_star = Path(particles_star).resolve()
     stacks = training_stack_files(particles_star)
-    preread, reading = training_image_reading(particles_star, preread_images, stacks)
+    preread, reading = training_image_reading(particles_star, preread_images, stacks, ranks)
     logger.info(
-        "PPCA particle images: %s (setting %s; stacks %.2f GB, memory %.1f GB, preread limit %.0f%%)",
+        "PPCA particle images: %s (setting %s; stacks %.2f GB, memory %.1f GB, preread limit %.0f%% for %d %s)",
         "read into host memory once" if preread else "read from disk per tile",
         reading["setting"],
         reading["stack_gb"],
         reading["memory_gb"],
         100 * PREREAD_MEMORY_FRACTION,
+        ranks,
+        "copy" if ranks == 1 else "copies, one per GPU process",
     )
     # No --scratch_dir: the stacks are read in place (recovar's implicit staging off, as in refine).
     prepare_particle_reads(str(particles_star), ParticleReadPolicy(preread_images=preread))
@@ -526,14 +543,14 @@ def refuse_unsupported_tilt_optics(particles_star):
     refuse_unsupported_optics(optics, source=str(particles_star), supported=TOMO_PPCA_OPTICS_FEATURES)
 
 
-def load_tilt_training(ios, output, preread_images="auto", *, particle_frame: bool = False):
+def load_tilt_training(ios, output, preread_images="auto", *, particle_frame: bool = False, ranks: int = 1):
     """Subtomogram particles of a RELION 5 optimisation set (algorithm section 16), and the image-reading record.
 
     Only the tilt-series geometry (each image's ``Aproj``), the images and their CTF and dose
     enter training; the particles' input angles and offsets are not read, except that ``particle_frame``
     (the filament band) composes each particle's ``rlnAngle*`` into its projections. ``preread_images``
     (:func:`resolve_preread_images` of the tilt images' bytes) holds every tilt image in host memory after the
-    first read.
+    first read (``ranks`` such copies on this host in a multi-GPU run).
     """
     from relax.ppca_initial_model.tomo import tilt_particles_from_tomo_dataset
     from relax.star.tomo_input import read_optimisation_set
@@ -559,14 +576,16 @@ def load_tilt_training(ios, output, preread_images="auto", *, particle_frame: bo
         "tilt_series_sha256": tilt_series_hash(tomograms_star),
     }
     image_bytes = int(np.asarray(tomo.image_rows).size) * int(np.prod(tomo.image_shape)) * 4
-    preread, reading = resolve_preread_images(preread_images, image_bytes, available_memory_bytes())
+    preread, reading = resolve_preread_images(preread_images, image_bytes, available_memory_bytes(), ranks)
     logger.info(
-        "PPCA tilt images: %s (setting %s; %.2f GB, memory %.1f GB, preread limit %.0f%%)",
+        "PPCA tilt images: %s (setting %s; %.2f GB, memory %.1f GB, preread limit %.0f%% for %d %s)",
         "held in host memory after the first read" if preread else "read from disk per tile",
         preread_images,
         image_bytes / 1e9,
         reading["memory_gb"],
         100 * PREREAD_MEMORY_FRACTION,
+        ranks,
+        "copy" if ranks == 1 else "copies, one per GPU process",
     )
     return tilt_particles_from_tomo_dataset(tomo, preread=preread), identity, reading
 
@@ -665,7 +684,22 @@ def main(args=None):
     activate_recovar_compilation_cache()
     if not os.environ.get("SLURM_JOB_ID"):
         raise RuntimeError("Particle refinement runs require Slurm; use unit tests for local numerical checks")
+    from relax.ppca_initial_model import ranks as tile_ranks
     from relax.ppca_initial_model.iteration_loop import run
+    from relax_cli import launch
+
+    # A multi-GPU run (--gpu with two to four devices): rank 0 listens for the other ranks, which write under a
+    # hidden directory of the output and score the tiles of each E-step it sends them (ppca_initial_model.ranks).
+    rank_env = launch.rank_environment()
+    tile_ranks.require_gpu_ranks(args.gpu, rank_env)
+    world = 1 if rank_env is None else rank_env.world
+    listener = None
+    if rank_env is not None and rank_env.is_leader:
+        from relax.parallel import channel
+
+        listener = channel.listen(rank_env.address, rank_env.authkey)
+    elif rank_env is not None:
+        args.output = launch.rank_directory(args.output, rank_env.rank)
 
     if args.physical_band and args.stages:
         raise ValueError("--physical-band computes the stages; do not give --stages as well")
@@ -722,11 +756,13 @@ def main(args=None):
         raise ValueError("Give either a particle STAR (--i) or an optimisation set (--ios)")
     if config.fixed_core is not None and args.ios is None:
         raise ValueError("--fixed-core removes a core from subtomogram particles (--ios)")
+    if rank_env is not None:
+        tile_ranks.require_tile_route(config, world)
     output = Path(args.output)
     output.mkdir(parents=True, exist_ok=True)
     if args.ios:
         data, identity, image_reading = load_tilt_training(
-            args.ios, output, config.preread_images, particle_frame=config.band() is not None
+            args.ios, output, config.preread_images, particle_frame=config.band() is not None, ranks=world
         )
         if config.fixed_core is not None:
             from recovar.utils.helpers import load_relion_volume
@@ -841,7 +877,7 @@ def main(args=None):
     else:
         if config.likelihood_min_shell:
             raise ValueError("--likelihood-min-shell is for subtomogram particles (--ios)")
-        data, identity, image_reading = load_training(args.particles, config.preread_images)
+        data, identity, image_reading = load_training(args.particles, config.preread_images, ranks=world)
     if args.physical_band:
         stages = physical_band_stages(data.grid_size, data.voxel_size, args.band_target_resolution)
         config = dataclasses.replace(config, stages=stages)
@@ -855,6 +891,19 @@ def main(args=None):
             json.dumps(config.shift_schedule), config.offset_sigma_hold_px,
         )
     identity["source"] = source_identity()
+    if rank_env is not None and not rank_env.is_leader:
+        # This rank scores the tiles rank 0 sends it; rank 0 writes every output.
+        from relax.parallel import channel
+
+        tile_ranks.serve_tile_ranks(
+            channel.connect(rank_env.address, rank_env.authkey, rank_env.rank),
+            rank_env.rank,
+            world,
+            dataset=data,
+            config=config,
+            fingerprint=tile_ranks.run_fingerprint(data, config, identity),
+        )
+        return
     if not args.resume and list(output.glob("checkpoint_*.npz")):
         raise ValueError("Output already contains checkpoints; use --resume or a new directory")
     if args.resume:
@@ -874,16 +923,26 @@ def main(args=None):
         )
         + "\n"
     )
-    run(
-        data,
-        config,
-        output,
-        identity,
-        args.particle_diameter,
-        resume=args.resume,
-        stop_after=args.stop_after,
-        stop_file=args.stop_file,
-    )
+    ranks = None
+    if listener is not None:
+        ranks = tile_ranks.accept_tile_ranks(
+            listener, world, tile_ranks.run_objects(data, config), tile_ranks.run_fingerprint(data, config, identity)
+        )
+    try:
+        run(
+            data,
+            config,
+            output,
+            identity,
+            args.particle_diameter,
+            resume=args.resume,
+            stop_after=args.stop_after,
+            stop_file=args.stop_file,
+            ranks=ranks,
+        )
+    finally:
+        if ranks is not None:
+            ranks.close()
 
 
 if __name__ == "__main__":

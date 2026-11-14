@@ -21,7 +21,9 @@ from recovar.core import fourier_transform_utils as ftu
 from recovar.ppca.pose_accumulators import AugmentedPPCAStats
 from recovar.reconstruction.noise import make_radial_noise
 
+from relax.parallel.channel import ordered_sum
 from relax.ppca_initial_model import checkpoint
+from relax.ppca_initial_model import ranks as ranks_module
 from relax.ppca_initial_model.filament_band import attachment_support_mask, uniform_log_prior
 from relax.ppca_initial_model.initialization import (
     bandlimit_and_mask,
@@ -213,6 +215,50 @@ class TileSums:
             raise ValueError("A tile of the group never completed")
         return [self.stripped[k] for k in self.order]
 
+    @classmethod
+    def joined(cls, order, stripped, totals):
+        """The sums of a group whose tiles (``order``) several ranks scored: ``stripped`` holds every tile's
+        statistics without volumes, ``totals`` each rank's volume sums over its tiles, in rank order; the group's
+        sums add them in that order (:func:`relax.parallel.channel.ordered_sum`)."""
+        sums = cls(order)
+        sums.stripped = {k: stripped[k] for k in sums.order}
+        sums.next = len(sums.order)
+        sums.totals = {
+            name: ordered_sum([rank_totals.get(name) for rank_totals in totals])
+            for name in VOLUME_FIELDS
+            if any(name in rank_totals for rank_totals in totals)
+        }
+        return sums
+
+
+def _tile_cost(dataset, tile):
+    """A tile's predicted cost for :func:`relax.ppca_initial_model.ranks.assign_tiles`: its images (a subtomogram
+    particle's tilt images each)."""
+    if isinstance(dataset, TiltParticles):
+        return int(np.sum(np.diff(dataset.image_offsets)[np.asarray(tile)]))
+    return len(tile)
+
+
+def _join_tile_shares(shares, tiles, n_groups, embeddings_only):
+    """Every tile's statistics in tile order and each group's sums from the ranks' shares (rank 0's first, in rank
+    order): rank 0's E-step continues as on one GPU from there."""
+    stripped = {}
+    for share in shares:
+        stripped.update(share.parts)
+    if sorted(stripped) != list(range(len(tiles))):
+        raise ValueError("The ranks' tiles do not cover the E-step's tiles exactly once")
+    if embeddings_only:
+        return [stripped[k] for k in range(len(tiles))], None
+    sums = [
+        TileSums.joined(
+            [k for k, (owner, _, _) in enumerate(tiles) if owner == group],
+            stripped,
+            [share.totals[group] for share in shares],
+        )
+        for group in range(n_groups)
+    ]
+    return None, sums
+
 
 def _merge_statistics(parts, totals=None):
     """One group's statistics from its tiles' (``parts``, in tile order). ``totals`` holds the volume sums
@@ -398,12 +444,13 @@ def _streams_groups(config):
 
 
 def expectation(
-    dataset, state, config, ids, iteration, *, embeddings_only=False, diameter_ang=None, noise_inflation=1.0
+    dataset, state, config, ids, iteration, *, embeddings_only=False, diameter_ang=None, noise_inflation=1.0, ranks=None
 ):
     """Posterior statistics (or embeddings) of the images ``ids`` at ``iteration``.
 
     ``diameter_ang`` sizes adaptive oversampling's pass-1 window (RELION's coarse image size); None takes the box.
-    ``noise_inflation`` multiplies the noise estimate in this E-step (``Config.noise_inflation``).
+    ``noise_inflation`` multiplies the noise estimate in this E-step (``Config.noise_inflation``). ``ranks`` (a
+    :class:`relax.ppca_initial_model.ranks.TileRanks`, the streamed engine only) scores the tiles on every GPU.
     """
     if _streams_groups(config):
         return _expectation(
@@ -415,6 +462,7 @@ def expectation(
             embeddings_only=embeddings_only,
             diameter_ang=diameter_ang,
             noise_inflation=noise_inflation,
+            ranks=ranks,
         )[0]
     return _expectation(
         dataset, state, config, ids, iteration, embeddings_only=embeddings_only, noise_inflation=noise_inflation
@@ -422,7 +470,16 @@ def expectation(
 
 
 def expectation_groups(
-    dataset, state, config, groups, iteration, *, embeddings_only=False, diameter_ang=None, noise_inflation=1.0
+    dataset,
+    state,
+    config,
+    groups,
+    iteration,
+    *,
+    embeddings_only=False,
+    diameter_ang=None,
+    noise_inflation=1.0,
+    ranks=None,
 ):
     """:func:`expectation` of each id group (the pseudo-halves), one result per group.
 
@@ -445,6 +502,7 @@ def expectation_groups(
         embeddings_only=embeddings_only,
         diameter_ang=diameter_ang,
         noise_inflation=noise_inflation,
+        ranks=ranks,
     )
 
 
@@ -462,8 +520,21 @@ def pass1_image_size(order, dataset, current_size, diameter_ang):
 
 @full_float32
 def _expectation(
-    dataset, state, config, ids, iteration, *, embeddings_only=False, diameter_ang=None, noise_inflation=1.0
+    dataset, state, config, ids, iteration, *, embeddings_only=False, diameter_ang=None, noise_inflation=1.0, ranks=None
 ):
+    """:func:`expectation_groups` of the id groups ``ids``. With ``ranks`` (rank 0's
+    :class:`relax.ppca_initial_model.ranks.TileRanks`, or another rank's ``FollowerTiles``) each rank scores its
+    share of the tiles; rank 0 returns the joined result and the other ranks None (section 18 of
+    docs/math/vdam_ppca_algorithm.md)."""
+    share = None
+    if ranks is not None:
+        if not config.stream_coarse_recompute:
+            raise NotImplementedError("Several GPUs split the streamed engine's tiles only")
+        # Rank 0 sends the E-step first, so the other ranks prepare their streams while it prepares its own.
+        share = ranks.begin(
+            state, ids, iteration, embeddings_only=embeddings_only, diameter_ang=diameter_ang,
+            noise_inflation=noise_inflation,
+        )  # fmt: skip
     radius, hp = config.stage(iteration)
     # full-box default projector excludes unpaired Nyquist, as existing PPCA.
     radius = min(radius, dataset.grid_size // 2 - 1)
@@ -614,6 +685,9 @@ def _expectation(
             return max(owners.count(owner) for owner in set(owners)) if owners else 0
 
         tile_size = plan_tile_images(streams[0], config.image_batch_size, tiles_per_call=tiles_per_call)
+        if share is not None:
+            # The tile size orders the update's sums: every rank cuts the tiles with rank 0's plan.
+            tile_size = share.plan(tile_size)
         # GPU streams pad a full tile's image axis with zero images to a multiple of SHIFT_ALIGN: the Gram and
         # metric GEMMs, whose operands have one row or column per image, then run cuBLAS's aligned kernels
         # (150 images: align1, about 1.6x slower). Padding images add exact zeros (drop_padding); the plan's
@@ -646,11 +720,19 @@ def _expectation(
             accumulate, embed = accumulate_full_row_tiles, full_row_tile_embeddings
         tiles = cut(tile_size)
         parts = [None] * len(tiles)
+        mine = set(range(len(tiles)))
+        if share is not None:
+            costs = [_tile_cost(dataset, tile_ids) for _, _, tile_ids in tiles]
+            owners = ranks_module.assign_tiles(costs, share.world)
+            mine = {k for k in range(len(tiles)) if owners[k] == share.rank}
         # Each id group's volume statistics are summed as its tiles complete (device memory does not grow
         # with the tile count, which RELION's full-set iteration takes to thousands).
-        sums = [TileSums(k for k, (owner, _, _) in enumerate(tiles) if owner == group) for group in range(len(ids))]
+        sums = [
+            TileSums(k for k, (owner, _, _) in enumerate(tiles) if owner == group and k in mine)
+            for group in range(len(ids))
+        ]
         for noise_group, stream in enumerate(streams):
-            members = [k for k, (_, owner, _) in enumerate(tiles) if owner == noise_group]
+            members = [k for k, (_, owner, _) in enumerate(tiles) if owner == noise_group and k in mine]
             items = [
                 (
                     tiles[k][2],
@@ -675,6 +757,23 @@ def _expectation(
                     sums[tiles[members[position]][0]].add(members[position], part)
 
                 accumulate(stream, items, consume=consume)
+        rank_record = None
+        if share is not None:
+            own = ranks_module.TileShare(
+                share.key,
+                {k: parts[k] for k in mine}
+                if embeddings_only
+                else {k: part for group_sums in sums for k, part in zip(group_sums.order, group_sums.parts())},
+                [{} if embeddings_only else group_sums.totals for group_sums in sums],
+                0.0,
+            )
+            shares = share.exchange(own, costs, owners)
+            if shares is None:  # another rank: its share went to rank 0
+                return None
+            joined_parts, joined_sums = _join_tile_shares(shares, tiles, len(ids), embeddings_only)
+            parts = joined_parts if embeddings_only else parts
+            sums = sums if embeddings_only else joined_sums
+            rank_record = share.record
         tiles = [(group, tile_ids) for group, _, tile_ids in tiles]
         results = []
         for group in range(len(ids)):
@@ -716,6 +815,7 @@ def _expectation(
                     / sum(part.diagnostics["scored_rows"] for part in group_parts),
                     "scored_image_rows": sum(part.diagnostics["scored_image_rows"] for part in group_parts),
                     "supported_image_rows": sum(part.diagnostics["supported_image_rows"] for part in group_parts),
+                    **({} if rank_record is None else {"ranks": rank_record}),
                 }
             )
             if oversampled:
@@ -765,7 +865,10 @@ def run(
     stop_after=None,
     stop_file=None,
     log_direction_prior=True,
+    ranks=None,
 ):
+    """Train the model; ``ranks`` (rank 0's :class:`relax.ppca_initial_model.ranks.TileRanks` of a multi-GPU run)
+    scores each E-step's tiles on every GPU. Initialization, the updates, checkpoints and outputs run here."""
     output = Path(output)
     output.mkdir(parents=True, exist_ok=True)
     resumed_precision = None
@@ -859,8 +962,9 @@ def run(
             raise ValueError("Selected batch has an empty pseudo-halfset")
         noise_inflation = config.noise_inflation(iteration)
         stats = expectation_groups(
-            dataset, state, config, halves, iteration, diameter_ang=diameter_ang, noise_inflation=noise_inflation
-        )
+            dataset, state, config, halves, iteration, diameter_ang=diameter_ang, noise_inflation=noise_inflation,
+            ranks=ranks,
+        )  # fmt: skip
         radius = min(config.stage(iteration)[0], dataset.grid_size // 2 - 1)
         # The update's own support: the rows bandlimit_and_mask keeps below.
         support = radii <= radius
@@ -1082,6 +1186,8 @@ def run(
         )
         if "oversampling" in stats[0].diagnostics:
             diagnostics["oversampling"] = _oversampling_record(stats, config, iteration)
+        if "ranks" in stats[0].diagnostics:
+            diagnostics["ranks"] = stats[0].diagnostics["ranks"]
         if config.optimizer == "momentum_sgd":
             diagnostics.update(
                 optimizer="momentum_sgd",
@@ -1120,8 +1226,9 @@ def run(
     if state.iteration == config.iterations and not config.skip_final_embeddings:
         ids = np.arange(dataset.n_images)
         final = expectation(
-            dataset, state, config, ids, config.iterations, embeddings_only=True, diameter_ang=diameter_ang
-        )
+            dataset, state, config, ids, config.iterations, embeddings_only=True, diameter_ang=diameter_ang,
+            ranks=ranks,
+        )  # fmt: skip
         if not np.array_equal(np.sort(final.original_image_ids), ids):
             raise ValueError("Final embedding does not cover every particle exactly once")
         # Per-image scores of the same pass (DensePPCAEmbeddings), aligned with particle_ids.

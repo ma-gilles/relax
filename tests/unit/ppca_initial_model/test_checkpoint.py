@@ -139,7 +139,7 @@ def test_rejected_resume_preserves_existing_run_metadata(tmp_path, monkeypatch):
     resume = output / "checkpoint_0110.npz"
     resume.write_bytes(b"mismatched checkpoint")
     monkeypatch.setenv("SLURM_JOB_ID", "test")
-    monkeypatch.setattr(command, "load_training", lambda _path, _preread: (object(), {}, None))
+    monkeypatch.setattr(command, "load_training", lambda _path, _preread, **_: (object(), {}, None))
     monkeypatch.setattr(command, "source_identity", lambda: {"test": True})
     monkeypatch.setattr(checkpoint, "load", lambda *_args: (_ for _ in ()).throw(ValueError("identity mismatch")))
     monkeypatch.setattr(iteration_loop, "run", lambda *_args, **_kwargs: pytest.fail("run called"))

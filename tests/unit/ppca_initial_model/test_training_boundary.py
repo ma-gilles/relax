@@ -86,7 +86,13 @@ def test_preread_decision():
     assert resolve_preread_images("on", 40 * gb, 64 * gb)[0]
     assert not resolve_preread_images("off", 1, 64 * gb)[0]
     _, record = resolve_preread_images("auto", 17 * gb, 64 * gb)
-    assert record == {"setting": "auto", "preread": False, "stack_gb": 17.0, "memory_gb": 64.0, "memory_fraction": 0.25}
+    assert record == {
+        "setting": "auto", "preread": False, "stack_gb": 17.0, "memory_gb": 64.0, "memory_fraction": 0.25, "ranks": 1,
+    }  # fmt: skip
+    # The ranks of a multi-GPU run each hold a copy: four copies of 4 GB pass a quarter of 64 GB, of 5 GB do not.
+    assert resolve_preread_images("auto", 4 * gb, 64 * gb, ranks=4)[0]
+    assert not resolve_preread_images("auto", 5 * gb, 64 * gb, ranks=4)[0]
+    assert resolve_preread_images("on", 40 * gb, 64 * gb, ranks=4)[0]
     with pytest.raises(ValueError, match="auto, on or off"):
         resolve_preread_images("yes", 1, 1)
 
