@@ -123,3 +123,11 @@ def test_block_scores_are_pass1_gaussian_scores():
                 assert np.all(np.isneginf(gathered[b, :, c]))
             else:
                 np.testing.assert_allclose(gathered[b, :, c], np.asarray(reference)[b, r], rtol=1e-5, atol=1e-3)
+
+
+def test_significant_ids_follow_the_columns():
+    """Each significant column ``(candidate, w)`` becomes ``rotation * W + w``, ascending, padded with -1."""
+    mask = jnp.asarray(np.array([[True, False, False, True, True, False], [False, False, False, True, False, False]]))
+    rotations = jnp.asarray(np.array([[3, 7, 9], [2, 5, -1]], dtype=np.int32))
+    ids = np.asarray(bnb_search._significant_ids(mask, rotations, size=4, n_window=2))
+    np.testing.assert_array_equal(ids, [[6, 15, 18, -1], [11, -1, -1, -1]])

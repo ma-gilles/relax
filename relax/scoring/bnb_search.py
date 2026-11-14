@@ -658,17 +658,39 @@ def run_search(
 @partial(jax.jit, static_argnames=("max_significants",))
 def _significant_mask(scores, fraction, *, max_significants: int):
     """Each image's significant scores ``[B, M]``: the highest scores until their posterior mass reaches
-    ``fraction`` (at most ``max_significants`` when positive), as a mask; scores tied with the last one are kept."""
+    ``fraction`` (at most ``max_significants`` when positive), as a mask; scores tied with the last one are kept.
 
-    top = -jnp.sort(-scores, axis=1)
+    The threshold is found by bisection on the score (no sort) unless a cap asks for a count.
+    """
+
+    finite = jnp.isfinite(scores)
     log_total = jax.nn.logsumexp(scores, axis=1, keepdims=True)
-    mass = jnp.exp(top - log_total)
-    before = jnp.cumsum(mass, axis=1) - mass
-    count = jnp.sum((before < fraction) & jnp.isfinite(top), axis=1)
+    weights = jnp.where(finite, jnp.exp(scores - log_total), 0.0)
+    high = jnp.max(jnp.where(finite, scores, -jnp.inf), axis=1)
+    low = jnp.min(jnp.where(finite, scores, jnp.inf), axis=1)
+
+    def bisect(_, bounds):
+        low, high = bounds
+        middle = 0.5 * (low + high)
+        enough = jnp.sum(jnp.where(scores >= middle[:, None], weights, 0.0), axis=1) >= fraction
+        return jnp.where(enough, middle, low), jnp.where(enough, high, middle)
+
+    low, _ = jax.lax.fori_loop(0, 48, bisect, (low, high))
+    mask = (scores >= low[:, None]) & finite
     if max_significants > 0:
-        count = jnp.minimum(count, max_significants)
-    threshold = jnp.take_along_axis(top, jnp.maximum(count - 1, 0)[:, None], axis=1)
-    return (scores >= threshold) & jnp.isfinite(scores) & (count[:, None] > 0)
+        threshold = jax.lax.top_k(scores, int(max_significants))[0][:, -1]
+        mask = mask & (scores >= threshold[:, None])
+    return mask
+
+
+@partial(jax.jit, static_argnames=("size", "n_window"))
+def _significant_ids(mask, rotation_of_column, *, size: int, n_window: int):
+    """Each image's significant samples ``rotation * n_window + w`` from its mask ``[B, M]`` over the columns
+    ``(candidate, window translation)``, ascending, ``-1`` padded to ``size``."""
+
+    columns = jax.vmap(lambda row: jnp.nonzero(row, size=size, fill_value=-1)[0])(mask)
+    rotation = jnp.take_along_axis(rotation_of_column, jnp.maximum(columns, 0) // n_window, axis=1)
+    return jnp.where(columns >= 0, rotation * n_window + columns % n_window, -1)
 
 
 def window_significance(
@@ -723,24 +745,23 @@ def window_significance(
             rows[i, : row.size] = row
         tick = time.time()
         masks, labels = [], []
-        for block_scores, _, block_labels in _candidate_blocks(prepared, weighted, image_term, weight, rows):
+        for block_scores, block_labels, _ in _candidate_blocks(prepared, weighted, image_term, weight, rows):
             masks.append(jnp.swapaxes(block_scores, 1, 2).reshape(batch_size, -1))
             labels.append(block_labels)
         joined = jnp.concatenate(masks, axis=1).block_until_ready()
         clock["scores"] += time.time() - tick
         tick = time.time()
-        mask = np.asarray(_significant_mask(joined, adaptive_fraction, max_significants=int(max_significants)))[:count]
+        mask = _significant_mask(joined, adaptive_fraction, max_significants=int(max_significants))
+        counts = np.asarray(jnp.sum(mask, axis=1))[:count].astype(np.int32)
         clock["mask"] += time.time() - tick
         tick = time.time()
-        rotation_of_column = np.concatenate(labels, axis=1)[:count]
         # Columns run over ascending rotations, then window translations: each image's ids come out ascending.
-        image, column = np.nonzero(mask)
-        ids_per_batch.append(
-            (rotation_of_column[image, column // n_window].astype(np.int64) * n_window + column % n_window).astype(
-                np.int32
-            )
-        )
-        counts_per_batch.append(np.bincount(image, minlength=count).astype(np.int32))
+        size = 1 << int(np.ceil(np.log2(max(int(counts.max(initial=1)), 1))))
+        ids = np.asarray(
+            _significant_ids(mask, jnp.concatenate(labels, axis=1), size=size, n_window=n_window)
+        )[:count]
+        ids_per_batch.append(ids[np.arange(size)[None, :] < counts[:, None]].astype(np.int32))
+        counts_per_batch.append(counts)
         clock["ids"] += time.time() - tick
         start = end
     counts = np.concatenate(counts_per_batch) if counts_per_batch else np.zeros(0, np.int32)
