@@ -14,7 +14,7 @@ import numpy as np
 from relax.classification.probes import KClassProbe
 from relax.numerics.precision import diagnostic_float64_pass2_matches
 from relax.reconstruction.resolution import ImageGeometry
-from relax.refinement import image_size_plans, iteration_planning, local_sampling
+from relax.refinement import bnb_half, image_size_plans, iteration_planning, local_sampling
 from relax.refinement.dense_half import score_half_dense_in_bpref_scope
 from relax.refinement.dense_specs import (
     DenseBatchPolicy,
@@ -52,7 +52,7 @@ from relax.steps.score_outputs import (
     empty_half_result,
     record_score_profile,
 )
-from relax.steps.scoring_policy import local_precision
+from relax.steps.scoring_policy import RELION_ADAPTIVE_FRACTION, local_precision
 from relax.steps.tomo_half import (
     TomoSampling,
     numbered_iteration_tomo_sampling,
@@ -310,6 +310,7 @@ def finish_numbered_half(
     particle_half = half.data.particles
     k = particle_half.index
     recording.per_half.translation_search_bases[k] = score_result.translation_search_base
+    recording.per_half.search_centres[k] = score_result.search_centres
     recording.per_half.pose_rotations[k] = score_result.pose_rotations
     recording.per_half.pose_rotation_eulers[k] = score_result.pose_rotation_eulers
     recording.per_half.coarse_ha[k] = score_result.coarse_ha
@@ -694,6 +695,20 @@ def score_numbered_half(
         str(bpref_device_signature_active).lower(),
     )
     previous_translations_k = particle_half.translations
+    bnb_search = None
+    if bnb_half.bnb_applies(
+        options, use_local=use_local, tomo_halves=tomo_halves, k_class_enabled=k_class_enabled,
+        use_adaptive=phase.use_adaptive, multi_shape_halves=multi_shape_halves,
+        score_mode=phase.variant.score_mode, winner_take_all=phase.variant.winner_take_all,
+    ) and particle_half.dataset.n_units > 0:
+        # The search's window centres replace the previous offsets: the pre-shift, the offset prior and the
+        # reported offsets follow them.
+        bnb_search = bnb_half.search_half(
+            half, sampling, options, image_geometry,
+            window_radius=float(np.max(np.linalg.norm(np.asarray(sampling.base_translations), axis=1), initial=0.0)),
+            relion_translation_angle_scale=relion_translation_angle_scale,
+        )
+        previous_translations_k = bnb_search.search.centres
     translation_search_base = relion_translation_search_base(
         previous_translations_k, dtype=scoring_dtype
     )
@@ -924,6 +939,15 @@ def score_numbered_half(
             translation_search_base=translation_search_base,
             trans_prior_center_for_engine=trans_prior_center_for_engine,
             class_log_priors=class_log_priors,
+            searched_supports=(
+                None
+                if bnb_search is None
+                else bnb_half.window_supports(
+                    bnb_search, sampling, translation_log_prior,
+                    adaptive_fraction=RELION_ADAPTIVE_FRACTION,
+                    max_significants=options.adaptive.max_significants,
+                )
+            ),
         )
         dense_batching = DenseBatchPolicy(
             max_significants=options.adaptive.max_significants,
@@ -981,6 +1005,8 @@ def score_numbered_half(
                 result=dense_result, use_float64_scoring=options.precision.use_float64_scoring,
             ))
 
+    if bnb_search is not None:
+        score_result.search_centres = bnb_search.search.centres
     return _with_translation_search_base(score_result, translation_search_base=translation_search_base)
 
 

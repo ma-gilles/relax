@@ -513,6 +513,7 @@ def _score_adaptive_k1_dense(
         scoring_overrides=execution.scoring_overrides,
         debug_iteration=execution.debug_iteration,
         probe=execution.k_class_probe,
+        searched_supports=priors.searched_supports,
         **adaptive_em_kwargs,
     )
     return k1_adaptive_result, pass2_grids

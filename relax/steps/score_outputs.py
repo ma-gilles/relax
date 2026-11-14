@@ -70,6 +70,9 @@ class HalfScoreResult:
 
     classes: ClassScoreSummary | None = None
     translation_search_base: object | None = None
+    # The window centres of a branch-and-bound search (relax.refinement.bnb_half), [N, 2] pixels: the offsets the
+    # reported ones are composed on instead of the previous ones. None: the previous offsets.
+    search_centres: object | None = None
 
 
 def empty_half_result(
@@ -177,6 +180,7 @@ class PerHalfOutputs:
     best_pose_rotation_eulers: list = field(default_factory=lambda: [None, None])
     best_pose_translations: list = field(default_factory=lambda: [None, None])
     translation_search_bases: list = field(default_factory=lambda: [None, None])
+    search_centres: list = field(default_factory=lambda: [None, None])
     pose_rotations: list = field(default_factory=lambda: [None, None])
     pose_rotation_eulers: list = field(default_factory=lambda: [None, None])
     mstep_full_half_axis: list = field(default_factory=lambda: [None, None])
@@ -373,6 +377,7 @@ HALF_RESULT_MERGE_RULES = {
     "mstep_accumulator_shape": "equal",
     "classes": "absent",
     "translation_search_base": "absent",
+    "search_centres": "absent",
 }
 RELION_STATS_MERGE_RULES = {
     "log_evidence_per_image": "units",

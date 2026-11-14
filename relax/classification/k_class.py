@@ -222,6 +222,7 @@ def run_dense_k_class_em_adaptive(
     fill_fine_rows=None,
     given_supports=None,
     given_image_translations=None,
+    searched_supports=None,
     zero_oversampling_coarse_state_for_classes: bool = False,
     probe: KClassProbe | None = None,
     engine_tuning: relax.runtime.engine_tuning.EngineTuning,
@@ -270,6 +271,9 @@ def run_dense_k_class_em_adaptive(
         winner (class and pose), as RELION's GPU code keeps them (acc_ml_optimiser_impl.h:1984-1988,
         docs/math/zero_oversampling.md; relax#73). K = 1 always does. Off, K > 1 normalizes pass 2 on the
         retained samples.
+    searched_supports : tuple or None
+        K=1: ``(csr, counts)``, each image's coarse significant samples found by the branch-and-bound global search
+        (:func:`relax.refinement.bnb_half.window_supports`) in place of pass 1, and their counts.
     given_image_translations : np.ndarray or None
         ``[n_images, 2]`` with ``given_supports``: each image's own translation sample
         (pixels), applied to its images by pass 2 (``image_translations`` of the resident
@@ -536,7 +540,16 @@ def run_dense_k_class_em_adaptive(
     coarse_significance_support_audit = None
     coarse_actual_backend = None
     pass1_t0 = time.time()
-    if given_supports is not None:
+    if searched_supports is not None:
+        if n_classes != 1 or given_supports is not None or firstiter_cc_pass2_only_best_coarse:
+            raise ValueError("searched supports replace the Gaussian pass 1 of a K=1 search")
+        if reuse_zero_oversampling_coarse_state:
+            raise ValueError("searched supports need adaptive oversampling: pass 2 takes no coarse state from them")
+        coarse_result = None
+        searched_csr, searched_counts = searched_supports
+        sig_sample_indices_by_class = [searched_csr]
+        significant_counts_for_result = np.asarray(searched_counts, dtype=np.int32)
+    elif given_supports is not None:
         coarse_result = None
         sig_sample_indices_by_class, significant_counts_for_result, given_classes = given_pose_class_supports(
             given_supports, n_classes=n_classes, n_images=n_images, image_seed_classes=image_seed_classes,

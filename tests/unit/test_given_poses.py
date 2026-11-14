@@ -99,7 +99,7 @@ def test_class3d_pose_seed_keeps_the_input_orientations_under_skip_align():
 
 
 def test_given_supports_carry_the_csr_that_limits_the_projection_cache():
-    from relax.classification.given_pose_classes import _given_support_csr
+    from relax.classification.given_pose_classes import given_support_csr
     from relax.fine_pass.resident_significance import significant_coarse_parents
 
     n = 7
@@ -107,7 +107,7 @@ def test_given_supports_carry_the_csr_that_limits_the_projection_cache():
     n_rot = grids.rotations.shape[0]
     # A seed iteration leaves the images of the other class with no sample.
     supports = [grids.supports[i] if i % 2 else np.zeros(0, np.int32) for i in range(n)]
-    support = _given_support_csr(supports, n_coarse_rot=n_rot, n_coarse_trans=1)
+    support = given_support_csr(supports, n_coarse_rot=n_rot, n_coarse_trans=1)
     assert [np.asarray(row).tolist() for row in support] == [np.asarray(s).tolist() for s in supports]
     parents = significant_coarse_parents(support, n_images=n, n_coarse_rot=n_rot, n_coarse_trans=1)
     # Only the images' own rotations (and parent 0, which an empty support takes), not the whole grid.

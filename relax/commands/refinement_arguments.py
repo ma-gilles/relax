@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, NamedTuple
 from relax.refinement.refinement_options import (
     FIRSTITER_CC_TREE_RESCORE_DEFAULT_MAX_MARGIN,
     AdaptiveOptions,
+    BnBSearchOptions,
     ExecutionOptions,
     InitialSampling,
     JobDefaults,
@@ -733,6 +734,14 @@ def resolve_adaptive_options(args, *, max_significants: int, log) -> AdaptiveOpt
         coarse_engine=args.coarse_engine,
         max_significants=max_significants,
         strict_highres_exp_angstrom=args.strict_highres_exp,
+        pose_search=args.pose_search,
+        bnb=BnBSearchOptions(
+            levels=args.bnb_levels,
+            translation_sigmas=args.bnb_translation_sigmas,
+            mass_fraction=args.bnb_mass_fraction,
+            margin=args.bnb_margin,
+            max_kept=args.bnb_max_kept,
+        ),
     )
 
 

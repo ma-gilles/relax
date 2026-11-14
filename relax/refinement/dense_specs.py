@@ -73,7 +73,11 @@ class DenseSamplingSpec:
 
 @dataclass(frozen=True, kw_only=True)
 class DensePriorSpec:
-    """Direction, translation and class priors for one dense half."""
+    """Direction, translation and class priors for one dense half.
+
+    ``searched_supports`` are the K=1 pass-2 supports the branch-and-bound search found (``(csr, counts)``,
+    ``relax.refinement.bnb_half.window_supports``), which replace pass 1; None: pass 1 finds them.
+    """
 
     rotation_log_prior_k: object
     class_rotation_log_prior_k: object
@@ -81,6 +85,7 @@ class DensePriorSpec:
     translation_search_base: object
     trans_prior_center_for_engine: object
     class_log_priors: object
+    searched_supports: object = None
 
 
 @dataclass(frozen=True, kw_only=True)

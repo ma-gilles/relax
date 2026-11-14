@@ -107,7 +107,11 @@ def resolve_particle_poses(
 
 @dataclass(frozen=True, eq=False)
 class ParticlePoseUpdate:
-    """Previous pose snapshots and resolved poses for one numbered iteration."""
+    """Previous pose snapshots and resolved poses for one numbered iteration.
+
+    ``previous_translations_pixels`` are the offsets the new ones are composed on and measured from: each half's
+    previous offsets, or the window centres of its branch-and-bound search.
+    """
 
     previous_rotations: list[np.ndarray | None]
     previous_translations_pixels: list[np.ndarray | None]
@@ -149,11 +153,17 @@ def prepare_particle_pose_update(
         np.asarray(half.translations).copy() if half.translations is not None else None
         for half in halves
     ]
+    # A branch-and-bound search centred its windows elsewhere: the offsets are composed on its centres, and the
+    # change metrics (RELION's next translation range, convergence) measure the move within the recentred window.
+    composition_bases = [
+        previous_translations_snapshot[k] if scores.search_centres[k] is None else scores.search_centres[k]
+        for k in range(2)
+    ]
     current = tuple(
         resolve_particle_poses(
             scores.hard_assignments[k],
             translation_grid,
-            previous_translations=previous_translations_snapshot[k],
+            previous_translations=composition_bases[k],
             own_pixel_factors=image_translation_factors(halves[k].dataset),
             best_pose_rotations=scores.best_pose_rotations[k],
             best_pose_rotation_eulers=scores.best_pose_rotation_eulers[k],
@@ -166,7 +176,7 @@ def prepare_particle_pose_update(
     )
     return ParticlePoseUpdate(
         previous_rotations=previous_rotations_snapshot,
-        previous_translations_pixels=previous_translations_snapshot,
+        previous_translations_pixels=[None if base is None else np.asarray(base).copy() for base in composition_bases],
         current=current,
     )
 

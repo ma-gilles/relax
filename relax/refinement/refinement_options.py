@@ -83,6 +83,37 @@ class RefinementSchedule:
 
 
 @dataclass(frozen=True, kw_only=True)
+class BnBSearchOptions:
+    """The branch-and-bound global pose search of ``--pose_search bnb`` (``relax.scoring.bnb_search``).
+
+    ``levels`` coarser HEALPix orders precede the iteration's own; the translation grid covers
+    ``translation_sigmas`` widths of the offset prior (at least the RELION window, at most 0.3 of the box), with a
+    step of half the Nyquist spacing of each level's window clipped to ``[min_step_px, max_step_px]``. A level keeps,
+    per image, the rotations carrying ``mass_fraction`` of its posterior and those within ``margin`` nats of its best,
+    at most ``max_kept``. ``image_batch_size`` images are searched per device batch.
+    """
+
+    levels: int = 1
+    translation_sigmas: float = 4.0
+    min_step_px: float = 0.5
+    max_step_px: float = 2.0
+    mass_fraction: float = 0.9999
+    margin: float = 10.0
+    max_kept: int = 4096
+    image_batch_size: int = 32
+
+    def __post_init__(self):
+        if int(self.levels) < 0:
+            raise ValueError(f"bnb levels must be non-negative, got {self.levels}")
+        if not 0.0 < float(self.mass_fraction) <= 1.0:
+            raise ValueError(f"bnb mass_fraction must be in (0, 1], got {self.mass_fraction}")
+        if not (self.translation_sigmas > 0 and self.margin >= 0 and self.max_kept > 0 and self.image_batch_size > 0):
+            raise ValueError("bnb translation_sigmas, max_kept and image_batch_size must be positive, margin >= 0")
+        if not 0.0 < float(self.min_step_px) <= float(self.max_step_px):
+            raise ValueError("bnb steps must satisfy 0 < min_step_px <= max_step_px")
+
+
+@dataclass(frozen=True, kw_only=True)
 class AdaptiveOptions:
     """Pose-search resolution + adaptive-oversampling knobs."""
 
@@ -96,8 +127,14 @@ class AdaptiveOptions:
     # RELION --strict_highres_exp in Angstrom: both E-step passes score at the size of this resolution
     # (capped at the current size); the M-step keeps the current size. None: off.
     strict_highres_exp_angstrom: float | None = None
+    # Pass 1 of the global K=1 searches: RELION's windowed coarse pass ("relion") or the branch-and-bound global
+    # search, which recentres every window and finds the supports itself ("bnb", relax.refinement.bnb_half).
+    pose_search: Literal["relion", "bnb"] = "relion"
+    bnb: BnBSearchOptions = field(default_factory=BnBSearchOptions)
 
     def __post_init__(self):
+        if self.pose_search not in {"relion", "bnb"}:
+            raise ValueError(f"unknown pose search {self.pose_search!r}")
         if self.coarse_engine not in {"auto", "gemm_hybrid", "gemm_dense"}:
             raise ValueError(f"unknown coarse engine {self.coarse_engine!r}")
         if self.strict_highres_exp_angstrom is not None and not self.strict_highres_exp_angstrom > 0:

@@ -59,6 +59,7 @@ def test_old_offset_is_rounded_in_each_images_own_pixels():
     ]
     scores = SimpleNamespace(
         hard_assignments=[np.zeros(2, dtype=np.int32)] * 2,
+        search_centres=[None, None],
         best_pose_rotations=[np.tile(np.eye(3), (2, 1, 1))] * 2,
         best_pose_rotation_eulers=[np.zeros((2, 3))] * 2,
         best_pose_translations=[trial_angstrom / MODEL_PIXEL] * 2,  # merged results are in model pixels

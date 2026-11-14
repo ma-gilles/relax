@@ -166,6 +166,29 @@ def parse_refinement_args(argv=None):
               "gemm_dense is an experimental full-grid, no-pruning route with unqualified quality and speed."),
     )
     parser.add_argument(
+        "--pose_search",
+        choices=("relion", "bnb"),
+        default="relion",
+        help="Pass 1 of the global K=1 searches. relion (default) scores RELION's translation window around each "
+        "particle's previous offset. bnb runs a branch-and-bound search over every translation within "
+        "--bnb_translation_sigmas widths of the offset prior, coarse to fine over HEALPix orders, recentres each "
+        "particle's window on its posterior and finds pass 2's supports there (needs --offset_prior_units consistent).",
+    )
+    parser.add_argument("--bnb_levels", type=int, default=1, help="bnb: coarser HEALPix orders searched first")
+    parser.add_argument(
+        "--bnb_translation_sigmas", type=float, default=4.0,
+        help="bnb: radius of the translation search in widths of the offset prior (at most 0.3 of the box)",
+    )
+    parser.add_argument(
+        "--bnb_mass_fraction", type=float, default=0.9999,
+        help="bnb: posterior mass of the rotations a level keeps for the next",
+    )
+    parser.add_argument(
+        "--bnb_margin", type=float, default=10.0,
+        help="bnb: a level also keeps every rotation within this many nats of its best",
+    )
+    parser.add_argument("--bnb_max_kept", type=int, default=4096, help="bnb: most rotations a level keeps per image")
+    parser.add_argument(
         "--max_significants",
         type=int,
         default=None,
