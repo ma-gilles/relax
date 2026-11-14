@@ -42,9 +42,11 @@ refinement sees the options only.
   to (`_relax_consistency_<name>`), and the start-up log prints them. A continuation must resolve to the
   recorded options; the mode itself is a label, so the same options given by name continue the run.
 
-Measured effect of the six options before `--offset_prior_units`: no measurable effect on two synthetic K=1 fixtures (5,000 particles at box 128 and 10,000 at
-box 256, full auto-refinement, three or four seeds; ground-truth map FSC, pose error, reported resolution and
-iterations to convergence against the default's seed-to-seed spread). Not tested on real data or Class3D.
+Measured effect of the six options before `--offset_prior_units`: no measurable effect on two synthetic K=1
+fixtures (5,000 particles at box 128 and 10,000 at box 256, full auto-refinement, three or four seeds;
+ground-truth map FSC, pose error, reported resolution and iterations to convergence against the default's
+seed-to-seed spread). Not tested on real data or Class3D. `--offset_prior_units` has an effect of its own at
+large pixel sizes (its section).
 
 ## The options
 
@@ -199,22 +201,39 @@ experimental `gemm_dense` coarse engine, subtomograms and full-grid GEMM passes.
 
 ## `--offset_prior_units {relion,consistent}`
 
-The Gaussian offset prior of the scores, `pdf_offset` (`acc_ml_optimiser_impl.h:2135-2167`), adds the
-sampled translation `sampling.translations_x[itrans]`, which is in Angstrom since RELION 3.1, to the rounded old
-offset `old_offset_x`, which is in pixels, subtracts the prior offset (pixels) and then multiplies the squared
+The Gaussian offset prior of the scores, `pdf_offset` (`acc_ml_optimiser_impl.h:2135-2167`; the CPU path,
+`ml_optimiser.cpp:7863-7876`, has the same formula), adds the sampled translation
+`sampling.translations_x[itrans]`, which is in Angstrom since RELION 3.1, to the rounded old offset
+`old_offset_x`, which is in pixels, subtracts the prior offset (pixels) and then multiplies the squared
 difference by `my_pixel_size^2` ("sigma_offsets are in Angstroms"). For a search shift `t` in pixels, pixel size
 `a`, old offset `o` and prior `p`, the log prior is therefore `-a^2 |a t + o - p|^2 / (2 sigma^2)`: a Gaussian on
 `t` of width `sigma / a^2` pixels centred on `(p - o) / a`, instead of width `sigma / a` centred on `p - o`. The
 two agree at 1 A per pixel. At larger pixels the prior pulls every offset towards `(1 - 1/a)` times its old
-value with a width the learned `sigma2_offset` cannot widen: on a box-128, 4.25 A/pixel simulation with Gaussian
-offsets of 15 A per axis and no input offsets, the default never moved the offsets (median error 4.2 px, the
-median true offset) and the refinement stalled at 27 A. The `wsum_sigma2_offset` statistic that updates
-`sigma2_offset` is in consistent units and is not affected.
+value, and a particle moves r pixels only where its log-likelihood gain beats a penalty `a^2` times the
+consistent one; `sigma2_offset`, re-estimated from the offsets the prior let through, then shrinks and narrows
+it further. The `wsum_sigma2_offset` statistic that updates `sigma2_offset` is in consistent units and is not
+affected.
 
 `consistent` scores `-|o + t - p|^2 a^2 / (2 sigma^2)`: the prior centre in pixels
 (`relion_translation_prior_center(consistent_units=True)`) and the width `sigma` passed to
 `make_relion_translation_log_prior` as `sigma * a` (`pdf_offset_score_sigma`,
 `relax/sampling/orientation_priors.py`), for the global and the local searches of every numbered iteration and
 of the final pass. Refused: subtomograms (their 3-D prior, `relion_offset_log_prior_3d`, has the same unit mix
-and is not changed) and optics groups on several image shapes.
+and is not changed) and optics groups on several image shapes. `relax multibody` does not take it.
+
+Measured effect (K=1 auto-refinements from zero offsets and angles, 2026-11-14; directions within 5 degrees of
+the truth, or of the published consensus for EMPIAR-10076):
+
+| Data | Pixel (A) | RELION | consistent | Started from the true origins |
+| --- | ---: | ---: | ---: | ---: |
+| EMPIAR-10076 binned to box 64, 131,899 particles | 6.55 | 59%, 63% | 77%, 77% | 77% |
+| 5nrl simulated, box 128, noise 1, 15 A offsets per axis, 20,000 particles | 4.25 | 11% | 41%, 39% | 56% |
+| the same at four times the SNR | 4.25 | 65% | 95% | |
+| EMPIAR-10076 binned to box 128 | 3.275 | 73%, 74% | 77%, 77% | 78% |
+| 8c9c simulated, box 256, 15 A offsets, 50,000 particles | 2.125 | 74%, 75% | 78%, 76% | 100% |
+
+Two values are two seeds. On the 5nrl box-128 set RELION's prior never moved an offset (median error 4.2 px,
+the median true offset) and the map stalled at 27 A; a wider first window alone (`--offset_range 12`) changed
+nothing, and `consistent` with it reached 55% (aligned map FSC AUC 0.695 against 0.702 from the true origins).
+At 2.125 A per pixel the difference is within the seed spread.
 
