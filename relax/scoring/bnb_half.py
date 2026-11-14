@@ -246,16 +246,18 @@ def search_half(
         image_batch_size=settings.image_batch_size,
         pixel_size=float(image_geometry.pixel_size_angstrom),
         sigma_offset_angstrom=float(half.sigma_offset_angstrom),
+        previous_offsets=particles.translations,
+        recentre_gain=settings.recentre_gain,
         precision=settings.search_precision,
     )
     previous = particles.translations
     if previous is not None:
         moved = np.linalg.norm(result.centres - np.asarray(previous, dtype=np.float64), axis=1)
         logger.info(
-            "BnB half %d: window centres moved from the previous offsets by median %.2f px, 90%% %.2f px, max %.2f px; "
+            "BnB half %d: %.1f%% of the windows moved (more than 1 px), by median %.2f px, 90%% %.2f px, max %.2f px; "
             "offset spread median %.2f px",
-            particles.index + 1, float(np.median(moved)), float(np.quantile(moved, 0.9)), float(moved.max()),
-            float(np.median(result.translation_spread)),
+            particles.index + 1, 100.0 * float(np.mean(moved > 1.0)), float(np.median(moved)),
+            float(np.quantile(moved, 0.9)), float(moved.max()), float(np.median(result.translation_spread)),
         )
     return HalfBnB(
         search=result,

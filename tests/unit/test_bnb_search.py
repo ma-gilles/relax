@@ -131,3 +131,16 @@ def test_significant_ids_follow_the_columns():
     rotations = jnp.asarray(np.array([[3, 7, 9], [2, 5, -1]], dtype=np.int32))
     ids = np.asarray(bnb_search._significant_ids(mask, rotations, size=4, n_window=2))
     np.testing.assert_array_equal(ids, [[6, 15, 18, -1], [11, -1, -1, -1]])
+
+
+def test_window_moves_only_on_evidence():
+    """A sharp posterior far from the previous offset moves the window; a broad one keeps it at the rounded previous
+    offset when the best window would hold little more of its mass."""
+    grid = bnb_search.translation_grid(10.0, 0.5)
+    sharp = -0.5 * np.sum((grid - np.array([6.0, -5.0])) ** 2, axis=1) / 0.25
+    broad = -0.5 * np.sum((grid - np.array([1.0, 1.0])) ** 2, axis=1) / 25.0
+    previous = np.array([[0.2, 0.3], [-0.4, 1.6]])
+    centres, _, _ = bnb_search.window_centres(np.stack([sharp, broad]), grid, 4.0, previous=previous, recentre_gain=0.1)
+    np.testing.assert_array_equal(centres, [[6.0, -5.0], [0.0, 2.0]])
+    centres, _, _ = bnb_search.window_centres(np.stack([sharp, broad]), grid, 4.0, previous=previous, recentre_gain=0.0)
+    np.testing.assert_array_equal(centres[0], [6.0, -5.0])

@@ -96,7 +96,8 @@ class BnBSearchOptions:
 
     The RELION window around each centre widens, when needed, to the radius that holds 99% of the offset posterior
     for ``window_quantile`` of the half's particles (0: RELION's range), at most the search radius; a widened window
-    spans at most ``window_steps`` steps of its radius, RELION's own bound.
+    spans at most ``window_steps`` steps of its radius. A window moves to the search's centre only when that holds
+    ``recentre_gain`` more of the particle's offset posterior than the window at its previous offset.
     """
 
     levels: int = 1
@@ -115,7 +116,8 @@ class BnBSearchOptions:
     # window significance and pass 2 score in float32 either way.
     search_precision: Literal["float32", "tf32"] = "float32"
     window_quantile: float = 0.75
-    window_steps: float = 4.0
+    window_steps: float = 6.0
+    recentre_gain: float = 0.1
 
     def __post_init__(self):
         if int(self.levels) < 0:

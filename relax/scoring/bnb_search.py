@@ -451,15 +451,26 @@ def centre_table(translations: np.ndarray, radius: float) -> tuple[np.ndarray, n
 
 
 def window_centres(
-    translation_mass: np.ndarray, translations: np.ndarray, radius: float, *, hold: float = 0.99, table=None
+    translation_mass: np.ndarray,
+    translations: np.ndarray,
+    radius: float,
+    *,
+    hold: float = 0.99,
+    table=None,
+    previous: np.ndarray | None = None,
+    recentre_gain: float = 0.0,
 ):
     """Each image's window centre: the whole pixel whose window (``radius``) holds the most posterior mass of the
     offset, which is the mode of a sharp posterior and near the mean of a broad one; also the posterior standard
     deviation (pixels) of the offset and the radius around the centre that holds ``hold`` of its mass.
 
     ``translation_mass`` ``[B, T]`` is the log posterior mass of every translation ``translations`` ``[T, 2]``;
-    ``table`` is their :func:`centre_table` (None: built here).
+    ``table`` is their :func:`centre_table` (None: built here). With ``previous`` ``[B, 2]`` (each image's previous
+    offset in the same frame), an image keeps the window at its rounded previous offset unless the best window
+    holds at least ``recentre_gain`` more of its posterior mass: a broad posterior does not move a window by noise.
     """
+
+    from relax.relion.macros import relion_round_array
 
     centres, inside = centre_table(translations, radius) if table is None else table
     mass = np.asarray(translation_mass, dtype=np.float64)
@@ -468,7 +479,14 @@ def window_centres(
     captured = weights @ inside
     # Ties (a flat posterior) go to the centre nearest the origin, the offset prior's centre.
     captured -= 1e-12 * np.sum(centres**2, axis=1)[None, :]
-    best = centres[np.argmax(captured, axis=1)]
+    choice = np.argmax(captured, axis=1)
+    best = centres[choice]
+    if previous is not None:
+        kept_at = relion_round_array(np.asarray(previous, dtype=np.float64))
+        within = np.sum((translations[None, :, :] - kept_at[:, None, :]) ** 2, axis=2) <= float(radius) ** 2 + 1e-9
+        previous_mass = np.sum(np.where(within, weights, 0.0), axis=1)
+        stay = captured[np.arange(mass.shape[0]), choice] < previous_mass + float(recentre_gain)
+        best = np.where(stay[:, None], kept_at, best)
     mean = weights @ translations
     spread = np.sqrt(np.maximum(np.sum(weights * np.sum((translations[None] - mean[:, None]) ** 2, axis=2), axis=1), 0))
     distance = np.sqrt(np.sum((translations[None, :, :] - best[:, None, :]) ** 2, axis=2))
@@ -493,13 +511,17 @@ def _level_pass(
     image_batch_size: int,
     precision: str,
     clock: dict,
+    previous: np.ndarray | None = None,
+    recentre_gain: float = 0.0,
 ):
     """One level over every image: each image's kept rotations, kept count, window centre (relative to its pre-shift),
     offset spread and hold radius, and best ``(rotation, translation)``.
 
     ``parents`` holds each image's kept rotations of the previous level (None at level 0, which scores every rotation);
     ``pre_shifts`` ``[N, 2]`` centre a local level's translations on each image (None: the absolute grid) and ``prior``
-    ``(pixel_size, sigma_offset_angstrom)`` gives them their offset prior, at ``pre_shift + t``.
+    ``(pixel_size, sigma_offset_angstrom)`` gives them their offset prior, at ``pre_shift + t``. ``previous``
+    ``[N, 2]`` (absolute offsets, or None) keeps an image's window where it was unless recentring gains
+    ``recentre_gain`` of its posterior mass (:func:`window_centres`).
     """
 
     from relax.io.batch_fetch import iter_indexed_batches
@@ -552,8 +574,12 @@ def _level_pass(
         kept_counts[start:end] = np.asarray(n_kept)[:count]
         clock["keep"] += time.time() - tick
         tick = time.time()
+        relative = None
+        if previous is not None:
+            relative = previous[start:end] - (0.0 if pre_shifts is None else pre_shifts[start:end])
         centres[start:end], spread[start:end], hold[start:end] = window_centres(
-            np.asarray(translation_mass)[:count], translations, centre_radius, table=table
+            np.asarray(translation_mass)[:count], translations, centre_radius, table=table,
+            previous=relative, recentre_gain=recentre_gain,
         )
         best_rotation[start:end] = np.asarray(best[1])[:count]
         best_translation[start:end] = translations[np.asarray(best[2])[:count]]
@@ -572,6 +598,8 @@ def run_search(
     image_batch_size: int,
     pixel_size: float,
     sigma_offset_angstrom: float,
+    previous_offsets: np.ndarray | None = None,
+    recentre_gain: float = 0.0,
     precision: str = "float32",
 ) -> BnBSearchResult:
     """Search every image of ``request_fields["experiment_dataset"]`` over ``levels`` (see the module docstring).
@@ -584,7 +612,8 @@ def run_search(
     prior (``pixel_size``, ``sigma_offset_angstrom``) at the absolute offsets. ``centre_radius`` (pixels) is the
     RELION window the centres are chosen for. ``precision`` is the score products' algorithm (``"float32"`` or
     ``"tf32"``). Coarse levels keep at most ``pruning.max_kept`` rotations per image; the last level keeps every
-    rotation its rules keep.
+    rotation its rules keep. ``previous_offsets`` ``[N, 2]`` (pixels; None: the origin) stay the window centres
+    unless the search's best window holds ``recentre_gain`` more of the offset posterior.
     """
 
     t0 = time.time()
@@ -626,6 +655,12 @@ def run_search(
             image_batch_size=image_batch_size,
             precision=precision,
             clock=clock,
+            previous=(
+                (np.zeros((n_images, 2)) if previous_offsets is None else np.asarray(previous_offsets, np.float64))
+                if index == n_levels - 1
+                else None
+            ),
+            recentre_gain=recentre_gain,
         )
         base = np.zeros((n_images, 2)) if pre_shifts is None else pre_shifts
         pre_shifts = base + local_centres
