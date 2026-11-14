@@ -1281,7 +1281,8 @@ def test_batch_adjoint_slice_volume_jax(monkeypatch):
 
     rng = np.random.default_rng(3001)
     volume_shape = (8, 8, 8)
-    image_shape = (6, 8)
+    # Non-square to catch axis transposes; axis 0 must divide volume_shape[0] (recovar's upsampling inference).
+    image_shape = (8, 6)
     n_batch = 3
     n_images = 4
     rots = np.concatenate([np.eye(3, dtype=np.float32)[None], _random_rotations(rng, n_images - 1)], axis=0)
