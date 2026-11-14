@@ -1,10 +1,11 @@
-"""Start one refinement process per GPU of RELION's ``--gpu`` list, before JAX starts.
+"""Start one process per GPU of RELION's ``--gpu`` list, before JAX starts.
 
 ``relax refine --gpu 0:1`` (RELION's syntax: device ids separated by ``:`` or ``,``) runs one process per
 listed device. The process the user started becomes the launcher: it starts the ranks with the same command
 line, each with ``CUDA_VISIBLE_DEVICES`` naming its one device, waits for them and exits with their status.
 Rank 0 runs the refinement and the other ranks score the halves it sends them
-(``relax.refinement.remote_halves``). A rank that fails ends the run: the launcher stops the other ranks and
+(``relax.refinement.remote_halves``); in ``relax ppca_initial_model`` they score image tiles of each update
+(``relax.ppca_initial_model.ranks``). A rank that fails ends the run: the launcher stops the other ranks and
 exits non-zero. Without ``--gpu``, or with one device, nothing is launched and the process runs as before
 (one listed device other than 0 restricts ``CUDA_VISIBLE_DEVICES`` to it).
 
@@ -95,11 +96,12 @@ def gpu_argument(argv) -> str | None:
 
 
 def output_argument(argv) -> str | None:
-    """The value of ``--output`` in a command line (``--output X`` or ``--output=X``), or None when absent."""
+    """The value of ``--output`` in a command line (``--output X``, ``--output=X``, or ``-o X`` as
+    ``relax ppca_initial_model`` takes it), or None when absent."""
 
     argv = list(argv)
     for index, token in enumerate(argv):
-        if token == "--output" and index + 1 < len(argv):
+        if token in ("--output", "-o") and index + 1 < len(argv):
             return argv[index + 1]
         if token.startswith("--output="):
             return token[len("--output=") :]
