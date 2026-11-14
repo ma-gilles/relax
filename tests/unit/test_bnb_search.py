@@ -144,3 +144,10 @@ def test_window_moves_only_on_evidence():
     np.testing.assert_array_equal(centres, [[6.0, -5.0], [0.0, 2.0]])
     centres, _, _ = bnb_search.window_centres(np.stack([sharp, broad]), grid, 4.0, previous=previous, recentre_gain=0.0)
     np.testing.assert_array_equal(centres[0], [6.0, -5.0])
+
+
+def test_image_batch_grows_on_small_grids():
+    assert bnb_search.image_batch(32, 401, 26) == 128
+    assert bnb_search.image_batch(32, 101, 52) == 64
+    assert bnb_search.image_batch(32, 2433, 42) == 32
+    assert bnb_search.image_batch(48, 2433, 42) == 48

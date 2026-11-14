@@ -92,7 +92,8 @@ class BnBSearchOptions:
     ``translation_sigmas`` widths of the offset prior (at least the RELION window, at most 0.3 of the box), with a
     step of half the Nyquist spacing of each level's window clipped to ``[min_step_px, max_step_px]``. A level keeps,
     per image, the rotations carrying ``mass_fraction`` of its posterior, those within ``margin`` nats of its best and
-    its ``min_kept`` best, at most ``max_kept``. ``image_batch_size`` images are searched per device batch.
+    its ``min_kept`` best, at most ``max_kept``. A device batch searches at least ``image_batch_size`` images (more on
+    a small grid).
 
     The RELION window around each centre widens, when needed, to the radius that holds 99% of the offset posterior
     for ``window_quantile`` of the half's particles (0: RELION's range), at most the search radius; a widened window

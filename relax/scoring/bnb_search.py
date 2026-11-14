@@ -39,6 +39,10 @@ _CANDIDATE_CHUNK = 512
 _DENSE_BLOCK = 1024
 # The dense union product is used unless it scores this many times more (image, rotation) pairs than the candidates.
 _GATHER_RATIO = 16
+# A device batch holds about this many complex coefficients of its images' translated rows (or gathered candidate
+# projections), with at least the configured images and at most _MAX_IMAGE_BATCH.
+_BATCH_ELEMENTS = 1 << 26
+_MAX_IMAGE_BATCH = 128
 
 
 @dataclass(frozen=True)
@@ -162,6 +166,15 @@ def coarse_level_prior(child_prior: np.ndarray | None, children: np.ndarray) -> 
 # ----------------------------------------------------------------------------------------------------------------
 # Device programs
 # ----------------------------------------------------------------------------------------------------------------
+
+
+def image_batch(minimum: int, n_translations: int, size: int) -> int:
+    """Images per device batch for ``n_translations`` translations at Fourier window ``size``: the power of two that
+    fills ``_BATCH_ELEMENTS`` (at most ``_MAX_IMAGE_BATCH``), at least ``minimum``. Small grids take larger batches."""
+
+    per_image = max(int(n_translations), _CANDIDATE_CHUNK) * int(size) * (int(size) // 2 + 1)
+    fit = max(_BATCH_ELEMENTS // per_image, 1)
+    return max(int(minimum), min(_MAX_IMAGE_BATCH, 1 << (fit.bit_length() - 1)))
 
 
 def _packed(values):
@@ -379,25 +392,29 @@ def _candidate_blocks(
     batch = int(weighted.shape[0])
     n_rot = int(prepared.projections.shape[0])
     if candidates is None:
-        union = np.arange(n_rot, dtype=np.int64)
-        member = np.ones((batch, n_rot), dtype=bool)
-    else:
-        valid = candidates >= 0
-        union = np.unique(candidates[valid])
-        if union.size * batch > _GATHER_RATIO * max(int(valid.sum()), 1):
-            rows = jnp.asarray(_pad_columns(candidates, _CANDIDATE_CHUNK))
-            rows_host = _pad_columns(candidates, _CANDIDATE_CHUNK)
-            rows = jnp.asarray(rows_host)
-            for start in range(0, rows.shape[1], _CANDIDATE_CHUNK):
-                chunk = rows[:, start : start + _CANDIDATE_CHUNK]
-                yield _gathered_block(
-                    weighted, image_term, weight, prepared.projections, chunk, prepared.rotation_prior,
-                    prepared.translation_prior, precision=precision,
-                ), chunk, rows_host[:, start : start + _CANDIDATE_CHUNK]
-            return
-        member = np.zeros((batch, union.size), dtype=bool)
-        image = np.broadcast_to(np.arange(batch)[:, None], candidates.shape)
-        member[image[valid], np.searchsorted(union, candidates[valid])] = True
+        for start in range(0, n_rot, _DENSE_BLOCK):
+            stop = min(start + _DENSE_BLOCK, n_rot)
+            ids = np.broadcast_to(np.arange(start, stop, dtype=np.int32), (batch, stop - start))
+            yield _dense_block(
+                weighted, image_term, weight, prepared.projections[start:stop], prepared.rotation_prior[start:stop],
+                prepared.translation_prior, precision=precision,
+            ), jnp.asarray(ids), ids
+        return
+    valid = candidates >= 0
+    union = np.unique(candidates[valid])
+    if union.size * batch > _GATHER_RATIO * max(int(valid.sum()), 1):
+        rows_host = _pad_columns(candidates, _CANDIDATE_CHUNK)
+        rows = jnp.asarray(rows_host)
+        for start in range(0, rows.shape[1], _CANDIDATE_CHUNK):
+            chunk = rows[:, start : start + _CANDIDATE_CHUNK]
+            yield _gathered_block(
+                weighted, image_term, weight, prepared.projections, chunk, prepared.rotation_prior,
+                prepared.translation_prior, precision=precision,
+            ), chunk, rows_host[:, start : start + _CANDIDATE_CHUNK]
+        return
+    member = np.zeros((batch, union.size), dtype=bool)
+    image = np.broadcast_to(np.arange(batch)[:, None], candidates.shape)
+    member[image[valid], np.searchsorted(union, candidates[valid])] = True
     for start in range(0, union.size, _DENSE_BLOCK):
         ids = union[start : start + _DENSE_BLOCK]
         block_member = member[:, start : start + _DENSE_BLOCK]
@@ -523,7 +540,8 @@ def _level_pass(
     ``parents`` holds each image's kept rotations of the previous level (None at level 0, which scores every rotation);
     ``pre_shifts`` ``[N, 2]`` centre a local level's translations on each image (None: the absolute grid) and ``prior``
     ``(pixel_size, sigma_offset_angstrom)`` gives them their offset prior, at ``pre_shift + t``. Also returns every
-    image's log posterior mass of the level's translations ``[N, T]`` (float32).
+    image's log posterior mass of the level's translations ``[N, T]`` (float32). A finer level batches the images
+    in order of their parent counts: a batch scores as many candidates as its widest image.
     """
 
     from relax.io.batch_fetch import iter_indexed_batches
@@ -531,7 +549,10 @@ def _level_pass(
     n_images = int(dataset.n_units)
     translations = prepared.level.translations
     table = centre_table(translations, centre_radius)
-    kept_rows: list[np.ndarray] = []
+    order = np.arange(n_images)
+    if parents is not None:
+        order = np.argsort(np.fromiter((row.size for row in parents), np.int64, count=n_images), kind="stable")
+    kept_rows: list[np.ndarray | None] = [None] * n_images
     kept_counts = np.zeros(n_images, dtype=np.int32)
     centres = np.zeros((n_images, 2), dtype=np.float64)
     spread = np.zeros(n_images, dtype=np.float64)
@@ -540,13 +561,14 @@ def _level_pass(
     best_translation = np.zeros((n_images, 2), dtype=np.float64)
     masses = np.zeros((n_images, translations.shape[0]), dtype=np.float32)
     start = 0
-    for batch_data, _, _, _, _, _, indices in iter_indexed_batches(dataset, np.arange(n_images), image_batch_size):
+    for batch_data, _, _, _, _, _, indices in iter_indexed_batches(dataset, order, image_batch_size):
         end = start + len(indices)
         count = end - start
+        batch = order[start:end]
         tick = time.time()
         weighted, image_term, weight, batch_size = _level_operands(prepared, batch_data, indices, start, end)
         if pre_shifts is not None:
-            absolute = pre_shifts[start:end][:, None, :] + translations[None, :, :]
+            absolute = pre_shifts[batch][:, None, :] + translations[None, :, :]
             image_prior = offset_log_prior(absolute.reshape(-1, 2), pixel_size=prior[0], sigma_offset_angstrom=prior[1])
             image_prior = image_prior.reshape(count, -1)
             if batch_size > count:
@@ -557,10 +579,12 @@ def _level_pass(
         tick = time.time()
         rows = None
         if parents is not None:
-            parent_rows = np.full((batch_size, max(max((row.size for row in parents[start:end]), default=1), 1)), -1)
-            for i, row in enumerate(parents[start:end]):
-                parent_rows[i, : row.size] = row
+            parent_rows = np.full((batch_size, max(max(parents[i].size for i in batch), 1)), -1)
+            for i, image in enumerate(batch):
+                parent_rows[i, : parents[image].size] = parents[image]
             rows = _expand_children(parent_rows, children)
+            clock["children"] += time.time() - tick
+            tick = time.time()
         mass, labels, translation_mass, best = _score_level(
             prepared, weighted, image_term, weight, rows, precision=precision
         )
@@ -573,16 +597,17 @@ def _level_pass(
             min_kept=int(pruning.min_kept) if coarse else 0,
         )
         kept = np.asarray(kept_device)[:count]
-        kept_rows.extend(np.sort(row[row >= 0]).astype(np.int32) for row in kept)
-        kept_counts[start:end] = np.asarray(n_kept)[:count]
+        for image, row in zip(batch, kept):
+            kept_rows[image] = np.sort(row[row >= 0]).astype(np.int32)
+        kept_counts[batch] = np.asarray(n_kept)[:count]
         clock["keep"] += time.time() - tick
         tick = time.time()
-        masses[start:end] = np.asarray(translation_mass)[:count]
-        centres[start:end], spread[start:end], hold[start:end] = window_centres(
-            masses[start:end], translations, centre_radius, table=table
+        masses[batch] = np.asarray(translation_mass)[:count]
+        centres[batch], spread[batch], hold[batch] = window_centres(
+            masses[batch], translations, centre_radius, table=table
         )
-        best_rotation[start:end] = np.asarray(best[1])[:count]
-        best_translation[start:end] = translations[np.asarray(best[2])[:count]]
+        best_rotation[batch] = np.asarray(best[1])[:count]
+        best_translation[batch] = translations[np.asarray(best[2])[:count]]
         clock["centres"] += time.time() - tick
         start = end
     return kept_rows, kept_counts, centres, spread, hold, best_rotation, best_translation, masses
@@ -610,7 +635,7 @@ def run_search(
     prior (``pixel_size``, ``sigma_offset_angstrom``) at the absolute offsets. ``centre_radius`` (pixels) is the
     RELION window the centres are chosen for. ``precision`` is the score products' algorithm (``"float32"`` or
     ``"tf32"``). Coarse levels keep at most ``pruning.max_kept`` rotations per image; the last level keeps every
-    rotation its rules keep.
+    rotation its rules keep. A device batch holds at least ``image_batch_size`` images (:func:`image_batch`).
     """
 
     t0 = time.time()
@@ -618,7 +643,9 @@ def run_search(
     n_images = int(dataset.n_units)
     n_levels = len(levels)
     search_radius = float(np.max(np.linalg.norm(levels[0].translations, axis=1), initial=0.0))
-    clock = {"plan": 0.0, "operands": 0.0, "scores": 0.0, "keep": 0.0, "centres": 0.0}
+    clock = {"plan": 0.0, "operands": 0.0, "children": 0.0, "scores": 0.0, "keep": 0.0, "centres": 0.0}
+    level_scores = []
+    batches = []
     kept_counts = np.zeros((n_levels, n_images), dtype=np.int32)
     parents = None
     pre_shifts = None
@@ -636,9 +663,13 @@ def run_search(
             level.translation_log_prior if index == 0 else np.zeros(level.translations.shape[0], np.float32)
         ))
         used_levels.append(level)
+        level_batch = image_batch(image_batch_size, level.translations.shape[0], level.size)
+        fields["image_batch_size"] = level_batch
+        batches.append(level_batch)
         tick = time.time()
         prepared = plan_level(level, fields, image_current_size=image_current_size)
         clock["plan"] += time.time() - tick
+        scores_before = clock["scores"]
         (
             parents, kept_counts[index], local_centres, spread, hold, best_rotation, best_translation, masses
         ) = _level_pass(
@@ -651,22 +682,26 @@ def run_search(
             pruning=pruning,
             coarse=index < n_levels - 1,
             centre_radius=centre_radius,
-            image_batch_size=image_batch_size,
+            image_batch_size=level_batch,
             precision=precision,
             clock=clock,
         )
+        level_scores.append(round(clock["scores"] - scores_before, 1))
         base = np.zeros((n_images, 2)) if pre_shifts is None else pre_shifts
         pre_shifts = base + local_centres
         best_translation = base + best_translation
     seconds = time.time() - t0
-    logger.info("BnB search time: %s", {name: round(value, 1) for name, value in clock.items()})
     logger.info(
-        "BnB search: %d images, levels %s (sizes %s, translations %s), kept rotations per level median %s max %s, "
-        "%.1fs",
+        "BnB search time: %s, scores per level %s", {name: round(value, 1) for name, value in clock.items()}, level_scores
+    )
+    logger.info(
+        "BnB search: %d images, levels %s (sizes %s, translations %s, image batches %s), kept rotations per level "
+        "median %s max %s, %.1fs",
         n_images,
         [lv.order for lv in used_levels],
         [lv.size for lv in used_levels],
         [int(lv.translations.shape[0]) for lv in used_levels],
+        batches,
         [int(np.median(row)) for row in kept_counts],
         [int(np.max(row, initial=0)) for row in kept_counts],
         seconds,
@@ -750,6 +785,8 @@ def window_significance(
     window_level = replace(
         level, translations=np.asarray(window, dtype=np.float64), translation_log_prior=np.zeros(len(window), np.float32)
     )
+    image_batch_size = image_batch(image_batch_size, len(window), level.size)
+    request_fields = dict(request_fields, image_batch_size=image_batch_size)
     prepared = plan_level(window_level, request_fields, image_current_size=image_current_size)
     dataset = request_fields["experiment_dataset"]
     n_images = int(dataset.n_units)
