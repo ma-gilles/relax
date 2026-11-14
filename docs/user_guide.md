@@ -59,6 +59,12 @@ is refused on more than one GPU. Start a multi-GPU run with the
 devices, because importing `relax` starts JAX on every visible GPU before the processes could be split. When one process fails, the
 other is stopped and the run exits non-zero.
 
+`relax ppca_initial_model` takes the same `--gpu` list (two to four devices of one node): every process scores a
+share of each update's image tiles and rank 0 adds the shares, runs the update and writes every output. A run
+on several GPUs selects the same particles as on one; only the order of each update's volume sums changes
+(section 18 of the [PPCA algorithm notes](math/vdam_ppca_algorithm.md)). Each process holds its own copy of preread images, which
+`--ppca-preread-images auto` counts. `--fixed-core` and `--no-stream-coarse-recompute` run on one GPU.
+
 Leave `XLA_PYTHON_CLIENT_PREALLOCATE` unset. relax runs with JAX's default, one
 preallocated memory pool, and that is the supported mode. `=false` lets another
 process share the GPU, but the pool then grows in separate regions and an array

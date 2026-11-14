@@ -2761,3 +2761,69 @@ frame offset. No SPA verdict moves.
 From October 5 `evaluate_arm.py` reports both metrics; cryo-ET pose comparisons quote
 the within-state median, and the global one for continuity.
 
+
+## 18. Several GPUs: each update's tiles split over the ranks (November 14, 2026)
+
+`relax ppca_initial_model --gpu 0:1[:2:3]` runs one process per GPU of one node, started before JAX by the
+`relax` console script as for `relax refine` (`relax_cli/launch.py`; at most four). The other ranks write only
+their log, under `<output>/.rank<r>/`. Rank 0 is the controller of a one-GPU run
+(`relax/ppca_initial_model/iteration_loop.py`, `run`): initialization, the batch and half selection, the update
+of the model, noise, offset variance and direction prior, every checkpoint and output. The other ranks keep no
+model state between updates; they load the same particles and serve E-steps
+(`relax/ppca_initial_model/ranks.py`, `serve_tile_ranks`).
+
+One E-step (`iteration_loop._expectation` with `ranks`):
+
+1. Rank 0 sends the E-step: the model fields it reads (theta, noise, offset variance, direction prior), the two
+   id groups and the iteration (`ExpectationTask`). Every rank prepares the same streams.
+2. Rank 0 plans the tile size on its device and sends it (`TilePlan`); every rank cuts the same tiles with it
+   (`tilt_tiles`, or slices of each group for single particles). Another rank checks that its own plan holds
+   rank 0's size and fails otherwise. The device models must match (the run fingerprint compares them, with the
+   inputs, the code identity and the configuration).
+3. Each rank scores the tiles `assign_tiles` gives it: heaviest first (a tile's tilt images, or its images), each
+   to the least loaded rank. The assignment is a function of the tile costs and the number of ranks only.
+4. Each rank sums its tiles' volume statistics (`lhs_tri`, `residual_gradient`, `metric_trace`,
+   `exact_metric_trace`) per id group in tile order, as one GPU does (`TileSums`), and returns those sums and its
+   tiles' other statistics (`TileShare`).
+5. Rank 0 joins the shares (`_join_tile_shares`): each group's volume sums are the ranks' sums added in rank
+   order (`relax.parallel.channel.ordered_sum`); the tiles' other statistics are put back in tile order, and from
+   there the E-step finishes as on one GPU: the noise sums, counts, log-likelihood, offset sums, rotation mass,
+   the n-weighted posterior means and the concatenated embeddings and ids are formed over all tiles in tile order.
+
+What changes with the number of ranks. The selected particles, the halves, the tile list, the counts and every
+concatenation are exactly those of one GPU, and the scalar and per-noise-group sums are added in the same order.
+Only the volume sums are associated differently: one GPU forms `t1 + t2 + ... + tn` over the group's tiles; `R`
+ranks form `S0 + S1 + ... + S(R-1)`, `Sr` the tile-order sum of rank r's tiles. The update itself runs once, on
+rank 0, on these sums. The results therefore differ from one GPU's by float32 association alone, which
+the update's nonlinearity carries forward; a run with a given number of GPUs is reproducible run to run (no sum
+depends on which rank finished first), within each GPU's own run-to-run noise. A run on one GPU (no `--gpu`, or one device) takes the unchanged
+code path.
+
+Measured on the CPU (`tests/unit/ppca_initial_model/test_ppca_ranks.py`, Slurm jobs 7473156 and 7473606):
+
+| Case | Largest relative difference to one rank (max abs difference / max magnitude) |
+| --- | --- |
+| Single-particle E-step, 2 ranks, dense / oversampled (statistics, embeddings, final pass) | 7.2e-8 / 1.0e-7 |
+| Subtomogram command, VDAM, 3 updates over 2 stages, 1 particle per tile, 2 ranks | theta 8.8e-8, first moment 2.6e-7, second moment 9.7e-6, direction prior 6.6e-8, noise 0, embeddings 5.1e-7 |
+| The same, 3 ranks | theta 8.8e-8, first moment 2.4e-7, second moment 1.0e-5, direction prior 1.3e-7, noise 9.0e-8, embeddings 1.3e-7 |
+| The same, momentum SGD, 2 ranks | theta 2.9e-8, velocity 4.4e-8, noise 0, embeddings 1.1e-7 |
+
+The selected particles, the batch order, the random state, the half counts and the particle order of the
+embeddings are identical in every case. VDAM's second moment, the moving average of the squared per-frequency
+direction, is the one quantity above 1e-6: the direction is a metric solve that amplifies the association
+difference at its ill-conditioned frequencies (2 to 6 of its 4608 entries). The one-process run of the same command
+writes byte-identical checkpoints and embeddings before (5f9e3e14) and after this change, for VDAM and momentum
+SGD (job 7473156).
+
+Cost. Every rank prepares the streams of every E-step (the projector upload and grids) and compiles the same
+programs; rank 0 alone runs the update, the logging and the checkpoints while the others wait. Each E-step moves
+the model to every rank and each rank's volume sums (for box 128, q = 2: about 60 MB per id group) to rank 0,
+over an abstract Unix socket; rank 0 places them on its device to add them.
+
+Host memory. The ranks share the node's memory and each holds its own copy of a preread stack: `--ppca-preread-
+images auto` prereads only when the ranks' copies together fit the usual quarter of the job's memory
+(`resolve_preread_images`, `ranks`).
+
+Not supported on more than one GPU (refused at start-up): the host-mask reference engine
+(`--no-stream-coarse-recompute`) and `--fixed-core`, whose per-particle core fit runs over all particles before
+training. A checkpoint resumes under any number of GPUs: it holds no rank state.
