@@ -634,13 +634,15 @@ half's priors are built, [`bnb_half.search_half`](../../relax/scoring/bnb_half.p
   within `--bnb_margin` nats of its best and its `--bnb_min_kept` best. The next level scores their children (the
   finer rotations within 0.75 of the parent's angular step) at its order's coarse size, on a disk of translations
   around each image's previous centre (images pre-shifted there); the last level is the iteration's own grid.
-- Each image's centre is the whole pixel whose RELION window holds the most posterior mass of the offset. The
-  controller takes the centres as the half's previous offsets, so the rounded pre-shift, the `pdf_offset` centres,
-  the `wsum_sigma2_offset` centre, the metadata offsets (`prepare_particle_pose_update` composes on the score
-  result's `search_centres`) and the change metrics all follow them.
-- `recentred_window` widens the half's window when 75% of the particles' 99% offset radii exceed it (at most four
-  steps per radius), and `window_supports` gives the resident pass 2 each image's 99.9% supports over its kept
-  rotations and that window (`searched_supports` of `run_dense_k_class_em_adaptive`, in place of pass 1).
+- The window widens when 75% of the particles' 99% offset radii exceed RELION's (at most the search radius and six
+  steps per radius; `recentred_window` builds the grid). Each image's centre is its previous offset (the origin
+  before any) unless the whole pixel whose window, at that radius, holds the most posterior mass of the offset holds
+  `--bnb_recentre_gain` more of it. The controller takes the centres as the half's previous offsets, so the rounded
+  pre-shift, the `pdf_offset` centres, the `wsum_sigma2_offset` centre, the metadata offsets
+  (`prepare_particle_pose_update` composes on the score result's `search_centres`) and the change metrics all
+  follow them.
+- `window_supports` gives the resident pass 2 each image's 99.9% supports over its kept rotations and that window
+  (`searched_supports` of `run_dense_k_class_em_adaptive`, in place of pass 1).
 
 The measurements behind each rule and the benchmark results are in
 [bnb_pose_search.md](../development/bnb_pose_search.md).
