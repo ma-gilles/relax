@@ -2776,30 +2776,37 @@ One E-step (`iteration_loop._expectation` with `ranks`):
 
 1. Rank 0 sends the E-step: the model fields it reads (theta, noise, offset variance, direction prior), the two
    id groups and the iteration (`ExpectationTask`). Every rank prepares the same streams.
-2. Rank 0 plans the tile size on its device and sends it (`TilePlan`); every rank cuts the same tiles with it
-   (`tilt_tiles`, or slices of each group for single particles). Another rank checks that its own plan holds
-   rank 0's size and fails otherwise. The device models must match (the run fingerprint compares them, with the
-   inputs, the code identity and the configuration).
-3. Each rank scores the tiles `assign_tiles` gives it: heaviest first (a tile's tilt images, or its images), each
-   to the least loaded rank. The assignment is a function of the tile costs and the number of ranks only.
-4. Each rank sums its tiles' volume statistics (`lhs_tri`, `residual_gradient`, `metric_trace`,
-   `exact_metric_trace`) per id group in tile order, as one GPU does (`TileSums`), and returns those sums and its
-   tiles' other statistics (`TileShare`).
-5. Rank 0 joins the shares (`_join_tile_shares`): each group's volume sums are the ranks' sums added in rank
+2. Rank 0 plans the tile size on its device, halves it until the E-step has at least four tiles per rank
+   (`_rank_tile_size`: a subtomogram batch of 200 particles makes five mixed tiles at the planned 150 particles
+   per tile), and sends it (`TilePlan`); every rank cuts the same tiles with it (`tilt_tiles`, or slices of each
+   group for single particles). Another rank checks that its own plan holds rank 0's size and fails otherwise.
+   The device models must match (the run fingerprint compares them, with the inputs, the code identity and the
+   configuration).
+3. The tiles form fixed blocks (`tile_blocks`): at most eight per rank, each a run of consecutive tiles of about
+   equal predicted cost (a tile's tilt images, or its images). The blocks are a function of the tile costs and the
+   number of ranks only. Rank 0 keeps the queue: one thread per other rank hands that rank the next block,
+   heaviest first, one ahead of the block it is scoring, while rank 0 scores blocks itself
+   (`LeaderTiles.run_blocks`). A rank whose tiles run slower than predicted takes fewer blocks.
+4. A block sums its tiles' volume statistics (`lhs_tri`, `residual_gradient`, `metric_trace`,
+   `exact_metric_trace`) per id group in tile order, as one GPU does (`TileSums`), and returns those sums with
+   its tiles' other statistics (`BlockShare`).
+5. Rank 0 joins the blocks (`_join_tile_shares`): each group's volume sums are the blocks' sums added in block
    order (`relax.parallel.channel.ordered_sum`); the tiles' other statistics are put back in tile order, and from
    there the E-step finishes as on one GPU: the noise sums, counts, log-likelihood, offset sums, rotation mass,
    the n-weighted posterior means and the concatenated embeddings and ids are formed over all tiles in tile order.
 
-What changes with the number of ranks. The selected particles, the halves, the tile list, the counts and every
-concatenation are exactly those of one GPU, and the scalar and per-noise-group sums are added in the same order.
-Only the volume sums are associated differently: one GPU forms `t1 + t2 + ... + tn` over the group's tiles; `R`
-ranks form `S0 + S1 + ... + S(R-1)`, `Sr` the tile-order sum of rank r's tiles. The update itself runs once, on
-rank 0, on these sums. The results therefore differ from one GPU's by float32 association alone, which
-the update's nonlinearity carries forward; a run with a given number of GPUs is reproducible run to run (no sum
-depends on which rank finished first), within each GPU's own run-to-run noise. A run on one GPU (no `--gpu`, or one device) takes the unchanged
+What changes with the number of ranks. The selected particles, the halves, the counts and every concatenation
+are exactly those of one GPU, and the scalar and per-noise-group sums are added in tile order. The volume sums
+are associated differently: one GPU forms `t1 + t2 + ... + tn` over the group's tiles; `R` ranks form
+`B0 + B1 + ... + B(m-1)`, `Bj` the tile-order sum of block j. Where the halving shrinks the tiles, the tiles
+themselves differ from one GPU's (a different GEMM shape per tile, the same per-image terms). The update itself
+runs once, on rank 0, on these sums. The results therefore differ from one GPU's at float32 rounding, which the
+update's nonlinearity carries forward; a run with a given number of GPUs is reproducible run to run (no sum
+depends on which rank scored a block or when), within each GPU's own run-to-run noise. A run on one GPU (no `--gpu`, or one device) takes the unchanged
 code path.
 
-Measured on the CPU (`tests/unit/ppca_initial_model/test_ppca_ranks.py`, Slurm jobs 7473156 and 7473606):
+Measured on the CPU (`tests/unit/ppca_initial_model/test_ppca_ranks.py`, Slurm jobs 7473156 and 7473606, with
+the first, static assignment of tiles to ranks; the blocks pass the same tests at the same tolerances, job 7474660):
 
 | Case | Largest relative difference to one rank (max abs difference / max magnitude) |
 | --- | --- |
@@ -2816,7 +2823,9 @@ writes byte-identical checkpoints and embeddings before (5f9e3e14) and after thi
 SGD (job 7473156).
 
 Cost. Every rank prepares the streams of every E-step (the projector upload and grids) and compiles the same
-programs; rank 0 alone runs the update, the logging and the checkpoints while the others wait. Each E-step moves
+programs; rank 0 alone runs the update, the logging and the checkpoints while the others wait. Each update's
+`iterations.jsonl` record holds its timing (`timing`: E-step phases, update, the previous checkpoint's write)
+and, on several GPUs, each rank's blocks, tiles, cost, busy seconds and E-step phases (`ranks`). Each E-step moves
 the model to every rank and each rank's volume sums (for box 128, q = 2: about 60 MB per id group) to rank 0,
 over an abstract Unix socket; rank 0 places them on its device to add them.
 
