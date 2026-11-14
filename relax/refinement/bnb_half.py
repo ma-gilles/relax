@@ -151,6 +151,7 @@ def _levels(
                 rotation_log_prior=priors[k],
                 children=children[k],
                 size=size,
+                step=step,
                 translations=translations,
                 translation_log_prior=offset_log_prior(
                     translations, pixel_size=pixel, sigma_offset_angstrom=sigma_offset_angstrom
@@ -240,6 +241,8 @@ def search_half(
         image_current_size=sampling.image_window_size,
         centre_radius=max(float(window_radius), 1.0),
         image_batch_size=settings.image_batch_size,
+        pixel_size=float(image_geometry.pixel_size_angstrom),
+        sigma_offset_angstrom=float(half.sigma_offset_angstrom),
         precision=settings.search_precision,
     )
     previous = particles.translations

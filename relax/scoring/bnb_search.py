@@ -49,7 +49,9 @@ class BnBLevel:
     their prior (``None``: flat); at a coarse level each entry bounds the prior of its descendants. ``children``
     ``[R_previous, max_children]`` lists, for each rotation of the previous level, this level's rotations under it
     (``-1`` pads; ``None`` at level 0). ``size`` is the level's Fourier window (a current size, even pixels).
-    ``translations`` ``[T, 2]`` are absolute offsets in pixels and ``translation_log_prior`` ``[T]`` their prior.
+    ``translations`` ``[T, 2]`` are the level's lattice of ``step`` pixels within the search radius, absolute offsets,
+    and ``translation_log_prior`` ``[T]`` their prior; a finer level scores a disk of the same step around each
+    image's centre instead (:func:`run_search`).
     """
 
     order: int
@@ -57,6 +59,7 @@ class BnBLevel:
     rotation_log_prior: np.ndarray | None
     children: np.ndarray | None
     size: int
+    step: float
     translations: np.ndarray
     translation_log_prior: np.ndarray
 
@@ -476,6 +479,89 @@ def window_centres(
     return best, spread, hold_radius
 
 
+def _level_pass(
+    prepared: _PreparedLevel,
+    dataset,
+    *,
+    parents: list[np.ndarray] | None,
+    children: np.ndarray | None,
+    pre_shifts: np.ndarray | None,
+    prior: tuple[float, float] | None,
+    pruning: BnBPruning,
+    coarse: bool,
+    centre_radius: float,
+    image_batch_size: int,
+    precision: str,
+    clock: dict,
+):
+    """One level over every image: each image's kept rotations, kept count, window centre (relative to its pre-shift),
+    offset spread and hold radius, and best ``(rotation, translation)``.
+
+    ``parents`` holds each image's kept rotations of the previous level (None at level 0, which scores every rotation);
+    ``pre_shifts`` ``[N, 2]`` centre a local level's translations on each image (None: the absolute grid) and ``prior``
+    ``(pixel_size, sigma_offset_angstrom)`` gives them their offset prior, at ``pre_shift + t``.
+    """
+
+    from relax.io.batch_fetch import iter_indexed_batches
+
+    n_images = int(dataset.n_units)
+    translations = prepared.level.translations
+    table = centre_table(translations, centre_radius)
+    kept_rows: list[np.ndarray] = []
+    kept_counts = np.zeros(n_images, dtype=np.int32)
+    centres = np.zeros((n_images, 2), dtype=np.float64)
+    spread = np.zeros(n_images, dtype=np.float64)
+    hold = np.zeros(n_images, dtype=np.float64)
+    best_rotation = np.zeros(n_images, dtype=np.int64)
+    best_translation = np.zeros((n_images, 2), dtype=np.float64)
+    start = 0
+    for batch_data, _, _, _, _, _, indices in iter_indexed_batches(dataset, np.arange(n_images), image_batch_size):
+        end = start + len(indices)
+        count = end - start
+        tick = time.time()
+        weighted, image_term, weight, batch_size = _level_operands(prepared, batch_data, indices, start, end)
+        if pre_shifts is not None:
+            absolute = pre_shifts[start:end][:, None, :] + translations[None, :, :]
+            image_prior = offset_log_prior(absolute.reshape(-1, 2), pixel_size=prior[0], sigma_offset_angstrom=prior[1])
+            image_prior = image_prior.reshape(count, -1)
+            if batch_size > count:
+                image_prior = np.concatenate([image_prior, np.repeat(image_prior[:1], batch_size - count, axis=0)])
+            image_term = image_term + jnp.asarray(image_prior)
+        weighted.block_until_ready()
+        clock["operands"] += time.time() - tick
+        tick = time.time()
+        rows = None
+        if parents is not None:
+            parent_rows = np.full((batch_size, max(max((row.size for row in parents[start:end]), default=1), 1)), -1)
+            for i, row in enumerate(parents[start:end]):
+                parent_rows[i, : row.size] = row
+            rows = _expand_children(parent_rows, children)
+        mass, labels, translation_mass, best = _score_level(
+            prepared, weighted, image_term, weight, rows, precision=precision
+        )
+        mass.block_until_ready()
+        clock["scores"] += time.time() - tick
+        tick = time.time()
+        kept_device, n_kept = _keep(
+            mass, labels, pruning.mass_fraction, pruning.margin,
+            max_kept=int(pruning.max_kept) if coarse else int(mass.shape[1]),
+            min_kept=int(pruning.min_kept) if coarse else 0,
+        )
+        kept = np.asarray(kept_device)[:count]
+        kept_rows.extend(np.sort(row[row >= 0]).astype(np.int32) for row in kept)
+        kept_counts[start:end] = np.asarray(n_kept)[:count]
+        clock["keep"] += time.time() - tick
+        tick = time.time()
+        centres[start:end], spread[start:end], hold[start:end] = window_centres(
+            np.asarray(translation_mass)[:count], translations, centre_radius, table=table
+        )
+        best_rotation[start:end] = np.asarray(best[1])[:count]
+        best_translation[start:end] = translations[np.asarray(best[2])[:count]]
+        clock["centres"] += time.time() - tick
+        start = end
+    return kept_rows, kept_counts, centres, spread, hold, best_rotation, best_translation
+
+
 def run_search(
     levels: list[BnBLevel],
     request_fields: dict,
@@ -484,91 +570,87 @@ def run_search(
     image_current_size: int | None,
     centre_radius: float,
     image_batch_size: int,
+    pixel_size: float,
+    sigma_offset_angstrom: float,
     precision: str = "float32",
 ) -> BnBSearchResult:
     """Search every image of ``request_fields["experiment_dataset"]`` over ``levels`` (see the module docstring).
 
     ``request_fields`` are the :class:`~relax.scoring.pass1_request.Pass1Request` fields every level shares (dataset,
-    noise, projector, corrections, sizes and execution settings), with ``image_pre_shifts`` None: the search grid is
-    absolute. ``centre_radius`` (pixels) is the window the centre is averaged over. ``precision`` is the score
-    products' algorithm (``"float32"`` or ``"tf32"``; the search only ranks, the window significance scores in float32). Coarse levels keep at most
-    ``pruning.max_kept`` rotations per image; the last level keeps every rotation its rules keep.
+    noise, projector, corrections, sizes and execution settings), with ``image_pre_shifts`` None. Level 0 scores the
+    absolute translation grid of ``levels[0]``; each finer level pre-shifts every image to the previous level's centre
+    and scores a disk of its own step around it, wide enough for 90% of the images' 99% hold radii at the previous
+    level (at least 2.5 of its step and ``centre_radius`` plus a step, at most the search radius), with the offset
+    prior (``pixel_size``, ``sigma_offset_angstrom``) at the absolute offsets. ``centre_radius`` (pixels) is the
+    RELION window the centres are chosen for. ``precision`` is the score products' algorithm (``"float32"`` or
+    ``"tf32"``). Coarse levels keep at most ``pruning.max_kept`` rotations per image; the last level keeps every
+    rotation its rules keep.
     """
 
-    from relax.io.batch_fetch import iter_indexed_batches
-
     t0 = time.time()
-    prepared = [plan_level(level, request_fields, image_current_size=image_current_size) for level in levels]
     dataset = request_fields["experiment_dataset"]
     n_images = int(dataset.n_units)
-    last = levels[-1]
     n_levels = len(levels)
-    centres = np.zeros((n_images, 2), dtype=np.float64)
-    spread = np.zeros(n_images, dtype=np.float64)
-    hold_radius = np.zeros(n_images, dtype=np.float64)
-    best_rotation = np.zeros(n_images, dtype=np.int64)
-    best_translation = np.zeros((n_images, 2), dtype=np.float64)
+    search_radius = float(np.max(np.linalg.norm(levels[0].translations, axis=1), initial=0.0))
+    clock = {"plan": 0.0, "operands": 0.0, "scores": 0.0, "keep": 0.0, "centres": 0.0}
     kept_counts = np.zeros((n_levels, n_images), dtype=np.int32)
-    candidates: list[np.ndarray] = []
-    centre_lookup = centre_table(last.translations, centre_radius)
-    clock = {"plan": time.time() - t0, "operands": 0.0, "scores": 0.0, "keep": 0.0, "centres": 0.0}
-    start = 0
-    for batch_data, _, _, _, _, _, indices in iter_indexed_batches(dataset, np.arange(n_images), image_batch_size):
-        end = start + len(indices)
-        count = end - start
-        kept = None
-        for level_index, level in enumerate(prepared):
-            tick = time.time()
-            weighted, image_term, weight, batch_size = _level_operands(level, batch_data, indices, start, end)
-            weighted.block_until_ready()
-            clock["operands"] += time.time() - tick
-            tick = time.time()
-            level_candidates = None if kept is None else _expand_children(kept, level.level.children)
-            mass, labels, translation_mass, best = _score_level(
-                level, weighted, image_term, weight, level_candidates, precision=precision
-            )
-            mass.block_until_ready()
-            clock["scores"] += time.time() - tick
-            tick = time.time()
-            coarse = level_index < n_levels - 1
-            kept_device, n_kept = _keep(
-                mass, labels, pruning.mass_fraction, pruning.margin,
-                max_kept=int(pruning.max_kept) if coarse else int(mass.shape[1]),
-                min_kept=int(pruning.min_kept) if coarse else 0,
-            )
-            kept = np.asarray(kept_device)
-            kept_counts[level_index, start:end] = np.asarray(n_kept)[:count]
-            clock["keep"] += time.time() - tick
+    parents = None
+    pre_shifts = None
+    hold = None
+    used_levels = []
+    for index, level in enumerate(levels):
+        fields = dict(request_fields)
+        if index > 0:
+            previous_step = float(used_levels[-1].step)
+            radius = float(np.quantile(hold, 0.9)) if hold.size else 0.0
+            radius = min(max(radius, 2.5 * previous_step, float(centre_radius) + level.step), search_radius)
+            level = replace(level, translations=translation_grid(radius, level.step))
+            fields["image_pre_shifts"] = pre_shifts
+        level = replace(level, translation_log_prior=(
+            level.translation_log_prior if index == 0 else np.zeros(level.translations.shape[0], np.float32)
+        ))
+        used_levels.append(level)
         tick = time.time()
-        candidates.extend(np.sort(row[row >= 0]).astype(np.int32) for row in kept[:count])
-        centres[start:end], spread[start:end], hold_radius[start:end] = window_centres(
-            np.asarray(translation_mass)[:count], last.translations, centre_radius, table=centre_lookup
+        prepared = plan_level(level, fields, image_current_size=image_current_size)
+        clock["plan"] += time.time() - tick
+        parents, kept_counts[index], local_centres, spread, hold, best_rotation, best_translation = _level_pass(
+            prepared,
+            dataset,
+            parents=parents,
+            children=level.children,
+            pre_shifts=pre_shifts,
+            prior=(float(pixel_size), float(sigma_offset_angstrom)),
+            pruning=pruning,
+            coarse=index < n_levels - 1,
+            centre_radius=centre_radius,
+            image_batch_size=image_batch_size,
+            precision=precision,
+            clock=clock,
         )
-        best_rotation[start:end] = np.asarray(best[1])[:count]
-        best_translation[start:end] = last.translations[np.asarray(best[2])[:count]]
-        clock["centres"] += time.time() - tick
-        start = end
+        base = np.zeros((n_images, 2)) if pre_shifts is None else pre_shifts
+        pre_shifts = base + local_centres
+        best_translation = base + best_translation
     seconds = time.time() - t0
     logger.info("BnB search time: %s", {name: round(value, 1) for name, value in clock.items()})
     logger.info(
         "BnB search: %d images, levels %s (sizes %s, translations %s), kept rotations per level median %s max %s, "
         "%.1fs",
         n_images,
-        [lv.order for lv in levels],
-        [lv.size for lv in levels],
-        [int(lv.translations.shape[0]) for lv in levels],
+        [lv.order for lv in used_levels],
+        [lv.size for lv in used_levels],
+        [int(lv.translations.shape[0]) for lv in used_levels],
         [int(np.median(row)) for row in kept_counts],
         [int(np.max(row, initial=0)) for row in kept_counts],
         seconds,
     )
     return BnBSearchResult(
-        centres=centres,
-        candidates=candidates,
+        centres=pre_shifts,
+        candidates=parents,
         kept_counts=kept_counts,
         best_rotation=best_rotation,
         best_translation=best_translation,
         translation_spread=spread,
-        hold_radius=hold_radius,
+        hold_radius=hold,
         seconds=seconds,
     )
 
