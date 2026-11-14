@@ -10,6 +10,9 @@ particle on the stage's full pose grid and keeps
   ``translations_px`` / ``translations_ang`` (P, 3, the 3D shift in the tomogram frame);
 - ``pmax`` (the top pose's posterior probability) and ``llr`` (log evidence ratio per image, a junk score);
 - ``z`` (P, q): the posterior latent mean, the PPCA embedding (``embeddings.npz``'s ``z`` for the last checkpoint);
+- ``z_orth`` (P, q) and ``pc_scales`` (q,): ``z`` in an orthonormal PC basis, scaled by how much map each direction
+  moves (relax.ppca_initial_model.latents): distances between ``z_orth`` are distances between the particles' maps.
+  Use ``z_orth`` (centred, not standardized per axis) for UMAP and clustering;
 - ``particle_ids`` (row of the particle STAR the run read) and ``particle_names`` (``rlnTomoParticleName``).
 
 ``--star FILE`` also writes the run's input particle STAR (all its blocks) with each particle's ``rlnAngleRot/Tilt/Psi``,
@@ -48,6 +51,7 @@ def main(argv=None):
     from relax.ppca_initial_model import checkpoint
     from relax.ppca_initial_model.config import Config
     from relax.ppca_initial_model.iteration_loop import _rotation_grid
+    from relax.ppca_initial_model.latents import box_from_theta, orthonormal_latents
     from relax.ppca_initial_model.tomo import free_low_shells, load_tilt_tile, tilt_tiles
     from relax.ppca_refinement.config import GeometryConfig, ScheduleConfig, ScoringConfig
     from relax.ppca_refinement.full_row_stream import (
@@ -135,9 +139,11 @@ def main(argv=None):
     names = starfile.read(read_optimisation_set(ios)[0])["particles"]["rlnTomoParticleName"].to_numpy()
     out = a.out or a.run_dir / f"export_{state.iteration:04d}.npz"
     R = rotations[rot]
+    z_orth, pc_scales, _ = orthonormal_latents(np.asarray(state.theta), z, box_from_theta(state.theta))
     np.savez(
         out, particle_ids=ids, particle_names=names[ids].astype(str), rotations=R, eulers_deg=euler_matrix_to_angles(R),
         translations_px=translations[trans], translations_ang=translations[trans] * particles.voxel_size, z=z,
+        z_orth=z_orth, pc_scales=pc_scales,
         pmax=np.concatenate([k["pmax"] for k in keep]), llr=np.concatenate([k["llr"] for k in keep]),
         iteration=state.iteration, healpix_order=hp, radius=radius, checkpoint=str(ckpt),
     )
