@@ -55,12 +55,13 @@ class TilePlan:
 @dataclass(frozen=True)
 class TileShare:
     """A rank's part of E-step ``key``: each of its tiles' statistics by tile index (without the volumes, which
-    ``totals`` holds: per id group, the volume sums over its tiles in tile order), and its seconds."""
+    ``totals`` holds: per id group, the volume sums over its tiles in tile order), its seconds and their breakdown."""
 
     key: int
     parts: dict
     totals: list
     seconds: float
+    timing: dict  # the rank's E-step breakdown (iteration_loop._Laps)
 
 
 @dataclass(frozen=True)

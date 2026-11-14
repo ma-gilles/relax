@@ -231,6 +231,23 @@ class TileSums:
         return sums
 
 
+class _Laps:
+    """Host seconds between marks, summed per name (an E-step's or an update's breakdown for iterations.jsonl).
+    Marks never wait for the device: a phase's device work that finishes in a later phase is counted there."""
+
+    def __init__(self):
+        self.start = self.last = time.perf_counter()
+        self.seconds = {}
+
+    def mark(self, name):
+        now = time.perf_counter()
+        self.seconds[name] = round(self.seconds.get(name, 0.0) + now - self.last, 4)
+        self.last = now
+
+    def record(self):
+        return {**self.seconds, "total": round(self.last - self.start, 4)}
+
+
 def _tile_cost(dataset, tile):
     """A tile's predicted cost for :func:`relax.ppca_initial_model.ranks.assign_tiles`: its images (a subtomogram
     particle's tilt images each)."""
@@ -527,6 +544,7 @@ def _expectation(
     share of the tiles; rank 0 returns the joined result and the other ranks None (section 18 of
     docs/math/vdam_ppca_algorithm.md)."""
     share = None
+    laps = _Laps()
     if ranks is not None:
         if not config.stream_coarse_recompute:
             raise NotImplementedError("Several GPUs split the streamed engine's tiles only")
@@ -684,10 +702,13 @@ def _expectation(
             owners = [owner for _, owner, _ in cut(size)]
             return max(owners.count(owner) for owner in set(owners)) if owners else 0
 
+        laps.mark("prepare")
         tile_size = plan_tile_images(streams[0], config.image_batch_size, tiles_per_call=tiles_per_call)
+        laps.mark("plan")
         if share is not None:
             # The tile size orders the update's sums: every rank cuts the tiles with rank 0's plan.
             tile_size = share.plan(tile_size)
+            laps.mark("plan_exchange")
         # GPU streams pad a full tile's image axis with zero images to a multiple of SHIFT_ALIGN: the Gram and
         # metric GEMMs, whose operands have one row or column per image, then run cuBLAS's aligned kernels
         # (150 images: align1, about 1.6x slower). Padding images add exact zeros (drop_padding); the plan's
@@ -718,6 +739,7 @@ def _expectation(
             accumulate, embed = accumulate_oversampled_tiles, oversampled_tile_embeddings
         else:
             accumulate, embed = accumulate_full_row_tiles, full_row_tile_embeddings
+        laps.mark("prepare")
         tiles = cut(tile_size)
         parts = [None] * len(tiles)
         mine = set(range(len(tiles)))
@@ -748,6 +770,7 @@ def _expectation(
                 )
                 for k in members
             ]
+            laps.mark("coarse")
             if embeddings_only:
                 for k, part in zip(members, [embed(stream, *item) for item in items]):
                     parts[k] = part
@@ -757,6 +780,7 @@ def _expectation(
                     sums[tiles[members[position]][0]].add(members[position], part)
 
                 accumulate(stream, items, consume=consume)
+            laps.mark("tiles")
         rank_record = None
         if share is not None:
             own = ranks_module.TileShare(
@@ -766,14 +790,17 @@ def _expectation(
                 else {k: part for group_sums in sums for k, part in zip(group_sums.order, group_sums.parts())},
                 [{} if embeddings_only else group_sums.totals for group_sums in sums],
                 0.0,
+                laps.record(),
             )
             shares = share.exchange(own, costs, owners)
             if shares is None:  # another rank: its share went to rank 0
                 return None
+            laps.mark("gather")
             joined_parts, joined_sums = _join_tile_shares(shares, tiles, len(ids), embeddings_only)
             parts = joined_parts if embeddings_only else parts
             sums = sums if embeddings_only else joined_sums
-            rank_record = share.record
+            laps.mark("join")
+            rank_record = {**share.record, "timing": [laps.record(), *(s.timing for s in shares[1:])]}
         tiles = [(group, tile_ids) for group, _, tile_ids in tiles]
         results = []
         for group in range(len(ids)):
@@ -815,6 +842,7 @@ def _expectation(
                     / sum(part.diagnostics["scored_rows"] for part in group_parts),
                     "scored_image_rows": sum(part.diagnostics["scored_image_rows"] for part in group_parts),
                     "supported_image_rows": sum(part.diagnostics["supported_image_rows"] for part in group_parts),
+                    "timing": laps.record(),
                     **({} if rank_record is None else {"ranks": rank_record}),
                 }
             )
@@ -949,6 +977,7 @@ def run(
     stage_tile_sizes = {}  # compiled tile shapes seen per stage (radius, HEALPix order)
     log = _ModelLog(output / "iterations.jsonl")
     state_start = state.iteration
+    checkpoint_seconds = None  # the previous update's checkpoint, recorded with this update
     for iteration in range(state_start + 1, end + 1):
         started = time.monotonic()
         count, step, fudge = config.schedule(iteration, dataset.n_images)
@@ -965,6 +994,7 @@ def run(
             dataset, state, config, halves, iteration, diameter_ang=diameter_ang, noise_inflation=noise_inflation,
             ranks=ranks,
         )  # fmt: skip
+        estep_seconds = time.monotonic() - started
         radius = min(config.stage(iteration)[0], dataset.grid_size // 2 - 1)
         # The update's own support: the rows bandlimit_and_mask keeps below.
         support = radii <= radius
@@ -1182,6 +1212,13 @@ def run(
                 "offset_variance_px2": offset_variance,
                 "dtype": str(theta.dtype),
                 "elapsed_seconds": time.monotonic() - started,
+                # Host seconds: the E-step (and its phases), the update after it, the previous checkpoint's write.
+                "timing": {
+                    "estep": round(estep_seconds, 4),
+                    "update": round(time.monotonic() - started - estep_seconds, 4),
+                    "estep_phases": stats[0].diagnostics.get("timing"),
+                    "previous_checkpoint": checkpoint_seconds,
+                },
             }
         )
         if "oversampling" in stats[0].diagnostics:
@@ -1215,11 +1252,14 @@ def run(
         log.append(diagnostics, theta)
         # A stop request ends the run after this iteration's checkpoint, whatever the checkpoint interval.
         stop = stop_file is not None and Path(stop_file).exists()
+        checkpoint_seconds = None
         if stop or iteration % config.checkpoint_interval == 0 or iteration == end:
+            saving = time.monotonic()
             log.wait()  # the checkpoint's iteration is logged first
             if newton is not None:
                 newton.save(output / f"newton_sgd_{iteration:04d}.npz")
             checkpoint.save(output / f"checkpoint_{iteration:04d}.npz", state, config, identity)
+            checkpoint_seconds = round(time.monotonic() - saving, 4)
         if stop:
             break
     log.close()
