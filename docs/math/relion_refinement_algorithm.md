@@ -634,7 +634,7 @@ half's priors are built, [`bnb_half.search_half`](../../relax/scoring/bnb_half.p
   within `--bnb_margin` nats of its best and its `--bnb_min_kept` best. The next level scores their children (the
   finer rotations within 0.75 of the parent's angular step) at its order's coarse size, on a disk of translations
   around each image's previous centre (images pre-shifted there); the last level is the iteration's own grid.
-- The window widens when 75% of the particles' 99% offset radii exceed RELION's (at most the search radius and six
+- The window widens when half of the particles' 99% offset radii exceed RELION's (at most the search radius and six
   steps per radius; `recentred_window` builds the grid). Each image's centre is its previous offset (the origin
   before any) unless the whole pixel whose window, at that radius, holds the most posterior mass of the offset holds
   `--bnb_recentre_gain` more of it. The controller takes the centres as the half's previous offsets, so the rounded

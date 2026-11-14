@@ -34,8 +34,8 @@ For each image of a half, at the iteration's HEALPix order `n` (`relax/scoring/b
 3. The next level scores the children of the kept rotations at the next order (the finer rotations within 0.75 of
    the parent's angular step: the cells overlap) at that order's coarse size, on a disk of translations around
    each image's level-0 centre. The last level is the iteration's own coarse grid.
-4. The RELION window widens, when needed, to the radius that holds 99% of the offset posterior of 75% of the
-   particles (`--bnb_window_quantile`), at most the search radius and six steps per radius.
+4. The RELION window widens, when needed, to the radius that holds 99% of the offset posterior of half of the
+   particles (`--bnb_window_quantile` 0.5), at most the search radius and six steps per radius.
 5. Each image's window centre is its previous offset (the origin before any) unless the whole pixel whose window holds
    the most posterior mass of the offset holds `--bnb_recentre_gain` (0.1) more of it; then the window moves there.
    The centre becomes the RELION pre-shift: the offset prior centres, the reported offsets

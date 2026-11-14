@@ -116,7 +116,7 @@ class BnBSearchOptions:
     # The search's score products ("tf32": TensorFloat-32 inputs, float32 accumulation, on GPUs that have it); the
     # window significance and pass 2 score in float32 either way.
     search_precision: Literal["float32", "tf32"] = "float32"
-    window_quantile: float = 0.75
+    window_quantile: float = 0.5
     window_steps: float = 6.0
     recentre_gain: float = 0.1
 

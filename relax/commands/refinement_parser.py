@@ -205,7 +205,7 @@ def parse_refinement_args(argv=None):
         "and later), the window significance and pass 2 stay float32",
     )
     parser.add_argument(
-        "--bnb_window_quantile", type=float, default=0.75,
+        "--bnb_window_quantile", type=float, default=0.5,
         help="bnb: widen the translation window to hold 99%% of the offset posterior of this fraction of the "
         "particles (0 keeps RELION's range)",
     )
