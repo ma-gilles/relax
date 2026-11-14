@@ -899,7 +899,10 @@ def plan_job_chunk(ostream: OversampledStream, n_images: int, *, memory_bytes=No
     unshifted operands and job results."""
     if memory_bytes is None and device_bytes is None:
         # The device probes run nvidia-smi (tens of ms); a stage's shapes are planned once.
-        key = (plan_shape_key(ostream.fine), int(n_images), getattr(ostream.fine.device, "id", None))
+        key = (
+            plan_shape_key(ostream.fine), int(n_images), getattr(ostream.fine.device, "id", None),
+            ostream.fine.tile_headroom,
+        )  # fmt: skip
         if key not in _JOB_CHUNKS:
             memory_bytes, device_bytes = available_bytes(ostream.fine)
             _JOB_CHUNKS[key] = plan_job_chunk(ostream, n_images, memory_bytes=memory_bytes, device_bytes=device_bytes)

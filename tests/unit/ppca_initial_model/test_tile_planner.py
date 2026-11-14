@@ -126,6 +126,21 @@ def _plan_checks(stream):
     return planned
 
 
+def test_a_larger_tile_headroom_plans_smaller_tiles_inside_its_budget(monkeypatch):
+    """``tile_headroom`` (``--ppca-tile-headroom``) replaces the planner's 10%: the plan keeps that share of the
+    device unplanned, and None is the default."""
+    _program_stand_in(monkeypatch)
+    stream = _tilt_stream()
+    device = 16 * GIB
+    available = device - _resident(stream)
+    default = plan_tile_images(stream, 300, memory_bytes=available, device_bytes=device)
+    assert plan_tile_images(stream._replace(tile_headroom=None), 300, memory_bytes=available, device_bytes=device) == default
+    wide = stream._replace(tile_headroom=0.4)
+    planned = plan_tile_images(wide, 300, memory_bytes=available, device_bytes=device)
+    assert 1 <= planned < default
+    assert tile_bytes(wide, planned) <= available - 0.4 * device
+
+
 def test_radius_31_tilt_stage_fits_a_16_gb_card(monkeypatch):
     """The planned tile's counted bytes stay inside a 16 GB card's budget (the GPU test below uses the
     compiled programs)."""

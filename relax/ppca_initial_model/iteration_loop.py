@@ -655,7 +655,7 @@ def _expectation(
                     tile_loader=load_tilt_tile if tilts else None,
                     pass2_mass_floor=config.pass2_mass_floor,
                     occupancy=config.occupancy,
-                )
+                )._replace(tile_headroom=config.tile_headroom)
                 for group_nv in ([nvs] if tilts else nvs)
             ]
 

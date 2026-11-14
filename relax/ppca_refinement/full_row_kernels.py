@@ -232,6 +232,9 @@ class FullRowStream(NamedTuple):
     # Prior probability that an image holds a placed copy of the model, against an explicit empty component
     # (relax/ppca_refinement/occupancy.py). None: every image holds one (no empty component).
     occupancy: float | None = None
+    # Share of the device's memory the tile plan leaves unplanned (full_row_tile_plan.fragmentation_budget).
+    # None: TILE_FRAGMENTATION_HEADROOM.
+    tile_headroom: float | None = None
 
 
 def full_row_pose_log_prior(

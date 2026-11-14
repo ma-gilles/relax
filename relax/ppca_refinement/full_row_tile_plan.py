@@ -32,8 +32,14 @@ logger = logging.getLogger("relax.ppca_refinement.full_row_stream")  # the strea
 
 
 # Device memory a tile plan leaves unplanned for allocator fragmentation and XLA program
-# temporaries the plan does not count, as a share of the device's memory.
+# temporaries the plan does not count, as a share of the device's memory; a stream's tile_headroom
+# replaces it (relax ppca_initial_model --ppca-tile-headroom).
 TILE_FRAGMENTATION_HEADROOM = 0.10
+
+
+def tile_headroom(stream: FullRowStream) -> float:
+    """The stream's share of the device memory left unplanned: its ``tile_headroom``, else the default."""
+    return TILE_FRAGMENTATION_HEADROOM if stream.tile_headroom is None else float(stream.tile_headroom)
 
 
 def _window_pixels(stream: FullRowStream) -> int:
@@ -106,7 +112,7 @@ def tile_program_bytes(stream: FullRowStream, n_images: int) -> int:
     shape and size. These are separate compiles from the tiles' own (their operands' device
     placement differs, so the cache keys do): about 0.3 s per stage on A100 at EMPIAR-10076's shapes.
     """
-    key = (plan_shape_key(stream), int(n_images), getattr(stream.device, "id", None))
+    key = (plan_shape_key(stream), int(n_images), getattr(stream.device, "id", None), tile_headroom(stream))
     if key not in _PROGRAM_BYTES:
         static, block = stream.static, stream.rotation_block_size
         capacity = len(stream.block_starts) * block
@@ -230,7 +236,7 @@ def plan_tile_images(
 def _planned_tile_images(stream, requested: int, memory_bytes, device_bytes, *, pipelined):
     if memory_bytes is None and device_bytes is None:
         # The device probes run nvidia-smi (tens of ms); a stage's shapes are planned once.
-        key = (plan_shape_key(stream), requested, stream.device.id, pipelined)
+        key = (plan_shape_key(stream), requested, stream.device.id, pipelined, tile_headroom(stream))
         if key not in _PLANS:
             _PLANS[key] = _planned_tile_images(stream, requested, *available_bytes(stream), pipelined=pipelined)
             if stream.static.cuda_kernels:
@@ -262,7 +268,7 @@ def _planned_tile_images(stream, requested: int, memory_bytes, device_bytes, *, 
         budget_bytes / gib,
         memory_bytes / gib,
         (device_bytes or memory_bytes) / gib,
-        100 * TILE_FRAGMENTATION_HEADROOM,
+        100 * tile_headroom(stream),
         stream_tile_bytes(stream, planned) / gib,
         tile_program_bytes(stream, planned) / gib,
         resident / gib,
@@ -295,7 +301,7 @@ def plan_shape_key(stream: FullRowStream) -> tuple:
 
 
 def fragmentation_budget(stream, memory_bytes, device_bytes):
-    """``(budget, device_bytes)``: ``memory_bytes`` less :data:`TILE_FRAGMENTATION_HEADROOM` of the device's memory.
+    """``(budget, device_bytes)``: ``memory_bytes`` less :func:`tile_headroom` of the device's memory.
 
     ``device_bytes`` None on a GPU stream (what :func:`available_bytes` returns there) is the device's memory
     limit; on a CPU stream, or when no total is known, the headroom is taken of ``memory_bytes``.
@@ -304,7 +310,7 @@ def fragmentation_budget(stream, memory_bytes, device_bytes):
         from relax.runtime import memory_budget as budget
 
         device_bytes = budget.device_memory_limit_bytes(None)  # PPCA takes no EngineTuning: the device's own memory
-    return memory_bytes - TILE_FRAGMENTATION_HEADROOM * (device_bytes or memory_bytes), device_bytes
+    return memory_bytes - tile_headroom(stream) * (device_bytes or memory_bytes), device_bytes
 
 
 def available_bytes(stream):

@@ -87,6 +87,9 @@ class Config:
     # 2 gives order 3 stages a coarse pass at order 2 (one level, as RELION's oversampling 1) and order 4 stages
     # one at order 2 too (two levels, as RELION's oversampling 2). A runtime setting, like tilt_coarse_pass.
     tilt_coarse_order: int | None = None
+    # Share of the device's memory each tile plan leaves unplanned (None: the planner's 10%,
+    # full_row_tile_plan.TILE_FRAGMENTATION_HEADROOM). More shrinks the planned tiles. A runtime setting.
+    tile_headroom: float | None = None
     # Newton SGD (docs/math/ppca_momentum_sgd.md, "Newton SGD"; momentum SGD with momentum 0). sgd_direction "coupled" steps
     # along the per-frequency H_f^-1 G_f, scaled at the first update to the split-curvature step's norm.
     # sgd_pc_gate_floor F multiplies the PC step per shell by clip(rho, F, 1), rho the moving correlation of the
@@ -290,6 +293,8 @@ class Config:
             raise ValueError("TF32 GEMMs apply to the streamed engines only")
         if self.preread_images not in ("auto", "on", "off"):
             raise ValueError("Image preread must be auto, on or off")
+        if self.tile_headroom is not None and not 0 <= self.tile_headroom < 1:
+            raise ValueError(f"tile_headroom must be in [0, 1), got {self.tile_headroom}")
         if not 0 <= self.pass2_mass_floor < 1:
             raise ValueError("The pass-2 mass floor must be in [0, 1)")
         if self.sgd_direction not in ("trace", "coupled"):
