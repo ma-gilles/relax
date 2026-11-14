@@ -11,10 +11,10 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 import numpy as np
 
-from relax.refinement.refinement_options import BnBSearchOptions, RefinementOptions
 from relax.scoring.bnb_search import (
     BnBLevel,
     BnBPruning,
@@ -26,6 +26,9 @@ from relax.scoring.bnb_search import (
     translation_grid,
     window_significance,
 )
+
+if TYPE_CHECKING:
+    from relax.refinement.refinement_options import BnBSearchOptions, RefinementOptions
 
 logger = logging.getLogger(__name__)
 

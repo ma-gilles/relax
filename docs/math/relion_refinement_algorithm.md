@@ -618,6 +618,33 @@ current/previous rotation and pixel-offset stacks consumed by hidden-variable
 tracking. Missing and malformed stacks retain the existing refusal behavior.
 The preceding-iteration convergence decision remains at the next top boundary.
 
+### Branch-and-bound global pose search (opt-in)
+
+`--pose_search bnb` (`AdaptiveOptions.pose_search`, K=1 single-particle, C1, one image shape, with
+`--offset_prior_units consistent`) replaces pass 1 of the global searches; RELION has no such step. Before the
+half's priors are built, [`bnb_half.search_half`](../../relax/scoring/bnb_half.py) runs
+[`bnb_search.run_search`](../../relax/scoring/bnb_search.py):
+
+- Level 0 scores every rotation of HEALPix order `max(2, n - 1)` (`n` the iteration's order) against every
+  translation on a lattice within `--bnb_translation_sigmas` widths of the offset prior around the origin, with no
+  pre-shift, at RELION's coarse size of that order. The score is pass 1's Gaussian score
+  `X - A/2 - C/2 - d0` on the operands and projections of a pass-1 plan of that window, with the direction prior and
+  the offset prior `-|t a|^2 / (2 sigma^2)`.
+- A level keeps, per image, the rotations whose translation-marginal posterior carries `--bnb_mass_fraction`, those
+  within `--bnb_margin` nats of its best and its `--bnb_min_kept` best. The next level scores their children (the
+  finer rotations within 0.75 of the parent's angular step) at its order's coarse size, on a disk of translations
+  around each image's previous centre (images pre-shifted there); the last level is the iteration's own grid.
+- Each image's centre is the whole pixel whose RELION window holds the most posterior mass of the offset. The
+  controller takes the centres as the half's previous offsets, so the rounded pre-shift, the `pdf_offset` centres,
+  the `wsum_sigma2_offset` centre, the metadata offsets (`prepare_particle_pose_update` composes on the score
+  result's `search_centres`) and the change metrics all follow them.
+- `recentred_window` widens the half's window when 75% of the particles' 99% offset radii exceed it (at most four
+  steps per radius), and `window_supports` gives the resident pass 2 each image's 99.9% supports over its kept
+  rotations and that window (`searched_supports` of `run_dense_k_class_em_adaptive`, in place of pass 1).
+
+The measurements behind each rule and the benchmark results are in
+[bnb_pose_search.md](../development/bnb_pose_search.md).
+
 
 ## 5. Accumulation, reconstruction and parameter updates
 

@@ -273,7 +273,7 @@ def run_dense_k_class_em_adaptive(
         retained samples.
     searched_supports : tuple or None
         K=1: ``(csr, counts)``, each image's coarse significant samples found by the branch-and-bound global search
-        (:func:`relax.refinement.bnb_half.window_supports`) in place of pass 1, and their counts.
+        (:func:`relax.scoring.bnb_half.window_supports`) in place of pass 1, and their counts.
     given_image_translations : np.ndarray or None
         ``[n_images, 2]`` with ``given_supports``: each image's own translation sample
         (pixels), applied to its images by pass 2 (``image_translations`` of the resident

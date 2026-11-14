@@ -76,7 +76,7 @@ class DensePriorSpec:
     """Direction, translation and class priors for one dense half.
 
     ``searched_supports`` are the K=1 pass-2 supports the branch-and-bound search found (``(csr, counts)``,
-    ``relax.refinement.bnb_half.window_supports``), which replace pass 1; None: pass 1 finds them.
+    ``relax.scoring.bnb_half.window_supports``), which replace pass 1; None: pass 1 finds them.
     """
 
     rotation_log_prior_k: object

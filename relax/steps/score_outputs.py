@@ -70,7 +70,7 @@ class HalfScoreResult:
 
     classes: ClassScoreSummary | None = None
     translation_search_base: object | None = None
-    # The window centres of a branch-and-bound search (relax.refinement.bnb_half), [N, 2] pixels: the offsets the
+    # The window centres of a branch-and-bound search (relax.scoring.bnb_half), [N, 2] pixels: the offsets the
     # reported ones are composed on instead of the previous ones. None: the previous offsets.
     search_centres: object | None = None
 

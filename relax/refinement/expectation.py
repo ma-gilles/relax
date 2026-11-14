@@ -14,7 +14,7 @@ import numpy as np
 from relax.classification.probes import KClassProbe
 from relax.numerics.precision import diagnostic_float64_pass2_matches
 from relax.reconstruction.resolution import ImageGeometry
-from relax.refinement import bnb_half, image_size_plans, iteration_planning, local_sampling
+from relax.refinement import image_size_plans, iteration_planning, local_sampling
 from relax.refinement.dense_half import score_half_dense_in_bpref_scope
 from relax.refinement.dense_specs import (
     DenseBatchPolicy,
@@ -44,6 +44,7 @@ from relax.sampling.orientation_priors import (
     relion_half_translation_prior_inputs,
     relion_translation_search_base,
 )
+from relax.scoring import bnb_half
 from relax.steps import half_inputs, shape_class_scoring
 from relax.steps.half_inputs import HalfScoringData
 from relax.steps.score_outputs import (

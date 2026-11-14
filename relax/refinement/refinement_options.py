@@ -147,7 +147,7 @@ class AdaptiveOptions:
     # (capped at the current size); the M-step keeps the current size. None: off.
     strict_highres_exp_angstrom: float | None = None
     # Pass 1 of the global K=1 searches: RELION's windowed coarse pass ("relion") or the branch-and-bound global
-    # search, which recentres every window and finds the supports itself ("bnb", relax.refinement.bnb_half).
+    # search, which recentres every window and finds the supports itself ("bnb", relax.scoring.bnb_half).
     pose_search: Literal["relion", "bnb"] = "relion"
     bnb: BnBSearchOptions = field(default_factory=BnBSearchOptions)
 
