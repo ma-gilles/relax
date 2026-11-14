@@ -1,4 +1,4 @@
-"""The channel between the ranks of a multi-GPU refinement: pickled records over an abstract Unix socket.
+"""The channel between the ranks of a multi-GPU run: pickled records over an abstract Unix socket.
 
 Rank 0 listens at the launcher's address (:mod:`relax_cli.launch`) and every other rank connects to it
 once, when its start-up is done. A message is a pickle (protocol 5) of one record. Its arrays travel as
@@ -9,6 +9,9 @@ Objects that each rank holds for the whole run (its datasets, its run context, i
 both ends name them in a table of run objects, and a reference to one travels as its name and is read back as
 the receiving rank's own object (``persistent_id``). The table must name the same objects on every rank.
 
+Rank 0 sends one record to every rank with :func:`broadcast` and receives one from each with :class:`Gather`
+(while it works); sums over ranks are added in rank order (:func:`ordered_sum`), never in arrival order.
+
 A closed connection is an error: a rank that waits on a rank that died raises :class:`RankFailed`.
 """
 
@@ -16,6 +19,7 @@ from __future__ import annotations
 
 import io
 import pickle
+import threading
 import time
 from multiprocessing.connection import Client, Connection, Listener
 
@@ -131,6 +135,60 @@ def receive(connection: Connection, objects: dict[str, object], *, peer: str):
     """Receive one record from ``peer`` (named in errors). The buffers are writable copies."""
 
     return decode(receive_frames(connection, peer=peer), objects)
+
+
+def broadcast(connections: dict[int, Connection], record, objects: dict[str, object]) -> None:
+    """Send one record to every rank of ``connections``, in rank order, encoded once."""
+
+    frames = encode(record, objects)
+    for rank in sorted(connections):
+        send_frames(connections[rank], frames)
+
+
+class Gather:
+    """One record from each rank of ``connections``, received on one thread per rank while the caller works.
+
+    The threads only move frames (no JAX); :meth:`records` waits for them and decodes on the calling thread, in
+    rank order, so each record is read as :func:`receive` reads it. The first failure (a closed connection) is
+    raised there.
+    """
+
+    def __init__(self, connections: dict[int, Connection]):
+        self._frames: dict[int, list] = {}
+        self._failures: list[BaseException] = []
+        self._threads = [
+            threading.Thread(target=self._receive, args=(rank, connection), daemon=True)
+            for rank, connection in sorted(connections.items())
+        ]
+        for thread in self._threads:
+            thread.start()
+
+    def _receive(self, rank: int, connection: Connection) -> None:
+        try:
+            self._frames[rank] = receive_frames(connection, peer=f"rank {rank}")
+        except BaseException as error:
+            self._failures.append(error)
+
+    def records(self, objects: dict[str, object]) -> dict[int, object]:
+        """Every rank's record, by rank in rank order, once all arrived."""
+
+        for thread in self._threads:
+            thread.join()
+        if self._failures:
+            raise self._failures[0]
+        frames, self._frames = self._frames, {}
+        return {rank: decode(frames.pop(rank), objects) for rank in sorted(frames)}
+
+
+def ordered_sum(values):
+    """``values[0] + values[1] + ...`` left to right: a sum over ranks in a fixed order, whatever order they
+    finished in. ``None`` entries (a rank with nothing to add) are skipped; all ``None`` is ``None``."""
+
+    total = None
+    for value in values:
+        if value is not None:
+            total = value if total is None else total + value
+    return total
 
 
 def listen(address: str, authkey: bytes) -> Listener:
