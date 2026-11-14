@@ -1,6 +1,6 @@
 # Branch-and-bound global pose search (`--pose_search bnb`)
 
-Record of the branch-and-bound pose search on branch `dev/bnb_pose_search` (from `main` at `0d9565a6`, with the
+Record of the branch-and-bound pose search on branch `dev/global_search` (from `main` at `0d9565a6`, with the
 offset study's `--offset_prior_units consistent` commit). It replaces pass 1 of the global K=1 searches with a
 search over every translation the offset prior allows, coarse to fine over HEALPix orders, after the
 branch-and-bound of cryoSPARC (Punjani et al. 2017, Nature Methods 14:290, Supplementary Note 2). The default
@@ -72,10 +72,119 @@ moved the particles by noise at order 3 (mean direction change 38-43 degrees per
 covering window, final GT FSC AUC 0.607 against 0.680), hence the recentring gain of step 5, decided at the
 widened window's radius (at RELION's radius 78% of the windows still moved).
 
+The window quantile, whole runs on the box-128 noise-1 set (below):
+
+| `--bnb_window_quantile` | Map FSC AUC | Order-3 iterations | Offset change at order 3, A per iteration | Wall (s) | GPU |
+| --- | ---: | ---: | --- | ---: | --- |
+| 0 (RELION's radius, recentred) | 0.672 | 4 | 5.5, 4.9, 4.8, 4.8 | 2221 | RTX 8000 |
+| 0.25 | 0.681 | 4 | 5.2, 4.7, 4.8, 4.8 | 3231 | V100-SXM2 |
+| 0.5 | 0.740 | 8 | 12.1, 10.4, 9.9, 9.0, 8.7, 8.2, 7.8, 8.0 | 4995 | RTX 8000 |
+| 0.5, seed 2 | 0.739 | 9 | 12.3, 10.4, 9.9, 9.2, 8.8, 8.2, 8.3, 7.9, 7.9 | 5287 | RTX 8000 |
+| 0.5, after the batching | 0.732 | 7 | 12.1, 10.4, 9.9, 9.0, 8.7, 8.1, 8.0 | 4887 | RTX 8000 |
+| 0.75 | 0.686 | 3 | 14.2, 11.9, 12.3 | 5182 | RTX 8000 |
+
+Widening at order 2 recovers particles (directions within 5 degrees after the order-2 iterations: 20% at 0, 26% at
+0.5). At order 3 the default's windows (6-9 px radius, 1.1-1.5 px step) let the offsets keep settling: their changes
+and the direction changes shrink by more than 3% every iteration, so RELION's convergence rule
+(`nr_iter_wo_large_hidden_variable_changes`) holds the global order-3 search for 7-9 iterations, and every one of
+them moves more particles to the right pose (direction error > 5 degrees with offset error > 3 px: 42% -> 27%). The
+other quantiles leave order 3 after 3-4 iterations while it still improves; the local searches that follow do not
+recover a misplaced particle. The run after the batching left order 3 one iteration earlier (its changes shrank by
+2.3%) and ends at 0.732; the spread of the three runs at 0.5 follows their order-3 iteration counts. At high SNR the
+quantile changes nothing (box-128 noise 0.25: AUC 0.952 at 0.5, 0.953 at 0.75).
+
+The search's own cost, one order-3 iteration of EMPIAR-10076 (box 128, 131,899 particles) continued from
+iteration 5, V100-PCIE-32GB, per half:
+
+| Batching | Search, s | Level 0 / level 1 scores, s | Iteration, s |
+| --- | ---: | --- | ---: |
+| 32 images in dataset order | 210 / 173 | 26 / 114, 26 / 103 | 468 |
+| 32 images in order of their parent counts | 78 / 77 | 24 / 18, 24 / 16 | 236 |
+| The same, 128 / 64 images (sized by grid and window) | 65 / 56 | 19 / 17, 19 / 14 | 199 |
+
+A batch scores as many candidates as its widest image, and a few images with broad posteriors keep the 4096-rotation
+cap; in dataset order they set the width of most batches. The resolution and `ave_Pmax` of the iteration are the
+same (8.22 A, 0.7740 / 0.7739).
+
 ## Results
 
-To be filled: the four benchmark sets of the offset study, each with RELION's search (`priorfix`) on the same
-branch and GPU model, and the offset study's runs for reference.
+`evaluate.py` of the offset study: the map FSC AUC against the true map after alignment (up to Nyquist), the offset
+and direction errors of the final poses against the true poses, the number of iterations and the wall time of the
+whole `relax refine` run (global search from zero offsets and the low-passed initial model). Times compare only
+within a GPU model. RELION's search is the offset study's `priorfix` (`--offset_prior_units consistent`, otherwise
+the defaults); BnB adds `--pose_search bnb`.
+
+5nrl box 128, noise 1 (`off15_b128_n20k`: 20k particles, 4.25 A per pixel, 15 A offsets per axis):
+
+| Search | Map FSC AUC | Offset error median (px) | < 0.5 px | > 3 px | Direction < 5 deg | Iterations | Wall (s) | GPU |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| RELION | 0.617 | 2.20 | 30% | 47% | 41% | 15 | 3418 | A100-PCIE-40GB |
+| BnB, window quantile 0.75 | 0.686 | 0.66 | 42% | 37% | 53% | 13 | 3964 | A100-PCIE-40GB |
+| RELION | 0.618 | 2.18 | 29% | 47% | 41% | 15 | 3963 | RTX 8000 |
+| BnB | 0.732 | 0.47 | 53% | 28% | 63% | 16 | 4887 | RTX 8000 |
+| BnB before the batching (seed 1 / 2) | 0.740 / 0.739 | 0.45 / 0.46 | 54% | 27% | 65% | 17 / 18 | 4995 / 5287 | RTX 8000 |
+| Covering window (offset study `win3_priorfix`) | 0.680 | 0.71 | 40% | 37% | 51% | 13 | 3212 | A100-SXM4-80GB |
+| RELION from the true poses (offset study `oracle_priorfix`) | 0.702 | 0.59 | 44% | 34% | 56% | 17 | 2513 | A100-SXM4-80GB |
+
+The same at noise 0.25 (`off15_b128_n20k_snr4`, four times the SNR):
+
+| Search | Map FSC AUC | Offset error median (px) | < 0.5 px | > 3 px | Direction < 5 deg | Iterations | Wall (s) | GPU |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| RELION | 0.953 | 0.10 | 95% | 5% | 95% | 21 | 1420 | A100-PCIE-40GB |
+| BnB, window quantile 0.75 | 0.953 | 0.11 | 98% | 2% | 98% | 16 | 1300 | A100-PCIE-40GB |
+| BnB before the batching | 0.952 | 0.10 | 98% | 2% | 98% | 17 | 1522 | V100-PCIE-32GB |
+
+8c9c, box 256 (`off15_8c9c_b256_n50k`: 50k particles, 2.125 A per pixel, 15 A offsets per axis):
+
+| Search | Map FSC AUC | Offset error median (px) | < 0.5 px | > 3 px | Direction < 5 deg | Iterations | Wall (s) | GPU |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| RELION | 0.849 | 0.14 | 77% | 23% | 77% | 28 | 4260 | V100-SXM2-32GB |
+| BnB before the batching | 0.861 | 0.18 | 97% | 2% | 98% | 18 | 3180 | V100-SXM2-32GB |
+| RELION | 0.852 | 0.17 | 77% | 22% | 78% | 34 | 3234 | A100-SXM4-80GB |
+| BnB | 0.861 | 0.18 | 97% | 2% | 98% | 18 | 2065 | A100-SXM4-80GB |
+| BnB, `--bnb_search_precision tf32` | 0.861 | 0.18 | 97% | 2% | 98% | 18 | 1971 | A100-SXM4-80GB |
+
+8c9c with 30 A offsets per axis (`off30_8c9c_b256_n50k`, 14.1 px):
+
+| Search | Map FSC AUC | Offset error median (px) | < 0.5 px | > 3 px | Direction < 5 deg | Iterations | Wall (s) | GPU |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| RELION's window at 15 px, step 3 (`--offset_range 15 --offset_step 3`) | 0.862 | 0.18 | 98% | 2% | 98% | 24 | 3447 | V100-SXM2-32GB |
+| BnB before the batching | 0.865 | 0.16 | 98% | 2% | 98% | 17 | 4237 | V100-SXM2-32GB |
+| BnB | 0.864 | 0.18 | 97% | 2% | 98% | 18 | 4195 | V100-SXM2-32GB |
+| RELION (offset study) | 0.752 | 11.91 | 2% | 65% | 36% | 23 | 1992 | A100-SXM4-80GB |
+| Covering window (offset study `win3_priorfix`) | 0.454 | 8.86 | 0% | 94% | 10% | 23 | 1485 | A100-SXM4-80GB |
+| BnB | 0.865 | 0.16 | 98% | 2% | 98% | 17 | 3097 | A100-SXM4-80GB |
+| RELION's window at 15 px, step 3 (offset study) | 0.862 | 0.18 | 98% | 2% | 98% | 24 | 2804 | A100-PCIE-40GB |
+
+EMPIAR-10076, box 128 (`empiar10076_b128`: 131,899 particles, 3.275 A per pixel; the reference is the consensus, the
+published poses and their map):
+
+| Search | Map FSC AUC | Offset error median (px) | < 0.5 px | > 3 px | Direction < 5 deg | Iterations | Wall (s) | GPU |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| RELION | 0.960 | 0.22 | 72% | 16% | 77% | 21 | 2108 | A100-SXM4-80GB |
+| BnB | 0.962 | 0.16 | 72% | 17% | 76% | 16 | 2126 | A100-SXM4-80GB |
+| BnB before the batching | 0.962 | 0.16 | 72% | 17% | 76% | 16 | 4065 | V100-SXM2-32GB |
+
+Runtime against RELION's search on the same GPU:
+
+- 8c9c: 25% faster on a V100 (3180 against 4260 s) and 36% faster on an A100 (2065 against 3234 s). An order-2
+  iteration costs more (64-96 against 21-28 s on the A100), but RELION runs 13 of them before its order-3 search and
+  BnB 4.
+- EMPIAR-10076: equal on an A100 (2126 against 2108 s, 16 against 21 iterations).
+- Box 128, noise 1: 23% slower on an RTX 8000 (4887 against 3963 s). The posteriors are broad, so the wider windows
+  send more samples to pass 2 (an order-2 iteration takes 476-536 s against 141-304 s), and BnB's order-3
+  iterations take 306-649 s against RELION's 72-90 s after its first one (2437 s).
+- 30 A offsets: 22% slower than RELION with the window set by hand on a V100 (4195 against 3447 s). BnB's order-2
+  iterations score the global grid (about 2500 translations, 94 s of search per half on an A100) where the hand-set
+  window scores 81. On an A100 BnB takes 3097 s against 1992 s of RELION's default window, which ends at 0.752.
+- `--bnb_search_precision tf32` (A100) leaves every 8c9c number unchanged and shortens the run by 5% (level-0
+  scores at order 2: 16.7 -> 4.5 s per half); the search is a small part of an 8c9c iteration. It stays opt-in.
+
+In short, on uncentred data BnB reaches the accuracy of a window that covers the offsets without that window being
+set (30 A offsets: 0.864 against 0.752, and 0.862 with the window set by hand), leaves 2% of the 8c9c particles
+more than 3 px off where RELION leaves 22-23% (65% at 30 A), and at noise 1 beats RELION started from the true poses
+(0.732-0.740 against 0.702) and leaves 28% of the particles more than 3 px off against RELION's 47%. On EMPIAR-10076
+and at high SNR it equals RELION.
 
 ## Not covered
 
