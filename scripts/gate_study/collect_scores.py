@@ -125,9 +125,11 @@ def table(work, tag, arms, seeds, reference):
             ref = np.asarray([y for _, y in pairs])
             sign = 1 if higher else -1
             spread = ref.max() - ref.min()
-            if len(pairs) == len(seeds) and np.all(sign * diff > 0) and sign * diff.mean() > spread:
+            if len(pairs) < len(seeds):  # PREDECLARED 2026-11-14: a row not scored leaves the dataset undecidable
+                verdict = f"not decidable ({len(pairs)} of {len(seeds)} pairs)"
+            elif np.all(sign * diff > 0) and sign * diff.mean() > spread:
                 verdict = "better beyond spread"
-            elif len(pairs) == len(seeds) and np.all(sign * diff < 0) and -sign * diff.mean() > spread:
+            elif np.all(sign * diff < 0) and -sign * diff.mean() > spread:
                 verdict = "worse beyond spread"
             else:
                 verdict = "within spread"
