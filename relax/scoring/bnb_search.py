@@ -62,12 +62,14 @@ class BnBLevel:
 
 @dataclass(frozen=True)
 class BnBPruning:
-    """How a level keeps rotations for the next: the smallest set carrying ``mass_fraction`` of the image's
-    translation-marginal posterior, every rotation within ``margin`` nats of its best, at most ``max_kept``."""
+    """How a coarse level keeps rotations for the next: the smallest set carrying ``mass_fraction`` of the image's
+    translation-marginal posterior, every rotation within ``margin`` nats of its best and its ``min_kept`` best, at most
+    ``max_kept``. The last level keeps by the first two rules alone."""
 
     mass_fraction: float = 0.9999
     margin: float = 10.0
     max_kept: int = 1024
+    min_kept: int = 16
 
 
 @dataclass(frozen=True)
@@ -76,8 +78,9 @@ class BnBSearchResult:
 
     ``centres`` ``[N, 2]`` are the window centres in pixels (integers, RELION's rounded pre-shift).
     ``candidates`` holds each image's kept rotations of the last level (sorted int32) and ``kept_counts``
-    ``[L + 1, N]`` the number kept at every level. ``best_rotation`` and ``best_translation`` are the last level's best pose and
-    ``translation_spread`` ``[N]`` the posterior standard deviation (pixels) of the offset around its centre.
+    ``[L + 1, N]`` the number kept at every level. ``best_rotation`` and ``best_translation`` are the last level's best pose,
+    ``translation_spread`` ``[N]`` the posterior standard deviation (pixels) of the offset and ``hold_radius`` ``[N]``
+    the radius (pixels) around the centre that holds 99% of its posterior mass.
     """
 
     centres: np.ndarray
@@ -86,6 +89,7 @@ class BnBSearchResult:
     best_rotation: np.ndarray
     best_translation: np.ndarray
     translation_spread: np.ndarray
+    hold_radius: np.ndarray
     seconds: float
 
 
@@ -106,27 +110,33 @@ def offset_log_prior(translations_px: np.ndarray, *, pixel_size: float, sigma_of
     return (-0.5 * squared / float(sigma_offset_angstrom) ** 2).astype(np.float32)
 
 
-def nearest_parents(parents: np.ndarray, rotations: np.ndarray, *, block: int = 4096) -> np.ndarray:
-    """For each rotation, the index of the nearest of ``parents`` (the largest ``trace(P^T R)``)."""
+def rotation_angles_deg(parents: np.ndarray, rotations: np.ndarray, *, block: int = 4096) -> np.ndarray:
+    """Angles (degrees) ``[N_rotations, N_parents]`` between every rotation and every parent."""
 
-    parent_flat = np.asarray(parents, dtype=np.float32).reshape(-1, 9)
-    rotation_flat = np.asarray(rotations, dtype=np.float32).reshape(-1, 9)
-    out = np.empty(rotation_flat.shape[0], dtype=np.int64)
+    parent_flat = np.asarray(parents, dtype=np.float64).reshape(-1, 9)
+    rotation_flat = np.asarray(rotations, dtype=np.float64).reshape(-1, 9)
+    out = np.empty((rotation_flat.shape[0], parent_flat.shape[0]), dtype=np.float32)
     for start in range(0, rotation_flat.shape[0], block):
-        out[start : start + block] = np.argmax(rotation_flat[start : start + block] @ parent_flat.T, axis=1)
+        cosine = (rotation_flat[start : start + block] @ parent_flat.T - 1.0) / 2.0
+        out[start : start + block] = np.degrees(np.arccos(np.clip(cosine, -1.0, 1.0)))
     return out
 
 
-def children_table(parent_of: np.ndarray, n_parents: int) -> np.ndarray:
-    """``[n_parents, max_children]`` rows of the children of each parent (``-1`` pads), from each child's parent."""
+def children_table(parents: np.ndarray, rotations: np.ndarray, *, radius_deg: float) -> np.ndarray:
+    """``[N_parents, max_children]`` rows of the rotations under each parent (``-1`` pads): every rotation within
+    ``radius_deg`` of the parent, and every rotation whose nearest parent it is. Overlapping cells keep a pose near a
+    cell boundary under each parent around it."""
 
-    parent_of = np.asarray(parent_of, dtype=np.int64)
-    counts = np.bincount(parent_of, minlength=int(n_parents))
-    table = np.full((int(n_parents), max(int(counts.max(initial=0)), 1)), -1, dtype=np.int32)
-    order = np.argsort(parent_of, kind="stable")
+    angles = rotation_angles_deg(parents, rotations)
+    member = angles <= float(radius_deg)
+    member[np.arange(angles.shape[0]), np.argmin(angles, axis=1)] = True
+    counts = member.sum(axis=0)
+    table = np.full((angles.shape[1], max(int(counts.max(initial=0)), 1)), -1, dtype=np.int32)
+    child, parent = np.nonzero(member)
+    order = np.lexsort((child, parent))
+    child, parent = child[order], parent[order]
     starts = np.concatenate([[0], np.cumsum(counts)[:-1]])
-    slot = np.arange(order.size) - starts[parent_of[order]]
-    table[parent_of[order], slot] = order.astype(np.int32)
+    table[parent, np.arange(parent.size) - starts[parent]] = child.astype(np.int32)
     return table
 
 
@@ -232,16 +242,18 @@ def _reduce_block(scores, labels, translation_mass, best):
     return block_rotation, translation_mass, best
 
 
-@partial(jax.jit, static_argnames=("max_kept",))
-def _keep(rotation_mass, labels, mass_fraction, margin, *, max_kept: int):
-    """Each image's kept labels ``[B, max_kept]`` (``-1`` pads) and their count, from its log masses ``[B, C]``."""
+@partial(jax.jit, static_argnames=("max_kept", "min_kept"))
+def _keep(rotation_mass, labels, mass_fraction, margin, *, max_kept: int, min_kept: int = 0):
+    """Each image's kept labels ``[B, max_kept]`` (``-1`` pads) and their count, from its log masses ``[B, C]``: the
+    smallest set carrying ``mass_fraction``, every label within ``margin`` of the best and the ``min_kept`` best."""
 
     k = min(int(max_kept), int(rotation_mass.shape[1]))
     top, where = jax.lax.top_k(rotation_mass, k)
     log_total = jax.nn.logsumexp(rotation_mass, axis=1, keepdims=True)
     mass = jnp.exp(top - log_total)
     before = jnp.cumsum(mass, axis=1) - mass
-    keep = ((before < mass_fraction) | (top >= top[:, :1] - margin)) & jnp.isfinite(top)
+    rank = jnp.arange(k)[None, :]
+    keep = ((before < mass_fraction) | (top >= top[:, :1] - margin) | (rank < min_kept)) & jnp.isfinite(top)
     kept = jnp.where(keep, jnp.take_along_axis(labels, where, axis=1), -1)
     if k < max_kept:
         kept = jnp.pad(kept, ((0, 0), (0, max_kept - k)), constant_values=-1)
@@ -398,15 +410,19 @@ def _score_level(prepared: _PreparedLevel, weighted, image_term, weight, candida
 
 
 def _expand_children(kept: np.ndarray, children: np.ndarray) -> np.ndarray:
-    """Each image's children ``[B, K * max_children]`` (``-1`` pads) of its kept rotations ``[B, K]``."""
+    """Each image's children ``[B, K * max_children]`` of its kept rotations ``[B, K]``, each child once (``-1`` pads)."""
 
-    return np.where(kept[:, :, None] >= 0, children[np.maximum(kept, 0)], -1).reshape(kept.shape[0], -1)
+    expanded = np.where(kept[:, :, None] >= 0, children[np.maximum(kept, 0)], -1).reshape(kept.shape[0], -1)
+    expanded = np.sort(expanded, axis=1)
+    repeated = np.zeros_like(expanded, dtype=bool)
+    repeated[:, 1:] = expanded[:, 1:] == expanded[:, :-1]
+    return np.where(repeated, -1, expanded)
 
 
-def window_centres(translation_mass: np.ndarray, translations: np.ndarray, radius: float):
+def window_centres(translation_mass: np.ndarray, translations: np.ndarray, radius: float, *, hold: float = 0.99):
     """Each image's window centre: the whole pixel whose window (``radius``) holds the most posterior mass of the
     offset, which is the mode of a sharp posterior and near the mean of a broad one; also the posterior standard
-    deviation (pixels) of the offset.
+    deviation (pixels) of the offset and the radius around the centre that holds ``hold`` of its mass.
 
     ``translation_mass`` ``[B, T]`` is the log posterior mass of every translation ``translations`` ``[T, 2]``.
     """
@@ -426,7 +442,12 @@ def window_centres(translation_mass: np.ndarray, translations: np.ndarray, radiu
     best = centres[np.argmax(captured, axis=1)]
     mean = weights @ translations
     spread = np.sqrt(np.maximum(np.sum(weights * np.sum((translations[None] - mean[:, None]) ** 2, axis=2), axis=1), 0))
-    return best, spread
+    distance = np.sqrt(np.sum((translations[None, :, :] - best[:, None, :]) ** 2, axis=2))
+    order = np.argsort(distance, axis=1)
+    held = np.cumsum(np.take_along_axis(weights, order, axis=1), axis=1)
+    first = np.minimum(np.sum(held < float(hold), axis=1), translations.shape[0] - 1)
+    hold_radius = np.take_along_axis(distance, order, axis=1)[np.arange(mass.shape[0]), first]
+    return best, spread, hold_radius
 
 
 def run_search(
@@ -456,31 +477,48 @@ def run_search(
     n_levels = len(levels)
     centres = np.zeros((n_images, 2), dtype=np.float64)
     spread = np.zeros(n_images, dtype=np.float64)
+    hold_radius = np.zeros(n_images, dtype=np.float64)
     best_rotation = np.zeros(n_images, dtype=np.int64)
     best_translation = np.zeros((n_images, 2), dtype=np.float64)
     kept_counts = np.zeros((n_levels, n_images), dtype=np.int32)
     candidates: list[np.ndarray] = []
+    clock = {"plan": time.time() - t0, "operands": 0.0, "scores": 0.0, "keep": 0.0, "centres": 0.0}
     start = 0
     for batch_data, _, _, _, _, _, indices in iter_indexed_batches(dataset, np.arange(n_images), image_batch_size):
         end = start + len(indices)
         count = end - start
         kept = None
         for level_index, level in enumerate(prepared):
+            tick = time.time()
             weighted, image_term, weight, batch_size = _level_operands(level, batch_data, indices, start, end)
+            weighted.block_until_ready()
+            clock["operands"] += time.time() - tick
+            tick = time.time()
             level_candidates = None if kept is None else _expand_children(kept, level.level.children)
             mass, labels, translation_mass, best = _score_level(level, weighted, image_term, weight, level_candidates)
-            cap = int(pruning.max_kept) if level_index < n_levels - 1 else int(mass.shape[1])
-            kept_device, n_kept = _keep(mass, labels, pruning.mass_fraction, pruning.margin, max_kept=cap)
+            mass.block_until_ready()
+            clock["scores"] += time.time() - tick
+            tick = time.time()
+            coarse = level_index < n_levels - 1
+            kept_device, n_kept = _keep(
+                mass, labels, pruning.mass_fraction, pruning.margin,
+                max_kept=int(pruning.max_kept) if coarse else int(mass.shape[1]),
+                min_kept=int(pruning.min_kept) if coarse else 0,
+            )
             kept = np.asarray(kept_device)
             kept_counts[level_index, start:end] = np.asarray(n_kept)[:count]
+            clock["keep"] += time.time() - tick
+        tick = time.time()
         candidates.extend(np.sort(row[row >= 0]).astype(np.int32) for row in kept[:count])
-        centres[start:end], spread[start:end] = window_centres(
+        centres[start:end], spread[start:end], hold_radius[start:end] = window_centres(
             np.asarray(translation_mass)[:count], last.translations, centre_radius
         )
         best_rotation[start:end] = np.asarray(best[1])[:count]
         best_translation[start:end] = last.translations[np.asarray(best[2])[:count]]
+        clock["centres"] += time.time() - tick
         start = end
     seconds = time.time() - t0
+    logger.info("BnB search time: %s", {name: round(value, 1) for name, value in clock.items()})
     logger.info(
         "BnB search: %d images, levels %s (sizes %s, translations %s), kept rotations per level median %s max %s, "
         "%.1fs",
@@ -499,6 +537,7 @@ def run_search(
         best_rotation=best_rotation,
         best_translation=best_translation,
         translation_spread=spread,
+        hold_radius=hold_radius,
         seconds=seconds,
     )
 

@@ -175,6 +175,11 @@ def parse_refinement_args(argv=None):
         "particle's window on its posterior and finds pass 2's supports there (needs --offset_prior_units consistent).",
     )
     parser.add_argument("--bnb_levels", type=int, default=1, help="bnb: coarser HEALPix orders searched first")
+    parser.add_argument("--bnb_min_order", type=int, default=2, help="bnb: the coarsest HEALPix order searched")
+    parser.add_argument(
+        "--bnb_half_band", action=argparse.BooleanOptionalAction, default=False,
+        help="bnb: score the first order at half its Fourier window first, then the kept rotations at the full one",
+    )
     parser.add_argument(
         "--bnb_translation_sigmas", type=float, default=4.0,
         help="bnb: radius of the translation search in widths of the offset prior (at most 0.3 of the box)",
@@ -188,6 +193,12 @@ def parse_refinement_args(argv=None):
         help="bnb: a level also keeps every rotation within this many nats of its best",
     )
     parser.add_argument("--bnb_max_kept", type=int, default=4096, help="bnb: most rotations a level keeps per image")
+    parser.add_argument("--bnb_min_kept", type=int, default=16, help="bnb: fewest rotations a coarse level keeps per image")
+    parser.add_argument(
+        "--bnb_window_quantile", type=float, default=0.75,
+        help="bnb: widen the translation window to hold 99%% of the offset posterior of this fraction of the "
+        "particles (0 keeps RELION's range)",
+    )
     parser.add_argument(
         "--max_significants",
         type=int,

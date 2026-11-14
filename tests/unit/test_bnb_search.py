@@ -22,23 +22,35 @@ def test_offset_prior_is_consistent_units():
     np.testing.assert_allclose(prior, [-0.5 * 100.0 / 25.0], rtol=1e-6)
 
 
-def test_children_partition_the_finer_grid():
-    """Every order-2 rotation has one order-1 parent within the parent's cell; children cover the finer grid once."""
+def test_children_cover_the_finer_grid_with_overlap():
+    """Every order-2 rotation sits under its nearest order-1 parent and under every parent within the radius; with no
+    radius the cells partition the finer grid."""
     coarse = relion_scoring_rotation_grid(1).rotations
     fine = relion_scoring_rotation_grid(2).rotations
-    parent = bnb_search.nearest_parents(coarse, fine)
-    table = bnb_search.children_table(parent, coarse.shape[0])
-    listed = np.sort(table[table >= 0])
-    np.testing.assert_array_equal(listed, np.arange(fine.shape[0]))
-    trace = np.einsum("nij,nij->n", coarse[parent], fine)
-    angle = np.degrees(np.arccos(np.clip((trace - 1.0) / 2.0, -1.0, 1.0)))
-    assert angle.max() < 30.0
+    angles = bnb_search.rotation_angles_deg(coarse, fine)
+    table = bnb_search.children_table(coarse, fine, radius_deg=0.0)
+    np.testing.assert_array_equal(np.sort(table[table >= 0]), np.arange(fine.shape[0]))
+    assert angles.min(axis=1).max() < 30.0
+    wide = bnb_search.children_table(coarse, fine, radius_deg=22.5)
+    for parent in (0, 100, 575):
+        expected = np.flatnonzero((angles[:, parent] <= 22.5) | (np.argmin(angles, axis=1) == parent))
+        np.testing.assert_array_equal(np.sort(wide[parent][wide[parent] >= 0]), expected)
+    same = bnb_search.children_table(fine, fine, radius_deg=0.0)
+    np.testing.assert_array_equal(same[:, 0], np.arange(fine.shape[0]))
+
+
+def test_children_expand_once_per_image():
+    """A child under two kept parents is scored once."""
+    children = np.array([[0, 1, 2], [2, 3, -1], [4, -1, -1]], dtype=np.int32)
+    kept = np.array([[0, 1, -1], [2, -1, -1]], dtype=np.int32)
+    rows = bnb_search._expand_children(kept, children)
+    assert sorted(rows[0][rows[0] >= 0].tolist()) == [0, 1, 2, 3]
+    assert sorted(rows[1][rows[1] >= 0].tolist()) == [4]
 
 
 def test_coarse_prior_bounds_its_children():
     """A coarse rotation's prior is the largest prior of its children."""
-    parent = np.array([0, 0, 1, 1, 1])
-    table = bnb_search.children_table(parent, 2)
+    table = np.array([[0, 1, -1], [2, 3, 4]], dtype=np.int32)
     prior = np.array([-1.0, -3.0, -0.5, -2.0, -4.0], dtype=np.float32)
     np.testing.assert_allclose(bnb_search.coarse_level_prior(prior, table), [-1.0, -0.5])
 
@@ -72,9 +84,12 @@ def test_window_centre_holds_the_most_mass():
     far = np.sum((grid - np.array([-6.0, 6.0])) ** 2, axis=1) < 0.3
     sharp = np.where(far, sharp.max() - 1.0, sharp)
     broad = -0.5 * np.sum((grid - np.array([0.6, 0.4])) ** 2, axis=1) / 9.0
-    centres, spread = bnb_search.window_centres(np.stack([sharp, broad]), grid, 2.0)
+    centres, spread, hold = bnb_search.window_centres(np.stack([sharp, broad]), grid, 2.0)
     np.testing.assert_array_equal(centres, [[2.0, -1.0], [1.0, 0.0]])
-    assert spread[1] > 2.0
+    assert spread[1] > 2.0 and hold[1] > 6.0
+    clean = -0.5 * np.sum((grid - np.array([2.0, -1.0])) ** 2, axis=1) / 0.25
+    _, _, hold = bnb_search.window_centres(clean[None], grid, 2.0)
+    assert 1.0 < hold[0] < 2.0
 
 
 def test_block_scores_are_pass1_gaussian_scores():

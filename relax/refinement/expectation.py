@@ -709,6 +709,11 @@ def score_numbered_half(
             relion_translation_angle_scale=relion_translation_angle_scale,
         )
         previous_translations_k = bnb_search.search.centres
+        sampling, trial_translations = bnb_half.recentred_window(
+            bnb_search, sampling, options, voxel_size=image_geometry.pixel_size_angstrom, dtype=scoring_dtype
+        )
+    else:
+        trial_translations = phase.grid.translations
     translation_search_base = relion_translation_search_base(
         previous_translations_k, dtype=scoring_dtype
     )
@@ -721,7 +726,7 @@ def score_numbered_half(
         half.data.projector,
         planner=batch_planner,
         rotations=phase.grid.rotations if phase.use_adaptive or k_class_enabled else None,
-        translations=phase.grid.translations,
+        translations=trial_translations,
         cs_for_engine=image_window_size,
         coarse_cs=phase.variant.coarse_window_size if phase.use_adaptive else None,
         model_current_size_for_engine=model_support_size,
@@ -756,7 +761,7 @@ def score_numbered_half(
             previous_translations_k,
             voxel_size=image_geometry.pixel_size_angstrom,
             base_translations=sampling.base_translations,
-            current_translations=phase.grid.translations,
+            current_translations=trial_translations,
             dtype=scoring_dtype,
             consistent_units=consistent_offset_prior,
         )
@@ -924,7 +929,7 @@ def score_numbered_half(
             previous_translations=previous_translations_k,
             sigma_offset_angstrom=half.sigma_offset_angstrom,
             base_translations=sampling.base_translations,
-            current_translations=phase.grid.translations,
+            current_translations=trial_translations,
             with_log_prior=True,
             zero_cold_center=not k_class_enabled,
             dtype=scoring_dtype,

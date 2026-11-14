@@ -86,21 +86,33 @@ class RefinementSchedule:
 class BnBSearchOptions:
     """The branch-and-bound global pose search of ``--pose_search bnb`` (``relax.scoring.bnb_search``).
 
-    ``levels`` coarser HEALPix orders precede the iteration's own; the translation grid covers
+    ``levels`` coarser HEALPix orders, none below ``min_order``, precede the iteration's own (a coarse rotation's
+    children are the finer rotations within ``child_overlap`` of its angular step, so cells overlap); ``half_band``
+    scores the first order at half its window first. The translation grid covers
     ``translation_sigmas`` widths of the offset prior (at least the RELION window, at most 0.3 of the box), with a
     step of half the Nyquist spacing of each level's window clipped to ``[min_step_px, max_step_px]``. A level keeps,
-    per image, the rotations carrying ``mass_fraction`` of its posterior and those within ``margin`` nats of its best,
-    at most ``max_kept``. ``image_batch_size`` images are searched per device batch.
+    per image, the rotations carrying ``mass_fraction`` of its posterior, those within ``margin`` nats of its best and
+    its ``min_kept`` best, at most ``max_kept``. ``image_batch_size`` images are searched per device batch.
+
+    The RELION window around each centre widens, when needed, to the radius that holds 99% of the offset posterior
+    for ``window_quantile`` of the half's particles (0: RELION's range), at most the search radius; a widened window
+    spans at most ``window_steps`` steps of its radius, RELION's own bound.
     """
 
     levels: int = 1
+    min_order: int = 2
+    child_overlap: float = 0.75
+    half_band: bool = False
     translation_sigmas: float = 4.0
     min_step_px: float = 0.5
     max_step_px: float = 2.0
     mass_fraction: float = 0.9999
     margin: float = 10.0
     max_kept: int = 4096
+    min_kept: int = 16
     image_batch_size: int = 32
+    window_quantile: float = 0.75
+    window_steps: float = 4.0
 
     def __post_init__(self):
         if int(self.levels) < 0:
@@ -109,6 +121,8 @@ class BnBSearchOptions:
             raise ValueError(f"bnb mass_fraction must be in (0, 1], got {self.mass_fraction}")
         if not (self.translation_sigmas > 0 and self.margin >= 0 and self.max_kept > 0 and self.image_batch_size > 0):
             raise ValueError("bnb translation_sigmas, max_kept and image_batch_size must be positive, margin >= 0")
+        if not (0.0 <= float(self.window_quantile) <= 1.0 and float(self.window_steps) >= 1.0):
+            raise ValueError("bnb window_quantile must be in [0, 1] and window_steps at least 1")
         if not 0.0 < float(self.min_step_px) <= float(self.max_step_px):
             raise ValueError("bnb steps must satisfy 0 < min_step_px <= max_step_px")
 

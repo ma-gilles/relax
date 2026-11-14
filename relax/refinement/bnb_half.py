@@ -21,7 +21,6 @@ from relax.scoring.bnb_search import (
     BnBSearchResult,
     children_table,
     coarse_level_prior,
-    nearest_parents,
     offset_log_prior,
     run_search,
     translation_grid,
@@ -109,38 +108,46 @@ def _levels(
     sigma_offset_angstrom: float,
     window_radius: float,
 ) -> list[BnBLevel]:
-    """The search levels: ``settings.levels`` coarser orders (at least order 1), then the iteration's coarse grid."""
+    """The search levels, coarse to fine: ``settings.levels`` coarser HEALPix orders (none below
+    ``settings.min_order``), then the iteration's coarse grid, each at RELION's coarse size of its order; with
+    ``settings.half_band``, the first order is scored at half that size first."""
+
+    from relax.sampling.healpix import angular_sampling_deg
 
     order = int(sampling.current_healpix_order)
-    orders = sorted({max(1, order - k) for k in range(int(settings.levels) + 1)})
+    orders = sorted({max(min(int(settings.min_order), order), order - k) for k in range(int(settings.levels) + 1)})
     box = int(image_geometry.box_size)
     pixel = float(image_geometry.pixel_size_angstrom)
     current_size = sampling.image_window_size
     sigma_px = float(sigma_offset_angstrom) / pixel
     radius = min(max(float(settings.translation_sigmas) * sigma_px, float(window_radius)), 0.3 * box)
-    rotations = [_perturbed_grid(o, sampling.random_perturbation) for o in orders[:-1]]
-    rotations.append(np.asarray(sampling.effective_rotations, dtype=np.float32))
+    grids = {o: _perturbed_grid(o, sampling.random_perturbation) for o in orders[:-1]}
+    grids[order] = np.asarray(sampling.effective_rotations, dtype=np.float32)
+    schedule = [(o, _coarse_size(o, image_geometry, options, current_size)) for o in orders]
+    if settings.half_band:
+        schedule.insert(0, (orders[0], max(8, 2 * (schedule[0][1] // 4))))
     prior = None
     if rotation_log_prior is not None:
         prior = np.asarray(rotation_log_prior, dtype=np.float32).reshape(-1)
-        if prior.size != rotations[-1].shape[0]:
-            raise ValueError(f"rotation prior of {prior.size} rows for a grid of {rotations[-1].shape[0]} rotations")
-    children = [None] * len(orders)
-    for k in range(1, len(orders)):
-        children[k] = children_table(nearest_parents(rotations[k - 1], rotations[k]), rotations[k - 1].shape[0])
-    priors = [None] * len(orders)
+        if prior.size != grids[order].shape[0]:
+            raise ValueError(f"rotation prior of {prior.size} rows for a grid of {grids[order].shape[0]} rotations")
+    children = [None] * len(schedule)
+    for k in range(1, len(schedule)):
+        parent_order, child_order = schedule[k - 1][0], schedule[k][0]
+        radius_deg = 0.0 if parent_order == child_order else settings.child_overlap * angular_sampling_deg(parent_order)
+        children[k] = children_table(grids[parent_order], grids[child_order], radius_deg=radius_deg)
+    priors = [None] * len(schedule)
     priors[-1] = prior
-    for k in range(len(orders) - 1, 0, -1):
+    for k in range(len(schedule) - 1, 0, -1):
         priors[k - 1] = coarse_level_prior(priors[k], children[k])
     levels = []
-    for k, o in enumerate(orders):
-        size = _coarse_size(o, image_geometry, options, current_size)
+    for k, (o, size) in enumerate(schedule):
         step = float(np.clip(box / (2.0 * size), settings.min_step_px, settings.max_step_px))
         translations = translation_grid(radius, step)
         levels.append(
             BnBLevel(
                 order=o,
-                rotations=rotations[k],
+                rotations=grids[o],
                 rotation_log_prior=priors[k],
                 children=children[k],
                 size=size,
@@ -228,6 +235,7 @@ def search_half(
             mass_fraction=settings.mass_fraction,
             margin=settings.margin,
             max_kept=settings.max_kept,
+            min_kept=settings.min_kept,
         ),
         image_current_size=sampling.image_window_size,
         centre_radius=max(float(window_radius), 1.0),
@@ -249,6 +257,44 @@ def search_half(
         image_current_size=sampling.image_window_size,
         image_batch_size=settings.image_batch_size,
     )
+
+
+def recentred_window(bnb: HalfBnB, sampling, options: RefinementOptions, *, voxel_size: float, dtype):
+    """The half's sampling with RELION's translation window widened, when needed, to hold the offset posterior
+    (``BnBSearchOptions.window_quantile``), and the window's perturbed translations.
+
+    A widened window keeps RELION's step unless the radius would span more than ``window_steps`` steps; it never
+    narrows RELION's window and never reaches past the search radius.
+    """
+
+    from dataclasses import replace
+
+    import jax.numpy as jnp
+
+    from relax.sampling.grids import relion_base_translation_grid
+    from relax.sampling.perturbation import apply_relion_translation_perturbation
+
+    settings = options.adaptive.bnb
+    relion_radius = float(np.max(np.linalg.norm(np.asarray(sampling.base_translations), axis=1), initial=0.0))
+    if not settings.window_quantile > 0.0:
+        return sampling, sampling.current_translations
+    search_radius = float(np.max(np.linalg.norm(bnb.final_level.translations, axis=1), initial=0.0))
+    cover = float(np.quantile(bnb.search.hold_radius, settings.window_quantile))
+    radius = min(cover, search_radius)
+    if not radius > relion_radius + 1e-6:
+        return sampling, sampling.current_translations
+    step = max(float(sampling.translation_step), radius / float(settings.window_steps))
+    base = relion_base_translation_grid(radius, step, n_classes=1, voxel_size=voxel_size)
+    current = jnp.asarray(
+        apply_relion_translation_perturbation(base, float(sampling.random_perturbation), step), dtype=dtype
+    )
+    logger.info(
+        "BnB window: radius %.2f -> %.2f px, step %.2f -> %.2f px (%d translations), to hold 99%% of the offset "
+        "posterior of %.0f%% of the particles",
+        relion_radius, radius, float(sampling.translation_step), step, int(base.shape[0]),
+        100.0 * settings.window_quantile,
+    )
+    return replace(sampling, base_translations=base, current_translations=current, translation_step=step), current
 
 
 def window_supports(bnb: HalfBnB, sampling, translation_log_prior, *, adaptive_fraction: float, max_significants: int):

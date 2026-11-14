@@ -737,10 +737,14 @@ def resolve_adaptive_options(args, *, max_significants: int, log) -> AdaptiveOpt
         pose_search=args.pose_search,
         bnb=BnBSearchOptions(
             levels=args.bnb_levels,
+            min_order=args.bnb_min_order,
+            half_band=args.bnb_half_band,
             translation_sigmas=args.bnb_translation_sigmas,
             mass_fraction=args.bnb_mass_fraction,
             margin=args.bnb_margin,
             max_kept=args.bnb_max_kept,
+            min_kept=args.bnb_min_kept,
+            window_quantile=args.bnb_window_quantile,
         ),
     )
 
