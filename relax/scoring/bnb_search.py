@@ -32,7 +32,8 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
-_F32 = jax.lax.DotAlgorithmPreset.F32_F32_F32
+# The product algorithm of the search's scores: float32, or TensorFloat-32 inputs with float32 accumulation.
+_ALGORITHMS = {"float32": jax.lax.DotAlgorithmPreset.F32_F32_F32, "tf32": jax.lax.DotAlgorithmPreset.TF32_TF32_F32}
 # Candidate rotations per device call: gathered per image, or a block of the batch's union scored densely.
 _CANDIDATE_CHUNK = 512
 _DENSE_BLOCK = 1024
@@ -170,12 +171,13 @@ def _image_terms(shifted, weight, initial_diff2):
     return weighted, -0.5 * image_energy - initial_diff2[:, None]
 
 
-@jax.jit
-def _dense_block(weighted, image_term, weight, projections, rotation_prior, translation_prior):
-    """Scores ``[B, T, R]`` of every image against a block of shared projections ``[R, S]``."""
+@partial(jax.jit, static_argnames=("precision",))
+def _dense_block(weighted, image_term, weight, projections, rotation_prior, translation_prior, *, precision="float32"):
+    """Scores ``[B, T, R]`` of every image against a block of shared projections ``[R, S]``; ``precision`` is the cross
+    term's product algorithm (``_ALGORITHMS``), the energies stay float32."""
 
     cross = jax.lax.dot_general(
-        weighted, _packed(projections), (((2,), (1,)), ((), ())), precision=_F32,
+        weighted, _packed(projections), (((2,), (1,)), ((), ())), precision=_ALGORITHMS[precision],
         preferred_element_type=jnp.float32,
     )
     model_energy = jnp.einsum("bs,rs->br", weight, jnp.abs(projections) ** 2, precision=jax.lax.Precision.HIGHEST)
@@ -188,23 +190,27 @@ def _dense_block(weighted, image_term, weight, projections, rotation_prior, tran
     )
 
 
-@jax.jit
-def _masked_dense_block(weighted, image_term, weight, projections, member, rotation_prior, translation_prior):
+@partial(jax.jit, static_argnames=("precision",))
+def _masked_dense_block(
+    weighted, image_term, weight, projections, member, rotation_prior, translation_prior, *, precision="float32"
+):
     """:func:`_dense_block` scores ``[B, T, R]`` with ``-inf`` where ``member`` ``[B, R]`` is false."""
 
-    scores = _dense_block(weighted, image_term, weight, projections, rotation_prior, translation_prior)
+    scores = _dense_block(
+        weighted, image_term, weight, projections, rotation_prior, translation_prior, precision=precision
+    )
     return jnp.where(member[:, None, :], scores, -jnp.inf)
 
 
-@jax.jit
-def _gathered_block(weighted, image_term, weight, table, rows, rotation_prior, translation_prior):
+@partial(jax.jit, static_argnames=("precision",))
+def _gathered_block(weighted, image_term, weight, table, rows, rotation_prior, translation_prior, *, precision="float32"):
     """Scores ``[B, T, C]`` of every image against its own rows ``[B, C]`` of the projection table (``-1``: none)."""
 
     valid = rows >= 0
     safe = jnp.maximum(rows, 0)
     projections = jnp.take(table, safe, axis=0)
     cross = jax.lax.dot_general(
-        weighted, _packed(projections), (((2,), (2,)), ((0,), (0,))), precision=_F32,
+        weighted, _packed(projections), (((2,), (2,)), ((0,), (0,))), precision=_ALGORITHMS[precision],
         preferred_element_type=jnp.float32,
     )
     model_energy = jnp.einsum("bs,bcs->bc", weight, jnp.abs(projections) ** 2, precision=jax.lax.Precision.HIGHEST)
@@ -337,9 +343,12 @@ def _level_operands(prepared: _PreparedLevel, batch_data, indices, start: int, e
 
 
 def _pad_columns(rows: np.ndarray, multiple: int) -> np.ndarray:
-    """``rows`` ``[B, C]`` (``-1`` pads) with the pads moved last and the columns padded to a multiple of ``multiple``."""
+    """``rows`` ``[B, C]`` (``-1`` pads) sorted ascending with the pads last, the columns padded to a multiple of
+    ``multiple``."""
 
-    rows = -np.sort(-np.asarray(rows, dtype=np.int64), axis=1)
+    rows = np.asarray(rows, dtype=np.int64)
+    rows = np.sort(np.where(rows < 0, np.iinfo(np.int64).max, rows), axis=1)
+    rows = np.where(rows == np.iinfo(np.int64).max, -1, rows)
     used = int(np.max(np.sum(rows >= 0, axis=1), initial=1))
     width = max(multiple, int(np.ceil(used / multiple)) * multiple)
     rows = rows[:, :width]
@@ -348,7 +357,9 @@ def _pad_columns(rows: np.ndarray, multiple: int) -> np.ndarray:
     return rows.astype(np.int32)
 
 
-def _candidate_blocks(prepared: _PreparedLevel, weighted, image_term, weight, candidates: np.ndarray | None):
+def _candidate_blocks(
+    prepared: _PreparedLevel, weighted, image_term, weight, candidates: np.ndarray | None, *, precision: str = "float32"
+):
     """Yield one batch's scores ``[B, T, C]`` and their rotations ``[B, C]`` (``-1``: not scored; on the device and on
     the host), block by block.
 
@@ -373,7 +384,7 @@ def _candidate_blocks(prepared: _PreparedLevel, weighted, image_term, weight, ca
                 chunk = rows[:, start : start + _CANDIDATE_CHUNK]
                 yield _gathered_block(
                     weighted, image_term, weight, prepared.projections, chunk, prepared.rotation_prior,
-                    prepared.translation_prior,
+                    prepared.translation_prior, precision=precision,
                 ), chunk, rows_host[:, start : start + _CANDIDATE_CHUNK]
             return
         member = np.zeros((batch, union.size), dtype=bool)
@@ -389,12 +400,14 @@ def _candidate_blocks(prepared: _PreparedLevel, weighted, image_term, weight, ca
         member_device = jnp.asarray(block_member)
         scores = _masked_dense_block(
             weighted, image_term, weight, jnp.take(prepared.projections, ids_device, axis=0), member_device,
-            jnp.take(prepared.rotation_prior, ids_device), prepared.translation_prior,
+            jnp.take(prepared.rotation_prior, ids_device), prepared.translation_prior, precision=precision,
         )
         yield scores, jnp.where(member_device, ids_device[None, :], -1), np.where(block_member, ids[None, :], -1)
 
 
-def _score_level(prepared: _PreparedLevel, weighted, image_term, weight, candidates: np.ndarray | None):
+def _score_level(
+    prepared: _PreparedLevel, weighted, image_term, weight, candidates: np.ndarray | None, *, precision: str
+):
     """One batch at one level: per-rotation log mass ``[B, C]`` with its rotations ``[B, C]`` (``-1``: none), the
     per-translation log mass ``[B, T]`` and the best ``(score, rotation, translation index)``."""
 
@@ -402,7 +415,9 @@ def _score_level(prepared: _PreparedLevel, weighted, image_term, weight, candida
     translation_mass = jnp.full((batch, prepared.translation_prior.shape[0]), -jnp.inf, jnp.float32)
     best = (jnp.full(batch, -jnp.inf, jnp.float32), jnp.zeros(batch, jnp.int32), jnp.zeros(batch, jnp.int32))
     masses, labels = [], []
-    for scores, block_labels, _ in _candidate_blocks(prepared, weighted, image_term, weight, candidates):
+    for scores, block_labels, _ in _candidate_blocks(
+        prepared, weighted, image_term, weight, candidates, precision=precision
+    ):
         block_mass, translation_mass, best = _reduce_block(scores, block_labels, translation_mass, best)
         masses.append(block_mass)
         labels.append(block_labels)
@@ -419,24 +434,35 @@ def _expand_children(kept: np.ndarray, children: np.ndarray) -> np.ndarray:
     return np.where(repeated, -1, expanded)
 
 
-def window_centres(translation_mass: np.ndarray, translations: np.ndarray, radius: float, *, hold: float = 0.99):
-    """Each image's window centre: the whole pixel whose window (``radius``) holds the most posterior mass of the
-    offset, which is the mode of a sharp posterior and near the mean of a broad one; also the posterior standard
-    deviation (pixels) of the offset and the radius around the centre that holds ``hold`` of its mass.
+def centre_table(translations: np.ndarray, radius: float) -> tuple[np.ndarray, np.ndarray]:
+    """The whole-pixel window centres within the reach of ``translations`` ``[T, 2]`` and, for each, which
+    translations its window of ``radius`` holds: ``(centres [C, 2], inside [T, C] float)``."""
 
-    ``translation_mass`` ``[B, T]`` is the log posterior mass of every translation ``translations`` ``[T, 2]``.
-    """
-
-    mass = np.asarray(translation_mass, dtype=np.float64)
-    weights = np.exp(mass - mass.max(axis=1, keepdims=True))
-    weights /= np.maximum(weights.sum(axis=1, keepdims=True), 1e-300)
     reach = int(np.ceil(np.max(np.abs(translations), initial=0.0)))
     axis = np.arange(-reach, reach + 1, dtype=np.float64)
     xx, yy = np.meshgrid(axis, axis, indexing="ij")
     centres = np.stack([xx.ravel(), yy.ravel()], axis=1)
     centres = centres[np.sum(centres**2, axis=1) <= reach**2 + 1e-9]
-    inside = np.sum((centres[:, None, :] - translations[None, :, :]) ** 2, axis=2) <= float(radius) ** 2 + 1e-9
-    captured = weights @ inside.T.astype(np.float64)
+    inside = np.sum((translations[:, None, :] - centres[None, :, :]) ** 2, axis=2) <= float(radius) ** 2 + 1e-9
+    return centres, inside.astype(np.float64)
+
+
+def window_centres(
+    translation_mass: np.ndarray, translations: np.ndarray, radius: float, *, hold: float = 0.99, table=None
+):
+    """Each image's window centre: the whole pixel whose window (``radius``) holds the most posterior mass of the
+    offset, which is the mode of a sharp posterior and near the mean of a broad one; also the posterior standard
+    deviation (pixels) of the offset and the radius around the centre that holds ``hold`` of its mass.
+
+    ``translation_mass`` ``[B, T]`` is the log posterior mass of every translation ``translations`` ``[T, 2]``;
+    ``table`` is their :func:`centre_table` (None: built here).
+    """
+
+    centres, inside = centre_table(translations, radius) if table is None else table
+    mass = np.asarray(translation_mass, dtype=np.float64)
+    weights = np.exp(mass - mass.max(axis=1, keepdims=True))
+    weights /= np.maximum(weights.sum(axis=1, keepdims=True), 1e-300)
+    captured = weights @ inside
     # Ties (a flat posterior) go to the centre nearest the origin, the offset prior's centre.
     captured -= 1e-12 * np.sum(centres**2, axis=1)[None, :]
     best = centres[np.argmax(captured, axis=1)]
@@ -458,12 +484,14 @@ def run_search(
     image_current_size: int | None,
     centre_radius: float,
     image_batch_size: int,
+    precision: str = "float32",
 ) -> BnBSearchResult:
     """Search every image of ``request_fields["experiment_dataset"]`` over ``levels`` (see the module docstring).
 
     ``request_fields`` are the :class:`~relax.scoring.pass1_request.Pass1Request` fields every level shares (dataset,
     noise, projector, corrections, sizes and execution settings), with ``image_pre_shifts`` None: the search grid is
-    absolute. ``centre_radius`` (pixels) is the window the centre is averaged over. Coarse levels keep at most
+    absolute. ``centre_radius`` (pixels) is the window the centre is averaged over. ``precision`` is the score
+    products' algorithm (``"float32"`` or ``"tf32"``; the search only ranks, the window significance scores in float32). Coarse levels keep at most
     ``pruning.max_kept`` rotations per image; the last level keeps every rotation its rules keep.
     """
 
@@ -482,6 +510,7 @@ def run_search(
     best_translation = np.zeros((n_images, 2), dtype=np.float64)
     kept_counts = np.zeros((n_levels, n_images), dtype=np.int32)
     candidates: list[np.ndarray] = []
+    centre_lookup = centre_table(last.translations, centre_radius)
     clock = {"plan": time.time() - t0, "operands": 0.0, "scores": 0.0, "keep": 0.0, "centres": 0.0}
     start = 0
     for batch_data, _, _, _, _, _, indices in iter_indexed_batches(dataset, np.arange(n_images), image_batch_size):
@@ -495,7 +524,9 @@ def run_search(
             clock["operands"] += time.time() - tick
             tick = time.time()
             level_candidates = None if kept is None else _expand_children(kept, level.level.children)
-            mass, labels, translation_mass, best = _score_level(level, weighted, image_term, weight, level_candidates)
+            mass, labels, translation_mass, best = _score_level(
+                level, weighted, image_term, weight, level_candidates, precision=precision
+            )
             mass.block_until_ready()
             clock["scores"] += time.time() - tick
             tick = time.time()
@@ -511,7 +542,7 @@ def run_search(
         tick = time.time()
         candidates.extend(np.sort(row[row >= 0]).astype(np.int32) for row in kept[:count])
         centres[start:end], spread[start:end], hold_radius[start:end] = window_centres(
-            np.asarray(translation_mass)[:count], last.translations, centre_radius
+            np.asarray(translation_mass)[:count], last.translations, centre_radius, table=centre_lookup
         )
         best_rotation[start:end] = np.asarray(best[1])[:count]
         best_translation[start:end] = last.translations[np.asarray(best[2])[:count]]
@@ -569,13 +600,13 @@ def window_significance(
     adaptive_fraction: float,
     max_significants: int,
     image_batch_size: int,
-) -> list[np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray]:
     """Pass 1 over each image's candidate rotations: its significant samples ``rotation * W + w`` on the window.
 
     ``request_fields["image_pre_shifts"]`` are the window centres; ``window`` ``[W, 2]`` are the relative translations
     of pass 2's coarse grid and ``window_log_prior`` ``[N, W]`` (or ``[W]``) their offset prior. ``level`` gives the
-    rotations (pass 2's coarse grid), their prior and the window size; ``candidates`` holds each image's rotations.
-    Returns one sorted int32 array per image.
+    rotations (pass 2's coarse grid), their prior and the window size; ``candidates`` holds each image's rotations
+    (sorted). Returns each image's count ``[N]`` and their samples, ascending within each image, one flat int32 array.
     """
 
     from relax.io.batch_fetch import iter_indexed_batches
@@ -589,7 +620,8 @@ def window_significance(
     n_images = int(dataset.n_units)
     n_window = int(np.asarray(window).shape[0])
     prior_rows = np.asarray(window_log_prior, dtype=np.float32)
-    supports: list[np.ndarray] = []
+    counts_per_batch: list[np.ndarray] = []
+    ids_per_batch: list[np.ndarray] = []
     clock = {"operands": 0.0, "scores": 0.0, "mask": 0.0, "ids": 0.0}
     start = 0
     for batch_data, _, _, _, _, _, indices in iter_indexed_batches(dataset, np.arange(n_images), image_batch_size):
@@ -619,13 +651,17 @@ def window_significance(
         clock["mask"] += time.time() - tick
         tick = time.time()
         rotation_of_column = np.concatenate(labels, axis=1)[:count]
+        # Columns run over ascending rotations, then window translations: each image's ids come out ascending.
         image, column = np.nonzero(mask)
-        ids = (rotation_of_column[image, column // n_window].astype(np.int64) * n_window + column % n_window)
-        bounds = np.searchsorted(image, np.arange(count + 1))
-        supports.extend(np.sort(ids[bounds[i] : bounds[i + 1]]).astype(np.int32) for i in range(count))
+        ids_per_batch.append(
+            (rotation_of_column[image, column // n_window].astype(np.int64) * n_window + column % n_window).astype(
+                np.int32
+            )
+        )
+        counts_per_batch.append(np.bincount(image, minlength=count).astype(np.int32))
         clock["ids"] += time.time() - tick
         start = end
-    counts = np.asarray([row.size for row in supports])
+    counts = np.concatenate(counts_per_batch) if counts_per_batch else np.zeros(0, np.int32)
     logger.info("BnB window significance time: %s", {name: round(value, 1) for name, value in clock.items()})
     logger.info(
         "BnB window significance: %d images, %d window translations, significant samples median %d mean %.1f max %d, "
@@ -637,4 +673,4 @@ def window_significance(
         int(counts.max(initial=0)),
         time.time() - t0,
     )
-    return supports
+    return counts, np.concatenate(ids_per_batch) if ids_per_batch else np.zeros(0, np.int32)

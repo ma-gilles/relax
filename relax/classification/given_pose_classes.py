@@ -17,9 +17,8 @@ from relax.classification.k_class_inputs import seed_iteration_supports
 logger = logging.getLogger("relax.classification.k_class")  # the engine's logger before the split: log rows keep it
 
 
-def given_support_csr(class_supports, *, n_coarse_rot: int, n_coarse_trans: int):
-    """A class's given per-image sample lists with the compacted CSR pass 1 would have produced (also the
-    branch-and-bound search's supports, ``relax.refinement.bnb_half``).
+def _given_support_csr(class_supports, *, n_coarse_rot: int, n_coarse_trans: int):
+    """A class's given per-image sample lists with the compacted CSR pass 1 would have produced.
 
     The resident pass reads the CSR for its candidate tables and to cache only the rotations the
     supports use (``resident_projections.significant_projection_slots``); a plain list makes it project the
@@ -65,7 +64,7 @@ def given_pose_class_supports(
         else seed_iteration_supports(supports, image_seed_classes, n_classes)
     )
     return (
-        [given_support_csr(rows, n_coarse_rot=n_coarse_rot, n_coarse_trans=n_coarse_trans) for rows in by_class],
+        [_given_support_csr(rows, n_coarse_rot=n_coarse_rot, n_coarse_trans=n_coarse_trans) for rows in by_class],
         np.asarray([samples.size for samples in supports], dtype=np.int32),
         np.asarray(image_seed_classes, dtype=np.int32) if firstiter_cc and image_seed_classes is not None else None,
     )

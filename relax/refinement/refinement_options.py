@@ -111,6 +111,9 @@ class BnBSearchOptions:
     max_kept: int = 4096
     min_kept: int = 16
     image_batch_size: int = 32
+    # The search's score products ("tf32": TensorFloat-32 inputs, float32 accumulation, on GPUs that have it); the
+    # window significance and pass 2 score in float32 either way.
+    search_precision: Literal["float32", "tf32"] = "float32"
     window_quantile: float = 0.75
     window_steps: float = 4.0
 
@@ -121,6 +124,8 @@ class BnBSearchOptions:
             raise ValueError(f"bnb mass_fraction must be in (0, 1], got {self.mass_fraction}")
         if not (self.translation_sigmas > 0 and self.margin >= 0 and self.max_kept > 0 and self.image_batch_size > 0):
             raise ValueError("bnb translation_sigmas, max_kept and image_batch_size must be positive, margin >= 0")
+        if self.search_precision not in {"float32", "tf32"}:
+            raise ValueError(f"bnb search_precision must be float32 or tf32, got {self.search_precision!r}")
         if not (0.0 <= float(self.window_quantile) <= 1.0 and float(self.window_steps) >= 1.0):
             raise ValueError("bnb window_quantile must be in [0, 1] and window_steps at least 1")
         if not 0.0 < float(self.min_step_px) <= float(self.max_step_px):

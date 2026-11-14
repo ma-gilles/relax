@@ -240,6 +240,7 @@ def search_half(
         image_current_size=sampling.image_window_size,
         centre_radius=max(float(window_radius), 1.0),
         image_batch_size=settings.image_batch_size,
+        precision=settings.search_precision,
     )
     previous = particles.translations
     if previous is not None:
@@ -301,7 +302,10 @@ def window_supports(bnb: HalfBnB, sampling, translation_log_prior, *, adaptive_f
     """Pass 2's coarse supports of the half: each image's significant samples over its candidates and the RELION
     window around its centre (``sampling``'s coarse translations under the perturbation), as the compacted CSR."""
 
-    from relax.classification.given_pose_classes import given_support_csr
+    from relax.fine_pass.resident_significance import (
+        DeviceCompactedSignificantSamples,
+        build_coarse_significance_csr,
+    )
     from relax.sampling.perturbation import apply_relion_translation_perturbation
 
     window = apply_relion_translation_perturbation(
@@ -311,7 +315,7 @@ def window_supports(bnb: HalfBnB, sampling, translation_log_prior, *, adaptive_f
     )
     fields = dict(bnb.request_fields)
     fields["image_pre_shifts"] = bnb.search.centres
-    supports = window_significance(
+    counts, ids = window_significance(
         bnb.final_level,
         fields,
         bnb.search.candidates,
@@ -322,7 +326,12 @@ def window_supports(bnb: HalfBnB, sampling, translation_log_prior, *, adaptive_f
         max_significants=int(max_significants),
         image_batch_size=bnb.image_batch_size,
     )
-    csr = given_support_csr(
-        supports, n_coarse_rot=int(bnb.final_level.rotations.shape[0]), n_coarse_trans=int(window.shape[0])
+    csr = build_coarse_significance_csr(
+        n_images=int(counts.size),
+        n_coarse_rot=int(bnb.final_level.rotations.shape[0]),
+        n_coarse_trans=int(window.shape[0]),
+        n_significant_per_batch=[counts],
+        store_excluded_per_batch=[np.zeros(counts.size, dtype=bool)],
+        ids_per_batch=[ids],
     )
-    return csr, np.asarray([row.size for row in supports], dtype=np.int32)
+    return DeviceCompactedSignificantSamples(csr=csr), counts

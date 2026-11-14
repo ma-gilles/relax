@@ -195,6 +195,11 @@ def parse_refinement_args(argv=None):
     parser.add_argument("--bnb_max_kept", type=int, default=4096, help="bnb: most rotations a level keeps per image")
     parser.add_argument("--bnb_min_kept", type=int, default=16, help="bnb: fewest rotations a coarse level keeps per image")
     parser.add_argument(
+        "--bnb_search_precision", choices=("float32", "tf32"), default="float32",
+        help="bnb: the search's score products; tf32 ranks with TensorFloat-32 inputs and float32 sums (Ampere GPUs "
+        "and later), the window significance and pass 2 stay float32",
+    )
+    parser.add_argument(
         "--bnb_window_quantile", type=float, default=0.75,
         help="bnb: widen the translation window to hold 99%% of the offset posterior of this fraction of the "
         "particles (0 keeps RELION's range)",
