@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import copy
 import dataclasses
+from pathlib import Path
 
 import numpy as np
 
@@ -264,7 +265,7 @@ def _tilt_stack_paths(particles_star, datadir) -> list[str]:
     return [path if os.path.isabs(path) or not datadir else os.path.join(str(datadir), path) for path in paths]
 
 
-def stage_tilt_stacks(particles_star, datadir, cache_dir, *, rank: int = 0, world: int = 1) -> None:
+def stage_tilt_stacks(particles_star, datadir, cache_dir, *, rank: int = 0, world: int = 1) -> dict[str, str]:
     """Copy every particle's tilt stack into recovar's implicit staging directory ``cache_dir``, many at a time.
 
     The dataset's loader stages each stack it opens (``recovar.data_io.staging.stage_mrc``), one after another: a
@@ -275,10 +276,12 @@ def stage_tilt_stacks(particles_star, datadir, cache_dir, *, rank: int = 0, worl
     starts at its own share of the list, so the ranks copy different stacks first (the rest are then mostly staged
     already), with its share of the threads: four ranks of 32 threads each took 79 s where one took 38 s (jobs
     7477514, 7477515). A stack two ranks copy at once is still written whole (``stage_mrc`` replaces atomically).
-    A stack that fails to stage is left to the loader.
+    A stack that fails to stage is left to the loader. Returns each staged stack's local copy by its joined path
+    (``os.path.normpath`` of ``datadir`` and the STAR's name).
     """
 
     import logging
+    import os
     import time
     from concurrent.futures import ThreadPoolExecutor
 
@@ -287,7 +290,7 @@ def stage_tilt_stacks(particles_star, datadir, cache_dir, *, rank: int = 0, worl
 
     paths = _tilt_stack_paths(particles_star, datadir)
     if not paths:
-        return
+        return {}
     start = len(paths) * rank // max(world, 1)
     paths = paths[start:] + paths[:start]
     threads = max(4, _WARM_STACK_THREADS // max(world, 1))
@@ -297,13 +300,50 @@ def stage_tilt_stacks(particles_star, datadir, cache_dir, *, rank: int = 0, worl
     staging_log.setLevel(logging.WARNING)  # two INFO lines per stack otherwise
     try:
         with ThreadPoolExecutor(max_workers=threads) as pool:
-            list(pool.map(lambda path: stage_mrc(_resolve_mrc_path(path), cache_dir), paths))
+            copies = list(pool.map(lambda path: stage_mrc(_resolve_mrc_path(path), cache_dir), paths))
     finally:
         staging_log.setLevel(level)
+    staged = {
+        os.path.normpath(path): copy
+        for path, copy in zip(paths, copies)
+        if os.path.abspath(copy).startswith(os.path.abspath(cache_dir) + os.sep)
+    }
     logging.getLogger(__name__).info(
-        "Staged %d tilt stacks into %s in %.1f s (%d threads)",
-        len(paths), cache_dir, time.monotonic() - clock, threads,
+        "Staged %d of %d tilt stacks into %s in %.1f s (%d threads)",
+        len(staged), len(paths), cache_dir, time.monotonic() - clock, threads,
     )  # fmt: skip
+    return staged
+
+
+def staged_loader_star(flat_star, datadir, staged, directory) -> Path | None:
+    """A copy of the per-tilt STAR ``flat_star`` in ``directory`` (node-local) whose ``rlnImageName`` rows name the
+    staged copies ``staged`` (:func:`stage_tilt_stacks`) instead of the stacks; every other column is the same text.
+
+    recovar's loader resolves and stages each stack it opens, one after another, with a file-system round trip on
+    the source each time (``_resolve_mrc_path``, ``stage_mrc``): 37 s for EMPIAR-10157's 12,400 staged stacks
+    (genx, job 7478816), on every rank of a multi-GPU run at once. Read with implicit staging off, this STAR opens the
+    local copies only. A stack without a copy keeps its name (read from the source). None when nothing is staged.
+    """
+
+    import os
+
+    from recovar.data_io.starfile import read_star, write_star
+
+    if not staged:
+        return None
+    rows, optics = read_star(str(flat_star))
+    column = "_rlnImageName" if "_rlnImageName" in rows.columns else "rlnImageName"
+    index, _, names = rows[column].astype(str).str.partition("@").T.values
+    local = {}
+    for name in set(names):
+        joined = os.path.normpath(name if os.path.isabs(name) or not datadir else os.path.join(str(datadir), name))
+        local[name] = staged.get(joined, name)
+    loader_rows = rows.copy(deep=False)
+    loader_rows[column] = [f"{i}@{local[name]}" for i, name in zip(index, names)]
+    path = Path(directory) / "relax_loader" / f"{os.getpid()}-{Path(flat_star).name}"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    write_star(str(path), loader_rows, data_optics=optics, array_rows=True)
+    return path
 
 
 def load_tomo_dataset(
@@ -339,15 +379,33 @@ def load_tomo_dataset(
     scratch = None if read_policy is None else prepare_particle_reads(
         str(flat_star), read_policy, datadir=datadir, compact=False
     )
+    loader_star = None
     if scratch is None:
         from recovar.data_io.staging import get_cache_dir
 
         cache_dir = get_cache_dir()
         if cache_dir:
-            stage_tilt_stacks(particles_star, datadir, cache_dir, rank=rank, world=world)
+            staged = stage_tilt_stacks(particles_star, datadir, cache_dir, rank=rank, world=world)
+            loader_star = staged_loader_star(flat_star, datadir, staged, cache_dir)
         else:
             warm_tilt_stacks(particles_star, datadir)
-    images = load_dataset(str(flat_star), datadir=datadir, lazy=lazy, dtype=np.complex64, absent_angles_zero=True)
+    if loader_star is None:
+        images = load_dataset(str(flat_star), datadir=datadir, lazy=lazy, dtype=np.complex64, absent_angles_zero=True)
+    else:
+        import os
+
+        # The loader STAR names the staged copies: implicit staging off while it opens them.
+        previous = os.environ.get("RECOVAR_CACHE_DIR")
+        os.environ["RECOVAR_CACHE_DIR"] = ""
+        try:
+            images = load_dataset(
+                str(loader_star), datadir=datadir, lazy=lazy, dtype=np.complex64, absent_angles_zero=True
+            )
+        finally:
+            if previous is None:
+                os.environ.pop("RECOVAR_CACHE_DIR", None)
+            else:
+                os.environ["RECOVAR_CACHE_DIR"] = previous
     assert_reads_from_scratch(images, scratch)
     return TomoDataset(
         images, read_star(str(flat_star))[0], particles_star, tomograms_star, particle_frame=particle_frame

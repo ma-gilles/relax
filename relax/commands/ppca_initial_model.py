@@ -9,6 +9,7 @@ import os
 
 os.environ.setdefault("RECOVAR_EM_XLA_DEFAULTS", "1")
 import subprocess
+import tempfile
 from pathlib import Path
 
 import numpy as np
@@ -773,9 +774,12 @@ def main(args=None):
     output = Path(args.output)
     output.mkdir(parents=True, exist_ok=True)
     if args.ios:
+        # Another rank's per-tilt STAR (284 MB for EMPIAR-10157, written twice) stays on this node: rank 0's is
+        # the run's record, and the ranks wrote theirs to the shared output file system at once.
+        star_dir = output if rank_env is None or rank_env.is_leader else Path(tempfile.mkdtemp(prefix="relax-rank-"))
         data, identity, image_reading = load_tilt_training(
             args.ios,
-            output,
+            star_dir,
             config.preread_images,
             particle_frame=config.band() is not None,
             ranks=world,
