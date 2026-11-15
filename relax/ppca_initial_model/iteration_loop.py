@@ -274,17 +274,30 @@ class _Laps:
 # tile shapes few.
 TILES_PER_RANK = 4
 
+# Halving stops before the tiles would average fewer images (a subtomogram particle's tilt images each) than this.
+# A tile has a fixed cost of about 0.1 s on an H100 (0.084 to 0.109 s per tile, fitted from the ranks' busy seconds
+# against their tiles and images in SPA's radius-16 stage, jobs 7477514 and 7477520) and costs 0.3 to 0.7 ms per
+# image at the cheapest (SPA, ET radius 24): below about 200 images a tile spends at least half its time on the fixed
+# cost, and halving it again doubles that cost for no less work. SPA's radius-16 batches of about 410 images were cut
+# into 17 to 48 tiles on 2 to 8 ranks, and every rank stayed busy about 0.7 s, the one-GPU E-step's time. The
+# smallest ET tiles (4 particles, about 236 tilt images, eight ranks at radius 16, at 2.4 ms per image) are unchanged.
+MIN_TILE_IMAGES = 200
 
-def _rank_tile_size(cut, planned, world):
+
+def _rank_tile_size(cut, planned, world, cost):
     """The tile size of a ``world``-rank E-step: ``planned`` halved until ``cut(size)`` (``(group, noise group,
     ids)`` per tile) makes :data:`TILES_PER_RANK` tiles per rank, each with at most ``1 / (TILES_PER_RANK * world)``
-    of the particles, or one particle per tile."""
+    of the particles, or one particle per tile; but not to tiles of fewer than :data:`MIN_TILE_IMAGES` images on
+    average (``cost(ids)``: a tile's images)."""
     share = TILES_PER_RANK * world
     size = int(planned)
     while size > 1:
         tiles = cut(size)
         largest = max(len(tile[2]) for tile in tiles)
         if len(tiles) >= share and largest * share <= sum(len(tile[2]) for tile in tiles):
+            break
+        halved = cut(size // 2)
+        if sum(cost(tile[2]) for tile in halved) < MIN_TILE_IMAGES * len(halved):
             break
         size //= 2
     return size
@@ -757,7 +770,7 @@ def _expectation(
         if share is not None:
             # The tile size orders the update's sums: every rank cuts the tiles with rank 0's plan.
             if share.rank == 0:
-                tile_size = _rank_tile_size(cut, tile_size, share.world)
+                tile_size = _rank_tile_size(cut, tile_size, share.world, lambda ids: _tile_cost(dataset, ids))
             tile_size = share.plan(tile_size)
             laps.mark("plan_exchange")
         # GPU streams pad a full tile's image axis with zero images to a multiple of SHIFT_ALIGN: the Gram and

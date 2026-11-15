@@ -87,23 +87,36 @@ def test_tile_blocks_are_runs_of_about_equal_cost():
 
 def test_rank_tile_size_halves_until_each_rank_has_several_small_tiles():
     """Rank 0 halves the planned tile size until the E-step has TILES_PER_RANK tiles per rank and no tile holds more
-    than 1 / (TILES_PER_RANK * ranks) of the particles (or one particle per tile)."""
+    than 1 / (TILES_PER_RANK * ranks) of the particles (or one particle per tile), but not to tiles of fewer than
+    MIN_TILE_IMAGES images on average."""
 
     def cut(size):
         return [(group, 0, ids[begin : begin + size]) for group, ids in enumerate((np.arange(150), np.arange(150)))
                 for begin in range(0, 150, size)]  # fmt: skip
 
-    assert iteration_loop._rank_tile_size(cut, 150, 1) == 75  # 2 tiles at 150, 4 at 75
-    assert iteration_loop._rank_tile_size(cut, 150, 2) == 37  # 10 tiles at 37, each at most 1/8 of 300
-    assert iteration_loop._rank_tile_size(cut, 10, 2) == 10  # 30 tiles already
+    def tilts(ids):  # subtomogram particles of 59 tilt images each
+        return 59 * len(ids)
+
+    assert iteration_loop._rank_tile_size(cut, 150, 1, tilts) == 75  # 2 tiles at 150, 4 at 75
+    assert iteration_loop._rank_tile_size(cut, 150, 2, tilts) == 37  # 10 tiles at 37, each at most 1/8 of 300
+    assert iteration_loop._rank_tile_size(cut, 10, 2, tilts) == 10  # 30 tiles already
+    # Single particles (one image each): 150-image tiles are not halved below 200 images; 4 particles of 59 tilts
+    # (236 tilt images) may be the tile, 2 (118) not.
+    assert iteration_loop._rank_tile_size(cut, 150, 4, len) == 150
+
+    def large(size):
+        return [(group, 0, np.arange(1000)[begin : begin + size]) for group in range(2) for begin in range(0, 1000, size)]
+
+    assert iteration_loop._rank_tile_size(large, 800, 4, len) == 200  # 10 tiles of 200; at 100 they would average 100
+    assert iteration_loop._rank_tile_size(cut, 150, 32, tilts) == 4
 
     def one_large_group(size):  # 140 particles in one tilt group, 8 groups of 20: the large group's tiles shrink
         groups = [np.arange(140)] + [np.arange(20)] * 8
         return [(0, 0, ids[begin : begin + size]) for ids in groups for begin in range(0, ids.size, size)]
 
     # 300 particles on 4 ranks: at most 18 per tile; at 37 there are 4 + 8 = 12 tiles, too few, and 37 > 18.
-    assert iteration_loop._rank_tile_size(one_large_group, 150, 4) == 18
-    assert iteration_loop._rank_tile_size(lambda size: [(0, 0, [0])], 150, 4) == 1
+    assert iteration_loop._rank_tile_size(one_large_group, 150, 4, tilts) == 18
+    assert iteration_loop._rank_tile_size(lambda size: [(0, 0, [0])], 150, 4, tilts) == 150  # one tile at any size
 
 
 @dataclass(frozen=True)
