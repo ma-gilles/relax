@@ -9,12 +9,14 @@ from helpers.full_row_tile import accumulate_full_row_tile
 
 from relax.fourier.half_spectrum import make_half_image_weights, make_shell_indices_half
 from relax.local_search.layout import build_pass2_hypothesis_layout
+from relax.ppca_initial_model.sgd_update import metric_trace
 from relax.ppca_refinement.config import GeometryConfig, ScheduleConfig, ScoringConfig, SparsePass2Config
 from relax.ppca_refinement.dense_blocks import _per_image_pose_prior_block
 from relax.ppca_refinement.dense_dataset import accumulate_dense_ppca_statistics, compute_dense_ppca_embeddings
 from relax.ppca_refinement.full_row_kernels import full_row_pose_log_prior
 from relax.ppca_refinement.full_row_stream import (
     FULL_ROW_ENGINE,
+    ExactTracePPCAStats,
     TracePPCAStats,
     accumulate_full_row_tiles,
     coarse_support_mask,
@@ -141,7 +143,7 @@ def _half_volume(rng, scale=1.0):
     return (scale * np.asarray(ftu.full_volume_to_half_volume(full, VOLUME_SHAPE)).reshape(-1)).astype(np.complex64)
 
 
-def make_tile_problem(device=None, q=2, metric_trace_only=False, gemm_precision="fp32"):
+def make_tile_problem(device=None, q=2, metric_trace_only=False, gemm_precision="fp32", exact_metric_trace=False):
     reference, shared, parent = _layouts()
     rng = np.random.default_rng(3)
     images = (rng.standard_normal((3, N_HALF)) + 1j * rng.standard_normal((3, N_HALF))).astype(np.complex64)
@@ -173,6 +175,7 @@ def make_tile_problem(device=None, q=2, metric_trace_only=False, gemm_precision=
         n_coarse_translations=3,
         device=device,
         metric_trace_only=metric_trace_only,
+        exact_metric_trace=exact_metric_trace,
         gemm_precision=gemm_precision,
         **common,
     )
@@ -251,6 +254,45 @@ def test_trace_only_stream_matches_host_mask_metric_trace(tile_problem):
     for name in ("residual_gradient", "residual_num", "residual_den", "embeddings"):
         assert_matches(np.asarray(getattr(actual, name)), np.asarray(getattr(expected, name)))
     assert_matches(np.float32(actual.log_likelihood), np.float32(expected.log_likelihood))
+
+
+def test_exact_trace_needs_a_gpu_stream():
+    import jax
+
+    with pytest.raises(ValueError, match="exact metric-diagonal trace needs a GPU stream"):
+        make_tile_problem(device=jax.devices("cpu")[0], exact_metric_trace=True)
+
+
+@pytest.mark.gpu
+@pytest.mark.parametrize("metric_trace_only", [False, True])
+def test_exact_trace_stream_adds_the_squared_weight_trace(metric_trace_only, gpu_device):
+    """The exact trace rides along: every other statistic equals the stream without it, and it lies between
+    zero and the backprojected trace (squared weights in [0, 1] never exceed the weights; LHS traces are
+    nonnegative), and differs from it: about (2/3)^3 of it in total for poses off the grid (the mean of
+    (1-f)^2 + f^2 over a uniform offset, per axis), more for this tiny grid's near-aligned poses."""
+    plain = accumulate_full_row_tile(
+        make_tile_problem(device=gpu_device, metric_trace_only=metric_trace_only)[3], np.arange(3), SIGNIFICANT
+    )
+    actual = accumulate_full_row_tile(
+        make_tile_problem(device=gpu_device, metric_trace_only=metric_trace_only, exact_metric_trace=True)[3],
+        np.arange(3),
+        SIGNIFICANT,
+    )
+    assert isinstance(actual, ExactTracePPCAStats)
+    if metric_trace_only:
+        assert actual.lhs_tri is None
+        trace = np.asarray(actual.metric_trace)
+        assert_matches(trace, np.asarray(plain.metric_trace))
+    else:
+        assert_matches(np.asarray(actual.lhs_tri), np.asarray(plain.lhs_tri))
+        trace = np.asarray(metric_trace(actual.lhs_tri, 3))
+    for name in ("residual_gradient", "residual_num", "residual_den", "embeddings"):
+        assert_matches(np.asarray(getattr(actual, name)), np.asarray(getattr(plain, name)))
+    exact = np.asarray(actual.exact_metric_trace)
+    assert exact.shape == trace.shape
+    scale = np.max(trace)
+    assert np.all(exact >= -1e-6 * scale) and np.all(exact <= trace + 1e-6 * scale)
+    assert 0.15 < np.sum(exact) / np.sum(trace) < 0.9
 
 
 def test_device_resident_tile_embeddings_match_host_mask(tile_problem):

@@ -13,6 +13,7 @@ from pathlib import Path
 
 import numpy as np
 
+from relax.ppca_initial_model.band_schedule import physical_band_stages
 from relax.ppca_initial_model.checkpoint import file_hash
 from relax.ppca_initial_model.config import Config
 from relax.runtime.host_memory import available_memory_bytes
@@ -33,6 +34,18 @@ def add_args(parser):
     parser.add_argument("--seed", type=int, default=11)
     parser.add_argument("--iterations", type=int, default=200)
     parser.add_argument("--stages", help="JSON list of [first iteration, Fourier radius, HEALPix order]")
+    parser.add_argument(
+        "--physical-band",
+        action="store_true",
+        help="Compute the stages from the box in Angstrom instead of --stages: start at 35 A, add 1/(384 A) every 125 "
+        "updates, HEALPix order 1 above 32 A, 2 above 16 A, then 3 (from 20 A if the band stops above 16 A). "
+        "The stages are logged; --iterations sets how far they run",
+    )
+    parser.add_argument(
+        "--band-target-resolution",
+        type=float,
+        help="Resolution in Angstrom where --physical-band stops (default Nyquist - 1)",
+    )
     parser.add_argument(
         "--oversampling",
         type=int,
@@ -103,10 +116,104 @@ def add_args(parser):
         help="pass 2 skips pose rows on which every image of a tile has less posterior mass (default 1e-10, "
         "applied when at most half the rows remain; 0: none skipped)",
     )
-    parser.add_argument("--sgd-learning-rate", type=float, default=0.4)
+    parser.add_argument(
+        "--sgd-learning-rate",
+        type=float,
+        help="Momentum SGD step factor on the gradient over the band maximum of the metric trace, which sums the "
+        "1 + q channels, so a rate r per channel is r (1 + q) here; above 0.8 (1 + q) the run warns (default 0.4; "
+        "0.8 with --sgd-variant gated)",
+    )
+    parser.add_argument(
+        "--sgd-momentum",
+        type=float,
+        help="Momentum B of the velocity B v + (1 - B) step (default 0.9); 0 is plain SGD",
+    )
+    parser.add_argument(
+        "--vdam-second-moment",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="VDAM divides its direction by the root of the half-set second moment (default); "
+        "--no-vdam-second-moment keeps the rest of VDAM (half-set first moments, shell gates, schedules) without it",
+    )
+    parser.add_argument(
+        "--sgd-variant",
+        choices=tuple(SGD_VARIANTS),
+        default="plain",
+        help="Momentum SGD variant: plain (default) or gated, which sets --sgd-gate halfset, --sgd-step-scale "
+        "exact_diagonal, --noise-anneal 8,750 and a step factor of 0.8 (ppca_optimizer_axes.md, 'Gated momentum "
+        "SGD'); a component given explicitly overrides the variant's",
+    )
+    parser.add_argument(
+        "--sgd-gate",
+        choices=("none", "halfset"),
+        help="Momentum SGD step gate: none, or VDAM's half-set shell gate (the run also keeps VDAM's half-set moments)",
+    )
+    parser.add_argument(
+        "--sgd-step-scale",
+        choices=("trace", "exact_diagonal"),
+        help="Momentum SGD curvature scale: the band maximum of the backprojected metric trace (trace), or of the "
+        "exact projection-Hessian diagonal (exact_diagonal, GPU streams)",
+    )
+    parser.add_argument(
+        "--noise-anneal",
+        help="F,N: the E-step of update t uses the noise estimate times 1 + (F - 1) max(0, 1 - t/N); 1,0 is off",
+    )
     parser.add_argument("--resume")
     parser.add_argument("--stop-after", type=int, help="Checkpoint stop without changing the scientific schedule")
     parser.add_argument("--stop-file", help="Stop between iterations after an atomic checkpoint")
+
+
+# Momentum SGD variants: the Config values each sets (plain: the Config defaults). Gated is the measured
+# recommendation of docs/development/ppca_optimizer_axes.md ("Gated momentum SGD").
+SGD_VARIANTS = {
+    "plain": {},
+    "gated": {
+        "sgd_learning_rate": 0.8,
+        "sgd_halfset_gate": True,
+        "sgd_step_scale": "exact_diagonal",
+        "noise_anneal_factor": 8.0,
+        "noise_anneal_updates": 750,
+    },
+}
+
+
+def parse_noise_anneal(value):
+    """``"F,N"`` to ``(noise_anneal_factor, noise_anneal_updates)``."""
+    parts = value.split(",")
+    if len(parts) != 2:
+        raise ValueError(f"--noise-anneal takes F,N (a factor and an update count), not {value!r}")
+    return float(parts[0]), int(parts[1])
+
+
+def resolve_sgd_options(args):
+    """The Config fields of the momentum SGD variant and its components, and of noise annealing.
+
+    Precedence: a component given explicitly, then the ``--sgd-variant`` preset, then the Config default.
+    The variant and the gate and step-scale components are momentum SGD options; with VDAM they refuse.
+    """
+    options = dict(SGD_VARIANTS[args.sgd_variant])
+    if args.sgd_learning_rate is not None:
+        options["sgd_learning_rate"] = args.sgd_learning_rate
+    if args.sgd_gate is not None:
+        options["sgd_halfset_gate"] = args.sgd_gate == "halfset"
+    if args.sgd_step_scale is not None:
+        options["sgd_step_scale"] = args.sgd_step_scale
+    if args.noise_anneal is not None:
+        options["noise_anneal_factor"], options["noise_anneal_updates"] = parse_noise_anneal(args.noise_anneal)
+    if args.optimizer != "momentum_sgd" and (
+        args.sgd_variant != "plain"
+        or args.sgd_gate is not None
+        or args.sgd_step_scale is not None
+        or args.sgd_momentum is not None
+    ):
+        raise ValueError("--sgd-variant, --sgd-gate, --sgd-step-scale and --sgd-momentum need --optimizer momentum_sgd")
+    if args.sgd_momentum is not None:
+        options["sgd_momentum"] = args.sgd_momentum
+    if not args.vdam_second_moment:
+        if args.optimizer != "vdam":
+            raise ValueError("--no-vdam-second-moment needs --optimizer vdam")
+        options["vdam_second_moment"] = False
+    return options
 
 
 # Largest share of the job's memory that "auto" lets one host copy of the particle stack take.
@@ -351,6 +458,10 @@ def main(args=None):
         raise RuntimeError("Particle refinement runs require Slurm; use unit tests for local numerical checks")
     from relax.ppca_initial_model.iteration_loop import run
 
+    if args.physical_band and args.stages:
+        raise ValueError("--physical-band computes the stages; do not give --stages as well")
+    if args.band_target_resolution is not None and not args.physical_band:
+        raise ValueError("--band-target-resolution needs --physical-band")
     config = Config(
         q=args.q,
         seed=args.seed,
@@ -370,7 +481,7 @@ def main(args=None):
         checkpoint_interval=args.checkpoint_interval,
         skip_final_embeddings=args.skip_final_embeddings,
         optimizer=args.optimizer,
-        sgd_learning_rate=args.sgd_learning_rate,
+        **resolve_sgd_options(args),
         gemm_precision=args.ppca_gemm_precision,
         preread_images=args.ppca_preread_images,
         pass2_mass_floor=args.ppca_pass2_mass_floor,
@@ -386,6 +497,12 @@ def main(args=None):
         image_reading = None
     else:
         data, identity, image_reading = load_training(args.particles, config.preread_images)
+    if args.physical_band:
+        stages = physical_band_stages(data.grid_size, data.voxel_size, args.band_target_resolution)
+        config = dataclasses.replace(config, stages=stages)
+        logger.info("physical band of a %g A box: --stages %s", data.grid_size * data.voxel_size, json.dumps(stages))
+        if stages[-1][0] > config.iterations:
+            logger.warning("--iterations %d ends before the last band stage %s", config.iterations, stages[-1])
     identity["source"] = source_identity()
     if not args.resume and list(output.glob("checkpoint_*.npz")):
         raise ValueError("Output already contains checkpoints; use --resume or a new directory")

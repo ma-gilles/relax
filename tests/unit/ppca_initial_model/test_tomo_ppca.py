@@ -414,27 +414,15 @@ def test_tiles_keep_one_tilt_group():
     assert [t.tolist() for t in tiles] == [[3, 0], [2], [1]]
 
 
-@pytest.mark.parametrize("optimizer", ["vdam", "momentum_sgd"])
-def test_controller_runs_subtomogram_particles(tmp_path, optimizer):
-    """Two all-particle updates and the final embedding through the InitialModel controller."""
-    import json
-
-    from relax.ppca_initial_model import iteration_loop
-    from relax.ppca_initial_model.config import Config
-    from relax.ppca_initial_model.iteration_loop import run
-
-    # Other tests monkeypatch the rotation grid behind these per-order caches.
-    iteration_loop._rotation_grid.cache_clear()
-    iteration_loop._direction_ids.cache_clear()
-
-    n, n_particles = 16, 8
+def _controller_particles():
+    n = 16
     rng = np.random.default_rng(2)
     image_frames = [[0, 1, 2], [0, 2], [1, 2, 0], [0, 1, 2]] * 2
     n_images = sum(len(f) for f in image_frames)
     raw = rng.standard_normal((n_images, n, n)).astype(np.float32)
     half = np.asarray(ftu.get_dft2_real(raw)).reshape(n_images, -1).astype(np.complex64)
     offsets = np.concatenate([[0], np.cumsum([len(f) for f in image_frames])]).astype(np.int64)
-    particles = TiltParticles(
+    return TiltParticles(
         image_shape=(n, n),
         volume_shape=(n, n, n),
         voxel_size=10.0,
@@ -444,6 +432,32 @@ def test_controller_runs_subtomogram_particles(tmp_path, optimizer):
         group_frames=(FRAMES[:3], FRAMES[1:]),
         read=lambda ids: (raw[ids], jnp.asarray(half[ids]), jnp.full((len(ids), half.shape[1]), 0.8, jnp.float32)),
     )
+
+
+@pytest.mark.parametrize(
+    "optimizer, options",
+    [
+        ("vdam", {}),
+        ("vdam", {"vdam_second_moment": False}),
+        ("momentum_sgd", {}),
+        ("momentum_sgd", {"sgd_momentum": 0.0, "sgd_learning_rate": 1.95}),
+    ],
+)
+def test_controller_runs_subtomogram_particles(tmp_path, caplog, optimizer, options):
+    """Two all-particle updates and the final embedding through the InitialModel controller."""
+    import json
+    import logging
+
+    from relax.ppca_initial_model import iteration_loop
+    from relax.ppca_initial_model.config import Config
+    from relax.ppca_initial_model.iteration_loop import run
+
+    # Other tests monkeypatch the rotation grid behind these per-order caches.
+    iteration_loop._rotation_grid.cache_clear()
+    iteration_loop._direction_ids.cache_clear()
+
+    n_particles = 8
+    particles = _controller_particles()
     config = Config(
         q=2,
         iterations=2,
@@ -455,7 +469,9 @@ def test_controller_runs_subtomogram_particles(tmp_path, optimizer):
         image_batch_size=3,
         rotation_block_size=32,
         optimizer=optimizer,
+        **options,
     )
+    caplog.set_level(logging.INFO, logger="relax.ppca_initial_model.iteration_loop")
     try:
         state = run(particles, config, tmp_path, {"test": True}, diameter_ang=120.0)
     finally:
@@ -469,6 +485,63 @@ def test_controller_runs_subtomogram_particles(tmp_path, optimizer):
     embeddings = np.load(tmp_path / "embeddings.npz")
     np.testing.assert_array_equal(np.sort(embeddings["particle_ids"]), np.arange(n_particles))
     assert embeddings["z"].shape == (n_particles, 2)
+    # The logs show the update rule that ran: every update's record, and the job log at the first update.
+    if optimizer == "vdam":
+        off = options.get("vdam_second_moment") is False
+        assert all(row["second_moment_scaling"] is not off for row in rows)
+        if off:
+            assert all(row["direction_divisor_mean"] == pytest.approx([1, 1]) for row in rows)
+            assert all(row["second_moment_mean"] != pytest.approx([1, 1]) for row in rows)
+            assert "second-moment scaling off" in caplog.text
+    else:
+        assert all(row["momentum"] == config.sgd_momentum for row in rows)
+        if config.sgd_momentum == 0:
+            assert all(row["velocity_carried_l2"] == 0 for row in rows)
+            assert "momentum 0 (off)" in caplog.text and "carried velocity L2 0 of" in caplog.text
+        else:
+            assert rows[1]["velocity_carried_l2"] > 0
+
+
+@pytest.mark.parametrize(
+    "options, expected",
+    [
+        (["--no-vdam-second-moment"], "second-moment scaling off"),
+        (["--optimizer", "momentum_sgd", "--sgd-momentum", "0", "--sgd-learning-rate", "1.95"], "momentum 0 (off)"),
+    ],
+)
+def test_ios_command_trains_the_ab_initio_versions(tmp_path, monkeypatch, caplog, options, expected):
+    """``relax ppca_initial_model --ios`` end to end: random start, the physical band and each version."""
+    import json
+    import logging
+
+    from relax.commands import ppca_initial_model as command
+    from relax.ppca_initial_model import iteration_loop
+
+    iteration_loop._rotation_grid.cache_clear()
+    iteration_loop._direction_ids.cache_clear()
+    monkeypatch.setenv("SLURM_JOB_ID", "1")
+    monkeypatch.setattr(command, "load_tilt_training", lambda ios, output: (_controller_particles(), {"test": True}))
+    monkeypatch.setattr(command, "source_identity", lambda: {"test": True})
+    caplog.set_level(logging.INFO, logger="relax")
+    output = tmp_path / "run"
+    try:
+        command.main(
+            [
+                "--ios", "optimisation_set.star", "--particle-diameter", "120", "-o", str(output),
+                "--q", "2", "--seed", "12", "--iterations", "20", "--oversampling", "0", "--physical-band",
+                "--stochastic-batch-size", "4", "--stochastic-all-iterations", "--balanced-stochastic-halves",
+                "--shift-range", "1", "--shift-step", "1", "--image-batch-size", "3", "--rotation-block-size", "32",
+                "--skip-final-embeddings", "--stop-after", "2", *options,
+            ]  # fmt: skip
+        )
+    finally:
+        iteration_loop._rotation_grid.cache_clear()
+        iteration_loop._direction_ids.cache_clear()
+    rows = [json.loads(line) for line in (output / "iterations.jsonl").read_text().splitlines()]
+    # L = 160 A: 35 A is shell 5, 32 A, so HEALPix order 2.
+    assert [(row["radius"], row["healpix_order"], sum(row["half_counts"])) for row in rows] == [(5, 2, 4)] * 2
+    assert json.loads((output / "run.json").read_text())["config"]["stages"][0] == [1, 5, 2]
+    assert "--stages [[1, 5, 2]" in caplog.text and expected in caplog.text
 
 
 def test_tilt_shifts_are_each_frames_projection_of_each_shift():
