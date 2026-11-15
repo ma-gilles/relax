@@ -2776,9 +2776,10 @@ One E-step (`iteration_loop._expectation` with `ranks`):
 
 1. Rank 0 sends the E-step: the model fields it reads (theta, noise, offset variance, direction prior), the two
    id groups and the iteration (`ExpectationTask`). Every rank prepares the same streams.
-2. Rank 0 plans the tile size on its device, halves it until the E-step has at least four tiles per rank
-   (`_rank_tile_size`: a subtomogram batch of 200 particles makes five mixed tiles at the planned 150 particles
-   per tile), and sends it (`TilePlan`); every rank cuts the same tiles with it (`tilt_tiles`, or slices of each
+2. Rank 0 plans the tile size on its device, halves it until the E-step has at least four tiles per rank and no
+   tile holds more than `1 / (4 x ranks)` of the batch's particles (`_rank_tile_size`: a subtomogram batch of 429
+   particles made 24 tiles at the planned 150 particles per tile, one of them a 150-particle tilt group that took
+   11 s of the 28.6 s E-step), and sends it (`TilePlan`); every rank cuts the same tiles with it (`tilt_tiles`, or slices of each
    group for single particles). Another rank checks that its own plan holds rank 0's size and fails otherwise.
    The device models must match (the run fingerprint compares them, with the inputs, the code identity and the
    configuration).
@@ -2828,6 +2829,22 @@ programs; rank 0 alone runs the update, the logging and the checkpoints while th
 and, on several GPUs, each rank's blocks, tiles, cost, busy seconds and E-step phases (`ranks`). Each E-step moves
 the model to every rank and each rank's volume sums (for box 128, q = 2: about 60 MB per id group) to rank 0,
 over an abstract Unix socket; rank 0 places them on its device to add them.
+
+Measured scaling of the E-step on one exclusive node of four H100 SXM5 (jobs 7474543, old static assignment,
+and 7474742, blocks; `bench_estep.py` repeats the E-step of a finished run's update from its checkpoint; seconds of
+the third repeat, after compilation). Starting a stream costs 0.008 s per update; two or four independent one-GPU
+processes on the node run as fast as one alone, so the node adds no contention.
+
+| E-step | 1 GPU | 2 GPUs | 4 GPUs |
+| --- | --- | --- | --- |
+| SPA EMPIAR-13372, update 80 (8214 images, radius 31, HEALPix 3), static | 5.03 s | 2.57 s (1.96x) | 1.30 s (3.87x) |
+| the same, blocks | 5.00 s | 2.57 s (1.95x) | 1.36 s (3.68x) |
+| SPA, all 82,138 images, static / blocks | 49.7 / 49.3 s | | 12.7 / 12.8 s (3.9x / 3.85x) |
+| ET EMPIAR-10157, update 41 (429 particles, radius 16, HEALPix 3), static | 28.6 s | 14.8 s (1.93x) | 11.3 s (2.53x) |
+| the same, blocks without the share bound | 28.6 s | 14.9 s (1.92x) | 22.2 s |
+
+The ET rows are why rank 0 bounds the largest tile's share: on four ranks the static assignment gave two ranks one
+150-particle tile each (11 s) and two ranks eleven mixed tiles of the same predicted cost (3 to 4 s).
 
 Host memory. The ranks share the node's memory and each holds its own copy of a preread stack: `--ppca-preread-
 images auto` prereads only when the ranks' copies together fit the usual quarter of the job's memory
