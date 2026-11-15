@@ -221,7 +221,7 @@ affected.
 of the final pass. Refused: subtomograms (their 3-D prior, `relion_offset_log_prior_3d`, has the same unit mix
 and is not changed) and optics groups on several image shapes. `relax multibody` does not take it.
 
-Measured effect (K=1 auto-refinements from zero offsets and angles, 2026-11-14; directions within 5 degrees of
+Measured effect (K=1 auto-refinements from zero offsets and angles, 2026-11-15; directions within 5 degrees of
 the truth, or of the published consensus for EMPIAR-10076):
 
 | Data | Pixel (A) | RELION | consistent | Started from the true origins |
@@ -231,9 +231,12 @@ the truth, or of the published consensus for EMPIAR-10076):
 | the same at four times the SNR | 4.25 | 65% | 95% | |
 | EMPIAR-10076 binned to box 128 | 3.275 | 73%, 74% | 77%, 77% | 78% |
 | 8c9c simulated, box 256, 15 A offsets, 50,000 particles | 2.125 | 74%, 75% | 78%, 76% | 100% |
+| EMPIAR-10076 unbinned, box 256 | 1.64 | 67% | 68% | 79% |
 
 Two values are two seeds. On the 5nrl box-128 set RELION's prior never moved an offset (median error 4.2 px,
 the median true offset) and the map stalled at 27 A; a wider first window alone (`--offset_range 12`) changed
 nothing, and `consistent` with it reached 55% (aligned map FSC AUC 0.695 against 0.702 from the true origins).
-At 2.125 A per pixel the difference is within the seed spread.
+At 2.125 A per pixel the difference is within the seed spread, and at 1.64 A it is 1% (one seed). At these pixel
+sizes the gap to the true origins comes from RELION's 5 px first window, which `--offset_range` widens:
+EMPIAR-10076 at box 256 reaches 77% with `--offset_range 15 --offset_step 3`.
 
