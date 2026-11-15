@@ -1710,10 +1710,11 @@ z_i\sim\mathcal N(0,I_q).
 Noise is independent across tilt images, with spectrum `Sigma_g` in the
 coefficient units of section 14 for the particle's optics group `g` (one per
 tomogram on RELION 5 imports), as in RELION; dose enters through the CTF, not the
-noise. Tiles hold particles of one tilt group and one noise group (16.4), and the
-controller runs one stream per noise group, whose noise enters that stream's
-operands; no engine change is needed. Until October 3, 2026 the first version
-used one spectrum for every tilt image.
+noise. The controller runs one stream with a noise table, one spectrum per noise
+group: each tile key (tilt group and noise group, 16.4) reads its row into its
+operands, and the tile's residual sums are kept per noise group. Until October 3,
+2026 the first version used one spectrum for every tilt image; until November 6,
+2026 each noise group had a stream of its own.
 
 ### 16.2 The latent is shared: sum the tilts before integrating it out
 
@@ -1762,7 +1763,8 @@ smoothing as SPA.
 A **tilt group** is a set of particles whose images come from one fixed list of
 frame matrices `{Aproj_f}_{f=1..K}`: the particles of one tomogram when they
 share the subtomogram matrix (the simulator writes none, so every particle of a
-tomogram does). Image tiles are drawn from one group. A particle's invisible
+tomogram does). A tile of one key is drawn from one group and one noise group (mixed
+tiles of many keys follow the table). A particle's invisible
 frames get zero operands, which add exact zeros to every GEMM and to the scatter.
 Particles with individual subtomogram orientations form groups of one, which is
 correct but shares no projections.
@@ -1786,6 +1788,34 @@ rotations. A one-frame group with `Aproj = I` and a 2D shift grid is exactly the
 SPA tile. Per-image 3D-to-2D phases replace SPA's shared translation table when
 `Y1` is built (`tilt_translation_angles` geometry, one table per tilt image).
 
+**Mixed tiles.** On real data a batch is spread over hundreds of tomograms with a
+few particles each (300 particles over about 500 tomograms on the
+thyroglobulin/beta-galactosidase mix), so tiles of one key would be hundreds of
+tiles of one or two particles, and the host work and launches per tile, not the
+arithmetic, set the update time (7.7 s per update against 0.42 s on a synthetic
+set of the same size). RELION has no such constraint: its expectation projects
+each particle's tilts at the particle's own matrices. Keys with at most
+`MIXED_GROUP_MAX = 8` particles of a batch share mixed tiles (`tilt_tiles`): a
+mixed tile holds `G` keys of `b` particle slots each (`b` the power of two that
+holds its largest key; `G` padded to a size bucket with keys of padding particles),
+each key with its own frames (padded to the stream's largest group with identity
+frames no particle sees) and noise row. Its operands are per key,
+`Y1 (G, K 2F, b T)`, `ctf2 (G, K F, b)` and so on; pass 1 and pass 2 run each key
+as one step of a scan, at the shapes of a one-key tile of `b` particles: in pass 1
+the projections at that key's `Aproj_f R_r` and the two GEMMs, with the latent
+epilogue and normalization run once for the tile in particle order (a slot
+permutation maps between the two orders). Pass 2 keeps each particle's sparsity:
+each key visits only the rows on which one of its own particles has posterior mass
+of at least `pass2_mass_floor` (in blocks, padded to the tile's largest key), forms
+its posterior weights, M-step images and moment scatter there and adds its residual
+to its noise group. With the union of all keys' rows instead, pass 2 visited every
+row (row fraction 1.0 against 0.05-0.08 for one-key tiles on the real mix) and the
+order-2 stage ran slower than with one-key tiles. The arithmetic is that of
+the one-key tiles; the tile count per update drops from hundreds to a few. Keys
+with more particles keep tiles of their own, whose projections all their particles
+share; adaptive oversampling reads one key's frames per tile and keeps one-key
+tiles.
+
 Cost per tile and pass is `2 P R (K 2F)(B T)` GEMM flops, `K` times an SPA tile
 of the same `B T`, plus `R K` window projections shared by the tile's `B`
 particles. Example: `K = 41`, radius 31 at box 64 (`2F` about 3000), HEALPix 3
@@ -1808,6 +1838,32 @@ The first version scores the full rotation grid of each stage with
 coarse parent). The oversampled path needs a coarse significance pass; the
 SPA one runs the host-mask dense engine, which has no tilt axis. A coarse pass
 through the same tilt stream is the follow-up, if the full grid is too slow.
+
+**Two low-pass limits, for two different reasons (keep them apart).**
+
+1. *Optimisation schedule* (`stages`, `--physical-band`): each stage's Fourier
+   radius is the band the model may use at that point of the run, marched up
+   with the HEALPix order (frequency marching). It shapes the optimisation
+   landscape; it is part of the method, and every pass that updates the model
+   (the fine pass, the M-step, the noise) uses it.
+2. *Search bound* (pass 1 of a coarse-to-fine pose search: adaptive
+   oversampling, `--tilt-coarse-pass`): a coarse rotation cell is scored at its
+   centre only, so pass 1 uses only the frequencies up to which every pose
+   inside the cell scores close to the centre: RELION's coarse image size for
+   the coarse grid's angular step and the particle diameter
+   (`pass1_image_size`; rotated distance `step/360 * pi * D`, resolution that
+   over 1.2), capped at the stage's window. It only decides which poses the
+   fine pass visits; it never limits the model.
+
+A change to one must not move the other: a coarser search grid lowers the
+pass-1 window, not the stage's radius; a new stage schedule changes the
+model's band, not the pass-1 window (except through the cap).
+
+`--tilt-coarse-pass` (subtomogram particles, from order 2): pass 1 on the
+order `hp - 1` grid (or `--tilt-coarse-order K`) at the search-bound window,
+then the stage's grid at the stage's window on the rows whose nearest coarse
+rotation is significant for the particle (posterior mass `target_mass`, at
+most `max_significant`) or within 1.5 coarse steps of one.
 
 ### 16.6 First-version limits
 
@@ -2257,6 +2313,28 @@ Script `snr008_os1/run_local_gpu3.sh` (driver `snr008_os1/et_run_hp4.py`, table
 `snr008_os1/table_local.py`). Evidence in
 `em_fixtures/ppca_evidence_20261003/em_work/relax_ppca_cryoet_20261002/snr008_os1/local_a100_20261005/`
 (`table.json`, per-arm `eval.json`).
+
+
+### 16.13 The ab initio versions as options
+
+Two update rules and a band rule, on single particles and with `--ios`, with random
+start and `--oversampling 0`:
+
+- VDAM without the second-moment scaling, `--no-vdam-second-moment`: section 3's
+  update with the averaged direction not divided by the root of the second moment.
+  The moments, gates and schedules are unchanged. Each update records
+  `second_moment_scaling`, `direction_divisor_mean` (1 when off) and
+  `second_moment_mean`; the job log repeats them at each stage.
+- Plain SGD, `--optimizer momentum_sgd --sgd-momentum 0`
+  ([ppca_momentum_sgd.md](ppca_momentum_sgd.md) has the learning rate's scale).
+- `--physical-band [--band-target-resolution A]` computes `--stages` from the box
+  ([band_schedule.py](../../relax/ppca_initial_model/band_schedule.py)) and logs them:
+  with `L` the box in Angstrom, the band starts at 35 A and gains `1/(384 A)` every
+  125 updates, up to the target or Nyquist - 1, on the nearest shell. HEALPix order
+  1 above 32 A, 2 above 16 A, then 3, or 3 from 20 A if the band stops above 16 A.
+  A fixed `--stages` in shells means a different resolution at every box.
+
+The update counts need `--iterations`, which also sets VDAM's step and gate schedules.
 
 
 ## 17. VDAM drift from a ground-truth start and the batch-share step (October 3, 2026)

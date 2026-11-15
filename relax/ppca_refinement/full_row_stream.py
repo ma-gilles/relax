@@ -80,6 +80,7 @@ from relax.ppca_refinement.full_row_kernels import (
     score_tile,
     unpack_moments,
 )
+from relax.ppca_refinement.occupancy import check_occupancy, log_partition_correction, with_empty_component
 from relax.ppca_refinement.residual_statistics import full_float32
 
 FULL_ROW_ENGINE = "full_row_device_resident"
@@ -96,6 +97,20 @@ class TracePPCAStats(AugmentedPPCAStats):
     """
 
     metric_trace: jax.Array | None = None
+
+
+@dataclasses.dataclass(frozen=True)
+class ExactTracePPCAStats(AugmentedPPCAStats):
+    """Streamed statistics that also carry the trace of the exact metric diagonal.
+
+    ``exact_metric_trace`` ``(n_frequency,)`` is ``sum_p w_p^2 tr LHS_p``: the per-pose LHS trace
+    images backprojected with squared linear-interpolation weights, the trace of the diagonal of the
+    projection Hessian ``P^T LHS P``, where the packed metric holds ``sum_p w_p LHS_p``. ``lhs_tri``
+    is the packed metric, or ``None`` for a trace-only stream, which then sets ``metric_trace``.
+    """
+
+    metric_trace: jax.Array | None = None
+    exact_metric_trace: jax.Array | None = None
 
 
 logger = logging.getLogger(__name__)
@@ -153,22 +168,30 @@ def prepare_full_row_stream(
     scoring: ScoringConfig,
     disc_type: str = "linear_interp",
     metric_trace_only: bool = False,
+    exact_metric_trace: bool = False,
     gemm_precision: str = "auto",
     device=None,
     tile_loader=None,
     pass2_mass_floor: float = 0.0,
+    occupancy: float | None = None,
 ) -> FullRowStream:
     """Upload the model, fine grids and priors once to ``device`` for an expectation's tiles.
 
     ``pass2_mass_floor`` (:attr:`FullRowStream.pass2_mass_floor`) lets pass 2 skip the pose rows
     that carry less posterior mass than it for every image of a tile.
 
+    ``occupancy`` (:attr:`FullRowStream.occupancy`) adds an explicit empty component with that prior: every
+    pass-2 statistic is weighted by the image's probability of holding a placed copy of the model
+    (:mod:`relax.ppca_refinement.occupancy`). None keeps the one-component model.
+
     ``tile_loader`` reads the tiles of a dataset that is not a single-particle image dataset
     (:attr:`FullRowStream.tile_loader`); ``experiment_dataset`` then only supplies the image and
     volume shapes and the original ids of its images.
 
     With ``metric_trace_only`` the tiles return :class:`TracePPCAStats`: the
-    LHS metric is backprojected only as its per-frequency trace.
+    LHS metric is backprojected only as its per-frequency trace. With ``exact_metric_trace`` they
+    return :class:`ExactTracePPCAStats`, which add the trace of the exact metric diagonal (GPU
+    streams only: the CUDA moment scatter computes it).
     ``gemm_precision`` (:data:`GEMM_PRECISIONS`) sets the four stream GEMMs: ``"tf32"`` one
     TF32 tensor-core pass with float32 accumulation (GPUs of compute capability 8.0 or later),
     ``"fp32"`` exact float32 products, ``"auto"`` (the default) tf32 where available, else fp32
@@ -195,10 +218,11 @@ def prepare_full_row_stream(
             scoring=scoring,
             disc_type=disc_type,
             metric_trace_only=metric_trace_only,
+            exact_metric_trace=exact_metric_trace,
             gemm_precision=gemm_precision,
             device=device,
             tile_loader=tile_loader,
-        )._replace(pass2_mass_floor=float(pass2_mass_floor))
+        )._replace(pass2_mass_floor=float(pass2_mass_floor), occupancy=check_occupancy(occupancy))
 
 
 def _prepare_full_row_stream(
@@ -220,6 +244,7 @@ def _prepare_full_row_stream(
     scoring,
     disc_type,
     metric_trace_only,
+    exact_metric_trace,
     gemm_precision,
     device,
     tile_loader,
@@ -267,7 +292,15 @@ def _prepare_full_row_stream(
         if tile_loader is None
         else None
     )
-    noise_variance_half = noise_utils.to_batched_half_pixel_noise(noise_variance, resolved.image_shape).squeeze()
+    if isinstance(noise_variance, (list, tuple)):
+        # A noise table, one spectrum per noise group (subtomogram particles): (G, n_half), kept 2D for one group.
+        if tile_loader is None:
+            raise ValueError("A noise table needs a tile reader that gives each tile its noise groups")
+        noise_variance_half = jnp.stack(
+            [noise_utils.to_batched_half_pixel_noise(row, resolved.image_shape).reshape(-1) for row in noise_variance]
+        )
+    else:
+        noise_variance_half = noise_utils.to_batched_half_pixel_noise(noise_variance, resolved.image_shape).squeeze()
     block_size = int(schedule.rotation_block_size)
     block_starts = device_block_starts(n_rot, block_size, device)
     # The sentinel row (identity rotation, zero prior) has the all-unsupported
@@ -296,11 +329,14 @@ def _prepare_full_row_stream(
         relion_texture_interp=bool(scoring.relion_texture_interp),
         basis_size=int(resolved.q) + 1,
         metric_trace_only=bool(metric_trace_only),
+        exact_metric_trace=bool(exact_metric_trace),
         cuda_kernels=cuda_kernels,
         gemm_precision=str(gemm_precision),
     )
     if static.cuda_kernels and (decide_order(static.disc_type) != 1 or static.relion_texture_interp):
         raise ValueError("The CUDA stream kernels support linear interpolation without RELION texture lookup only")
+    if static.exact_metric_trace and not static.cuda_kernels:
+        raise ValueError("The exact metric-diagonal trace needs a GPU stream (the CUDA moment scatter computes it)")
     return FullRowStream(
         dataset=experiment_dataset,
         arrays=arrays,
@@ -492,7 +528,7 @@ def _deliver(position, stats, consume):
 
 
 # Compiled tile sizes per stage: a padding reader rounds a tile up to one of these many sizes.
-TILE_SIZE_BUCKETS = 5
+TILE_SIZE_BUCKETS = 9
 
 
 def tile_size_bucket(n_images: int, planned: int) -> int:
@@ -522,6 +558,15 @@ def drop_padding(posterior: Posterior, n_real: int) -> Posterior:
     return posterior._replace(center=jnp.where(real, posterior.center, jnp.inf))
 
 
+def apply_occupancy(stream: FullRowStream, posterior: Posterior, layout: dict) -> Posterior:
+    """The two-component normalization when the stream has an empty component (``layout["p_occupied"]`` gets
+    each image's probability of holding the model); the posterior unchanged otherwise."""
+    if stream.occupancy is None:
+        return posterior
+    posterior, layout["p_occupied"] = with_empty_component(posterior, stream.occupancy)
+    return posterior
+
+
 def _enqueue_full_row_tile(stream, tile, observation_power, layout, kept=None):
     """Dispatch both passes of one loaded tile; returns its pass-1 kept buffer too.
 
@@ -529,10 +574,18 @@ def _enqueue_full_row_tile(stream, tile, observation_power, layout, kept=None):
     (:func:`_pass2_rows` needs the row count).
     """
     kept, posterior = score_tile(stream, tile, layout["n_blocks"], kept)
-    posterior = drop_padding(posterior, real_image_count(tile, layout))
+    posterior = apply_occupancy(stream, drop_padding(posterior, real_image_count(tile, layout)), layout)
     carry = empty_carry(stream, int(tile.y_norm.shape[0]), observation_power)
     carry = run_skipping_pass2(stream, tile, kept, posterior, layout, carry, moments=True)
     return (tile, layout, posterior, carry), kept
+
+
+@functools.lru_cache(maxsize=8)
+def _shell_tables(image_shape: tuple, device):
+    """Half-image weights, shell indices and shell count, on ``device``: built once, not once per tile."""
+    weights = jax.device_put(make_half_image_weights(image_shape), device)
+    shells = jax.device_put(make_shell_indices_half(image_shape), device)
+    return weights, shells, int(np.max(np.asarray(shells))) + 1
 
 
 def finish_full_row_tile(stream, image_indices, tile, layout, posterior, carry, *, enforce_x0):
@@ -542,20 +595,30 @@ def finish_full_row_tile(stream, image_indices, tile, layout, posterior, carry, 
     lhs_tri, residual = unpack_moments(carry.moments, static)
     if enforce_x0:
         lhs_tri = enforce_augmented_x0(lhs_tri.astype(jnp.complex64), static.volume_shape).real.astype(jnp.float32)
-    weights = make_half_image_weights(static.image_shape)
-    shells = make_shell_indices_half(static.image_shape)
-    n_shells = int(np.max(np.asarray(shells))) + 1
-    residual_num = jnp.zeros(n_shells, jnp.float32).at[shells].add(weights * carry.residual_power)
+    weights, shells, n_shells = _shell_tables(tuple(int(n) for n in static.image_shape), stream.device)
+    # Per noise group (rows) with a stream noise table, else one row.
+    power = carry.residual_power
+    residual_num = jnp.zeros((*power.shape[:-1], n_shells), jnp.float32).at[..., shells].add(weights * power)
     # Every observed image counts once: a subtomogram particle observes each of its visible tilts.
-    residual_den = jnp.zeros(n_shells, jnp.float32).at[shells].add(weights * layout["n_observations"])
+    observations = jnp.asarray(layout["n_observations"], jnp.float32)
+    residual_den = (
+        jnp.zeros((*observations.shape, n_shells), jnp.float32).at[..., shells].add(weights * observations[..., None])
+    )
     # Scores exclude the pose-invariant image constant; the absolute log-partition adds it back.
-    logZ = posterior.center + posterior.centered_logZ + pose_invariant_score_offset(tile.y_norm)
+    logZ = (
+        posterior.center
+        + posterior.centered_logZ
+        + log_partition_correction(stream.occupancy)
+        + pose_invariant_score_offset(tile.y_norm)
+    )
     real = slice(0, n_images)  # padding images (after the real ones) report nothing
     host = jax.device_get(
         {
             "log_likelihood": jnp.sum(logZ[real]),
             "top_centered_score": (posterior.top_score - posterior.center)[real],
             "centered_logZ": posterior.centered_logZ[real],
+            # log p(image | model) - log p(image | noise only): per-image evidence over the noise model (junk score)
+            "evidence_ratio": (posterior.center + posterior.centered_logZ)[real],
             "rotation": posterior.top_rotation[real],
             "translation": posterior.top_translation[real],
             "n_significant": carry.n_significant[real],
@@ -580,6 +643,7 @@ def finish_full_row_tile(stream, image_indices, tile, layout, posterior, carry, 
         "log_likelihood": float(host["log_likelihood"]),
         "logZ_mean": float(host["log_likelihood"]) / n_images,
         "max_posterior_per_image": pmax,
+        "log_evidence_ratio_per_image": np.asarray(host["evidence_ratio"], np.float64),
         "n_significant_per_image": host["n_significant"],
         "best_rotation_idx": np.where(finite, host["rotation"], -1).astype(np.int32),
         "best_translation_idx": np.where(finite, host["translation"], -1).astype(np.int32),
@@ -594,6 +658,12 @@ def finish_full_row_tile(stream, image_indices, tile, layout, posterior, carry, 
         "latent_covariance_trace_mean": float(host["latent"] / np.float32(n_images)),
         "pose_entropy_mean": float(host["entropy"] / np.float32(n_images)),
     }
+    if stream.occupancy is not None:
+        # With an empty component, max_posterior_per_image is the joint P(occupied, top pose).
+        p_occupied = np.asarray(jax.device_get(layout["p_occupied"][real]))
+        diagnostics.update(
+            occupancy_prior=stream.occupancy, p_occupied_per_image=p_occupied, p_occupied_mean=float(p_occupied.mean())
+        )
     fields = dict(
         # No RHS volume: the streamed statistics feed the direct residual gradient only.
         rhs=None,
@@ -606,6 +676,11 @@ def finish_full_row_tile(stream, image_indices, tile, layout, posterior, carry, 
         original_image_ids=original_ids,
         diagnostics=diagnostics,
     )
+    if static.exact_metric_trace:
+        metric, exact = lhs_tri[:-1], lhs_tri[-1]
+        if static.metric_trace_only:
+            return ExactTracePPCAStats(lhs_tri=None, metric_trace=metric[0], exact_metric_trace=exact, **fields)
+        return ExactTracePPCAStats(lhs_tri=jnp.swapaxes(metric, 0, 1), exact_metric_trace=exact, **fields)
     if static.metric_trace_only:
         return TracePPCAStats(lhs_tri=None, metric_trace=lhs_tri[0], **fields)
     return AugmentedPPCAStats(lhs_tri=jnp.swapaxes(lhs_tri, 0, 1), **fields)
@@ -619,11 +694,77 @@ def full_row_tile_embeddings(stream: FullRowStream, image_indices, significant_r
         kept, posterior = score_tile(stream, tile, layout["n_blocks"])
         n_real = real_image_count(tile, layout)
         check_finite_posterior(posterior, n_real)
-        posterior = drop_padding(posterior, n_real)
+        posterior = apply_occupancy(stream, drop_padding(posterior, n_real), layout)
         carry = empty_carry(stream, int(tile.y_norm.shape[0]), jnp.float32(0))
         carry = run_skipping_pass2(stream, tile, kept, posterior, layout, carry, moments=False)
         scores = image_scores(
-            posterior.center[:n_real], posterior.centered_logZ[:n_real], posterior.top_score[:n_real],
+            posterior.center[:n_real],
+            posterior.centered_logZ[:n_real] + log_partition_correction(stream.occupancy),
+            posterior.top_score[:n_real],
             tile.y_norm[:n_real],
         )
-        return DensePPCAEmbeddings(carry.embedding[:n_real], layout["original_ids"], n_real, *scores)
+        top = dict(
+            best_rotation=np.asarray(jax.device_get(posterior.top_rotation[:n_real]), np.int32),
+            best_translation=np.asarray(jax.device_get(posterior.top_translation[:n_real]), np.int32),
+        )
+        if stream.occupancy is None:
+            return DensePPCAEmbeddings(carry.embedding[:n_real], layout["original_ids"], n_real, *scores, **top)
+        # The top pose's score leaves out log(occupancy); with it, max_posterior is the joint P(occupied, top pose),
+        # as the statistics pass reports it (max_posterior_per_image).
+        log_evidence, best, max_posterior, null = scores
+        scores = (log_evidence, best, (max_posterior * np.float32(stream.occupancy)).astype(np.float32), null)
+        # Pass 2 weights each pose by P(occupied, pose): the embedding is P(occupied) E[z | occupied].
+        p_occupied = layout["p_occupied"][:n_real]
+        embedding = carry.embedding[:n_real] / jnp.maximum(p_occupied, jnp.finfo(jnp.float32).tiny)[:, None]
+        return DensePPCAEmbeddings(
+            embedding, layout["original_ids"], n_real, *scores, p_occupied=np.asarray(jax.device_get(p_occupied)), **top
+        )
+
+
+@functools.partial(jax.jit, static_argnames=("max_significant",))
+def _significant_rotations(score, rows, log_norm, target_mass, neighbors, *, max_significant):
+    """Each image's supported coarse rotations ``(B, R_c)``: the rotations of its leading poses holding
+    ``target_mass`` of its posterior (at most ``max_significant`` poses), with every shift, dilated by
+    ``neighbors`` ``(R_c, R_c)`` (each significant rotation's neighbouring coarse cells)."""
+    n, B, T = score.shape
+    mass = jnp.exp(jnp.transpose(score, (1, 0, 2)).reshape(B, n * T) - log_norm[:, None])
+    top, index = jax.lax.top_k(mass, max_significant)
+    before = jnp.cumsum(top, axis=1) - top  # mass of the poses ahead of each
+    keep = (before < target_mass) & (top > 0)
+    rotation = rows[index // T]  # (B, S) coarse rotation ids
+    significant = jnp.zeros((B, neighbors.shape[0]), jnp.float32)
+    significant = significant.at[jnp.arange(B)[:, None], rotation].max(keep.astype(jnp.float32))
+    return (significant @ neighbors.astype(jnp.float32)) > 0
+
+
+@full_float32
+def coarse_significant_rows(
+    stream: FullRowStream, image_indices, *, target_mass: float, max_significant: int, neighbors
+):
+    """Each image's supported poses on ``stream``'s (coarse) grid, as packed ``rotation * T + t`` ids for a fine
+    stream whose rotations have these as parents (:func:`coarse_support_mask`): pass 1 of the image tile on the
+    coarse grid; the coarse rotations of the leading poses holding ``target_mass`` of each image's posterior (at
+    most ``max_significant`` poses, RELION's adaptive oversampling selection), with every shift and each one's
+    ``neighbors`` (a boolean ``(R_c, R_c)`` table including the diagonal). A target mass of 1 keeps every pose
+    (None), poses whose posterior underflows included."""
+    image_indices = np.asarray(image_indices)
+    if target_mass >= 1:
+        return [None] * image_indices.size
+    with jax.default_device(stream.device):
+        tile, _, layout = read_tile(stream, image_indices, [None] * image_indices.size, collect_observation=False)
+        kept, posterior = score_tile(stream, tile, layout["n_blocks"])
+        n = layout["n_blocks"] * stream.rotation_block_size
+        T = int(stream.translations.shape[0])
+        supported = _significant_rotations(
+            kept.score[:n],
+            tile.rows[:n],
+            posterior.center + posterior.centered_logZ,
+            np.float32(target_mass),
+            jnp.asarray(neighbors),
+            max_significant=min(int(max_significant), n * T),
+        )
+        supported = np.asarray(jax.device_get(supported))
+    shifts = np.arange(T)
+    return [
+        (np.flatnonzero(supported[k])[:, None] * T + shifts[None, :]).reshape(-1) for k in range(image_indices.size)
+    ]

@@ -130,7 +130,6 @@ def _brute_force(particles, stream, p):
     theta = np.concatenate([p["mu"][:, None], p["W"]], axis=1).T.astype(np.complex128)  # (P, half volume)
     P = theta.shape[0]
     q = P - 1
-    frames = particles.group_frames[0]
     R, T = len(p["rotations"]), len(translations)
 
     def project(rotation):
@@ -147,8 +146,13 @@ def _brute_force(particles, stream, p):
         )
         return np.asarray(out)[:, 0, :]  # (P, n_half)
 
+    # Keys (tilt group, rotation, frame): each tilt group projects at its own frames.
     tilt_rotation = {
-        (r, k): frames[k] @ p["rotations"][r].astype(np.float64) for r in range(R) for k in range(len(frames))
+        (g, r, k): frames[k] @ p["rotations"][r].astype(np.float64)
+        for g in sorted(set(particles.particle_group.tolist()))
+        for frames in [particles.group_frames[g]]
+        for r in range(R)
+        for k in range(len(frames))
     }
     projections = {key: project(rot) for key, rot in tilt_rotation.items()}
     real = lambda z: np.concatenate([z.real, z.imag], axis=-1)  # noqa: E731
@@ -167,6 +171,8 @@ def _brute_force(particles, stream, p):
     for i in range(n_particles):
         image_ids, _ = particles.particle_images([i])
         slots = particles.image_frame[image_ids]
+        group = int(particles.particle_group[i])
+        frames = particles.group_frames[group]
         y = p["images"][image_ids].astype(np.complex128)
         C = p["ctf"][image_ids].astype(np.float64)
         outside = np.ones(N_HALF, bool)
@@ -180,7 +186,9 @@ def _brute_force(particles, stream, p):
                 shifts = tilt_shifts(frames, translations[t : t + 1])[slots, 0].astype(np.float64)  # (n, 2)
                 phase = np.exp(-2j * np.pi * shifts @ lattice[window].T)  # (n, F)
                 shifted = y[:, window] * phase
-                A = np.stack([C[n, window] * projections[(r, k)][:, window] for n, k in enumerate(slots)], axis=1)
+                A = np.stack(
+                    [C[n, window] * projections[(group, r, k)][:, window] for n, k in enumerate(slots)], axis=1
+                )
                 residual = real(shifted - A[0]).reshape(-1)
                 B = np.stack([real(A[j]).reshape(-1) for j in range(1, P)], axis=1)
                 d = np.tile(np.concatenate([D, D]), len(slots))
@@ -207,9 +215,9 @@ def _brute_force(particles, stream, p):
             G[1:, 1:] += covariance
             for n, k in enumerate(slots):
                 y_recon = shifted[n] * C[n, window] / sigma2
-                rhs_images[(r, k)][:, window] += g * alpha[:, None] * y_recon[None]
+                rhs_images[(group, r, k)][:, window] += g * alpha[:, None] * y_recon[None]
                 for c, (a, b) in enumerate(tri):
-                    lhs_images[(r, k)][c, window] += g * G[a, b] * C[n, window] ** 2 / sigma2
+                    lhs_images[(group, r, k)][c, window] += g * G[a, b] * C[n, window] ** 2 / sigma2
                 predicted = alpha @ A[:, n]  # CTF-weighted projection of mu + W m
                 loading = A[1:, n]  # (q, F)
                 expected = (
@@ -414,27 +422,316 @@ def test_tiles_keep_one_tilt_group():
     assert [t.tolist() for t in tiles] == [[3, 0], [2], [1]]
 
 
-@pytest.mark.parametrize("optimizer", ["vdam", "momentum_sgd"])
-def test_controller_runs_subtomogram_particles(tmp_path, optimizer):
-    """Two all-particle updates and the final embedding through the InitialModel controller."""
-    import json
+# Three tilt groups (their own frames, two with three of them) and two noise groups: keys (tilt group, noise group)
+# (0, 0) x2, (1, 1), (2, 1), (1, 0), so a tile of all five particles is a mixed tile of four keys.
+MIXED_GROUP_FRAMES = (
+    FRAMES,
+    Rotation.from_euler("zyx", [[-30, -30, 2], [-30, 0, 0], [-30, 30, -1]], degrees=True).as_matrix(),
+    FRAMES[1:],
+)
+MIXED_PARTICLE_GROUP = np.asarray([0, 1, 0, 2, 1])
+MIXED_NOISE_GROUP = np.asarray([0, 1, 0, 1, 0])
+MIXED_IMAGE_FRAMES = [[0, 1, 2, 3], [2, 0], [3, 1, 2], [0, 1, 2], [1]]
+MIXED_NOISE = np.asarray([30.0, 75.0])
+
+
+def make_mixed_problem(seed=12):
+    """Five particles of three tilt groups and two noise groups, with a stream noise table."""
+    _, base, arrays = make_problem(image_frames=MIXED_IMAGE_FRAMES, seed=seed)
+    offsets = np.concatenate([[0], np.cumsum([len(f) for f in MIXED_IMAGE_FRAMES])]).astype(np.int64)
+    images, ctf = arrays["images"].astype(np.complex64), arrays["ctf"]
+    particles = TiltParticles(
+        image_shape=IMAGE_SHAPE,
+        volume_shape=VOLUME_SHAPE,
+        voxel_size=1.0,
+        image_offsets=offsets,
+        image_frame=np.concatenate(MIXED_IMAGE_FRAMES).astype(np.int64),
+        particle_group=MIXED_PARTICLE_GROUP,
+        group_frames=tuple(np.asarray(f, np.float64) for f in MIXED_GROUP_FRAMES),
+        read=lambda ids: (None, jnp.asarray(images[np.asarray(ids)]), jnp.asarray(ctf[np.asarray(ids)])),
+        noise_group=MIXED_NOISE_GROUP,
+    )
+    stream = prepare_full_row_stream(
+        particles,
+        arrays["mu"],
+        arrays["W"],
+        noise_variance=[np.full(IMAGE_SHAPE, n, np.float32) for n in MIXED_NOISE],
+        rotations=arrays["rotations"],
+        translations=TRANSLATIONS,
+        rotation_log_prior=arrays["rotation_log_prior"],
+        translation_log_prior=arrays["translation_log_prior"],
+        rotation_parent=np.zeros(5, np.int32),
+        translation_parent=np.zeros(len(TRANSLATIONS), np.int32),
+        n_coarse_rotations=1,
+        n_coarse_translations=1,
+        geometry=GeometryConfig(current_size=6, q=2, volume_domain="fourier_half"),
+        schedule=ScheduleConfig(image_batch_size=5, rotation_block_size=2),
+        scoring=ScoringConfig(relion_texture_interp=False, full_real_observation=True),
+        tile_loader=load_tilt_tile,
+        gemm_precision="fp32",
+        device=base.device,
+    )
+    truth = brute_force(particles, stream, {**arrays, "noise": MIXED_NOISE[MIXED_NOISE_GROUP]})
+    return particles, stream, truth
+
+
+@pytest.fixture(scope="module")
+def mixed_problem():
+    return make_mixed_problem()
+
+
+@pytest.mark.parametrize("planned", [None, 10])
+def test_mixed_tile_matches_brute_force(mixed_problem, planned):
+    """One tile of particles from three tilt groups and two noise groups (RELION's per-particle tilt matrices),
+    unpadded and padded to a key bucket (10 slots of two: a bucket of five keys, one of them padding), gives the joint
+    Gaussian's statistics, the residual sums per noise group."""
+    from relax.ppca_refinement.full_row_stream import full_row_tile_embeddings
+
+    particles, stream, truth = mixed_problem
+    stream = stream._replace(tile_images=planned)
+    tile, _, layout = load_tilt_tile(stream, np.arange(5), [None] * 5, collect_observation=False)
+    assert tile.frames.shape == (4 if planned is None else 5, 4, 3, 3) and layout["n_keys"] == 4
+    actual = accumulate_full_row_tile(stream, np.arange(5), [None] * 5)
+    rtol = 2e-5  # the one-group tile's band (test_tilt_tile_matches_brute_force_joint_gaussian)
+    assert_matches(actual.log_likelihood, truth["log_likelihood"], rtol=rtol)
+    assert_matches(np.asarray(actual.embeddings), truth["embeddings"], rtol=rtol)
+    assert_matches(actual.diagnostics["rotation_mass"], truth["rotation_mass"], rtol=rtol)
+    assert_matches(actual.diagnostics["offset_second_sum_px2"], truth["offset_second_sum_px2"], rtol=rtol)
+    assert_matches(np.asarray(actual.lhs_tri), truth["lhs_tri"], rtol=rtol)
+    assert_matches(np.asarray(actual.residual_gradient), truth["residual_gradient"], rtol=rtol)
+    assert np.asarray(actual.residual_num).shape == truth["residual_num"].shape == (2, truth["residual_num"].shape[1])
+    assert_matches(np.asarray(actual.residual_num), truth["residual_num"], rtol=rtol)
+    assert_matches(np.asarray(actual.residual_den), truth["residual_den"], rtol=1e-6)
+    np.testing.assert_array_equal(actual.original_image_ids, np.arange(5))
+    embedded = full_row_tile_embeddings(stream, np.arange(5), [None] * 5)
+    assert_matches(np.asarray(embedded.embeddings), truth["embeddings"], rtol=rtol)
+
+
+@pytest.mark.parametrize("floor", [0.0, 1e-30])
+def test_mixed_tile_equals_its_keys_own_tiles(mixed_problem, floor):
+    """The mixed tile's sums equal those of one tile per key, within float32 summation order, with and without
+    pass-2 row skipping (a floor no row's mass is below: each key's own rows, every row)."""
+    from relax.ppca_refinement.full_row_stream import accumulate_full_row_tiles
+
+    particles, stream, _ = mixed_problem
+    stream = stream._replace(pass2_mass_floor=floor)
+    keys = MIXED_PARTICLE_GROUP * 2 + MIXED_NOISE_GROUP
+    order = [np.flatnonzero(keys == key) for key in dict.fromkeys(keys.tolist())]
+    parts = accumulate_full_row_tiles(stream, [(ids, [None] * ids.size) for ids in order])
+    mixed = accumulate_full_row_tile(stream, np.concatenate(order), [None] * 5)
+    rtol = 1e-5
+    for name in ("lhs_tri", "residual_gradient", "residual_num", "residual_den"):
+        assert_matches(np.asarray(getattr(mixed, name)), sum(np.asarray(getattr(p, name)) for p in parts), rtol=rtol)
+    assert_matches(np.asarray(mixed.embeddings), np.concatenate([np.asarray(p.embeddings) for p in parts]), rtol=rtol)
+    assert_matches(np.float32(mixed.log_likelihood), np.float32(sum(p.log_likelihood for p in parts)), rtol=rtol)
+
+
+def test_mixed_tile_pass2_skips_each_keys_own_rows(mixed_problem):
+    """With a pass-2 floor each key visits the rows that carry its own particles' mass: fewer than the scored
+    rows, and the statistics stay those of the unskipped tile within the dropped mass."""
+    particles, stream, truth = mixed_problem
+    full = accumulate_full_row_tile(stream, np.arange(5), [None] * 5)
+    skipped = accumulate_full_row_tile(stream._replace(pass2_mass_floor=1e-3), np.arange(5), [None] * 5)
+    assert skipped.diagnostics["pass2_rows"] < skipped.diagnostics["scored_rows"]
+    assert full.diagnostics["pass2_rows"] == full.diagnostics["scored_rows"]
+    # At most rows * floor of each particle's mass is dropped (5 rows, floor 1e-3).
+    assert_matches(np.asarray(skipped.lhs_tri), np.asarray(full.lhs_tri), rtol=1e-2)
+    assert_matches(skipped.log_likelihood, full.log_likelihood, rtol=1e-6)
+
+
+def _coarse_stream(stream, n_coarse=2):
+    """The mixed problem's stream with real coarse parents: rotation r's parent is r % n_coarse, shifts their own."""
+    T = int(stream.translations.shape[0])
+    parents = np.arange(5, dtype=np.int32) % n_coarse
+    return stream._replace(
+        arrays=stream.arrays._replace(
+            rotation_parent=jnp.asarray(np.append(parents, np.int32(n_coarse))),
+            translation_parent=jnp.arange(T, dtype=jnp.int32),
+        ),
+        rotation_parent=parents,
+        n_coarse_rotations=n_coarse,
+        n_coarse_translations=T,
+    )
+
+
+def test_sparse_mixed_tile_with_full_support_matches_brute_force(mixed_problem):
+    """With coarse parents and every coarse pose significant, each key's own-row pass 1 gives the joint Gaussian."""
+    particles, stream, truth = mixed_problem
+    actual = accumulate_full_row_tile(_coarse_stream(stream), np.arange(5), [None] * 5)
+    rtol = 2e-5
+    assert_matches(actual.log_likelihood, truth["log_likelihood"], rtol=rtol)
+    assert_matches(np.asarray(actual.embeddings), truth["embeddings"], rtol=rtol)
+    assert_matches(np.asarray(actual.lhs_tri), truth["lhs_tri"], rtol=rtol)
+    assert_matches(np.asarray(actual.residual_gradient), truth["residual_gradient"], rtol=rtol)
+    assert_matches(np.asarray(actual.residual_num), truth["residual_num"], rtol=rtol)
+
+
+def test_sparse_mixed_tile_equals_its_keys_own_tiles_on_partial_support(mixed_problem):
+    """Particles with different significant coarse poses: the mixed tile's per-key rows give the sums of one tile
+    per key (whose pass 1 masks the same unsupported poses)."""
+    from relax.ppca_refinement.full_row_stream import accumulate_full_row_tiles
+
+    particles, stream, _ = mixed_problem
+    stream = _coarse_stream(stream)
+    T = len(TRANSLATIONS)
+    rng = np.random.default_rng(3)
+    significant = [np.sort(rng.choice(2 * T, size=n, replace=False)) for n in (3, 9, 5, 14, 1)]
+    keys = MIXED_PARTICLE_GROUP * 2 + MIXED_NOISE_GROUP
+    order = [np.flatnonzero(keys == key) for key in dict.fromkeys(keys.tolist())]
+    parts = accumulate_full_row_tiles(stream, [(ids, [significant[i] for i in ids]) for ids in order])
+    ids = np.concatenate(order)
+    mixed = accumulate_full_row_tile(stream, ids, [significant[i] for i in ids])
+    rtol = 1e-5
+    for name in ("lhs_tri", "residual_gradient", "residual_num", "residual_den"):
+        assert_matches(np.asarray(getattr(mixed, name)), sum(np.asarray(getattr(p, name)) for p in parts), rtol=rtol)
+    assert_matches(np.asarray(mixed.embeddings), np.concatenate([np.asarray(p.embeddings) for p in parts]), rtol=rtol)
+    assert_matches(np.float32(mixed.log_likelihood), np.float32(sum(p.log_likelihood for p in parts)), rtol=rtol)
+
+
+def test_coarse_pass_keeping_every_pose_changes_nothing():
+    """The controller's coarse pass (HEALPix order 2) with target mass 1 keeps every fine pose (on the coarse
+    parents' row tables and pose priors): the update's statistics equal those without it."""
+    from relax.ppca_initial_model import iteration_loop
+    from relax.ppca_initial_model.config import Config
+    from relax.ppca_initial_model.state import State
+
+    particles, _stream, arrays = make_problem(seed=9)
+    theta = np.stack([arrays["mu"], *arrays["W"].T], axis=1).astype(np.complex64)
+    state = State(jnp.asarray(theta), None, jnp.full((1, 5), 40.0, jnp.float32), 0, np.arange(3), {}, 2.0, 0, {})
+
+    def statistics(**options):
+        config = Config(
+            q=2,
+            stages=((1, 3, 2),),
+            oversampling=0,
+            stream_coarse_recompute=True,
+            shift_range=1,
+            shift_step=1,
+            image_batch_size=3,
+            rotation_block_size=32,
+            gemm_precision="fp32",
+            **options,
+        )
+        iteration_loop._rotation_grid.cache_clear()
+        iteration_loop._direction_ids.cache_clear()
+        try:
+            return iteration_loop.expectation_groups(particles, state, config, [np.arange(3)], 1)[0]
+        finally:
+            iteration_loop._rotation_grid.cache_clear()
+            iteration_loop._direction_ids.cache_clear()
+
+    plain = statistics()
+    coarse = statistics(tilt_coarse_pass=True, target_mass=1.0)
+    order_a, order_b = np.argsort(plain.original_image_ids), np.argsort(coarse.original_image_ids)
+    rtol = 1e-5
+    assert_matches(np.float32(coarse.log_likelihood), np.float32(plain.log_likelihood), rtol=rtol)
+    assert_matches(np.asarray(coarse.embeddings)[order_b], np.asarray(plain.embeddings)[order_a], rtol=rtol)
+    for name in ("lhs_tri", "residual_gradient", "residual_num", "residual_den"):
+        assert_matches(np.asarray(getattr(coarse, name)), np.asarray(getattr(plain, name)), rtol=rtol)
+
+
+def test_two_level_coarse_pass_keeping_every_pose_changes_nothing():
+    """A coarse pass two orders below the stage (order 3 stage, --tilt-coarse-order 1) with target mass 1 keeps
+    every fine pose: the update's statistics equal those of the dense order 3 grid."""
+    from relax.ppca_initial_model import iteration_loop
+    from relax.ppca_initial_model.config import Config
+    from relax.ppca_initial_model.state import State
+
+    particles, _stream, arrays = make_problem(seed=9)
+    theta = np.stack([arrays["mu"], *arrays["W"].T], axis=1).astype(np.complex64)
+    state = State(jnp.asarray(theta), None, jnp.full((1, 5), 40.0, jnp.float32), 0, np.arange(3), {}, 2.0, 0, {})
+
+    def statistics(**options):
+        config = Config(
+            q=2,
+            stages=((1, 3, 3),),
+            oversampling=0,
+            stream_coarse_recompute=True,
+            shift_range=1,
+            shift_step=1,
+            image_batch_size=3,
+            rotation_block_size=256,
+            gemm_precision="fp32",
+            **options,
+        )
+        iteration_loop._rotation_grid.cache_clear()
+        iteration_loop._direction_ids.cache_clear()
+        try:
+            return iteration_loop.expectation_groups(particles, state, config, [np.arange(3)], 1)[0]
+        finally:
+            iteration_loop._rotation_grid.cache_clear()
+            iteration_loop._direction_ids.cache_clear()
+
+    plain = statistics()
+    coarse = statistics(tilt_coarse_pass=True, tilt_coarse_order=1, target_mass=1.0)
+    order_a, order_b = np.argsort(plain.original_image_ids), np.argsort(coarse.original_image_ids)
+    rtol = 1e-5
+    assert_matches(np.float32(coarse.log_likelihood), np.float32(plain.log_likelihood), rtol=rtol)
+    assert_matches(np.asarray(coarse.embeddings)[order_b], np.asarray(plain.embeddings)[order_a], rtol=rtol)
+    for name in ("lhs_tri", "residual_gradient", "residual_num", "residual_den"):
+        assert_matches(np.asarray(getattr(coarse, name)), np.asarray(getattr(plain, name)), rtol=rtol)
+
+
+def test_coarse_parents_at_a_fixed_coarse_order():
+    """``_coarse_parents(hp, k)`` maps each order-hp rotation to its nearest order-k rotation; the default k is hp-1;
+    a nonpositive or fractional tilt_coarse_order is refused."""
+    from scipy.spatial.transform import Rotation
 
     from relax.ppca_initial_model import iteration_loop
     from relax.ppca_initial_model.config import Config
-    from relax.ppca_initial_model.iteration_loop import run
 
-    # Other tests monkeypatch the rotation grid behind these per-order caches.
-    iteration_loop._rotation_grid.cache_clear()
-    iteration_loop._direction_ids.cache_clear()
+    assert np.array_equal(iteration_loop._coarse_parents(2), iteration_loop._coarse_parents(2, 1))
+    parents = iteration_loop._coarse_parents(3, 1)
+    fine = Rotation.from_matrix(iteration_loop._rotation_grid(3)[:500].astype(np.float64))
+    coarse = Rotation.from_matrix(iteration_loop._rotation_grid(1).astype(np.float64))
+    angles = np.stack([(fine.inv() * coarse[k]).magnitude() for k in range(len(coarse))], axis=1)
+    np.testing.assert_allclose(angles[np.arange(500), parents[:500]], angles.min(axis=1), atol=1e-6)
+    for bad in (0, 1.5, True):
+        with pytest.raises(ValueError, match="tilt_coarse_order"):
+            Config(tilt_coarse_order=bad)
 
-    n, n_particles = 16, 8
+
+def test_coarse_support_is_whole_rotations_with_their_neighbours():
+    """The coarse pass supports each significant coarse rotation at every shift, and its neighbouring cells."""
+    from relax.ppca_refinement.full_row_stream import _significant_rotations
+
+    T, R = 3, 4
+    score = np.full((R, 1, T), -np.inf, np.float32)
+    score[2, 0, 1] = 0.0  # all the mass on rotation 2, shift 1
+    neighbors = np.eye(R, dtype=bool)
+    neighbors[2, 3] = neighbors[3, 2] = True
+    supported = _significant_rotations(
+        jnp.asarray(score), jnp.arange(R), jnp.zeros(1), np.float32(0.999), jnp.asarray(neighbors), max_significant=5
+    )
+    np.testing.assert_array_equal(np.asarray(supported), [[False, False, True, True]])
+
+
+def test_tilt_tiles_pack_small_groups_into_mixed_tiles():
+    """Small keys share tiles, largest first, as many as fit the tile at the largest key's slot bucket; a key
+    above MIXED_GROUP_MAX keeps tiles of its own; without ``mixed`` every key does."""
+    from relax.ppca_initial_model.tomo import MIXED_GROUP_MAX
+
+    group = np.asarray([0] * (MIXED_GROUP_MAX + 2) + [1, 2, 2, 3, 4, 5, 6])
+    n = group.size
+    particles = _particles(np.zeros((n, N_HALF), np.complex64), np.ones((n, N_HALF), np.float32), [[0]] * n, FRAMES)
+    particles = TiltParticles(**{**particles.__dict__, "particle_group": group, "group_frames": (FRAMES,) * 7})
+    ids = np.arange(n)
+    big = ids[: MIXED_GROUP_MAX + 2]
+    tiles = tilt_tiles(particles, ids, 6)
+    assert [t.tolist() for t in tiles] == [big[:6].tolist(), big[6:].tolist(), [11, 12, 10, 13], [14, 15, 16]]
+    alone = tilt_tiles(particles, ids, 6, mixed=False)
+    assert [t.tolist() for t in alone] == [big[:6].tolist(), big[6:].tolist(), [10], [11, 12], [13], [14], [15], [16]]
+
+
+def _controller_particles():
+    n = 16
     rng = np.random.default_rng(2)
     image_frames = [[0, 1, 2], [0, 2], [1, 2, 0], [0, 1, 2]] * 2
     n_images = sum(len(f) for f in image_frames)
     raw = rng.standard_normal((n_images, n, n)).astype(np.float32)
     half = np.asarray(ftu.get_dft2_real(raw)).reshape(n_images, -1).astype(np.complex64)
     offsets = np.concatenate([[0], np.cumsum([len(f) for f in image_frames])]).astype(np.int64)
-    particles = TiltParticles(
+    return TiltParticles(
         image_shape=(n, n),
         volume_shape=(n, n, n),
         voxel_size=10.0,
@@ -444,6 +741,32 @@ def test_controller_runs_subtomogram_particles(tmp_path, optimizer):
         group_frames=(FRAMES[:3], FRAMES[1:]),
         read=lambda ids: (raw[ids], jnp.asarray(half[ids]), jnp.full((len(ids), half.shape[1]), 0.8, jnp.float32)),
     )
+
+
+@pytest.mark.parametrize(
+    "optimizer, options",
+    [
+        ("vdam", {}),
+        ("vdam", {"vdam_second_moment": False}),
+        ("momentum_sgd", {}),
+        ("momentum_sgd", {"sgd_momentum": 0.0, "sgd_learning_rate": 1.95}),
+    ],
+)
+def test_controller_runs_subtomogram_particles(tmp_path, caplog, optimizer, options):
+    """Two all-particle updates and the final embedding through the InitialModel controller."""
+    import json
+    import logging
+
+    from relax.ppca_initial_model import iteration_loop
+    from relax.ppca_initial_model.config import Config
+    from relax.ppca_initial_model.iteration_loop import run
+
+    # Other tests monkeypatch the rotation grid behind these per-order caches.
+    iteration_loop._rotation_grid.cache_clear()
+    iteration_loop._direction_ids.cache_clear()
+
+    n_particles = 8
+    particles = _controller_particles()
     config = Config(
         q=2,
         iterations=2,
@@ -455,7 +778,9 @@ def test_controller_runs_subtomogram_particles(tmp_path, optimizer):
         image_batch_size=3,
         rotation_block_size=32,
         optimizer=optimizer,
+        **options,
     )
+    caplog.set_level(logging.INFO, logger="relax.ppca_initial_model.iteration_loop")
     try:
         state = run(particles, config, tmp_path, {"test": True}, diameter_ang=120.0)
     finally:
@@ -469,6 +794,65 @@ def test_controller_runs_subtomogram_particles(tmp_path, optimizer):
     embeddings = np.load(tmp_path / "embeddings.npz")
     np.testing.assert_array_equal(np.sort(embeddings["particle_ids"]), np.arange(n_particles))
     assert embeddings["z"].shape == (n_particles, 2)
+    # The logs show the update rule that ran: every update's record, and the job log at the first update.
+    if optimizer == "vdam":
+        off = options.get("vdam_second_moment") is False
+        assert all(row["second_moment_scaling"] is not off for row in rows)
+        if off:
+            assert all(row["direction_divisor_mean"] == pytest.approx([1, 1]) for row in rows)
+            assert all(row["second_moment_mean"] != pytest.approx([1, 1]) for row in rows)
+            assert "second-moment scaling off" in caplog.text
+    else:
+        assert all(row["momentum"] == config.sgd_momentum for row in rows)
+        if config.sgd_momentum == 0:
+            assert all(row["velocity_carried_l2"] == 0 for row in rows)
+            assert "momentum 0 (off)" in caplog.text and "carried velocity L2 0 of" in caplog.text
+        else:
+            assert rows[1]["velocity_carried_l2"] > 0
+
+
+@pytest.mark.parametrize(
+    "options, expected",
+    [
+        (["--no-vdam-second-moment"], "second-moment scaling off"),
+        (["--optimizer", "momentum_sgd", "--sgd-momentum", "0", "--sgd-learning-rate", "1.95"], "momentum 0 (off)"),
+    ],
+)
+def test_ios_command_trains_the_ab_initio_versions(tmp_path, monkeypatch, caplog, options, expected):
+    """``relax ppca_initial_model --ios`` end to end: random start, the physical band and each version."""
+    import json
+    import logging
+
+    from relax.commands import ppca_initial_model as command
+    from relax.ppca_initial_model import iteration_loop
+
+    iteration_loop._rotation_grid.cache_clear()
+    iteration_loop._direction_ids.cache_clear()
+    monkeypatch.setenv("SLURM_JOB_ID", "1")
+    monkeypatch.setattr(
+        command, "load_tilt_training", lambda ios, output, *args, **options: (_controller_particles(), {"test": True}, None)
+    )
+    monkeypatch.setattr(command, "source_identity", lambda: {"test": True})
+    caplog.set_level(logging.INFO, logger="relax")
+    output = tmp_path / "run"
+    try:
+        command.main(
+            [
+                "--ios", "optimisation_set.star", "--particle-diameter", "120", "-o", str(output),
+                "--q", "2", "--seed", "12", "--iterations", "20", "--oversampling", "0", "--physical-band",
+                "--stochastic-batch-size", "4", "--stochastic-all-iterations", "--balanced-stochastic-halves",
+                "--shift-range", "1", "--shift-step", "1", "--image-batch-size", "3", "--rotation-block-size", "32",
+                "--skip-final-embeddings", "--stop-after", "2", *options,
+            ]  # fmt: skip
+        )
+    finally:
+        iteration_loop._rotation_grid.cache_clear()
+        iteration_loop._direction_ids.cache_clear()
+    rows = [json.loads(line) for line in (output / "iterations.jsonl").read_text().splitlines()]
+    # L = 160 A: 35 A is shell 5, 32 A, so HEALPix order 2.
+    assert [(row["radius"], row["healpix_order"], sum(row["half_counts"])) for row in rows] == [(5, 2, 4)] * 2
+    assert json.loads((output / "run.json").read_text())["config"]["stages"][0] == [1, 5, 2]
+    assert "--stages [[1, 5, 2]" in caplog.text and expected in caplog.text
 
 
 def test_tilt_shifts_are_each_frames_projection_of_each_shift():
@@ -656,16 +1040,19 @@ def test_tilt_geometry_edit_refuses_resume(tmp_path, monkeypatch):
     )
     series = tmp_path / "tilt_series/TS_01.star"
     series.write_text("data_TS_01\n\nloop_\n_rlnMicrographName #1\n_rlnTomoYTilt #2\nTS_01_001.tif 0.0\n")
-    monkeypatch.setattr(tomo_half, "load_tomo_dataset", lambda *args, **kwargs: None)
-    monkeypatch.setattr(tomo, "tilt_particles_from_tomo_dataset", lambda dataset: None)
-    _, identity = command.load_tilt_training(tmp_path / "optimisation_set.star", tmp_path)
+    from types import SimpleNamespace
+
+    stub = SimpleNamespace(image_rows=np.arange(1), image_shape=(8, 8))
+    monkeypatch.setattr(tomo_half, "load_tomo_dataset", lambda *args, **kwargs: stub)
+    monkeypatch.setattr(tomo, "tilt_particles_from_tomo_dataset", lambda dataset, preread=False: None)
+    _, identity, _ = command.load_tilt_training(tmp_path / "optimisation_set.star", tmp_path)
     theta = jnp.ones((5, 3), jnp.complex64)
     state = State(theta, None, jnp.ones(3, jnp.float32), 3, np.arange(8), {}, 2.0, 4, {}, sgd_momentum=0 * theta)
     config = Config(optimizer="momentum_sgd")
     save(tmp_path / "checkpoint.npz", state, config, identity)
     assert load(tmp_path / "checkpoint.npz", config, identity).iteration == 3
     series.write_text("data_TS_01\n\nloop_\n_rlnMicrographName #1\n_rlnTomoYTilt #2\nTS_01_001.tif 1.5\n")
-    _, edited = command.load_tilt_training(tmp_path / "optimisation_set.star", tmp_path)
+    _, edited, _ = command.load_tilt_training(tmp_path / "optimisation_set.star", tmp_path)
     assert edited["particles_sha256"] == identity["particles_sha256"]
     assert edited["tilt_series_sha256"] != identity["tilt_series_sha256"]
     with pytest.raises(ValueError, match="identity mismatch"):

@@ -506,3 +506,30 @@ def test_uncached_fftw_ctf_rows_are_the_exact_rows(aberrated_project, monkeypatc
     assert_matches(-np.fft.fftshift(squared, axes=1).reshape(len(rows), -1), cached)
     plain = ctf.relion_fftw_ctf_rows(dataset, indices, (GRID, GRID), square_premultiplied=False)
     assert_matches(plain * plain, squared)
+
+
+@pytest.mark.unit
+def test_image_geometry_composes_the_particle_frame_on_request(project, tmp_path):
+    """``particle_frame`` gives tilt x subtomogram x particle matrix, RELION's ``A_subtomogram * A_particle``."""
+    from recovar.data_io import starfile
+
+    from relax.sampling.healpix import euler_angles_to_matrix
+
+    out, _ = project
+    particles, optics = read_star(str(out / "particles.star"))
+    subtomo = np.array([[10.0, 35.0, -20.0]]) + np.arange(len(particles))[:, None]
+    own = np.array([[-70.0, 88.0, 15.0]]) - 2 * np.arange(len(particles))[:, None]
+    for label, column in zip(("Rot", "Tilt", "Psi"), subtomo.T):
+        particles[f"_rlnTomoSubtomogram{label}"] = column
+    for label, column in zip(("Rot", "Tilt", "Psi"), own.T):
+        particles[f"_rlnAngle{label}"] = column
+    star = tmp_path / "particles_frames.star"
+    starfile.write_star(str(star), particles, data_optics=optics)
+    rows, index, without = _geometry(project, star)
+    composed = tomo_input.relion_image_geometry(rows, index, star, out / "tomograms.star", particle_frame=True)
+    names = list(star_column(particles, "rlnTomoParticleName"))
+    assert np.array_equal(composed.rows, without.rows) and np.array_equal(composed.frames, without.frames)
+    for p, name in enumerate(index.particle_names):
+        start, stop = index.image_offsets[p], index.image_offsets[p + 1]
+        a = euler_angles_to_matrix(own[names.index(name)])[0]
+        assert_matches(composed.projections[start:stop], without.projections[start:stop] @ a)

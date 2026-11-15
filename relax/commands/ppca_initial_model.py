@@ -13,6 +13,7 @@ from pathlib import Path
 
 import numpy as np
 
+from relax.ppca_initial_model.band_schedule import physical_band_stages
 from relax.ppca_initial_model.checkpoint import file_hash
 from relax.ppca_initial_model.config import Config
 from relax.runtime.host_memory import available_memory_bytes
@@ -33,6 +34,18 @@ def add_args(parser):
     parser.add_argument("--seed", type=int, default=11)
     parser.add_argument("--iterations", type=int, default=200)
     parser.add_argument("--stages", help="JSON list of [first iteration, Fourier radius, HEALPix order]")
+    parser.add_argument(
+        "--physical-band",
+        action="store_true",
+        help="Compute the stages from the box in Angstrom instead of --stages: start at 35 A, add 1/(384 A) every 125 "
+        "updates, HEALPix order 1 above 32 A, 2 above 16 A, then 3 (from 20 A if the band stops above 16 A). "
+        "The stages are logged; --iterations sets how far they run",
+    )
+    parser.add_argument(
+        "--band-target-resolution",
+        type=float,
+        help="Resolution in Angstrom where --physical-band stops (default Nyquist - 1)",
+    )
     parser.add_argument(
         "--oversampling",
         type=int,
@@ -83,6 +96,85 @@ def add_args(parser):
     )
     parser.add_argument("--optimizer", choices=("vdam", "momentum_sgd"), default="vdam")
     parser.add_argument(
+        "--filament-band-length",
+        type=float,
+        help="Search each subtomogram particle in its own frame (rlnAngle* composed): rotations about +z and shifts "
+        "along it within +-LENGTH/2 Angstrom, uniform priors (relax/ppca_initial_model/filament_band.py)",
+    )
+    parser.add_argument("--filament-band-axial-step", type=float, default=15.0, help="Angstrom (default 15)")
+    parser.add_argument("--filament-band-phi-step", type=float, default=5.0, help="degrees, divides 360 (default 5)")
+    parser.add_argument(
+        "--attachment-center", type=float, default=180.0, help="support centre on +x, Angstrom from the axis (180)"
+    )
+    parser.add_argument("--attachment-radius", type=float, default=60.0, help="support radius, Angstrom (default 60)")
+    parser.add_argument(
+        "--attachment-exclude-radius",
+        type=float,
+        help="leave the cylinder of this radius about the axis (Angstrom) out of the support, e.g. the fixed core's "
+        "outer radius (default: nothing excluded)",
+    )
+    parser.add_argument(
+        "--fixed-core",
+        help="RELION-convention map of a fixed core (e.g. the filament) in each particle's frame; it is projected with "
+        "each tilt's CTF and removed from the images before training (subtomogram particles)",
+    )
+    parser.add_argument(
+        "--fixed-core-scale",
+        choices=("particle", "basis", "none"),
+        default="particle",
+        help="particle (default): fit each particle's core scale before removing the core; basis: the scale plus the "
+        "core's radial-dilation and transverse-shift directions; none: scale 1",
+    )
+    parser.add_argument(
+        "--fixed-core-box",
+        type=int,
+        help="box (pixels) the fixed core is extended to and projected in before cropping to the images (default "
+        "twice the image box; the image box itself disables the extension)",
+    )
+    parser.add_argument(
+        "--no-fixed-core-free-offset",
+        dest="fixed_core_free_offset",
+        action="store_false",
+        help="fit the core with each image's DC pixel (default: a free per-image offset)",
+    )
+    parser.add_argument(
+        "--fixed-core-background",
+        choices=("none", "z", "cylinder"),
+        default="none",
+        help="after the core, fit the residual's mean (averaged along / about the filament) as a second core component",
+    )
+    parser.add_argument(
+        "--fixed-core-spectrum",
+        action="store_true",
+        help="fit the core's spectral shape to the data (one gain per image shell), filter the map by it and refit "
+        "the per-particle scales (--fixed-core-scale particle)",
+    )
+    parser.add_argument(
+        "--fixed-core-neighbours",
+        help=".npz of each particle's neighbouring core copies (rotations (P, K, 3, 3), translations_px (P, K, 3), "
+        "present (P, K), particles_sha256): their sum is fitted and removed with the core",
+    )
+    parser.add_argument(
+        "--initial-mean",
+        help="RELION-convention map (the model's box and voxel size) that replaces the random initial mean",
+    )
+    parser.add_argument(
+        "--initial-mean-scale", type=float, default=1.0, help="factor on --initial-mean (map units to image units)"
+    )
+    parser.add_argument(
+        "--likelihood-min-shell",
+        type=int,
+        default=0,
+        help="subtomogram particles: no likelihood weight on image shells below K (zeroed images, model and noise "
+        "held there); for low-frequency content shared by a particle's tilts that is not the particle (default 0)",
+    )
+    parser.add_argument(
+        "--occupancy",
+        type=float,
+        help="Prior probability that a particle holds the model, against an explicit empty component (needs "
+        "--filament-band-length)",
+    )
+    parser.add_argument(
         "--ppca-gemm-precision",
         choices=("auto", "fp32", "tf32"),
         default="auto",
@@ -103,10 +195,217 @@ def add_args(parser):
         help="pass 2 skips pose rows on which every image of a tile has less posterior mass (default 1e-10, "
         "applied when at most half the rows remain; 0: none skipped)",
     )
-    parser.add_argument("--sgd-learning-rate", type=float, default=0.4)
+    parser.add_argument(
+        "--tilt-coarse-pass",
+        action="store_true",
+        help="subtomogram particles: score the order hp - 1 grid first and the stage's grid only near each "
+        "particle's significant coarse poses (target mass, max significant; a runtime setting)",
+    )
+    parser.add_argument(
+        "--tilt-coarse-order",
+        type=int,
+        help="with --tilt-coarse-pass: the coarse grid's HEALPix order for every stage above it (default: each "
+        "stage's order - 1); 2 gives order 3 stages a one-level and order 4 stages a two-level coarse pass",
+    )
+    parser.add_argument(
+        "--sgd-learning-rate",
+        type=float,
+        help="Momentum SGD step factor on the gradient over the band maximum of the metric trace, which sums the "
+        "1 + q channels, so a rate r per channel is r (1 + q) here; above 0.8 (1 + q) the run warns (default 0.4; "
+        "0.8 with --sgd-variant gated)",
+    )
+    parser.add_argument(
+        "--sgd-momentum",
+        type=float,
+        help="Momentum B of the velocity B v + (1 - B) step (default 0.9); 0 is plain SGD",
+    )
+    parser.add_argument(
+        "--vdam-second-moment",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="VDAM divides its direction by the root of the half-set second moment (default); "
+        "--no-vdam-second-moment keeps the rest of VDAM (half-set first moments, shell gates, schedules) without it",
+    )
+    parser.add_argument(
+        "--sgd-variant",
+        choices=tuple(SGD_VARIANTS),
+        default="plain",
+        help="Momentum SGD variant: plain (default) or gated, which sets --sgd-gate halfset, --sgd-step-scale "
+        "exact_diagonal, --noise-anneal 8,750 and a step factor of 0.8 (ppca_optimizer_axes.md, 'Gated momentum "
+        "SGD'); a component given explicitly overrides the variant's",
+    )
+    parser.add_argument(
+        "--sgd-gate",
+        choices=("none", "halfset"),
+        help="Momentum SGD step gate: none, or VDAM's half-set shell gate (the run also keeps VDAM's half-set moments)",
+    )
+    parser.add_argument(
+        "--sgd-step-scale",
+        choices=("trace", "exact_diagonal"),
+        help="Momentum SGD curvature scale: the band maximum of the backprojected metric trace (trace), or of the "
+        "exact projection-Hessian diagonal (exact_diagonal, GPU streams)",
+    )
+    parser.add_argument(
+        "--noise-anneal",
+        help="F,N: the E-step of update t uses the noise estimate times 1 + (F - 1) max(0, 1 - t/N); 1,0 is off",
+    )
+    parser.add_argument(
+        "--sgd-direction",
+        choices=("trace", "coupled"),
+        help="Momentum SGD direction: trace (G over the band maximum of the metric trace; default) or coupled, the "
+        "per-frequency Newton direction H_f^-1 G_f scaled at update 1 to the split-curvature step's norm "
+        "(ppca_momentum_sgd.md, 'Newton SGD'; needs --sgd-momentum 0)",
+    )
+    parser.add_argument(
+        "--sgd-pc-gate-floor",
+        type=float,
+        help="Multiply the PC step per shell by clip(rho, F, 1), rho the moving correlation (about 20 updates) of "
+        "the two half-batch PC gradients; the mean is not gated (needs --sgd-momentum 0)",
+    )
+    parser.add_argument(
+        "--sgd-lr-schedule",
+        help=".npy of per-update steps s: update t uses --sgd-learning-rate s(t) / s(1) (needs --sgd-momentum 0)",
+    )
+    parser.add_argument(
+        "--sgd-lr-match",
+        type=float,
+        help="Set the base learning rate at update 1 so that the mean's step equals the shared-trace step at this "
+        "rate (rate M c_mean / max tr H; replaces --sgd-learning-rate; needs --sgd-momentum 0)",
+    )
+    parser.add_argument(
+        "--sgd-fixed-step",
+        type=float,
+        help="Coupled direction: step T s(t) / s(1) times the damped Newton direction (s the --sgd-lr-schedule steps; "
+        "T throughout without one), with no update-1 norm match; the learning rate cancels",
+    )
+    parser.add_argument(
+        "--oversampling-from-update",
+        type=int,
+        help="With --oversampling 1: oversample from this update on (default: the last stage)",
+    )
+    parser.add_argument(
+        "--oversampling-rotations-only",
+        action="store_true",
+        help="With --oversampling 1: the children are rotations only; the shifts keep the stage's grid",
+    )
+    parser.add_argument(
+        "--sgd-pc-min-shell",
+        type=int,
+        help="Coupled direction: no PC step on Fourier shells below N (1 freezes the PCs' zero-frequency term)",
+    )
+    parser.add_argument(
+        "--sgd-eig-floor-rel",
+        type=float,
+        help="Coupled direction: also floor each frequency's metric eigenvalues at this fraction of the band's "
+        "largest eigenvalue",
+    )
+    parser.add_argument(
+        "--sgd-mean-gate-floor",
+        type=float,
+        help="Coupled direction with --sgd-pc-gate-floor: also multiply the mean's step per shell by clip(rho, F, 1), "
+        "rho the moving correlation of the two half-batch mean gradients",
+    )
+    parser.add_argument(
+        "--uniform-direction-prior",
+        action="store_true",
+        help="Keep the orientation prior uniform instead of learning RELION's direction prior",
+    )
+    parser.add_argument(
+        "--shift-schedule",
+        help="JSON [[first update, range A, step A], ...]: the zero-centred translation window of each update, in "
+        "Angstrom, rounded to whole pixels (replaces --shift-range and --shift-step)",
+    )
+    parser.add_argument(
+        "--offset-sigma-hold",
+        type=float,
+        help="Hold the Gaussian offset prior's sigma per axis at this many Angstrom (default: learned)",
+    )
     parser.add_argument("--resume")
     parser.add_argument("--stop-after", type=int, help="Checkpoint stop without changing the scientific schedule")
     parser.add_argument("--stop-file", help="Stop between iterations after an atomic checkpoint")
+
+
+# Momentum SGD variants: the Config values each sets (plain: the Config defaults). Gated is the measured
+# recommendation of docs/development/ppca_optimizer_axes.md ("Gated momentum SGD").
+SGD_VARIANTS = {
+    "plain": {},
+    "gated": {
+        "sgd_learning_rate": 0.8,
+        "sgd_halfset_gate": True,
+        "sgd_step_scale": "exact_diagonal",
+        "noise_anneal_factor": 8.0,
+        "noise_anneal_updates": 750,
+    },
+}
+
+
+def parse_noise_anneal(value):
+    """``"F,N"`` to ``(noise_anneal_factor, noise_anneal_updates)``."""
+    parts = value.split(",")
+    if len(parts) != 2:
+        raise ValueError(f"--noise-anneal takes F,N (a factor and an update count), not {value!r}")
+    return float(parts[0]), int(parts[1])
+
+
+def resolve_sgd_options(args):
+    """The Config fields of the momentum SGD variant and its components, and of noise annealing.
+
+    Precedence: a component given explicitly, then the ``--sgd-variant`` preset, then the Config default.
+    The variant and the gate and step-scale components are momentum SGD options; with VDAM they refuse.
+    """
+    options = dict(SGD_VARIANTS[args.sgd_variant])
+    if args.sgd_learning_rate is not None:
+        options["sgd_learning_rate"] = args.sgd_learning_rate
+    if args.sgd_gate is not None:
+        options["sgd_halfset_gate"] = args.sgd_gate == "halfset"
+    if args.sgd_step_scale is not None:
+        options["sgd_step_scale"] = args.sgd_step_scale
+    if args.noise_anneal is not None:
+        options["noise_anneal_factor"], options["noise_anneal_updates"] = parse_noise_anneal(args.noise_anneal)
+    if args.optimizer != "momentum_sgd" and (
+        args.sgd_variant != "plain"
+        or args.sgd_gate is not None
+        or args.sgd_step_scale is not None
+        or args.sgd_momentum is not None
+    ):
+        raise ValueError("--sgd-variant, --sgd-gate, --sgd-step-scale and --sgd-momentum need --optimizer momentum_sgd")
+    if args.sgd_momentum is not None:
+        options["sgd_momentum"] = args.sgd_momentum
+    if args.sgd_direction is not None:
+        options["sgd_direction"] = args.sgd_direction
+    if args.sgd_pc_gate_floor is not None:
+        options["sgd_pc_gate_floor"] = args.sgd_pc_gate_floor
+    if args.sgd_lr_match is not None:
+        options["sgd_lr_match"] = args.sgd_lr_match
+    if args.sgd_fixed_step is not None:
+        options["sgd_fixed_step"] = args.sgd_fixed_step
+    if args.sgd_pc_min_shell is not None:
+        options["sgd_pc_min_shell"] = args.sgd_pc_min_shell
+    if args.sgd_eig_floor_rel is not None:
+        options["sgd_eig_floor_rel"] = args.sgd_eig_floor_rel
+    if args.sgd_mean_gate_floor is not None:
+        options["sgd_mean_gate_floor"] = args.sgd_mean_gate_floor
+    if args.sgd_lr_schedule is not None:
+        options["sgd_lr_schedule"] = str(Path(args.sgd_lr_schedule).resolve())
+    if not args.vdam_second_moment:
+        if args.optimizer != "vdam":
+            raise ValueError("--no-vdam-second-moment needs --optimizer vdam")
+        options["vdam_second_moment"] = False
+    return options
+
+
+def translation_options(args, voxel_size):
+    """``shift_schedule`` and ``offset_sigma_hold_px`` from the Angstrom options, steps and ranges in whole pixels."""
+    options = {}
+    if args.shift_schedule:
+        schedule = []
+        for first, window, step in json.loads(args.shift_schedule):
+            step_px = max(1, round(step / voxel_size))
+            schedule.append((int(first), float(step_px * round(window / voxel_size / step_px)), float(step_px)))
+        options["shift_schedule"] = tuple(schedule)
+    if args.offset_sigma_hold is not None:
+        options["offset_sigma_hold_px"] = args.offset_sigma_hold / voxel_size
+    return options
 
 
 # Largest share of the job's memory that "auto" lets one host copy of the particle stack take.
@@ -227,11 +526,14 @@ def refuse_unsupported_tilt_optics(particles_star):
     refuse_unsupported_optics(optics, source=str(particles_star), supported=TOMO_PPCA_OPTICS_FEATURES)
 
 
-def load_tilt_training(ios, output):
-    """Subtomogram particles of a RELION 5 optimisation set (algorithm section 16).
+def load_tilt_training(ios, output, preread_images="auto", *, particle_frame: bool = False):
+    """Subtomogram particles of a RELION 5 optimisation set (algorithm section 16), and the image-reading record.
 
     Only the tilt-series geometry (each image's ``Aproj``), the images and their CTF and dose
-    enter training; the particles' input angles and offsets are not read.
+    enter training; the particles' input angles and offsets are not read, except that ``particle_frame``
+    (the filament band) composes each particle's ``rlnAngle*`` into its projections. ``preread_images``
+    (:func:`resolve_preread_images` of the tilt images' bytes) holds every tilt image in host memory after the
+    first read.
     """
     from relax.ppca_initial_model.tomo import tilt_particles_from_tomo_dataset
     from relax.star.tomo_input import read_optimisation_set
@@ -244,7 +546,11 @@ def load_tilt_training(ios, output):
         tomograms_star,
         Path(output) / "particles_2d.star",
         datadir=str(Path(particles_star).resolve().parent),
-        lazy=False,
+        # Lazy: the dataset reads tilt images from disk on demand. An eager load holds every image as a complex64
+        # full grid (twice the real pixels' bytes; 266 GB for 2.0M images of 128 x 128); --ppca-preread-images
+        # decides whether the real pixels are held instead.
+        lazy=True,
+        particle_frame=particle_frame,
     )
     identity = {
         "ios_sha256": file_hash(ios),
@@ -252,7 +558,17 @@ def load_tilt_training(ios, output):
         "tomograms_sha256": file_hash(tomograms_star),
         "tilt_series_sha256": tilt_series_hash(tomograms_star),
     }
-    return tilt_particles_from_tomo_dataset(tomo), identity
+    image_bytes = int(np.asarray(tomo.image_rows).size) * int(np.prod(tomo.image_shape)) * 4
+    preread, reading = resolve_preread_images(preread_images, image_bytes, available_memory_bytes())
+    logger.info(
+        "PPCA tilt images: %s (setting %s; %.2f GB, memory %.1f GB, preread limit %.0f%%)",
+        "held in host memory after the first read" if preread else "read from disk per tile",
+        preread_images,
+        image_bytes / 1e9,
+        reading["memory_gb"],
+        100 * PREREAD_MEMORY_FRACTION,
+    )
+    return tilt_particles_from_tomo_dataset(tomo, preread=preread), identity, reading
 
 
 def tilt_series_hash(tomograms_star):
@@ -351,11 +667,17 @@ def main(args=None):
         raise RuntimeError("Particle refinement runs require Slurm; use unit tests for local numerical checks")
     from relax.ppca_initial_model.iteration_loop import run
 
+    if args.physical_band and args.stages:
+        raise ValueError("--physical-band computes the stages; do not give --stages as well")
+    if args.band_target_resolution is not None and not args.physical_band:
+        raise ValueError("--band-target-resolution needs --physical-band")
     config = Config(
         q=args.q,
         seed=args.seed,
         iterations=args.iterations,
         oversampling=args.oversampling,
+        oversampling_from_update=args.oversampling_from_update,
+        oversampling_rotations_only=args.oversampling_rotations_only,
         max_significant=args.maxsig,
         shift_range=args.shift_range,
         shift_step=args.shift_step,
@@ -370,22 +692,168 @@ def main(args=None):
         checkpoint_interval=args.checkpoint_interval,
         skip_final_embeddings=args.skip_final_embeddings,
         optimizer=args.optimizer,
-        sgd_learning_rate=args.sgd_learning_rate,
+        **resolve_sgd_options(args),
         gemm_precision=args.ppca_gemm_precision,
         preread_images=args.ppca_preread_images,
         pass2_mass_floor=args.ppca_pass2_mass_floor,
+        tilt_coarse_pass=args.tilt_coarse_pass,
+        tilt_coarse_order=args.tilt_coarse_order,
         stages=tuple(tuple(stage) for stage in json.loads(args.stages)) if args.stages else Config().stages,
+        uniform_direction_prior=args.uniform_direction_prior,
+        band_length_ang=args.filament_band_length,
+        band_axial_step_ang=args.filament_band_axial_step,
+        band_phi_step_deg=args.filament_band_phi_step,
+        attachment_center_ang=args.attachment_center,
+        attachment_radius_ang=args.attachment_radius,
+        attachment_exclude_radius_ang=args.attachment_exclude_radius,
+        occupancy=args.occupancy,
+        fixed_core=args.fixed_core,
+        fixed_core_scale=args.fixed_core_scale,
+        fixed_core_box=args.fixed_core_box,
+        fixed_core_free_offset=args.fixed_core_free_offset,
+        fixed_core_background=args.fixed_core_background,
+        fixed_core_spectrum=args.fixed_core_spectrum,
+        fixed_core_neighbours=args.fixed_core_neighbours,
+        initial_mean=args.initial_mean,
+        initial_mean_scale=args.initial_mean_scale,
+        likelihood_min_shell=args.likelihood_min_shell,
     )
     if (args.ios is None) == (args.particles is None):
         raise ValueError("Give either a particle STAR (--i) or an optimisation set (--ios)")
+    if config.fixed_core is not None and args.ios is None:
+        raise ValueError("--fixed-core removes a core from subtomogram particles (--ios)")
     output = Path(args.output)
     output.mkdir(parents=True, exist_ok=True)
     if args.ios:
-        data, identity = load_tilt_training(args.ios, output)
-        # Subtomogram stacks are always read into memory (load_tilt_training).
-        image_reading = None
+        data, identity, image_reading = load_tilt_training(
+            args.ios, output, config.preread_images, particle_frame=config.band() is not None
+        )
+        if config.fixed_core is not None:
+            from recovar.utils.helpers import load_relion_volume
+
+            from relax.ppca_initial_model.fixed_core import FixedCore, core_basis_volumes, extend_axial_core
+            from relax.ppca_initial_model.tomo import (
+                estimate_core_coefficients,
+                estimate_core_scales,
+                subtract_fixed_core,
+            )
+
+            voxel_size = FixedCore.from_map(config.fixed_core).voxel_size
+            volume = np.asarray(load_relion_volume(config.fixed_core), np.float32)
+            box = 2 * data.grid_size if config.fixed_core_box is None else int(config.fixed_core_box)
+            if box != volume.shape[0]:
+                volume = extend_axial_core(volume, box)
+            logger.info(
+                "fixed core projected in a %d box (images %d), free offset %s",
+                box,
+                data.grid_size,
+                config.fixed_core_free_offset,
+            )
+
+            def as_core(v):
+                return FixedCore.from_volume(v, volume_shape=v.shape, voxel_size=voxel_size, volume_domain="real")
+
+            core = as_core(volume)
+            scales = None
+            # Before any noise estimate: a white metric (one flat spectrum per noise group).
+            white = np.ones((data.n_noise_groups, data.grid_size // 2 + 1), np.float32)
+            offset = config.fixed_core_free_offset
+            if config.fixed_core_scale == "particle":
+                scales = estimate_core_scales(data, core, white, free_offset=offset)
+                np.save(output / "core_scales.npy", scales)
+                logger.info("fixed-core scales: %s", np.percentile(scales, [1, 25, 50, 75, 99]).round(3).tolist())
+                if config.fixed_core_spectrum:
+                    from relax.ppca_initial_model.fixed_core import filter_core_spectrum
+                    from relax.ppca_initial_model.tomo import estimate_core_spectrum
+
+                    gains, record = estimate_core_spectrum(data, core, white, scales, free_offset=offset)
+                    (output / "core_spectrum.json").write_text(json.dumps(record))
+                    volume = filter_core_spectrum(volume, gains, data.grid_size)
+                    core = as_core(volume)
+                    scales = estimate_core_scales(data, core, white, free_offset=offset)
+                    np.save(output / "core_scales.npy", scales)
+                    logger.info(
+                        "fixed-core spectrum: gains %s at shells %s; refitted scales %s",
+                        np.round(gains[:: max(1, gains.size // 8)], 3).tolist(),
+                        list(range(0, gains.size, max(1, gains.size // 8))),
+                        np.percentile(scales, [1, 25, 50, 75, 99]).round(3).tolist(),
+                    )
+                if config.fixed_core_neighbours is not None:
+                    from relax.ppca_initial_model.fixed_core import PlacedNeighbours
+
+                    with np.load(config.fixed_core_neighbours) as nb:
+                        if str(nb["particles_sha256"]) != identity["particles_sha256"]:
+                            raise ValueError(f"{config.fixed_core_neighbours} was made for other particles")
+                        present = np.asarray(nb["present"], bool)
+                        if present.shape[0] != data.n_images:  # n_images counts particles (TiltParticles)
+                            raise ValueError(f"Neighbours for {present.shape[0]} particles, data has {data.n_images}")
+                        neighbours = PlacedNeighbours(
+                            core,
+                            np.asarray(nb["rotations"], np.float32),
+                            np.asarray(nb["translations_px"], np.float64),
+                            present,
+                        )
+                    core = (core, neighbours)
+                    scales = estimate_core_coefficients(data, core, white, free_offset=offset)
+                    np.save(output / "core_coefficients.npy", scales)
+                    logger.info(
+                        "fixed-core neighbours: %d particles with >= 1 (mean %.2f); core coefficient %s, neighbour "
+                        "coefficient %s",
+                        int(present.any(axis=1).sum()),
+                        float(present.sum(axis=1).mean()),
+                        np.percentile(scales[:, 0], [1, 50, 99]).round(3).tolist(),
+                        np.percentile(scales[:, 1], [1, 50, 99]).round(3).tolist(),
+                    )
+            elif config.fixed_core_scale == "basis":
+                core = tuple(as_core(v) for v in core_basis_volumes(volume))
+                scales = estimate_core_coefficients(data, core, white, free_offset=offset)
+                np.save(output / "core_coefficients.npy", scales)
+                logger.info(
+                    "fixed-core basis: scale %s, dilation/scale %s",
+                    np.percentile(scales[:, 0], [1, 50, 99]).round(3).tolist(),
+                    np.percentile(scales[:, 1] / scales[:, 0], [1, 50, 99]).round(4).tolist(),
+                )
+            observed = data
+            data = subtract_fixed_core(observed, core, scales=scales, free_offset=offset)
+            if config.fixed_core_background != "none":
+                from relax.ppca_initial_model.tomo import estimate_residual_background
+
+                background = estimate_residual_background(data, config.fixed_core_background)
+                np.save(output / "core_background.npy", background)
+                if box != background.shape[0]:
+                    background = extend_axial_core(background, box)
+                basis = (core if isinstance(core, tuple) else (core,)) + (as_core(background),)
+                scales = estimate_core_coefficients(observed, basis, white, free_offset=offset)
+                np.save(output / "core_coefficients.npy", scales)
+                logger.info(
+                    "fixed-core background (%s): core coefficient %s, background coefficient %s",
+                    config.fixed_core_background,
+                    np.percentile(scales[:, 0], [1, 50, 99]).round(3).tolist(),
+                    np.percentile(scales[:, -1], [1, 50, 99]).round(3).tolist(),
+                )
+                data = subtract_fixed_core(observed, basis, scales=scales, free_offset=offset)
+            identity["fixed_core_sha256"] = file_hash(config.fixed_core)
+        if config.likelihood_min_shell:
+            from relax.ppca_initial_model.tomo import free_low_shells
+
+            data = free_low_shells(data, config.likelihood_min_shell)
+            logger.info("no likelihood weight on image shells below %d", config.likelihood_min_shell)
     else:
+        if config.likelihood_min_shell:
+            raise ValueError("--likelihood-min-shell is for subtomogram particles (--ios)")
         data, identity, image_reading = load_training(args.particles, config.preread_images)
+    if args.physical_band:
+        stages = physical_band_stages(data.grid_size, data.voxel_size, args.band_target_resolution)
+        config = dataclasses.replace(config, stages=stages)
+        logger.info("physical band of a %g A box: --stages %s", data.grid_size * data.voxel_size, json.dumps(stages))
+        if stages[-1][0] > config.iterations:
+            logger.warning("--iterations %d ends before the last band stage %s", config.iterations, stages[-1])
+    if args.shift_schedule or args.offset_sigma_hold is not None:
+        config = dataclasses.replace(config, **translation_options(args, data.voxel_size))
+        logger.info(
+            "translations: schedule %s px, offset sigma %s px",
+            json.dumps(config.shift_schedule), config.offset_sigma_hold_px,
+        )
     identity["source"] = source_identity()
     if not args.resume and list(output.glob("checkpoint_*.npz")):
         raise ValueError("Output already contains checkpoints; use --resume or a new directory")

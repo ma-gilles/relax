@@ -9,12 +9,14 @@ from helpers.full_row_tile import accumulate_full_row_tile
 
 from relax.fourier.half_spectrum import make_half_image_weights, make_shell_indices_half
 from relax.local_search.layout import build_pass2_hypothesis_layout
+from relax.ppca_initial_model.sgd_update import metric_trace
 from relax.ppca_refinement.config import GeometryConfig, ScheduleConfig, ScoringConfig, SparsePass2Config
 from relax.ppca_refinement.dense_blocks import _per_image_pose_prior_block
 from relax.ppca_refinement.dense_dataset import accumulate_dense_ppca_statistics, compute_dense_ppca_embeddings
 from relax.ppca_refinement.full_row_kernels import full_row_pose_log_prior
 from relax.ppca_refinement.full_row_stream import (
     FULL_ROW_ENGINE,
+    ExactTracePPCAStats,
     TracePPCAStats,
     accumulate_full_row_tiles,
     coarse_support_mask,
@@ -141,7 +143,7 @@ def _half_volume(rng, scale=1.0):
     return (scale * np.asarray(ftu.full_volume_to_half_volume(full, VOLUME_SHAPE)).reshape(-1)).astype(np.complex64)
 
 
-def make_tile_problem(device=None, q=2, metric_trace_only=False, gemm_precision="fp32"):
+def make_tile_problem(device=None, q=2, metric_trace_only=False, gemm_precision="fp32", exact_metric_trace=False):
     reference, shared, parent = _layouts()
     rng = np.random.default_rng(3)
     images = (rng.standard_normal((3, N_HALF)) + 1j * rng.standard_normal((3, N_HALF))).astype(np.complex64)
@@ -173,6 +175,7 @@ def make_tile_problem(device=None, q=2, metric_trace_only=False, gemm_precision=
         n_coarse_translations=3,
         device=device,
         metric_trace_only=metric_trace_only,
+        exact_metric_trace=exact_metric_trace,
         gemm_precision=gemm_precision,
         **common,
     )
@@ -251,6 +254,45 @@ def test_trace_only_stream_matches_host_mask_metric_trace(tile_problem):
     for name in ("residual_gradient", "residual_num", "residual_den", "embeddings"):
         assert_matches(np.asarray(getattr(actual, name)), np.asarray(getattr(expected, name)))
     assert_matches(np.float32(actual.log_likelihood), np.float32(expected.log_likelihood))
+
+
+def test_exact_trace_needs_a_gpu_stream():
+    import jax
+
+    with pytest.raises(ValueError, match="exact metric-diagonal trace needs a GPU stream"):
+        make_tile_problem(device=jax.devices("cpu")[0], exact_metric_trace=True)
+
+
+@pytest.mark.gpu
+@pytest.mark.parametrize("metric_trace_only", [False, True])
+def test_exact_trace_stream_adds_the_squared_weight_trace(metric_trace_only, gpu_device):
+    """The exact trace rides along: every other statistic equals the stream without it, and it lies between
+    zero and the backprojected trace (squared weights in [0, 1] never exceed the weights; LHS traces are
+    nonnegative), and differs from it: about (2/3)^3 of it in total for poses off the grid (the mean of
+    (1-f)^2 + f^2 over a uniform offset, per axis), more for this tiny grid's near-aligned poses."""
+    plain = accumulate_full_row_tile(
+        make_tile_problem(device=gpu_device, metric_trace_only=metric_trace_only)[3], np.arange(3), SIGNIFICANT
+    )
+    actual = accumulate_full_row_tile(
+        make_tile_problem(device=gpu_device, metric_trace_only=metric_trace_only, exact_metric_trace=True)[3],
+        np.arange(3),
+        SIGNIFICANT,
+    )
+    assert isinstance(actual, ExactTracePPCAStats)
+    if metric_trace_only:
+        assert actual.lhs_tri is None
+        trace = np.asarray(actual.metric_trace)
+        assert_matches(trace, np.asarray(plain.metric_trace))
+    else:
+        assert_matches(np.asarray(actual.lhs_tri), np.asarray(plain.lhs_tri))
+        trace = np.asarray(metric_trace(actual.lhs_tri, 3))
+    for name in ("residual_gradient", "residual_num", "residual_den", "embeddings"):
+        assert_matches(np.asarray(getattr(actual, name)), np.asarray(getattr(plain, name)))
+    exact = np.asarray(actual.exact_metric_trace)
+    assert exact.shape == trace.shape
+    scale = np.max(trace)
+    assert np.all(exact >= -1e-6 * scale) and np.all(exact <= trace + 1e-6 * scale)
+    assert 0.15 < np.sum(exact) / np.sum(trace) < 0.9
 
 
 def test_device_resident_tile_embeddings_match_host_mask(tile_problem):
@@ -457,10 +499,10 @@ def test_padded_tile_matches_the_real_tile(tile_problem):
     assert_matches(np.asarray(embedded.embeddings), np.asarray(real.embeddings))
 
 
-@pytest.mark.parametrize("planned", [4, 80, 96])
+@pytest.mark.parametrize("planned", [4, 7, 13])
 def test_single_particle_reader_pads_to_the_planned_buckets(tile_problem, planned):
     """With a planned tile size the single-particle reader pads a short tile to its bucket (3 images
-    to 4, 5 and 6 here); the statistics do not depend on the padded size."""
+    to 4 each here); the statistics do not depend on the padded size."""
     from relax.ppca_refinement.full_row_stream import read_tile, tile_size_bucket
 
     _dataset, _mu, _W, stream, _host = tile_problem
@@ -499,7 +541,7 @@ def test_tile_size_buckets_cap_compiled_shapes():
         sizes = {tile_size_bucket(n, planned) for n in range(1, planned + 1)}
         assert len(sizes) <= TILE_SIZE_BUCKETS and max(sizes) == planned
         assert all(tile_size_bucket(n, planned) >= n for n in range(1, planned + 1))
-    assert sorted({tile_size_bucket(n, 150) for n in range(1, 151)}) == [10, 19, 38, 75, 150]
+    assert sorted({tile_size_bucket(n, 150) for n in range(1, 151)}) == [1, 2, 3, 5, 10, 19, 38, 75, 150]
     with pytest.raises(ValueError):
         tile_size_bucket(151, 150)
 
@@ -915,3 +957,72 @@ def test_tf32_stream_gemms_need_ampere_and_auto_selects_them(tile_problem):
         a, b = np.asarray(getattr(fp32, name)), np.asarray(getattr(tf32, name))
         assert np.all(np.isfinite(b))
         assert _relative_l2(b, a.astype(np.complex128)) > 1e-5, name  # the switch reaches the GEMMs
+
+
+def _weak_model_stream(scale):
+    """The tile problem's stream with mu and W scaled by ``scale``: a weak model puts the occupied-versus-empty
+    log-odds of the noise images near 0, so P(occupied) is interior rather than saturated."""
+    reference, shared, parent = _layouts()
+    dataset, mu, W, _, host = make_tile_problem()
+    stream = prepare_full_row_stream(
+        dataset,
+        scale * mu,
+        scale * W,
+        rotations=shared.rotations_flat,
+        translations=shared.translation_grid,
+        rotation_log_prior=shared.rotation_log_priors_flat,
+        translation_log_prior=host["translation_log_prior"],
+        rotation_parent=shared.rotation_posterior_ids_flat,
+        translation_parent=parent,
+        n_coarse_rotations=3,
+        n_coarse_translations=3,
+        gemm_precision="fp32",
+        noise_variance=host["noise_variance"],
+        geometry=host["geometry"],
+        schedule=host["schedule"],
+        scoring=host["scoring"],
+    )
+    return stream
+
+
+@pytest.mark.parametrize("occupancy", [0.2, 1.0])
+def test_empty_component_weights_each_image_by_its_occupied_probability(occupancy):
+    """Pass-2 statistics are linear in each image's pose weights; the empty component scales them by P(occupied)."""
+    stream = _weak_model_stream(0.1)
+    mixed = stream._replace(occupancy=occupancy)
+    plain_embeddings = full_row_tile_embeddings(stream, np.arange(3), SIGNIFICANT)
+    mixed_embeddings = full_row_tile_embeddings(mixed, np.arange(3), SIGNIFICANT)
+    log_evidence = plain_embeddings.log_evidence.astype(np.float64)
+    null = plain_embeddings.null_log_likelihood.astype(np.float64)
+    occupied = np.log(occupancy) + log_evidence
+    empty = np.log1p(-occupancy) + null if occupancy < 1 else np.full_like(null, -np.inf)
+    p = np.exp(occupied - np.logaddexp(occupied, empty))
+    if occupancy < 1:
+        assert np.all((p > 0.01) & (p < 0.99)), p  # the comparison is about interior probabilities
+    assert_matches(mixed_embeddings.p_occupied, p.astype(np.float32))
+    assert_matches(mixed_embeddings.log_evidence, np.logaddexp(occupied, empty).astype(np.float32))
+    # E[z | occupied] is the one-component embedding: the empty component changes no pose's relative weight.
+    assert_matches(np.asarray(mixed_embeddings.embeddings), np.asarray(plain_embeddings.embeddings))
+    # The top pose keeps its share of the occupied mass: P(occupied, top pose) = P(occupied) P(top pose | occupied).
+    assert_matches(mixed_embeddings.max_posterior, (p * plain_embeddings.max_posterior).astype(np.float32))
+
+    plain_tiles = [accumulate_full_row_tile(stream, np.asarray([i]), [SIGNIFICANT[i]]) for i in range(3)]
+    mixed_tile = accumulate_full_row_tile(mixed, np.arange(3), SIGNIFICANT)
+    assert_matches(mixed_tile.diagnostics["p_occupied_per_image"], p.astype(np.float32))
+    for name in ("lhs_tri", "residual_gradient"):
+        parts = [np.asarray(getattr(t, name)) for t in plain_tiles]
+        expected = sum(p[i] * part.astype(np.result_type(part, np.float64)) for i, part in enumerate(parts))
+        assert_matches(np.asarray(getattr(mixed_tile, name)), expected.astype(parts[0].dtype))
+    # The tile log-likelihood (0.34 here) is a float32 sum of per-image terms of magnitude ~2 that cancel (evidence
+    # ~ +1.4, null ~ -1.6): measured |diff| 7.7e-7, i.e. 2.3e-6 of the total, which the default band cannot hold.
+    assert_matches(
+        np.float32(mixed_tile.log_likelihood), np.float32(np.sum(np.logaddexp(occupied, empty))), rtol=1e-5
+    )
+
+
+def test_tile_embeddings_carry_the_statistics_pass_top_pose(tile_problem):
+    _, _, _, stream, _ = tile_problem
+    embeddings = full_row_tile_embeddings(stream, np.arange(3), SIGNIFICANT)
+    stats = accumulate_full_row_tile(stream, np.arange(3), SIGNIFICANT)
+    assert np.array_equal(embeddings.best_rotation, stats.diagnostics["best_rotation_idx"])
+    assert np.array_equal(embeddings.best_translation, stats.diagnostics["best_translation_idx"])

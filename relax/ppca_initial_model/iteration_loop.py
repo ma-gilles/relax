@@ -22,12 +22,28 @@ from recovar.ppca.pose_accumulators import AugmentedPPCAStats
 from recovar.reconstruction.noise import make_radial_noise
 
 from relax.ppca_initial_model import checkpoint
-from relax.ppca_initial_model.initialization import bandlimit_and_mask, initialize, support_mask
+from relax.ppca_initial_model.filament_band import attachment_support_mask, uniform_log_prior
+from relax.ppca_initial_model.initialization import (
+    bandlimit_and_mask,
+    initialize,
+    support_mask,
+    with_initial_mean,
+    zero_low_shells,
+)
 from relax.ppca_initial_model.noise import update_noise
-from relax.ppca_initial_model.sgd_update import metric_trace, momentum_step
+from relax.ppca_initial_model.sgd_recipe import NewtonSGD
+from relax.ppca_initial_model.sgd_recipe import describe as describe_newton
+from relax.ppca_initial_model.sgd_update import gated_gradient, metric_diagonal, metric_trace, momentum_step
 from relax.ppca_initial_model.state import State
 from relax.ppca_initial_model.tomo import TiltParticles, initialize_tilts, load_tilt_tile, tilt_tiles
-from relax.ppca_initial_model.update import coupled_direction, empty_moments, metric_floor, stochastic_update
+from relax.ppca_initial_model.update import (
+    advance_moments,
+    coupled_direction,
+    empty_moments,
+    metric_floor,
+    shell_gates,
+    stochastic_update,
+)
 from relax.ppca_refinement.config import GeometryConfig, ScheduleConfig, ScoringConfig, SparsePass2Config
 from relax.ppca_refinement.dense_dataset import (
     DensePPCAEmbeddings,
@@ -36,8 +52,10 @@ from relax.ppca_refinement.dense_dataset import (
 )
 from relax.ppca_refinement.full_row_kernels import SHIFT_ALIGN, resolve_gemm_precision
 from relax.ppca_refinement.full_row_stream import (
+    ExactTracePPCAStats,
     TracePPCAStats,
     accumulate_full_row_tiles,
+    coarse_significant_rows,
     full_row_tile_embeddings,
     prepare_full_row_stream,
 )
@@ -73,6 +91,39 @@ def _rotation_grid(hp):
     rotations = grids.get_relion_hidden_rotation_grid(hp, matrices=True).astype(np.float32)
     rotations.flags.writeable = False
     return rotations
+
+
+@functools.lru_cache(maxsize=4)
+def _coarse_parents(hp, coarse_order=None):
+    """Each order-``hp`` rotation's nearest rotation of order ``coarse_order`` (default ``hp - 1``; largest
+    |quaternion dot|), int32 (read-only)."""
+    from scipy.spatial.transform import Rotation
+
+    coarse_order = hp - 1 if coarse_order is None else coarse_order
+    fine = Rotation.from_matrix(_rotation_grid(hp).astype(np.float64)).as_quat()
+    coarse = Rotation.from_matrix(_rotation_grid(coarse_order).astype(np.float64)).as_quat()
+    parents = np.concatenate(
+        [np.argmax(np.abs(fine[start : start + 2048] @ coarse.T), axis=1) for start in range(0, len(fine), 2048)]
+    ).astype(np.int32)
+    parents.flags.writeable = False
+    return parents
+
+
+# Coarse cells around a significant coarse rotation that the coarse pass also supports: every coarse rotation within
+# this many grid steps (60 / 2^order degrees) of it.
+COARSE_NEIGHBOR_STEPS = 1.5
+
+
+@functools.lru_cache(maxsize=4)
+def _coarse_neighbors(order):
+    """``(R, R)`` bool: order-``order`` rotations within :data:`COARSE_NEIGHBOR_STEPS` grid steps of each other."""
+    from scipy.spatial.transform import Rotation
+
+    q = Rotation.from_matrix(_rotation_grid(order).astype(np.float64)).as_quat()
+    angle = 2 * np.degrees(np.arccos(np.clip(np.abs(q @ q.T), 0, 1)))
+    table = angle <= COARSE_NEIGHBOR_STEPS * 60.0 / 2**order
+    table.flags.writeable = False
+    return table
 
 
 @functools.lru_cache(maxsize=4)
@@ -124,7 +175,7 @@ class _ModelLog:
 
 
 # The statistics over the half volume, one array per tile: a group's sum is kept running (TileSums).
-VOLUME_FIELDS = ("rhs", "lhs_tri", "residual_gradient", "metric_trace")
+VOLUME_FIELDS = ("rhs", "lhs_tri", "residual_gradient", "metric_trace", "exact_metric_trace")
 
 
 class TileSums:
@@ -167,14 +218,18 @@ def _merge_statistics(parts, totals=None):
     """One group's statistics from its tiles' (``parts``, in tile order). ``totals`` holds the volume sums
     (:class:`TileSums`) when the parts no longer carry their volumes."""
     trace_only = all(isinstance(s, TracePPCAStats) for s in parts)
+    exact = all(isinstance(s, ExactTracePPCAStats) for s in parts)
 
     def volume(name):
-        return totals.get(name) if totals is not None else sum(getattr(s, name) for s in parts)
+        if totals is not None:
+            return totals.get(name)
+        values = [getattr(s, name, None) for s in parts]
+        return None if any(value is None for value in values) else sum(values)
 
     fields = dict(
         # The streamed engine produces no RHS volume (only lhs_tri and the residual gradient are read).
-        rhs=None if (totals is None and any(s.rhs is None for s in parts)) else volume("rhs"),
-        lhs_tri=None if trace_only else volume("lhs_tri"),
+        rhs=volume("rhs"),
+        lhs_tri=volume("lhs_tri"),
         residual_gradient=volume("residual_gradient"),
         residual_num=sum(s.residual_num for s in parts),
         residual_den=sum(s.residual_den for s in parts),
@@ -192,6 +247,10 @@ def _merge_statistics(parts, totals=None):
     )
     if trace_only:
         return TracePPCAStats(metric_trace=volume("metric_trace"), **fields)
+    if exact:
+        return ExactTracePPCAStats(
+            metric_trace=volume("metric_trace"), exact_metric_trace=volume("exact_metric_trace"), **fields
+        )
     return AugmentedPPCAStats(**fields)
 
 
@@ -201,11 +260,21 @@ OVERSAMPLING_CAP_MASS = 0.99
 OVERSAMPLING_CAP_WARNING = 0.05
 
 
+def _check_newton_resume(newton, saved, resume, iteration):
+    """A resumed Newton SGD run needs its saved state: the file, and the coupled step's scale k unless the step is
+    fixed (--sgd-fixed-step never sets k)."""
+    if not resume or iteration <= 0:
+        return
+    if not (saved and Path(saved).exists()) or (newton.k is None and newton.fixed_step is None):
+        raise FileNotFoundError(f"Newton SGD state {saved} of the resumed checkpoint")
+
+
 def oversampled_update(config, iteration) -> bool:
     """Whether the update at ``iteration`` runs adaptive oversampling: the last stage's updates do; the earlier
     stages run the dense grid of their order (their posteriors are flat, the significant-sample cap cannot follow
     them, and the dense grid costs less there; section 14 of docs/math/vdam_ppca_algorithm.md)."""
-    return bool(config.oversampling) and iteration >= config.stages[-1][0]
+    first = config.stages[-1][0] if getattr(config, "oversampling_from_update", None) is None else config.oversampling_from_update
+    return bool(config.oversampling) and iteration >= first
 
 
 def _oversampling_record(stats, config, iteration):
@@ -245,8 +314,13 @@ def _oversampling_record(stats, config, iteration):
     return record
 
 
-def _curvature_trace(stats, p):
-    """Momentum SGD's per-frequency metric trace summed over the halves."""
+def _curvature_trace(stats, p, *, exact):
+    """Momentum SGD's per-frequency metric trace summed over the halves; with ``exact`` the trace of the
+    exact metric diagonal (``Config.sgd_step_scale`` ``"exact_diagonal"``)."""
+    if exact:
+        if not all(isinstance(s, ExactTracePPCAStats) for s in stats):
+            raise ValueError("The exact-diagonal step scale needs statistics with the exact metric trace")
+        return sum(s.exact_metric_trace for s in stats)
     if all(isinstance(s, TracePPCAStats) for s in stats):
         return sum(s.metric_trace for s in stats)
     return metric_trace(sum(s.lhs_tri for s in stats), p)
@@ -267,6 +341,51 @@ def _select_halves(rng, order, count, balanced):
     return selected, [selected[selected % 2 == half] for half in range(2)]
 
 
+# Above this sgd_learning_rate / (1 + q) the run warns (docs/math/ppca_momentum_sgd.md).
+MAX_SGD_RATE_PER_CHANNEL = 0.8
+
+
+def _update_rule(config):
+    """The run's update rule as configured, for the job log."""
+    if config.newton_sgd():
+        return f"Newton SGD, learning rate {config.sgd_learning_rate:g}: {describe_newton(config)}"
+    if config.optimizer == "momentum_sgd":
+        rate = config.sgd_learning_rate
+        return (
+            f"momentum SGD, momentum {config.sgd_momentum:g} ({'on' if config.sgd_momentum else 'off'}), "
+            f"learning rate {rate:g} = {rate / (config.q + 1):.4g} (1 + q)"
+        )
+    return f"VDAM, second-moment scaling {'on' if config.vdam_second_moment else 'off'}"
+
+
+def _update_rule_measured(config, diagnostics):
+    """What the update computed that shows its rule, for the job log."""
+    if config.newton_sgd():
+        return (
+            f"learning rate {diagnostics['learning_rate_used']:.4g}, k {diagnostics.get('coupled_k')}, "
+            f"indefinite frequencies {diagnostics.get('indefinite_frequencies')}, "
+            f"PC gate {diagnostics.get('pc_gate_shell')}, shifts {config.shifts(diagnostics['iteration'])} px, "
+            f"offset sigma {'held at %g px' % config.offset_sigma_hold_px if config.offset_sigma_hold_px else 'learned'}"
+        )
+    if config.optimizer == "momentum_sgd":
+        return (
+            f"momentum {diagnostics['momentum']:g}, carried velocity L2 {diagnostics['velocity_carried_l2']:.4g} "
+            f"of {diagnostics['velocity_l2_before_projection']:.4g}"
+        )
+    return (
+        f"second-moment scaling {'on' if diagnostics['second_moment_scaling'] else 'off'}, direction divisor mean "
+        f"{diagnostics['direction_divisor_mean']}, second moment mean {diagnostics['second_moment_mean']}"
+    )
+
+
+def _frozen_noise_shells(dataset):
+    """Noise shells the data carry no information on: the DC pixel of DC-free particles, the shells below K of
+    :func:`relax.ppca_initial_model.tomo.free_low_shells`."""
+    if not isinstance(dataset, TiltParticles):
+        return ()
+    return tuple(range(max(int(dataset.free_shells), 1 if dataset.dc_free else 0)))
+
+
 def _gemm_precision_used(config):
     """The stream GEMM precision of this run's updates; the host-mask engine multiplies in fp32."""
     if not config.stream_coarse_recompute:
@@ -278,28 +397,54 @@ def _streams_groups(config):
     return config.stream_coarse_recompute
 
 
-def expectation(dataset, state, config, ids, iteration, *, embeddings_only=False, diameter_ang=None):
+def expectation(
+    dataset, state, config, ids, iteration, *, embeddings_only=False, diameter_ang=None, noise_inflation=1.0
+):
     """Posterior statistics (or embeddings) of the images ``ids`` at ``iteration``.
 
     ``diameter_ang`` sizes adaptive oversampling's pass-1 window (RELION's coarse image size); None takes the box.
+    ``noise_inflation`` multiplies the noise estimate in this E-step (``Config.noise_inflation``).
     """
     if _streams_groups(config):
         return _expectation(
-            dataset, state, config, [ids], iteration, embeddings_only=embeddings_only, diameter_ang=diameter_ang
+            dataset,
+            state,
+            config,
+            [ids],
+            iteration,
+            embeddings_only=embeddings_only,
+            diameter_ang=diameter_ang,
+            noise_inflation=noise_inflation,
         )[0]
-    return _expectation(dataset, state, config, ids, iteration, embeddings_only=embeddings_only)
+    return _expectation(
+        dataset, state, config, ids, iteration, embeddings_only=embeddings_only, noise_inflation=noise_inflation
+    )
 
 
-def expectation_groups(dataset, state, config, groups, iteration, *, embeddings_only=False, diameter_ang=None):
+def expectation_groups(
+    dataset, state, config, groups, iteration, *, embeddings_only=False, diameter_ang=None, noise_inflation=1.0
+):
     """:func:`expectation` of each id group (the pseudo-halves), one result per group.
 
     The streamed coarse-recompute path prepares the model once for all groups
     and pipelines their image tiles; every other path runs group by group.
     """
     if not _streams_groups(config):
-        return [expectation(dataset, state, config, ids, iteration, embeddings_only=embeddings_only) for ids in groups]
+        return [
+            expectation(
+                dataset, state, config, ids, iteration, embeddings_only=embeddings_only, noise_inflation=noise_inflation
+            )
+            for ids in groups
+        ]
     return _expectation(
-        dataset, state, config, groups, iteration, embeddings_only=embeddings_only, diameter_ang=diameter_ang
+        dataset,
+        state,
+        config,
+        groups,
+        iteration,
+        embeddings_only=embeddings_only,
+        diameter_ang=diameter_ang,
+        noise_inflation=noise_inflation,
     )
 
 
@@ -316,84 +461,148 @@ def pass1_image_size(order, dataset, current_size, diameter_ang):
 
 
 @full_float32
-def _expectation(dataset, state, config, ids, iteration, *, embeddings_only=False, diameter_ang=None):
+def _expectation(
+    dataset, state, config, ids, iteration, *, embeddings_only=False, diameter_ang=None, noise_inflation=1.0
+):
     radius, hp = config.stage(iteration)
     # full-box default projector excludes unpaired Nyquist, as existing PPCA.
     radius = min(radius, dataset.grid_size // 2 - 1)
     geometry = GeometryConfig(current_size=2 * radius, q=config.q, volume_domain="fourier_half")
     schedule = ScheduleConfig(image_batch_size=config.image_batch_size, rotation_block_size=config.rotation_block_size)
     scoring = ScoringConfig(relion_texture_interp=False, full_real_observation=True)
-    rotations = _rotation_grid(hp)
-    canonical_eulers = grids.get_relion_hidden_rotation_grid(hp, matrices=False)
-    rotation_prior = (
-        np.asarray(state.direction_prior, np.float32)
-        if state.direction_order == hp and state.direction_prior is not None
-        else np.full(len(rotations), 1 / len(rotations), np.float32)
-    )
-    rotation_log_prior = np.log(rotation_prior, where=rotation_prior > 0, out=np.full_like(rotation_prior, -np.inf))
     tilts = isinstance(dataset, TiltParticles)
     if tilts and not _streams_groups(config):
         raise ValueError("Subtomogram PPCA needs the streamed full-grid engine (stream_coarse_recompute)")
-    translations = (
-        # Subtomogram particles have one 3D shift each (section 16.1), on RELION's 3D grid in pixels.
-        grids.get_relion_translation_grid_3d(config.shift_range, config.shift_step)
-        if tilts
-        else grids.get_relion_translation_grid(max_pixel=config.shift_range, pixel_offset=config.shift_step)
-    ).astype(np.float32)
-    prior = -jnp.sum(jnp.asarray(translations) ** 2, axis=-1) / (2 * state.offset_variance)
-    prior = prior - jnp.log(jnp.sum(jnp.exp(prior)))
+    band = config.band()
+    if band is not None:
+        # The filament band's own grid in each particle's frame, with uniform priors (filament_band.py).
+        if not tilts:
+            raise ValueError("The filament band searches subtomogram particles")
+        canonical_eulers = band.eulers()
+        rotations = band.rotations()
+        rotation_log_prior = uniform_log_prior(len(rotations))
+        translations = band.translations_px(dataset.voxel_size)
+        prior = jnp.asarray(uniform_log_prior(len(translations)))
+        shift_step = None
+    else:
+        rotations = _rotation_grid(hp)
+        canonical_eulers = grids.get_relion_hidden_rotation_grid(hp, matrices=False)
+        rotation_prior = (
+            np.asarray(state.direction_prior, np.float32)
+            if state.direction_order == hp and state.direction_prior is not None and not config.uniform_direction_prior
+            else np.full(len(rotations), 1 / len(rotations), np.float32)
+        )
+        rotation_log_prior = np.log(rotation_prior, where=rotation_prior > 0, out=np.full_like(rotation_prior, -np.inf))
+        shift_range, shift_step = config.shifts(iteration)
+        translations = (
+            # Subtomogram particles have one 3D shift each (section 16.1), on RELION's 3D grid in pixels.
+            grids.get_relion_translation_grid_3d(shift_range, shift_step)
+            if tilts
+            else grids.get_relion_translation_grid(max_pixel=shift_range, pixel_offset=shift_step)
+        ).astype(np.float32)
+        offset_variance = (
+            state.offset_variance if config.offset_sigma_hold_px is None else config.offset_sigma_hold_px**2
+        )
+        prior = -jnp.sum(jnp.asarray(translations) ** 2, axis=-1) / (2 * offset_variance)
+        prior = prior - jnp.log(jnp.sum(jnp.exp(prior)))
     # Subtomogram particles keep one noise spectrum per noise group (rows of ``state.noise``, section 16.6).
     noise_rows = np.asarray(state.noise) if tilts else np.asarray(state.noise)[None]
     nvs = [np.asarray(make_radial_noise(row, dataset.image_shape), np.float32) for row in noise_rows]
+    if noise_inflation != 1.0:
+        nvs = [np.float32(noise_inflation) * nv for nv in nvs]
     nv = nvs[0]
     common = dict(noise_variance=nv, geometry=geometry, schedule=schedule, scoring=scoring, image_indices=ids)
     mu, W = state.theta[:, 0], state.theta[:, 1:]
     if config.stream_coarse_recompute:
         # One artificial coarse parent represents the full coarse pose grid.
-        # It keeps the shared full-row mask Bx1x1 instead of BxRxT. Each noise group has its
-        # own stream (its noise enters the operands); single particles have one group.
-        def make_streams(stream_geometry):
+        # It keeps the shared full-row mask Bx1x1 instead of BxRxT. Subtomogram particles have one stream
+        # with a noise table (each tile reads its keys' rows; the residual sums are per noise group);
+        # single particles have one noise group.
+        def make_streams(stream_geometry, **grid):
+            grid = {
+                "rotations": rotations,
+                "rotation_log_prior": rotation_log_prior,
+                "rotation_parent": np.zeros(len(grid.get("rotations", rotations)), np.int32),
+                "translation_parent": np.zeros(len(translations), np.int32),
+                "n_coarse_rotations": 1,
+                "n_coarse_translations": 1,
+                **grid,
+            }
             return [
                 prepare_full_row_stream(
                     dataset,
                     mu,
                     W,
                     noise_variance=group_nv,
-                    rotations=rotations,
                     translations=translations,
-                    rotation_log_prior=rotation_log_prior,
                     translation_log_prior=np.asarray(prior),
-                    rotation_parent=np.zeros(len(rotations), np.int32),
-                    translation_parent=np.zeros(len(translations), np.int32),
-                    n_coarse_rotations=1,
-                    n_coarse_translations=1,
+                    **grid,
                     geometry=stream_geometry,
                     schedule=schedule,
                     scoring=scoring,
-                    # Momentum SGD reads only the metric trace (sgd_update.momentum_step).
-                    metric_trace_only=config.optimizer == "momentum_sgd",
+                    # Plain momentum SGD reads only the metric trace (sgd_update.momentum_step); the
+                    # half-set gate needs the packed metric (one direction per half, as VDAM).
+                    # Newton SGD solves the packed metric per frequency.
+                    metric_trace_only=config.optimizer == "momentum_sgd"
+                    and not config.sgd_halfset_gate
+                    and not config.newton_sgd(),
+                    exact_metric_trace=config.sgd_step_scale == "exact_diagonal",
                     gemm_precision=config.gemm_precision,
                     tile_loader=load_tilt_tile if tilts else None,
                     pass2_mass_floor=config.pass2_mass_floor,
+                    occupancy=config.occupancy,
                 )
-                for group_nv in nvs
+                for group_nv in ([nvs] if tilts else nvs)
             ]
 
         # Adaptive oversampling scores pass 1 on RELION's coarse image window and pass 2 at the stage's.
         oversampled = oversampled_update(config, iteration)
         pass1_size = pass1_image_size(hp, dataset, 2 * radius, diameter_ang) if oversampled else 2 * radius
-        streams = make_streams(dataclasses.replace(geometry, current_size=pass1_size))
+        # Subtomogram coarse pass (config.tilt_coarse_pass): pass 1 on the order hp - 1 grid (or the fixed
+        # config.tilt_coarse_order), at RELION's coarse image size for that grid's step, gives each particle its significant (coarse rotation, shift) poses (target_mass,
+        # max_significant); the stage's grid is then scored only on the rows whose nearest coarse rotation is
+        # significant or a neighbouring cell of one (_coarse_parents, _coarse_neighbors).
+        # Order 1's coarse grid (order 0) is too coarse to prune; the pass runs from order 2.
+        coarse_order = hp - 1 if config.tilt_coarse_order is None else config.tilt_coarse_order
+        coarse_pass = tilts and config.tilt_coarse_pass and not oversampled and hp >= 2 and 1 <= coarse_order < hp
+        if coarse_pass:
+            parents = _coarse_parents(hp, coarse_order)
+            coarse_rotations = _rotation_grid(coarse_order)
+            coarse_log_prior = np.full(len(coarse_rotations), -np.inf, np.float64)
+            np.logaddexp.at(coarse_log_prior, parents, rotation_log_prior.astype(np.float64))
+            streams = make_streams(
+                geometry,
+                rotation_parent=parents,
+                translation_parent=np.arange(len(translations), dtype=np.int32),
+                n_coarse_rotations=len(coarse_rotations),
+                n_coarse_translations=len(translations),
+            )
+            # Two separate low-pass limits. The stage's radius (2 * radius) is the optimisation schedule: the
+            # frequencies the model may use at this stage. The coarse pass's window is a search bound: the frequency
+            # up to which a pose anywhere in a coarse cell scores close to the cell's centre, so the coarse score
+            # stands for the whole cell (RELION's coarse image size for the coarse grid's angular step and the
+            # particle diameter, as adaptive oversampling's pass 1). It is capped at the stage's window and leaves
+            # the stage's radius, the fine pass and the model update unchanged.
+            coarse_size = pass1_image_size(coarse_order, dataset, 2 * radius, diameter_ang)
+            coarse_streams = make_streams(
+                dataclasses.replace(geometry, current_size=coarse_size),
+                rotations=coarse_rotations,
+                rotation_log_prior=coarse_log_prior.astype(np.float32),
+            )
+        else:
+            streams = make_streams(dataclasses.replace(geometry, current_size=pass1_size))
         pass2_streams = make_streams(geometry) if pass1_size != 2 * radius else streams
 
-        # Here ``ids`` is the list of id groups; each group is cut into image tiles, of one tilt
-        # group and one noise group each for subtomogram particles. ``image_batch_size`` particles
-        # per tile at most, fewer when a tile (with all its particles' tilts) would not fit the device.
+        # Here ``ids`` is the list of id groups; each group is cut into image tiles (subtomogram particles:
+        # mixed tiles of many tilt groups, or one tilt group's own tiles; tilt_tiles). ``image_batch_size``
+        # particles per tile at most, fewer when a tile (with all its particles' tilts) would not fit the device.
         def cut(size):
             return [
-                (group, int(dataset.particle_noise_group[tile[0]]) if tilts else 0, np.asarray(tile))
+                (group, 0, np.asarray(tile))
                 for group, ids_group in enumerate(ids)
                 for tile in (
-                    tilt_tiles(dataset, ids_group, size)
+                    # Adaptive oversampling reads one tilt group's frames per tile.
+                    tilt_tiles(dataset, ids_group, size, mixed=not oversampled)
                     if tilts
                     else [ids_group[begin : begin + size] for begin in range(0, len(ids_group), size)]
                 )
@@ -411,8 +620,14 @@ def _expectation(dataset, state, config, ids, iteration, *, embeddings_only=Fals
         # fragmentation headroom covers the few extra images.
         padded_size = -(-tile_size // SHIFT_ALIGN) * SHIFT_ALIGN if streams[0].static.cuda_kernels else tile_size
         streams = [stream._replace(tile_images=padded_size) for stream in streams]
+        if coarse_pass:
+            coarse_streams = [stream._replace(tile_images=padded_size) for stream in coarse_streams]
         if oversampled:
-            fine_rotations, fine_translations = relion_child_grids(hp, translations, config.shift_step)
+            fine_rotations, fine_translations = relion_child_grids(hp, translations, shift_step)
+            if config.oversampling_rotations_only:
+                # Rotation children only: each shift is its own child (the stage's shift grid).
+                fine_translations = np.array(translations, np.float32)
+                fine_translations.setflags(write=False)
             streams = [
                 prepare_oversampled_stream(
                     stream,
@@ -436,7 +651,21 @@ def _expectation(dataset, state, config, ids, iteration, *, embeddings_only=Fals
         sums = [TileSums(k for k, (owner, _, _) in enumerate(tiles) if owner == group) for group in range(len(ids))]
         for noise_group, stream in enumerate(streams):
             members = [k for k, (_, owner, _) in enumerate(tiles) if owner == noise_group]
-            items = [(tiles[k][2], [None] * len(tiles[k][2])) for k in members]
+            items = [
+                (
+                    tiles[k][2],
+                    coarse_significant_rows(
+                        coarse_streams[noise_group],
+                        tiles[k][2],
+                        target_mass=config.target_mass,
+                        max_significant=config.max_significant,
+                        neighbors=_coarse_neighbors(coarse_order),
+                    )
+                    if coarse_pass
+                    else [None] * len(tiles[k][2]),
+                )
+                for k in members
+            ]
             if embeddings_only:
                 for k, part in zip(members, [embed(stream, *item) for item in items]):
                     parts[k] = part
@@ -446,7 +675,6 @@ def _expectation(dataset, state, config, ids, iteration, *, embeddings_only=Fals
                     sums[tiles[members[position]][0]].add(members[position], part)
 
                 accumulate(stream, items, consume=consume)
-        noise_owner = [owner for _, owner, _ in tiles]
         tiles = [(group, tile_ids) for group, _, tile_ids in tiles]
         results = []
         for group in range(len(ids)):
@@ -465,28 +693,16 @@ def _expectation(dataset, state, config, ids, iteration, *, embeddings_only=Fals
                             np.concatenate([getattr(part, name) for part in group_parts])
                             for name in ("log_evidence", "best_pose_log_score", "max_posterior", "null_log_likelihood")
                         ),
+                        **{
+                            name: np.concatenate([getattr(part, name) for part in group_parts])
+                            for name in ("p_occupied", "best_rotation", "best_translation")
+                            if getattr(group_parts[0], name) is not None
+                        },
                     )
                 )
                 continue
+            # Subtomogram tiles give their noise sums per noise group already, (G, S).
             stats = _merge_statistics(group_parts, sums[group].totals)
-            if tilts:
-                # Noise sums per noise group, (G, S); a group without images in this id group adds zeros.
-                owners = [owner for (half, _), owner in zip(tiles, noise_owner) if half == group]
-                stats = dataclasses.replace(
-                    stats,
-                    **{
-                        name: jnp.stack(
-                            [
-                                sum(
-                                    (getattr(part, name) for part, owner in zip(group_parts, owners) if owner == g),
-                                    jnp.zeros_like(getattr(group_parts[0], name)),
-                                )
-                                for g in range(len(streams))
-                            ]
-                        )
-                        for name in ("residual_num", "residual_den")
-                    },
-                )
             stats.diagnostics.update(
                 {
                     "rotation_mass": sum(np.asarray(part.diagnostics["rotation_mass"]) for part in group_parts),
@@ -568,13 +784,27 @@ def run(
                 "resumed %s checkpoint under %s (%s)", saved, config.gemm_precision, _gemm_precision_used(config)
             )
     else:
-        initializer = initialize_tilts if isinstance(dataset, TiltParticles) else initialize
-        theta, noise, info = initializer(dataset, seed=config.seed, diameter_ang=diameter_ang, q=config.q)
+        if isinstance(dataset, TiltParticles):
+            # The band seeds inside the attachment support (initialization.seed_model).
+            band_seed = {} if config.band() is None else {"band": config.band()}
+            theta, noise, info = initialize_tilts(
+                dataset, seed=config.seed, diameter_ang=diameter_ang, q=config.q, **band_seed
+            )
+        else:
+            theta, noise, info = initialize(dataset, seed=config.seed, diameter_ang=diameter_ang, q=config.q)
+        if config.initial_mean is not None:
+            theta = with_initial_mean(
+                theta, config.initial_mean, config.initial_mean_scale, dataset.volume_shape, dataset.voxel_size,
+                diameter_ang, band=config.band(),
+            )
+            info = {**info, "initial_mean": config.initial_mean, "initial_mean_scale": config.initial_mean_scale}
+        if config.likelihood_min_shell:
+            theta = zero_low_shells(theta, dataset.volume_shape, config.likelihood_min_shell)
         rng = np.random.default_rng(config.seed + 1)
         order = rng.permutation(dataset.n_images)
         state = State(
             theta,
-            empty_moments(theta) if config.optimizer == "vdam" else None,
+            empty_moments(theta) if config.keeps_halfset_moments() else None,
             noise,
             0,
             order,
@@ -591,13 +821,32 @@ def run(
         raise TypeError("InitialModel requires production float32 model and noise")
     if dataset.n_images < 4:
         raise ValueError("Both pseudo-halfsets need particles")
-    mask = support_mask(dataset.grid_size, diameter_ang / dataset.voxel_size)
+    mask = (
+        support_mask(dataset.grid_size, diameter_ang / dataset.voxel_size)
+        if config.band() is None
+        else attachment_support_mask(dataset.grid_size, dataset.voxel_size, config.band())
+    )
     shells = np.asarray(ftu.get_grid_of_radial_distances_real(dataset.volume_shape), np.int32).reshape(-1)
     radii = np.asarray(ftu.get_grid_of_radial_distances_real(dataset.volume_shape, rounded=False)).reshape(-1)
     end = config.iterations if stop_after is None else min(config.iterations, stop_after)
+    logger.info("update rule: %s", _update_rule(config))
+    if config.optimizer == "momentum_sgd" and config.sgd_learning_rate / (config.q + 1) > MAX_SGD_RATE_PER_CHANNEL:
+        logger.warning(
+            "SGD learning rate %g is above %g (1 + q) = %g",
+            config.sgd_learning_rate,
+            MAX_SGD_RATE_PER_CHANNEL,
+            MAX_SGD_RATE_PER_CHANNEL * (config.q + 1),
+        )
+    newton = None
+    if config.newton_sgd():
+        saved = Path(resume).with_name(Path(resume).name.replace("checkpoint_", "newton_sgd_")) if resume else None
+        newton = NewtonSGD(config, int(shells.max()) + 1, NewtonSGD.load(saved) if saved and saved.exists() else None)
+        _check_newton_resume(newton, saved, resume, state.iteration)
+        logger.info("Newton SGD: %s", describe_newton(config))
     stage_tile_sizes = {}  # compiled tile shapes seen per stage (radius, HEALPix order)
     log = _ModelLog(output / "iterations.jsonl")
-    for iteration in range(state.iteration + 1, end + 1):
+    state_start = state.iteration
+    for iteration in range(state_start + 1, end + 1):
         started = time.monotonic()
         count, step, fudge = config.schedule(iteration, dataset.n_images)
         step_factor = config.step_factor(iteration, dataset.n_images)
@@ -608,29 +857,18 @@ def run(
         selected, halves = _select_halves(rng, state.order, count, config.balanced_stochastic_halves)
         if any(len(ids) == 0 for ids in halves):
             raise ValueError("Selected batch has an empty pseudo-halfset")
-        stats = expectation_groups(dataset, state, config, halves, iteration, diameter_ang=diameter_ang)
+        noise_inflation = config.noise_inflation(iteration)
+        stats = expectation_groups(
+            dataset, state, config, halves, iteration, diameter_ang=diameter_ang, noise_inflation=noise_inflation
+        )
         radius = min(config.stage(iteration)[0], dataset.grid_size // 2 - 1)
-        if config.optimizer == "momentum_sgd":
-            _, proposed_momentum, diagnostics = momentum_step(
-                state.theta,
-                state.sgd_momentum,
-                sum(result.residual_gradient for result in stats),
-                _curvature_trace(stats, config.q + 1),
-                radii <= radius,
-                learning_rate=config.sgd_learning_rate,
-                floor=metric_floor(dataset.grid_size),
-            )
-            momentum = bandlimit_and_mask(proposed_momentum, dataset.volume_shape, radius, mask)
-            theta = bandlimit_and_mask(state.theta + proposed_momentum, dataset.volume_shape, radius, mask)
-            moments = None
-            metric_info = []
-            diagnostics["velocity_l2_after_support"] = float(jnp.linalg.norm(momentum))
-        else:
+        # The update's own support: the rows bandlimit_and_mask keeps below.
+        support = radii <= radius
+        metric_info = []
+        if config.keeps_halfset_moments():
+            # One coupled direction per half (VDAM's, and the gate's disagreement for gated momentum SGD).
             directions = []
-            metric_info = []
             coverage = []
-            # The update's own support: the rows bandlimit_and_mask keeps below.
-            support = radii <= radius
             diagonal = np.flatnonzero(np.equal(*np.triu_indices(config.q + 1)))  # packed diagonal entries
             for half, result in enumerate(stats):
                 try:
@@ -651,6 +889,47 @@ def run(
                 metric_info.append(info)
                 covered = jnp.sum(jnp.asarray(result.lhs_tri)[:, diagonal], axis=-1) > 0  # the metric's trace
                 coverage.append(covered & jnp.asarray(support))
+        if newton is not None:
+            moments = None
+            proposed_momentum, diagnostics = newton.step(
+                stats, support, shells, iteration, metric_floor(dataset.grid_size), config.q
+            )
+            momentum = bandlimit_and_mask(proposed_momentum, dataset.volume_shape, radius, mask, config.likelihood_min_shell)
+            theta = bandlimit_and_mask(state.theta + proposed_momentum, dataset.volume_shape, radius, mask, config.likelihood_min_shell)
+            diagnostics["velocity_l2_after_support"] = float(jnp.linalg.norm(momentum))
+        elif config.optimizer == "momentum_sgd":
+            gradient = sum(result.residual_gradient for result in stats)
+            moments = None
+            if config.sgd_halfset_gate:
+                # VDAM's moments and shell gate on this update's half directions; the gate shrinks the step.
+                moments = advance_moments(
+                    state.moments, jnp.stack(directions), jnp.stack(coverage), image_size=dataset.grid_size
+                )
+                gates = shell_gates(
+                    state.theta, moments.first, jnp.any(jnp.stack(coverage), axis=0), shells, fudge=fudge
+                )
+                gradient = gated_gradient(
+                    state.theta,
+                    gradient,
+                    metric_diagonal(sum(result.lhs_tri for result in stats), config.q + 1),
+                    gates.per_frequency(shells, config.q),
+                )
+            _, proposed_momentum, diagnostics = momentum_step(
+                state.theta,
+                state.sgd_momentum,
+                gradient,
+                _curvature_trace(stats, config.q + 1, exact=config.sgd_step_scale == "exact_diagonal"),
+                support,
+                learning_rate=config.sgd_learning_rate,
+                floor=metric_floor(dataset.grid_size),
+                momentum=config.sgd_momentum,
+            )
+            if config.sgd_halfset_gate:
+                diagnostics.update(gates.diagnostics())
+            momentum = bandlimit_and_mask(proposed_momentum, dataset.volume_shape, radius, mask, config.likelihood_min_shell)
+            theta = bandlimit_and_mask(state.theta + proposed_momentum, dataset.volume_shape, radius, mask, config.likelihood_min_shell)
+            diagnostics["velocity_l2_after_support"] = float(jnp.linalg.norm(momentum))
+        else:
             theta, moments, diagnostics = stochastic_update(
                 state.theta,
                 state.moments,
@@ -660,8 +939,9 @@ def run(
                 step=step * step_factor,
                 fudge=fudge,
                 image_size=dataset.grid_size,
+                second_moment=config.vdam_second_moment,
             )
-            theta = bandlimit_and_mask(theta, dataset.volume_shape, radius, mask)
+            theta = bandlimit_and_mask(theta, dataset.volume_shape, radius, mask, config.likelihood_min_shell)
             momentum = None
         numerator = sum(s.residual_num for s in stats)
         denominator = sum(s.residual_den for s in stats)
@@ -671,7 +951,13 @@ def run(
         padding = [(0, 0)] * (current.ndim - 1) + [(0, max(0, noise_shells - current.shape[-1]))]
         previous = np.pad(current, padding, mode="edge")[..., :noise_shells]
         try:
-            noise = update_noise(previous, numerator, denominator, full_data=count == dataset.n_images)
+            noise = update_noise(
+                previous,
+                numerator,
+                denominator,
+                full_data=count == dataset.n_images,
+                frozen_shells=_frozen_noise_shells(dataset),
+            )
         except ValueError:
             checkpoint.save(output / f"failure_before_{iteration:04d}.npz", state, config, identity)
             np.savez(
@@ -685,7 +971,9 @@ def run(
         # Mean squared offset per dimension: 2D in-plane shifts, 3D subtomogram shifts.
         dimensions = 3 if isinstance(dataset, TiltParticles) else 2
         beta = 0 if count == dataset.n_images else 0.9
-        offset_variance = blend_offset_variance(
+        # The filament band's priors are uniform and fixed: no offset variance or direction prior is learned.
+        band = config.band()
+        offset_variance = state.offset_variance if band is not None else blend_offset_variance(
             state.offset_variance,
             sum(s.diagnostics["offset_second_sum_px2"] for s in stats),
             count,
@@ -702,18 +990,25 @@ def run(
         if not bool(jnp.all(jnp.isfinite(theta))):
             raise ValueError("Nonfinite PPCA model")
         hp = config.stage(iteration)[1]
-        direction_ids = _direction_ids(hp)
-        masses = sum(np.asarray(result.diagnostics["rotation_mass"]) for result in stats)
-        direction_mass = np.bincount(direction_ids, weights=masses)
-        multiplicity = np.bincount(direction_ids)
-        old_prior = (
-            state.direction_prior
-            if state.direction_order == hp and state.direction_prior is not None
-            else np.full(len(direction_ids), 1 / len(direction_ids), np.float32)
-        )
-        # Each direction's posterior mass per image, spread over its in-plane angles.
-        rotation_mass = direction_mass[direction_ids] / multiplicity[direction_ids]
-        direction_prior = relion_blend(old_prior, rotation_mass, count, beta).astype(np.float32)
+        if band is not None:
+            direction_prior = None
+        else:
+            direction_ids = _direction_ids(hp)
+            masses = sum(np.asarray(result.diagnostics["rotation_mass"]) for result in stats)
+            direction_mass = np.bincount(direction_ids, weights=masses)
+            multiplicity = np.bincount(direction_ids)
+            old_prior = (
+                state.direction_prior
+                if state.direction_order == hp and state.direction_prior is not None
+                else np.full(len(direction_ids), 1 / len(direction_ids), np.float32)
+            )
+            # Each direction's posterior mass per image, spread over its in-plane angles.
+            rotation_mass = direction_mass[direction_ids] / multiplicity[direction_ids]
+            direction_prior = (
+                None
+                if config.uniform_direction_prior
+                else relion_blend(old_prior, rotation_mass, count, beta).astype(np.float32)
+            )
         state = State(
             theta,
             moments,
@@ -747,7 +1042,13 @@ def run(
                 "pass2_mass_floor": config.pass2_mass_floor,
                 **({"resumed_from_gemm_precision": resumed_precision} if resumed_precision else {}),
                 **({"resumed_from_source": resumed_source} if resumed_source is not None else {}),
-                "step": config.sgd_learning_rate if config.optimizer == "momentum_sgd" else step * step_factor,
+                "step": (
+                    diagnostics.get("learning_rate_used", config.sgd_learning_rate)
+                    if config.optimizer == "momentum_sgd"
+                    else step * step_factor
+                ),
+                "shift_range_step_px": config.shifts(iteration),
+                "offset_sigma_hold_px": config.offset_sigma_hold_px,
                 "vdam_step_factor": step_factor,
                 "fudge": fudge,
                 "noise": noise,
@@ -786,7 +1087,20 @@ def run(
                 optimizer="momentum_sgd",
                 sgd_learning_rate=config.sgd_learning_rate,
                 vdam_scheduled_step_unused=step,
-                vdam_scheduled_fudge_unused=fudge,
+                # The half-set gate uses VDAM's fudge schedule.
+                **({"gate_fudge": fudge} if config.sgd_halfset_gate else {"vdam_scheduled_fudge_unused": fudge}),
+            )
+            if config.sgd_halfset_gate or config.sgd_step_scale != "trace":
+                diagnostics.update(sgd_halfset_gate=config.sgd_halfset_gate, sgd_step_scale=config.sgd_step_scale)
+        if config.noise_anneal_updates:
+            diagnostics["noise_inflation"] = noise_inflation
+        if iteration == state_start + 1 or config.stage(iteration) != config.stage(iteration - 1):
+            logger.info(
+                "update %d, radius %d, HEALPix order %d: %s",
+                iteration,
+                radius,
+                config.stage(iteration)[1],
+                _update_rule_measured(config, diagnostics),
             )
         if not log_direction_prior:
             # The full angular prior is checkpointed in State. Large stochastic
@@ -797,6 +1111,8 @@ def run(
         stop = stop_file is not None and Path(stop_file).exists()
         if stop or iteration % config.checkpoint_interval == 0 or iteration == end:
             log.wait()  # the checkpoint's iteration is logged first
+            if newton is not None:
+                newton.save(output / f"newton_sgd_{iteration:04d}.npz")
             checkpoint.save(output / f"checkpoint_{iteration:04d}.npz", state, config, identity)
         if stop:
             break
@@ -809,6 +1125,25 @@ def run(
         if not np.array_equal(np.sort(final.original_image_ids), ids):
             raise ValueError("Final embedding does not cover every particle exactly once")
         # Per-image scores of the same pass (DensePPCAEmbeddings), aligned with particle_ids.
+        band = config.band()
+        placement = (
+            {}
+            if band is None
+            else dict(
+                # Each particle's top pose and P(occupied), and the grid that best_rotation/translation index.
+                best_rotation=final.best_rotation,
+                best_translation=final.best_translation,
+                band_eulers_deg=band.eulers(),
+                band_axial_offsets_ang=band.axial_offsets_ang(),
+                # The attachment's placement T(a, phi) f(r) = f(R_z(phi)^T (r - a e_z)) of the model's canonical
+                # object: the inverse of the top pose (R_z(phi_pose), a_pose e_z) as the stream applies it, so
+                # a = -a_pose and phi = -phi_pose (measured on the stage-0 synthetic set, relax-band job 7425640:
+                # median errors 3.7 A and 1.2 degrees against the truth in this convention).
+                attachment_axial_ang=-band.axial_offsets_ang()[final.best_translation],
+                attachment_phi_deg=np.mod(-band.eulers()[final.best_rotation, 0], 360.0),
+                **({} if final.p_occupied is None else {"p_occupied": final.p_occupied}),
+            )
+        )
         np.savez(
             output / "embeddings.npz",
             particle_ids=final.original_image_ids,
@@ -817,5 +1152,6 @@ def run(
             best_pose_log_score=final.best_pose_log_score,
             max_posterior=final.max_posterior,
             null_log_likelihood=final.null_log_likelihood,
+            **placement,
         )
     return state

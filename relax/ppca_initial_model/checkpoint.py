@@ -27,7 +27,7 @@ def canonical(value):
 
 # Runtime settings: they change how later updates are computed, not the model a checkpoint
 # holds, so a run may resume under a different value (the controller logs the change).
-RUNTIME_CONFIG_FIELDS = ("gemm_precision", "preread_images", "pass2_mass_floor")
+RUNTIME_CONFIG_FIELDS = ("gemm_precision", "preread_images", "pass2_mass_floor", "tilt_coarse_pass", "tilt_coarse_order")
 
 
 # Retired model settings and their only supported value: a checkpoint that recorded that value
@@ -38,7 +38,38 @@ _RETIRED_CONFIG_DEFAULTS = {
 
 # Model settings added later and their defaults: a checkpoint written before a setting existed holds the model its
 # default gives, so the setting at that default is no part of the identity.
-_ADDED_CONFIG_DEFAULTS = {"max_significant": 100}
+_ADDED_CONFIG_DEFAULTS = {
+    "max_significant": 100,
+    "sgd_halfset_gate": False,
+    "sgd_step_scale": "trace",
+    "noise_anneal_factor": 1.0,
+    "noise_anneal_updates": 0,
+    "sgd_momentum": 0.9,
+    "vdam_second_moment": True,
+    "band_length_ang": None,
+    "band_axial_step_ang": 15.0,
+    "band_phi_step_deg": 5.0,
+    "attachment_center_ang": 180.0,
+    "attachment_radius_ang": 60.0,
+    "attachment_exclude_radius_ang": None,
+    "occupancy": None,
+    "fixed_core": None,
+    "fixed_core_scale": "particle",
+    "fixed_core_box": None,
+    "fixed_core_free_offset": True,
+    "fixed_core_background": "none",
+    "fixed_core_spectrum": False,
+    "fixed_core_neighbours": None,
+    "initial_mean": None,
+    "initial_mean_scale": 1.0,
+    "sgd_pc_min_shell": 0,
+    "sgd_eig_floor_rel": None,
+    "sgd_mean_gate_floor": None,
+    "likelihood_min_shell": 0,
+    "sgd_fixed_step": None,
+    "oversampling_from_update": None,
+    "oversampling_rotations_only": False,
+}
 
 
 def _identity_config(config_dict):
@@ -88,17 +119,18 @@ def save(path, state, config, identity):
     }
     temporary = path.with_suffix(".tmp")
     arrays = {"theta": np.asarray(state.theta)}
-    if config.optimizer == "vdam":
-        if state.moments is None or state.sgd_momentum is not None:
-            raise ValueError("VDAM checkpoint requires VDAM moments only")
+    # VDAM keeps the half-set moments, plain momentum SGD its velocity, gated momentum SGD both.
+    if (state.moments is not None) != config.keeps_halfset_moments():
+        raise ValueError("Checkpoint half-set moments do not match the optimizer")
+    if (state.sgd_momentum is not None) != (config.optimizer == "momentum_sgd"):
+        raise ValueError("Checkpoint momentum does not match the optimizer")
+    if state.moments is not None:
         arrays.update(
             first=np.asarray(state.moments.first),
             second=np.asarray(state.moments.second),
             initialized=np.asarray(state.moments.initialized),
         )
-    else:
-        if state.sgd_momentum is None or state.moments is not None:
-            raise ValueError("Momentum SGD checkpoint requires momentum only")
+    if state.sgd_momentum is not None:
         arrays["sgd_momentum"] = np.asarray(state.sgd_momentum)
     arrays.update(
         noise=np.asarray(state.noise),
@@ -124,20 +156,23 @@ def load(path, config, identity):
             raise ValueError("Checkpoint input/configuration/source identity mismatch")
         if arrays["theta"].dtype != np.complex64 or arrays["noise"].dtype != np.float32:
             raise ValueError("Checkpoint is not a production float32 model")
-        if config.optimizer == "vdam":
-            if "sgd_momentum" in arrays or arrays["first"].dtype != np.complex64:
-                raise ValueError("VDAM checkpoint has incorrect optimizer state")
+        moments = momentum = None
+        if config.keeps_halfset_moments():
+            if "first" not in arrays or arrays["first"].dtype != np.complex64:
+                raise ValueError("Checkpoint lacks the half-set moments its optimizer keeps")
             moments = Moments(
                 jnp.asarray(arrays["first"]), jnp.asarray(arrays["second"]), jnp.asarray(arrays["initialized"])
             )
-            momentum = None
-        else:
-            if "first" in arrays or "sgd_momentum" not in arrays or arrays["sgd_momentum"].dtype != np.complex64:
+        elif "first" in arrays:
+            raise ValueError("Momentum SGD checkpoint has incorrect optimizer state")
+        if config.optimizer == "momentum_sgd":
+            if "sgd_momentum" not in arrays or arrays["sgd_momentum"].dtype != np.complex64:
                 raise ValueError("Momentum SGD checkpoint has incorrect optimizer state")
-            moments = None
             momentum = jnp.asarray(arrays["sgd_momentum"])
             if momentum.shape != arrays["theta"].shape:
                 raise ValueError("Momentum SGD checkpoint momentum shape mismatch")
+        elif "sgd_momentum" in arrays:
+            raise ValueError("VDAM checkpoint has incorrect optimizer state")
         return State(
             jnp.asarray(arrays["theta"]),
             moments,

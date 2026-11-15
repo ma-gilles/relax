@@ -61,18 +61,29 @@ def _spherical_support(shape, radius):
     return jnp.asarray((radii <= radius)[:, None], jnp.float32)
 
 
-def bandlimit_and_mask(theta, shape, radius, mask):
-    """Common real-space mask and common spherical support for all channels."""
+def bandlimit_and_mask(theta, shape, radius, mask, min_shell=0):
+    """Common real-space mask and common spherical support for all channels. ``min_shell`` K > 0 also zeroes every
+    channel's shells below K (rounded radius, the noise shells' convention), after the mask: the model has no
+    content where the likelihood gives the data no weight (``TiltParticles.free_shells``)."""
     half_shape = ftu.volume_shape_to_half_volume_shape(shape)
     real = ftu.get_idft3_real(theta.T.reshape((-1,) + half_shape), shape)
     spectrum = ftu.get_dft3_real(real * mask).reshape(theta.shape[1], -1).T
-    return spectrum * _spherical_support(tuple(int(n) for n in shape), radius).astype(spectrum.real.dtype)
+    spectrum = spectrum * _spherical_support(tuple(int(n) for n in shape), radius).astype(spectrum.real.dtype)
+    return spectrum if not min_shell else zero_low_shells(spectrum, shape, min_shell)
 
 
-def _blob_field(amplitude, diameter, rng):
+def zero_low_shells(theta, shape, min_shell):
+    """``theta`` (half volume, channels) with the shells below ``min_shell`` (rounded radius) zeroed."""
+    shells = np.asarray(ftu.get_grid_of_radial_distances_real(tuple(int(n) for n in shape)), np.int64).reshape(-1)
+    return theta * jnp.asarray((shells >= int(min_shell))[:, None], theta.real.dtype)
+
+
+def _blob_field(amplitude, diameter, rng, center=None):
+    """Random Gaussian blobs about ``center`` (voxel indices; the box centre when None), scaled by ``amplitude``."""
     n = amplitude.shape[0]
+    center = np.full(3, n / 2) if center is None else np.asarray(center, np.float64)
     # Host RNG/geometry is deliberate; all field arithmetic stays float32.
-    centers = (rng.normal(size=(40, 3)) * diameter / 6 + n / 2).astype(np.float32)
+    centers = (rng.normal(size=(40, 3)) * diameter / 6 + center).astype(np.float32)
     grid = np.indices((n, n, n), dtype=np.float32)
     out = np.zeros((n, n, n), np.float32)
     for center in centers:
@@ -152,22 +163,33 @@ def initialize(dataset, *, seed, diameter_ang, batch_size=64, q=2):
     )
 
 
-def seed_model(rhs, lhs, volume_shape, voxel_size, diameter_ang, radius, rng):
-    """Seed maps from the bootstrap reconstructions ``rhs / lhs`` (one per channel), as half-Fourier theta."""
+def seed_model(rhs, lhs, volume_shape, voxel_size, diameter_ang, radius, rng, band=None):
+    """Seed maps from the bootstrap reconstructions ``rhs / lhs`` (one per channel), as half-Fourier theta.
+
+    With a :class:`relax.ppca_initial_model.filament_band.FilamentBand`, the blobs sit about the attachment's
+    canonical centre with the band's support diameter and the model is masked by its support.
+    """
+    from relax.ppca_initial_model.filament_band import attachment_support_mask
+
     channels = rhs.shape[0]
     n = volume_shape[0]
     half_shape = ftu.volume_shape_to_half_volume_shape(volume_shape)
     reconstruction = jnp.where(lhs > 0, rhs / jnp.where(lhs > 0, lhs, 1), 0)
     real = np.asarray(ftu.get_idft3_real(reconstruction.reshape((channels,) + half_shape), volume_shape), np.float32)
-    diameter = diameter_ang / voxel_size
-    mask = support_mask(n, diameter)
+    if band is None:
+        diameter, center = diameter_ang / voxel_size, None
+        mask = support_mask(n, diameter)
+    else:
+        diameter, center = 2 * band.support_radius_ang / voxel_size, band.support_center_px(n, voxel_size)
+        mask = attachment_support_mask(n, voxel_size, band)
     # The blob fields take the bootstrap's magnitude only; their sign follows the bootstrap's density (relax's
     # internal frame: negative for a RELION-sign stack, relax/io/map_io.py), so negated images seed the exactly
     # negated model.
     sign = np.float32(_bootstrap_sign(real.mean(axis=0), volume_shape))
     fields = []
     for volume in real:
-        field = _blob_field(volume, diameter, rng) - np.float32(0.5) * _blob_field(volume, diameter, rng)
+        field = _blob_field(volume, diameter, rng, center)
+        field = field - np.float32(0.5) * _blob_field(volume, diameter, rng, center)
         sd = np.std(field, dtype=np.float32)
         if sd <= 0:
             raise ValueError("Random bootstrap produced a zero blob field")
@@ -178,6 +200,26 @@ def seed_model(rhs, lhs, volume_shape, voxel_size, diameter_ang, radius, rng):
     if not np.all(np.isfinite(np.asarray(theta))) or np.any(np.linalg.norm(np.asarray(theta[:, 1:]), axis=0) == 0):
         raise ValueError("Random initialization requires finite, nonzero loadings")
     return theta
+
+
+def with_initial_mean(theta, path, scale, volume_shape, voxel_size, diameter_ang, band=None):
+    """``theta`` with its mean (column 0) replaced by the RELION-convention map at ``path`` times ``scale``, masked
+    as :func:`seed_model` masks the seed (the attachment support with a band, else the particle sphere) and kept at
+    every frequency (the stages band-limit the model as they go). The loadings are unchanged."""
+    from recovar.utils.helpers import load_relion_volume
+
+    from relax.ppca_initial_model.filament_band import attachment_support_mask
+
+    volume, map_voxel = load_relion_volume(str(path), return_voxel_size=True)
+    volume = np.asarray(volume, np.float32)
+    map_voxel = float(np.asarray(map_voxel.tolist() if hasattr(map_voxel, "tolist") else map_voxel).reshape(-1)[0])
+    if volume.shape != tuple(volume_shape) or not np.isclose(map_voxel, voxel_size, rtol=1e-4):
+        raise ValueError(f"{path}: {volume.shape} at {map_voxel} A, the model is {tuple(volume_shape)} at {voxel_size} A")
+    n = volume_shape[0]
+    mask = support_mask(n, diameter_ang / voxel_size) if band is None else attachment_support_mask(n, voxel_size, band)
+    mean = ftu.get_dft3_real(jnp.asarray(volume * np.float32(scale))[None]).reshape(1, -1).T
+    mean = bandlimit_and_mask(mean, volume_shape, n // 2, mask)
+    return jnp.asarray(theta).at[:, 0].set(mean[:, 0].astype(theta.dtype))
 
 
 def _bootstrap_sign(volume, volume_shape) -> int:
