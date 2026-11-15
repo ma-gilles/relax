@@ -7,7 +7,7 @@ each E-step rank 0 sends the model and the id groups (:class:`ExpectationTask`),
 streams, rank 0 sends the tile size it planned (:class:`TilePlan`), and every rank cuts the same tiles. The tiles
 form fixed blocks (:func:`tile_blocks`: runs of consecutive tiles of about equal predicted cost), which the ranks
 take from rank 0's queue as they finish the previous one, heaviest first (:meth:`LeaderTiles.run_blocks`, one block
-sent ahead), so a rank whose tiles run slower than predicted takes fewer. A block returns its tiles' statistics
+sent ahead while the queue is long), so a rank whose tiles run slower than predicted takes fewer. A block returns its tiles' statistics
 without their volumes and its volume sums per id group in tile order (:class:`BlockShare`); rank 0 adds the blocks'
 volume sums in block order and puts every other statistic back in tile order (``iteration_loop._join_tile_shares``).
 Section 18 of ``docs/math/vdam_ppca_algorithm.md`` states what is summed where and how the result compares with one
@@ -102,6 +102,12 @@ class TileFailure:
 # Blocks per rank of an E-step: enough that the last blocks even out the ranks' measured speeds, few enough that a
 # block (one accumulate call, one reply) holds several tiles.
 BLOCKS_PER_RANK = 8
+
+# A rank is sent its next block ahead (while it scores one, hiding the reply's round trip) only while the queue holds
+# at least this many blocks per rank. A block sent ahead at the end is one a rank that finishes first cannot take:
+# with one ahead to the end, rank 0 (which takes blocks as it finishes them) waited a block's time at the end of
+# every ET update on four H100 (job 7475535: about 1 s of 7 to 8 s, 0.8 s of each update's loss to the busiest rank).
+AHEAD_QUEUE_PER_RANK = 2
 
 
 def tile_blocks(costs, world: int) -> list[list[int]]:
@@ -201,7 +207,9 @@ class LeaderTiles:
     def run_blocks(self, blocks, costs, run_block, laps) -> list[BlockShare]:
         """Every block's share, in block order: rank 0 scores blocks on this thread (``run_block(b)`` returns the
         block's parts and totals) while one thread per other rank hands that rank the next block, heaviest first,
-        one ahead of the block it is scoring. The threads only move frames; the replies are read here."""
+        one ahead of the block it is scoring while the queue holds :data:`AHEAD_QUEUE_PER_RANK` blocks per rank.
+        The threads only move frames; the replies are read here, those that arrived after each of rank 0's own
+        blocks (their volume sums go to the device while rank 0 scores its next block) and the rest at the end."""
 
         costs = np.asarray(costs, np.float64)
         block_cost = [float(costs[block].sum()) for block in blocks]
@@ -212,20 +220,24 @@ class LeaderTiles:
         received, done, failures = {}, {}, []
         ran = {rank: [] for rank in range(self.world)}
 
-        def next_block():
+        def next_block(ahead=False):
             with lock:
-                return None if stop.is_set() or not queue else queue.popleft()
+                if stop.is_set() or not queue or (ahead and len(queue) < AHEAD_QUEUE_PER_RANK * self.world):
+                    return None
+                return queue.popleft()
 
         def serve(rank, connection):
             sent = deque()
             try:
                 while True:
-                    while len(sent) < 2 and (b := next_block()) is not None:
+                    while len(sent) < 2 and (b := next_block(ahead=bool(sent))) is not None:
                         channel.send_frames(connection, task_frames[b])
                         sent.append(b)
                     if not sent:
                         break
-                    received[sent[0]] = (rank, channel.receive_frames(connection, peer=f"rank {rank}"))
+                    frames = channel.receive_frames(connection, peer=f"rank {rank}")
+                    with lock:
+                        received[sent[0]] = (rank, frames)
                     ran[rank].append(sent.popleft())
                 channel.send_frames(connection, end_frames)
                 done[rank] = channel.receive_frames(connection, peer=f"rank {rank}")
@@ -239,13 +251,26 @@ class LeaderTiles:
         ]
         for thread in threads:
             thread.start()
-        own = {}
+        own, read = {}, {}
+
+        def read_replies():
+            with lock:
+                arrived = [(b, received.pop(b)) for b in list(received)]
+            for b, (rank, frames) in arrived:
+                reply = channel.decode(frames, self._ranks.objects)
+                if isinstance(reply, TileFailure):
+                    raise channel.RankFailed(f"rank {rank} failed a block of an E-step:\n{reply.text}")
+                if not isinstance(reply, BlockShare) or (reply.key, reply.block) != (self.key, b):
+                    raise channel.RankFailed(f"rank {rank} returned {reply!r} for block {b} of E-step {self.key}")
+                read[b] = reply
+
         try:
             while (b := next_block()) is not None:
                 clock = Stopwatch()
                 parts, totals = run_block(b)
                 own[b] = BlockShare(self.key, b, parts, totals, clock.seconds)
                 ran[0].append(b)
+                read_replies()
         except BaseException:
             stop.set()
             raise
@@ -253,20 +278,15 @@ class LeaderTiles:
             for thread in threads:
                 thread.join()
         laps.mark("own_blocks_then_wait")
+        read_replies()
         shares, timing = [], {0: laps.record()}
         for b in range(len(blocks)):
             if b in own:
                 shares.append(own.pop(b))
-                continue
-            if b not in received:
+            elif b in read:
+                shares.append(read.pop(b))
+            else:
                 break
-            rank, frames = received.pop(b)
-            reply = channel.decode(frames, self._ranks.objects)
-            if isinstance(reply, TileFailure):
-                raise channel.RankFailed(f"rank {rank} failed a block of an E-step:\n{reply.text}")
-            if (reply.key, reply.block) != (self.key, b):
-                raise channel.RankFailed(f"rank {rank} returned block {reply.block} of E-step {reply.key}")
-            shares.append(reply)
         if failures:
             raise failures[0]
         if len(shares) != len(blocks):
