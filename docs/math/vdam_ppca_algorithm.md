@@ -2843,6 +2843,15 @@ processes on the node run as fast as one alone, so the node adds no contention.
 | ET EMPIAR-10157, update 41 (429 particles, radius 16, HEALPix 3), static | 28.6 s | 14.8 s (1.93x) | 11.3 s (2.53x) |
 | the same, blocks without the share bound | 28.6 s | 14.9 s (1.92x) | 22.2 s |
 
+Divergence from one GPU over a run. On the ET radius-24 schedule (EMPIAR-10157, 31 noise groups) the four-GPU run
+(job 7474053) moves away from the one-GPU run (7474046) by a relative mean difference of 2.2e-5 after update 1,
+2.3e-3 at update 30 and 6.8e-2 at update 60 (2.07 at 100), while SPA stays near 1e-4. A control on the same node
+type (job 7475485) shows this is the one-GPU run's own sensitivity: an unmodified one-GPU repeat departs from
+7474046 by 2.1e-5, 2.5e-3 and 7.8e-2 at the same updates, and a one-GPU run that sums each group's tiles in
+reversed order by 2.3e-5, 1.7e-3 and 5.6e-2. Every run selects the same particles at every update. The GPU's
+run-to-run rounding (the moment scatter's atomic sums) is enough; this schedule amplifies it about tenfold every
+15 updates, and several GPUs add nothing measurable to it.
+
 The ET rows are why rank 0 bounds the largest tile's share: on four ranks the static assignment gave two ranks one
 150-particle tile each (11 s) and two ranks eleven mixed tiles of the same predicted cost (3 to 4 s).
 
