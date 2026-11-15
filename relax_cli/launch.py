@@ -63,8 +63,9 @@ def rank_environment(environ=None) -> RankEnvironment | None:
     )
 
 
-# The most ranks of one run: the GPUs of one node (relax.refinement.remote_halves).
-MAX_RANKS = 4
+# The most ranks of one run: the GPUs of one node (eight H100 PCIe on Rusty). A command may take fewer:
+# relax refine takes two to four (relax.refinement.remote_halves), relax ppca_initial_model two to eight.
+MAX_RANKS = 8
 
 
 def gpu_devices(value: str) -> tuple[str, ...]:

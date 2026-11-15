@@ -699,7 +699,7 @@ def main(args=None):
     from relax.ppca_initial_model.iteration_loop import run
     from relax_cli import launch
 
-    # A multi-GPU run (--gpu with two to four devices): rank 0 listens for the other ranks, which write under a
+    # A multi-GPU run (--gpu with two to eight devices): rank 0 listens for the other ranks, which write under a
     # hidden directory of the output and score the tiles of each E-step it sends them (ppca_initial_model.ranks).
     rank_env = launch.rank_environment()
     tile_ranks.require_gpu_ranks(args.gpu, rank_env)

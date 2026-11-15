@@ -99,6 +99,9 @@ class TileFailure:
     text: str
 
 
+# The most ranks of a PPCA run: the GPUs of one node (relax_cli.launch.MAX_RANKS).
+MAX_WORLD = 8
+
 # Blocks per rank of an E-step: enough that the last blocks even out the ranks' measured speeds, few enough that a
 # block (one accumulate call, one reply) holds several tiles.
 BLOCKS_PER_RANK = 8
@@ -158,8 +161,10 @@ def run_objects(dataset, config) -> dict[str, object]:
 def require_tile_route(config, world: int) -> None:
     """Refuse a multi-GPU run of what it does not support."""
 
-    if not 2 <= world <= 4:
-        raise NotImplementedError(f"a multi-GPU PPCA run takes two to four GPUs of one node; --gpu lists {world}")
+    if not 2 <= world <= MAX_WORLD:
+        raise NotImplementedError(
+            f"a multi-GPU PPCA run takes two to {MAX_WORLD} GPUs of one node; --gpu lists {world}"
+        )
     if not config.stream_coarse_recompute:
         raise NotImplementedError(
             "--gpu with more than one device splits the streamed engine's tiles; the host-mask reference engine "
