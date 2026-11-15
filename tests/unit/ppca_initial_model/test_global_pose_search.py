@@ -17,8 +17,12 @@ from relax.ppca_initial_model import iteration_loop
 from relax.ppca_initial_model.config import Config
 from relax.ppca_initial_model.state import State
 from relax.ppca_refinement.config import GeometryConfig, ScheduleConfig, ScoringConfig
-from relax.ppca_refinement.full_row_stream import prepare_full_row_stream
-from relax.ppca_refinement.oversampled_stream import accumulate_oversampled_tile, prepare_oversampled_stream
+from relax.ppca_refinement.full_row_stream import full_row_tile_embeddings, prepare_full_row_stream
+from relax.ppca_refinement.oversampled_stream import (
+    accumulate_oversampled_tile,
+    oversampled_tile_embeddings,
+    prepare_oversampled_stream,
+)
 from relax.sampling import grids
 
 pytestmark = pytest.mark.unit
@@ -51,6 +55,21 @@ def test_own_child_priors_and_child_mass_equal_the_dense_child_grid():
     _assert_same_statistics(actual, expected)
     assert actual.diagnostics["rotation_mass"].shape == (len(fine_rotations),)
     assert_matches(actual.diagnostics["rotation_mass"], expected.diagnostics["rotation_mass"], rtol=DIAGNOSTIC_RTOL)
+
+
+def test_embeddings_report_the_dense_child_grids_top_pose():
+    """With fraction 1 the embeddings pass gives the dense child grid's latents and top pose (child-grid rows)."""
+    coarse, (fine_rotations, fine_translations) = _spa_stream()
+    n_poses = (coarse.arrays.rotations.shape[0] - 1) * coarse.translations.shape[0]
+    ostream = prepare_oversampled_stream(
+        coarse, fine_rotations, fine_translations, adaptive_fraction=1.0, max_significant=n_poses, job_chunk=96
+    )
+    ids = np.arange(4)
+    actual = oversampled_tile_embeddings(ostream, ids)
+    expected = full_row_tile_embeddings(ostream.fine, ids, [None] * 4)
+    np.testing.assert_array_equal(actual.best_rotation, expected.best_rotation)
+    np.testing.assert_array_equal(actual.best_translation, expected.best_translation)
+    assert_matches(np.asarray(actual.embeddings), np.asarray(expected.embeddings), rtol=STATISTICS_RTOL)
 
 
 def test_child_priors_must_have_one_entry_per_child():

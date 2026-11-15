@@ -796,7 +796,8 @@ def oversampled_tile_embeddings(
     ostream: OversampledStream, image_indices, significant_rows=None
 ) -> DensePPCAEmbeddings:
     """Pose-marginal embeddings of one tile with adaptive oversampling, as
-    :func:`relax.ppca_refinement.full_row_stream.full_row_tile_embeddings`."""
+    :func:`relax.ppca_refinement.full_row_stream.full_row_tile_embeddings`; the top pose indexes the child grid
+    (``ostream.fine``)."""
     significant_rows = [None] * len(image_indices) if significant_rows is None else significant_rows
     with jax.default_device(ostream.coarse.device):
         tile, layout, posterior, carry, _ = _oversampled_tile(
@@ -810,7 +811,11 @@ def oversampled_tile_embeddings(
             posterior.top_score[:n_real],
             tile.y_norm[:n_real],
         )
-        return DensePPCAEmbeddings(carry.embedding[:n_real], layout["original_ids"], n_real, *scores)
+        top = dict(
+            best_rotation=np.asarray(jax.device_get(posterior.top_rotation[:n_real]), np.int32),
+            best_translation=np.asarray(jax.device_get(posterior.top_translation[:n_real]), np.int32),
+        )
+        return DensePPCAEmbeddings(carry.embedding[:n_real], layout["original_ids"], n_real, *scores, **top)
 
 
 _JOB_PROGRAM_BYTES: dict = {}
