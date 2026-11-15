@@ -179,6 +179,27 @@ if mode == "controller":
     import test_tomo_ppca
     from relax.commands import ppca_initial_model as command
 
+    # PPCA_TEST_FAULT=rank:update:raise|kill: that rank's E-step of that update raises, or the rank is killed
+    # (SIGKILL, as the kernel's out-of-memory killer ends a process).
+    fault = os.environ.get("PPCA_TEST_FAULT")
+    here = launch.rank_environment()
+    if fault and int(fault.split(":")[0]) == (0 if here is None else here.rank):
+        import signal
+
+        from relax.ppca_initial_model import iteration_loop
+
+        _, update, how = fault.split(":")
+        original = iteration_loop._expectation
+
+        def faulty(dataset, state, config, ids, iteration, **options):
+            if iteration == int(update):
+                if how == "kill":
+                    os.kill(os.getpid(), signal.SIGKILL)
+                raise RuntimeError(f"injected E-step failure at update {update}")
+            return original(dataset, state, config, ids, iteration, **options)
+
+        iteration_loop._expectation = faulty
+
     command.load_tilt_training = lambda ios, output, *args, **options: (
         test_tomo_ppca._controller_particles(), {"test": True}, None
     )
@@ -201,6 +222,10 @@ from relax.ppca_initial_model.state import State
 rng = np.random.default_rng(7)
 images = (rng.standard_normal((11, N_HALF)) + 1j * rng.standard_normal((11, N_HALF))).astype(np.complex64)
 images[:, 0] += 30.0
+if "perturb_half1" in extra[1:]:  # other images for the second id group (the odd ids) only; the model is unchanged
+    other = np.random.default_rng(8)
+    images[1::2] = (other.standard_normal((5, N_HALF)) + 1j * other.standard_normal((5, N_HALF))).astype(np.complex64)
+    images[1::2, 0] += 20.0
 data = _TinyData(images)
 theta = np.stack([_half_volume(rng), _half_volume(rng, 0.3), _half_volume(rng, 0.2)], axis=1)
 state = State(jnp.asarray(theta), None, jnp.full(5, 40.0, jnp.float32), 1, np.arange(11), {}, 2.0, 0, {})
@@ -242,19 +267,23 @@ np.savez(os.path.join(out, f"estep_{name}.npz"), **saved)
 """
 
 
-def _run_ranks(tmp_path, mode, out, world, *extra):
+def _run_ranks(tmp_path, mode, out, world, *extra, fault=None, timeout=900):
     script = tmp_path / "ranks.py"
     script.write_text(_RANKS)
     env = repo_subprocess_env()
     env.update({"JAX_PLATFORMS": "cpu", "CUDA_VISIBLE_DEVICES": "", "OMP_NUM_THREADS": "2"})
     env.pop("RELAX_RANK", None)
+    if fault is not None:
+        env["PPCA_TEST_FAULT"] = fault
     Path(out).mkdir(parents=True, exist_ok=True)
     completed = subprocess.run(
         repo_python_command(str(script), mode, str(TESTS), str(out), str(world), *extra),
-        env=env, capture_output=True, text=True, timeout=900, cwd=tmp_path,
+        env=env, capture_output=True, text=True, timeout=timeout, cwd=tmp_path,
     )  # fmt: skip
     logs = "".join(path.read_text() for path in Path(out).glob(".rank*/rank*.log"))
-    assert completed.returncode == 0, completed.stderr[-6000:] + logs[-6000:]
+    if fault is None:
+        assert completed.returncode == 0, completed.stderr[-6000:] + logs[-6000:]
+    completed.logs = logs
     return completed
 
 
@@ -291,8 +320,14 @@ def _checkpoints(output):
 
 @pytest.mark.parametrize(
     "options, worlds",
-    [([], (2, 3)), (["--optimizer", "momentum_sgd"], (2,))],
-    ids=["vdam", "momentum-sgd"],
+    [
+        ([], (2, 3)),
+        (["--optimizer", "momentum_sgd"], (2,)),
+        (["--q", "4"], (2,)),
+        # Every update scores two particles, one per half (two tiles, two blocks) on four ranks: two get no work.
+        (["--stochastic-batch-size", "2", "--stochastic-all-iterations", "--balanced-stochastic-halves"], (4,)),
+    ],
+    ids=["vdam", "momentum-sgd", "q4", "fewer-tiles-than-ranks"],
 )
 def test_subtomogram_command_on_several_ranks_matches_one_rank(tmp_path, options, worlds):
     """``relax ppca_initial_model --ios`` on one, two and three ranks: three updates (two stages) and the final
@@ -328,8 +363,11 @@ def test_subtomogram_command_on_several_ranks_matches_one_rank(tmp_path, options
         for row, our_row in zip(rows, ours_rows):
             assert row["particle_ids"] == our_row["particle_ids"] and row["half_counts"] == our_row["half_counts"]
             assert "ranks" not in our_row
-            assert row["ranks"]["world"] == world and sum(row["ranks"]["tiles"]) == 8  # one particle per tile
-            assert sum(row["ranks"]["blocks"]) == 8 and len(row["ranks"]["timing"]) == world
+            tiles = sum(row["half_counts"])  # one particle per tile
+            assert row["ranks"]["world"] == world and sum(row["ranks"]["tiles"]) == tiles
+            assert sum(row["ranks"]["blocks"]) == tiles and len(row["ranks"]["timing"]) == world
+            if tiles < world:
+                assert row["ranks"]["blocks"].count(0) == world - tiles
             assert "timing" in row and "estep_phases" in row["timing"]
         embeddings, our_embeddings = np.load(output / "embeddings.npz"), np.load(reference / "embeddings.npz")
         np.testing.assert_array_equal(embeddings["particle_ids"], our_embeddings["particle_ids"])
@@ -339,6 +377,88 @@ def test_subtomogram_command_on_several_ranks_matches_one_rank(tmp_path, options
             hidden = output / f".rank{rank}"
             assert (hidden / f"rank{rank}.log").is_file()
             assert not list(hidden.glob("checkpoint_*")) and not (hidden / "run.json").exists()
+
+
+def _assert_same_checkpoint(theirs, ours, *, exact):
+    assert sorted(theirs) == sorted(ours)
+    assert theirs["metadata"]["rng_state"] == ours["metadata"]["rng_state"]
+    np.testing.assert_array_equal(theirs["order"], ours["order"])
+    for field, value in ours.items():
+        if field in ("metadata", "order"):
+            continue
+        if exact:
+            assert theirs[field].tobytes() == value.tobytes(), field
+        else:
+            assert_matches(theirs[field], value, rtol=SECOND_MOMENT_RTOL if field == "second" else None)
+
+
+def test_subtomogram_runs_repeat_bitwise_and_resume_on_any_rank_count(tmp_path):
+    """Two runs on two ranks write the same bytes (no sum depends on which rank scored a block or when). A checkpoint
+    written on two ranks resumes on one, two or three: the resumed update selects the same particles and agrees with
+    the uninterrupted run, bitwise on two ranks and to float32 noise on one or three; so do the final embeddings."""
+    first, second = tmp_path / "first", tmp_path / "second"
+    _run_ranks(tmp_path, "controller", first, 2)
+    _run_ranks(tmp_path, "controller", second, 2)
+    ours = _checkpoints(first)
+    for name, checkpoint in _checkpoints(second).items():
+        _assert_same_checkpoint(checkpoint, ours[name], exact=True)
+    assert np.load(first / "embeddings.npz")["z"].tobytes() == np.load(second / "embeddings.npz")["z"].tobytes()
+    rows = [json.loads(line) for line in (first / "iterations.jsonl").read_text().splitlines()]
+    for world in (1, 2, 3):
+        resumed = tmp_path / f"resumed{world}"
+        _run_ranks(tmp_path, "controller", resumed, world, "--resume", str(first / "checkpoint_0002.npz"))
+        theirs = _checkpoints(resumed)
+        assert sorted(theirs) == ["checkpoint_0003.npz"]
+        _assert_same_checkpoint(theirs["checkpoint_0003.npz"], ours["checkpoint_0003.npz"], exact=world == 2)
+        (row,) = [json.loads(line) for line in (resumed / "iterations.jsonl").read_text().splitlines()]
+        assert row["iteration"] == 3 and row["particle_ids"] == rows[2]["particle_ids"]
+        embeddings, our_embeddings = np.load(resumed / "embeddings.npz"), np.load(first / "embeddings.npz")
+        np.testing.assert_array_equal(embeddings["particle_ids"], our_embeddings["particle_ids"])
+        if world == 2:
+            assert embeddings["z"].tobytes() == our_embeddings["z"].tobytes()
+        else:
+            assert_matches(embeddings["z"], our_embeddings["z"])
+
+
+def test_half_statistics_on_several_ranks_read_only_their_own_particles(tmp_path):
+    """The pseudo-halves stay independent on several ranks: other images for the second half's particles leave every
+    statistic of the first half bitwise unchanged (the tiles and blocks depend on the image counts only), and change
+    the second half's (but its pixel counts)."""
+    fields = ("lhs_tri", "residual_gradient", "residual_num", "residual_den", "embeddings", "log_likelihood")
+    saved = {}
+    for label, extra in (("same", ()), ("other", ("perturb_half1",))):
+        out = tmp_path / label
+        _run_ranks(tmp_path, "estep", out, 2, "dense", *extra)
+        saved[label] = np.load(out / "estep_dense.npz")
+    for field in fields:
+        assert saved["same"][f"dense/many/0/{field}"].tobytes() == saved["other"][f"dense/many/0/{field}"].tobytes()
+        if field != "residual_den":  # the noise denominator counts pixels: no image enters it
+            assert not np.array_equal(saved["same"][f"dense/many/1/{field}"], saved["other"][f"dense/many/1/{field}"])
+        assert_matches(saved["other"][f"dense/many/0/{field}"], saved["other"][f"dense/one/0/{field}"])
+
+
+@pytest.mark.parametrize(
+    "fault", ["1:2:raise", "2:2:kill", "0:2:raise"], ids=["rank-raises", "rank-killed", "rank0-raises"]
+)
+def test_a_failed_or_killed_rank_ends_the_run(tmp_path, fault):
+    """A rank whose E-step raises (an out-of-memory error, say) or that is killed (the kernel's out-of-memory killer)
+    ends the whole run with a non-zero status and the failure named, within seconds, not a hang; no checkpoint of
+    the failed update is written."""
+    import time
+
+    output = tmp_path / "failed"
+    clock = time.monotonic()
+    completed = _run_ranks(tmp_path, "controller", output, 3, fault=fault, timeout=600)
+    rank, update, how = fault.split(":")
+    text = completed.stderr + completed.logs
+    assert completed.returncode != 0, text[-4000:]
+    assert time.monotonic() - clock < 300
+    assert "stopping the other ranks" in completed.stderr
+    if how == "kill":
+        assert f"rank {rank} exited with status {128 + 9}" in completed.stderr
+    else:
+        assert f"injected E-step failure at update {update}" in text
+    assert (output / "checkpoint_0001.npz").is_file() and not (output / f"checkpoint_000{update}.npz").exists()
 
 
 # VDAM's second moment averages the squared per-frequency direction, a metric solve that amplifies the volume sums'
@@ -364,6 +484,7 @@ def test_one_device_and_a_skipped_launcher_refuse_or_run_alone():
     ranks.require_tile_route(Config(), 2)
     with pytest.raises(NotImplementedError, match="one GPU"):
         ranks.require_tile_route(Config(stream_coarse_recompute=False), 2)
-    with pytest.raises(NotImplementedError, match="two to four"):
-        ranks.require_tile_route(Config(), 5)
+    ranks.require_tile_route(Config(), 8)
+    with pytest.raises(NotImplementedError, match="two to 8"):
+        ranks.require_tile_route(Config(), 9)
     assert launch.output_argument(["ppca_initial_model", "-o", "run"]) == "run"
