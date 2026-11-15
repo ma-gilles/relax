@@ -137,21 +137,40 @@ def _direction_ids(hp):
 
 
 class _ModelLog:
-    """Appends the per-update lines of ``iterations.jsonl`` on one background thread, in update order.
+    """Appends the per-update lines of ``iterations.jsonl`` and writes the checkpoints on one background thread, in
+    update order (a checkpoint after its update's line).
 
     A line's model diagnostics (singular values of the loadings, mean and loading power) come from a host copy
-    of that update's theta and the host SVD, about 0.1 s at box 128; on the thread they overlap the next update's
-    E-step. ``wait`` returns once every appended line is written (raising a writer's error); ``close`` also stops
-    the thread.
+    of that update's theta and the host SVD, about 0.1 s at box 128; a checkpoint is the state's host copy and an
+    fsynced file, 0.15 to 0.2 s on Ceph for ET box 128 (job 7475535). On the thread both overlap the next update's
+    E-step; the state they read is never modified (each update makes a new one). ``wait`` returns once every
+    appended line and checkpoint is written (raising a writer's error); ``close`` also stops the thread. A writer's
+    error is also raised by the next ``append`` or ``checkpoint`` after it.
     """
 
     def __init__(self, path):
         self.path = path
         self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="ppca-log")
         self.pending = []
+        self.checkpoint_seconds = {}  # iteration -> seconds of its checkpoint's write, once written
+
+    def _submit(self, function, *args):
+        done = [future for future in self.pending if future.done()]
+        self.pending = [future for future in self.pending if not future.done()]
+        for future in done:
+            future.result()
+        self.pending.append(self.executor.submit(function, *args))
 
     def append(self, diagnostics, theta):
-        self.pending.append(self.executor.submit(self._write, diagnostics, theta))
+        self._submit(self._write, diagnostics, theta)
+
+    def checkpoint(self, path, state, config, identity):
+        self._submit(self._checkpoint, path, state, config, identity)
+
+    def _checkpoint(self, path, state, config, identity):
+        clock = time.monotonic()
+        checkpoint.save(path, state, config, identity)
+        self.checkpoint_seconds[state.iteration] = round(time.monotonic() - clock, 4)
 
     def _write(self, diagnostics, theta):
         theta_host = np.asarray(theta)
@@ -887,6 +906,10 @@ def _expectation(
                     },
                 }
             results.append(stats)
+        if results and not embeddings_only:
+            # The groups' statistics merged from the tiles (the device's volume sums arrive here).
+            laps.mark("merge")
+            results[0].diagnostics["timing"] = laps.record()
         return results
     function = compute_dense_ppca_embeddings if embeddings_only else accumulate_dense_ppca_statistics
     options = {} if embeddings_only else {"sparse_pass2": SparsePass2Config(enabled=False), "collect_residuals": True}
@@ -1001,7 +1024,6 @@ def run(
     stage_tile_sizes = {}  # compiled tile shapes seen per stage (radius, HEALPix order)
     log = _ModelLog(output / "iterations.jsonl")
     state_start = state.iteration
-    checkpoint_seconds = None  # the previous update's checkpoint, recorded with this update
     for iteration in range(state_start + 1, end + 1):
         started = time.monotonic()
         count, step, fudge = config.schedule(iteration, dataset.n_images)
@@ -1236,12 +1258,13 @@ def run(
                 "offset_variance_px2": offset_variance,
                 "dtype": str(theta.dtype),
                 "elapsed_seconds": time.monotonic() - started,
-                # Host seconds: the E-step (and its phases), the update after it, the previous checkpoint's write.
+                # Host seconds: the E-step (and its phases), the update after it, the previous checkpoint's write (on
+                # the writer thread, off this loop; None if not written yet or none was due).
                 "timing": {
                     "estep": round(estep_seconds, 4),
                     "update": round(time.monotonic() - started - estep_seconds, 4),
                     "estep_phases": stats[0].diagnostics.get("timing"),
-                    "previous_checkpoint": checkpoint_seconds,
+                    "previous_checkpoint": log.checkpoint_seconds.get(iteration - 1),
                 },
             }
         )
@@ -1276,14 +1299,12 @@ def run(
         log.append(diagnostics, theta)
         # A stop request ends the run after this iteration's checkpoint, whatever the checkpoint interval.
         stop = stop_file is not None and Path(stop_file).exists()
-        checkpoint_seconds = None
         if stop or iteration % config.checkpoint_interval == 0 or iteration == end:
-            saving = time.monotonic()
-            log.wait()  # the checkpoint's iteration is logged first
             if newton is not None:
+                log.wait()  # the Newton state changes in place: written here, after the update's line
                 newton.save(output / f"newton_sgd_{iteration:04d}.npz")
-            checkpoint.save(output / f"checkpoint_{iteration:04d}.npz", state, config, identity)
-            checkpoint_seconds = round(time.monotonic() - saving, 4)
+            # Written after the update's line, on the log's thread, while the next update runs.
+            log.checkpoint(output / f"checkpoint_{iteration:04d}.npz", state, config, identity)
         if stop:
             break
     log.close()
