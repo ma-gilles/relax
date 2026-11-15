@@ -272,8 +272,10 @@ def stage_tilt_stacks(particles_star, datadir, cache_dir, *, rank: int = 0, worl
     (jobs 7474046, 7475535). Staged here first, under the loader's own path and cache key
     (``image_loader._resolve_mrc_path`` of the joined path), the loader finds each copy staged; a stack staged
     under another key is staged again by the loader, as before. Rank ``rank`` of ``world`` processes on the node
-    starts at its own share of the list, so the ranks copy different stacks first; a stack two ranks copy at once
-    is still written whole (``stage_mrc`` replaces atomically). A stack that fails to stage is left to the loader.
+    starts at its own share of the list, so the ranks copy different stacks first (the rest are then mostly staged
+    already), with its share of the threads: four ranks of 32 threads each took 79 s where one took 38 s (jobs
+    7477514, 7477515). A stack two ranks copy at once is still written whole (``stage_mrc`` replaces atomically).
+    A stack that fails to stage is left to the loader.
     """
 
     import logging
@@ -288,18 +290,19 @@ def stage_tilt_stacks(particles_star, datadir, cache_dir, *, rank: int = 0, worl
         return
     start = len(paths) * rank // max(world, 1)
     paths = paths[start:] + paths[:start]
+    threads = max(4, _WARM_STACK_THREADS // max(world, 1))
     staging_log = logging.getLogger("recovar.data_io.staging")
     level = staging_log.level
     clock = time.monotonic()
     staging_log.setLevel(logging.WARNING)  # two INFO lines per stack otherwise
     try:
-        with ThreadPoolExecutor(max_workers=_WARM_STACK_THREADS) as pool:
+        with ThreadPoolExecutor(max_workers=threads) as pool:
             list(pool.map(lambda path: stage_mrc(_resolve_mrc_path(path), cache_dir), paths))
     finally:
         staging_log.setLevel(level)
     logging.getLogger(__name__).info(
         "Staged %d tilt stacks into %s in %.1f s (%d threads)",
-        len(paths), cache_dir, time.monotonic() - clock, _WARM_STACK_THREADS,
+        len(paths), cache_dir, time.monotonic() - clock, threads,
     )  # fmt: skip
 
 
