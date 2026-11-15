@@ -2765,7 +2765,8 @@ the within-state median, and the global one for continuity.
 ## 18. Several GPUs: each update's tiles split over the ranks (November 14, 2026)
 
 `relax ppca_initial_model --gpu 0:1[:2:3]` runs one process per GPU of one node, started before JAX by the
-`relax` console script as for `relax refine` (`relax_cli/launch.py`; at most four). The other ranks write only
+`relax` console script as for `relax refine` (`relax_cli/launch.py`; at most eight, the GPUs of an H100 PCIe
+node; `relax refine` takes at most four). The other ranks write only
 their log, under `<output>/.rank<r>/`. Rank 0 is the controller of a one-GPU run
 (`relax/ppca_initial_model/iteration_loop.py`, `run`): initialization, the batch and half selection, the update
 of the model, noise, offset variance and direction prior, every checkpoint and output. The other ranks keep no
@@ -2786,8 +2787,12 @@ One E-step (`iteration_loop._expectation` with `ranks`):
 3. The tiles form fixed blocks (`tile_blocks`): at most eight per rank, each a run of consecutive tiles of about
    equal predicted cost (a tile's tilt images, or its images). The blocks are a function of the tile costs and the
    number of ranks only. Rank 0 keeps the queue: one thread per other rank hands that rank the next block,
-   heaviest first, one ahead of the block it is scoring, while rank 0 scores blocks itself
-   (`LeaderTiles.run_blocks`). A rank whose tiles run slower than predicted takes fewer blocks.
+   heaviest first, while rank 0 scores blocks itself (`LeaderTiles.run_blocks`). A rank whose tiles run slower
+   than predicted takes fewer blocks. A rank is sent its next block ahead, while it scores one, only while the
+   queue holds at least two blocks per rank (`AHEAD_QUEUE_PER_RANK`): a block sent ahead at the end is one a rank
+   that finishes first cannot take. With one block ahead to the end, rank 0 waited about a block's time at the end
+   of every ET update on four H100 (job 7475535: about 1 s of 7 to 8 s). Rank 0 reads the replies that arrived after
+   each of its own blocks, so their volume sums move to its device while it scores the next one.
 4. A block sums its tiles' volume statistics (`lhs_tri`, `residual_gradient`, `metric_trace`,
    `exact_metric_trace`) per id group in tile order, as one GPU does (`TileSums`), and returns those sums with
    its tiles' other statistics (`BlockShare`).
@@ -2854,6 +2859,44 @@ run-to-run rounding (the moment scatter's atomic sums) is enough; this schedule 
 
 The ET rows are why rank 0 bounds the largest tile's share: on four ranks the static assignment gave two ranks one
 150-particle tile each (11 s) and two ranks eleven mixed tiles of the same predicted cost (3 to 4 s).
+
+Wall time of a whole run (November 15, 2026). ET EMPIAR-10157, radius-24 schedule (100 updates, a checkpoint every
+update), H100 SXM5; seconds from the command's start; parts from file times (`multigpu/matrix_report.py --wall`):
+
+| Part | 1 GPU before (7474046) | 4 GPU before (7475535) | 1 GPU after (7477515) | 4 GPU after (7477514) |
+| --- | --- | --- | --- | --- |
+| Start-up: STAR conversion, stack staging, loader, CTF, initialization | 237 | 242 | 130 | 212 |
+| Updates 1-100 (E-steps, update, checkpoints) | 3070 | 828 | 2966 | 771 |
+| of which ranks' mean busy seconds / loss to the busiest rank | - | 697 / 71 | - | 681 / 39 |
+| Final embedding pass | 154 | 43 | 156 | 41 |
+| Exit | 4 | 6 | 4 | 7 |
+| Wall | 3465 | 1118 | 3255 | 1031 |
+
+What changed (all for one GPU too, except the scheduling). Start-up: the tilt stacks are staged in parallel before the
+loader (`relax.steps.tomo_half.stage_tilt_stacks`; recovar's loader staged 12,400 small stacks one by one, 115-131 s), and
+the per-tilt STAR is rewritten without a pandas Series per row. Checkpoints are written on the log's thread while the
+next update runs (0.12 s each on Ceph). The scheduling (step 3 above) halved the loss to the busiest rank. The
+merge of an E-step's tiles concatenates their embeddings on the host: `jnp.concatenate` compiled a program for every
+update's tile shapes, 0.26-0.34 s per update on four GPUs and 0.36 s on eight (the timing's `merge` phase); a run with
+this change (and the staging threads split between the ranks, below) is pending.
+
+Speedup of the update loop, 4 GPUs against 1 at the same code: 3.85x (radius 16: 4.17x; radius 24: 3.48x); against the
+earlier one-GPU run 7474046: 3.96x. Of the whole run: 3.16x (3.36x against 7474046). What is left against 4x: the
+start-up, which every rank runs in full (212 s on four ranks against 130 s on one: the ranks' staging and loaders
+contend on Ceph; each rank now stages its share with its share of the threads), the merge (above), the loss to the
+busiest rank (39 s) and the ranks' serial phases (preparing the streams, the update: about 0.15 s per update).
+
+Scaling and correctness matrix (multigpu/README.txt, jobs 7477514, 7477520; H100 PCIe nodes hold eight GPUs): ET loop
+speedup on PCIe 2.08x (2 GPUs), 3.94x (4), 6.94x (8); SPA EMPIAR-13372 1.5x (2), 1.8-2.3x (4), 2.1x (8), its radius-31
+stage 2.8-3.1x (4) and 4.3x (8): the radius-16 stage's E-step takes 1 s on one GPU, and halved into 17-48 tiles of about
+0.1 s fixed cost each it does not shrink with more GPUs. Every run selects the same particles in each half at every
+update as one GPU (on eight GPUs, a third of the updates list a half's ids in another order: smaller tiles concatenate
+in another order). Agreement with one GPU at updates 1/5/10 (relative mean difference): ET 2.2e-5-3.5e-5 / 0.9e-4-1.4e-4
+/ 1.2e-4-2.9e-4, the one-GPU run-to-run noise (2.1e-5 / 8.9e-5 / 1.7e-4); SPA 2e-6 / 5e-6 / 5e-6. Four GPUs twice differ
+as one GPU twice does (4.2e-5 at update 1); on the CPU two runs on two ranks are bitwise equal. A four-GPU checkpoint
+resumed on two and on one GPU continues within 4e-5 of the uninterrupted run over five updates. q = 4 (3.8e-3 after
+30 updates) and two particles per update (two of four ranks without work) agree with one GPU. A rank that raises or
+is killed ends the run within seconds with a non-zero status (`tests/unit/ppca_initial_model/test_ppca_ranks.py`).
 
 Host memory. The ranks share the node's memory and each holds its own copy of a preread stack: `--ppca-preread-
 images auto` prereads only when the ranks' copies together fit the usual quarter of the job's memory
