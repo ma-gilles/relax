@@ -235,16 +235,9 @@ def warm_tilt_stacks(particles_star, datadir) -> None:
     loader to report.
     """
 
-    import os
     from concurrent.futures import ThreadPoolExecutor
 
-    from recovar.data_io.starfile import read_star, star_column
-
-    names = star_column(read_star(str(particles_star))[0], "rlnImageName")
-    if names is None:
-        return
-    paths = sorted({str(name).split("@")[-1] for name in np.asarray(names)})
-    paths = [path if os.path.isabs(path) or not datadir else os.path.join(str(datadir), path) for path in paths]
+    paths = _tilt_stack_paths(particles_star, datadir)
 
     def header(path):
         try:
@@ -257,8 +250,70 @@ def warm_tilt_stacks(particles_star, datadir) -> None:
         list(pool.map(header, paths))
 
 
+def _tilt_stack_paths(particles_star, datadir) -> list[str]:
+    """Every particle's tilt stack (``rlnImageName``), joined to ``datadir``, one per distinct file, sorted."""
+
+    import os
+
+    from recovar.data_io.starfile import read_star, star_column
+
+    names = star_column(read_star(str(particles_star))[0], "rlnImageName")
+    if names is None:
+        return []
+    paths = sorted({str(name).split("@")[-1] for name in np.asarray(names)})
+    return [path if os.path.isabs(path) or not datadir else os.path.join(str(datadir), path) for path in paths]
+
+
+def stage_tilt_stacks(particles_star, datadir, cache_dir, *, rank: int = 0, world: int = 1) -> None:
+    """Copy every particle's tilt stack into recovar's implicit staging directory ``cache_dir``, many at a time.
+
+    The dataset's loader stages each stack it opens (``recovar.data_io.staging.stage_mrc``), one after another: a
+    small stack costs a file-system round trip, 115 to 131 s for the 12,400 stacks of EMPIAR-10157 on an H100 node
+    (jobs 7474046, 7475535). Staged here first, under the loader's own path and cache key
+    (``image_loader._resolve_mrc_path`` of the joined path), the loader finds each copy staged; a stack staged
+    under another key is staged again by the loader, as before. Rank ``rank`` of ``world`` processes on the node
+    starts at its own share of the list, so the ranks copy different stacks first; a stack two ranks copy at once
+    is still written whole (``stage_mrc`` replaces atomically). A stack that fails to stage is left to the loader.
+    """
+
+    import logging
+    import time
+    from concurrent.futures import ThreadPoolExecutor
+
+    from recovar.data_io.image_loader import _resolve_mrc_path
+    from recovar.data_io.staging import stage_mrc
+
+    paths = _tilt_stack_paths(particles_star, datadir)
+    if not paths:
+        return
+    start = len(paths) * rank // max(world, 1)
+    paths = paths[start:] + paths[:start]
+    staging_log = logging.getLogger("recovar.data_io.staging")
+    level = staging_log.level
+    clock = time.monotonic()
+    staging_log.setLevel(logging.WARNING)  # two INFO lines per stack otherwise
+    try:
+        with ThreadPoolExecutor(max_workers=_WARM_STACK_THREADS) as pool:
+            list(pool.map(lambda path: stage_mrc(_resolve_mrc_path(path), cache_dir), paths))
+    finally:
+        staging_log.setLevel(level)
+    logging.getLogger(__name__).info(
+        "Staged %d tilt stacks into %s in %.1f s (%d threads)",
+        len(paths), cache_dir, time.monotonic() - clock, _WARM_STACK_THREADS,
+    )  # fmt: skip
+
+
 def load_tomo_dataset(
-    particles_star, tomograms_star, flat_star, *, datadir, lazy: bool, read_policy=None, particle_frame: bool = False
+    particles_star,
+    tomograms_star,
+    flat_star,
+    *,
+    datadir,
+    lazy: bool,
+    read_policy=None,
+    particle_frame: bool = False,
+    rank: int = 0,
+    world: int = 1,
 ) -> TomoDataset:
     """A RELION 5 2D-stack project as a :class:`TomoDataset`; the per-tilt STAR is written to ``flat_star``.
 
@@ -267,6 +322,8 @@ def load_tomo_dataset(
 
     ``read_policy`` (:class:`relax.io.particle_io.ParticleReadPolicy`) applies ``--scratch_dir`` to
     the stacks the per-tilt STAR names: the particle STAR has no ``_rlnImageName`` rows to stage from.
+    Without it, recovar's implicit staging directory (if any) receives the stacks from
+    :func:`stage_tilt_stacks` (process ``rank`` of ``world`` on this node), else the stacks are warmed.
     """
 
     from recovar.data_io.cryoem_dataset import load_dataset
@@ -280,7 +337,13 @@ def load_tomo_dataset(
         str(flat_star), read_policy, datadir=datadir, compact=False
     )
     if scratch is None:
-        warm_tilt_stacks(particles_star, datadir)
+        from recovar.data_io.staging import get_cache_dir
+
+        cache_dir = get_cache_dir()
+        if cache_dir:
+            stage_tilt_stacks(particles_star, datadir, cache_dir, rank=rank, world=world)
+        else:
+            warm_tilt_stacks(particles_star, datadir)
     images = load_dataset(str(flat_star), datadir=datadir, lazy=lazy, dtype=np.complex64, absent_angles_zero=True)
     assert_reads_from_scratch(images, scratch)
     return TomoDataset(

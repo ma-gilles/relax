@@ -549,14 +549,17 @@ def refuse_unsupported_tilt_optics(particles_star):
     refuse_unsupported_optics(optics, source=str(particles_star), supported=TOMO_PPCA_OPTICS_FEATURES)
 
 
-def load_tilt_training(ios, output, preread_images="auto", *, particle_frame: bool = False, ranks: int = 1):
+def load_tilt_training(
+    ios, output, preread_images="auto", *, particle_frame: bool = False, ranks: int = 1, rank: int = 0
+):
     """Subtomogram particles of a RELION 5 optimisation set (algorithm section 16), and the image-reading record.
 
     Only the tilt-series geometry (each image's ``Aproj``), the images and their CTF and dose
     enter training; the particles' input angles and offsets are not read, except that ``particle_frame``
     (the filament band) composes each particle's ``rlnAngle*`` into its projections. ``preread_images``
     (:func:`resolve_preread_images` of the tilt images' bytes) holds every tilt image in host memory after the
-    first read (``ranks`` such copies on this host in a multi-GPU run).
+    first read (``ranks`` such copies on this host in a multi-GPU run). This process (rank ``rank``) stages its
+    share of the tilt stacks first (:func:`relax.steps.tomo_half.stage_tilt_stacks`).
     """
     from relax.ppca_initial_model.tomo import tilt_particles_from_tomo_dataset
     from relax.star.tomo_input import read_optimisation_set
@@ -574,6 +577,8 @@ def load_tilt_training(ios, output, preread_images="auto", *, particle_frame: bo
         # decides whether the real pixels are held instead.
         lazy=True,
         particle_frame=particle_frame,
+        rank=rank,
+        world=ranks,
     )
     identity = {
         "ios_sha256": file_hash(ios),
@@ -769,7 +774,12 @@ def main(args=None):
     output.mkdir(parents=True, exist_ok=True)
     if args.ios:
         data, identity, image_reading = load_tilt_training(
-            args.ios, output, config.preread_images, particle_frame=config.band() is not None, ranks=world
+            args.ios,
+            output,
+            config.preread_images,
+            particle_frame=config.band() is not None,
+            ranks=world,
+            rank=0 if rank_env is None else rank_env.rank,
         )
         if config.fixed_core is not None:
             from recovar.utils.helpers import load_relion_volume

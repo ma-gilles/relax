@@ -123,6 +123,61 @@ def test_command_particle_loading_stages_subtomogram_stacks_to_scratch_dir(proje
 
 
 @pytest.mark.unit
+def test_implicit_staging_stages_the_loaders_stacks_first(project, tmp_path, monkeypatch):
+    """With recovar's implicit staging on, every tilt stack is staged before the loader opens it (in parallel,
+    stage_tilt_stacks) under the loader's own cache key: the loader copies nothing more and reads the same images."""
+    import logging
+    import os
+
+    from relax.steps.tomo_half import load_tomo_dataset
+
+    out, _ = project
+    particles, tomograms = tomo_input.read_optimisation_set(out / "optimisation_set.star")
+    datadir = str(particles.resolve().parent)
+
+    def load(name):
+        return load_tomo_dataset(particles, tomograms, tmp_path / name / "flat.star", datadir=datadir, lazy=True)
+
+    monkeypatch.setenv("RECOVAR_CACHE_DIR", "")
+    streamed = load("streamed")
+    cache = tmp_path / "cache"
+    monkeypatch.setenv("RECOVAR_CACHE_DIR", str(cache))
+    copies = []
+    handler = logging.Handler()
+    handler.emit = lambda record: copies.append(record.getMessage())
+    staging_log = logging.getLogger("recovar.data_io.staging")
+    staging_log.addHandler(handler)
+    staging_log.setLevel(logging.INFO)
+    try:
+        staged = load("staged")
+    finally:
+        staging_log.removeHandler(handler)
+        staging_log.setLevel(logging.NOTSET)
+    stacks = staged.images.image_source.backend.source.stack_files()
+    assert stacks and all(path.startswith(str(cache) + os.sep) for path in stacks)
+    assert len(stacks) == len([name for name in os.listdir(cache / "recovar_cache") if name.endswith(".ok")])
+    assert not [message for message in copies if message.startswith("Staging")]  # the loader found every copy
+    assert np.array_equal(staged.image_rows, streamed.image_rows)
+    for unit in range(staged.n_units):
+        assert_matches(staged.unit_images(unit), streamed.unit_images(unit))
+
+
+@pytest.mark.unit
+def test_per_tilt_star_rewrite_writes_the_text_of_the_per_row_writer(project, tmp_path):
+    """flatten_relion5_tomo rewrites the per-tilt STAR with recovar's array-row writer: the same text as its per-row
+    writer, but for the header's time stamp."""
+    from recovar.data_io import starfile
+
+    _, flat = project
+    rows, optics = read_star(str(flat))
+    texts = []
+    for name, array_rows in (("rows.star", False), ("arrays.star", True)):
+        starfile.write_star(str(tmp_path / name), rows, data_optics=optics, array_rows=array_rows)
+        texts.append((tmp_path / name).read_text().split("\n", 1)[1])
+    assert texts[0] == texts[1]
+
+
+@pytest.mark.unit
 def test_relion_tomo_damping_matches_relion_formula():
     freq_sq = np.array([0.0, 1e-4, 1e-2, 0.03])
     ne = 0.245 * np.power(freq_sq[1:], -0.8325) + 2.81
