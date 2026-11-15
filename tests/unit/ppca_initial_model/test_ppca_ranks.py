@@ -85,17 +85,25 @@ def test_tile_blocks_are_runs_of_about_equal_cost():
     assert tile_blocks([3.0], 2) == [[0]]
 
 
-def test_rank_tile_size_halves_until_each_rank_has_several_tiles():
-    """Rank 0 halves the planned tile size until the E-step has TILES_PER_RANK tiles per rank (or one particle
-    per tile); halving keeps the compiled tile sizes few."""
+def test_rank_tile_size_halves_until_each_rank_has_several_small_tiles():
+    """Rank 0 halves the planned tile size until the E-step has TILES_PER_RANK tiles per rank and no tile holds more
+    than 1 / (TILES_PER_RANK * ranks) of the particles (or one particle per tile)."""
 
     def cut(size):
-        return [ids[begin : begin + size] for ids in (np.arange(150), np.arange(150)) for begin in range(0, 150, size)]
+        return [(group, 0, ids[begin : begin + size]) for group, ids in enumerate((np.arange(150), np.arange(150)))
+                for begin in range(0, 150, size)]  # fmt: skip
 
     assert iteration_loop._rank_tile_size(cut, 150, 1) == 75  # 2 tiles at 150, 4 at 75
-    assert iteration_loop._rank_tile_size(cut, 150, 2) == 37  # 10 tiles at 37
+    assert iteration_loop._rank_tile_size(cut, 150, 2) == 37  # 10 tiles at 37, each at most 1/8 of 300
     assert iteration_loop._rank_tile_size(cut, 10, 2) == 10  # 30 tiles already
-    assert iteration_loop._rank_tile_size(lambda size: [[0]], 150, 4) == 1
+
+    def one_large_group(size):  # 140 particles in one tilt group, 8 groups of 20: the large group's tiles shrink
+        groups = [np.arange(140)] + [np.arange(20)] * 8
+        return [(0, 0, ids[begin : begin + size]) for ids in groups for begin in range(0, ids.size, size)]
+
+    # 300 particles on 4 ranks: at most 18 per tile; at 37 there are 4 + 8 = 12 tiles, too few, and 37 > 18.
+    assert iteration_loop._rank_tile_size(one_large_group, 150, 4) == 18
+    assert iteration_loop._rank_tile_size(lambda size: [(0, 0, [0])], 150, 4) == 1
 
 
 @dataclass(frozen=True)

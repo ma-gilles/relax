@@ -248,17 +248,25 @@ class _Laps:
         return {**self.seconds, "total": round(self.last - self.start, 4)}
 
 
-# On several GPUs each rank takes whole tiles, so a rank's load is a whole number of tiles: rank 0 halves the
-# planned tile size until the E-step has at least this many tiles per rank (a subtomogram batch of 200 particles
-# makes five mixed tiles at 150 particles per tile). Halving keeps a stage's compiled tile shapes few.
+# On several GPUs a tile is the smallest unit a rank takes. Rank 0 halves the planned tile size until the E-step has
+# at least this many tiles per rank and no tile holds more than that share of the batch's particles: a subtomogram
+# batch of 429 particles made 24 tiles at 150 particles per tile, one of them a 150-particle tilt group that took 11 s
+# of a 28.6 s E-step on one H100 (job 7474543), so no four ranks could balance it. Halving keeps a stage's compiled
+# tile shapes few.
 TILES_PER_RANK = 4
 
 
 def _rank_tile_size(cut, planned, world):
-    """The tile size of a ``world``-rank E-step: ``planned`` halved until ``cut(size)`` makes
-    :data:`TILES_PER_RANK` tiles per rank, or one particle per tile."""
+    """The tile size of a ``world``-rank E-step: ``planned`` halved until ``cut(size)`` (``(group, noise group,
+    ids)`` per tile) makes :data:`TILES_PER_RANK` tiles per rank, each with at most ``1 / (TILES_PER_RANK * world)``
+    of the particles, or one particle per tile."""
+    share = TILES_PER_RANK * world
     size = int(planned)
-    while size > 1 and len(cut(size)) < TILES_PER_RANK * world:
+    while size > 1:
+        tiles = cut(size)
+        largest = max(len(tile[2]) for tile in tiles)
+        if len(tiles) >= share and largest * share <= sum(len(tile[2]) for tile in tiles):
+            break
         size //= 2
     return size
 
