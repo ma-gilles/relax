@@ -2860,6 +2860,23 @@ run-to-run rounding (the moment scatter's atomic sums) is enough; this schedule 
 The ET rows are why rank 0 bounds the largest tile's share: on four ranks the static assignment gave two ranks one
 150-particle tile each (11 s) and two ranks eleven mixed tiles of the same predicted cost (3 to 4 s).
 
+Tile floor. A tile costs about 0.1 s on an H100 whatever it holds (0.084 to 0.109 s per tile, fitted from the
+ranks' busy seconds against their tiles and images in SPA's radius-16 stage, jobs 7477514 and 7477520), and 0.3 to
+0.7 ms per image at the cheapest (SPA; ET radius 24). SPA's radius-16 batches of about 410 images were halved into
+17 to 48 tiles on 2 to 8 ranks and every rank stayed busy about 0.7 s, the one-GPU E-step's time. Halving now stops
+before the tiles would average fewer than `MIN_TILE_IMAGES` = 200 images (tilt images for subtomograms): below that
+a tile spends at least half its time on the fixed cost. Every ET tile plan measured so far is above it (the smallest:
+4 particles, about 236 tilt images, eight ranks at radius 16, 2.4 ms per tilt image there).
+
+Start-up shared by the ranks' file system. After staging, `load_tomo_dataset` loads a node-local copy of the per-tilt
+STAR that names the staged copies (`staged_loader_star`) with recovar's implicit staging off: the loader no longer
+resolves and stages the 12,400 stacks one by one on Ceph (37 s on genx, job 7478816), on every rank at once. The
+loaded data are byte-identical (EMPIAR-10157 against 5d80dbb8's loader: offsets, frames, groups and 400 sampled tilt
+images with their CTF; the load took 145 s against 283 s on genx, job 7478837). Ranks other than rank 0 keep their
+per-tilt STAR on the node. recovar's own conversion still writes the 740,366-row STAR through a pandas Series per row
+(about 15 to 35 s of every load; `write_star(..., array_rows=True)` in `parse_relion5_tomo.convert` would remove it,
+a recovar change not made here).
+
 Wall time of a whole run (November 15, 2026). ET EMPIAR-10157, radius-24 schedule (100 updates, a checkpoint every
 update), H100 SXM5; seconds from the command's start; parts from file times (`multigpu/matrix_report.py --wall`):
 
