@@ -69,6 +69,7 @@ _ADDED_CONFIG_DEFAULTS = {
     "sgd_fixed_step": None,
     "oversampling_from_update": None,
     "oversampling_rotations_only": False,
+    "pose_search": "grid",
 }
 
 

@@ -28,6 +28,11 @@ class Config:
     # children are rotations only (the shifts keep the stage's grid).
     oversampling_from_update: int | None = None
     oversampling_rotations_only: bool = False
+    # Pose search of single particles: "grid" scores each stage's full grid (or oversamples it, above); "global"
+    # scores every update coarse to fine (iteration_loop._global_search_grids): pass 1 on the HEALPix order hp - 1
+    # grid and twice the stage's shift step over the stage's shift window, at RELION's coarse image size for that
+    # order, then each image's significant samples' children at the stage's order, step and image size.
+    pose_search: str = "grid"
     # The adaptive fraction of the posterior mass the significant samples hold (RELION's --adaptive_fraction).
     target_mass: float = 0.999
     # Significant coarse samples kept per image at most (RELION's --maxsig: 100 per class for gradient runs).
@@ -316,6 +321,16 @@ class Config:
             raise ValueError("--oversampling-from-update and --oversampling-rotations-only need --oversampling 1")
         if self.oversampling_from_update is not None and self.oversampling_from_update < 1:
             raise ValueError("The first oversampled update must be >= 1")
+        if self.pose_search not in ("grid", "global"):
+            raise ValueError(f"pose_search must be grid or global, got {self.pose_search!r}")
+        if self.pose_search == "global" and (
+            self.oversampling or not self.stream_coarse_recompute or self.band_length_ang is not None
+            or self.tilt_coarse_pass
+        ):
+            raise ValueError(
+                "The global pose search runs on the streamed engine with oversampling 0, no filament band and no "
+                "tilt coarse pass"
+            )
         if self.likelihood_min_shell < 0:
             raise ValueError("The likelihood minimum shell must be >= 0")
         if self.sgd_mean_gate_floor is not None and (

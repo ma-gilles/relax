@@ -284,6 +284,15 @@ def add_args(parser):
         help="With --oversampling 1: oversample from this update on (default: the last stage)",
     )
     parser.add_argument(
+        "--pose-search",
+        choices=("grid", "global"),
+        default="grid",
+        help="Single particles: grid (default) scores each stage's full pose grid; global scores each update coarse "
+        "to fine: the HEALPix order hp - 1 grid and twice the stage's shift step over the stage's shift window at "
+        "RELION's coarse image size, then the children of each image's significant samples (target mass, --maxsig) "
+        "at the stage's order and step (needs --oversampling 0)",
+    )
+    parser.add_argument(
         "--oversampling-rotations-only",
         action="store_true",
         help="With --oversampling 1: the children are rotations only; the shifts keep the stage's grid",
@@ -678,6 +687,7 @@ def main(args=None):
         oversampling=args.oversampling,
         oversampling_from_update=args.oversampling_from_update,
         oversampling_rotations_only=args.oversampling_rotations_only,
+        pose_search=args.pose_search,
         max_significant=args.maxsig,
         shift_range=args.shift_range,
         shift_step=args.shift_step,

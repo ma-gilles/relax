@@ -111,6 +111,8 @@ class OversampledStream(NamedTuple):
     # Single particles: the phase factors of the coarse translations on the pass-1 window and of the child
     # translations on the pass-2 window (:func:`_shift_phases`); None for a reader whose factors depend on the tile.
     phases: tuple | None
+    # Whether ``rotation_mass`` is kept per child rotation (else summed into each coarse parent).
+    child_rotation_mass: bool = False
 
 
 def relion_child_grids(order: int, translations, translation_step: float):
@@ -171,14 +173,19 @@ def prepare_oversampled_stream(
     max_significant: int = 100,
     job_chunk: int = 256,
     fine_fraction: float | None = None,
+    fine_rotation_log_prior=None,
+    fine_translation_log_prior=None,
+    child_rotation_mass: bool = False,
 ) -> OversampledStream:
     """The child grid of a pass-1 stream.
 
     ``fine_rotations`` ``(R_c R, 3, 3)`` and ``fine_translations`` ``(T_c T, D)`` are the children of the coarse
     stream's grids, parent-major (:func:`relion_child_grids`). A child takes its parent's rotation and translation
-    log-priors. ``pass2`` is the same model, grids and priors at the pass-2 window (``coarse`` itself when both
+    log-priors, or its own from ``fine_rotation_log_prior`` ``(R_c R,)`` and ``fine_translation_log_prior``
+    ``(T_c T,)``. ``pass2`` is the same model, grids and priors at the pass-2 window (``coarse`` itself when both
     passes use one window); its model and windows are reused, not uploaded again. ``fine_fraction`` is the mass
     of each image's fine posterior that pass 2 accumulates (``adaptive_fraction`` when None, as RELION).
+    ``child_rotation_mass`` keeps the statistics' ``rotation_mass`` per child rotation instead of per parent.
     """
     pass2 = coarse if pass2 is None else pass2
     if coarse.occupancy is not None or pass2.occupancy is not None:
@@ -202,6 +209,12 @@ def prepare_oversampled_stream(
         raise ValueError("max_significant must be between 1 and the number of coarse poses")
     rotation_parent = np.repeat(np.arange(n_rotations, dtype=np.int32), rotation_children)
     translation_parent = np.repeat(np.arange(n_translations, dtype=np.int32), translation_children)
+    for name, prior, size in (
+        ("fine_rotation_log_prior", fine_rotation_log_prior, fine_rotations.shape[0]),
+        ("fine_translation_log_prior", fine_translation_log_prior, fine_translations.shape[0]),
+    ):
+        if prior is not None and np.shape(prior) != (size,):
+            raise ValueError(f"{name} needs one entry per child, ({size},), not {np.shape(prior)}")
     position = {int(pixel): slot for slot, pixel in enumerate(_window_pixel_ids(pass2)) if pixel >= 0}
     pass1_pixels = [int(pixel) for pixel in _window_pixel_ids(coarse)]
     if any(pixel >= 0 and pixel not in position for pixel in pass1_pixels):
@@ -212,10 +225,19 @@ def prepare_oversampled_stream(
         phases = None
         if pass2.tile_loader is None:
             phases = (_shift_phases(coarse, None, coarse.translations), _shift_phases(pass2, None, fine_translations))
+        child_rotation_prior = (
+            jnp.repeat(arrays.rotation_log_prior[:-1], rotation_children)
+            if fine_rotation_log_prior is None
+            else jnp.asarray(fine_rotation_log_prior, jnp.float32)
+        )
         fine_arrays = arrays._replace(
             rotations=_device_rotations(fine_rotations, pass2.device),
-            rotation_log_prior=jnp.append(jnp.repeat(arrays.rotation_log_prior[:-1], rotation_children), 0.0),
-            translation_log_prior=jnp.repeat(arrays.translation_log_prior, translation_children),
+            rotation_log_prior=jnp.append(child_rotation_prior, 0.0),
+            translation_log_prior=(
+                jnp.repeat(arrays.translation_log_prior, translation_children)
+                if fine_translation_log_prior is None
+                else jnp.asarray(fine_translation_log_prior, jnp.float32)
+            ),
             rotation_parent=jnp.asarray(np.append(rotation_parent, np.int32(n_rotations))),
             translation_parent=jnp.asarray(translation_parent),
             shift_squared=jnp.sum(jnp.asarray(fine_translations) ** 2, axis=-1),
@@ -242,6 +264,7 @@ def prepare_oversampled_stream(
         fine_fraction=float(fine_fraction),
         pass1_slots=pass1_slots,
         phases=phases,
+        child_rotation_mass=bool(child_rotation_mass),
     )
 
 
@@ -459,7 +482,9 @@ def _significant_rows(score, table, posterior, threshold):
     return table.valid[:, None] & jnp.any((weight >= threshold[table.image][:, None, None]) & (weight > 0), axis=2)
 
 
-@partial(jax.jit, static_argnames=("static", "translation_children", "chunk", "moments"), donate_argnums=(0,))
+@partial(
+    jax.jit, static_argnames=("static", "translation_children", "chunk", "moments", "child_mass"), donate_argnums=(0,)
+)
 def _moment_rows(
     carry,
     arrays,
@@ -477,12 +502,14 @@ def _moment_rows(
     translation_children,
     chunk,
     moments,
+    child_mass=False,
 ):
     """Pass 2 posterior, M-step images and diagnostics of ``chunk`` kept rows from ``start``, added into ``carry``.
 
     ``take`` lists the kept rows ``job R_c + child`` of the job ``results``, the first ``n_rows`` of it. A row's weights are
     its image's posterior at the row's child translations, zero below the image's fine significance ``threshold``.
-    ``carry.rotation_mass`` is per coarse rotation: each child's posterior mass is summed into its parent.
+    ``carry.rotation_mass`` is per coarse rotation (each child's posterior mass summed into its parent), or per child
+    rotation with ``child_mass``.
     """
     N, R_c = chunk, results.score.shape[1]
     position = start + jnp.arange(N, dtype=jnp.int32)
@@ -507,7 +534,7 @@ def _moment_rows(
     row_mass = jnp.sum(gamma, axis=1)  # (N,)
     carry = carry._replace(
         embedding=carry.embedding.at[rows.image].add(jnp.einsum("nt,nqt->nq", gamma, mean, precision=HIGHEST)),
-        rotation_mass=carry.rotation_mass.at[rows.parent].add(row_mass),
+        rotation_mass=carry.rotation_mass.at[rows.row if child_mass else rows.parent].add(row_mass),
         latent_covariance_trace_sum=carry.latent_covariance_trace_sum + jnp.sum(row_mass * latent_trace),
         pose_entropy_sum=carry.pose_entropy_sum - jnp.sum(jnp.where(significant, gamma * centered, 0)),
         offset_second_sum=carry.offset_second_sum + jnp.sum(gamma * arrays.shift_squared[shifts]),
@@ -673,9 +700,9 @@ def _oversampled_tile(ostream: OversampledStream, image_indices, significant_row
     )
     check_finite_posterior(fine_posterior, n_real)
     fine_posterior = drop_padding(fine_posterior, n_real)
-    n_coarse = int(coarse.arrays.rotations.shape[0]) - 1
+    n_mass = (int(coarse.arrays.rotations.shape[0]) - 1) * (R_c if ostream.child_rotation_mass else 1)
     power = jnp.float32(0) if observation_power is None else observation_power
-    carry = empty_carry(fine, B, power)._replace(rotation_mass=jnp.zeros((n_coarse,), jnp.float32))
+    carry = empty_carry(fine, B, power)._replace(rotation_mass=jnp.zeros((n_mass,), jnp.float32))
     row_mask = _significant_rows(results.score, table, fine_posterior, threshold)
     take, n_rows, chunks = _chunks(jax.device_get(row_mask), tuple(size * R_c for size in sizes), padding=0)
     for start, size in chunks:
@@ -695,6 +722,7 @@ def _oversampled_tile(ostream: OversampledStream, image_indices, significant_row
             translation_children=T_c,
             chunk=size,
             moments=moments,
+            child_mass=ostream.child_rotation_mass,
         )
     layout = dict(
         layout,
@@ -725,7 +753,8 @@ def accumulate_oversampled_tile(ostream: OversampledStream, image_indices, signi
     """Unregularized PPCA statistics of one tile with adaptive oversampling.
 
     The same statistics and diagnostics as :func:`relax.ppca_refinement.full_row_stream.accumulate_full_row_tiles` on one tile,
-    over each image's pass-2 poses; ``rotation_mass`` is per coarse rotation (children summed into their parent).
+    over each image's pass-2 poses; ``rotation_mass`` is per coarse rotation (children summed into their parent),
+    or per child rotation with the stream's ``child_rotation_mass``.
     The diagnostics add, per image, the packed coarse ids ``rotation T + translation`` of its significant samples
     (``significant_samples``), their count, the posterior mass they hold and whether ``max_significant`` stopped
     them before the adaptive fraction (``significant_capped_per_image``); and the tile's accumulated (image, child
@@ -737,13 +766,15 @@ def accumulate_oversampled_tile(ostream: OversampledStream, image_indices, signi
         tile, layout, posterior, carry, significant = _oversampled_tile(
             ostream, image_indices, significant_rows, collect_observation=True, moments=True
         )
-        n_coarse = int(carry.rotation_mass.shape[0])
+        n_mass = int(carry.rotation_mass.shape[0])
         host = jax.device_get(dict(zip(("rotation", "translation", "valid", "mass", "capped"), significant)))
         n_real = real_image_count(tile, layout)
         packed = host["rotation"] * int(coarse.translations.shape[0]) + host["translation"]
         samples = [np.sort(packed[i][host["valid"][i]]).astype(np.int64) for i in range(n_real)]
-        layout = dict(layout, rows=np.arange(n_coarse, dtype=np.int32))
-        stats = finish_full_row_tile(coarse, image_indices, tile, layout, posterior, carry, enforce_x0=enforce_x0)
+        layout = dict(layout, rows=np.arange(n_mass, dtype=np.int32))
+        # The finishing stream sizes rotation_mass: the coarse grid, or the child grid (the fine stream).
+        finisher = ostream.fine if ostream.child_rotation_mass else coarse
+        stats = finish_full_row_tile(finisher, image_indices, tile, layout, posterior, carry, enforce_x0=enforce_x0)
     stats.diagnostics.update(
         {
             "engine": OVERSAMPLED_ENGINE,

@@ -4,6 +4,9 @@ Every update scores the full pose grid of its stage (no oversampling; section 14
 ``docs/math/vdam_ppca_algorithm.md`` records why) on the device-resident stream
 (:mod:`relax.ppca_refinement.full_row_stream`), or, with ``stream_coarse_recompute``
 off, on the host-mask dense engine that serves as its float32 reference (q <= 2).
+Options replace that grid with adaptive oversampling of the last stages, or with the global pose search
+(``Config.pose_search``), which scores every update coarse to fine on the oversampling engine
+(:mod:`relax.ppca_refinement.oversampled_stream`).
 """
 
 import concurrent.futures
@@ -13,6 +16,7 @@ import json
 import logging
 import time
 from pathlib import Path
+from typing import NamedTuple
 
 import jax
 import jax.numpy as jnp
@@ -132,6 +136,92 @@ def _direction_ids(hp):
     direction_ids = grids.rotation_direction_ids(hp, rotation_index_order="relion")
     direction_ids.flags.writeable = False
     return direction_ids
+
+
+class GlobalSearchGrids(NamedTuple):
+    """One stage's global-search grids: pass 1's coarse grids (HEALPix order hp - 1, twice the stage's shift step over
+    its window) and their parent-major RELION children (order hp, the stage's step), with the order-hp HEALPix
+    direction of each child rotation (an id of :func:`_direction_ids`)."""
+
+    coarse_order: int
+    coarse_rotations: np.ndarray  # (R0, 3, 3)
+    coarse_translations: np.ndarray  # (T0, 2) pixels
+    fine_rotations: np.ndarray  # (8 R0, 3, 3)
+    fine_translations: np.ndarray  # (4 T0, 2) pixels
+    child_direction: np.ndarray  # (8 R0,) int
+
+
+@functools.lru_cache(maxsize=4)
+def _global_search_grids(hp: int, shift_range: float, shift_step: float) -> GlobalSearchGrids:
+    """The global-search grids of a stage at HEALPix order ``hp`` (at least 1) with the zero-centred shift window
+    ``shift_range`` and step ``shift_step`` (pixels); read-only arrays, cached per stage."""
+    if hp < 1:
+        raise ValueError("The global pose search needs stages of HEALPix order 1 or more")
+    coarse_order = hp - 1
+    coarse_step = 2.0 * float(shift_step)
+    coarse_translations = grids.get_relion_translation_grid(max_pixel=shift_range, pixel_offset=coarse_step)
+    coarse_translations = np.asarray(coarse_translations, np.float32)
+    fine_rotations, fine_translations = relion_child_grids(coarse_order, coarse_translations, coarse_step)
+    # A child's viewing direction (the projection matrix's third row) is one of the order-hp grid's directions.
+    ids = _direction_ids(hp)
+    labels, first = np.unique(ids, return_index=True)
+    directions = _rotation_grid(hp)[first, 2, :].astype(np.float64)
+    view = fine_rotations[:, 2, :].astype(np.float64)
+    nearest = np.concatenate([np.argmax(view[k : k + 4096] @ directions.T, axis=1) for k in range(0, len(view), 4096)])
+    if np.min(np.sum(view * directions[nearest], axis=1)) < 1 - 1e-5:
+        raise ValueError(f"The order-{coarse_order} children's directions are not the order-{hp} grid's")
+    coarse_translations.flags.writeable = False
+    child_direction = labels[nearest].astype(np.int64)
+    child_direction.flags.writeable = False
+    return GlobalSearchGrids(
+        coarse_order,
+        _rotation_grid(coarse_order),
+        coarse_translations,
+        fine_rotations,
+        fine_translations,
+        child_direction,
+    )
+
+
+def _logsumexp_rows(values: np.ndarray, width: int) -> np.ndarray:
+    """log-sum-exp of each consecutive group of ``width`` entries of ``values`` (parent-major children), float32."""
+    groups = np.asarray(values, np.float64).reshape(-1, width)
+    peak = np.max(groups, axis=1, keepdims=True)
+    safe = np.where(np.isfinite(peak), peak, 0.0)
+    with np.errstate(divide="ignore"):
+        total = np.log(np.sum(np.exp(groups - safe), axis=1)) + safe[:, 0]
+    return np.where(np.isfinite(peak[:, 0]), total, -np.inf).astype(np.float32)
+
+
+def _global_search_priors(search: GlobalSearchGrids, rotation_log_prior, offset_variance: float, hp: int) -> dict:
+    """The priors of the global search: each child's own (the stage's direction prior of its direction, the Gaussian
+    offset prior at its translation, normalized over the child grid) and each coarse sample's, the log-sum of its
+    children's (the prior mass of its cell)."""
+    ids = _direction_ids(hp)
+    first = np.unique(ids, return_index=True)[1]
+    fine_rotation = np.asarray(rotation_log_prior, np.float32)[first][search.child_direction]
+    shifts = np.asarray(search.fine_translations, np.float64)
+    fine_translation = -np.sum(shifts**2, axis=-1) / (2.0 * float(offset_variance))
+    fine_translation -= _logsumexp_rows(fine_translation, fine_translation.size)[0]
+    fine_translation = fine_translation.astype(np.float32)
+    rotation_children = len(search.fine_rotations) // len(search.coarse_rotations)
+    translation_children = len(search.fine_translations) // len(search.coarse_translations)
+    return dict(
+        fine_rotation_log_prior=fine_rotation,
+        fine_translation_log_prior=fine_translation,
+        coarse_rotation_log_prior=_logsumexp_rows(fine_rotation, rotation_children),
+        coarse_translation_log_prior=_logsumexp_rows(fine_translation, translation_children),
+    )
+
+
+def _stage_rotation_mass(search: GlobalSearchGrids, child_mass, hp: int) -> np.ndarray:
+    """The child grid's posterior mass per rotation as mass per order-hp grid rotation: each direction's mass, spread
+    evenly over the stage rotations of that direction (what the direction prior update reads)."""
+    ids = _direction_ids(hp)
+    weights = np.asarray(child_mass, np.float64)
+    direction_mass = np.bincount(search.child_direction, weights=weights, minlength=ids.max() + 1)
+    multiplicity = np.bincount(ids)
+    return (direction_mass[ids] / multiplicity[ids]).astype(np.float32)
 
 
 class _ModelLog:
@@ -280,7 +370,11 @@ def oversampled_update(config, iteration) -> bool:
 def _oversampling_record(stats, config, iteration):
     """Per-update record of adaptive oversampling: windows and the significant samples of the whole batch."""
     parts = [s.diagnostics["oversampling"] for s in stats]
-    record = {key: parts[0][key] for key in ("order", "pass1_image_size", "pass2_image_size")}
+    record = {
+        key: parts[0][key]
+        for key in ("order", "pass1_order", "pose_search", "pass1_image_size", "pass2_image_size")
+        if key in parts[0]
+    }
     record.update(
         significance_summary(
             np.concatenate([p["significant_samples_per_image"] for p in parts]),
@@ -522,8 +616,10 @@ def _expectation(
             grid = {
                 "rotations": rotations,
                 "rotation_log_prior": rotation_log_prior,
+                "translations": translations,
+                "translation_log_prior": np.asarray(prior),
                 "rotation_parent": np.zeros(len(grid.get("rotations", rotations)), np.int32),
-                "translation_parent": np.zeros(len(translations), np.int32),
+                "translation_parent": np.zeros(len(grid.get("translations", translations)), np.int32),
                 "n_coarse_rotations": 1,
                 "n_coarse_translations": 1,
                 **grid,
@@ -534,8 +630,6 @@ def _expectation(
                     mu,
                     W,
                     noise_variance=group_nv,
-                    translations=translations,
-                    translation_log_prior=np.asarray(prior),
                     **grid,
                     geometry=stream_geometry,
                     schedule=schedule,
@@ -555,9 +649,25 @@ def _expectation(
                 for group_nv in ([nvs] if tilts else nvs)
             ]
 
+        # The global pose search (config.pose_search): pass 1 on the order hp - 1 grid and coarse shifts, pass 2 on
+        # their children (the stage's order and step) through the adaptive-oversampling engine.
+        global_search = config.pose_search == "global"
+        coarse_grid = {}
+        if global_search:
+            if tilts or band is not None:
+                raise ValueError("The global pose search runs on single particles")
+            search = _global_search_grids(hp, float(shift_range), float(shift_step))
+            search_priors = _global_search_priors(search, rotation_log_prior, offset_variance, hp)
+            coarse_grid = dict(
+                rotations=search.coarse_rotations,
+                rotation_log_prior=search_priors["coarse_rotation_log_prior"],
+                translations=search.coarse_translations,
+                translation_log_prior=search_priors["coarse_translation_log_prior"],
+            )
         # Adaptive oversampling scores pass 1 on RELION's coarse image window and pass 2 at the stage's.
-        oversampled = oversampled_update(config, iteration)
-        pass1_size = pass1_image_size(hp, dataset, 2 * radius, diameter_ang) if oversampled else 2 * radius
+        oversampled = global_search or oversampled_update(config, iteration)
+        pass1_order = search.coarse_order if global_search else hp
+        pass1_size = pass1_image_size(pass1_order, dataset, 2 * radius, diameter_ang) if oversampled else 2 * radius
         # Subtomogram coarse pass (config.tilt_coarse_pass): pass 1 on the order hp - 1 grid (or the fixed
         # config.tilt_coarse_order), at RELION's coarse image size for that grid's step, gives each particle its significant (coarse rotation, shift) poses (target_mass,
         # max_significant); the stage's grid is then scored only on the rows whose nearest coarse rotation is
@@ -590,8 +700,8 @@ def _expectation(
                 rotation_log_prior=coarse_log_prior.astype(np.float32),
             )
         else:
-            streams = make_streams(dataclasses.replace(geometry, current_size=pass1_size))
-        pass2_streams = make_streams(geometry) if pass1_size != 2 * radius else streams
+            streams = make_streams(dataclasses.replace(geometry, current_size=pass1_size), **coarse_grid)
+        pass2_streams = make_streams(geometry, **coarse_grid) if pass1_size != 2 * radius else streams
 
         # Here ``ids`` is the list of id groups; each group is cut into image tiles (subtomogram particles:
         # mixed tiles of many tilt groups, or one tilt group's own tiles; tilt_tiles). ``image_batch_size``
@@ -623,7 +733,16 @@ def _expectation(
         if coarse_pass:
             coarse_streams = [stream._replace(tile_images=padded_size) for stream in coarse_streams]
         if oversampled:
-            fine_rotations, fine_translations = relion_child_grids(hp, translations, shift_step)
+            child_options = {}
+            if global_search:
+                fine_rotations, fine_translations = search.fine_rotations, search.fine_translations
+                child_options = dict(
+                    fine_rotation_log_prior=search_priors["fine_rotation_log_prior"],
+                    fine_translation_log_prior=search_priors["fine_translation_log_prior"],
+                    child_rotation_mass=True,
+                )
+            else:
+                fine_rotations, fine_translations = relion_child_grids(hp, translations, shift_step)
             if config.oversampling_rotations_only:
                 # Rotation children only: each shift is its own child (the stage's shift grid).
                 fine_translations = np.array(translations, np.float32)
@@ -636,6 +755,7 @@ def _expectation(
                     pass2=pass2._replace(tile_images=padded_size),
                     adaptive_fraction=config.target_mass,
                     max_significant=config.max_significant,
+                    **child_options,
                 )
                 for stream, pass2 in zip(streams, pass2_streams)
             ]
@@ -703,9 +823,12 @@ def _expectation(
                 continue
             # Subtomogram tiles give their noise sums per noise group already, (G, S).
             stats = _merge_statistics(group_parts, sums[group].totals)
+            rotation_mass = sum(np.asarray(part.diagnostics["rotation_mass"]) for part in group_parts)
+            if global_search:
+                rotation_mass = _stage_rotation_mass(search, rotation_mass, hp)
             stats.diagnostics.update(
                 {
-                    "rotation_mass": sum(np.asarray(part.diagnostics["rotation_mass"]) for part in group_parts),
+                    "rotation_mass": rotation_mass,
                     "coarse_omitted_mass_bound": 0.0,
                     "canonical_euler_count": len(canonical_eulers),
                     "engine": "full_row_coarse_recompute",
@@ -720,7 +843,9 @@ def _expectation(
             )
             if oversampled:
                 stats.diagnostics["oversampling"] = {
-                    "order": config.oversampling,
+                    "order": 1 if global_search else config.oversampling,
+                    "pass1_order": pass1_order,
+                    "pose_search": config.pose_search,
                     "pass1_image_size": pass1_size,
                     "pass2_image_size": 2 * radius,
                     "scored_fine_rows": sum(part.diagnostics["scored_fine_rows"] for part in group_parts),
