@@ -319,6 +319,13 @@ def _join_tile_shares(shares, tiles, n_groups, embeddings_only):
     return None, sums
 
 
+def _joined_embeddings(parts):
+    """The tiles' embeddings, concatenated in tile order: on the host (one transfer back), since ``jnp.concatenate``
+    compiles a program for each new list of tile shapes, which every update makes (0.05 s for 31 tiles, 0.16 s for
+    124 on the CPU; 0.36 s of each E-step on eight H100, job 7477520). The values are the same."""
+    return jnp.asarray(np.concatenate(jax.device_get([part.embeddings for part in parts])))
+
+
 def _merge_statistics(parts, totals=None):
     """One group's statistics from its tiles' (``parts``, in tile order). ``totals`` holds the volume sums
     (:class:`TileSums`) when the parts no longer carry their volumes."""
@@ -338,7 +345,7 @@ def _merge_statistics(parts, totals=None):
         residual_gradient=volume("residual_gradient"),
         residual_num=sum(s.residual_num for s in parts),
         residual_den=sum(s.residual_den for s in parts),
-        embeddings=jnp.concatenate([s.embeddings for s in parts]),
+        embeddings=_joined_embeddings(parts),
         original_image_ids=np.concatenate([s.original_image_ids for s in parts]),
         n_images=sum(s.n_images for s in parts),
         log_likelihood=sum(s.log_likelihood for s in parts),
@@ -855,7 +862,7 @@ def _expectation(
             if embeddings_only:
                 results.append(
                     DensePPCAEmbeddings(
-                        jnp.concatenate([part.embeddings for part in group_parts]),
+                        _joined_embeddings(group_parts),
                         np.concatenate([part.original_image_ids for part in group_parts]),
                         sum(part.n_images for part in group_parts),
                         *(
