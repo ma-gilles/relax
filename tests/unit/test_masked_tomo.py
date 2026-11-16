@@ -300,3 +300,29 @@ def teardown_module(module):
     if path:
         with open(path, "w") as f:
             json.dump(REPORT, f, indent=1, default=float)
+
+
+def test_fft_shift_path_equals_rolls(setup):
+    """MaskedArm.stats with the crop equal to the scene box (FFT correlations) equals explicit periodic rolls."""
+    d = setup["d"]
+    arm = L.MaskedArm(d, support_radius=3.5, mask_radius=4.5, crop=S, lam_rel=0.1, n_mc=1)
+    rt, ctf = setup["rt"], setup["ctf"]
+    D, lam = arm.weights(ctf, rt)
+    part = arm.particle_from(rt, ctf, D, lam)
+    rng = np.random.default_rng(8)
+    part["V"] = jnp.asarray(rng.standard_normal((S,) * 3)) * arm.mask
+    part["c"] = jnp.asarray(0.7)
+    X = jnp.asarray(rng.standard_normal((3, n, n, n)) * L.sphere(n, 3.5))
+    vft = arm.volumes_ft(X)
+    Qs = jnp.asarray(Rotation.random(2, random_state=4).as_matrix())
+    us = jnp.asarray(np.array([[0.25, 0.25, 0.25], [1.25, -0.75, 0.25], [-2.75, 2.25, 1.25]]))
+    inner, gram = arm.stats(vft, part, Qs, us)
+    delta = us[0] - jnp.round(us[0])
+    for r in range(2):
+        f = arm.filtered(vft, Qs[r], delta, part["filt"])
+        for t, m in enumerate(np.round(np.asarray(us - delta)).astype(int)):
+            fs = jnp.roll(f, shift=tuple(m), axis=(1, 2, 3)) * arm.mask
+            ref_inner = jnp.sum(fs * (part["V"] / part["c"])[None], axis=(1, 2, 3))
+            ref_gram = jnp.stack([jnp.sum(fs[a] * fs[b]) for a, b in zip(*np.triu_indices(3))]) / part["c"]
+            np.testing.assert_allclose(np.asarray(inner[:, r, t]), np.asarray(ref_inner), rtol=1e-5, atol=1e-6 * float(jnp.abs(ref_inner).max()))
+            np.testing.assert_allclose(np.asarray(gram[:, r, t]), np.asarray(ref_gram), rtol=1e-5, atol=1e-6 * float(jnp.abs(ref_gram).max()))
