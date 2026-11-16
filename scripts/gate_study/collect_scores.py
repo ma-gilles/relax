@@ -1,6 +1,6 @@
 """Paired tables of suite v3.2 headline metrics for the gate study (one table per dataset, arms by seeds).
 
-Rows are named gs_<TAG>_<ARM>_s<SEED> in <work>/scores/<row>/report.json. For each dataset and metric: per seed the
+Rows are named gsn_<TAG>_<ARM>_s<SEED> (the gs_ rows of the first pass scored sign-inverted models and are invalid) in <work>/scores/<row>/report.json. For each dataset and metric: per seed the
 value of each arm, mean and range over seeds, and for each arm against the reference arm the paired differences and the
 predeclared verdict (better in every seed pair and mean gain above the reference arm's seed range). D sets use the
 distinctive protein's line, as SHARED_RULES asks. Mean-only and true-model references are printed beside the map scores.
@@ -70,11 +70,11 @@ def headline(report: dict) -> dict:
     return out
 
 
-def load_rows(work: Path, tag: str, arms, seeds):
+def load_rows(work: Path, tag: str, arms, seeds, prefix="gsn"):
     rows = {}
     for arm in arms:
         for seed in seeds:
-            path = work / "scores" / f"gs_{tag}_{arm}_s{seed}" / "report.json"
+            path = work / "scores" / f"{prefix}_{tag}_{arm}_s{seed}" / "report.json"
             if path.is_file():
                 rows[(arm, seed)] = headline(json.loads(path.read_text()))
     return rows
