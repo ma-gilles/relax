@@ -366,3 +366,26 @@ def test_kernel_box_arm_reduces_to_masked_arm(setup):
     # The filter is float32 by construction (particle_from), so its kernel round trip is complex64: float32 agreement.
     for a, b in zip(ref.stats_multi(vft, ref.particle(0), Qs, dl, it, gd), kb.stats_multi(vft, kb.particle(0), Qs, dl, it, gd)):
         np.testing.assert_allclose(np.asarray(b), np.asarray(a), rtol=1e-5, atol=1e-6 * float(jnp.abs(a).max()))
+
+
+def test_fourier_inner_equals_exact_inner(setup):
+    """The prefilter's inner (Parseval + separable partial DFT, no inverse DFT) equals stats_multi's on every valid
+    shift of a Cartesian grid, sub-pixel included; only its gram (mask dropped) is approximate."""
+    d = setup["d"]
+    arm = L.MaskedArm(d, support_radius=3.5, mask_radius=2.5, crop=12, lam_rel=0.1, n_mc=1)
+    rt, ctf = setup["rt"], setup["ctf"]
+    D, lam = arm.weights(ctf, rt)
+    part = arm.particle_from(rt, ctf, D, lam)
+    rng = np.random.default_rng(11)
+    part["V"] = jnp.asarray(rng.standard_normal((12,) * 3)) * arm.mask
+    part["c"] = jnp.asarray(0.7)
+    vft = arm.volumes_ft(jnp.asarray(rng.standard_normal((2, n, n, n)) * L.sphere(n, 3.5)))
+    Qs = jnp.asarray(Rotation.random(3, random_state=7).as_matrix())
+    for center, step in ((np.array([0.5, 0.0, -1.0]), 0.5), (np.array([1.0, -1.0, 0.0]), 1.0)):
+        us = PL.shift_grid(center, step, step)
+        axes = jnp.asarray((center[:, None] + np.array([-step, 0.0, step])[None]).astype(np.float32))
+        dl, it, gd = (jnp.asarray(x) for x in PL.split_shifts(us))
+        exact, _ = arm.stats_multi(vft, part, Qs, dl, it, gd)
+        fourier, gram = L._fourier_stats(arm, vft, part, Qs, axes)
+        assert gram.shape == (3, 3)
+        np.testing.assert_allclose(np.asarray(fourier), np.asarray(exact), rtol=1e-5, atol=1e-6 * float(jnp.abs(exact).max()))

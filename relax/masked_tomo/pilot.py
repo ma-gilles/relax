@@ -241,9 +241,28 @@ def _scores_batched(arm):
     return _jit_cached("masked", arm, build)
 
 
+def _prefilter_batched(arm):
+    """Jitted ``(B, R, T)`` prefilter scores of the masked arms: exact inner, unmasked gram (``L._fourier_stats``)."""
+
+    def build():
+        def f(vft, parts, Qs, axes):
+            def one(part, Q, ax):
+                inner, gram = L._fourier_stats(arm, vft, part, Q, ax)
+                return L.scores_from_stats(inner, jnp.broadcast_to(gram[:, :, None], gram.shape + (inner.shape[-1],)), True)[0]
+
+            return jax.vmap(one)(parts, Qs, axes)
+
+        return f
+
+    return _jit_cached("prefilter", arm, build)
+
+
 def _search_batched(arm, X, ids, Q0s, u0s, schedule):
     """:func:`search` with ``SEARCH_PARTICLES`` particles and a memory-sized rotation chunk per call and the latent
-    epilogue fused in the same jit. Masked arms: every sub-pixel part of a shift grid in one call."""
+    epilogue fused in the same jit. Masked arms: every sub-pixel part of a shift grid in one call; with
+    ``arm.prefilter_k`` set, every stage but the last scores the full grid with the Fourier prefilter and rescores
+    the ``prefilter_k`` best rotations (by their best shift) exactly, so chosen poses and the reported posterior
+    summary always come from exact scores."""
     vft = arm.volumes_ft(jnp.asarray(X))
     image = arm.name == "image"
     P = vft.shape[0]
@@ -257,6 +276,7 @@ def _search_batched(arm, X, ids, Q0s, u0s, schedule):
     ub = np.array(u0s, np.float32)
     post = np.zeros(len(ids))
     fn = _scores_batched(arm)
+    pk = None if image else getattr(arm, "prefilter_k", None)
     n = len(ids)
     B = min(SEARCH_PARTICLES, n)
 
@@ -267,8 +287,9 @@ def _search_batched(arm, X, ids, Q0s, u0s, schedule):
         Qp = np.concatenate([Qs, np.repeat(Qs[:, -1:], pad, 1)], 1) if pad else Qs
         return np.concatenate([np.asarray(call(jnp.asarray(Qp[:, r : r + rc]))) for r in range(0, R + pad, rc)], 1)[:, :R]
 
-    for radius, step, srad, sstep in schedule:
+    for si, (radius, step, srad, sstep) in enumerate(schedule):
         rv = rotvec_lattice(radius, step)
+        last = si == len(schedule) - 1
         for a in range(0, n, B):
             js = np.arange(a, a + B).clip(max=n - 1)  # the last batch repeats its last particle
             parts = [arm.particle(int(ids[j])) for j in js]
@@ -287,6 +308,13 @@ def _search_batched(arm, X, ids, Q0s, u0s, schedule):
                 ints = jnp.asarray(np.stack([x[1] for x in sp]))
                 gid = jnp.asarray(np.stack([x[2] for x in sp]))
                 exact = lambda Q: fn(vft, parts, Q, deltas, ints, gid)  # noqa: E731
+            if pk and not last and pk < rv.shape[0]:
+                m = int(round(srad / sstep))
+                g = np.arange(-m, m + 1) * sstep
+                axes = jnp.asarray((centers[:, :, None] + g[None, None, :]).astype(np.float32))  # as shift_grid
+                approx = chunked(lambda Q: _prefilter_batched(arm)(vft, parts, Q, axes), Qs, 1)
+                top = np.argsort(-approx.max(-1), axis=1)[:, :pk]  # (B, k) best rotations by their best shift
+                Qs = np.take_along_axis(Qs, top[:, :, None, None], 1)
             s = chunked(exact, Qs, D)
             for b, j in enumerate(js[: min(B, n - a)]):
                 r, t = np.unravel_index(np.argmax(s[b]), s[b].shape)

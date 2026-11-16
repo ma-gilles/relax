@@ -284,6 +284,8 @@ class MaskedArm:
         self.k3 = jnp.asarray(grid3(S))
         # Template side: the periodic box of the predicted mean (the scene grid here; KernelBoxMaskedArm shrinks it).
         self.N, self.k3t = S, self.k3
+        self._kaxes = jnp.asarray(np.stack([grid3(S).reshape(S, S, S, 3)[:, 0, 0, 0], grid3(S).reshape(S, S, S, 3)[0, :, 0, 1],
+                                            grid3(S).reshape(S, S, S, 3)[0, 0, :, 2]]))
         self.lam_rel = lam_rel
         self.window = window  # None, or the side (working px) of a central detector window (matched field)
         self.max_r = S // 2 - 1
@@ -291,6 +293,7 @@ class MaskedArm:
         # Template frequencies where the filter can be non-zero (the projector's ball; the filter is zero elsewhere by
         # construction): the trilinear gather runs only there. None means the whole template box.
         self.support_idx = jnp.asarray(np.nonzero(np.asarray(self.k_ok))[0].astype(np.int32))
+        self.prefilter_k = None  # opt-in: shortlist size of the Fourier prefilter in pilot.search (not the last stage)
         self.seed = seed
         self.n_mc = n_mc
         self.dof_correction = dof_correction
@@ -484,6 +487,41 @@ class MaskedArm:
         return inner, gram
 
 
+def _fourier_stats(arm, vft, part, Qs, axes):
+    """``inner (P, R, T)`` and the unmasked ``gram (tri, R)`` of ``arm`` (a ``MaskedArm``) on a Cartesian shift grid
+    ``axes (3, Ta)`` (``T = Ta^3`` in ``pilot.shift_grid`` order), with no inverse DFT per rotation.
+
+    ``inner`` is exact for every shift inside the crop's valid range (sub-pixel included): with ``a = M V / c`` on
+    the template box and ``F_u = filt x^_Q e^{-2 pi i k.u / N}``, ``inner(u) = sum_x a Re F^-1[F_u] =
+    Re sum_k conj(A(k)) F_u(k) / N^3``, evaluated as a separable partial DFT at the grid's ``Ta`` points per axis.
+    ``gram`` drops the mask, ``sum_k Re F_a conj(F_b) / N^3`` (shift-independent): the APPROXIMATION of the opt-in
+    prefilter (the template energy outside the mask and its shift dependence are ignored)."""
+    S, Cc = arm.N, arm.Cc
+    c = part["c"]
+    lo = (S - Cc) // 2
+    a = jnp.zeros((S, S, S), F32).at[lo : lo + Cc, lo : lo + Cc, lo : lo + Cc].set(arm.mask * part["V"] / c)
+    conjA = jnp.conj(ftu.get_dft3(a.astype(C64))).reshape(-1)
+    kax = arm._kaxes  # (3, S) integer frequency of each index along each axis
+    E = jnp.exp(-2j * jnp.pi * kax[:, :, None] * axes[:, None, :] / S).astype(C64)  # (3, S, Ta)
+    vol = jnp.moveaxis(vft, 0, -1)
+    P = vft.shape[0]
+    first, second = np.triu_indices(P)
+    hi = jax.lax.Precision.HIGHEST
+    zero = jnp.zeros(3, F32)
+
+    def per_rot(Q):
+        F = arm._spectrum(arm._gather(vol, Q), zero, part["filt"])  # (P, S^3)
+        g = (conjA[None] * F).reshape(P, S, S, S)
+        g = jnp.einsum("pxyz,xi->piyz", g, E[0], precision=hi)
+        g = jnp.einsum("piyz,yj->pijz", g, E[1], precision=hi)
+        g = jnp.einsum("pijz,zl->pijl", g, E[2], precision=hi)
+        gram = jnp.real(jnp.sum(F[first] * jnp.conj(F[second]), -1)) / S**3
+        return jnp.real(g).reshape(P, -1) / S**3, gram
+
+    inner, gram = jax.vmap(per_rot)(Qs)  # (R, P, T), (R, tri)
+    return jnp.transpose(inner, (1, 0, 2)), gram.T
+
+
 class KernelBoxMaskedArm(MaskedArm):
     """Arm B with the data side on the full scene field and the template side on a small periodic box
     (``masked-tomo/notes/TWO_RES.md``, Option A; opt-in, ``MaskedArm`` is unchanged).
@@ -506,6 +544,8 @@ class KernelBoxMaskedArm(MaskedArm):
             raise ValueError("template box must be even, at most the scene grid and at least the crop")
         self.N, self.k3t = N, jnp.asarray(grid3(N))
         self.support_idx = None  # the kernel's spectrum on the N grid is not confined to the projector's ball
+        g = grid3(N).reshape(N, N, N, 3)
+        self._kaxes = jnp.asarray(np.stack([g[:, 0, 0, 0], g[0, :, 0, 1], g[0, 0, :, 2]]))
         # Largest integer shift (per axis) for which the kernel box is exact: r_mask + r_support + s < N / 2.
         self.exact_shift = N // 2 - 1 - int(np.ceil(mask_radius)) - int(np.ceil(support_radius))
 
