@@ -229,6 +229,34 @@ translation keeps its coarse parent's value, and optics groups on several image 
 their own pixels. Refused: subtomograms (`--ios`) and a diagnostic continuation from RELION's optimiser. The run's
 `<output>_native_options.json` records the value.
 
+Measured effect on `relax initial_model` (2026-11-16, commit `c87d0dc9`, clean diff; K=1 at RELION's InitialModel
+defaults: 200 iterations, offset search 6 px in steps of 2, sigma 10 A; seeds 11 to 15; one Slurm job per run on
+Grace). The Ribosembly sets are 100,000 CryoBench Ribosembly particles (SNR 0.01) Fourier-cropped to box 64; `shift25`
+shifts each by a Gaussian of 2.5 px per axis truncated at 3 sd (median offset 2.9 px). EMPIAR-10076 is 131,899
+particles at box 64 as picked (consensus offsets: median 3.2 px, 5% beyond 6 px), or shifted by the consensus
+origins. Pose: rotation error against the truth or consensus after one global frame and hand. Map: FSC-AUC of the
+last class map against the population mean (Ribosembly) or the consensus map, after a global rigid alignment.
+
+| Data, box 64 | Pixel (A) | Prior | Maps with AUC above 0.9 | Map AUC | Within 10 degrees |
+| --- | ---: | --- | ---: | ---: | ---: |
+| Ribosembly, centred | 6.0 | `relion` | 4 of 5 | 0.21 to 0.98 | 15% to 99% |
+| | | `consistent` | 5 of 5 | 0.981 to 0.982 | 97% to 98% |
+| Ribosembly, `shift25` | 6.0 | `relion` | 0 of 5 | 0.19 to 0.75 | 3% to 18% |
+| | | `consistent` | 5 of 5 | 0.958 to 0.967 | 60% to 71% |
+| EMPIAR-10076, as picked | 6.55 | `relion` | 0 of 5 | 0.19 to 0.67 | 5% to 11% |
+| | | `consistent` | 1 of 5 (two more at 0.75) | 0.25 to 0.95 | 7% to 39% |
+| EMPIAR-10076, centred by the consensus | 6.55 | `relion` | 5 of 5 | 0.984 to 0.987 | 90% to 91% |
+| | | `consistent` | 4 of 5 | 0.21 to 0.985 | 28% to 81% |
+
+With RELION's prior `sigma_offset` falls from 10 A to its floor, 1.4 A, by iteration 80 (seed 11 on each shifted set;
+1.4 to 1.7 A at the end of every such run); the prior is then 0.03 to 0.04 px wide and the offsets barely move
+(`shift25`: median error 2.2 to 2.6 px at the end, 2.9 px at the start). With `consistent` it ends at 8.6 to 12.9 A
+and the `shift25` offsets reach 0.3 to 0.5 px. On the synthetic shifts the unit
+mix alone decides the run: the same search with the consistent prior poses every seed. On EMPIAR-10076 as picked the
+fix helps but does not make the run reliable, while the centred stack succeeds with either prior. On centred data the
+prior's narrowness happens to be right: `consistent` places fewer particles within 5 degrees (Ribosembly 85% to 87%
+against 93%; EMPIAR-10076 70% to 75% against 82% to 84%).
+
 Measured effect (K=1 auto-refinements from zero offsets and angles, 2026-11-15; directions within 5 degrees of
 the truth, or of the published consensus for EMPIAR-10076):
 
