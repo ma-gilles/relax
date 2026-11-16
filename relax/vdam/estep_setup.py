@@ -183,11 +183,13 @@ def initial_model_estep_config(
     # offset, independently of the same integer shift being pre-applied to the
     # image. RELION computes this prior on the coarse translation grid and
     # reuses each parent value for all oversampled children.
+    consistent_offset_prior = opts.offset_prior_units == "consistent"
     coarse_translation_log_prior = native_sampling.sampling_translation_log_prior(
         coarse_prior_translations,
         voxel_size=float(dataset.voxel_size),
         sigma_angstrom=float(sigma_offset_angstrom),
         old_offsets=image_pre_shifts,
+        consistent_units=consistent_offset_prior,
     )
     if sampling_plan.translation_parent is None:
         if int(np.asarray(sampling_plan.translations).shape[0]) != int(coarse_translation_log_prior.shape[1]):
@@ -233,6 +235,7 @@ def initial_model_estep_config(
             offsets_px=np.asarray(translation_offsets, dtype=np.float64),
             coarse_prior_translations=coarse_prior_translations,
             sigma_angstrom=float(sigma_offset_angstrom),
+            consistent_units=consistent_offset_prior,
         )
         if isinstance(dataset, MultiShapeDataset)
         else None,

@@ -475,7 +475,7 @@ def test_translation_log_prior_matches_relion_pdf_offset_scaling():
 
     prior = native_sampling.sampling_translation_log_prior(
         translations, voxel_size=3.0, sigma_angstrom=6.0,
-        old_offsets=np.zeros((1, 2), dtype=np.float32),
+        old_offsets=np.zeros((1, 2), dtype=np.float32), consistent_units=False,
     )[0]
 
     np.testing.assert_allclose(prior, np.asarray([0.0, -4.5, -1.125], dtype=np.float32), rtol=1e-6)
@@ -485,6 +485,7 @@ def test_translation_log_prior_matches_relion_pdf_offset_scaling():
         voxel_size=3.0,
         sigma_angstrom=6.0,
         old_offsets=np.asarray([[3.0, 0.0], [0.0, -3.0]], dtype=np.float32),
+        consistent_units=False,
     )
     np.testing.assert_allclose(
         centered,

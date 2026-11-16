@@ -286,7 +286,10 @@ production scoring remains float32. Each oversampled translation inherits its
 coarse parent's prior, rather than evaluating the prior at the child coordinate.
 Image pre-shifts and offset-variance statistics retain their separate conventions.
 See [`sampling_translation_log_prior`](../../relax/vdam/native_sampling.py) and
-[`initial_model_estep_config`](../../relax/vdam/estep_setup.py).
+[`initial_model_estep_config`](../../relax/vdam/estep_setup.py). The opt-in
+`--offset_prior_units consistent` drops the inner `pixel_size` (the translation
+stays in pixels), a Gaussian of width `sigma_offset_A` on the whole offset
+([RELION-consistency options](relion_consistency_options.md)).
 
 ### E-step pass 1
 

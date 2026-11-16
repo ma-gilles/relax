@@ -221,6 +221,14 @@ affected.
 of the final pass. Refused: subtomograms (their 3-D prior, `relion_offset_log_prior_3d`, has the same unit mix
 and is not changed) and optics groups on several image shapes. `relax multibody` does not take it.
 
+`relax initial_model` takes the same option, without `--mode`. InitialModel's coarse `pdf_offset` has the same
+mix with no prior offset, `-a^2 |round(o) + a t|^2 / (2 sigma^2)`, and `consistent` adds `t` in pixels:
+`-a^2 |round(o) + t|^2 / (2 sigma^2)`, a Gaussian of width `sigma` on the whole offset
+(`sampling_translation_log_prior(consistent_units=True)`, `relax/vdam/native_sampling.py`). Each oversampled
+translation keeps its coarse parent's value, and optics groups on several image shapes rebuild the same prior in
+their own pixels. Refused: subtomograms (`--ios`) and a diagnostic continuation from RELION's optimiser. The run's
+`<output>_native_options.json` records the value.
+
 Measured effect (K=1 auto-refinements from zero offsets and angles, 2026-11-15; directions within 5 degrees of
 the truth, or of the published consensus for EMPIAR-10076):
 

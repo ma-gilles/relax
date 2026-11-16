@@ -117,6 +117,7 @@ def run_by_shape_class(
             voxel_size=float(shape_class.pixel_size),
             sigma_angstrom=sigma_angstrom,
             old_offsets=pre_shifts,
+            consistent_units=shape_translations.consistent_units,
         )
         class_result = run_dense_k_class_em_adaptive(
             inputs.dataset,

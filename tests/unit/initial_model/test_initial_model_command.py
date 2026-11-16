@@ -62,6 +62,7 @@ def test_public_defaults_match_native_option_defaults():
         "scratch_dir",
         "keep_free_scratch_gb",
         "translation_sigma_angstrom",
+        "offset_prior_units",
         "write_iter_artifacts",
         "grad_write_iter",
     ):

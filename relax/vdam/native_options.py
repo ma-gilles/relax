@@ -176,6 +176,8 @@ class InitialModelDefaults:
     write_iter_artifacts: bool = True
     random_perturbation: float | None = None
     translation_sigma_angstrom: float | None = None
+    # RELION's mixed-unit pdf_offset ("relion") or one unit ("consistent"); docs/math/relion_consistency_options.md.
+    offset_prior_units: Literal["relion", "consistent"] = "relion"
     grad_ini_frac: float = DEFAULT_GRAD_INI_FRAC
     grad_fin_frac: float = DEFAULT_GRAD_FIN_FRAC
     grad_em_iters: int = DEFAULT_GRAD_EM_ITERS
@@ -275,6 +277,12 @@ class NativeInitialModelOptions(InitialModelDefaults):
                     f"{unusable} (RELION's sigmoid length grad_inbetween_iter // 4 is 0); choose another --nr-iter "
                     "or --optimizer momentum_sgd"
                 )
+        if self.offset_prior_units not in ("relion", "consistent"):
+            raise ValueError(f"offset_prior_units must be relion or consistent, not {self.offset_prior_units!r}")
+        if self.offset_prior_units == "consistent" and self.fn_tomograms is not None:
+            raise NotImplementedError("--offset_prior_units consistent: the subtomogram 3-D offset prior is RELION's only")
+        if self.offset_prior_units == "consistent" and self.diagnostic_continue_optimiser is not None:
+            raise ValueError("--offset_prior_units consistent cannot replay RELION's next iteration")
         if self.fn_tomograms is not None and (self.optimizer != "vdam" or not self.do_run_C1):
             raise NotImplementedError("subtomogram InitialModel runs RELION's VDAM in C1")
         if self.padding_factor not in (1, 2):
