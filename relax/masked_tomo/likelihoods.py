@@ -405,6 +405,30 @@ class MaskedArm:
 
             return jax.lax.map(per_shift, ints)
 
+        if self.Cc == self.S:
+            # The crop is the whole periodic scene box: a roll is an exact periodic shift, and every integer shift
+            # comes from FFT cross-correlations, sum_x V(x) f(x - m) and sum_y M(y + m) (f_a f_b)(y).
+            Cc = self.Cc
+            idx = jnp.mod(ints, Cc)
+            FV = jnp.fft.rfftn(V)
+            FM = jnp.fft.rfftn(mask)
+            P = vft.shape[0]
+            first, second = np.triu_indices(P)
+
+            def corr(Fa, b):
+                return jnp.fft.irfftn(jnp.conj(Fa) * b, s=(Cc,) * 3)
+
+            def per_rot_fft(Q):
+                f = self.filtered(vft, Q, delta, part["filt"])
+                Ff = jnp.fft.rfftn(f, axes=(1, 2, 3))
+                inner = jnp.stack([corr(Ff[a], FV) for a in range(P)])
+                prods = jnp.stack([f[a] * f[b] for a, b in zip(first.tolist(), second.tolist())])
+                gram = jnp.stack([corr(jnp.fft.rfftn(pr), FM) for pr in prods]) / part["c"]
+                take = lambda vol: vol[:, idx[:, 0], idx[:, 1], idx[:, 2]]  # noqa: E731
+                return take(inner).T, take(gram).T
+
+            inner, gram = jax.lax.map(per_rot_fft, Qs)
+            return jnp.transpose(inner, (2, 0, 1)), jnp.transpose(gram, (2, 0, 1))
         inner, gram = jax.lax.map(per_rot, Qs)  # (R, T, P), (R, T, tri)
         return jnp.transpose(inner, (2, 0, 1)), jnp.transpose(gram, (2, 0, 1))
 
