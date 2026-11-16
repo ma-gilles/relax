@@ -187,7 +187,7 @@ def main():
     ap.add_argument("--search-particles", type=int, default=8)
     ap.add_argument("--template-box", type=int, default=None, help="'new' is KernelBoxMaskedArm with this box")
     ap.add_argument("--schedule", default="n32", choices=("n32", "pilot64"), help="search schedule (run_pilot.py)")
-    ap.add_argument("--search-budget-log2", type=int, default=27)
+    ap.add_argument("--search-budget-log2", type=int, default=28)
     a = ap.parse_args()
     N_WORK, S_WORK, CROP, MASK_R, SUPPORT_R, NOISE_R, W_BAND, CHUNK = (a.n, a.S, a.crop, a.mask_r, a.support_r,
                                                                        a.noise_r, a.w_band, a.chunk)
@@ -405,6 +405,23 @@ def main():
             report["sweep"] = sw
             save()
         print("sweep", json.dumps(sw), flush=True)
+
+    if "sweep_image" in stages:
+        swi = {}
+        img = make("new", "image")
+        for B, lb in ((1, 24), (1, 26), (2, 26), (8, 26), (8, 28), (16, 28)):
+            PLnew.SEARCH_PARTICLES, PLnew.SEARCH_BUDGET = B, 2**lb
+            try:
+                PLnew.search(img, maps[:1], ids, Q0[ids], u0[ids], [PASS1, PASS2], CHUNK)
+                t0 = time.time()
+                PLnew.search(img, maps[:1], ids, Q0[ids], u0[ids], [PASS1, PASS2], CHUNK)
+                swi[f"image_A1_B{B}_budget2^{lb}_ms_per_particle"] = 1e3 * (time.time() - t0) / P
+            except Exception as e:
+                swi[f"image_A1_B{B}_budget2^{lb}_ms_per_particle"] = f"failed: {type(e).__name__}"
+            report["sweep_image"] = swi
+            save()
+        PLnew.SEARCH_PARTICLES, PLnew.SEARCH_BUDGET = a.search_particles, 2**a.search_budget_log2
+        print("sweep_image", json.dumps(swi), flush=True)
 
     # ------------------------------------------------------------------ stages (timed after a warm-up on 8 particles)
     def run_A1(impl, arm, sel):

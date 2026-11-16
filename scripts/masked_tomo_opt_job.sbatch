@@ -21,6 +21,11 @@ source $W/venv/bin/activate
 export TMPDIR; TMPDIR=$(mktemp -d "/tmp/mgilles-mto-${SLURM_JOB_ID}.XXXXXX"); trap 'rm -rf -- "$TMPDIR"' EXIT
 mkdir -p $TMPDIR/recovar $TMPDIR/relax $TMPDIR/ref
 (cd $W/recovar-masked && git ls-files -co --exclude-standard recovar | tar -cf - -T -) | tar -xf - -C $TMPDIR/recovar
+if [ -n "${MT_RECOVAR_FIX:-}" ]; then  # a second RECOVAR snapshot (e.g. recovar-projfix) at $TMPDIR/recovar_fix
+  mkdir -p $TMPDIR/recovar_fix
+  (cd $W/$MT_RECOVAR_FIX && git ls-files -co --exclude-standard recovar | tar -cf - -T -) | tar -xf - -C $TMPDIR/recovar_fix
+  echo "$MT_RECOVAR_FIX $(git -C $W/$MT_RECOVAR_FIX rev-parse HEAD) diff-sha $(git -C $W/$MT_RECOVAR_FIX diff HEAD | sha256sum | cut -c1-16)"
+fi
 (cd $W/$WT && git ls-files -co --exclude-standard relax tests scripts pyproject.toml | tar -cf - -T -) | tar -xf - -C $TMPDIR/relax
 git -C $W/$WT show $REF:relax/masked_tomo/likelihoods.py > $TMPDIR/ref/likelihoods_ref.py
 git -C $W/$WT show $REF:relax/masked_tomo/pilot.py | sed 's/^from relax.masked_tomo import likelihoods as L$/import likelihoods_ref as L/' > $TMPDIR/ref/pilot_ref.py
