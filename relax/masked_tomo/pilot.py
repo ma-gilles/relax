@@ -24,7 +24,7 @@ F32 = jnp.float32
 
 # ----------------------------------------------------------------------------------------------- loading
 def load_condition(root, condition, n, S, *, n_particles=None, noise_radius_px, need_patches=True, extra_noise_var=0.0,
-                   extra_noise_seed=0):
+                   extra_noise_seed=0, field="patch"):
     """Read a condition's crops (and patches) and Fourier-crop them to the working sizes.
 
     ``extra_noise_var`` > 0 adds white Gaussian noise of that per-pixel variance (data units) to every bin-1 detector
@@ -54,6 +54,8 @@ def load_condition(root, condition, n, S, *, n_particles=None, noise_radius_px, 
                 patches.append(np.asarray(m.data, np.float32))
     crops = np.stack(crops)
     patches = np.stack(patches) if need_patches else None
+    if field == "crop":  # arm B's detector field is the target crop itself (matched field, S == n)
+        patches = crops
     d = L.prepare(crops, patches, acq["rots"][:P], acq["ctf_params"][:P], float(acq["voxel_size"]), n, S,
                   noise_radius_px)
     return d, acq
