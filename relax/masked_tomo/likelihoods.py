@@ -413,8 +413,9 @@ def dof_ratio(D, lam, k_ok):
     """In-band frequencies per effective degree of freedom of the whitened noise, ``N_band sum s^2 / (sum s)^2``
     with ``s = D / (D + lam)`` its spectrum over the projector's band (``1 / observed fraction`` when ``s`` is 0
     or 1). ``C ~ c I`` with the per-voxel variance ``c`` over-weights band-limited residuals by about this factor;
-    scaling ``c`` by it is the labelled temperature correction of section 3 of the math note (dense tiny case,
-    41 tilts: approximate/exact score slope 1.86 against this ratio 1.85)."""
+    scaling ``c`` by it is the labelled, partial temperature correction of section 3 of the math note. Dense tiny
+    case (tests/unit/test_masked_tomo.py): approximate/exact score slope 1.86 (41 tilts) and 2.12 (5 tilts) before,
+    1.52 and 1.28 after this correction: B's scores stay about 1.3-1.5x overconfident."""
     sp = jnp.where(k_ok, D / (D + lam), 0.0)
     return jnp.sum(k_ok) * jnp.sum(sp**2) / jnp.sum(sp) ** 2
 

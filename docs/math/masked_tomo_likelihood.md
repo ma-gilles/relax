@@ -45,8 +45,12 @@ breaks translation invariance), so the epilogue runs on the flattened (rotation,
    the template's DFT resampled at `k Q` (trilinear, from a 2x zero-padded, gridding-corrected grid) times the
    3D phase of `u`. Tiny-case error against the exact `L A_g x`: 18% (5 tilts; `tests/unit/test_masked_tomo.py`),
    against about 160% for a transposed rotation or negated shift.
-2. **Covariance:** `C ~ c I` on the mask, `c` the Monte Carlo mean voxel variance of `L e` (2 draws per particle).
-   Tiny-case score differences against the exact `C^+`: see the test report (`white_cov_*`).
+2. **Covariance:** `C ~ c I` on the mask, `c` the Monte Carlo mean voxel variance of `L e` (2 draws per particle),
+   times the in-band effective-dof ratio `N_band sum s^2 / (sum s)^2` of the whitened noise spectrum
+   `s = D / (D + lam)` (`dof_ratio`). Tiny dense case against the exact `C^+`: score correlation 0.97 (41 tilts;
+   0.93 with 5), same arg max with 41 tilts; slope of approximate against exact score differences 1.86 before and
+   1.52 after the dof factor (5 tilts: 2.12, 1.28). B's likelihood is therefore about 1.3-1.5x overconfident: MAP
+   poses for a fixed map are unaffected, posterior widths and PPCA weights are not.
 3. The data-side map `L` is exact (no approximation); its covariance is checked by Monte Carlo against the dense
    `L Sigma L^*`.
 
