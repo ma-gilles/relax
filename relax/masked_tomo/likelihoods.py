@@ -454,17 +454,18 @@ class MaskedArm:
         if T > FFT_SHIFTS_ABOVE:
             # Large shift sets: every integer shift comes from FFT cross-correlations on the crop, sum_x V(x) f(x - m)
             # and sum_y M(y + m) (f_a f_b)(y), per sub-pixel part. These are circular on the crop, i.e. exactly the
-            # rolls of the product path below, for any crop (a periodic shift when the crop is the whole box). On the
-            # GPU this path differs from the product path by ~1e-3 relative (GPU jobs 7482932 and 7483092; CPU: 1e-7).
+            # rolls of the product path below, for any crop (a periodic shift when the crop is the whole box).
+            # Complex FFTs: the real-FFT version differed from the product path by ~1e-3 relative on the GPU (jobs
+            # 7482932, 7483092; CPU 1e-7), the complex one agrees to ~6e-7 (masked-tomo check before GPU 12).
             Cc = self.Cc
             idx = jnp.mod(ints, Cc)
-            FV = jnp.fft.rfftn(mask * V)
-            FM = jnp.fft.rfftn(mask)
             ax = (-3, -2, -1)
+            FV = jnp.fft.fftn((mask * V).astype(C64))
+            FM = jnp.fft.fftn(mask.astype(C64))
             f = jax.vmap(per_rot)(Qs)  # (R, D, P, Cc, Cc, Cc)
-            inner = jnp.fft.irfftn(jnp.conj(jnp.fft.rfftn(f, axes=ax)) * FV, s=(Cc,) * 3, axes=ax)
+            inner = jnp.real(jnp.fft.ifftn(jnp.conj(jnp.fft.fftn(f.astype(C64), axes=ax)) * FV, axes=ax))
             prods = f[:, :, first] * f[:, :, second]
-            gram = jnp.fft.irfftn(jnp.conj(jnp.fft.rfftn(prods, axes=ax)) * FM, s=(Cc,) * 3, axes=ax) / c
+            gram = jnp.real(jnp.fft.ifftn(jnp.conj(jnp.fft.fftn(prods.astype(C64), axes=ax)) * FM, axes=ax)) / c
             inner = inner[..., idx[:, 0], idx[:, 1], idx[:, 2]]  # (R, D, P, T)
             gram = gram[..., idx[:, 0], idx[:, 1], idx[:, 2]]
             sel = gid[None, None, None, :]
