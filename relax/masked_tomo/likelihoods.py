@@ -228,16 +228,10 @@ class ImageArm:
         return pad_ft(X * self.support, self.G).reshape(X.shape[0], -1)
 
     def slice(self, v, rot_rows):
-        """``(m, n*n)`` slices of one padded DFT ``v`` at ``(m, 3, 3)`` rotations.
-
-        The slices are taken on the padded ``G x G`` image grid (no oversampling factor for the projector to
-        infer) and the even frequencies kept: padded-grid pixel ``2p`` is the working pixel ``p``. RECOVAR's
-        JAX projector path (used on the CPU and when the CUDA call falls back under vmap/vjp) does not scale
-        image frequencies by ``volume_shape / image_shape``, while its CUDA path does; slicing at ``G`` keeps
-        both paths identical."""
+        """``(m, n*n)`` slices of one padded DFT ``v`` (``G = 2n`` grid) at ``(m, 3, 3)`` rotations, inside the
+        projector's disc. RECOVAR infers the oversampling ``G / n`` on both its CUDA and JAX paths (recovar a9333ddf5)."""
         n, G = self.n, self.G
-        img = slicing.slice_volume(v, rot_rows, (G, G), (G, G, G), "linear_interp", max_r=None)
-        img = img.reshape(-1, G, G)[:, ::2, ::2].reshape(-1, n * n)
+        img = slicing.slice_volume(v, rot_rows, (n, n), (G, G, G), "linear_interp", max_r=None)
         return img * self.disc
 
     def project(self, vft, rot_rows):
