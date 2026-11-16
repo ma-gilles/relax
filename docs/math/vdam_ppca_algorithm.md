@@ -2880,28 +2880,31 @@ a recovar change not made here).
 Wall time of a whole run (November 15, 2026). ET EMPIAR-10157, radius-24 schedule (100 updates, a checkpoint every
 update), H100 SXM5; seconds from the command's start; parts from file times (`multigpu/matrix_report.py --wall`):
 
-| Part | 1 GPU before (7474046) | 4 GPU before (7475535) | 1 GPU after (7477515) | 4 GPU after (7477514) |
-| --- | --- | --- | --- | --- |
-| Start-up: STAR conversion, stack staging, loader, CTF, initialization | 237 | 242 | 130 | 212 |
-| Updates 1-100 (E-steps, update, checkpoints) | 3070 | 828 | 2966 | 771 |
-| of which ranks' mean busy seconds / loss to the busiest rank | - | 697 / 71 | - | 681 / 39 |
-| Final embedding pass | 154 | 43 | 156 | 41 |
-| Exit | 4 | 6 | 4 | 7 |
-| Wall | 3465 | 1118 | 3255 | 1031 |
+| Part | 1 GPU before (7474046) | 4 GPU before (7475535) | 1 GPU, 1571899c (7477515) | 4 GPU, 1571899c (7477514) | 1 GPU, 0af5ec18 (7478927) | 4 GPU, 0af5ec18 (7478794) |
+| --- | --- | --- | --- | --- | --- | --- |
+| Start-up: STAR conversion, stack staging, loader, CTF, initialization | 237 | 242 | 130 | 212 | 104 | 144 |
+| Updates 1-100 (E-steps, update, checkpoints) | 3070 | 828 | 2966 | 771 | 2955 | 707 |
+| of which ranks' mean busy seconds / loss to the busiest rank | - | 697 / 71 | - | 681 / 39 | - | 653 / 39 |
+| Final embedding pass | 154 | 43 | 156 | 41 | 155 | 39 |
+| Exit | 4 | 6 | 4 | 7 | 4 | 5 |
+| Wall | 3465 | 1118 | 3255 | 1031 | 3218 | 896 |
 
 What changed (all for one GPU too, except the scheduling). Start-up: the tilt stacks are staged in parallel before the
 loader (`relax.steps.tomo_half.stage_tilt_stacks`; recovar's loader staged 12,400 small stacks one by one, 115-131 s), and
 the per-tilt STAR is rewritten without a pandas Series per row. Checkpoints are written on the log's thread while the
 next update runs (0.12 s each on Ceph). The scheduling (step 3 above) halved the loss to the busiest rank. The
 merge of an E-step's tiles concatenates their embeddings on the host: `jnp.concatenate` compiled a program for every
-update's tile shapes, 0.26-0.34 s per update on four GPUs and 0.36 s on eight (the timing's `merge` phase); a run with
-this change (and the staging threads split between the ranks, below) is pending.
+update's tile shapes, 0.26-0.34 s per update on four GPUs and 0.36 s on eight (the timing's `merge` phase; 0.006 s
+after). At 0af5ec18 the loader also opens the staged copies directly (below).
 
-Speedup of the update loop, 4 GPUs against 1 at the same code: 3.85x (radius 16: 4.17x; radius 24: 3.48x); against the
-earlier one-GPU run 7474046: 3.96x. Of the whole run: 3.16x (3.36x against 7474046). What is left against 4x: the
-start-up, which every rank runs in full (212 s on four ranks against 130 s on one: the ranks' staging and loaders
-contend on Ceph; each rank now stages its share with its share of the threads), the merge (above), the loss to the
-busiest rank (39 s) and the ranks' serial phases (preparing the streams, the update: about 0.15 s per update).
+Speedup at 0af5ec18, 4 GPUs against 1 at the same code: update loop 4.18x (radius 16: 4.57x, radius 24: 3.74x; one
+GPU compiles its tile shapes inside the loop, four GPUs fewer and smaller ones), whole run 3.59x; against 7474046:
+4.32x and 3.87x. Two GPUs: 2.07x and 1.94x. EMPIAR-11221 (27,164 particles): 3.83x and 3.52x on four, 2.05x and 1.98x
+on two. What is left against 4x of the whole run is the start-up: every rank loads the whole data set (each needs
+every particle over the random batches), 104 s for one process and 144 s for four (20 s of the difference is four
+processes starting and importing at once, about 25 s the ranks' staging at 8 threads each). The whole run reaches 4x
+only if four GPUs start up in about 53 s: below what one process needs to load (104 s), so only by scoring the first
+updates before the load ends.
 
 Scaling and correctness matrix (multigpu/README.txt, jobs 7477514, 7477520; H100 PCIe nodes hold eight GPUs): ET loop
 speedup on PCIe 2.08x (2 GPUs), 3.94x (4), 6.94x (8); SPA EMPIAR-13372 1.5x (2), 1.8-2.3x (4), 2.1x (8), its radius-31
