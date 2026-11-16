@@ -390,3 +390,32 @@ def test_fourier_inner_equals_exact_inner(setup):
         fourier, gram = L._fourier_stats(arm, vft, part, Qs, axes)
         assert gram.shape == (3, 3)
         np.testing.assert_allclose(np.asarray(fourier), np.asarray(exact), rtol=1e-5, atol=1e-6 * float(jnp.abs(exact).max()))
+
+
+def _rolled_reference(f, MV, M, ints):
+    P = f.shape[0]
+    inner, gram = [], []
+    for m in ints:
+        fs = np.roll(f, shift=tuple(m), axis=(1, 2, 3))
+        inner.append(np.sum(fs * MV[None], axis=(1, 2, 3)))
+        gram.append(np.stack([np.sum(M * fs[a] * fs[b]) for a, b in zip(*np.triu_indices(P))]))
+    return np.stack(inner, -1), np.stack(gram, -1)
+
+
+@pytest.mark.parametrize("dtype", [np.float32, np.float64])
+def test_shift_correlations_match_explicit_rolls(dtype):
+    """``shift_correlations`` (complex FFT, in the input's precision) against explicit periodic rolls. float32 is the
+    production precision (default float32 tolerance); the float64 companion is the same comparison at 1e-12."""
+    from helpers.float_compare import assert_matches
+
+    rng = np.random.default_rng(12)
+    C, P = 16, 3
+    f = rng.standard_normal((P, C, C, C)).astype(dtype)
+    M = L.sphere(C, 6.0).astype(dtype)
+    MV = (M * rng.standard_normal((C,) * 3)).astype(dtype)
+    ints = rng.integers(-5, 6, (40, 3)).astype(np.int32)
+    inner, gram = L.shift_correlations(jnp.asarray(f), jnp.asarray(MV), jnp.asarray(M), jnp.asarray(ints))
+    ref_inner, ref_gram = _rolled_reference(f.astype(np.float64), MV.astype(np.float64), M.astype(np.float64), ints)
+    rtol = None if dtype == np.float32 else 1e-12
+    assert_matches(np.asarray(inner), ref_inner.astype(dtype), rtol=rtol)
+    assert_matches(np.asarray(gram), ref_gram.astype(dtype), rtol=rtol)

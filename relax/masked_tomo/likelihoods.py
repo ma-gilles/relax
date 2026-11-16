@@ -457,17 +457,9 @@ class MaskedArm:
             # rolls of the product path below, for any crop (a periodic shift when the crop is the whole box).
             # Complex FFTs: the real-FFT version differed from the product path by ~1e-3 relative on the GPU (jobs
             # 7482932, 7483092; CPU 1e-7), the complex one agrees to ~6e-7 (masked-tomo check before GPU 12).
-            Cc = self.Cc
-            idx = jnp.mod(ints, Cc)
-            ax = (-3, -2, -1)
-            FV = jnp.fft.fftn((mask * V).astype(C64))
-            FM = jnp.fft.fftn(mask.astype(C64))
             f = jax.vmap(per_rot)(Qs)  # (R, D, P, Cc, Cc, Cc)
-            inner = jnp.real(jnp.fft.ifftn(jnp.conj(jnp.fft.fftn(f.astype(C64), axes=ax)) * FV, axes=ax))
-            prods = f[:, :, first] * f[:, :, second]
-            gram = jnp.real(jnp.fft.ifftn(jnp.conj(jnp.fft.fftn(prods.astype(C64), axes=ax)) * FM, axes=ax)) / c
-            inner = inner[..., idx[:, 0], idx[:, 1], idx[:, 2]]  # (R, D, P, T)
-            gram = gram[..., idx[:, 0], idx[:, 1], idx[:, 2]]
+            inner, gram = shift_correlations(f, mask * V, mask, ints)  # (R, D, P, T), (R, D, tri, T)
+            gram = gram / c
             sel = gid[None, None, None, :]
             inner = jnp.take_along_axis(inner, jnp.broadcast_to(sel, (inner.shape[0], 1) + inner.shape[2:]), axis=1)[:, 0]
             gram = jnp.take_along_axis(gram, jnp.broadcast_to(sel, (gram.shape[0], 1) + gram.shape[2:]), axis=1)[:, 0]
@@ -567,6 +559,24 @@ class KernelBoxMaskedArm(MaskedArm):
         if "kernel_tail" not in out:
             out["filt"], out["kernel_tail"] = self.kernel(out["filt"])
         return out
+
+
+def shift_correlations(f, MV, M, ints):
+    """All circular integer shifts ``m`` of ``inner_p(m) = sum_x MV(x) f_p(x - m)`` and
+    ``gram_ab(m) = sum_x M(x) f_a(x - m) f_b(x - m)`` by complex FFT cross-correlation (in ``f``'s precision),
+    read at ``ints (T, 3)``. ``f`` is ``(..., P, C, C, C)``; returns ``(..., P, T)`` and ``(..., tri(P), T)``."""
+    C = f.shape[-1]
+    P = f.shape[-4]
+    first, second = np.triu_indices(P)
+    cdt = jnp.result_type(f.dtype, jnp.complex64)
+    ax = (-3, -2, -1)
+    idx = jnp.mod(ints, C)
+    FV = jnp.fft.fftn(MV.astype(cdt))
+    FM = jnp.fft.fftn(M.astype(cdt))
+    inner = jnp.real(jnp.fft.ifftn(jnp.conj(jnp.fft.fftn(f.astype(cdt), axes=ax)) * FV, axes=ax))
+    prods = f[..., first, :, :, :] * f[..., second, :, :, :]
+    gram = jnp.real(jnp.fft.ifftn(jnp.conj(jnp.fft.fftn(prods.astype(cdt), axes=ax)) * FM, axes=ax))
+    return inner[..., idx[:, 0], idx[:, 1], idx[:, 2]], gram[..., idx[:, 0], idx[:, 1], idx[:, 2]]
 
 
 def dof_ratio(D, lam, k_ok):
