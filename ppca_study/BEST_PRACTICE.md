@@ -234,6 +234,11 @@ STANDARD for every report:
 - SVD-sorted raw PCs with σ and |PC|/|mean|.
 - Latents in PC coordinates (UMAP only in addition).
 - Corrections reported plainly.
+- Mean + raw PCs next to EVERY latent / UMAP figure, PCs signed to match z' (a skew flip of z'_k flips PC k too, or the
+  figure shows the wrong direction); latents also coloured by pmax (owner 2026-11-16).
+- Cleaning reports: the pose distribution of every final refinement. SCF from the poses alone (Baldwin & Lyumkis 2020),
+  junk-free over labelled-true particles where labels exist, and true-particle retention by view against same-size random
+  subsets (em_work/posedist_20261116/scripts/posedist.py). Not cFAR: it moves with map resolution (owner 2026-11-16).
 
 ## 8. How experiments run
 
@@ -252,7 +257,7 @@ STANDARD:
 | D-set seed dependence: does the SGD candidate flip the distinctive protein into a second frame on some seeds? (abinit_study handoff, 2026-11-05: many SGD arms at ~50% on D40 at one seed of three) | round17 step1h_sgddiag, seeds 12-13 on D10/D20/D40 | Answered 2026-11-05: yes. The candidate fails D10 at 2 of 3 seeds and D20 at 1 of 3; VDAM fails D10 at 3 of 3. Failures are scattered mis-poses, not a clean second frame. The noise anneal (σ² × 3 → 1 over updates 1-500) is not adopted: it rescues 2 of 3 failures but makes D10 s13 worse and costs Ribosembly 14 points and T10 one protein (no harm on C, D40, H1). Seed selection by held-out likelihood fails, both mean and paired per-image (spread < 1 nat/image). PC-shrink test on the 3 failing seeds: floor .5 rescues 1, gate-off-500 rescues 2 (crashes T10); biased by seed selection. Fresh-seed test (seeds 14-16, direct fit, diagnostic): floor .25 passes 3 of 6, floor .5 passes 4 of 6, a tie under the predeclared rule (≥3 needed). Floor .25 stays. Pooled floor .25 over seeds 11-16: D10 2 of 6, D20 4 of 6. D10/D20 remain seed-sensitive with no fix found |
 | Off-centre particles (common image-plane offset) | realshift_20261109 (10180) | Found on real data (v1.67): 10180's picks share a 55 Å image-plane offset that no volume shift can absorb; the mean particle image's centre of mass recovers it truth-free. Global recentring + wide window solves it (v1.69: .958 vs pre-centred .973). CLOSED (owner, v1.70): a one-off of this deposited stack (never re-extracted centred), not pursued further |
 | T10 | t10_solve_20261104; transfer_20261105 | Best row: union10hinv (K-class SGD → per-class ab initio, seeds by held-out likelihood → union selection → SGD H⁻¹ + gate floor .05), suite decoded .779 / BP .826 / N_struct .968 (mean only .382, true .996). **Correction 2026-11-05:** not fully truth-free. In its history, 3 classes kept their seed-11 maps because the truth showed them posed. The frozen, truth-free version is being rerun on T10 as a control, then on D10, D20 and a new 10-protein set T10b (transfer test). **From scratch, no class step, with gate floor .25 (suite v3.1):** 8 random starts to update 500, best by held-out likelihood (seed 12), continued with the diagonal direction: decoded .760, BP .770, N_struct .951. Continued with H⁻¹: .695 / .746 / .948. Single wrong-protein start (seed 11): .633; ten wrong proteins: .614. The older from-scratch rows (.28-.41) used floor .05, plain SGD or VDAM. The wrong-protein start gives no gain over a random start (direct fit at seed 12: 9.5° vs 8.9°). The simple multi-start pipeline is in the transfer test. |
-| Particle cleaning (owner goal 2026-11-12): can PPCA find junk as well as conventional cleaning? | ppca_coupled_20261026/dirtybench_20261112, dirty10345_20261113, ppca_cleaning_bench_20261106 | Answered v1.86: not with the current recipe (forms the particle on 1 of 3 dirty pools; matches conventional refinement there but not label precision). Open: per-image offset/scale term against the low-shell runaway; a predeclared pmax / UMAP-island selection test |
+| Particle cleaning (owner goal 2026-11-12): can PPCA find junk as well as conventional cleaning? | ppca_coupled_20261026/dirtybench_20261112, dirty10345_20261113, ppca_cleaning_bench_20261106 | Answered v1.86: not with the current recipe (forms the particle on 1 of 3 dirty pools; matches conventional refinement there but not label precision). Fresh predeclared tests (v1.97-v2.00): PPCA latent selections hold up on 10061, 10028, 10077 (cleaning not limiting) and on 10005, where cleaning is limiting (S1/S2 +20 shells over RELION and the conventional pipeline), and they keep the views of true particles that 2D-class cleaning drops (v2.00). Running: 10532, synthetic junk injection J40/J70, HA retry with the per-image scale term; next: a synthetic preferred-orientation set |
 | Box-128 high-shell sampling | after shifts | not started |
 | Ribosembly gap (VDAM .794 vs true .932) | after step 1g | the pose tail (states 0-2, the three smallest assemblies) is a signal limit: the true model mis-poses them equally (median 44-102°). So the map gap is on the PC/state-map side, not poses (2026-11-04) |
 | Noise-level gaps (H1/Ribo n1, T10/D n3) | with the winning recipe | not started |
@@ -502,3 +507,33 @@ STANDARD:
   - Repeat: two refinements of the identical 20,177-pick set give 4.69 / 4.69 A (cFAR .332 / .333), so the shared refinement adds well under one shell. Draw-to-draw spread of random subsets: 2 extra S3-matched draws queued (descriptive).
   - Caveats: both conventional selections refine worse than same-size random subsets and are strongly view-biased (cFAR .04 / .07): on this crowded, multi-state pool 2D classification keeps preferred views. All picks beat every selection (PPCA sets 2-4 shells behind). Three of three fresh datasets now say the same: cleaning is not what limits resolution on these pools, and PPCA passes by keeping particles, not by removing junk better.
   - Practice: unchanged from v1.98 (clean lightly; a predeclared PPCA pmax-valley or likelihood cut is safe where PPCA forms the particle; conventional cleaning where it fails). Measuring junk-finding itself needs ground truth: the synthetic junk-injection test is under way.
+- 2026-11-16 v2.00. Results batch: 10005, pose distributions, scale term, averaged statistics, schedule, CAHRA twin, figure rule.
+  - EMPIAR-10005 (TRPV1, C4; freshtest10005_20261115, predeclared): the first fresh pool where cleaning limits resolution (all picks
+    7.96 A; the conventional pipeline 6.40 A). PPCA default and its one fix failed the gate (.206 / .207), but the predeclared selections from the failed
+    model pass 2 of 3: S1 (r) 4.30 A and S2 (UMAP lobe) 4.24 A against 6.40 A for both the conventional pipeline and the RELION ranker (+20 / +21 shells;
+    +39 / +41 over their same-size randoms; FSC 0.5 to EMD-5778 4.6-4.8 A); S3 (pmax) 8.21 A fails. At the conventional pipeline's count S2 gives 4.24 A.
+    Trivial-score baselines at S2's size: picker score 8.21 A, disk template 6.40 A. One seed; CryoPPP labels on 29 of 300 micrographs.
+  - Pose distributions of every cleaned stack (owner request; posedist_20261116, predeclared + one amendment before R6): our SCF
+    reproduces the reference implementation's SCF* on 17 HA refinements (rank .99, max diff .016). Junk inflates SCF (scattered junk poses), so the headline is
+    SCF over labelled-true particles only. All picks / RELION 2D / the conventional pipeline / PPCA S1-S3: 10061 .91 / .82 / .83 / .89-.90; 10028 .82 / .64 /
+    .22 / .80-.82; 10077 .67 / .36 / .34 / .58-.63; 10005 .97 / .91 / .90 / .96, .97, .82 (S3: 378 true particles); 10081 ~.99 for
+    all (not limiting); HA .28 / .20 / .14-.29 / no PPCA set. True-particle retention by view vs same-size random subsets: 2D and the conventional pipeline
+    96-250x uneven (rare views lost first), PPCA 4-47x (10081 1-2x); same order at equal N. On 10028 and 10077 the least uniform
+    stacks (the conventional pipeline: .22, .34) also refine worst (7.66, 6.10 A vs PPCA 4.16, 4.55). Caveat: annotators may favour obvious views; every
+    selection is scored against the same labels.
+  - Per-image scale term (ppca_imgscale_20261116, mode ls, driver ebec7e5c): ACCEPTABLE by its predeclared rule. 10061 gate .915
+    (control .905); 10345 completes without forming the particle (.216 vs .102); C_shift decoded .874 vs .873 (tie). Prediction
+    partly met on 10061: PC1 still tracks a_i (rho .49 > .30). Not the default; the HA 10096 retry with it is approved
+    (ha_imgscale_20261116).
+  - Averaged-statistics update (ema_stats; ppca_emastats_20261115): NOT ACCEPTABLE. C_shift .502 vs .873 (poses never lock;
+    median 34 deg), 10061 .813 vs .905, 10345 still failing. VDAM stays the update.
+  - Schedule study (ppca_sched_study_20261115): the step sets stability, not success; a large early step is the risk. HA's small
+    single trajectory (pool:561232) tied or did not lose on 3 sets (10061 .901 vs .905; 10345 stable; C_shift .883 vs .873). Not a
+    recipe change until seeds 12 and 13 (owner's decision). The pool-size rule stays.
+  - CAHRA synthetic twin (twin_20261112): species separation is signal-limited. At matched SNR 1 of 6 species is posed right (ARI
+    .056); at 4x signal power 3 of 6 (ARI .59); real data 1 of 6 (GDH, borderline at 20 deg). Usable now: a 93%-pure GDH cluster;
+    pmax marks well-posed particles (twin AUC .89).
+  - Figure rule (owner): mean + signed raw PCs beside every latent figure, latents also coloured by pmax (section 7). The
+    analysis scripts flipped z' by skewness without flipping the PC volume; fixed in the new figures.
+  - Owner-approved next: PPCA on HA 10096 with the scale term (the textbook untilted case); a synthetic preferred-orientation set
+    with known views and 40% junk, after J40/J70.
