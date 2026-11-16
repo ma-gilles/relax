@@ -185,10 +185,15 @@ def main():
     ap.add_argument("--w-band", type=int, default=W_BAND)
     ap.add_argument("--chunk", type=int, default=32)
     ap.add_argument("--search-particles", type=int, default=8)
+    ap.add_argument("--template-box", type=int, default=None, help="'new' is KernelBoxMaskedArm with this box")
+    ap.add_argument("--schedule", default="n32", choices=("n32", "pilot64"), help="search schedule (run_pilot.py)")
     ap.add_argument("--search-budget-log2", type=int, default=27)
     a = ap.parse_args()
     N_WORK, S_WORK, CROP, MASK_R, SUPPORT_R, NOISE_R, W_BAND, CHUNK = (a.n, a.S, a.crop, a.mask_r, a.support_r,
                                                                        a.noise_r, a.w_band, a.chunk)
+    if a.schedule == "pilot64":  # run_pilot.py --n-work 64
+        PASS1, PASS2 = (20.0, 3.0, 4.0, 1.0), (3.0, 1.0, 1.0, 0.5)
+        REFINE_LATER = [(6.0, 1.5, 2.0, 1.0), (1.5, 0.5, 0.5, 0.5)]
     if a.smoke:
         PASS1, PASS2 = (8.0, 4.0, 1.0, 1.0), (2.0, 2.0, 0.5, 0.5)
         REFINE_LATER = [(4.0, 4.0, 1.0, 1.0)]
@@ -234,6 +239,9 @@ def main():
         L_, _ = mods[impl]
         if name == "image":
             return L_.ImageArm(d, SUPPORT_R)
+        if impl == "new" and a.template_box:
+            return L_.KernelBoxMaskedArm(d, SUPPORT_R, MASK_R, template_box=a.template_box, crop=CROP, lam_rel=LAM_REL,
+                                         window=None, n_mc=2, seed=0)
         return L_.MaskedArm(d, SUPPORT_R, MASK_R, crop=CROP, lam_rel=LAM_REL, window=None, n_mc=2, seed=0)
 
     arms = {}
