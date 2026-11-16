@@ -396,12 +396,14 @@ class MaskedArm:
     def _gather(self, vol, Q):
         """Trilinear samples ``(K, P)`` of channels-last ``vol`` at the rotated template frequencies on the support."""
         S, G = self.N, self.G
-        return trilinear(vol, (self._support_k() @ Q) * (G / S) + G // 2)
+        # Precision.HIGHEST: at default precision a GPU dot may take TF32 operands (coordinates off by ~1e-3 relative).
+        coords = jnp.matmul(self._support_k(), Q, precision=jax.lax.Precision.HIGHEST)
+        return trilinear(vol, coords * (G / S) + G // 2)
 
     def _spectrum(self, t, u, filt):
         """``(P, N^3)`` template spectra ``t * phase(u) * filt``, zero off the support."""
         S = self.N
-        phase = jnp.exp(-2j * jnp.pi * (self._support_k() @ u) / S)
+        phase = jnp.exp(-2j * jnp.pi * jnp.matmul(self._support_k(), u, precision=jax.lax.Precision.HIGHEST) / S)
         if self.support_idx is None:
             return jnp.moveaxis(t * phase[:, None] * filt[:, None], -1, 0)
         f = t * phase[:, None] * filt[self.support_idx][:, None]
