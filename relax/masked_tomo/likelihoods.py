@@ -205,8 +205,9 @@ class ImageArm:
         self.G = 2 * n
         self.lattice = jnp.asarray(plane_lattice(n))
         self.support = jnp.asarray(sphere(n, support_radius))
-        r = shell_index(n)
-        self.band = jnp.asarray((r <= n // 2 - 1).astype(np.float32))  # the projector's max_r disc
+        r2 = np.sum((plane_lattice(n) * n) ** 2, -1)
+        self.disc = jnp.asarray((r2 <= (n // 2 - 1) ** 2).astype(np.float32))  # RECOVAR's default max_r disc
+        self.band = self.disc
 
     def particle(self, i):
         d = self.d
@@ -222,10 +223,22 @@ class ImageArm:
         """``(P, G^3)`` padded, gridding-corrected DFTs of real volumes ``(P, n, n, n)``."""
         return pad_ft(X * self.support, self.G).reshape(X.shape[0], -1)
 
+    def slice(self, v, rot_rows):
+        """``(m, n*n)`` slices of one padded DFT ``v`` at ``(m, 3, 3)`` rotations.
+
+        The slices are taken on the padded ``G x G`` image grid (no oversampling factor for the projector to
+        infer) and the even frequencies kept: padded-grid pixel ``2p`` is the working pixel ``p``. RECOVAR's
+        JAX projector path (used on the CPU and when the CUDA call falls back under vmap/vjp) does not scale
+        image frequencies by ``volume_shape / image_shape``, while its CUDA path does; slicing at ``G`` keeps
+        both paths identical."""
+        n, G = self.n, self.G
+        img = slicing.slice_volume(v, rot_rows, (G, G), (G, G, G), "linear_interp", max_r=None)
+        img = img.reshape(-1, G, G)[:, ::2, ::2].reshape(-1, n * n)
+        return img * self.disc
+
     def project(self, vft, rot_rows):
         """``(P, m, n*n)`` slices of padded DFTs at ``(m, 3, 3)`` rotations."""
-        n, G = self.n, self.G
-        return jax.vmap(lambda v: slicing.slice_volume(v, rot_rows, (n, n), (G, G, G), "linear_interp"))(vft)
+        return jax.vmap(lambda v: self.slice(v, rot_rows))(vft)
 
     def phases(self, rt, us):
         """``(T, K, n*n)`` translation phases of 3D shifts ``us`` ``(T, 3)`` on every tilt."""
@@ -397,12 +410,13 @@ class MaskedArm:
 
 
 def dof_ratio(D, lam, k_ok):
-    """Voxels per effective degree of freedom of the whitened noise, ``N sum s^2 / (sum s)^2`` with
-    ``s = D / (D + lam)`` its spectrum (``1 / observed fraction`` when ``s`` is 0 or 1). ``C ~ c I`` with the
-    per-voxel variance ``c`` treats every voxel as independent and over-weights residuals by about this factor;
-    scaling ``c`` by it is the labelled temperature correction of section 3 of the math note."""
+    """In-band frequencies per effective degree of freedom of the whitened noise, ``N_band sum s^2 / (sum s)^2``
+    with ``s = D / (D + lam)`` its spectrum over the projector's band (``1 / observed fraction`` when ``s`` is 0
+    or 1). ``C ~ c I`` with the per-voxel variance ``c`` over-weights band-limited residuals by about this factor;
+    scaling ``c`` by it is the labelled temperature correction of section 3 of the math note (dense tiny case,
+    41 tilts: approximate/exact score slope 1.86 against this ratio 1.85)."""
     sp = jnp.where(k_ok, D / (D + lam), 0.0)
-    return sp.size * jnp.sum(sp**2) / jnp.sum(sp) ** 2
+    return jnp.sum(k_ok) * jnp.sum(sp**2) / jnp.sum(sp) ** 2
 
 
 # ----------------------------------------------------------------------------------------------- scores

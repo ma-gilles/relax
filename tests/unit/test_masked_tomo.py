@@ -78,6 +78,26 @@ def _real_to_patch_ft(y, K=K):
     return ftu.get_dft2(y.reshape(K, S, S)).reshape(K, S * S)
 
 
+def test_image_arm_projection_matches_direct_projection():
+    """Arm A's slice of the padded volume at the identity equals the DFT of the real-space z-sum of that volume at
+    the working (even) frequencies inside the projector's disc. Arbitrary rotations: the arm-A model at the true
+    pose reproduces the simulator's noiseless target (correlation 1.000 at every tilt, masked-tomo diagnostic job
+    7479095)."""
+    rng = np.random.default_rng(3)
+    nn = 8
+    d = L.Particles(images=None, patches=None, rt=None, ctf_img=None, ctf_patch=None, noise_img=np.ones(nn * nn),
+                    noise_patch=None, shell_noise=None, n=nn, S=16, pixel=PIX)
+    arm = L.ImageArm(d, support_radius=3.5)
+    x = rng.standard_normal((nn,) * 3) * L.sphere(nn, 3.5)
+    v = arm.volumes_ft(jnp.asarray(x)[None])[0]
+    got = np.asarray(arm.slice(v.reshape(-1), jnp.eye(3)[None]))[0]
+    G = 2 * nn
+    proj = np.real(np.asarray(ftu.get_idft3(v.reshape(G, G, G)))).sum(2)
+    # RECOVAR's image layout: row i, column j holds (k0, k1) = (freq_j, freq_i), i.e. the transposed DFT.
+    ref_ft = np.asarray(ftu.get_dft2(jnp.asarray(proj.T)))[::2, ::2].reshape(-1) * np.asarray(arm.disc)
+    np.testing.assert_allclose(got, ref_ft, atol=1e-6 * np.abs(ref_ft).max())
+
+
 def test_adjoint_dot(setup):
     rng = setup["rng"]
     rt = setup["rt"]

@@ -191,8 +191,7 @@ def _forward_pair(arm):
             rows = jnp.einsum("kab,bc->kac", rt, Q)
             ph = arm.phases(rt, u[None])[0]
             v = arm.volumes_ft(x[None])[0]
-            p = L.slicing.slice_volume(v, rows, (arm.n, arm.n), (arm.G,) * 3, "linear_interp")
-            p = p * part["ctf"] * ph * jnp.sqrt(part["w"])
+            p = arm.slice(v, rows) * part["ctf"] * ph * jnp.sqrt(part["w"])
             return jnp.concatenate([p.real.reshape(-1), p.imag.reshape(-1)])
 
         def data(part):
