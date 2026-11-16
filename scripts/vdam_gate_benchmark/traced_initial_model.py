@@ -2,17 +2,19 @@
 
 For each gradient M-step, per Fourier shell inside the current sphere: the voxel count, the shell means of the reference
 projector's amplitude and power and of the half first moments' difference (amplitude and power, before any scale), the
-FSC floor, the fudge, the scale the run applied and the gate it applied. Each iteration's batch (particle ids and
-pseudo-halves) is saved too, so that the scale of every gate can be recomputed offline (analyze_gates.py).
+FSC floor, the fudge, the step, the scale the run applied and the gate it applied. Each iteration's batch (particle ids
+and pseudo-halves) is saved too, so that the scale of every gate can be recomputed offline (analyze_gates.py). After each
+iteration's resolution update: its average Pmax, current size, batch size and data_vs_prior, and the next resolution.
 
-The run is the command's own, with two hooks: the M-step's jitted transaction is called with ``return_intermediates``
-(its projector, gradient and updated projector are dropped on the device after the statistics are read), and
-``VdamUpdate.maximize`` notes the iteration and its batch. The extra outputs change the compiled program, so a traced
+The run is the command's own, with three hooks: the M-step's jitted transaction is called with ``return_intermediates``
+(its projector, gradient and updated projector are dropped on the device after the statistics are read),
+``VdamUpdate.maximize`` notes the iteration and its batch, and ``VdamUpdate.update_resolution`` writes the iteration line. The extra outputs change the compiled program, so a traced
 run need not be bitwise equal to an untraced one; compare traced runs with traced runs.
 
 Run:
     python scripts/vdam_gate_benchmark/traced_initial_model.py TRACE_DIR -- <relax initial_model arguments>
-Writes TRACE_DIR/gate_trace.jsonl (one line per M-step) and TRACE_DIR/batches.npz.
+Writes TRACE_DIR/gate_trace.jsonl (one line per M-step), TRACE_DIR/iterations.jsonl (one line per iteration) and
+TRACE_DIR/batches.npz.
 """
 
 from __future__ import annotations
@@ -48,15 +50,17 @@ def shell_means(values: np.ndarray, radius: int) -> tuple[np.ndarray, np.ndarray
 
 
 def install(trace_dir: Path) -> list:
-    """Install the two hooks; returns the list the batches are appended to."""
+    """Install the three hooks; returns the list the batches are appended to."""
     from relax.vdam import iteration_loop, relion_mstep
 
     trace_dir.mkdir(parents=True, exist_ok=True)
     handle = open(trace_dir / "gate_trace.jsonl", "w")
+    iterations = open(trace_dir / "iterations.jsonl", "w")
     batches: list = []
     context = {"iteration": None}
     device = relion_mstep.relion_vdam_m_step_device
     maximize = iteration_loop.VdamUpdate.maximize
+    update_resolution = iteration_loop.VdamUpdate.update_resolution
 
     def traced_maximize(self, current, accumulators, sums, meta):
         context["iteration"] = int(current.iter)
@@ -65,6 +69,22 @@ def install(trace_dir: Path) -> list:
                 (int(current.iter), np.asarray(current.subset_particle_ids, np.int64), np.asarray(current.subset_halfset_ids, np.int8))
             )
         return maximize(self, current, accumulators, sums, meta)
+
+    def traced_update_resolution(self, current):
+        updated = update_resolution(self, current)
+        line = {
+            "iteration": int(current.iter),
+            "ave_pmax": float(current.ave_Pmax),
+            "current_size": int(current.current_size),
+            "subset_size": int(current.subset_size),
+            "stepsize": float(current.grad_current_stepsize),
+            "fudge": float(current.tau2_fudge_factor),
+            "next_resolution_shell": int(updated.current_resolution_shell),
+            "data_vs_prior": np.asarray(current.data_vs_prior_class[0], np.float64).tolist(),
+        }
+        iterations.write(json.dumps(line) + "\n")
+        iterations.flush()
+        return updated
 
     def traced_device(*args, **kwargs):
         result = device(*args, **{**kwargs, "return_intermediates": True})
@@ -89,6 +109,7 @@ def install(trace_dir: Path) -> list:
             "radius": radius,
             "scale": None if scale is None else float(np.asarray(scale)),
             "fudge": float(np.asarray(args[11])),
+            "stepsize": float(np.asarray(args[10])),
             "counts": counts.tolist(),
             "ref_amp": ref_amp.tolist(),
             "ref_pow": ref_pow.tolist(),
@@ -103,6 +124,7 @@ def install(trace_dir: Path) -> list:
 
     relion_mstep.relion_vdam_m_step_device = traced_device
     iteration_loop.VdamUpdate.maximize = traced_maximize
+    iteration_loop.VdamUpdate.update_resolution = traced_update_resolution
     return batches
 
 

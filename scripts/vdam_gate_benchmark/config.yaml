@@ -4,11 +4,13 @@
 # source digest of this checkout's relax/cuda; `python` defaults to the checkout's pixi environment.
 
 output_root: null
+radius_root: null        # the run root of the source arms of `arms` written <gate>@<source>; needed only for those
 natives_dir: /scratch/gpfs/CRYOEM/gilleslab/em_work/relax_test_tiers/smoke_3547746f_20261111_134438/natives
 python: null
 
 nr_iter: 200
-gates: [relion, power, full_data_power, full_data_power_overlap]   # the first is the reference of the comparison
+# The first is the reference of the comparison. `<gate>@<source>`: the gate at the radius of the run of arm <source>.
+arms: [relion, power, full_data_power, full_data_power_overlap]
 gpu_model: h100          # the benchmark rows' GPU (docs/benchmarks/relion_vs_relax.md): a gate pair runs on one model
 
 # The K=1 VDAM rows of docs/benchmarks/relion_vs_relax.md: each row's particles, diameter and extra arguments are those

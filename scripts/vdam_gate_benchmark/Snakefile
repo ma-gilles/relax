@@ -1,32 +1,37 @@
-# VDAM gate benchmark: does the full-data power gate (relax initial_model --vdam-gate full_data_power) change what
-# RELION's gate gives on the ab initio benchmark datasets?
+# VDAM gate benchmark: do the power gates of relax initial_model --vdam-gate change what RELION's gate gives on the
+# ab initio benchmark datasets, and through what?
 #
 # The datasets are the K=1 VDAM rows of docs/benchmarks/relion_vs_relax.md (config.yaml: `datasets`). Each dataset
-# is run with every gate of config `gates` at the same seeds, from one checkout, native pack, GPU model and command line
-# but the gate:
+# is run with every arm of config `arms` at the same seeds, from one checkout, native pack, GPU model and command line
+# but the arm. An arm is a gate (`full_data_power`), or a gate at the Fourier radius of another run
+# (`full_data_power@relion`: the gate full_data_power, each iteration at the radius of the run of arm `relion`, same
+# dataset and seed, under config `radius_root`):
+#   0. radius_schedule    the source run's radius per iteration, as --fourier-radius-schedule (arms with a source).
 #   1. run_initial_model  relax initial_model, 200 iterations, the row's recorded arguments, through
-#                         traced_initial_model.py, which records every M-step's gate statistics and batch.      [GPU]
+#                         traced_initial_model.py, which records every M-step's gate statistics, each iteration's
+#                         Pmax and data_vs_prior, and each batch.                                                  [GPU]
 #   2. score_config       the scorer's config: the row's reference map, frozen mask and RELION runs
 #                         (docs/benchmarks/initialmodel_scores/config.json, tests/baselines/relion_vs_relax_benchmarks.json) and the runs of this workflow.
 #   3. score_maps         scripts/score_initialmodel_maps.py: every map rigidly registered to the reference; FSC-AUC
 #                         (masked and unmasked) to it, and between each pair of gates of one seed. All arms of a
 #                         dataset in one invocation, as the scorer requires.                                      [CPU]
 #   4. analyze_gates      every gate recomputed on each run's trace (and checked against the gate it applied).
-#   5. compare_gates      one table of the runs: each gate's difference from the first per seed and dataset, walls.
+#   5. compare_gates      one table of the runs: each arm's difference from the first per seed and dataset, walls.
 #
 # Outputs, under config `output_root`:
-#   <dataset>/<gate>/s<seed>/   run_it*_class001.mrc, run_it*_model.star, run_it*_recovar_meta.json (the gate's scale
-#                               and noise weight per written iteration), wall.tsv, trace/ (gate_trace.jsonl, batches.npz)
+#   <dataset>/<arm>/s<seed>/    run_it*_class001.mrc, run_it*_model.star, run_it*_recovar_meta.json (the gate's scale
+#                               and noise weight per written iteration), wall.tsv, trace/ (gate_trace.jsonl,
+#                               iterations.jsonl, batches.npz), radius_schedule.txt (arms with a source)
 #   <dataset>/gate_traces.json  the gates of every run of the dataset, recomputed from its trace
 #   <dataset>/scoring/          score_config.json, scores.json
 #   comparison/                 gate_comparison.csv, gate_comparison.md
-#   logs/                       one log per rule, dataset, gate and seed
+#   logs/                       one log per rule, dataset, arm and seed
 #
 # Run (the profile submits the GPU rules to Slurm). Run the snapshot's copy of this file, not a worktree's, so that
 # an edit of the checkout cannot re-queue finished runs:
 #   mkdir -p <dir>
 #   snakemake --snakefile <snapshot>/scripts/vdam_gate_benchmark/Snakefile --directory <dir> --profile slurm \
-#       --config output_root=<dir>
+#       --config output_root=<dir> [radius_root=<run root of the source arms>]
 
 import os
 from pathlib import Path
@@ -49,7 +54,8 @@ OUTPUT_ROOT = Path(config["output_root"])
 NATIVES = Path(config["natives_dir"])
 PYTHON = config["python"] or str(REPO / ".pixi/envs/default/bin/python")
 NR_ITER = config["nr_iter"]
-GATES = config["gates"]
+ARMS = config["arms"]
+RADIUS_ROOT = Path(config["radius_root"]) if config.get("radius_root") else None
 GPU_MODEL = config["gpu_model"]
 DATASETS = config["datasets"]
 RUN_DATASETS = config["run_datasets"]
@@ -59,6 +65,7 @@ SCORE_SCRIPT = str(REPO / "scripts" / "score_initialmodel_maps.py")
 SCORE_CONFIG_SCRIPT = str(BENCHMARK_DIR / "make_score_config.py")
 COMPARE_SCRIPT = str(BENCHMARK_DIR / "compare_gates.py")
 TRACE_SCRIPT = str(BENCHMARK_DIR / "traced_initial_model.py")
+RADIUS_SCRIPT = str(BENCHMARK_DIR / "radius_schedule.py")
 ANALYZE_SCRIPT = str(BENCHMARK_DIR / "analyze_gates.py")
 SCORE_CELLS = str(REPO / "docs" / "benchmarks" / "initialmodel_scores" / "config.json")
 BENCHMARK_ROWS = str(REPO / "tests" / "baselines" / "relion_vs_relax_benchmarks.json")
@@ -66,6 +73,8 @@ BENCHMARK_ROWS = str(REPO / "tests" / "baselines" / "relion_vs_relax_benchmarks.
 unknown = [name for name in RUN_DATASETS if name not in DATASETS]
 if unknown:
     raise WorkflowError(f"run_datasets names datasets that are not defined: {unknown}")
+if RADIUS_ROOT is None and any("@" in arm for arm in ARMS):
+    raise WorkflowError("arms with a radius source need radius_root: --config radius_root=<run root>")
 
 # The pinned environment only, this checkout on the import path, and the native pack for the GPU rules.
 CLEAN_ENV = f"env -u PYTHONHOME -u CONDA_PREFIX -u VIRTUAL_ENV PYTHONNOUSERSITE=1 PYTHONPATH={REPO}"
@@ -89,14 +98,35 @@ def seeds_of(dataset):
 
 
 def maps_of(dataset):
-    """Every final map of one dataset: each gate at each seed."""
-    return [output_path(dataset, gate, f"s{seed}", FINAL_MAP) for gate in GATES for seed in seeds_of(dataset)]
+    """Every final map of one dataset: each arm at each seed."""
+    return [output_path(dataset, arm, f"s{seed}", FINAL_MAP) for arm in ARMS for seed in seeds_of(dataset)]
+
+
+def gate_of(arm):
+    """The --vdam-gate of an arm."""
+    return arm.partition("@")[0]
+
+
+def radius_source(arm):
+    """The arm whose run gives this arm's radius, or None (the run's own data_vs_prior radius)."""
+    return arm.partition("@")[2] or None
+
+
+def schedule_of(wildcards):
+    """The radius schedule file of an arm with a source, else nothing."""
+    if radius_source(wildcards.arm) is None:
+        return []
+    return output_path(wildcards.dataset, wildcards.arm, f"s{wildcards.seed}", "radius_schedule.txt")
 
 
 wildcard_constraints:
     dataset="|".join(DATASETS),
-    gate="|".join(GATES),
+    arm="|".join(ARMS),
     seed=r"\d+",
+
+
+localrules:
+    radius_schedule,
 
 
 # ----------------------------------------------------------------------------------------------------------------
@@ -105,26 +135,53 @@ wildcard_constraints:
 
 
 rule all:
-    """Every dataset of `run_datasets` with both gates, scored, and the gate comparison."""
+    """Every dataset of `run_datasets` with every arm, scored, and the comparison."""
     input:
         comparison=output_path("comparison", "gate_comparison.md"),
         gate_traces=expand(output_path("{dataset}", "gate_traces.json"), dataset=RUN_DATASETS),
 
 
 # ----------------------------------------------------------------------------------------------------------------
-# Stage 1: the runs
+# Stage 0 and 1: the runs
 # ----------------------------------------------------------------------------------------------------------------
+
+
+rule radius_schedule:
+    message:
+        "The radius schedule of {wildcards.arm} on {wildcards.dataset}, seed {wildcards.seed}, from its source run"
+    input:
+        trace=lambda wildcards: str(
+            RADIUS_ROOT / wildcards.dataset / radius_source(wildcards.arm) / f"s{wildcards.seed}" / "trace"
+            / "gate_trace.jsonl"
+        ),
+        script=RADIUS_SCRIPT,
+    output:
+        schedule=output_path("{dataset}", "{arm}", "s{seed}", "radius_schedule.txt"),
+    params:
+        clean_env=CLEAN_ENV,
+        python=PYTHON,
+        nr_iter=NR_ITER,
+    shell:
+        "{params.clean_env} {params.python} {input.script} "
+        "--trace {input.trace} "
+        "--nr-iter {params.nr_iter} "
+        "--output {output.schedule}"
 
 
 rule run_initial_model:
     message:
-        "relax initial_model on {wildcards.dataset}, gate {wildcards.gate}, seed {wildcards.seed}"
+        "relax initial_model on {wildcards.dataset}, arm {wildcards.arm}, seed {wildcards.seed}"
     input:
         trace_script=TRACE_SCRIPT,
+        schedule=schedule_of,
     output:
-        final_map=output_path("{dataset}", "{gate}", "s{seed}", FINAL_MAP),
-        trace=output_path("{dataset}", "{gate}", "s{seed}", "trace", "gate_trace.jsonl"),
+        final_map=output_path("{dataset}", "{arm}", "s{seed}", FINAL_MAP),
+        trace=output_path("{dataset}", "{arm}", "s{seed}", "trace", "gate_trace.jsonl"),
     params:
+        gate=lambda wildcards: gate_of(wildcards.arm),
+        radius=lambda wildcards, input: (
+            f"--fourier-radius-schedule $(cat {input.schedule})" if input.schedule else ""
+        ),
         env=RUN_ENV,
         python=PYTHON,
         nr_iter=NR_ITER,
@@ -140,9 +197,9 @@ rule run_initial_model:
         gpu_model=GPU_MODEL,
         mem=lambda wildcards: DATASETS[wildcards.dataset]["gpu_memory"],
     benchmark:
-        output_path("{dataset}", "{gate}", "s{seed}", "wall.tsv")
+        output_path("{dataset}", "{arm}", "s{seed}", "wall.tsv")
     log:
-        output_path("logs", "{dataset}.{gate}.s{seed}.run_initial_model.log"),
+        output_path("logs", "{dataset}.{arm}.s{seed}.run_initial_model.log"),
     shell:
         "scratch=$(mktemp -d /tmp/vdam_gate_XXXXXX) && trap 'rm -rf $scratch' EXIT && "
         "{params.env} {params.python} {input.trace_script} $(dirname {output.trace}) -- "
@@ -163,7 +220,8 @@ rule run_initial_model:
         "--random_seed {wildcards.seed} "
         "--j 8 "
         "--gpu 0 "
-        "--vdam-gate {wildcards.gate} "
+        "--vdam-gate {params.gate} "
+        "{params.radius} "
         "{params.extra_args} "
         "--scratch_dir $scratch "
         "> {log} 2>&1"
@@ -189,7 +247,7 @@ rule score_config:
         cell=lambda wildcards: DATASETS[wildcards.dataset]["score_cell"],
         row=lambda wildcards: DATASETS[wildcards.dataset]["benchmark_row"],
         rows=BENCHMARK_ROWS,
-        gates=" ".join(GATES),
+        gates=" ".join(ARMS),
         seeds=lambda wildcards: " ".join(seeds_of(wildcards.dataset)),
         dataset_root=lambda wildcards: output_path(wildcards.dataset),
         final_map=FINAL_MAP,
@@ -243,8 +301,8 @@ rule analyze_gates:
         "Every gate recomputed on the traces of {wildcards.dataset}"
     input:
         traces=lambda wildcards: [
-            output_path(wildcards.dataset, gate, f"s{seed}", "trace", "gate_trace.jsonl")
-            for gate in GATES
+            output_path(wildcards.dataset, arm, f"s{seed}", "trace", "gate_trace.jsonl")
+            for arm in ARMS
             for seed in seeds_of(wildcards.dataset)
         ],
         script=ANALYZE_SCRIPT,
@@ -282,7 +340,7 @@ rule compare_gates:
         python=PYTHON,
         output_root=str(OUTPUT_ROOT),
         datasets=" ".join(RUN_DATASETS),
-        gates=" ".join(GATES),
+        gates=" ".join(ARMS),
     log:
         output_path("logs", "compare_gates.log"),
     shell:
