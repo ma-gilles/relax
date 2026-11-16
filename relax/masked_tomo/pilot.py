@@ -23,13 +23,30 @@ F32 = jnp.float32
 
 
 # ----------------------------------------------------------------------------------------------- loading
-def load_condition(root, condition, n, S, *, n_particles=None, noise_radius_px, need_patches=True):
+def load_condition(root, condition, n, S, *, n_particles=None, noise_radius_px, need_patches=True, extra_noise_var=0.0,
+                   extra_noise_seed=0):
+    """Read a condition's crops (and patches) and Fourier-crop them to the working sizes.
+
+    ``extra_noise_var`` > 0 adds white Gaussian noise of that per-pixel variance (data units) to every bin-1 detector
+    patch, one stream per scene from ``extra_noise_seed`` (the same in every condition), and takes the crops from the
+    noisy patches: the data of a lower-SNR acquisition of the same scenes (labelled exploratory option)."""
     acq = np.load(os.path.join(root, "acquisition.npz"))
     names = acq["particle_names"]
     P = len(names) if n_particles is None else min(n_particles, len(names))
     crops, patches = [], []
     for p in range(P):
         tomo, idx = str(names[p]).split("/")
+        if extra_noise_var > 0:
+            with mrcfile.open(os.path.join(root, condition, "ScenePatches", tomo, f"{idx}_patch2d.mrcs")) as m:
+                patch = np.asarray(m.data, np.float64)
+            rng = np.random.default_rng(np.random.SeedSequence([int(extra_noise_seed), p]))
+            patch = (patch + np.sqrt(extra_noise_var) * rng.standard_normal(patch.shape)).astype(np.float32)
+            N, M = int(acq["target_box"]), patch.shape[-1]
+            lo = (M - N) // 2
+            crops.append(patch[:, lo : lo + N, lo : lo + N])
+            if need_patches:
+                patches.append(patch)
+            continue
         with mrcfile.open(os.path.join(root, condition, "Subtomograms", tomo, f"{idx}_stack2d.mrcs")) as m:
             crops.append(np.asarray(m.data, np.float32))
         if need_patches:
