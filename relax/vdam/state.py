@@ -79,6 +79,9 @@ class InitialModelState:
     gate_noise_weight: Optional[float] = None
     # The overlap gate's weight of each particle in its half's first moment (float64 [N]); None until its first iteration.
     gate_noise_coefficients: Optional[np.ndarray] = None
+    # The window gate's weight of each particle in the noise of the mean first moment and of the reference.
+    gate_window_moment: Optional[np.ndarray] = None
+    gate_window_reference: Optional[np.ndarray] = None
 
     @property
     def effective_current_size(self) -> int:

@@ -176,13 +176,15 @@ def make_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--vdam-gate",
-        choices=("relion", "power", "full_data_power", "full_data_power_overlap"),
+        choices=("relion", "power", "full_data_power", "full_data_power_overlap", "seen_power_overlap", "window_power"),
         default=DEFAULTS.vdam_gate,
         help=(
             "VDAM's shrinkage gate: relion (shell means of amplitudes of the half-batch disagreement, as RELION); power "
             "(shell means of power, the disagreement as measured); full_data_power (power, the disagreement rescaled to "
             "two full-data half maps for independent batches); full_data_power_overlap (the same from each particle's "
-            "weight in the first moments, for batches that repeat particles). All but relion: K=1. "
+            "weight in the first moments, for batches that repeat particles); seen_power_overlap (the same with the particles "
+            "seen so far in place of the data set); window_power (the reference's own noise, from the step and the "
+            "moments). All but relion: K=1. "
             "docs/math/vdam_gate_derivation.md"
         ),
     )

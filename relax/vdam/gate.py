@@ -157,7 +157,111 @@ class FullDataOverlapPowerGate:
         return replace(state, gate_noise_coefficients=coefficients), scale
 
 
-VdamGate = RelionGate | PowerGate | FullDataPowerGate | FullDataOverlapPowerGate
+def seen_disagreement_scale(coefficients: np.ndarray) -> float:
+    """:func:`overlap_disagreement_scale` with the data set replaced by the particles seen so far.
+
+    The particles seen are those with a nonzero weight in the first moments (a weight decays by 0.9 per iteration and
+    reaches the float64 underflow only after about 7000 iterations). The reference holds no particle it has not seen,
+    so its noise is at least that of two half maps of the particles seen: 1 at the first iteration (the batch itself),
+    the full-data scale once every particle has been seen.
+    """
+    return overlap_disagreement_scale(coefficients, int(np.count_nonzero(coefficients)))
+
+
+def advance_window_coefficients(
+    moment: np.ndarray | None,
+    reference: np.ndarray | None,
+    particle_ids: np.ndarray,
+    halfset_ids: np.ndarray,
+    n_particles: int,
+    step: float,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Each particle's weight in the noise of the mean first moment and of the reference after one more iteration.
+
+    VDAM's direction is the halves' reconstruction minus the reference, so with the gate open (1) and the second moment
+    at 1 the noise follows mu <- 0.9 mu + 0.1 (delta - c) and c <- c + step mu, with delta the particle's weight in the
+    mean of the two half reconstructions (1 / (2 n_h) in half h) and mu = delta - c at the first iteration (the moment
+    is then the direction itself). ``moment`` and ``reference`` are mu and c after the previous iteration (None before
+    the first; the initial reference holds no particle noise). Returns the new (mu, c), float64 per particle.
+    """
+    delta = np.zeros(n_particles)
+    for half in (0, 1):
+        members = particle_ids[halfset_ids == half]
+        if members.size:
+            delta[members] = 0.5 / members.size
+    if moment is None:
+        reference = np.zeros(n_particles)
+        moment = delta
+    else:
+        moment = FIRST_MOMENT_DECAY * moment + (1.0 - FIRST_MOMENT_DECAY) * (delta - reference)
+    return moment, reference + step * moment
+
+
+def window_disagreement_scale(reference: np.ndarray, coefficients: np.ndarray) -> float:
+    """The factor on the halves' disagreement power that gives the noise power of the reference itself.
+
+    The reference's noise power is s^2 * sum(reference^2); in the convention of the half-map FSC (two halves, each with
+    twice the noise of their mean) the gate's disagreement must stand for 4 s^2 * sum(reference^2), and the measured
+    one is s^2 * sum(coefficients^2). The factor is 1 when every batch is all particles and the reference has settled.
+    """
+    return 4.0 * float(np.sum(reference**2)) / float(np.sum(coefficients**2))
+
+
+@dataclass(frozen=True)
+class SeenOverlapPowerGate:
+    """:class:`FullDataOverlapPowerGate` with the particles seen so far in place of the data set (study variant)."""
+
+    n_particles: int
+    name = "seen_power_overlap"
+
+    def advance(self, state: InitialModelState) -> tuple[InitialModelState, float]:
+        """The state after this iteration's mini-batch joined the moments, and the scale for its disagreement."""
+        if not state.pseudo_halfsets:
+            return state, 1.0
+        coefficients = advance_noise_coefficients(
+            state.gate_noise_coefficients,
+            np.asarray(state.subset_particle_ids),
+            np.asarray(state.subset_halfset_ids),
+            self.n_particles,
+        )
+        return replace(state, gate_noise_coefficients=coefficients), seen_disagreement_scale(coefficients)
+
+
+@dataclass(frozen=True)
+class WindowPowerGate:
+    """The power gate with the reference's own noise, from the step and the moments (study variant).
+
+    The state carries each particle's weight in its half's first moment (``gate_noise_coefficients``) and in the noise of
+    the mean moment and of the reference (``gate_window_moment``, ``gate_window_reference``). The noise is that of an
+    open gate (:func:`advance_window_coefficients`); a shell the gate partly closes holds less.
+    """
+
+    n_particles: int
+    name = "window_power"
+
+    def advance(self, state: InitialModelState) -> tuple[InitialModelState, float]:
+        """The state after this iteration's mini-batch and step, and the scale for its disagreement."""
+        if not state.pseudo_halfsets:
+            return state, 1.0
+        ids, halves = np.asarray(state.subset_particle_ids), np.asarray(state.subset_halfset_ids)
+        coefficients = advance_noise_coefficients(state.gate_noise_coefficients, ids, halves, self.n_particles)
+        moment, reference = advance_window_coefficients(
+            state.gate_window_moment,
+            state.gate_window_reference,
+            ids,
+            halves,
+            self.n_particles,
+            float(state.grad_current_stepsize),
+        )
+        state = replace(
+            state, gate_noise_coefficients=coefficients, gate_window_moment=moment, gate_window_reference=reference
+        )
+        return state, window_disagreement_scale(reference, coefficients)
+
+
+VdamGate = (
+    RelionGate | PowerGate | FullDataPowerGate | FullDataOverlapPowerGate | SeenOverlapPowerGate | WindowPowerGate
+)
 
 
 def vdam_gate(name: str, n_particles: int) -> VdamGate:
@@ -170,4 +274,8 @@ def vdam_gate(name: str, n_particles: int) -> VdamGate:
         return FullDataPowerGate(n_particles=n_particles)
     if name == "full_data_power_overlap":
         return FullDataOverlapPowerGate(n_particles=n_particles)
+    if name == "seen_power_overlap":
+        return SeenOverlapPowerGate(n_particles=n_particles)
+    if name == "window_power":
+        return WindowPowerGate(n_particles=n_particles)
     raise ValueError(f"unknown VDAM gate: {name!r}")

@@ -17,11 +17,16 @@ from relax.vdam.gate import (
     FullDataPowerGate,
     PowerGate,
     RelionGate,
+    SeenOverlapPowerGate,
+    WindowPowerGate,
     advance_noise_coefficients,
     advance_noise_weight,
+    advance_window_coefficients,
     full_data_disagreement_scale,
     overlap_disagreement_scale,
+    seen_disagreement_scale,
     vdam_gate,
+    window_disagreement_scale,
 )
 from relax.vdam.iteration_loop import VdamUpdate, run_vdam_iterations
 from relax.vdam.native_options import NativeInitialModelOptions, VdamEnvironment
@@ -157,6 +162,59 @@ def test_the_overlap_gate_carries_the_coefficients_and_the_power_gate_scales_by_
     assert scale == 1.0 and tail.gate_noise_coefficients is state.gate_noise_coefficients
     unchanged, scale = PowerGate().advance(state)
     assert unchanged is state and scale == 1.0
+
+
+def test_the_seen_scale_is_one_for_the_first_batch_and_the_overlap_scale_once_every_particle_is_seen():
+    gate, state = SeenOverlapPowerGate(n_particles=1000), _state()
+    ids = np.arange(0, 200)
+    state, scale = gate.advance(replace(state, subset_particle_ids=ids, subset_halfset_ids=_halves(ids)))
+    assert scale == pytest.approx(1.0, rel=1e-12)
+    for ids in (np.arange(100, 400), np.arange(0, 1000)):
+        state, scale = gate.advance(replace(state, subset_particle_ids=ids, subset_halfset_ids=_halves(ids)))
+    assert scale == overlap_disagreement_scale(state.gate_noise_coefficients, 1000)
+    assert seen_disagreement_scale(state.gate_noise_coefficients) == scale
+
+
+@pytest.mark.parametrize("step", [0.3, 0.5, 0.9])
+def test_the_window_scale_recovers_the_noise_of_the_reference_through_the_update(step):
+    """Monte Carlo of the update with the gate open and the second moment 1, particles with fixed noise.
+
+    Each half's direction is the mean noise of its batch particles minus the reference; first = direction, then
+    0.9 first + 0.1 direction; reference += step * mean(first). The reference's noise power times 4 must equal the
+    measured disagreement times the window scale. 4000 voxels, 60 iterations of 10% batches; rtol .1.
+    """
+    n, voxels, rng = 2000, 4000, np.random.default_rng(23)
+    noise = rng.standard_normal((n, voxels))
+    halves = _halves(np.arange(n))
+    reference = np.zeros(voxels)
+    first = coefficients = moment = window = None
+    for _ in range(60):
+        ids = np.sort(rng.choice(n, n // 10, replace=False))
+        direction = np.stack([noise[ids[halves[ids] == h]].mean(axis=0) for h in (0, 1)]) - reference
+        first = direction if first is None else 0.9 * first + 0.1 * direction
+        reference = reference + step * first.mean(axis=0)
+        coefficients = advance_noise_coefficients(coefficients, ids, halves[ids], n)
+        moment, window = advance_window_coefficients(moment, window, ids, halves[ids], n, step)
+    measured = np.mean((first[0] - first[1]) ** 2)
+    assert_matches(measured * window_disagreement_scale(window, coefficients), 4 * np.mean(reference**2), rtol=0.1)
+
+
+def test_the_window_scale_is_the_step_squared_at_the_first_iteration_and_one_when_batches_are_all_particles():
+    ids = np.arange(1000)
+    coefficients = advance_noise_coefficients(None, ids, _halves(ids), 1000)
+    moment, window = advance_window_coefficients(None, None, ids, _halves(ids), 1000, 0.5)
+    assert window_disagreement_scale(window, coefficients) == pytest.approx(0.25, rel=1e-12)
+    for _ in range(400):
+        coefficients = advance_noise_coefficients(coefficients, ids, _halves(ids), 1000)
+        moment, window = advance_window_coefficients(moment, window, ids, _halves(ids), 1000, 0.5)
+    assert window_disagreement_scale(window, coefficients) == pytest.approx(1.0, rel=1e-6)
+    gate, state = WindowPowerGate(n_particles=1000), _state()
+    state, scale = gate.advance(
+        replace(state, subset_particle_ids=ids, subset_halfset_ids=_halves(ids), grad_current_stepsize=0.5)
+    )
+    assert scale == pytest.approx(0.25, rel=1e-12) and state.gate_window_reference is not None
+    tail, scale = gate.advance(replace(state, pseudo_halfsets=False))
+    assert scale == 1.0 and tail.gate_window_reference is state.gate_window_reference
 
 
 def test_relion_gate_takes_no_scale_and_leaves_the_state():

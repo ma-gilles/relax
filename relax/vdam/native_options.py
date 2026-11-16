@@ -188,7 +188,9 @@ class InitialModelDefaults:
     stochastic_all_iterations: bool = False
     uniform_class_direction_prior: bool = False
     # The shrinkage gate of VDAM's update (relax.vdam.gate); RELION's unless the full-data power gate is asked for.
-    vdam_gate: Literal["relion", "power", "full_data_power", "full_data_power_overlap"] = "relion"
+    vdam_gate: Literal[
+        "relion", "power", "full_data_power", "full_data_power_overlap", "seen_power_overlap", "window_power"
+    ] = "relion"
 
 
 @dataclass(frozen=True, kw_only=True)
