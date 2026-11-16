@@ -288,6 +288,9 @@ class MaskedArm:
         self.window = window  # None, or the side (working px) of a central detector window (matched field)
         self.max_r = S // 2 - 1
         self.k_ok = jnp.asarray((radius2(S) <= self.max_r**2).reshape(-1))
+        # Template frequencies where the filter can be non-zero (the projector's ball; the filter is zero elsewhere by
+        # construction): the trilinear gather runs only there. None means the whole template box.
+        self.support_idx = jnp.asarray(np.nonzero(np.asarray(self.k_ok))[0].astype(np.int32))
         self.seed = seed
         self.n_mc = n_mc
         self.dof_correction = dof_correction
@@ -385,11 +388,25 @@ class MaskedArm:
     def _filtered_channels(self, vol, Q, u, filt):
         """:meth:`filtered` of channels-last padded DFTs ``vol (G, G, G, P)``: one trilinear gather per corner
         fetches every component, and the ``P`` inverse DFTs run as one batch."""
+        return self._to_crop(self._spectrum(self._gather(vol, Q), u, filt), self.N)
+
+    def _support_k(self):
+        return self.k3t if self.support_idx is None else self.k3t[self.support_idx]
+
+    def _gather(self, vol, Q):
+        """Trilinear samples ``(K, P)`` of channels-last ``vol`` at the rotated template frequencies on the support."""
         S, G = self.N, self.G
-        coords = (self.k3t @ Q) * (G / S) + G // 2
-        phase = jnp.exp(-2j * jnp.pi * (self.k3t @ u) / S)
-        f = trilinear(vol, coords) * phase[:, None] * filt[:, None]  # (N^3, P)
-        return self._to_crop(jnp.moveaxis(f, -1, 0), S)
+        return trilinear(vol, (self._support_k() @ Q) * (G / S) + G // 2)
+
+    def _spectrum(self, t, u, filt):
+        """``(P, N^3)`` template spectra ``t * phase(u) * filt``, zero off the support."""
+        S = self.N
+        phase = jnp.exp(-2j * jnp.pi * (self._support_k() @ u) / S)
+        if self.support_idx is None:
+            return jnp.moveaxis(t * phase[:, None] * filt[:, None], -1, 0)
+        f = t * phase[:, None] * filt[self.support_idx][:, None]
+        return jnp.zeros((t.shape[1], S**3), f.dtype).at[:, self.support_idx].set(
+            f.T, indices_are_sorted=True, unique_indices=True)
 
     def stats(self, vft, part, Qs, us):
         """``inner (P, R, T)`` and ``gram (tri, R, T)``; shifts ``us`` must be ``delta + integer`` with one
@@ -421,12 +438,10 @@ class MaskedArm:
         filt = part["filt"]
 
         def per_rot(Q):
-            coords = (self.k3t @ Q) * (G / S) + G // 2
-            t = trilinear(vol, coords)  # (S^3, P)
+            t = self._gather(vol, Q)  # (K, P)
 
             def per_delta(u):
-                phase = jnp.exp(-2j * jnp.pi * (self.k3t @ u) / S)
-                return self._to_crop(jnp.moveaxis(t * phase[:, None] * filt[:, None], -1, 0), S)
+                return self._to_crop(self._spectrum(t, u, filt), S)
 
             return jax.vmap(per_delta)(deltas)  # (D, P, Cc, Cc, Cc)
 
@@ -488,6 +503,7 @@ class KernelBoxMaskedArm(MaskedArm):
         if N > self.S or self.Cc > N or N % 2:
             raise ValueError("template box must be even, at most the scene grid and at least the crop")
         self.N, self.k3t = N, jnp.asarray(grid3(N))
+        self.support_idx = None  # the kernel's spectrum on the N grid is not confined to the projector's ball
         # Largest integer shift (per axis) for which the kernel box is exact: r_mask + r_support + s < N / 2.
         self.exact_shift = N // 2 - 1 - int(np.ceil(mask_radius)) - int(np.ceil(support_radius))
 
