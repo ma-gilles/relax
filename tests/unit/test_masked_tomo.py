@@ -303,8 +303,9 @@ def teardown_module(module):
             json.dump(REPORT, f, indent=1, default=float)
 
 
-def test_fft_shift_path_equals_rolls(setup):
-    """MaskedArm.stats with the crop equal to the scene box (FFT correlations) equals explicit periodic rolls."""
+def test_fft_shift_path_equals_rolls(setup, monkeypatch):
+    """MaskedArm.stats with the crop equal to the scene box (FFT correlations, forced) equals explicit periodic rolls."""
+    monkeypatch.setattr(L, "FFT_SHIFTS_ABOVE", 0)
     d = setup["d"]
     arm = L.MaskedArm(d, support_radius=3.5, mask_radius=4.5, crop=S, lam_rel=0.1, n_mc=1)
     rt, ctf = setup["rt"], setup["ctf"]

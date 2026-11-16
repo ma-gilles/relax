@@ -262,7 +262,8 @@ class ImageArm:
 
 # ----------------------------------------------------------------------------------------------- arm B
 # Shift sets larger than this use the FFT-correlation path in MaskedArm.stats_multi (2 T Cc^3 pre-rolled copies and
-# products scale with T; the correlations do not).
+# products scale with T; the correlations do not). Smaller sets use the products, which are faster there and match
+# the reference to float32 on the GPU.
 FFT_SHIFTS_ABOVE = 256
 
 
@@ -450,11 +451,11 @@ class MaskedArm:
 
             return jax.vmap(per_delta)(deltas)  # (D, P, Cc, Cc, Cc)
 
-        if self.Cc == self.N or T > FFT_SHIFTS_ABOVE:
-            # The crop is the whole periodic template box (a roll is then an exact periodic shift), or the shift set is
-            # large: every integer shift comes from FFT cross-correlations on the crop, sum_x V(x) f(x - m) and
-            # sum_y M(y + m) (f_a f_b)(y), per sub-pixel part. These are circular on the crop, i.e. exactly the rolls of
-            # the product path below, for any crop.
+        if T > FFT_SHIFTS_ABOVE:
+            # Large shift sets: every integer shift comes from FFT cross-correlations on the crop, sum_x V(x) f(x - m)
+            # and sum_y M(y + m) (f_a f_b)(y), per sub-pixel part. These are circular on the crop, i.e. exactly the
+            # rolls of the product path below, for any crop (a periodic shift when the crop is the whole box). On the
+            # GPU this path differs from the product path by ~1e-3 relative (GPU jobs 7482932 and 7483092; CPU: 1e-7).
             Cc = self.Cc
             idx = jnp.mod(ints, Cc)
             FV = jnp.fft.rfftn(mask * V)
