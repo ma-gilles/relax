@@ -185,6 +185,7 @@ def main():
     ap.add_argument("--w-band", type=int, default=W_BAND)
     ap.add_argument("--chunk", type=int, default=32)
     ap.add_argument("--search-particles", type=int, default=8)
+    ap.add_argument("--only-image", action="store_true", help="stages: image arms only (old vs new)")
     ap.add_argument("--template-box", type=int, default=None, help="'new' is KernelBoxMaskedArm with this box")
     ap.add_argument("--schedule", default="n32", choices=("n32", "pilot64"), help="search schedule (run_pilot.py)")
     ap.add_argument("--search-budget-log2", type=int, default=28)
@@ -410,7 +411,7 @@ def main():
         swi = {}
         img = make("new", "image")
         for B, lb in ((1, 24), (1, 26), (2, 26), (8, 26), (8, 28), (16, 28)):
-            PLnew.SEARCH_PARTICLES, PLnew.SEARCH_BUDGET = B, 2**lb
+            PLnew.SEARCH_PARTICLES_IMAGE, PLnew.SEARCH_BUDGET_IMAGE = B, 2**lb
             try:
                 PLnew.search(img, maps[:1], ids, Q0[ids], u0[ids], [PASS1, PASS2], CHUNK)
                 t0 = time.time()
@@ -420,7 +421,7 @@ def main():
                 swi[f"image_A1_B{B}_budget2^{lb}_ms_per_particle"] = f"failed: {type(e).__name__}"
             report["sweep_image"] = swi
             save()
-        PLnew.SEARCH_PARTICLES, PLnew.SEARCH_BUDGET = a.search_particles, 2**a.search_budget_log2
+        PLnew.SEARCH_PARTICLES_IMAGE, PLnew.SEARCH_BUDGET_IMAGE = 1, 2**26
         print("sweep_image", json.dumps(swi), flush=True)
 
     # ------------------------------------------------------------------ stages (timed after a warm-up on 8 particles)
@@ -469,6 +470,8 @@ def main():
         if st not in stages:
             continue
         for impl, arm in entries:
+            if a.only_image and not impl.startswith("image"):
+                continue
             t0 = time.time()
             if st == "B2":
                 runners[st](impl, arm, warm, n_iter=1)
@@ -484,7 +487,7 @@ def main():
             print(st, impl, timing[f"{st}_{impl}_s"], flush=True)
             save()
         for ra_, na_ in (("ref", "new"), ("image_ref", "image")):
-            if ra_ not in allarms or na_ not in allarms:
+            if (st, ra_) not in results or (st, na_) not in results:
                 continue
             r, n = results[(st, ra_)], results[(st, na_)]
             cmp = {}
