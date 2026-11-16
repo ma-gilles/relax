@@ -225,7 +225,7 @@ def _search_batched(arm, X, ids, Q0s, u0s, schedule):
     """:func:`search` for the masked arms: ``SEARCH_PARTICLES`` particles and a memory-sized rotation chunk per
     call, every sub-pixel part of the shift grid in the same call, scores fused with the latent epilogue."""
     vft = arm.volumes_ft(jnp.asarray(X))
-    P, S3 = vft.shape[0], arm.S**3
+    P, S3 = vft.shape[0], arm.N**3  # the template box sets the per-rotation buffers
     Qb = np.array(Q0s, np.float32)
     ub = np.array(u0s, np.float32)
     post = np.zeros(len(ids))

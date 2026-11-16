@@ -288,6 +288,8 @@ class MaskedArm:
             raise ValueError("crop too small for the mask and the shift search")
         self.mask = jnp.asarray(sphere(crop, mask_radius))
         self.k3 = jnp.asarray(grid3(S))
+        # Template side: the periodic box of the predicted mean (the scene grid here; KernelBoxMaskedArm shrinks it).
+        self.N, self.k3t = S, self.k3
         self.lam_rel = lam_rel
         self.window = window  # None, or the side (working px) of a central detector window (matched field)
         self.max_r = S // 2 - 1
@@ -314,9 +316,10 @@ class MaskedArm:
     def _whiten(self, b, D, lam):
         return b / jnp.sqrt(D + lam)
 
-    def _to_crop(self, qft):
-        """Central ``Cc^3`` crop of the real part of the centred inverse DFT of ``(..., S^3)`` spectra."""
-        S, Cc = self.S, self.Cc
+    def _to_crop(self, qft, box=None):
+        """Central ``Cc^3`` crop of the real part of the centred inverse DFT of ``(..., box^3)`` spectra (default
+        the scene grid ``S``)."""
+        S, Cc = box or self.S, self.Cc
         q = jnp.real(ftu.get_idft3(qft.reshape(qft.shape[:-1] + (S, S, S))))
         lo = (S - Cc) // 2
         return q[..., lo : lo + Cc, lo : lo + Cc, lo : lo + Cc]
@@ -388,11 +391,11 @@ class MaskedArm:
     def _filtered_channels(self, vol, Q, u, filt):
         """:meth:`filtered` of channels-last padded DFTs ``vol (G, G, G, P)``: one trilinear gather per corner
         fetches every component, and the ``P`` inverse DFTs run as one batch."""
-        S, G = self.S, self.G
-        coords = (self.k3 @ Q) * (G / S) + G // 2
-        phase = jnp.exp(-2j * jnp.pi * (self.k3 @ u) / S)
-        f = trilinear(vol, coords) * phase[:, None] * filt[:, None]  # (S^3, P)
-        return self._to_crop(jnp.moveaxis(f, -1, 0))
+        S, G = self.N, self.G
+        coords = (self.k3t @ Q) * (G / S) + G // 2
+        phase = jnp.exp(-2j * jnp.pi * (self.k3t @ u) / S)
+        f = trilinear(vol, coords) * phase[:, None] * filt[:, None]  # (N^3, P)
+        return self._to_crop(jnp.moveaxis(f, -1, 0), S)
 
     def stats(self, vft, part, Qs, us):
         """``inner (P, R, T)`` and ``gram (tri, R, T)``; shifts ``us`` must be ``delta + integer`` with one
@@ -420,21 +423,21 @@ class MaskedArm:
             return jax.vmap(lambda m: jnp.roll(a, shift=(-m[0], -m[1], -m[2]), axis=(0, 1, 2)).reshape(-1))(ints)
 
         vol = jnp.moveaxis(vft, 0, -1)
-        S, G = self.S, self.G
+        S, G = self.N, self.G
         filt = part["filt"]
 
         def per_rot(Q):
-            coords = (self.k3 @ Q) * (G / S) + G // 2
+            coords = (self.k3t @ Q) * (G / S) + G // 2
             t = trilinear(vol, coords)  # (S^3, P)
 
             def per_delta(u):
-                phase = jnp.exp(-2j * jnp.pi * (self.k3 @ u) / S)
-                return self._to_crop(jnp.moveaxis(t * phase[:, None] * filt[:, None], -1, 0))
+                phase = jnp.exp(-2j * jnp.pi * (self.k3t @ u) / S)
+                return self._to_crop(jnp.moveaxis(t * phase[:, None] * filt[:, None], -1, 0), S)
 
             return jax.vmap(per_delta)(deltas)  # (D, P, Cc, Cc, Cc)
 
-        if self.Cc == self.S or T > FFT_SHIFTS_ABOVE:
-            # The crop is the whole periodic scene box (a roll is then an exact periodic shift), or the shift set is
+        if self.Cc == self.N or T > FFT_SHIFTS_ABOVE:
+            # The crop is the whole periodic template box (a roll is then an exact periodic shift), or the shift set is
             # large: every integer shift comes from FFT cross-correlations on the crop, sum_x V(x) f(x - m) and
             # sum_y M(y + m) (f_a f_b)(y), per sub-pixel part. These are circular on the crop, i.e. exactly the rolls of
             # the product path below, for any crop.
@@ -468,6 +471,48 @@ class MaskedArm:
         inner = pick(jnp.einsum("rdpx,tx->prdt", f, Vs, precision=hi))
         gram = pick(jnp.einsum("rdkx,tx->krdt", f[:, :, first] * f[:, :, second], Ms, precision=hi)) / c
         return inner, gram
+
+
+class KernelBoxMaskedArm(MaskedArm):
+    """Arm B with the data side on the full scene field and the template side on a small periodic box
+    (``masked-tomo/notes/TWO_RES.md``, Option A; opt-in, ``MaskedArm`` is unchanged).
+
+    ``V``, ``D``, ``lam`` and the Monte Carlo ``c`` are ``MaskedArm``'s on the scene grid ``S``. The predicted mean
+    ``F_g x = M C (h_S (*)_S x_g)``, ``h_S = F_S^-1 [D / sqrt(D + lam)]``, reads ``h_S`` only at offsets
+    ``|d|_inf <= r_mask + r_support + |shift|``; it is evaluated as ``M C (h_N (*)_N x_g)`` with ``h_N`` the central
+    ``N^3`` box of ``h_S`` (its DFT replaces the per-particle filter). This is exact for the masked crop while that
+    offset stays below ``N / 2``; the one other difference from ``MaskedArm`` is that the target spectrum is
+    interpolated at the ``N``-grid frequencies. ``N = S`` is ``MaskedArm``. ``kernel_tail`` (in every prepared
+    particle) is the fraction of ``||h_S||^2`` outside the central ``N^3`` box (labelled diagnostic for ``N`` below
+    the exact size)."""
+
+    name = "masked_kb"
+
+    def __init__(self, data: Particles, support_radius, mask_radius, *, template_box, **kw):
+        super().__init__(data, support_radius, mask_radius, **kw)
+        N = int(template_box)
+        if N > self.S or self.Cc > N or N % 2:
+            raise ValueError("template box must be even, at most the scene grid and at least the crop")
+        self.N, self.k3t = N, jnp.asarray(grid3(N))
+        # Largest integer shift (per axis) for which the kernel box is exact: r_mask + r_support + s < N / 2.
+        self.exact_shift = N // 2 - 1 - int(np.ceil(mask_radius)) - int(np.ceil(support_radius))
+
+    def kernel(self, filt):
+        """``(N^3,)`` centred DFT of the central ``N^3`` box of ``h_S = F_S^-1 filt``, and the tail fraction."""
+        S, N = self.S, self.N
+        cdt = jnp.result_type(filt.dtype, C64)  # complex64 in production (float32 filter)
+        h = ftu.get_idft3(filt.reshape(S, S, S).astype(cdt))  # offset 0 at index S // 2
+        lo = (S - N) // 2
+        box = h[lo : lo + N, lo : lo + N, lo : lo + N]
+        total = jnp.sum(jnp.abs(h) ** 2)
+        tail = 1.0 - jnp.sum(jnp.abs(box) ** 2) / total
+        return ftu.get_dft3(box).reshape(-1).astype(cdt), tail
+
+    def prepare_particle(self, i):
+        out = super().prepare_particle(i)
+        if "kernel_tail" not in out:
+            out["filt"], out["kernel_tail"] = self.kernel(out["filt"])
+        return out
 
 
 def dof_ratio(D, lam, k_ok):

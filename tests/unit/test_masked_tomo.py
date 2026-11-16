@@ -349,3 +349,20 @@ def test_fft_shift_path_equals_product_path_on_a_crop(setup, monkeypatch):
     for a, b in zip(products, ffts):  # the FFT path transforms the float32 mask in complex64
         np.testing.assert_allclose(np.asarray(b), np.asarray(a), rtol=1e-5, atol=1e-6 * float(jnp.abs(a).max()))
 
+
+def test_kernel_box_arm_reduces_to_masked_arm(setup):
+    """KernelBoxMaskedArm with the template box equal to the scene grid is MaskedArm (data side and template side)."""
+    d = setup["d"]
+    kw = dict(support_radius=3.5, mask_radius=2.5, crop=12, lam_rel=0.1, n_mc=1)
+    ref, kb = L.MaskedArm(d, **kw), L.KernelBoxMaskedArm(d, template_box=S, **kw)
+    pr, pk = ref.prepare_particle(0), kb.prepare_particle(0)
+    np.testing.assert_allclose(np.asarray(pk["V"]), np.asarray(pr["V"]), rtol=0, atol=0)
+    assert float(pk["kernel_tail"]) < 1e-12
+    rng = np.random.default_rng(10)
+    vft = ref.volumes_ft(jnp.asarray(rng.standard_normal((2, n, n, n)) * L.sphere(n, 3.5)))
+    Qs = jnp.asarray(Rotation.random(2, random_state=6).as_matrix())
+    us = jnp.asarray(np.array([[0.25, 0.0, -0.5], [1.25, -1.0, 0.5], [-0.75, 1.0, 0.5]]))
+    dl, it, gd = (jnp.asarray(x) for x in PL.split_shifts(us))
+    # The filter is float32 by construction (particle_from), so its kernel round trip is complex64: float32 agreement.
+    for a, b in zip(ref.stats_multi(vft, ref.particle(0), Qs, dl, it, gd), kb.stats_multi(vft, kb.particle(0), Qs, dl, it, gd)):
+        np.testing.assert_allclose(np.asarray(b), np.asarray(a), rtol=1e-5, atol=1e-6 * float(jnp.abs(a).max()))
