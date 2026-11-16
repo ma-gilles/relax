@@ -267,6 +267,11 @@ class ImageArm:
 
 
 # ----------------------------------------------------------------------------------------------- arm B
+# Shift sets larger than this use the FFT-correlation path in MaskedArm.stats_multi (2 T Cc^3 pre-rolled copies and
+# products scale with T; the correlations do not).
+FFT_SHIFTS_ABOVE = 256
+
+
 class MaskedArm:
     """Masked whitened scene reconstruction around the target (see the module docstring)."""
 
@@ -428,9 +433,11 @@ class MaskedArm:
 
             return jax.vmap(per_delta)(deltas)  # (D, P, Cc, Cc, Cc)
 
-        if self.Cc == self.S:
-            # The crop is the whole periodic scene box: a roll is an exact periodic shift, and every integer shift
-            # comes from FFT cross-correlations, sum_x V(x) f(x - m) and sum_y M(y + m) (f_a f_b)(y), per sub-pixel part.
+        if self.Cc == self.S or T > FFT_SHIFTS_ABOVE:
+            # The crop is the whole periodic scene box (a roll is then an exact periodic shift), or the shift set is
+            # large: every integer shift comes from FFT cross-correlations on the crop, sum_x V(x) f(x - m) and
+            # sum_y M(y + m) (f_a f_b)(y), per sub-pixel part. These are circular on the crop, i.e. exactly the rolls of
+            # the product path below, for any crop.
             Cc = self.Cc
             idx = jnp.mod(ints, Cc)
             FV = jnp.fft.rfftn(mask * V)

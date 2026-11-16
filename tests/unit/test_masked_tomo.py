@@ -17,6 +17,7 @@ from recovar.core import slicing
 from scipy.spatial.transform import Rotation
 
 from relax.masked_tomo import likelihoods as L
+from relax.masked_tomo import pilot as PL
 
 jax.config.update("jax_enable_x64", True)
 S, n, K, PIX = 16, 8, 5, 17.0
@@ -326,3 +327,25 @@ def test_fft_shift_path_equals_rolls(setup):
             ref_gram = jnp.stack([jnp.sum(fs[a] * fs[b]) for a, b in zip(*np.triu_indices(3))]) / part["c"]
             np.testing.assert_allclose(np.asarray(inner[:, r, t]), np.asarray(ref_inner), rtol=1e-5, atol=1e-6 * float(jnp.abs(ref_inner).max()))
             np.testing.assert_allclose(np.asarray(gram[:, r, t]), np.asarray(ref_gram), rtol=1e-5, atol=1e-6 * float(jnp.abs(ref_gram).max()))
+
+
+def test_fft_shift_path_equals_product_path_on_a_crop(setup, monkeypatch):
+    """With a crop smaller than the scene box, the FFT-correlation shifts (forced) equal the rolled products."""
+    d = setup["d"]
+    arm = L.MaskedArm(d, support_radius=3.5, mask_radius=2.5, crop=12, lam_rel=0.1, n_mc=1)
+    rt, ctf = setup["rt"], setup["ctf"]
+    D, lam = arm.weights(ctf, rt)
+    part = arm.particle_from(rt, ctf, D, lam)
+    rng = np.random.default_rng(9)
+    part["V"] = jnp.asarray(rng.standard_normal((12,) * 3)) * arm.mask
+    part["c"] = jnp.asarray(0.7)
+    vft = arm.volumes_ft(jnp.asarray(rng.standard_normal((3, n, n, n)) * L.sphere(n, 3.5)))
+    Qs = jnp.asarray(Rotation.random(2, random_state=5).as_matrix())
+    us = jnp.asarray(np.array([[0.0, 0.0, 0.0], [1.0, -2.0, 0.0], [-0.5, 0.5, 1.5], [2.0, 1.0, -1.0]]))
+    dl, it, gd = (jnp.asarray(x) for x in PL.split_shifts(us))
+    products = arm.stats_multi(vft, part, Qs, dl, it, gd)
+    monkeypatch.setattr(L, "FFT_SHIFTS_ABOVE", 0)
+    ffts = arm.stats_multi(vft, part, Qs, dl, it, gd)
+    for a, b in zip(products, ffts):  # the FFT path transforms the float32 mask in complex64
+        np.testing.assert_allclose(np.asarray(b), np.asarray(a), rtol=1e-5, atol=1e-6 * float(jnp.abs(a).max()))
+

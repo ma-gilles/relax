@@ -197,7 +197,7 @@ def split_shifts(us):
 
 # Complex elements of the largest per-call buffer (particles x rotations x sub-pixel parts x components x S^3) in the
 # batched masked search; the call's peak is a small multiple of it (2^27 elements is 1 GiB).
-SEARCH_BUDGET = 2**27
+SEARCH_BUDGET = 2**28
 SEARCH_PARTICLES = 8
 
 _SCORE_CACHE = {}
@@ -284,6 +284,9 @@ def search(arm, X, ids, Q0s, u0s, schedule, chunk):
 
 # ----------------------------------------------------------------------------------------------- M-step
 def _forward_pair(arm):
+    """``lift, proj, data``: the forward map of a particle is ``proj(lift(X), part, Q, u)`` ``(P, m)``, with
+    ``lift`` shared by every particle (the masked arms' padded DFTs; the identity for the image arm), so the normal
+    operator sums the particles' cotangents before one adjoint of ``lift``."""
     if arm.name == "image":
 
         def fwd(x, part, Q, u):
@@ -298,19 +301,24 @@ def _forward_pair(arm):
             y = part["yw"] / jnp.where(part["w"] > 0, jnp.sqrt(part["w"]), 1.0)
             return jnp.concatenate([y.real.reshape(-1), y.imag.reshape(-1)])
 
-        def proj_all(X, part, Q, u):  # (P, m)
+        def proj(X, part, Q, u):  # (P, m)
             return jax.vmap(lambda x: fwd(x, part, Q, u))(X)
+
+        def lift(X):
+            return X
 
     else:
 
-        def proj_all(X, part, Q, u):  # (P, m): every component through one gather per trilinear corner
-            f = arm.filtered(arm.volumes_ft(X), Q, u, part["filt"]) * arm.mask / jnp.sqrt(part["c"])
-            return f.reshape(X.shape[0], -1)
+        def proj(vft, part, Q, u):  # (P, m): every component through one gather per trilinear corner
+            f = arm.filtered(vft, Q, u, part["filt"]) * arm.mask / jnp.sqrt(part["c"])
+            return f.reshape(vft.shape[0], -1)
 
         def data(part):
             return (part["V"] / jnp.sqrt(part["c"])).reshape(-1)
 
-    return proj_all, data
+        lift = arm.volumes_ft
+
+    return lift, proj, data
 
 
 def _stack_parts(arm, ids):
@@ -327,30 +335,36 @@ def _problem_programs(arm):
     hit = _PROBLEM_CACHE.get(id(arm))
     if hit is not None and hit[0] is arm:
         return hit[1]
-    proj_all, data = _forward_pair(arm)
+    lift, proj, data = _forward_pair(arm)
 
     def estats(X, parts, Q, u):
+        Y = lift(X)
+
         def one(part, Qi, ui):
-            f = proj_all(X, part, Qi, ui)
+            f = proj(Y, part, Qi, ui)
             d = data(part)
             return f @ d, f @ f.T, d @ d
 
         return jax.vmap(one)(parts, Q, u)
 
     def normal(X, parts, Q, u, G):
+        Y, back = jax.vjp(lift, X)
+
         def one(part, Qi, ui, Gi):
-            f, vjp = jax.vjp(lambda XX: proj_all(XX, part, Qi, ui), X)
+            f, vjp = jax.vjp(lambda YY: proj(YY, part, Qi, ui), Y)
             return vjp(Gi @ f)[0]
 
-        return jnp.sum(jax.vmap(one)(parts, Q, u, G), 0)
+        return back(jnp.sum(jax.vmap(one)(parts, Q, u, G), 0))[0]
 
     def rhs(X, parts, Q, u, g):
+        Y, back = jax.vjp(lift, X)
+
         def one(part, Qi, ui, gi):
-            _, vjp = jax.vjp(lambda XX: proj_all(XX, part, Qi, ui), X)
+            _, vjp = jax.vjp(lambda YY: proj(YY, part, Qi, ui), Y)
             d = data(part)
             return vjp(gi[:, None] * d[None])[0]
 
-        return jnp.sum(jax.vmap(one)(parts, Q, u, g), 0)
+        return back(jnp.sum(jax.vmap(one)(parts, Q, u, g), 0))[0]
 
     programs = (jax.jit(estats), jax.jit(normal), jax.jit(rhs))
     _PROBLEM_CACHE[id(arm)] = (arm, programs)
