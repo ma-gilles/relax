@@ -199,6 +199,10 @@ def split_shifts(us):
 # batched masked search; the call's peak is a small multiple of it (2^27 elements is 1 GiB).
 SEARCH_BUDGET = 2**28
 SEARCH_PARTICLES = 8
+# The image arm is fastest one particle per call with a smaller buffer (GPU job 7483092, n = 64, pilot schedule:
+# A1 77 ms per particle against 186 for the per-particle loop of cc40162f and 241 with the masked arms' settings).
+SEARCH_BUDGET_IMAGE = 2**26
+SEARCH_PARTICLES_IMAGE = 1
 
 _SCORE_CACHE = {}
 
@@ -278,11 +282,12 @@ def _search_batched(arm, X, ids, Q0s, u0s, schedule):
     fn = _scores_batched(arm)
     pk = None if image else getattr(arm, "prefilter_k", None)
     n = len(ids)
-    B = min(SEARCH_PARTICLES, n)
+    B = min(SEARCH_PARTICLES_IMAGE if image else SEARCH_PARTICLES, n)
+    budget = SEARCH_BUDGET_IMAGE if image else SEARCH_BUDGET
 
     def chunked(call, Qs, D):
         R = Qs.shape[1]
-        rc = int(max(1, min(R, SEARCH_BUDGET // (B * D * per_rot))))
+        rc = int(max(1, min(R, budget // (B * D * per_rot))))
         pad = (-R) % rc
         Qp = np.concatenate([Qs, np.repeat(Qs[:, -1:], pad, 1)], 1) if pad else Qs
         return np.concatenate([np.asarray(call(jnp.asarray(Qp[:, r : r + rc]))) for r in range(0, R + pad, rc)], 1)[:, :R]
