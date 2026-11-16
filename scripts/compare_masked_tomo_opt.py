@@ -408,7 +408,7 @@ def main():
 
     # ------------------------------------------------------------------ stages (timed after a warm-up on 8 particles)
     def run_A1(impl, arm, sel):
-        PL_ = mods[impl][1] if arm.name != "image" else PLnew
+        PL_ = plmod[impl]
         return PL_.search(arm, maps[:1], sel, Q0[sel], u0[sel], [PASS1, PASS2], CHUNK)
 
     def reconstruct(PL_, arm, sel, Q, u, X0):
@@ -416,7 +416,7 @@ def main():
         return prob.m_step(X0, np.zeros((len(sel), X0.shape[0] - 1)), np.zeros((len(sel), 0)), reg, Lnew.sphere(N_WORK, SUPPORT_R), 40)
 
     def run_A2(impl, arm, sel):
-        PL_ = mods[impl][1] if arm.name != "image" else PLnew
+        PL_ = plmod[impl]
         X = mu0[None].copy()
         Q, u = Q0[sel], u0[sel]
         for r in range(3):
@@ -425,7 +425,7 @@ def main():
         return Q, u, X
 
     def run_B2(impl, arm, sel, n_iter=15):
-        PL_ = mods[impl][1] if arm.name != "image" else PLnew
+        PL_ = plmod[impl]
         prob = PL_.Problem(arm, sel, truth["Q"][sel].astype(np.float32), truth["u"][sel].astype(np.float32))
         X = X3.copy()
         hist = []
@@ -438,13 +438,20 @@ def main():
         return X, m, c, hist
 
     runners = {"A1": run_A1, "A2": run_A2, "B2": run_B2}
+    entries = [("image", image_arm)]
+    plmod = {"image": PLnew, "new": PLnew, "ref": PLref, "image_ref": PLref}
+    lmod = {"image": Lnew, "new": Lnew, "ref": Lref, "image_ref": Lref}
+    if "ref" in arms:
+        entries.append(("image_ref", Lref.ImageArm(d, SUPPORT_R)))
+    entries += list(arms.items())
+    allarms = dict(entries)
     timing = report.setdefault("timing", {})
     results = {}
     warm = ids[:8]
     for st in ("A1", "A2", "B2"):
         if st not in stages:
             continue
-        for impl, arm in [("image", image_arm)] + list(arms.items()):
+        for impl, arm in entries:
             t0 = time.time()
             if st == "B2":
                 runners[st](impl, arm, warm, n_iter=1)
@@ -459,8 +466,10 @@ def main():
             timing[f"{st}_{impl}_s_per_particle"] = timing[f"{st}_{impl}_s"] / P
             print(st, impl, timing[f"{st}_{impl}_s"], flush=True)
             save()
-        if "ref" in arms and "new" in arms:
-            r, n = results[(st, "ref")], results[(st, "new")]
+        for ra_, na_ in (("ref", "new"), ("image_ref", "image")):
+            if ra_ not in allarms or na_ not in allarms:
+                continue
+            r, n = results[(st, ra_)], results[(st, na_)]
             cmp = {}
             if st in ("A1", "A2"):
                 ang = PLnew.angle_deg(r[0], n[0])
@@ -471,11 +480,11 @@ def main():
                 X = maps[:1] if st == "A1" else r[2]
                 for j in diff:
                     row = {"particle": int(j), "angle_deg": float(ang[j]), "shift_diff": float(du[j])}
-                    for impl in ("ref", "new"):
-                        arm = arms[impl]
+                    for impl in (ra_, na_):
+                        arm = allarms[impl]
                         vft = arm.volumes_ft(jnp.asarray(X))
                         for who, res in (("ref_choice", r), ("new_choice", n)):
-                            s, _, _ = mods[impl][1].score_grid(arm, vft, arm.particle(int(j)), res[0][j][None], res[1][j][None], 1)
+                            s, _, _ = plmod[impl].score_grid(arm, vft, arm.particle(int(j)), res[0][j][None], res[1][j][None], 1)
                             row[f"score_{impl}_at_{who}"] = float(s[0, 0])
                     cmp["differences"].append(row)
                 if st == "A2":
@@ -483,8 +492,9 @@ def main():
             else:
                 cmp = {"X_rel": rel(r[0], n[0]), "m_rel": rel(r[1], n[1]), "c_rel": rel(r[2], n[2]),
                        "ll_hist_rel": rel(r[3], n[3])}
-            report[f"compare_{st}"] = cmp
-            print("compare", st, json.dumps(cmp, default=str)[:2000], flush=True)
+            tag = st if ra_ == "ref" else f"{st}_image"
+            report[f"compare_{tag}"] = cmp
+            print("compare", tag, json.dumps(cmp, default=str)[:2000], flush=True)
             save()
     save()
     print("done", flush=True)
