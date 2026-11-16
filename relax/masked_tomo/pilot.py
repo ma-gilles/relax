@@ -203,54 +203,91 @@ SEARCH_PARTICLES = 8
 _SCORE_CACHE = {}
 
 
-def _scores_batched(arm):
-    """Jitted ``(B, R, T)`` pose scores of ``B`` particles (each with its own candidates): masked arms."""
-    hit = _SCORE_CACHE.get(id(arm))
+def _jit_cached(key, arm, build):
+    hit = _SCORE_CACHE.get((key, id(arm)))
     if hit is not None and hit[0] is arm:
         return hit[1]
-
-    def f(vft, parts, Qs, deltas, ints, gid):
-        def one(part, Q, d, i, g):
-            inner, gram = arm.stats_multi(vft, part, Q, d, i, g)
-            return L.scores_from_stats(inner, gram, True)[0]
-
-        return jax.vmap(one)(parts, Qs, deltas, ints, gid)
-
-    fn = jax.jit(f)
-    _SCORE_CACHE[id(arm)] = (arm, fn)
+    fn = jax.jit(build())
+    _SCORE_CACHE[(key, id(arm))] = (arm, fn)
     return fn
 
 
+def _scores_batched(arm):
+    """Jitted ``(B, R, T)`` exact pose scores of ``B`` particles (each with its own candidates)."""
+    if arm.name == "image":
+
+        def build():
+            def f(vft, parts, Qs, us):
+                def one(part, Q, u):
+                    inner, gram = arm.stats(vft, part, Q, u)
+                    return L.scores_from_stats(inner, gram, False)[0]
+
+                return jax.vmap(one)(parts, Qs, us)
+
+            return f
+
+        return _jit_cached("image", arm, build)
+
+    def build():
+        def f(vft, parts, Qs, deltas, ints, gid):
+            def one(part, Q, d, i, g):
+                inner, gram = arm.stats_multi(vft, part, Q, d, i, g)
+                return L.scores_from_stats(inner, gram, True)[0]
+
+            return jax.vmap(one)(parts, Qs, deltas, ints, gid)
+
+        return f
+
+    return _jit_cached("masked", arm, build)
+
+
 def _search_batched(arm, X, ids, Q0s, u0s, schedule):
-    """:func:`search` for the masked arms: ``SEARCH_PARTICLES`` particles and a memory-sized rotation chunk per
-    call, every sub-pixel part of the shift grid in the same call, scores fused with the latent epilogue."""
+    """:func:`search` with ``SEARCH_PARTICLES`` particles and a memory-sized rotation chunk per call and the latent
+    epilogue fused in the same jit. Masked arms: every sub-pixel part of a shift grid in one call."""
     vft = arm.volumes_ft(jnp.asarray(X))
-    P, S3 = vft.shape[0], arm.N**3  # the template box sets the per-rotation buffers
+    image = arm.name == "image"
+    P = vft.shape[0]
+    if image:
+        per_rot = P * arm.d.rt.shape[1] * arm.G**2  # projected padded slices of every tilt
+        keys = ("rt", "ctf", "yw", "w")
+    else:
+        per_rot = P * arm.N**3  # the template box sets the per-rotation buffers
+        keys = ("V", "c", "filt")
     Qb = np.array(Q0s, np.float32)
     ub = np.array(u0s, np.float32)
     post = np.zeros(len(ids))
     fn = _scores_batched(arm)
     n = len(ids)
     B = min(SEARCH_PARTICLES, n)
+
+    def chunked(call, Qs, D):
+        R = Qs.shape[1]
+        rc = int(max(1, min(R, SEARCH_BUDGET // (B * D * per_rot))))
+        pad = (-R) % rc
+        Qp = np.concatenate([Qs, np.repeat(Qs[:, -1:], pad, 1)], 1) if pad else Qs
+        return np.concatenate([np.asarray(call(jnp.asarray(Qp[:, r : r + rc]))) for r in range(0, R + pad, rc)], 1)[:, :R]
+
     for radius, step, srad, sstep in schedule:
         rv = rotvec_lattice(radius, step)
-        R = rv.shape[0]
         for a in range(0, n, B):
             js = np.arange(a, a + B).clip(max=n - 1)  # the last batch repeats its last particle
             parts = [arm.particle(int(ids[j])) for j in js]
-            parts = {k: jnp.stack([p[k] for p in parts]) for k in ("V", "c", "filt")}
+            parts = {k: jnp.stack([p[k] for p in parts]) for k in keys}
             Qs = np.stack([candidates(Qb[j], rv) for j in js])
-            us = np.stack([shift_grid(np.round(ub[j] / sstep) * sstep if sstep >= 1 else ub[j], srad, sstep) for j in js])
-            sp = [split_shifts(u) for u in us]
-            D = max(x[0].shape[0] for x in sp)
-            deltas = np.stack([np.concatenate([x[0], np.repeat(x[0][:1], D - x[0].shape[0], 0)]) for x in sp])
-            ints = np.stack([x[1] for x in sp])
-            gid = np.stack([x[2] for x in sp])
-            rc = int(max(1, min(R, SEARCH_BUDGET // (B * D * P * S3))))
-            pad = (-R) % rc
-            Qp = np.concatenate([Qs, np.repeat(Qs[:, -1:], pad, 1)], 1) if pad else Qs
-            s = np.concatenate([np.asarray(fn(vft, parts, jnp.asarray(Qp[:, r : r + rc]), jnp.asarray(deltas),
-                                              jnp.asarray(ints), jnp.asarray(gid))) for r in range(0, R + pad, rc)], 1)[:, :R]
+            centers = np.stack([np.round(ub[j] / sstep) * sstep if sstep >= 1 else ub[j] for j in js])
+            us = np.stack([shift_grid(c, srad, sstep) for c in centers])
+            if image:
+                uj = jnp.asarray(us)
+                exact = lambda Q: fn(vft, parts, Q, uj)  # noqa: E731
+                D = 1
+            else:
+                sp = [split_shifts(u) for u in us]
+                D = max(x[0].shape[0] for x in sp)
+                deltas = jnp.asarray(np.stack([np.concatenate([x[0], np.repeat(x[0][:1], D - x[0].shape[0], 0)]) for x in sp]))
+                ints = jnp.asarray(np.stack([x[1] for x in sp]))
+                gid = jnp.asarray(np.stack([x[2] for x in sp]))
+                exact = lambda Q: fn(vft, parts, Q, deltas, ints, gid)  # noqa: E731
+            s = chunked(exact, Qs, D)
             for b, j in enumerate(js[: min(B, n - a)]):
                 r, t = np.unravel_index(np.argmax(s[b]), s[b].shape)
                 Qb[j], ub[j] = Qs[b, r], us[b, t]
@@ -261,25 +298,9 @@ def _search_batched(arm, X, ids, Q0s, u0s, schedule):
 
 def search(arm, X, ids, Q0s, u0s, schedule, chunk):
     """Local pose search: for every particle and stage ``(radius_deg, step_deg, shift_radius, shift_step)``,
-    candidates around the previous best; returns MAP ``Q``, ``u`` and the last stage's posterior summary."""
-    if hasattr(arm, "stats_multi"):
-        return _search_batched(arm, X, ids, Q0s, u0s, schedule)
-    vft = arm.volumes_ft(jnp.asarray(X))
-    Qb = np.array(Q0s, np.float32)
-    ub = np.array(u0s, np.float32)
-    post = np.zeros(len(ids))
-    for radius, step, srad, sstep in schedule:
-        rv = rotvec_lattice(radius, step)
-        for j, i in enumerate(ids):
-            part = arm.particle(int(i))
-            Qs = candidates(Qb[j], rv)
-            us = shift_grid(np.round(ub[j] / sstep) * sstep if sstep >= 1 else ub[j], srad, sstep)
-            s, _, _ = score_grid(arm, vft, part, Qs, us, chunk)
-            r, t = np.unravel_index(np.argmax(s), s.shape)
-            Qb[j], ub[j] = Qs[r], us[t]
-            p = np.exp(s - s.max())
-            post[j] = float(p.max() / p.sum())
-    return Qb, ub, post
+    candidates around the previous best; returns MAP ``Q``, ``u`` and the last stage's posterior summary.
+    ``chunk`` is kept for the callers; the rotation chunk is sized by ``SEARCH_BUDGET`` (:func:`_search_batched`)."""
+    return _search_batched(arm, X, ids, Q0s, u0s, schedule)
 
 
 # ----------------------------------------------------------------------------------------------- M-step
