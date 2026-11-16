@@ -72,8 +72,12 @@ def pad_ft(x, box, *, gridding=True):
 
 
 def trilinear(vol, coords):
-    """Trilinear gather of a ``(G,G,G)`` complex grid at ``(m, 3)`` index coordinates (zero outside)."""
+    """Trilinear gather of a ``(G,G,G)`` complex grid at ``(m, 3)`` index coordinates (zero outside).
+
+    ``vol`` may carry trailing channels ``(G,G,G,C)`` (e.g. every PPCA component): one gather per corner then
+    fetches all channels, with the same per-channel arithmetic; the result is ``(m, C)``."""
     G = vol.shape[0]
+    extra = (1,) * (vol.ndim - 3)
     b = jnp.floor(coords)
     f = coords - b
     b = b.astype(jnp.int32)
@@ -89,7 +93,7 @@ def trilinear(vol, coords):
                 )
                 ok = jnp.all((i >= 0) & (i < G), -1)
                 v = vol[jnp.clip(i[:, 0], 0, G - 1), jnp.clip(i[:, 1], 0, G - 1), jnp.clip(i[:, 2], 0, G - 1)]
-                out = out + jnp.where(ok, w, 0) * v
+                out = out + jnp.where(ok, w, 0).reshape(w.shape + extra) * v
     return out
 
 
@@ -306,10 +310,11 @@ class MaskedArm:
         return b / jnp.sqrt(D + lam)
 
     def _to_crop(self, qft):
+        """Central ``Cc^3`` crop of the real part of the centred inverse DFT of ``(..., S^3)`` spectra."""
         S, Cc = self.S, self.Cc
-        q = jnp.real(ftu.get_idft3(qft.reshape(S, S, S)))
+        q = jnp.real(ftu.get_idft3(qft.reshape(qft.shape[:-1] + (S, S, S))))
         lo = (S - Cc) // 2
-        return q[lo : lo + Cc, lo : lo + Cc, lo : lo + Cc]
+        return q[..., lo : lo + Cc, lo : lo + Cc, lo : lo + Cc]
 
     def weights(self, ctf, rt):
         """``D`` (backprojected ``CTF^2 / Sigma``, zero outside the projector's disc) and ``lam``."""
@@ -373,64 +378,89 @@ class MaskedArm:
 
     def filtered(self, vft, Q, u, filt):
         """Masked-crop mean ``F_g x`` of every component: ``(P, Cc, Cc, Cc)`` (before the mask)."""
+        return self._filtered_channels(jnp.moveaxis(vft, 0, -1), Q, u, filt)
+
+    def _filtered_channels(self, vol, Q, u, filt):
+        """:meth:`filtered` of channels-last padded DFTs ``vol (G, G, G, P)``: one trilinear gather per corner
+        fetches every component, and the ``P`` inverse DFTs run as one batch."""
         S, G = self.S, self.G
         coords = (self.k3 @ Q) * (G / S) + G // 2
         phase = jnp.exp(-2j * jnp.pi * (self.k3 @ u) / S)
-
-        def one(v):
-            f = trilinear(v, coords) * phase * filt
-            return self._to_crop(f)
-
-        return jax.vmap(one)(vft)
+        f = trilinear(vol, coords) * phase[:, None] * filt[:, None]  # (S^3, P)
+        return self._to_crop(jnp.moveaxis(f, -1, 0))
 
     def stats(self, vft, part, Qs, us):
         """``inner (P, R, T)`` and ``gram (tri, R, T)``; shifts ``us`` must be ``delta + integer`` with one
         sub-pixel ``delta`` shared by all of them (``us - delta`` integers within ``+-(Cc/2 - mask)``)."""
         delta = us[0] - jnp.round(us[0])
         ints = jnp.round(us - delta).astype(jnp.int32)
+        return self.stats_multi(vft, part, Qs, delta[None], ints, jnp.zeros(us.shape[0], jnp.int32))
+
+    def stats_multi(self, vft, part, Qs, deltas, ints, gid):
+        """``inner (P, R, T)`` and ``gram (tri, R, T)`` for shifts ``deltas[gid] + ints``: ``deltas (D, 3)``
+        sub-pixel parts (Fourier phase), ``ints (T, 3)`` integer parts within ``+-(Cc/2 - mask)`` (a circular
+        roll of the crop), ``gid (T,)`` the sub-pixel part of each shift.
+
+        The trilinear gather of a rotation is shared by its ``D`` sub-pixel parts. With ``f`` rolled by an integer
+        ``m`` and the 0/1 mask ``M``, ``inner_p(m) = sum_x M V roll(f_p, m) = sum_y f_p(y) roll(M V, -m)(y)`` and
+        ``gram_ab(m) = sum_x M roll(f_a f_b, m) = sum_y (f_a f_b)(y) roll(M, -m)(y)``: an exact re-indexing, so the
+        shifts are float32 (``Precision.HIGHEST``) matrix products against the rolled data and mask."""
         mask = self.mask
-        V = part["V"] / part["c"]
+        c = part["c"]
+        V = part["V"] / c
+        P, D, T = vft.shape[0], deltas.shape[0], ints.shape[0]
+        first, second = np.triu_indices(P)
+
+        def rolled(a):
+            return jax.vmap(lambda m: jnp.roll(a, shift=(-m[0], -m[1], -m[2]), axis=(0, 1, 2)).reshape(-1))(ints)
+
+        vol = jnp.moveaxis(vft, 0, -1)
+        S, G = self.S, self.G
+        filt = part["filt"]
 
         def per_rot(Q):
-            f = self.filtered(vft, Q, delta, part["filt"])  # (P, Cc, Cc, Cc)
+            coords = (self.k3 @ Q) * (G / S) + G // 2
+            t = trilinear(vol, coords)  # (S^3, P)
 
-            def per_shift(m):
-                # f shifted by m: f(x - m) on the crop: roll (the mask keeps far from the edge)
-                fs = jnp.roll(f, shift=(m[0], m[1], m[2]), axis=(1, 2, 3)) * mask
-                inner = jnp.sum(fs * V[None], axis=(1, 2, 3))
-                P = f.shape[0]
-                first, second = np.triu_indices(P)
-                gram = jnp.stack([jnp.sum(fs[a] * fs[b]) for a, b in zip(first, second)]) / part["c"]
-                return inner, gram
+            def per_delta(u):
+                phase = jnp.exp(-2j * jnp.pi * (self.k3 @ u) / S)
+                return self._to_crop(jnp.moveaxis(t * phase[:, None] * filt[:, None], -1, 0))
 
-            return jax.lax.map(per_shift, ints)
+            return jax.vmap(per_delta)(deltas)  # (D, P, Cc, Cc, Cc)
 
         if self.Cc == self.S:
             # The crop is the whole periodic scene box: a roll is an exact periodic shift, and every integer shift
-            # comes from FFT cross-correlations, sum_x V(x) f(x - m) and sum_y M(y + m) (f_a f_b)(y).
+            # comes from FFT cross-correlations, sum_x V(x) f(x - m) and sum_y M(y + m) (f_a f_b)(y), per sub-pixel part.
             Cc = self.Cc
             idx = jnp.mod(ints, Cc)
-            FV = jnp.fft.rfftn(V)
+            FV = jnp.fft.rfftn(mask * V)
             FM = jnp.fft.rfftn(mask)
-            P = vft.shape[0]
-            first, second = np.triu_indices(P)
+            ax = (-3, -2, -1)
+            f = jax.vmap(per_rot)(Qs)  # (R, D, P, Cc, Cc, Cc)
+            inner = jnp.fft.irfftn(jnp.conj(jnp.fft.rfftn(f, axes=ax)) * FV, s=(Cc,) * 3, axes=ax)
+            prods = f[:, :, first] * f[:, :, second]
+            gram = jnp.fft.irfftn(jnp.conj(jnp.fft.rfftn(prods, axes=ax)) * FM, s=(Cc,) * 3, axes=ax) / c
+            inner = inner[..., idx[:, 0], idx[:, 1], idx[:, 2]]  # (R, D, P, T)
+            gram = gram[..., idx[:, 0], idx[:, 1], idx[:, 2]]
+            sel = gid[None, None, None, :]
+            inner = jnp.take_along_axis(inner, jnp.broadcast_to(sel, (inner.shape[0], 1) + inner.shape[2:]), axis=1)[:, 0]
+            gram = jnp.take_along_axis(gram, jnp.broadcast_to(sel, (gram.shape[0], 1) + gram.shape[2:]), axis=1)[:, 0]
+            return jnp.transpose(inner, (1, 0, 2)), jnp.transpose(gram, (1, 0, 2))
+        Vs, Ms = rolled(mask * V), rolled(mask)  # (T, Cc^3)
+        f = jax.vmap(per_rot)(Qs)
+        f = f.reshape(f.shape[:3] + (-1,))  # (R, D, P, X)
+        hi = jax.lax.Precision.HIGHEST
+        if D == 1:
+            inner = jnp.einsum("rpx,tx->prt", f[:, 0], Vs, precision=hi)
+            gram = jnp.einsum("rkx,tx->krt", f[:, 0, first] * f[:, 0, second], Ms, precision=hi) / c
+            return inner, gram
 
-            def corr(Fa, b):
-                return jnp.fft.irfftn(jnp.conj(Fa) * b, s=(Cc,) * 3)
+        def pick(a):  # (k, R, D, T) -> (k, R, T): each shift reads its own sub-pixel part
+            return jnp.take_along_axis(a, gid[None, None, None, :], axis=2)[:, :, 0]
 
-            def per_rot_fft(Q):
-                f = self.filtered(vft, Q, delta, part["filt"])
-                Ff = jnp.fft.rfftn(f, axes=(1, 2, 3))
-                inner = jnp.stack([corr(Ff[a], FV) for a in range(P)])
-                prods = jnp.stack([f[a] * f[b] for a, b in zip(first.tolist(), second.tolist())])
-                gram = jnp.stack([corr(jnp.fft.rfftn(pr), FM) for pr in prods]) / part["c"]
-                take = lambda vol: vol[:, idx[:, 0], idx[:, 1], idx[:, 2]]  # noqa: E731
-                return take(inner).T, take(gram).T
-
-            inner, gram = jax.lax.map(per_rot_fft, Qs)
-            return jnp.transpose(inner, (2, 0, 1)), jnp.transpose(gram, (2, 0, 1))
-        inner, gram = jax.lax.map(per_rot, Qs)  # (R, T, P), (R, T, tri)
-        return jnp.transpose(inner, (2, 0, 1)), jnp.transpose(gram, (2, 0, 1))
+        inner = pick(jnp.einsum("rdpx,tx->prdt", f, Vs, precision=hi))
+        gram = pick(jnp.einsum("rdkx,tx->krdt", f[:, :, first] * f[:, :, second], Ms, precision=hi)) / c
+        return inner, gram
 
 
 def dof_ratio(D, lam, k_ok):

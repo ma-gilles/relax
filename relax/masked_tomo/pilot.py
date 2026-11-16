@@ -182,9 +182,88 @@ def _stats_jit(arm, vft, part, Qs, us):
     return _STATS_CACHE[key](vft, part, Qs, us)
 
 
+def split_shifts(us):
+    """``us (T, 3) = deltas[gid] + ints``: sub-pixel parts ``deltas (D, 3)`` in ``[0, 1)`` (one per distinct
+    fractional part, to 1e-3), integer parts ``ints (T, 3)`` and the part ``gid (T,)`` of every shift."""
+    us = np.asarray(us, np.float32)
+    frac = us - np.floor(us)
+    key = np.round(frac * 1000).astype(np.int64) % 1000
+    _, first, gid = np.unique(key, axis=0, return_index=True, return_inverse=True)
+    deltas = frac[first].astype(np.float32)
+    gid = gid.reshape(-1)
+    ints = np.round(us - deltas[gid]).astype(np.int32)
+    return deltas, ints, gid.astype(np.int32)
+
+
+# Complex elements of the largest per-call buffer (particles x rotations x sub-pixel parts x components x S^3) in the
+# batched masked search; the call's peak is a small multiple of it (2^27 elements is 1 GiB).
+SEARCH_BUDGET = 2**27
+SEARCH_PARTICLES = 8
+
+_SCORE_CACHE = {}
+
+
+def _scores_batched(arm):
+    """Jitted ``(B, R, T)`` pose scores of ``B`` particles (each with its own candidates): masked arms."""
+    hit = _SCORE_CACHE.get(id(arm))
+    if hit is not None and hit[0] is arm:
+        return hit[1]
+
+    def f(vft, parts, Qs, deltas, ints, gid):
+        def one(part, Q, d, i, g):
+            inner, gram = arm.stats_multi(vft, part, Q, d, i, g)
+            return L.scores_from_stats(inner, gram, True)[0]
+
+        return jax.vmap(one)(parts, Qs, deltas, ints, gid)
+
+    fn = jax.jit(f)
+    _SCORE_CACHE[id(arm)] = (arm, fn)
+    return fn
+
+
+def _search_batched(arm, X, ids, Q0s, u0s, schedule):
+    """:func:`search` for the masked arms: ``SEARCH_PARTICLES`` particles and a memory-sized rotation chunk per
+    call, every sub-pixel part of the shift grid in the same call, scores fused with the latent epilogue."""
+    vft = arm.volumes_ft(jnp.asarray(X))
+    P, S3 = vft.shape[0], arm.S**3
+    Qb = np.array(Q0s, np.float32)
+    ub = np.array(u0s, np.float32)
+    post = np.zeros(len(ids))
+    fn = _scores_batched(arm)
+    n = len(ids)
+    B = min(SEARCH_PARTICLES, n)
+    for radius, step, srad, sstep in schedule:
+        rv = rotvec_lattice(radius, step)
+        R = rv.shape[0]
+        for a in range(0, n, B):
+            js = np.arange(a, a + B).clip(max=n - 1)  # the last batch repeats its last particle
+            parts = [arm.particle(int(ids[j])) for j in js]
+            parts = {k: jnp.stack([p[k] for p in parts]) for k in ("V", "c", "filt")}
+            Qs = np.stack([candidates(Qb[j], rv) for j in js])
+            us = np.stack([shift_grid(np.round(ub[j] / sstep) * sstep if sstep >= 1 else ub[j], srad, sstep) for j in js])
+            sp = [split_shifts(u) for u in us]
+            D = max(x[0].shape[0] for x in sp)
+            deltas = np.stack([np.concatenate([x[0], np.repeat(x[0][:1], D - x[0].shape[0], 0)]) for x in sp])
+            ints = np.stack([x[1] for x in sp])
+            gid = np.stack([x[2] for x in sp])
+            rc = int(max(1, min(R, SEARCH_BUDGET // (B * D * P * S3))))
+            pad = (-R) % rc
+            Qp = np.concatenate([Qs, np.repeat(Qs[:, -1:], pad, 1)], 1) if pad else Qs
+            s = np.concatenate([np.asarray(fn(vft, parts, jnp.asarray(Qp[:, r : r + rc]), jnp.asarray(deltas),
+                                              jnp.asarray(ints), jnp.asarray(gid))) for r in range(0, R + pad, rc)], 1)[:, :R]
+            for b, j in enumerate(js[: min(B, n - a)]):
+                r, t = np.unravel_index(np.argmax(s[b]), s[b].shape)
+                Qb[j], ub[j] = Qs[b, r], us[b, t]
+                p = np.exp(s[b] - s[b].max())
+                post[j] = float(p.max() / p.sum())
+    return Qb, ub, post
+
+
 def search(arm, X, ids, Q0s, u0s, schedule, chunk):
     """Local pose search: for every particle and stage ``(radius_deg, step_deg, shift_radius, shift_step)``,
     candidates around the previous best; returns MAP ``Q``, ``u`` and the last stage's posterior summary."""
+    if hasattr(arm, "stats_multi"):
+        return _search_batched(arm, X, ids, Q0s, u0s, schedule)
     vft = arm.volumes_ft(jnp.asarray(X))
     Qb = np.array(Q0s, np.float32)
     ub = np.array(u0s, np.float32)
@@ -219,16 +298,19 @@ def _forward_pair(arm):
             y = part["yw"] / jnp.where(part["w"] > 0, jnp.sqrt(part["w"]), 1.0)
             return jnp.concatenate([y.real.reshape(-1), y.imag.reshape(-1)])
 
+        def proj_all(X, part, Q, u):  # (P, m)
+            return jax.vmap(lambda x: fwd(x, part, Q, u))(X)
+
     else:
 
-        def fwd(x, part, Q, u):
-            v = arm.volumes_ft(x[None])
-            return (arm.filtered(v, Q, u, part["filt"])[0] * arm.mask / jnp.sqrt(part["c"])).reshape(-1)
+        def proj_all(X, part, Q, u):  # (P, m): every component through one gather per trilinear corner
+            f = arm.filtered(arm.volumes_ft(X), Q, u, part["filt"]) * arm.mask / jnp.sqrt(part["c"])
+            return f.reshape(X.shape[0], -1)
 
         def data(part):
             return (part["V"] / jnp.sqrt(part["c"])).reshape(-1)
 
-    return fwd, data
+    return proj_all, data
 
 
 def _stack_parts(arm, ids):
@@ -236,47 +318,55 @@ def _stack_parts(arm, ids):
     return {k: jnp.stack([p[k] for p in parts]) for k in parts[0] if k in ("rt", "ctf", "yw", "w", "V", "c", "filt")}
 
 
+_PROBLEM_CACHE = {}
+
+
+def _problem_programs(arm):
+    """The jitted E-step statistics, normal operator and right-hand side of one arm, compiled once per arm and
+    batch shape (not once per :class:`Problem`)."""
+    hit = _PROBLEM_CACHE.get(id(arm))
+    if hit is not None and hit[0] is arm:
+        return hit[1]
+    proj_all, data = _forward_pair(arm)
+
+    def estats(X, parts, Q, u):
+        def one(part, Qi, ui):
+            f = proj_all(X, part, Qi, ui)
+            d = data(part)
+            return f @ d, f @ f.T, d @ d
+
+        return jax.vmap(one)(parts, Q, u)
+
+    def normal(X, parts, Q, u, G):
+        def one(part, Qi, ui, Gi):
+            f, vjp = jax.vjp(lambda XX: proj_all(XX, part, Qi, ui), X)
+            return vjp(Gi @ f)[0]
+
+        return jnp.sum(jax.vmap(one)(parts, Q, u, G), 0)
+
+    def rhs(X, parts, Q, u, g):
+        def one(part, Qi, ui, gi):
+            _, vjp = jax.vjp(lambda XX: proj_all(XX, part, Qi, ui), X)
+            d = data(part)
+            return vjp(gi[:, None] * d[None])[0]
+
+        return jnp.sum(jax.vmap(one)(parts, Q, u, g), 0)
+
+    programs = (jax.jit(estats), jax.jit(normal), jax.jit(rhs))
+    _PROBLEM_CACHE[id(arm)] = (arm, programs)
+    return programs
+
+
 class Problem:
     """Fixed-pose quadratic pieces of one arm over a set of particles (chunks of ``chunk`` particles)."""
 
     def __init__(self, arm, ids, Qs, us, chunk=8):
         self.arm, self.chunk = arm, chunk
-        self.fwd, self.data = _forward_pair(arm)
         self.batches = []
         for a in range(0, len(ids), chunk):
             sl = slice(a, a + chunk)
             self.batches.append((_stack_parts(arm, ids[sl]), jnp.asarray(Qs[sl]), jnp.asarray(us[sl])))
-        fwd, data = self.fwd, self.data
-
-        def proj_all(X, part, Q, u):  # (P, m)
-            return jax.vmap(lambda x: fwd(x, part, Q, u))(X)
-
-        def estats(X, parts, Q, u):
-            def one(part, Qi, ui):
-                f = proj_all(X, part, Qi, ui)
-                d = data(part)
-                return f @ d, f @ f.T, d @ d
-
-            return jax.vmap(one)(parts, Q, u)
-
-        def normal(X, parts, Q, u, G):
-            def one(part, Qi, ui, Gi):
-                f, vjp = jax.vjp(lambda XX: proj_all(XX, part, Qi, ui), X)
-                return vjp(Gi @ f)[0]
-
-            return jnp.sum(jax.vmap(one)(parts, Q, u, G), 0)
-
-        def rhs(X, parts, Q, u, g):
-            def one(part, Qi, ui, gi):
-                _, vjp = jax.vjp(lambda XX: proj_all(XX, part, Qi, ui), X)
-                d = data(part)
-                return vjp(gi[:, None] * d[None])[0]
-
-            return jnp.sum(jax.vmap(one)(parts, Q, u, g), 0)
-
-        self._estats = jax.jit(estats)
-        self._normal = jax.jit(normal)
-        self._rhs = jax.jit(rhs)
+        self._estats, self._normal, self._rhs = _problem_programs(arm)
 
     def e_step(self, X):
         """Per particle: ``inner (P,)``, ``gram (P,P)``, data norm; then latent mean/cov via RELAX's epilogue."""
