@@ -271,8 +271,10 @@ class Problem:
             ll.append(np.asarray(s[:, 0, 0]) - 0.5 * np.asarray(dd))
         return np.concatenate(out_m), np.concatenate(out_c), np.concatenate(ll)
 
-    def m_step(self, X0, means, covs, reg, support, iters=40):
-        """Solve ``sum_i J_i^T J_i X G_i + reg X = sum_i J_i^T d_i g_i^T`` (support-restricted) by CG."""
+    def m_step(self, X0, means, covs, reg, support, iters=40, band=None):
+        """Solve ``B (sum_i J_i^T J_i (B X) G_i + reg B X) = B sum_i J_i^T d_i g_i^T`` by CG, with ``B`` the
+        projector onto the support (``band`` None) or, per component, onto the Fourier band ``band[p]`` (a radius
+        in working Fourier pixels, None for the full band); the forward maps apply the support themselves."""
         P = X0.shape[0]
         q = P - 1
         Gs, gs = [], []
@@ -285,20 +287,32 @@ class Problem:
             gs.append(g)
         Gs, gs = np.asarray(Gs, np.float32), np.asarray(gs, np.float32)
         sup = jnp.asarray(support)
+        if band is None:
+            def proj(X):
+                return X * sup
+        else:
+            n = X0.shape[-1]
+            r = np.sqrt(np.sum(L.grid3(n) ** 2, -1)).reshape((n,) * 3)
+            masks = jnp.asarray(np.stack([np.ones_like(r) if b_ is None else (r <= b_).astype(float) for b_ in band]))
+
+            def proj(X):
+                ft = L.ftu.get_dft3(X.astype(jnp.complex64))
+                return jnp.real(L.ftu.get_idft3(ft * masks)).astype(X.dtype)
         b = 0
         for k, (parts, Q, u) in enumerate(self.batches):
             sl = slice(k * self.chunk, k * self.chunk + Q.shape[0])
             b = b + self._rhs(jnp.asarray(X0), parts, Q, u, jnp.asarray(gs[sl]))
-        b = b * sup
+        b = proj(b)
 
         def A(X):
+            X = proj(X)
             out = reg * X
             for k, (parts, Q, u) in enumerate(self.batches):
                 sl = slice(k * self.chunk, k * self.chunk + Q.shape[0])
                 out = out + self._normal(X, parts, Q, u, jnp.asarray(Gs[sl]))
-            return out * sup
+            return proj(out)
 
-        x = jnp.asarray(X0) * sup
+        x = proj(jnp.asarray(X0))
         r = b - A(x)
         p = r
         rs = jnp.sum(r * r)
@@ -313,7 +327,7 @@ class Problem:
                 break
             p = r + (rs_new / rs) * p
             rs = rs_new
-        return np.asarray(x), float(jnp.sqrt(rs_new / rs0))
+        return np.asarray(proj(x)), float(jnp.sqrt(rs_new / rs0))
 
 
 # ----------------------------------------------------------------------------------------------- metrics
