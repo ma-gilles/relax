@@ -83,6 +83,8 @@ def basis_maps(n):
     return {
         "homo": np.stack([L.fourier_crop3(vols[0], n)]),
         "het2": np.stack([L.fourier_crop3(v, n) for v in het]),
+        # het2 with doubled loadings (dense-crowding pilot, for statistical power)
+        "het2L": np.stack([L.fourier_crop3(v, n) for v in np.concatenate([het[:1], 2.0 * het[1:]])]),
     }
 
 
