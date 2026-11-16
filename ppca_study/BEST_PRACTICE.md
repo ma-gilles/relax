@@ -239,6 +239,8 @@ STANDARD for every report:
 - Cleaning reports: the pose distribution of every final refinement. SCF from the poses alone (Baldwin & Lyumkis 2020),
   junk-free over labelled-true particles where labels exist, and true-particle retention by view against same-size random
   subsets (em_work/posedist_20261116/scripts/posedist.py). Not cFAR: it moves with map resolution (owner 2026-11-16).
+  Expand by the PARTICLE's symmetry: a C1 refinement of a symmetric particle picks one of the equivalent poses per particle,
+  differently in each refinement, and un-expanded SCF measures that choice (J40: .49-.998 for the same true particles).
 
 ## 8. How experiments run
 
@@ -537,3 +539,16 @@ STANDARD:
     analysis scripts flipped z' by skewness without flipping the PC volume; fixed in the new figures.
   - Owner-approved next: PPCA on HA 10096 with the scale term (the textbook untilted case); a synthetic preferred-orientation set
     with known views and 40% junk, after J40/J70.
+- 2026-11-16 v2.01. HA scale-term retry, 10532 gate, J40 junk injection.
+  - HA 10096 with the per-image scale term (ha_imgscale_20261116, predeclared, one arm): GATE FAIL. FSC to EMD-8731 .344 at 3000 vs
+    the VW control .357 (tie or slightly below at every update); the same neighbour lock (blob 85 A off centre = the pick spacing;
+    extent 83 x 65 x 63 vs 126 x 71 x 73 A). Scale estimates healthy (fallback 7 of 3000 updates, 7% clamped), so the lock is not an
+    amplitude problem. HA stays a PPCA failure; no further variant.
+  - EMPIAR-10532 (second HA pool, fresh, predeclared; the most crowded pool so far: median pick neighbour 86 A vs 154 A diameter):
+    default V gate FAIL .218 with the same lock (second blob ring at 81-87 A). The one predeclared fix (window +-16.5 A at 1 px,
+    support 170 A) is running: it puts the neighbour out of reach and so tests the lock directly. the conventional pipeline and RELION branches running.
+  - Synthetic junk injection J40 (beta-gal, 60,000 true + 40,000 junk of five kinds, truth sealed): the default VW recipe forms the
+    particle (gate .893). S1-S3 frozen label-free (65,670 / 68,684 / 73,809; RELION ranker 68,695). In every common refinement 99.4-99.7%
+    of true particles are posed within 5 deg of truth (modulo D2), also with all 40% junk in. Pose distributions: views not limiting
+    (uniform by design; every cleaner keeps 97.5-99.7% of true particles, true-only SCF 1.00). Resolutions and the the conventional pipeline branch pending.
+  - Pose readout rule: expand by the particle's symmetry, not the refinement's (section 7).
