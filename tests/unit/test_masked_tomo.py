@@ -405,7 +405,10 @@ def _rolled_reference(f, MV, M, ints):
 @pytest.mark.parametrize("dtype", [np.float32, np.float64])
 def test_shift_correlations_match_explicit_rolls(dtype):
     """``shift_correlations`` (complex FFT, in the input's precision) against explicit periodic rolls. float32 is the
-    production precision (default float32 tolerance); the float64 companion is the same comparison at 1e-12."""
+    production precision (default float32 tolerance on this small CPU case); the float64 companion is the same
+    comparison at 1e-12. On the GPU at n = 64 the Gram term reaches 4.1e-6 to 6.7e-6 relative to the product path
+    (inner 5.0e-7 to 7.6e-7; job 7484077): float32 rounding in the FFT correlation of the mask with f_a f_b. That
+    case is gated in masked-tomo/scripts/gpu_shiftcheck.py at inner <= 1e-6, Gram <= 1e-5, argmax identical."""
     from helpers.float_compare import assert_matches
 
     rng = np.random.default_rng(12)

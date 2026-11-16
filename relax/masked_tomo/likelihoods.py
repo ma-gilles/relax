@@ -456,7 +456,10 @@ class MaskedArm:
             # and sum_y M(y + m) (f_a f_b)(y), per sub-pixel part. These are circular on the crop, i.e. exactly the
             # rolls of the product path below, for any crop (a periodic shift when the crop is the whole box).
             # Complex FFTs: the real-FFT version differed from the product path by ~1e-3 relative on the GPU (jobs
-            # 7482932, 7483092; CPU 1e-7), the complex one agrees to ~6e-7 (masked-tomo check before GPU 12).
+            # 7482932, 7483092; CPU 1e-7). Complex FFT on an H100 (job 7484077, n = 64, 729 shifts): inner 5.0e-7 to
+            # 7.6e-7, Gram 4.1e-6 to 6.7e-6 relative to max (float32 rounding in the FFT correlation of the mask with
+            # f_a f_b, a large dynamic range), scores 0.5e-3 to 1.6e-3 abs on ranges 132-303, argmax identical 6/6.
+            # Accepted bound (2026-11-16): inner <= 1e-6, Gram <= 1e-5, argmax identical; no float64 (rule 1).
             f = jax.vmap(per_rot)(Qs)  # (R, D, P, Cc, Cc, Cc)
             inner, gram = shift_correlations(f, mask * V, mask, ints)  # (R, D, P, T), (R, D, tri, T)
             gram = gram / c
