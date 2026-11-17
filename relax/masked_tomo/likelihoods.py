@@ -491,7 +491,7 @@ def _fourier_stats(arm, vft, part, Qs, axes):
     ``inner`` is exact for every shift inside the crop's valid range (sub-pixel included): with ``a = M V / c`` on
     the template box and ``F_u = filt x^_Q e^{-2 pi i k.u / N}``, ``inner(u) = sum_x a Re F^-1[F_u] =
     Re sum_k conj(A(k)) F_u(k) / N^3``, evaluated as a separable partial DFT at the grid's ``Ta`` points per axis.
-    ``gram`` drops the mask, ``sum_k Re F_a conj(F_b) / N^3`` (shift-independent): the APPROXIMATION of the opt-in
+    ``gram`` drops the mask, ``sum_k Re F_a conj(F_b) / (N^3 c)`` (shift-independent): the APPROXIMATION of the opt-in
     prefilter (the template energy outside the mask and its shift dependence are ignored)."""
     S, Cc = arm.N, arm.Cc
     c = part["c"]
@@ -512,7 +512,7 @@ def _fourier_stats(arm, vft, part, Qs, axes):
         g = jnp.einsum("pxyz,xi->piyz", g, E[0], precision=hi)
         g = jnp.einsum("piyz,yj->pijz", g, E[1], precision=hi)
         g = jnp.einsum("pijz,zl->pijl", g, E[2], precision=hi)
-        gram = jnp.real(jnp.sum(F[first] * jnp.conj(F[second]), -1)) / S**3
+        gram = jnp.real(jnp.sum(F[first] * jnp.conj(F[second]), -1)) / (S**3 * c)
         return jnp.real(g).reshape(P, -1) / S**3, gram
 
     inner, gram = jax.vmap(per_rot)(Qs)  # (R, P, T), (R, tri)
