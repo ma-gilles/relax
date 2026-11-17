@@ -423,9 +423,8 @@ def test_image_route_at_a_given_pose_scores_as_the_full_grid_at_that_pose():
 
 @pytest.mark.parametrize("masked", [False, True])
 def test_local_search_about_the_true_pose_peaks_at_the_identity(masked):
-    """Noiseless particles given their true poses: over the local search's rotations (HEALPix order 2 within 3 x 6
-    deg) with the identity added, and shifts within 1 px, every particle's top pose is the identity and zero shift.
-    (The grid's rotation nearest the identity need not score best by itself: the score is anisotropic in SO(3).)"""
+    """Noiseless particles given their true poses: over the local search's rotations (HEALPix order 2 centred on the
+    identity, within 3 x 6 deg) and shifts within 1 px, every particle's top pose is the identity and zero shift."""
     from relax.ppca_initial_model.pose_input import InputPoses, local_rotations
     from relax.sampling import grids
 
@@ -433,12 +432,13 @@ def test_local_search_about_the_true_pose_peaks_at_the_identity(masked):
     particles, volume, rotations, translations, truth = _noiseless_problem(n)
     poses = InputPoses(rotations[[r for r, _ in truth]].astype(np.float64), translations[[t for _, t in truth]].astype(np.float64))
     local, _, _ = local_rotations(grids.get_relion_hidden_rotation_grid(2, matrices=True), 6.0)
-    local = np.concatenate([local, np.eye(3, dtype=np.float32)[None]])
+    identity = np.flatnonzero(np.abs(local - np.eye(3)).max(axis=(1, 2)) < 1e-6)
+    assert identity.size == 1  # the centred grid holds the given pose
     shifts = grids.get_relion_translation_grid_3d(1.0, 1.0).astype(np.float32)
     _, stream = _pose_streams(particles, poses, volume, local, shifts, masked=masked)
     _, posterior, rows = _top_poses(stream, np.arange(particles.n_images))
     top = rows[np.asarray(posterior.top_rotation)]
-    np.testing.assert_array_equal(top, np.full(particles.n_images, len(local) - 1))
+    np.testing.assert_array_equal(top, np.full(particles.n_images, identity[0]))
     np.testing.assert_array_equal(shifts[np.asarray(posterior.top_translation)], np.zeros((particles.n_images, 3)))
 
 
@@ -485,6 +485,21 @@ def test_controller_trains_at_given_poses(tmp_path, options):
         angle = np.degrees(np.arccos(np.clip(
             (np.einsum("pab,pab->p", embeddings["best_rotation_matrix"], rotations[order]) - 1) / 2, -1, 1)))  # fmt: skip
         assert np.all(angle < 30.0 + 1e-3)  # inside the 3 sigma cone
+
+
+@pytest.mark.parametrize("order", [2, 4])
+def test_local_grid_is_centred_on_the_given_pose(order):
+    """The local grid holds the identity, keeps the HEALPix grid's spacing (centring is an isometry) and only
+    rotations within 3 sigma."""
+    from relax.ppca_initial_model.pose_input import local_rotations
+    from relax.sampling import grids
+
+    grid = grids.get_relion_hidden_rotation_grid(order, matrices=True)
+    local, log_prior, _ = local_rotations(grid, 3.0 * 2 ** (2 - order))
+    angle = np.degrees(np.arccos(np.clip((np.trace(local, axis1=1, axis2=2) - 1) / 2, -1, 1)))
+    assert angle.min() < 1e-3 and angle.max() < 9.0 * 2 ** (2 - order)
+    assert int(np.argmax(log_prior)) == int(np.argmin(angle))
+    assert np.isclose(np.exp(log_prior.astype(np.float64)).sum(), 1.0, rtol=1e-5)
 
 
 def test_pose_files_are_checked(tmp_path):

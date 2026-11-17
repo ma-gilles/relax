@@ -99,12 +99,22 @@ def particles_at_poses(particles: TiltParticles, poses: InputPoses) -> TiltParti
     )
 
 
+def _angle_to_identity(grid):
+    return np.degrees(np.arccos(np.clip((np.trace(grid, axis1=1, axis2=2) - 1) / 2, -1, 1)))
+
+
 def local_rotations(rotation_grid: np.ndarray, sigma_deg: float, cutoff: float = 3.0):
-    """The rotations of ``rotation_grid`` within ``cutoff sigma`` (geodesic angle) of the identity and their normalised
-    Gaussian log prior ``-angle^2 / (2 sigma^2)``: RELION's local search about a prior at the identity, isotropic in
-    SO(3) (the particle frame makes every prior the identity). Raises when the cone holds no grid rotation."""
+    """The rotations of ``rotation_grid``, centred on the identity, within ``cutoff sigma`` (geodesic angle) of it,
+    and their normalised Gaussian log prior ``-angle^2 / (2 sigma^2)``: RELION's local search about a prior at the
+    identity, isotropic in SO(3) (the particle frame makes every prior the identity). The grid is centred by
+    left-multiplying it with the inverse of its rotation nearest the identity (an isometry of SO(3), so the
+    sampling is unchanged), so the given pose itself is a candidate: without it, every particle of a run at
+    HEALPix order 4 moved by at least the grid's 2.92 deg offset from the identity (pilot agent, job 7489035).
+    Raises when the cone holds no grid rotation."""
     grid = np.asarray(rotation_grid, np.float64)
-    angle = np.degrees(np.arccos(np.clip((np.trace(grid, axis1=1, axis2=2) - 1) / 2, -1, 1)))
+    nearest = grid[np.argmin(_angle_to_identity(grid))]
+    grid = np.einsum("ba,rbc->rac", nearest, grid)
+    angle = _angle_to_identity(grid)
     keep = np.flatnonzero(angle < cutoff * sigma_deg)
     if keep.size == 0:
         raise ValueError(f"No grid rotation within {cutoff} x {sigma_deg} deg of the given pose: widen the local sigma")
