@@ -299,33 +299,50 @@ def _volume_grid_coordinates(indices, rotations, volume_shape):
     return jnp.einsum("fa,rab->rfb", k, rotations, precision=HIGHEST) + centre
 
 
+def _trilinear_channels(volume, coords):
+    """Trilinear samples ``(n, C)`` of a channels-last full volume ``(N0, N1, N2, C)`` at grid coordinates ``(n, 3)``
+    (zero outside the grid): each corner reads all ``C`` channels of a voxel at once."""
+    shape = volume.shape[:3]
+    base = jnp.floor(coords)
+    frac = coords - base
+    base = base.astype(jnp.int32)
+    out = 0
+    for corner in ((0, 0, 0), (0, 0, 1), (0, 1, 0), (0, 1, 1), (1, 0, 0), (1, 0, 1), (1, 1, 0), (1, 1, 1)):
+        index = base + jnp.asarray(corner, jnp.int32)
+        weight = 1.0
+        for axis, d in enumerate(corner):
+            weight = weight * (frac[:, axis] if d else 1 - frac[:, axis])
+        inside = jnp.all((index >= 0) & (index < jnp.asarray(shape, jnp.int32)), axis=-1)
+        index = jnp.clip(index, 0, jnp.asarray(shape, jnp.int32) - 1)
+        out = out + jnp.where(inside, weight, 0)[:, None] * volume[index[:, 0], index[:, 1], index[:, 2]]
+    return out
+
+
 def _project_volume(augmented, indices, rotations, volume_shape):
-    """Trilinear samples ``(P, R, F)`` of the augmented half volumes at the rotated window voxels ``k @ R``:
-    the volume observation's projection (RECOVAR's half-volume gather, the slicer's Hermitian convention)."""
-    from recovar.core.relion_interp import _trilinear_gather_half
+    """Trilinear samples ``(P, R, F)`` of the augmented half volumes at the rotated window voxels ``k @ R``: the
+    volume observation's projection. The half volumes are expanded to full Hermitian volumes (RECOVAR's
+    ``half_volume_to_full_volume``) and read channels-last, every component per corner read; on the window (radius
+    below ``N / 2 - 1``, so no Nyquist plane) this is RECOVAR's half-volume gather (``relion_interp``) up to float32
+    rounding (tests/unit/ppca_initial_model/test_masked_volume.py)."""
+    from recovar.core.fourier_transform_utils import half_volume_to_full_volume
 
-    n0, n1, n2 = (int(n) for n in volume_shape)
-    g = _volume_grid_coordinates(indices, rotations, volume_shape).reshape(-1, 3)
-    volumes = augmented.reshape(augmented.shape[0], n0, n1, n2 // 2 + 1)
-
-    def one(volume):
-        return _trilinear_gather_half(volume, g[:, 0], g[:, 1], g[:, 2], n0, n1, n2)
-
-    return jax.vmap(one)(volumes).reshape(augmented.shape[0], rotations.shape[0], -1)
+    shape = tuple(int(n) for n in volume_shape)
+    full = jax.vmap(lambda h: half_volume_to_full_volume(h, shape).reshape(shape))(augmented)
+    g = _volume_grid_coordinates(indices, rotations, shape).reshape(-1, 3)
+    samples = _trilinear_channels(jnp.moveaxis(full, 0, -1), g)  # (R F, P)
+    return samples.T.reshape(augmented.shape[0], rotations.shape[0], -1)
 
 
 def _backproject_volume(images, indices, rotations, volume_shape):
-    """Adjoint of :func:`_project_volume` per channel: ``images`` ``(C, R, F)`` scattered into ``(C, half)``."""
-    from recovar.core.relion_interp import _scatter_trilinear_half
-
-    n0, n1, n2 = (int(n) for n in volume_shape)
-    half = n0 * n1 * (n2 // 2 + 1)
-    g = _volume_grid_coordinates(indices, rotations, volume_shape).reshape(-1, 3)
-
-    def one(values):
-        return _scatter_trilinear_half(half, g[:, 0], g[:, 1], g[:, 2], values.reshape(-1), n0, n1, n2)
-
-    return jax.vmap(one)(images)
+    """Adjoint of :func:`_project_volume`: ``images`` ``(C, R, F)`` into ``(C, half)``, all channels in one transposed
+    gather (``jax.vjp``; at the half volume's Hermitian partners the conjugated adjoint, as RECOVAR's half-volume
+    scatter)."""
+    half = int(volume_shape[0]) * int(volume_shape[1]) * (int(volume_shape[2]) // 2 + 1)
+    dtype = jnp.result_type(images.dtype, jnp.complex64)
+    zero = jnp.zeros((images.shape[0], half), dtype)
+    _, adjoint = jax.vjp(lambda v: _project_volume(v, indices, rotations, volume_shape), zero)
+    out = adjoint(images.astype(dtype))[0]
+    return out if jnp.iscomplexobj(images) else out.real
 
 
 def real_imag(values):

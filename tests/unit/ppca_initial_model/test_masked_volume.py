@@ -77,6 +77,38 @@ def test_volume_backprojection_is_the_projection_adjoint():
     assert_matches(left, right, rtol=1e-5)
 
 
+def test_volume_projection_and_backprojection_are_recovar_half_volume_interpolation():
+    """The channels-last gather of the expanded volume equals RECOVAR's half-volume trilinear gather on the window, and
+    its transposed gather RECOVAR's half-volume scatter (Hermitian partners conjugated), for every channel."""
+    from recovar.core.relion_interp import _scatter_trilinear_half, _trilinear_gather_half
+
+    from relax.ppca_refinement.full_row_kernels import _volume_grid_coordinates
+
+    n = 12
+    shape = (n, n, n)
+    rng = np.random.default_rng(7)
+    indices, _ = half_ball(shape, n // 2 - 1)
+    rotations = Rotation.random(4, random_state=8).as_matrix().astype(np.float32)
+    volumes = np.stack([_half_volume(rng, n) for _ in range(3)])
+    g = np.asarray(_volume_grid_coordinates(jnp.asarray(indices), jnp.asarray(rotations), shape)).reshape(-1, 3)
+    half_shape = (n, n, n // 2 + 1)
+    reference = np.stack([np.asarray(_trilinear_gather_half(jnp.asarray(v).reshape(half_shape), *jnp.asarray(g).T, n, n, n))
+                          for v in volumes]).reshape(3, len(rotations), -1)  # fmt: skip
+    actual = np.asarray(_project_volume(jnp.asarray(volumes), jnp.asarray(indices), jnp.asarray(rotations), shape))
+    assert_matches(actual, reference, rtol=1e-5)
+    images = (rng.standard_normal((2,) + actual.shape[1:]) + 1j * rng.standard_normal((2,) + actual.shape[1:])).astype(np.complex64)
+    reference = np.stack([np.asarray(_scatter_trilinear_half(int(np.prod(half_shape)), *jnp.asarray(g).T, jnp.asarray(im).reshape(-1), n, n, n))
+                          for im in images])  # fmt: skip
+    actual = np.asarray(_backproject_volume(jnp.asarray(images), jnp.asarray(indices), jnp.asarray(rotations), shape))
+    assert_matches(actual, reference, rtol=1e-5)
+    real = images.real.astype(np.float32)
+    actual_real = np.asarray(_backproject_volume(jnp.asarray(real), jnp.asarray(indices), jnp.asarray(rotations), shape))
+    reference_real = np.stack([np.asarray(_scatter_trilinear_half(int(np.prod(half_shape)), *jnp.asarray(g).T, jnp.asarray(im).reshape(-1), n, n, n))
+                               for im in real])  # fmt: skip
+    assert actual_real.dtype == np.float32
+    assert_matches(actual_real, reference_real, rtol=1e-5)
+
+
 FRAMES = Rotation.from_euler("zyx", [[85, a, 0] for a in range(-60, 61, 6)], degrees=True).as_matrix()
 
 
