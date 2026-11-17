@@ -12,14 +12,17 @@ The run is the command's own, with three hooks: the M-step's jitted transaction 
 The extra outputs change the compiled program, so a traced run need not be bitwise equal to an untraced one; compare
 traced runs with traced runs.
 
-Two study options change the next iteration's Fourier radius (RELION: the last shell where data_vs_prior >= 1, plus
+Study options change the next iteration's Fourier radius (RELION: the last shell where data_vs_prior >= 1, plus
 incr_size = 10 shells). ``--incr-size N`` sets incr_size from the end of iteration 1. ``--radius-rule moment_window``
 reads the crossing from data_vs_prior times the half-0 first moment's effective particles over the half-0 batch,
 (1 / n_0) / sum_{i in half 0} a_i^2 with a the per-particle moment coefficients (relax.vdam.gate.advance_noise_coefficients):
-the shells the update direction resolves rather than one half-batch. The state keeps the run's own data_vs_prior.
+the shells the update direction resolves rather than one half-batch. ``--radius-rule signal`` also multiplies by the
+reference's signal fraction per shell, 1 - noise / power (clipped to [0, 1]), with the reference's noise power the M-step's
+half-moment disagreement power times window_disagreement_scale / 4 (open gate: an upper bound), so that noise the
+reference holds does not count as signal. The state keeps the run's own data_vs_prior.
 
 Run:
-    python scripts/vdam_gate_benchmark/traced_initial_model.py TRACE_DIR [--radius-rule moment_window] \
+    python scripts/vdam_gate_benchmark/traced_initial_model.py TRACE_DIR [--radius-rule {moment_window,signal}] \
         [--incr-size N] -- <relax initial_model arguments>
 Writes TRACE_DIR/gate_trace.jsonl (one line per M-step), TRACE_DIR/iterations.jsonl (one line per iteration) and
 TRACE_DIR/batches.npz.
@@ -69,14 +72,14 @@ def grown(values: np.ndarray | None, size: int, fill) -> np.ndarray | None:
 def install(trace_dir: Path, radius_rule: str = "relion", incr_size: int | None = None) -> list:
     """Install the three hooks (with the study radius options); returns the list the batches are appended to."""
     from relax.vdam import iteration_loop, relion_mstep
-    from relax.vdam.gate import advance_noise_coefficients
+    from relax.vdam.gate import advance_noise_coefficients, advance_window_coefficients, window_disagreement_scale
 
     trace_dir.mkdir(parents=True, exist_ok=True)
     handle = open(trace_dir / "gate_trace.jsonl", "w")
     iterations = open(trace_dir / "iterations.jsonl", "w")
     batches: list = []
-    context = {"iteration": None}
-    window = {"coefficients": None, "halves": np.zeros(0, np.int8)}
+    context = {"iteration": None, "record": None}
+    window = {"coefficients": None, "halves": np.zeros(0, np.int8), "moment": None, "reference": None}
     device = relion_mstep.relion_vdam_m_step_device
     maximize = iteration_loop.VdamUpdate.maximize
     update_resolution = iteration_loop.VdamUpdate.update_resolution
@@ -100,11 +103,32 @@ def install(trace_dir: Path, radius_rule: str = "relion", incr_size: int | None 
         members = window["halves"] == 0
         return (1.0 / int(np.sum(halves == 0))) / float(np.sum(window["coefficients"][members] ** 2))
 
+    def signal_fraction(current, shells: int) -> np.ndarray:
+        """Advance the window coefficients by this iteration's batch and step; the reference's signal fraction per shell."""
+        record = context["record"]
+        if record is None or record["iteration"] != int(current.iter):
+            raise RuntimeError(f"no M-step statistics traced for iteration {int(current.iter)}")
+        ids = np.asarray(current.subset_particle_ids, np.int64)
+        halves = np.asarray(current.subset_halfset_ids, np.int8)
+        size = window["coefficients"].size
+        window["moment"], window["reference"] = advance_window_coefficients(
+            grown(window["moment"], size, 0.0), grown(window["reference"], size, 0.0), ids, halves, size, record["stepsize"]
+        )
+        scale = window_disagreement_scale(window["reference"], window["coefficients"])
+        power, disagreement = np.asarray(record["ref_pow"]), np.asarray(record["dis_pow"])
+        fraction = np.zeros(shells)
+        m = min(shells, power.size)
+        fraction[:m] = np.clip(1.0 - disagreement[:m] * scale / 4.0 / np.where(power[:m] > 0, power[:m], np.inf), 0.0, 1.0)
+        return fraction
+
     def traced_update_resolution(self, current):
         factor = 1.0
-        if radius_rule == "moment_window" and current.pseudo_halfsets:
+        if radius_rule in ("moment_window", "signal") and current.pseudo_halfsets:
             factor = moment_window_factor(current)
-            scaled = replace(current, data_vs_prior_class=np.asarray(current.data_vs_prior_class, np.float64) * factor)
+            curve = np.asarray(current.data_vs_prior_class, np.float64) * factor
+            if radius_rule == "signal":
+                curve = curve * signal_fraction(current, curve.shape[-1])[None, :]
+            scaled = replace(current, data_vs_prior_class=curve)
             updated = replace(update_resolution(self, scaled), data_vs_prior_class=current.data_vs_prior_class)
         else:
             updated = update_resolution(self, current)
@@ -160,6 +184,7 @@ def install(trace_dir: Path, radius_rule: str = "relion", incr_size: int | None 
         }
         handle.write(json.dumps(record) + "\n")
         handle.flush()
+        context["record"] = record
         return result
 
     relion_mstep.relion_vdam_m_step_device = traced_device
@@ -184,7 +209,7 @@ def main() -> int:
     split = sys.argv.index("--", 2)
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("trace_dir", type=Path)
-    parser.add_argument("--radius-rule", choices=("relion", "moment_window"), default="relion")
+    parser.add_argument("--radius-rule", choices=("relion", "moment_window", "signal"), default="relion")
     parser.add_argument("--incr-size", type=int)
     options = parser.parse_args(sys.argv[1:split])
     batches = install(options.trace_dir, options.radius_rule, options.incr_size)
