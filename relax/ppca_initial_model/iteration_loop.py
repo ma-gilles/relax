@@ -26,6 +26,7 @@ from relax.ppca_initial_model import checkpoint
 from relax.ppca_initial_model import ranks as ranks_module
 from relax.ppca_initial_model.filament_band import attachment_support_mask, uniform_log_prior
 from relax.ppca_initial_model.masked_volume import prepare_volume_observations, prepare_volume_stream
+from relax.ppca_initial_model.pose_input import absolute_poses, local_rotations, particles_at_poses, read_pose_file
 from relax.ppca_initial_model.initialization import (
     bandlimit_and_mask,
     initialize,
@@ -505,6 +506,19 @@ def _update_rule_measured(config, diagnostics):
     )
 
 
+def _pose_input_grid(config, iteration):
+    """``(rotations, rotation_log_prior, translations, shift_step)`` about the given poses at ``iteration``: the one
+    pose (identity, zero shift) for pose_mode "fixed"; for "local" the stage's HEALPix rotations within 3 sigma of the
+    identity (pose_input.local_rotations) and the stage's 3D shift grid."""
+    if config.pose_mode == "fixed":
+        return np.eye(3, dtype=np.float32)[None], np.zeros(1, np.float32), np.zeros((1, 3), np.float32), None
+    _, hp = config.stage(iteration)
+    rotations, log_prior, _ = local_rotations(_rotation_grid(hp), config.local_sigma_deg)
+    shift_range, shift_step = config.shifts(iteration)
+    translations = grids.get_relion_translation_grid_3d(shift_range, shift_step).astype(np.float32)
+    return rotations, log_prior, translations, shift_step
+
+
 def _frozen_noise_shells(dataset):
     """Noise shells the data carry no information on: the DC pixel of DC-free particles, the shells below K of
     :func:`relax.ppca_initial_model.tomo.free_low_shells`."""
@@ -639,6 +653,17 @@ def _expectation(
         translations = band.translations_px(dataset.voxel_size)
         prior = jnp.asarray(uniform_log_prior(len(translations)))
         shift_step = None
+    elif config.pose_mode is not None:
+        # Given poses: each particle in its own frame (pose_input.particles_at_poses), searched about the identity.
+        if not tilts or dataset.input_poses is None:
+            raise ValueError("Given poses train subtomogram particles composed with their poses")
+        rotations, rotation_log_prior, translations, shift_step = _pose_input_grid(config, iteration)
+        canonical_eulers = np.zeros((len(rotations), 3), np.float32)  # the composed frames carry the orientations
+        offset_variance = (
+            state.offset_variance if config.offset_sigma_hold_px is None else config.offset_sigma_hold_px**2
+        )
+        prior = -jnp.sum(jnp.asarray(translations) ** 2, axis=-1) / (2 * offset_variance)
+        prior = prior - jnp.log(jnp.sum(jnp.exp(prior)))
     else:
         rotations = _rotation_grid(hp)
         canonical_eulers = grids.get_relion_hidden_rotation_grid(hp, matrices=False)
@@ -971,6 +996,11 @@ def run(
     scores each E-step's tiles on every GPU. Initialization, the updates, checkpoints and outputs run here."""
     output = Path(output)
     output.mkdir(parents=True, exist_ok=True)
+    if config.pose_mode is not None:
+        if not isinstance(dataset, TiltParticles):
+            raise ValueError("Given poses train subtomogram particles (--ios)")
+        dataset = particles_at_poses(dataset, read_pose_file(config.init_poses, dataset.n_images))
+        logger.info("given poses from %s, pose mode %s", config.init_poses, config.pose_mode)
     resumed_precision = None
     resumed_source = None
     if resume:
@@ -1225,7 +1255,8 @@ def run(
         if not bool(jnp.all(jnp.isfinite(theta))):
             raise ValueError("Nonfinite PPCA model")
         hp = config.stage(iteration)[1]
-        if band is not None:
+        if band is not None or config.pose_mode is not None:
+            # The band's and the given poses' grids are not the HEALPix order's: no direction prior.
             direction_prior = None
         else:
             direction_ids = _direction_ids(hp)
@@ -1398,16 +1429,30 @@ def run(
             # convention, as the stream projects it) and the 3D (or 2D) shift in pixels.
             _, hp_final = config.stage(config.iterations)
             shift_range, shift_step = config.shifts(config.iterations)
-            grid_translations = (
-                grids.get_relion_translation_grid_3d(shift_range, shift_step)
-                if isinstance(dataset, TiltParticles)
-                else grids.get_relion_translation_grid(max_pixel=shift_range, pixel_offset=shift_step)
-            )
+            if config.pose_mode is not None:
+                # The stream's poses are about each particle's given pose: report the particle poses.
+                grid_rotations, _, grid_translations, _ = _pose_input_grid(config, config.iterations)
+                order = np.argsort(final.original_image_ids)
+                rotations, translations = absolute_poses(
+                    dataset.input_poses,
+                    grid_rotations[final.best_rotation][order],
+                    np.asarray(grid_translations)[final.best_translation][order],
+                )
+                inverse = np.argsort(order)
+                rotations, translations = rotations[inverse], translations[inverse]
+            else:
+                grid_translations = (
+                    grids.get_relion_translation_grid_3d(shift_range, shift_step)
+                    if isinstance(dataset, TiltParticles)
+                    else grids.get_relion_translation_grid(max_pixel=shift_range, pixel_offset=shift_step)
+                )
+                rotations = _rotation_grid(hp_final)[final.best_rotation]
+                translations = np.asarray(grid_translations, np.float32)[final.best_translation]
             placement.update(
                 best_rotation=final.best_rotation,
                 best_translation=final.best_translation,
-                best_rotation_matrix=_rotation_grid(hp_final)[final.best_rotation],
-                best_translation_px=np.asarray(grid_translations, np.float32)[final.best_translation],
+                best_rotation_matrix=np.asarray(rotations, np.float32),
+                best_translation_px=np.asarray(translations, np.float32),
             )
         np.savez(
             output / "embeddings.npz",

@@ -78,6 +78,9 @@ _ADDED_CONFIG_DEFAULTS = {
     "masked_mc_samples": 2,
     "hold_noise": False,
     "single_volume": False,
+    "init_poses": None,
+    "pose_mode": None,
+    "local_sigma_deg": 3.0,
 }
 
 

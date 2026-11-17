@@ -338,3 +338,135 @@ def test_masked_and_single_volume_options_are_validated():
         Config(tomo_likelihood="masked", masked_mask_radius_px=5.0, oversampling=1)
     assert Config(tomo_likelihood="masked", masked_mask_radius_px=5.0).holds_noise()
     assert not Config().holds_noise()
+
+
+# ----------------------------------------------------------------------------------------------- given poses
+def _pose_streams(particles, poses, volume, rotations, translations, *, masked):
+    """Streams of the particles composed with ``poses`` and of the plain particles, both likelihoods' readers."""
+    from relax.ppca_initial_model.pose_input import particles_at_poses
+
+    n = particles.grid_size
+    composed = particles_at_poses(particles, poses)
+    if masked:
+        noise = np.ones((1, n // 2 + 1), np.float32)
+        kw = dict(mask_radius_px=n // 2 - 1, lam_rel=0.01, n_mc=1)
+        composed = TiltParticles(**{**composed.__dict__,
+                                    "volume_observations": prepare_volume_observations(composed, noise, **kw)})  # fmt: skip
+    mu, W = jnp.asarray(volume), jnp.zeros((volume.size, 1), jnp.complex64)
+    return composed, _streams(composed, mu, W, rotations, translations, n // 2 - 1, 1, image=not masked)
+
+
+def _top_poses(stream, ids):
+    tile, _, layout = read_tile(stream, ids, [None] * ids.size, collect_observation=False)
+    kept, posterior = score_tile(stream, tile, layout["n_blocks"])
+    return kept, posterior, np.asarray(tile.rows)
+
+
+def test_image_route_at_a_given_pose_scores_as_the_full_grid_at_that_pose():
+    """Composing each particle's frames with its pose and shifting its images by the pose's shift is the same image
+    likelihood: the given pose's score (identity, zero shift) equals the plain stream's score at that grid pose."""
+    from relax.ppca_initial_model.pose_input import InputPoses
+
+    n = 16
+    particles, volume, rotations, translations, truth = _noiseless_problem(n)
+    rng = np.random.default_rng(3)
+    _, half, ctf = particles.read(np.arange(particles.image_offsets[-1]))
+    noisy = (np.asarray(half) + 0.3 * rng.standard_normal(half.shape)).astype(np.complex64)
+    particles = _particles(n, noisy, np.asarray(ctf), particles.n_images)
+    ids = np.arange(particles.n_images)
+    # Each particle's given pose is another particle's grid pose, so scores are not all at the maximum.
+    given = [((p + 2) % 6, (p + 3) % 5) for p in ids]
+    poses = InputPoses(rotations[[r for r, _ in given]].astype(np.float64), translations[[t for _, t in given]].astype(np.float64))
+    mu, W = jnp.asarray(volume), jnp.zeros((volume.size, 1), jnp.complex64)
+    plain = _streams(particles, mu, W, rotations, translations, n // 2 - 1, 1, image=True)
+    kept, _, rows = _top_poses(plain, ids)
+    full = np.asarray(kept.score)
+    _, fixed = _pose_streams(particles, poses, volume, np.eye(3, dtype=np.float32)[None], np.zeros((1, 3), np.float32),
+                             masked=False)  # fmt: skip
+    kept_fixed, _, _ = _top_poses(fixed, ids)
+    position = {int(r): k for k, r in enumerate(rows[: len(rotations)])}
+    expected = np.asarray([full[position[r], p, t] for p, (r, t) in enumerate(given)])
+    assert_matches(np.asarray(kept_fixed.score)[0, :, 0], expected, rtol=1e-5)
+
+
+@pytest.mark.parametrize("masked", [False, True])
+def test_local_search_about_the_true_pose_peaks_at_the_identity(masked):
+    """Noiseless particles given their true poses: over the local search's rotations (HEALPix order 2 within 3 x 6
+    deg) with the identity added, and shifts within 1 px, every particle's top pose is the identity and zero shift.
+    (The grid's rotation nearest the identity need not score best by itself: the score is anisotropic in SO(3).)"""
+    from relax.ppca_initial_model.pose_input import InputPoses, local_rotations
+    from relax.sampling import grids
+
+    n = 16
+    particles, volume, rotations, translations, truth = _noiseless_problem(n)
+    poses = InputPoses(rotations[[r for r, _ in truth]].astype(np.float64), translations[[t for _, t in truth]].astype(np.float64))
+    local, _, _ = local_rotations(grids.get_relion_hidden_rotation_grid(2, matrices=True), 6.0)
+    local = np.concatenate([local, np.eye(3, dtype=np.float32)[None]])
+    shifts = grids.get_relion_translation_grid_3d(1.0, 1.0).astype(np.float32)
+    _, stream = _pose_streams(particles, poses, volume, local, shifts, masked=masked)
+    _, posterior, rows = _top_poses(stream, np.arange(particles.n_images))
+    top = rows[np.asarray(posterior.top_rotation)]
+    np.testing.assert_array_equal(top, np.full(particles.n_images, len(local) - 1))
+    np.testing.assert_array_equal(shifts[np.asarray(posterior.top_translation)], np.zeros((particles.n_images, 3)))
+
+
+@pytest.mark.parametrize(
+    "options",
+    [
+        {"pose_mode": "fixed"},
+        {"pose_mode": "local", "local_sigma_deg": 10.0, "tomo_likelihood": "masked", "masked_mask_radius_px": 6.0},
+        {"pose_mode": "fixed", "tomo_likelihood": "masked", "masked_mask_radius_px": 6.0},
+    ],
+)
+def test_controller_trains_at_given_poses(tmp_path, options):
+    """Fixed and local given poses through the controller, both likelihoods; fixed mode's final poses are the given
+    ones (particle_ids reorder the file's rows)."""
+    from relax.ppca_initial_model import iteration_loop
+    from relax.ppca_initial_model.config import Config
+    from relax.ppca_initial_model.iteration_loop import run
+
+    particles = _controller_particles()
+    n = particles.n_images
+    rng = np.random.default_rng(5)
+    rotations = Rotation.random(n, random_state=6).as_matrix()
+    translations = rng.normal(0, 1.0, (n, 3))
+    ids = rng.permutation(n)
+    np.savez(tmp_path / "poses.npz", rotations=rotations[ids], translations_px=translations[ids], particle_ids=ids)
+    iteration_loop._rotation_grid.cache_clear()
+    iteration_loop._direction_ids.cache_clear()
+    config = Config(
+        q=2, iterations=2, stages=((1, 3, 1),), shift_range=1, shift_step=1, image_batch_size=3, rotation_block_size=32,
+        final_poses=True, init_poses=str(tmp_path / "poses.npz"), **options,
+    )  # fmt: skip
+    try:
+        state = run(particles, config, tmp_path / "run", {"test": True}, diameter_ang=100.0)
+    finally:
+        iteration_loop._rotation_grid.cache_clear()
+        iteration_loop._direction_ids.cache_clear()
+    assert np.all(np.isfinite(np.asarray(state.theta)))
+    embeddings = np.load(tmp_path / "run" / "embeddings.npz")
+    order = np.asarray(embeddings["particle_ids"])
+    if options["pose_mode"] == "fixed":
+        assert_matches(embeddings["best_rotation_matrix"], rotations[order].astype(np.float32), rtol=1e-6)
+        assert_matches(embeddings["best_translation_px"], translations[order].astype(np.float32), rtol=1e-6)
+    else:
+        angle = np.degrees(np.arccos(np.clip(
+            (np.einsum("pab,pab->p", embeddings["best_rotation_matrix"], rotations[order]) - 1) / 2, -1, 1)))  # fmt: skip
+        assert np.all(angle < 30.0 + 1e-3)  # inside the 3 sigma cone
+
+
+def test_pose_files_are_checked(tmp_path):
+    from relax.ppca_initial_model.config import Config
+    from relax.ppca_initial_model.pose_input import read_pose_file
+
+    np.savez(tmp_path / "bad.npz", rotations=np.tile(np.eye(3), (3, 1, 1)), translations_px=np.zeros((3, 3)),
+             particle_ids=np.array([0, 0, 2]))  # fmt: skip
+    with pytest.raises(ValueError, match="exactly once"):
+        read_pose_file(tmp_path / "bad.npz", 3)
+    np.savez(tmp_path / "mirror.npz", rotations=np.tile(np.diag([1.0, 1.0, -1.0]), (3, 1, 1)), translations_px=np.zeros((3, 3)))
+    with pytest.raises(ValueError, match="proper rotation"):
+        read_pose_file(tmp_path / "mirror.npz", 3)
+    with pytest.raises(ValueError, match="both init_poses and pose_mode"):
+        Config(init_poses="x.npz")
+    with pytest.raises(ValueError, match="tilt coarse pass"):
+        Config(init_poses="x.npz", pose_mode="fixed", tilt_coarse_pass=True)

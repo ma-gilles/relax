@@ -184,6 +184,13 @@ class Config:
     single_volume: bool = False
     # Write each particle's top pose of the final embedding pass into embeddings.npz (a runtime setting).
     final_poses: bool = False
+    # Given particle poses (relax/ppca_initial_model/pose_input.py: an .npz of rotations and 3D shifts) and how they are
+    # used: pose_mode "fixed" scores each particle at its given pose only (fixed-pose PPCA); "local" searches the
+    # stage's HEALPix rotations within 3 local_sigma_deg of it (Gaussian prior of that sigma) and the stage's shift
+    # grid about its shift. None: the full pose grid (the default).
+    init_poses: str | None = None
+    pose_mode: str | None = None
+    local_sigma_deg: float = 3.0
 
     def band(self):
         """The :class:`FilamentBand` search, or None for the full grid."""
@@ -353,6 +360,7 @@ class Config:
         if self.offset_sigma_hold_px is not None and not (np.isfinite(self.offset_sigma_hold_px) and self.offset_sigma_hold_px > 0):
             raise ValueError("The held offset sigma must be finite and positive")
         self._check_likelihood()
+        self._check_pose_input()
 
     def _check_likelihood(self):
         if self.tomo_likelihood not in ("image", "masked"):
@@ -377,6 +385,20 @@ class Config:
                 "The masked likelihood runs on the streamed engine without oversampling, the filament band, a fixed "
                 "core, likelihood_min_shell or the exact-diagonal step scale"
             )
+
+    def _check_pose_input(self):
+        if (self.init_poses is None) != (self.pose_mode is None):
+            raise ValueError("Given poses need both init_poses and pose_mode (fixed or local)")
+        if self.pose_mode is None:
+            if self.local_sigma_deg != 3.0:
+                raise ValueError("local_sigma_deg is a pose_mode local option")
+            return
+        if self.pose_mode not in ("fixed", "local"):
+            raise ValueError(f"pose_mode must be fixed or local, got {self.pose_mode}")
+        if not (np.isfinite(self.local_sigma_deg) and self.local_sigma_deg > 0):
+            raise ValueError("local_sigma_deg must be positive")
+        if self.oversampling or self.band_length_ang is not None or self.tilt_coarse_pass or self.fixed_core is not None:
+            raise ValueError("Given poses run without oversampling, the filament band, the tilt coarse pass or a fixed core")
 
     def holds_noise(self):
         """Whether the run keeps the start-up noise (hold_noise, and always under the masked likelihood)."""

@@ -354,6 +354,17 @@ def add_args(parser):
     parser.add_argument(
         "--final-poses", action="store_true", help="Write each particle's top pose of the final pass to embeddings.npz"
     )
+    parser.add_argument(
+        "--init-poses",
+        help="Given particle poses (.npz: rotations (P,3,3), translations_px (P,3), optional particle_ids; "
+        "relax/ppca_initial_model/pose_input.py); needs --pose-mode",
+    )
+    parser.add_argument(
+        "--pose-mode", choices=("fixed", "local"),
+        help="With --init-poses: 'fixed' scores each particle at its pose only; 'local' searches the stage's HEALPix "
+        "rotations within 3 --local-sigma of it and the stage's shift grid about its shift",
+    )  # fmt: skip
+    parser.add_argument("--local-sigma", type=float, default=3.0, help="--pose-mode local: rotation prior sigma, degrees")
     parser.add_argument("--resume")
     parser.add_argument("--stop-after", type=int, help="Checkpoint stop without changing the scientific schedule")
     parser.add_argument("--stop-file", help="Stop between iterations after an atomic checkpoint")
@@ -790,6 +801,9 @@ def main(args=None):
         hold_noise=args.hold_noise,
         single_volume=args.single_volume,
         final_poses=args.final_poses,
+        init_poses=args.init_poses,
+        pose_mode=args.pose_mode,
+        local_sigma_deg=args.local_sigma,
     )
     if (args.ios is None) == (args.particles is None):
         raise ValueError("Give either a particle STAR (--i) or an optimisation set (--ios)")
