@@ -8,6 +8,7 @@ map alike), and the streams that score with it against the float64 brute-force j
 
 import dataclasses
 import json
+from types import SimpleNamespace
 
 import jax.numpy as jnp
 import numpy as np
@@ -302,7 +303,7 @@ def test_streams_without_a_pose_prior_carry_none():
     assert tile.pose_centres is None
     config = Config()
     assert config.pose_prior_sigma_deg is None and not config.pose_prior_active(1)
-    assert iteration_loop._pose_prior(config, 1, None, 3) is None
+    assert iteration_loop._pose_prior(config, 1, None, SimpleNamespace(n_images=3)) is None
 
 
 def _zero_model_state(particles, q=2):
@@ -346,9 +347,9 @@ def test_controller_top_pose_is_the_input_pose(options):
 def test_controller_refuses_a_missing_or_misshaped_input_pose_set():
     config = Config(pose_prior_sigma_deg=5.0)
     with pytest.raises(ValueError, match="input pose"):
-        iteration_loop._pose_prior(config, 1, None, 3)
+        iteration_loop._pose_prior(config, 1, None, SimpleNamespace(n_images=3))
     with pytest.raises(ValueError, match="rotations for 3 particles"):
-        iteration_loop._pose_prior(config, 1, np.zeros((2, 3, 3)), 3)
+        iteration_loop._pose_prior(config, 1, np.zeros((2, 3, 3)), SimpleNamespace(n_images=3))
 
 
 def test_config_validates_and_schedules_the_prior():

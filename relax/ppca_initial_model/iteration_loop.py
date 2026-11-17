@@ -614,15 +614,15 @@ def pass1_image_size(order, dataset, current_size, diameter_ang):
     )
 
 
-def _pose_prior(config, iteration, input_poses, n_images):
+def _pose_prior(config, iteration, input_poses, dataset):
     """The E-step's :class:`relax.ppca_refinement.pose_prior.PosePrior` (None when ``Config.pose_prior_active``
     says the update has none)."""
     if not config.pose_prior_active(iteration):
         return None
     if input_poses is None:
         raise ValueError("--pose-prior-sigma-deg needs every particle's input pose (input_poses)")
-    if np.shape(input_poses) != (n_images, 3, 3):
-        raise ValueError(f"input_poses holds {np.shape(input_poses)} rotations for {n_images} particles")
+    if np.shape(input_poses) != (dataset.n_images, 3, 3):
+        raise ValueError(f"input_poses holds {np.shape(input_poses)} rotations for {dataset.n_images} particles")
     return PosePrior(
         centres=np.asarray(input_poses, np.float32),
         sigma_deg=float(config.pose_prior_sigma_deg),
@@ -668,7 +668,7 @@ def _expectation(
     if tilts and not _streams_groups(config):
         raise ValueError("Subtomogram PPCA needs the streamed full-grid engine (stream_coarse_recompute)")
     # Config refuses the pose prior with the filament band and the host-mask engine.
-    pose_prior = _pose_prior(config, iteration, input_poses, dataset.n_images)
+    pose_prior = _pose_prior(config, iteration, input_poses, dataset)
     band = config.band()
     if band is not None:
         # The filament band's own grid in each particle's frame, with uniform priors (filament_band.py).

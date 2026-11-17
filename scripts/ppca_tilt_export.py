@@ -105,7 +105,7 @@ def main(argv=None):
     pose_prior = None
     if config.pose_prior_active(state.iteration) and not a.no_pose_prior:
         poses_star = read_optimisation_set(ios)[0]
-        pose_prior = _pose_prior(config, state.iteration, read_input_rotations(poses_star), particles.n_images)
+        pose_prior = _pose_prior(config, state.iteration, read_input_rotations(poses_star), particles)
         print(f"pose prior: sigma {config.pose_prior_sigma_deg} deg, {config.pose_prior_symmetry}", flush=True)
     noise_rows = np.asarray(state.noise).reshape(-1, np.asarray(state.noise).shape[-1])
     keep, embedded = [], []
