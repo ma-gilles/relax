@@ -338,11 +338,10 @@ def _backproject_volume(images, indices, rotations, volume_shape):
     gather (``jax.vjp``; at the half volume's Hermitian partners the conjugated adjoint, as RECOVAR's half-volume
     scatter)."""
     half = int(volume_shape[0]) * int(volume_shape[1]) * (int(volume_shape[2]) // 2 + 1)
-    dtype = jnp.result_type(images.dtype, jnp.complex64)
-    zero = jnp.zeros((images.shape[0], half), dtype)
+    # Real channels (the metric) transpose the gather of a real volume: half the work of a complex one.
+    zero = jnp.zeros((images.shape[0], half), images.dtype)
     _, adjoint = jax.vjp(lambda v: _project_volume(v, indices, rotations, volume_shape), zero)
-    out = adjoint(images.astype(dtype))[0]
-    return out if jnp.iscomplexobj(images) else out.real
+    return adjoint(images)[0]
 
 
 def real_imag(values):
@@ -350,7 +349,7 @@ def real_imag(values):
     return jnp.concatenate([values.real, values.imag], axis=-1)
 
 
-def _latent_block(Y1, ctf2, proj, pose_log_prior, n_images: int):
+def _latent_block(Y1, ctf2, proj, pose_log_prior, n_images: int, precision=HIGHEST):
     """Pose scores, latent means and covariances for one rotation block.
 
     ``Y1`` is ``(K 2F, B T)`` (real and imaginary parts per frame), ``ctf2``
@@ -367,7 +366,7 @@ def _latent_block(Y1, ctf2, proj, pose_log_prior, n_images: int):
     score ``(R, B, T)``, means ``(q, R, B, T)`` and packed covariances
     ``(R, B, tri(q))``.
     """
-    inner, gram = _inner_gram(Y1, ctf2, proj, n_images, HIGHEST)
+    inner, gram = _inner_gram(Y1, ctf2, proj, n_images, precision)
     return latent_scores(inner, gram, pose_log_prior)
 
 
@@ -529,7 +528,10 @@ def score_block(arrays, tile, kept, start, *, static, block_size):
     )
     proj = project(arrays, frame_rotations(tile, arrays.rotations[rows]), static)
     proj = proj.reshape(proj.shape[0], rows.shape[0], n_frames(tile), proj.shape[-1])
-    score, mean, covariance = _latent_block(tile.Y1, tile.ctf2, proj, prior, tile.y_norm.shape[0])
+    # A volume stream runs this XLA formulation on the GPU too: its two GEMMs take the stream's GEMM precision, as
+    # the image route's CUDA path does (_score_block_cuda); the XLA image path stays the float32 reference.
+    precision = gemm(static) if static.observation == "volume" else HIGHEST
+    score, mean, covariance = _latent_block(tile.Y1, tile.ctf2, proj, prior, tile.y_norm.shape[0], precision)
     return kept._replace(
         score=jax.lax.dynamic_update_slice_in_dim(kept.score, score, start, axis=0),
         latent_mean=jax.lax.dynamic_update_slice_in_dim(kept.latent_mean, mean, start, axis=1),
