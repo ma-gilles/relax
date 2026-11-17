@@ -5,7 +5,8 @@
 # is run with every arm of config `arms` at the same seeds, from one checkout, native pack, GPU model and command line
 # but the arm. An arm is a gate (`full_data_power`), or a gate at the Fourier radius of another run
 # (`full_data_power@relion`: the gate full_data_power, each iteration at the radius of the run of arm `relion`, same
-# dataset and seed, under config `radius_root`):
+# dataset and seed, under config `radius_root`). Config `arm_options` gives an arm study options of
+# traced_initial_model.py (the radius rule, incr_size); the gate is the arm's name up to "@" or "+":
 #   0. radius_schedule    the source run's radius per iteration, as --fourier-radius-schedule (arms with a source).
 #   1. run_initial_model  relax initial_model, 200 iterations, the row's recorded arguments, through
 #                         traced_initial_model.py, which records every M-step's gate statistics, each iteration's
@@ -34,6 +35,7 @@
 #       --config output_root=<dir> [radius_root=<run root of the source arms>]
 
 import os
+import re
 from pathlib import Path
 
 from snakemake.exceptions import WorkflowError
@@ -55,6 +57,7 @@ NATIVES = Path(config["natives_dir"])
 PYTHON = config["python"] or str(REPO / ".pixi/envs/default/bin/python")
 NR_ITER = config["nr_iter"]
 ARMS = config["arms"]
+ARM_OPTIONS = config.get("arm_options") or {}
 RADIUS_ROOT = Path(config["radius_root"]) if config.get("radius_root") else None
 GPU_MODEL = config["gpu_model"]
 DATASETS = config["datasets"]
@@ -103,8 +106,8 @@ def maps_of(dataset):
 
 
 def gate_of(arm):
-    """The --vdam-gate of an arm."""
-    return arm.partition("@")[0]
+    """The --vdam-gate of an arm: its name up to "@" or "+"."""
+    return re.split(r"[@+]", arm)[0]
 
 
 def radius_source(arm):
@@ -121,7 +124,7 @@ def schedule_of(wildcards):
 
 wildcard_constraints:
     dataset="|".join(DATASETS),
-    arm="|".join(ARMS),
+    arm="|".join(re.escape(arm) for arm in ARMS),
     seed=r"\d+",
 
 
@@ -179,6 +182,7 @@ rule run_initial_model:
         trace=output_path("{dataset}", "{arm}", "s{seed}", "trace", "gate_trace.jsonl"),
     params:
         gate=lambda wildcards: gate_of(wildcards.arm),
+        trace_options=lambda wildcards: ARM_OPTIONS.get(wildcards.arm, ""),
         radius=lambda wildcards, input: (
             f"--fourier-radius-schedule $(cat {input.schedule})" if input.schedule else ""
         ),
@@ -202,7 +206,7 @@ rule run_initial_model:
         output_path("logs", "{dataset}.{arm}.s{seed}.run_initial_model.log"),
     shell:
         "scratch=$(mktemp -d /tmp/vdam_gate_XXXXXX) && trap 'rm -rf $scratch' EXIT && "
-        "{params.env} {params.python} {input.trace_script} $(dirname {output.trace}) -- "
+        "{params.env} {params.python} {input.trace_script} $(dirname {output.trace}) {params.trace_options} -- "
         "--i {params.star} "
         "{params.datadir} "
         "--o {params.prefix} "

@@ -8,19 +8,29 @@ iteration's resolution update: its average Pmax, current size, batch size and da
 
 The run is the command's own, with three hooks: the M-step's jitted transaction is called with ``return_intermediates``
 (its projector, gradient and updated projector are dropped on the device after the statistics are read),
-``VdamUpdate.maximize`` notes the iteration and its batch, and ``VdamUpdate.update_resolution`` writes the iteration line. The extra outputs change the compiled program, so a traced
-run need not be bitwise equal to an untraced one; compare traced runs with traced runs.
+``VdamUpdate.maximize`` notes the iteration and its batch, and ``VdamUpdate.update_resolution`` writes the iteration line.
+The extra outputs change the compiled program, so a traced run need not be bitwise equal to an untraced one; compare
+traced runs with traced runs.
+
+Two study options change the next iteration's Fourier radius (RELION: the last shell where data_vs_prior >= 1, plus
+incr_size = 10 shells). ``--incr-size N`` sets incr_size from the end of iteration 1. ``--radius-rule moment_window``
+reads the crossing from data_vs_prior times the half-0 first moment's effective particles over the half-0 batch,
+(1 / n_0) / sum_{i in half 0} a_i^2 with a the per-particle moment coefficients (relax.vdam.gate.advance_noise_coefficients):
+the shells the update direction resolves rather than one half-batch. The state keeps the run's own data_vs_prior.
 
 Run:
-    python scripts/vdam_gate_benchmark/traced_initial_model.py TRACE_DIR -- <relax initial_model arguments>
+    python scripts/vdam_gate_benchmark/traced_initial_model.py TRACE_DIR [--radius-rule moment_window] \
+        [--incr-size N] -- <relax initial_model arguments>
 Writes TRACE_DIR/gate_trace.jsonl (one line per M-step), TRACE_DIR/iterations.jsonl (one line per iteration) and
 TRACE_DIR/batches.npz.
 """
 
 from __future__ import annotations
 
+import argparse
 import json
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
@@ -49,15 +59,24 @@ def shell_means(values: np.ndarray, radius: int) -> tuple[np.ndarray, np.ndarray
     return sums / np.maximum(counts, 1), counts
 
 
-def install(trace_dir: Path) -> list:
-    """Install the three hooks; returns the list the batches are appended to."""
+def grown(values: np.ndarray | None, size: int, fill) -> np.ndarray | None:
+    """``values`` padded with ``fill`` to at least ``size`` entries (None stays None)."""
+    if values is None or values.size >= size:
+        return values
+    return np.concatenate([values, np.full(size - values.size, fill, values.dtype)])
+
+
+def install(trace_dir: Path, radius_rule: str = "relion", incr_size: int | None = None) -> list:
+    """Install the three hooks (with the study radius options); returns the list the batches are appended to."""
     from relax.vdam import iteration_loop, relion_mstep
+    from relax.vdam.gate import advance_noise_coefficients
 
     trace_dir.mkdir(parents=True, exist_ok=True)
     handle = open(trace_dir / "gate_trace.jsonl", "w")
     iterations = open(trace_dir / "iterations.jsonl", "w")
     batches: list = []
     context = {"iteration": None}
+    window = {"coefficients": None, "halves": np.zeros(0, np.int8)}
     device = relion_mstep.relion_vdam_m_step_device
     maximize = iteration_loop.VdamUpdate.maximize
     update_resolution = iteration_loop.VdamUpdate.update_resolution
@@ -70,8 +89,27 @@ def install(trace_dir: Path) -> list:
             )
         return maximize(self, current, accumulators, sums, meta)
 
+    def moment_window_factor(current) -> float:
+        """Advance the per-particle moment coefficients by this iteration's batch; the half-0 factor."""
+        ids = np.asarray(current.subset_particle_ids, np.int64)
+        halves = np.asarray(current.subset_halfset_ids, np.int8)
+        size = max(int(ids.max()) + 1, window["halves"].size)
+        window["halves"] = grown(window["halves"], size, -1)
+        window["halves"][ids] = halves
+        window["coefficients"] = advance_noise_coefficients(grown(window["coefficients"], size, 0.0), ids, halves, size)
+        members = window["halves"] == 0
+        return (1.0 / int(np.sum(halves == 0))) / float(np.sum(window["coefficients"][members] ** 2))
+
     def traced_update_resolution(self, current):
-        updated = update_resolution(self, current)
+        factor = 1.0
+        if radius_rule == "moment_window" and current.pseudo_halfsets:
+            factor = moment_window_factor(current)
+            scaled = replace(current, data_vs_prior_class=np.asarray(current.data_vs_prior_class, np.float64) * factor)
+            updated = replace(update_resolution(self, scaled), data_vs_prior_class=current.data_vs_prior_class)
+        else:
+            updated = update_resolution(self, current)
+        if incr_size is not None:
+            updated = replace(updated, incr_size=int(incr_size))
         line = {
             "iteration": int(current.iter),
             "ave_pmax": float(current.ave_Pmax),
@@ -80,6 +118,8 @@ def install(trace_dir: Path) -> list:
             "stepsize": float(current.grad_current_stepsize),
             "fudge": float(current.tau2_fudge_factor),
             "next_resolution_shell": int(updated.current_resolution_shell),
+            "radius_factor": factor,
+            "incr_size": int(updated.incr_size),
             "data_vs_prior": np.asarray(current.data_vs_prior_class[0], np.float64).tolist(),
         }
         iterations.write(json.dumps(line) + "\n")
@@ -138,15 +178,21 @@ def save_batches(path: Path, batches: list) -> None:
 
 
 def main() -> int:
-    """Parse ``TRACE_DIR -- ARGS``, run the command with the hooks, save the batches."""
-    if len(sys.argv) < 3 or sys.argv[2] != "--":
+    """Parse ``TRACE_DIR [study options] -- ARGS``, run the command with the hooks, save the batches."""
+    if "--" not in sys.argv[2:]:
         raise SystemExit(__doc__)
-    trace_dir = Path(sys.argv[1])
-    batches = install(trace_dir)
+    split = sys.argv.index("--", 2)
+    parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    parser.add_argument("trace_dir", type=Path)
+    parser.add_argument("--radius-rule", choices=("relion", "moment_window"), default="relion")
+    parser.add_argument("--incr-size", type=int)
+    options = parser.parse_args(sys.argv[1:split])
+    batches = install(options.trace_dir, options.radius_rule, options.incr_size)
+    trace_dir = options.trace_dir
     from relax.commands.initial_model import main as initial_model_main
 
     try:
-        return initial_model_main(sys.argv[3:])
+        return initial_model_main(sys.argv[split + 1 :])
     finally:
         save_batches(trace_dir / "batches.npz", batches)
 

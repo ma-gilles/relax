@@ -11,6 +11,7 @@ python: null
 nr_iter: 200
 # The first is the reference of the comparison. `<gate>@<source>`: the gate at the radius of the run of arm <source>.
 arms: [relion, power, full_data_power, full_data_power_overlap]
+arm_options: {}          # arm -> study options of traced_initial_model.py, e.g. "--radius-rule moment_window"
 gpu_model: h100          # the benchmark rows' GPU (docs/benchmarks/relion_vs_relax.md): a gate pair runs on one model
 
 # The K=1 VDAM rows of docs/benchmarks/relion_vs_relax.md: each row's particles, diameter and extra arguments are those
