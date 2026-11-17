@@ -335,6 +335,25 @@ def add_args(parser):
         "rank 0 runs the update and writes every output. Absent or one device runs on one GPU. The relax command "
         "starts the processes before JAX (relax_cli)",
     )
+    parser.add_argument(
+        "--tomo-likelihood",
+        choices=("image", "masked"),
+        default="image",
+        help="Subtomogram likelihood: 'image' (default) scores the tilt images; 'masked' scores each particle's masked, "
+        "whitened scene backprojection with the unmasked Fourier Gram (relax/ppca_initial_model/masked_volume.py); "
+        "it holds the start-up noise and runs on one GPU",
+    )
+    parser.add_argument("--masked-mask-radius", type=float, help="Masked likelihood: observation mask radius, pixels")
+    parser.add_argument(
+        "--masked-lambda", type=float, default=0.1,
+        help="Masked likelihood: whitening regulariser, a fraction of the mean observed backprojected CTF^2/noise",
+    )  # fmt: skip
+    parser.add_argument("--masked-mc-samples", type=int, default=2, help="Masked likelihood: Monte Carlo noise draws")
+    parser.add_argument("--hold-noise", action="store_true", help="Keep the start-up noise estimate (no noise update)")
+    parser.add_argument("--single-volume", action="store_true", help="A single-volume model: q = 0 (give --q 0)")
+    parser.add_argument(
+        "--final-poses", action="store_true", help="Write each particle's top pose of the final pass to embeddings.npz"
+    )
     parser.add_argument("--resume")
     parser.add_argument("--stop-after", type=int, help="Checkpoint stop without changing the scientific schedule")
     parser.add_argument("--stop-file", help="Stop between iterations after an atomic checkpoint")
@@ -764,6 +783,13 @@ def main(args=None):
         initial_mean=args.initial_mean,
         initial_mean_scale=args.initial_mean_scale,
         likelihood_min_shell=args.likelihood_min_shell,
+        tomo_likelihood=args.tomo_likelihood,
+        masked_mask_radius_px=args.masked_mask_radius,
+        masked_lambda=args.masked_lambda,
+        masked_mc_samples=args.masked_mc_samples,
+        hold_noise=args.hold_noise,
+        single_volume=args.single_volume,
+        final_poses=args.final_poses,
     )
     if (args.ios is None) == (args.particles is None):
         raise ValueError("Give either a particle STAR (--i) or an optimisation set (--ios)")

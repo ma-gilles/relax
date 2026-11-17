@@ -168,6 +168,22 @@ class Config:
     # seed); the loadings stay random. None: the random seed.
     initial_mean: str | None = None
     initial_mean_scale: float = 1.0
+    # The subtomogram likelihood: "image" (the default) scores each particle's tilt images; "masked" scores its masked,
+    # whitened scene backprojection (relax/ppca_initial_model/masked_volume.py; the masked-tomo pilot's arm B with the
+    # unmasked Fourier Gram). The masked likelihood's preprocessing is a fixed map of the noise model, so it holds
+    # the start-up noise. masked_mask_radius_px: the observation mask's radius (pixels of the box); masked_lambda:
+    # the whitening regulariser as a fraction of the mean observed backprojected CTF^2 / noise; masked_mc_samples:
+    # Monte Carlo noise draws per particle for its voxel variance.
+    tomo_likelihood: str = "image"
+    masked_mask_radius_px: float | None = None
+    masked_lambda: float = 0.1
+    masked_mc_samples: int = 2
+    # Keep the start-up noise estimate for the whole run (no noise update). The masked likelihood always holds it.
+    hold_noise: bool = False
+    # A single-volume model: q = 0 (the mean alone). Without it q must be positive.
+    single_volume: bool = False
+    # Write each particle's top pose of the final embedding pass into embeddings.npz (a runtime setting).
+    final_poses: bool = False
 
     def band(self):
         """The :class:`FilamentBand` search, or None for the full grid."""
@@ -207,7 +223,10 @@ class Config:
                 raise ValueError("An occupancy prior needs the filament band's full grid")
             if not 0 < self.occupancy <= 1:
                 raise ValueError(f"Occupancy prior must be in (0, 1], got {self.occupancy}")
-        if isinstance(self.q, bool) or not isinstance(self.q, (int, np.integer)) or self.q <= 0 or self.seed <= 0 or self.iterations <= 0:
+        if self.single_volume:
+            if isinstance(self.q, bool) or self.q != 0 or self.seed <= 0 or self.iterations <= 0:
+                raise ValueError("A single-volume model needs q = 0 and a positive seed and iteration count")
+        elif isinstance(self.q, bool) or not isinstance(self.q, (int, np.integer)) or self.q <= 0 or self.seed <= 0 or self.iterations <= 0:
             raise ValueError("PPCA requires positive integer q, seed and iteration count")
         if not self.stages or self.stages[0][0] != 1:
             raise ValueError("Stages must begin at iteration 1")
@@ -333,6 +352,35 @@ class Config:
                 raise ValueError("The shift schedule is sorted (first update, range >= 0, step > 0) entries from update 1")
         if self.offset_sigma_hold_px is not None and not (np.isfinite(self.offset_sigma_hold_px) and self.offset_sigma_hold_px > 0):
             raise ValueError("The held offset sigma must be finite and positive")
+        self._check_likelihood()
+
+    def _check_likelihood(self):
+        if self.tomo_likelihood not in ("image", "masked"):
+            raise ValueError(f"tomo_likelihood must be image or masked, got {self.tomo_likelihood}")
+        if self.tomo_likelihood == "image":
+            if (self.masked_mask_radius_px, self.masked_lambda, self.masked_mc_samples) != (None, 0.1, 2):
+                raise ValueError("The masked likelihood's options need tomo_likelihood masked")
+            return
+        if self.masked_mask_radius_px is None or not self.masked_mask_radius_px > 0:
+            raise ValueError("The masked likelihood needs a positive masked_mask_radius_px")
+        if not (np.isfinite(self.masked_lambda) and self.masked_lambda > 0) or self.masked_mc_samples < 1:
+            raise ValueError("The masked likelihood needs masked_lambda > 0 and at least one Monte Carlo sample")
+        if (
+            not self.stream_coarse_recompute
+            or self.oversampling
+            or self.band_length_ang is not None
+            or self.fixed_core is not None
+            or self.likelihood_min_shell
+            or self.sgd_step_scale != "trace"
+        ):
+            raise ValueError(
+                "The masked likelihood runs on the streamed engine without oversampling, the filament band, a fixed "
+                "core, likelihood_min_shell or the exact-diagonal step scale"
+            )
+
+    def holds_noise(self):
+        """Whether the run keeps the start-up noise (hold_noise, and always under the masked likelihood)."""
+        return self.hold_noise or self.tomo_likelihood == "masked"
 
     def newton_sgd(self):
         """Whether the update is the Newton SGD step (sgd_recipe.NewtonSGD) rather than the momentum step."""

@@ -25,6 +25,7 @@ from relax.parallel.channel import ordered_sum
 from relax.ppca_initial_model import checkpoint
 from relax.ppca_initial_model import ranks as ranks_module
 from relax.ppca_initial_model.filament_band import attachment_support_mask, uniform_log_prior
+from relax.ppca_initial_model.masked_volume import prepare_volume_observations, prepare_volume_stream
 from relax.ppca_initial_model.initialization import (
     bandlimit_and_mask,
     initialize,
@@ -176,7 +177,8 @@ class _ModelLog:
         theta_host = np.asarray(theta)
         loadings = np.ascontiguousarray(theta_host[:, 1:])
         diagnostics.update(
-            loading_singular_values=np.linalg.svd(loadings, compute_uv=False),
+            # A single-volume model (q = 0) has no loadings.
+            loading_singular_values=np.linalg.svd(loadings, compute_uv=False) if loadings.shape[1] else [],
             mean_power=float(np.sum(np.abs(np.ascontiguousarray(theta_host[:, 0])) ** 2)),
             loading_power=float(np.sum(np.abs(loadings) ** 2)),
         )
@@ -608,6 +610,8 @@ def _expectation(
     share = None
     laps = _Laps()
     if ranks is not None:
+        if config.tomo_likelihood == "masked":
+            raise NotImplementedError("The masked likelihood runs on one GPU")
         if not config.stream_coarse_recompute:
             raise NotImplementedError("Several GPUs split the streamed engine's tiles only")
         # Rank 0 sends the E-step first, so the other ranks prepare their streams while it prepares its own.
@@ -680,7 +684,8 @@ def _expectation(
                 **grid,
             }
             return [
-                prepare_full_row_stream(
+                # The masked likelihood's stream (one 3D frame per particle, masked_volume.py) takes the same grids.
+                (prepare_volume_stream if config.tomo_likelihood == "masked" else prepare_full_row_stream)(
                     dataset,
                     mu,
                     W,
@@ -986,9 +991,16 @@ def run(
             # The band seeds inside the attachment support (initialization.seed_model).
             band_seed = {} if config.band() is None else {"band": config.band()}
             theta, noise, info = initialize_tilts(
-                dataset, seed=config.seed, diameter_ang=diameter_ang, q=config.q, **band_seed
+                # A single-volume model starts from the mean of the rank-1 seed (same draws as a q = 1 run).
+                dataset, seed=config.seed, diameter_ang=diameter_ang, q=1 if config.single_volume else config.q,
+                **band_seed,
             )
+            if config.single_volume:
+                theta = theta[:, :1]
+                info = {**info, "single_volume": "mean of the q = 1 seed"}
         else:
+            if config.single_volume:
+                raise ValueError("A single-volume model trains subtomogram particles (--ios)")
             theta, noise, info = initialize(dataset, seed=config.seed, diameter_ang=diameter_ang, q=config.q)
         if config.initial_mean is not None:
             theta = with_initial_mean(
@@ -1019,6 +1031,24 @@ def run(
         raise TypeError("InitialModel requires production float32 model and noise")
     if dataset.n_images < 4:
         raise ValueError("Both pseudo-halfsets need particles")
+    if config.tomo_likelihood == "masked":
+        # The masked likelihood's fixed preprocessing, from the noise it holds for the run (the start-up estimate, or
+        # the resumed state's, which a masked run never updates).
+        if not isinstance(dataset, TiltParticles):
+            raise ValueError("The masked likelihood trains subtomogram particles (--ios)")
+        clock = time.monotonic()
+        observations = prepare_volume_observations(
+            dataset,
+            np.asarray(state.noise),
+            mask_radius_px=config.masked_mask_radius_px,
+            lam_rel=config.masked_lambda,
+            n_mc=config.masked_mc_samples,
+            seed=config.seed,
+        )
+        dataset = dataclasses.replace(dataset, volume_observations=observations)
+        record = {**observations.record, "seconds": round(time.monotonic() - clock, 2)}
+        (output / "masked_observations.json").write_text(json.dumps(record, indent=1))
+        logger.info("masked likelihood observations: %s", json.dumps(record))
     mask = (
         support_mask(dataset.grid_size, diameter_ang / dataset.voxel_size)
         if config.band() is None
@@ -1151,12 +1181,17 @@ def run(
         padding = [(0, 0)] * (current.ndim - 1) + [(0, max(0, noise_shells - current.shape[-1]))]
         previous = np.pad(current, padding, mode="edge")[..., :noise_shells]
         try:
-            noise = update_noise(
-                previous,
-                numerator,
-                denominator,
-                full_data=count == dataset.n_images,
-                frozen_shells=_frozen_noise_shells(dataset),
+            # Held noise (Config.holds_noise: the masked likelihood, or hold_noise) keeps the start-up estimate.
+            noise = (
+                current
+                if config.holds_noise()
+                else update_noise(
+                    previous,
+                    numerator,
+                    denominator,
+                    full_data=count == dataset.n_images,
+                    frozen_shells=_frozen_noise_shells(dataset),
+                )
             )
         except ValueError:
             checkpoint.save(output / f"failure_before_{iteration:04d}.npz", state, config, identity)
@@ -1304,6 +1339,8 @@ def run(
                 diagnostics.update(sgd_halfset_gate=config.sgd_halfset_gate, sgd_step_scale=config.sgd_step_scale)
         if config.noise_anneal_updates:
             diagnostics["noise_inflation"] = noise_inflation
+        if config.holds_noise():
+            diagnostics["noise_held"] = True
         if iteration == state_start + 1 or config.stage(iteration) != config.stage(iteration - 1):
             logger.info(
                 "update %d, radius %d, HEALPix order %d: %s",
@@ -1356,6 +1393,22 @@ def run(
                 **({} if final.p_occupied is None else {"p_occupied": final.p_occupied}),
             )
         )
+        if config.final_poses and band is None:
+            # Each particle's top pose of the final pass on the last stage's grids: the rotation matrix (RECOVAR's
+            # convention, as the stream projects it) and the 3D (or 2D) shift in pixels.
+            _, hp_final = config.stage(config.iterations)
+            shift_range, shift_step = config.shifts(config.iterations)
+            grid_translations = (
+                grids.get_relion_translation_grid_3d(shift_range, shift_step)
+                if isinstance(dataset, TiltParticles)
+                else grids.get_relion_translation_grid(max_pixel=shift_range, pixel_offset=shift_step)
+            )
+            placement.update(
+                best_rotation=final.best_rotation,
+                best_translation=final.best_translation,
+                best_rotation_matrix=_rotation_grid(hp_final)[final.best_rotation],
+                best_translation_px=np.asarray(grid_translations, np.float32)[final.best_translation],
+            )
         np.savez(
             output / "embeddings.npz",
             particle_ids=final.original_image_ids,
