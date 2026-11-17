@@ -187,8 +187,15 @@ def prepare_volume_observations(particles, noise, *, mask_radius_px: float, lam_
         )  # fmt: skip
         data[p], filt2[p], y_norm[p], cs[p], lams[p] = (np.asarray(x) for x in out)
         visible[p] = k
-    if not (np.all(np.isfinite(cs)) and np.all(cs > 0) and np.all(np.isfinite(data))):
-        raise ValueError("The masked likelihood's preprocessing gave a nonfinite or nonpositive noise variance")
+    bad = np.flatnonzero(
+        ~(np.isfinite(cs) & (cs > 0) & np.isfinite(y_norm) & np.isfinite(lams) & np.all(np.isfinite(data), axis=1))
+    )
+    if bad.size:
+        raise ValueError(
+            f"The masked likelihood's preprocessing is nonfinite for {bad.size} particle(s) (training indices "
+            f"{bad[:20].tolist()}): noise variance c {cs[bad[:5]].tolist()}, ||MV||^2/c {y_norm[bad[:5]].tolist()}, "
+            f"lam {lams[bad[:5]].tolist()}. Check those particles' tilt images and CTFs."
+        )
     record = {
         "likelihood": "masked volume, B-diag (exact masked inner, unmasked Fourier Gram)",
         "mask_radius_px": float(mask_radius_px),
