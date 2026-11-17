@@ -392,6 +392,35 @@ def test_fourier_inner_equals_exact_inner(setup):
         np.testing.assert_allclose(np.asarray(fourier), np.asarray(exact), rtol=1e-5, atol=1e-6 * float(jnp.abs(exact).max()))
 
 
+@pytest.mark.parametrize("fft", [False, True])
+def test_unmasked_gram_is_the_fourier_gram_on_the_scene_box(setup, monkeypatch, fft):
+    """With the crop the periodic scene box, ``unmasked_gram`` (B-diag) gives every shift the prefilter's unmasked
+    Fourier Gram, and leaves the inner product with the masked data unchanged."""
+    if fft:
+        monkeypatch.setattr(L, "FFT_SHIFTS_ABOVE", 0)
+    d = setup["d"]
+    kw = dict(support_radius=3.5, mask_radius=4.5, crop=S, lam_rel=0.1, n_mc=1)
+    exact, bdiag = L.MaskedArm(d, **kw), L.MaskedArm(d, unmasked_gram=True, **kw)
+    rt, ctf = setup["rt"], setup["ctf"]
+    D, lam = exact.weights(ctf, rt)
+    part = exact.particle_from(rt, ctf, D, lam)
+    rng = np.random.default_rng(12)
+    part["V"] = jnp.asarray(rng.standard_normal((S,) * 3)) * exact.mask
+    part["c"] = jnp.asarray(0.7)
+    vft = exact.volumes_ft(jnp.asarray(rng.standard_normal((3, n, n, n)) * L.sphere(n, 3.5)))
+    Qs = jnp.asarray(Rotation.random(2, random_state=8).as_matrix())
+    us = PL.shift_grid(np.zeros(3), 1.0, 1.0)
+    dl, it, gd = (jnp.asarray(x) for x in PL.split_shifts(us))
+    inner_exact, gram_exact = exact.stats_multi(vft, part, Qs, dl, it, gd)
+    inner, gram = bdiag.stats_multi(vft, part, Qs, dl, it, gd)
+    axes = jnp.asarray(np.tile(np.array([-1.0, 0.0, 1.0], np.float32), (3, 1)))
+    _, fourier_gram = L._fourier_stats(bdiag, vft, part, Qs, axes)
+    np.testing.assert_allclose(np.asarray(inner), np.asarray(inner_exact), rtol=1e-5, atol=1e-6 * float(jnp.abs(inner_exact).max()))
+    expected = np.broadcast_to(np.asarray(fourier_gram)[:, :, None], gram.shape)
+    np.testing.assert_allclose(np.asarray(gram), expected, rtol=1e-5, atol=1e-6 * float(np.abs(expected).max()))
+    assert float(jnp.max(jnp.abs(gram - gram_exact))) > 1e-3 * float(jnp.abs(gram_exact).max())  # the mask mattered
+
+
 def _rolled_reference(f, MV, M, ints):
     P = f.shape[0]
     inner, gram = [], []

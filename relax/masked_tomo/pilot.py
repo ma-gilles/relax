@@ -364,7 +364,7 @@ def _forward_pair(arm):
     else:
 
         def proj(vft, part, Q, u):  # (P, m): every component through one gather per trilinear corner
-            f = arm.filtered(vft, Q, u, part["filt"]) * arm.mask / jnp.sqrt(part["c"])
+            f = arm.filtered(vft, Q, u, part["filt"]) * arm.gram_mask / jnp.sqrt(part["c"])
             return f.reshape(vft.shape[0], -1)
 
         def data(part):

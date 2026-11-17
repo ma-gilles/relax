@@ -273,7 +273,7 @@ class MaskedArm:
     name = "masked"
 
     def __init__(self, data: Particles, support_radius, mask_radius, *, lam_rel=0.1, crop=40, window=None,
-                 n_mc=2, seed=0, dof_correction=True):
+                 n_mc=2, seed=0, dof_correction=True, unmasked_gram=False):
         d = self.d = data
         n, S = data.n, data.S
         self.n, self.S, self.G, self.Cc = n, S, 2 * n, crop
@@ -282,6 +282,11 @@ class MaskedArm:
         if lo < 3:
             raise ValueError("crop too small for the mask and the shift search")
         self.mask = jnp.asarray(sphere(crop, mask_radius))
+        # The mask of the predicted energy (Gram) and of the M-step's forward map. ``unmasked_gram`` (opt-in, "B-diag",
+        # the likelihood relax/ppca_initial_model/masked_volume.py trains with) keeps the whole crop there: the inner
+        # product with the masked data is unchanged and the Gram is ``||F_g x||^2`` on the crop (with the crop the
+        # periodic scene box, the unmasked Fourier Gram).
+        self.gram_mask = jnp.ones_like(self.mask) if unmasked_gram else self.mask
         self.k3 = jnp.asarray(grid3(S))
         # Template side: the periodic box of the predicted mean (the scene grid here; KernelBoxMaskedArm shrinks it).
         self.N, self.k3t = S, self.k3
@@ -461,13 +466,13 @@ class MaskedArm:
             # f_a f_b, a large dynamic range), scores 0.5e-3 to 1.6e-3 abs on ranges 132-303, argmax identical 6/6.
             # Accepted bound (2026-11-16): inner <= 1e-6, Gram <= 1e-5, argmax identical; no float64 (rule 1).
             f = jax.vmap(per_rot)(Qs)  # (R, D, P, Cc, Cc, Cc)
-            inner, gram = shift_correlations(f, mask * V, mask, ints)  # (R, D, P, T), (R, D, tri, T)
+            inner, gram = shift_correlations(f, mask * V, self.gram_mask, ints)  # (R, D, P, T), (R, D, tri, T)
             gram = gram / c
             sel = gid[None, None, None, :]
             inner = jnp.take_along_axis(inner, jnp.broadcast_to(sel, (inner.shape[0], 1) + inner.shape[2:]), axis=1)[:, 0]
             gram = jnp.take_along_axis(gram, jnp.broadcast_to(sel, (gram.shape[0], 1) + gram.shape[2:]), axis=1)[:, 0]
             return jnp.transpose(inner, (1, 0, 2)), jnp.transpose(gram, (1, 0, 2))
-        Vs, Ms = rolled(mask * V), rolled(mask)  # (T, Cc^3)
+        Vs, Ms = rolled(mask * V), rolled(self.gram_mask)  # (T, Cc^3)
         f = jax.vmap(per_rot)(Qs)
         f = f.reshape(f.shape[:3] + (-1,))  # (R, D, P, X)
         hi = jax.lax.Precision.HIGHEST
@@ -640,7 +645,7 @@ def masked_forward(arm: MaskedArm, part, Q, u):
 
     def f(x):
         v = arm.volumes_ft(x[None])
-        return (arm.filtered(v, Q, u, part["filt"])[0] * arm.mask * sc).reshape(-1)
+        return (arm.filtered(v, Q, u, part["filt"])[0] * arm.gram_mask * sc).reshape(-1)
 
     return f, (part["V"] * sc).reshape(-1).astype(F32)
 
