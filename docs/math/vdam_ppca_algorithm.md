@@ -2925,3 +2925,61 @@ images auto` prereads only when the ranks' copies together fit the usual quarter
 Not supported on more than one GPU (refused at start-up): the host-mask reference engine
 (`--no-stream-coarse-recompute`) and `--fixed-core`, whose per-particle core fit runs over all particles before
 training. A checkpoint resumes under any number of GPUs: it holds no rank state.
+
+## 19. Per-particle pose prior (`--pose-prior-sigma-deg`, November 17, 2026)
+
+Particles that come with poses (template matching, an earlier refinement) can centre each particle's rotation search
+on its input pose. Off by default: without `--pose-prior-sigma-deg` the input angles are not read, the streams hold no
+prior (`StreamArrays.pose_prior` and `TileArrays.pose_centres` are None) and every program is the one without it.
+
+**The prior.** Particle `i` with input rotation `R0_i` adds to every candidate rotation `R`
+
+    log p(R | R0_i) = -theta(R, R0_i)^2 / (2 sigma^2) - log_norm,
+    theta(R, R0) = min_G arccos((tr(R0^T R G) - 1) / 2),
+
+the geodesic angle to the nearest copy `R G` of the point group `--pose-prior-symmetry` (default C1; e.g. D7 for
+GroEL). `log_norm` is the log mean of `exp(-theta^2 / (2 sigma^2))` over the stream's rotation grid at `R0 = I`; the
+HEALPix grid is uniform to within its quadrature, so the prior sums to about one over the grid for every `R0`
+(`relax/ppca_refinement/pose_prior.py`, `log_normalizer`). The term is added in log space to the grid's shared
+rotation log-prior (uniform, or the learned direction prior) and to the translation prior, which stays the
+zero-centred Gaussian (`--offset-sigma-hold` or learned). `--pose-prior-until U` applies it to updates `1..U` only;
+the final embeddings have it when `U` is at least `--iterations`. The angle is computed from the trace as
+`2 asin(sqrt((3 - tr) / 4))` in float32: about 3e-4 rad near 0, up to about 1e-3 rad near 180 degrees
+(`d theta / d tr = -1 / (2 sin theta)`), where the prior's weight is negligible for any useful sigma.
+
+**Convention.** `R0_i` is RELION's `Euler_angles2matrix` of the particle STAR's `rlnAngleRot/Tilt/Psi`
+(`relax/ppca_initial_model/pose_prior.py`, `read_input_rotations`). The PPCA's rotation grid holds the same matrix
+of its own canonical Euler angles (`grids.get_relion_hidden_rotation_grid`; the two agree to 1.1e-7 at HEALPix order
+2, the float32 angles' rounding). For subtomogram particles the tilt reader projects candidate `R` at
+`Aproj_f A_subtomogram R` (`relax/star/tomo_input.py`, `relion_image_geometry`), RELION's
+`Aproj A_subtomogram A_particle`, so `R` and `A_particle` are the same matrix: `rlnAngle*` is the particle's pose in
+its subtomogram frame. Symmetry copies multiply on the right: a map invariant under `G` projects alike at `R` and
+`R G` (checked on recovar's projector with a D2-symmetric map; `G R` differs).
+
+**Where it enters.** The per-image term is formed on the device per rotation block from the block's particle-frame
+rotations and the tile's input rotations (`outer_rotation_log_prior`: one `(S R, 9) x (9, B)` product and a max over
+the `S` operators). The XLA scorers add it to the pose log-prior (`full_row_kernels.score_block`,
+`_score_block_mixed`, `_pass1_mixed_sparse`; `oversampled_stream._job_poses` for adaptive oversampling's children,
+each at its child rotation with the parent grid's `log_norm`, as the children inherit the parent's shared prior).
+The CUDA epilogue reads one shared prior table, so on GPU streams the term enters through the mean channel of the
+score GEMM (`add_to_mean_inner`): the pose score is `-0.5 (|A_0|^2 - 2 Re<A_0, Y>) + ...`, so adding `c` to
+`Re<A_0, Y>` adds exactly `c` to the score (`Re<A_0, Y>` enters nothing else; the latent moments read the other
+channels), and no kernel is rebuilt. Every stream of an E-step takes the prior: the tilt coarse pass
+(`--tilt-coarse-pass`) evaluates it at each coarse rotation (normalized over the coarse grid), so its significance
+pruning keeps the cells near the input pose. `read_tile` gives each tile its particles' input rotations in tile
+order (real particles first, identity for padding; by original image id). Several GPUs: every rank reads the input
+poses itself and the run fingerprint carries their hash (`ranks.run_fingerprint`). Refused: the filament band (it
+already searches each particle in its input frame) and the host-mask engine (`--no-stream-coarse-recompute`).
+
+**Not done.** The translation prior is not centred on `rlnOriginX/Y/ZAngst`: the shift grid is zero-centred, so a
+per-particle centre needs the window itself re-centred per particle (the tilt reader's phase shifts), not only the
+Gaussian; until then the input offsets are ignored, as before.
+
+**Checks** (`tests/unit/ppca_initial_model/test_pose_prior.py`). The prior against an independent SciPy reference
+(C1, C4, D7); a particle STAR whose angles are grid rows' Euler angles peaks at those rows (orders 1 and 2); D7 copies
+of the input pose get the top prior; the tilt tile (unpadded, padded), the mixed tile of three tilt groups and two
+noise groups, and its sparse pass 1 against the float64 brute-force joint Gaussian with the per-particle prior; the
+oversampled children against the dense child grid with the prior; through the controller, a zero model's top pose
+is each particle's input grid row, also with the coarse pass at two significant coarse poses per particle; the
+checkpoint and resume round-trip the three options, a changed one refuses the resume, and a checkpoint written
+before the options existed resumes without them.
