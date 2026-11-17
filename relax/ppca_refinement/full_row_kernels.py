@@ -29,6 +29,12 @@ from relax.cuda.ppca import (
     ppca_window_project_f32,
 )
 from relax.ppca_refinement.engine import compensated_add
+from relax.ppca_refinement.pose_prior import (
+    ImagePosePrior,
+    add_to_mean_inner,
+    add_to_pose_log_prior,
+    outer_rotation_log_prior,
+)
 from relax.ppca_refinement.residual_statistics import residual_statistics_from_moment_images
 from relax.projection.adjoint import batch_adjoint_slice_volume_maybe_windowed
 
@@ -123,6 +129,9 @@ class StreamArrays(NamedTuple):
     gemm_window: jax.Array | None
     coefficient_noise: jax.Array  # (n_half,) noise variance per half-image pixel
     shift_squared: jax.Array  # (T,) squared fine shift length in px^2
+    # Per-image rotation prior about each image's input pose (relax/ppca_refinement/pose_prior.py); its
+    # tiles carry the input rotations (TileArrays.pose_centres). None: the shared priors alone.
+    pose_prior: ImagePosePrior | None = None
 
 
 class TileArrays(NamedTuple):
@@ -153,6 +162,9 @@ class TileArrays(NamedTuple):
     slots: jax.Array | None = None
     # Mixed tiles only: the number of real keys (scalar int32); keys from it on are padding and skip their work.
     keys: jax.Array | None = None
+    # (B, 3, 3) float32 input rotation of each particle position (identity for padding) when the stream has a
+    # per-image pose prior (StreamArrays.pose_prior); None without one.
+    pose_centres: jax.Array | None = None
 
 
 class Posterior(NamedTuple):
@@ -235,6 +247,9 @@ class FullRowStream(NamedTuple):
     # Share of the device's memory the tile plan leaves unplanned (full_row_tile_plan.fragmentation_budget).
     # None: TILE_FRAGMENTATION_HEADROOM.
     tile_headroom: float | None = None
+    # Each original image id's input rotation (N, 3, 3) float32 for a per-image pose prior (StreamArrays.pose_prior);
+    # read_tile gives each tile its images' rows. None: no per-image prior.
+    pose_centres: np.ndarray | None = None
 
 
 def full_row_pose_log_prior(
@@ -250,6 +265,18 @@ def full_row_pose_log_prior(
     mask = jnp.take(jnp.take(coarse_mask, rotation_parent, axis=1), translation_parent, axis=2)
     prior = rotation_log_prior[:, None] + translation_log_prior[None, :]
     return jnp.where(mask, prior[None], -jnp.inf).astype(jnp.float32)
+
+
+def image_pose_log_prior(arrays: StreamArrays, tile: TileArrays, rotations, particles=None):
+    """The per-image rotation log-prior ``(R, B)`` of ``rotations`` ``(R, 3, 3)`` (the particle-frame rotations, not
+    composed with tilt frames) at the tile's input poses (positions ``particles`` of them, all when None); None
+    when the tile carries no input poses (relax/ppca_refinement/pose_prior.py)."""
+    if tile.pose_centres is None:
+        return None
+    if arrays.pose_prior is None:
+        raise ValueError("A tile with input poses needs a stream with a pose prior")
+    centres = tile.pose_centres if particles is None else tile.pose_centres[particles]
+    return outer_rotation_log_prior(arrays.pose_prior, rotations, centres)
 
 
 def project(arrays: StreamArrays, rotations, static: StreamStatic):
@@ -449,12 +476,15 @@ def score_block(arrays, tile, kept, start, *, static, block_size):
         return _score_block_mixed(arrays, tile, kept, start, rows, static)
     if static.cuda_kernels:
         return _score_block_cuda(arrays, tile, kept, start, rows, static)
-    prior = full_row_pose_log_prior(
-        tile.coarse_mask,
-        arrays.rotation_parent[rows],
-        arrays.translation_parent,
-        arrays.rotation_log_prior[rows],
-        arrays.translation_log_prior,
+    prior = add_to_pose_log_prior(
+        full_row_pose_log_prior(
+            tile.coarse_mask,
+            arrays.rotation_parent[rows],
+            arrays.translation_parent,
+            arrays.rotation_log_prior[rows],
+            arrays.translation_log_prior,
+        ),
+        image_pose_log_prior(arrays, tile, arrays.rotations[rows]),
     )
     proj = project(arrays, frame_rotations(tile, arrays.rotations[rows]), static)
     proj = proj.reshape(proj.shape[0], rows.shape[0], n_frames(tile), proj.shape[-1])
@@ -496,6 +526,10 @@ def _score_block_cuda(arrays, tile, kept, start, rows, static):
     R = rows.shape[0]
     # (P, R, B T padded): the epilogue reads each row's B T columns and ignores the padding.
     inner = jnp.dot(planar.reshape(P * R, -1), tile.Y1, precision=gemm(static)).reshape(P, R, -1)
+    # The epilogue reads one shared prior table; a per-image pose prior enters through the mean channel.
+    inner = add_to_mean_inner(
+        inner, image_pose_log_prior(arrays, tile, arrays.rotations[rows]), int(arrays.shift_squared.shape[0])
+    )
     gram = jnp.dot(products.reshape(products.shape[0] * R, -1), tile.ctf2, precision=gemm(static)).reshape(
         -1, R, tile.ctf2.shape[1]
     )
@@ -573,9 +607,10 @@ def _score_block_mixed(arrays, tile, kept, start, rows, static):
     # (G, P, R, b T) -> particle order (P, R, B, T); (G, tri, R, b) -> (tri, R, B).
     inner = jnp.transpose(inner, (1, 2, 0, 3)).reshape(P, R, G * b, T)[:, :, position_slot]
     gram = jnp.transpose(gram, (1, 2, 0, 3)).reshape(gram.shape[1], R, G * b)[:, :, position_slot]
+    image_prior = image_pose_log_prior(arrays, tile, rotations)
     if static.cuda_kernels:
         B = G * b
-        flat = inner.reshape(P, R, B * T)
+        flat = add_to_mean_inner(inner.reshape(P, R, B * T), image_prior, T)
         flat = jnp.pad(flat, ((0, 0), (0, 0), (0, -(B * T) % SHIFT_ALIGN)))
         tables = (
             arrays.rotation_parent,
@@ -585,12 +620,15 @@ def _score_block_mixed(arrays, tile, kept, start, rows, static):
             tile.coarse_mask,
         )
         return _Kept(*ppca_latent_epilogue_f32(flat, gram, rows, tables, start, kept))
-    prior = full_row_pose_log_prior(
-        tile.coarse_mask,
-        arrays.rotation_parent[rows],
-        arrays.translation_parent,
-        arrays.rotation_log_prior[rows],
-        arrays.translation_log_prior,
+    prior = add_to_pose_log_prior(
+        full_row_pose_log_prior(
+            tile.coarse_mask,
+            arrays.rotation_parent[rows],
+            arrays.translation_parent,
+            arrays.rotation_log_prior[rows],
+            arrays.translation_log_prior,
+        ),
+        image_prior,
     )
     score, mean, covariance = latent_scores(inner, gram, prior)
     return kept._replace(
@@ -1149,12 +1187,15 @@ def _pass1_mixed_sparse(kept, arrays, tile, positions, valid, steps, n_steps, *,
         else:
             proj = project(arrays, rotations, static).reshape(P, chunk, K, -1)
             inner, gram = _inner_gram(Y1, ctf2, proj, b, HIGHEST)
-        prior = full_row_pose_log_prior(
-            tile.coarse_mask[particles],
-            arrays.rotation_parent[rows],
-            arrays.translation_parent,
-            arrays.rotation_log_prior[rows],
-            arrays.translation_log_prior,
+        prior = add_to_pose_log_prior(
+            full_row_pose_log_prior(
+                tile.coarse_mask[particles],
+                arrays.rotation_parent[rows],
+                arrays.translation_parent,
+                arrays.rotation_log_prior[rows],
+                arrays.translation_log_prior,
+            ),
+            image_pose_log_prior(arrays, tile, arrays.rotations[rows], particles),
         )
         prior = jnp.where(real[None, :, None], prior, -jnp.inf)
         score, mean, covariance = latent_scores(inner, gram, prior)  # (chunk, b, T), (q, chunk, b, T), (chunk, b, .)

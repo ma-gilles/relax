@@ -168,6 +168,14 @@ class Config:
     # seed); the loadings stay random. None: the random seed.
     initial_mean: str | None = None
     initial_mean_scale: float = 1.0
+    # Per-particle pose prior (relax/ppca_refinement/pose_prior.py; section 19 of docs/math/vdam_ppca_algorithm.md):
+    # each candidate rotation R of particle i adds -theta(R, R0_i)^2 / (2 sigma^2) to its log-prior, R0_i the
+    # particle's input rlnAngleRot/Tilt/Psi and theta the geodesic angle to the nearest pose_prior_symmetry copy
+    # R0_i G. None: no pose prior (the input angles are not read). pose_prior_until U: the prior applies to the
+    # E-steps of updates 1..U only (None: every update and the final embeddings).
+    pose_prior_sigma_deg: float | None = None
+    pose_prior_symmetry: str = "C1"
+    pose_prior_until: int | None = None
 
     def band(self):
         """The :class:`FilamentBand` search, or None for the full grid."""
@@ -333,6 +341,27 @@ class Config:
                 raise ValueError("The shift schedule is sorted (first update, range >= 0, step > 0) entries from update 1")
         if self.offset_sigma_hold_px is not None and not (np.isfinite(self.offset_sigma_hold_px) and self.offset_sigma_hold_px > 0):
             raise ValueError("The held offset sigma must be finite and positive")
+        if self.pose_prior_sigma_deg is None:
+            if self.pose_prior_symmetry != "C1" or self.pose_prior_until is not None:
+                raise ValueError("--pose-prior-symmetry and --pose-prior-until need --pose-prior-sigma-deg")
+        else:
+            from relax.sampling.symmetry import canonicalize_rotational_symmetry
+
+            if not (np.isfinite(self.pose_prior_sigma_deg) and self.pose_prior_sigma_deg > 0):
+                raise ValueError("The pose prior sigma must be finite and positive")
+            if canonicalize_rotational_symmetry(self.pose_prior_symmetry) != self.pose_prior_symmetry:
+                raise ValueError(
+                    f"The pose prior symmetry must be a canonical RELION point group label, got {self.pose_prior_symmetry!r}"
+                )
+            if self.pose_prior_until is not None and (
+                isinstance(self.pose_prior_until, bool) or not isinstance(self.pose_prior_until, (int, np.integer))
+                or self.pose_prior_until < 1
+            ):
+                raise ValueError(f"pose_prior_until must be a positive update number, got {self.pose_prior_until}")
+            if self.band_length_ang is not None:
+                raise ValueError("The filament band searches each particle in its input frame; it takes no pose prior")
+            if not self.stream_coarse_recompute:
+                raise ValueError("The pose prior runs on the streamed engine (stream_coarse_recompute)")
 
     def newton_sgd(self):
         """Whether the update is the Newton SGD step (sgd_recipe.NewtonSGD) rather than the momentum step."""
@@ -354,6 +383,12 @@ class Config:
     def keeps_halfset_moments(self):
         """Whether the run keeps VDAM's half-set moments: VDAM, and momentum SGD with the half-set gate."""
         return self.optimizer == "vdam" or self.sgd_halfset_gate
+
+    def pose_prior_active(self, iteration):
+        """Whether the E-step of update ``iteration`` (the final embeddings: ``iterations``) has the pose prior."""
+        return self.pose_prior_sigma_deg is not None and (
+            self.pose_prior_until is None or iteration <= self.pose_prior_until
+        )
 
     def noise_inflation(self, iteration):
         """The factor on the noise estimate in the E-step of update ``iteration`` (1.0 without annealing)."""

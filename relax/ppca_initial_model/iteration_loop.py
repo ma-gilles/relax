@@ -70,10 +70,12 @@ from relax.ppca_refinement.oversampled_stream import (
     relion_child_grids,
     significance_summary,
 )
+from relax.ppca_refinement.pose_prior import PosePrior
 from relax.ppca_refinement.residual_statistics import full_float32
 from relax.reconstruction.resolution import relion_coarse_image_size
 from relax.sampling import grids
 from relax.sampling.healpix import angular_sampling_deg
+from relax.sampling.symmetry import rotational_operators
 from relax.steps.model_blend import MIN_SIGMA2_OFFSET_ANGSTROM2, blend_offset_variance, relion_blend
 
 logger = logging.getLogger(__name__)
@@ -523,13 +525,25 @@ def _streams_groups(config):
 
 
 def expectation(
-    dataset, state, config, ids, iteration, *, embeddings_only=False, diameter_ang=None, noise_inflation=1.0, ranks=None
+    dataset,
+    state,
+    config,
+    ids,
+    iteration,
+    *,
+    embeddings_only=False,
+    diameter_ang=None,
+    noise_inflation=1.0,
+    ranks=None,
+    input_poses=None,
 ):
     """Posterior statistics (or embeddings) of the images ``ids`` at ``iteration``.
 
     ``diameter_ang`` sizes adaptive oversampling's pass-1 window (RELION's coarse image size); None takes the box.
     ``noise_inflation`` multiplies the noise estimate in this E-step (``Config.noise_inflation``). ``ranks`` (a
     :class:`relax.ppca_initial_model.ranks.TileRanks`, the streamed engine only) scores the tiles on every GPU.
+    ``input_poses`` ``(n_images, 3, 3)``: each particle's input rotation, the centre of the pose prior
+    (``Config.pose_prior_sigma_deg``; :func:`relax.ppca_initial_model.pose_prior.read_input_rotations`).
     """
     if _streams_groups(config):
         return _expectation(
@@ -542,6 +556,7 @@ def expectation(
             diameter_ang=diameter_ang,
             noise_inflation=noise_inflation,
             ranks=ranks,
+            input_poses=input_poses,
         )[0]
     return _expectation(
         dataset, state, config, ids, iteration, embeddings_only=embeddings_only, noise_inflation=noise_inflation
@@ -559,6 +574,7 @@ def expectation_groups(
     diameter_ang=None,
     noise_inflation=1.0,
     ranks=None,
+    input_poses=None,
 ):
     """:func:`expectation` of each id group (the pseudo-halves), one result per group.
 
@@ -582,6 +598,7 @@ def expectation_groups(
         diameter_ang=diameter_ang,
         noise_inflation=noise_inflation,
         ranks=ranks,
+        input_poses=input_poses,
     )
 
 
@@ -597,9 +614,35 @@ def pass1_image_size(order, dataset, current_size, diameter_ang):
     )
 
 
+def _pose_prior(config, iteration, input_poses, n_images):
+    """The E-step's :class:`relax.ppca_refinement.pose_prior.PosePrior` (None when ``Config.pose_prior_active``
+    says the update has none)."""
+    if not config.pose_prior_active(iteration):
+        return None
+    if input_poses is None:
+        raise ValueError("--pose-prior-sigma-deg needs every particle's input pose (input_poses)")
+    if np.shape(input_poses) != (n_images, 3, 3):
+        raise ValueError(f"input_poses holds {np.shape(input_poses)} rotations for {n_images} particles")
+    return PosePrior(
+        centres=np.asarray(input_poses, np.float32),
+        sigma_deg=float(config.pose_prior_sigma_deg),
+        operators=rotational_operators(config.pose_prior_symmetry, dtype=np.float64),
+    )
+
+
 @full_float32
 def _expectation(
-    dataset, state, config, ids, iteration, *, embeddings_only=False, diameter_ang=None, noise_inflation=1.0, ranks=None
+    dataset,
+    state,
+    config,
+    ids,
+    iteration,
+    *,
+    embeddings_only=False,
+    diameter_ang=None,
+    noise_inflation=1.0,
+    ranks=None,
+    input_poses=None,
 ):
     """:func:`expectation_groups` of the id groups ``ids``. With ``ranks`` (rank 0's
     :class:`relax.ppca_initial_model.ranks.TileRanks`, or another rank's ``FollowerTiles``) each rank scores its
@@ -624,6 +667,8 @@ def _expectation(
     tilts = isinstance(dataset, TiltParticles)
     if tilts and not _streams_groups(config):
         raise ValueError("Subtomogram PPCA needs the streamed full-grid engine (stream_coarse_recompute)")
+    # Config refuses the pose prior with the filament band and the host-mask engine.
+    pose_prior = _pose_prior(config, iteration, input_poses, dataset.n_images)
     band = config.band()
     if band is not None:
         # The filament band's own grid in each particle's frame, with uniform priors (filament_band.py).
@@ -702,6 +747,8 @@ def _expectation(
                     tile_loader=load_tilt_tile if tilts else None,
                     pass2_mass_floor=config.pass2_mass_floor,
                     occupancy=config.occupancy,
+                    # Every stream of the E-step takes it (the coarse pass's too, so its pruning sees the prior).
+                    pose_prior=pose_prior,
                 )._replace(tile_headroom=config.tile_headroom)
                 for group_nv in ([nvs] if tilts else nvs)
             ]
@@ -961,9 +1008,11 @@ def run(
     stop_file=None,
     log_direction_prior=True,
     ranks=None,
+    input_poses=None,
 ):
     """Train the model; ``ranks`` (rank 0's :class:`relax.ppca_initial_model.ranks.TileRanks` of a multi-GPU run)
-    scores each E-step's tiles on every GPU. Initialization, the updates, checkpoints and outputs run here."""
+    scores each E-step's tiles on every GPU. Initialization, the updates, checkpoints and outputs run here.
+    ``input_poses`` ``(n_images, 3, 3)`` centres the pose prior (``Config.pose_prior_sigma_deg``)."""
     output = Path(output)
     output.mkdir(parents=True, exist_ok=True)
     resumed_precision = None
@@ -1058,7 +1107,7 @@ def run(
         noise_inflation = config.noise_inflation(iteration)
         stats = expectation_groups(
             dataset, state, config, halves, iteration, diameter_ang=diameter_ang, noise_inflation=noise_inflation,
-            ranks=ranks,
+            ranks=ranks, input_poses=input_poses,
         )  # fmt: skip
         estep_seconds = time.monotonic() - started
         radius = min(config.stage(iteration)[0], dataset.grid_size // 2 - 1)
@@ -1249,6 +1298,7 @@ def run(
                 ),
                 "shift_range_step_px": config.shifts(iteration),
                 "offset_sigma_hold_px": config.offset_sigma_hold_px,
+                "pose_prior": config.pose_prior_active(iteration),
                 "vdam_step_factor": step_factor,
                 "fudge": fudge,
                 "noise": noise,
@@ -1332,7 +1382,7 @@ def run(
         ids = np.arange(dataset.n_images)
         final = expectation(
             dataset, state, config, ids, config.iterations, embeddings_only=True, diameter_ang=diameter_ang,
-            ranks=ranks,
+            ranks=ranks, input_poses=input_poses,
         )  # fmt: skip
         if not np.array_equal(np.sort(final.original_image_ids), ids):
             raise ValueError("Final embedding does not cover every particle exactly once")

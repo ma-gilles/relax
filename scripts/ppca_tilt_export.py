@@ -19,7 +19,9 @@ particle on the stage's full pose grid and keeps
 ``rlnOriginX/Y/ZAngst`` (the 3D shift times the image pixel size, the convention relax and RELION read back as the
 particle's offset) and ``rlnMaxValueProbDistribution`` (pmax) set from this pass.
 
-The rotations are in the frame of the run's own map (ab initio: arbitrary up to one global rotation and hand).
+The rotations are in the frame of the run's own map (ab initio: arbitrary up to one global rotation and hand). A run
+with a pose prior (``--pose-prior-sigma-deg``) is scored with it when it applied at the checkpoint's update, as the
+run scored that update; ``--no-pose-prior`` scores the model's likelihood with the shared priors alone.
 Run it on a GPU node in relax's environment; it reads the run's run.json for the input and config.
 """
 
@@ -42,6 +44,9 @@ def main(argv=None):
     parser.add_argument("--out", type=Path, help="default: RUN_DIR/export_NNNN.npz")
     parser.add_argument("--star", type=Path, help="also write the input particle STAR with these poses")
     parser.add_argument("--preread-images", default="auto", choices=("auto", "on", "off"))
+    parser.add_argument(
+        "--no-pose-prior", action="store_true", help="score without the run's per-particle pose prior"
+    )
     a = parser.parse_args(argv)
 
     import starfile
@@ -50,8 +55,9 @@ def main(argv=None):
     from relax.commands.ppca_initial_model import load_tilt_training
     from relax.ppca_initial_model import checkpoint
     from relax.ppca_initial_model.config import Config
-    from relax.ppca_initial_model.iteration_loop import _rotation_grid
+    from relax.ppca_initial_model.iteration_loop import _pose_prior, _rotation_grid
     from relax.ppca_initial_model.latents import box_from_theta, orthonormal_latents
+    from relax.ppca_initial_model.pose_prior import read_input_rotations
     from relax.ppca_initial_model.tomo import free_low_shells, load_tilt_tile, tilt_tiles
     from relax.ppca_refinement.config import GeometryConfig, ScheduleConfig, ScoringConfig
     from relax.ppca_refinement.full_row_stream import (
@@ -96,6 +102,11 @@ def main(argv=None):
         else np.full(len(rotations), 1 / len(rotations), np.float32)
     )
     log_rot = np.log(rotation_prior, where=rotation_prior > 0, out=np.full_like(rotation_prior, -np.inf))
+    pose_prior = None
+    if config.pose_prior_active(state.iteration) and not a.no_pose_prior:
+        poses_star = read_optimisation_set(ios)[0]
+        pose_prior = _pose_prior(config, state.iteration, read_input_rotations(poses_star), particles.n_images)
+        print(f"pose prior: sigma {config.pose_prior_sigma_deg} deg, {config.pose_prior_symmetry}", flush=True)
     noise_rows = np.asarray(state.noise).reshape(-1, np.asarray(state.noise).shape[-1])
     keep, embedded = [], []
     for group, row in enumerate(noise_rows):
@@ -109,7 +120,7 @@ def main(argv=None):
             schedule=ScheduleConfig(image_batch_size=config.image_batch_size, rotation_block_size=config.rotation_block_size),
             scoring=ScoringConfig(relion_texture_interp=False, full_real_observation=True),
             tile_loader=load_tilt_tile, metric_trace_only=True, gemm_precision=config.gemm_precision,
-            pass2_mass_floor=config.pass2_mass_floor,
+            pass2_mass_floor=config.pass2_mass_floor, pose_prior=pose_prior,
         )
         stream = stream._replace(tile_images=plan_tile_images(stream, config.image_batch_size))
         tiles = [t for t in tilt_tiles(particles, np.arange(particles.n_images), stream.tile_images)
@@ -146,6 +157,7 @@ def main(argv=None):
         z_orth=z_orth, pc_scales=pc_scales,
         pmax=np.concatenate([k["pmax"] for k in keep]), llr=np.concatenate([k["llr"] for k in keep]),
         iteration=state.iteration, healpix_order=hp, radius=radius, checkpoint=str(ckpt),
+        pose_prior=pose_prior is not None,
     )
     if a.star is not None:
         blocks = starfile.read(read_optimisation_set(ios)[0], always_dict=True)

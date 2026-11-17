@@ -81,6 +81,7 @@ from relax.ppca_refinement.full_row_tile_plan import (
     tile_frames,
     tile_spec,
 )
+from relax.ppca_refinement.pose_prior import paired_rotation_log_prior
 from relax.ppca_refinement.residual_statistics import full_float32
 from relax.sampling import grids as sampling_grids
 from relax.sampling import oversampled_grids
@@ -375,11 +376,18 @@ class _FineRows(NamedTuple):
     valid: jax.Array  # (N,) bool
 
 
-def _job_poses(arrays, jobs, rotation_children, translation_children):
-    """Child rows ``(J, R_c)``, child translations ``(J, T_c)`` and log-priors ``(J, R_c, T_c)``."""
+def _job_poses(arrays, jobs, rotation_children, translation_children, pose_centres=None):
+    """Child rows ``(J, R_c)``, child translations ``(J, T_c)`` and log-priors ``(J, R_c, T_c)``. With the tile's
+    input poses ``pose_centres`` (``TileArrays.pose_centres``) each child also takes its image's per-image rotation
+    prior at the child rotation (relax/ppca_refinement/pose_prior.py)."""
     rows = jobs.rotation[:, None] * rotation_children + jnp.arange(rotation_children, dtype=jnp.int32)
     shifts = jobs.translation[:, None] * translation_children + jnp.arange(translation_children, dtype=jnp.int32)
     prior = arrays.rotation_log_prior[rows][:, :, None] + arrays.translation_log_prior[shifts][:, None, :]
+    if pose_centres is not None:
+        if arrays.pose_prior is None:
+            raise ValueError("A tile with input poses needs a stream with a pose prior")
+        image_prior = paired_rotation_log_prior(arrays.pose_prior, arrays.rotations[rows], pose_centres[jobs.image])
+        prior = prior + image_prior[:, :, None]
     prior = jnp.where(jobs.valid[:, None, None], prior, -jnp.inf)
     return rows, shifts, prior
 
@@ -432,7 +440,7 @@ def _score_jobs(
     child translations. The padding of ``order`` addresses the invalid last slot, whose score stays ``-inf``."""
     slots = jax.lax.dynamic_slice_in_dim(order, start, chunk)
     jobs = _FineJobs(*(x[slots] for x in table))
-    rows, shifts, prior = _job_poses(arrays, jobs, rotation_children, translation_children)
+    rows, shifts, prior = _job_poses(arrays, jobs, rotation_children, translation_children, tile.pose_centres)
     planar, products = _job_projections(arrays, tile, rows, static)
     Y1 = _shifted(tile.Y1[:, jobs.image].T, phases, shifts, n_frames(tile))  # (J, T_c, K 2F)
     inner = jnp.einsum("pjrk,jtk->jprt", planar, Y1, precision=gemm(static))

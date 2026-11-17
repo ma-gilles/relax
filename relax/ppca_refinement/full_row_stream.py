@@ -81,6 +81,7 @@ from relax.ppca_refinement.full_row_kernels import (
     unpack_moments,
 )
 from relax.ppca_refinement.occupancy import check_occupancy, log_partition_correction, with_empty_component
+from relax.ppca_refinement.pose_prior import PosePrior, device_prior, tile_centres
 from relax.ppca_refinement.residual_statistics import full_float32
 
 FULL_ROW_ENGINE = "full_row_device_resident"
@@ -174,8 +175,13 @@ def prepare_full_row_stream(
     tile_loader=None,
     pass2_mass_floor: float = 0.0,
     occupancy: float | None = None,
+    pose_prior: PosePrior | None = None,
 ) -> FullRowStream:
     """Upload the model, fine grids and priors once to ``device`` for an expectation's tiles.
+
+    ``pose_prior`` (:class:`relax.ppca_refinement.pose_prior.PosePrior`) adds each image's rotation prior about its
+    input pose to every pose score (:attr:`StreamArrays.pose_prior`, normalized over ``rotations``); each tile then
+    carries its images' input rotations (:func:`read_tile`). None keeps the shared priors alone.
 
     ``pass2_mass_floor`` (:attr:`FullRowStream.pass2_mass_floor`) lets pass 2 skip the pose rows
     that carry less posterior mass than it for every image of a tile.
@@ -222,6 +228,7 @@ def prepare_full_row_stream(
             gemm_precision=gemm_precision,
             device=device,
             tile_loader=tile_loader,
+            pose_prior=pose_prior,
         )._replace(pass2_mass_floor=float(pass2_mass_floor), occupancy=check_occupancy(occupancy))
 
 
@@ -248,6 +255,7 @@ def _prepare_full_row_stream(
     gemm_precision,
     device,
     tile_loader,
+    pose_prior,
 ) -> FullRowStream:
     gemm_precision = resolve_gemm_precision(gemm_precision, device)
     if scoring.image_scale_corrections is not None or scoring.class_log_prior != 0.0:
@@ -319,6 +327,7 @@ def _prepare_full_row_stream(
         score_indices=resolved.score_indices,
         coefficient_noise=noise_variance_half,
         shift_squared=jnp.sum(jnp.asarray(translations, jnp.float32) ** 2, axis=-1),
+        **({} if pose_prior is None else {"pose_prior": device_prior(pose_prior, rotations)}),
     )
     static = StreamStatic(
         image_shape=tuple(resolved.image_shape),
@@ -353,6 +362,7 @@ def _prepare_full_row_stream(
         rotation_parent=rotation_parent,
         device=device,
         tile_loader=tile_loader,
+        pose_centres=None if pose_prior is None else np.asarray(pose_prior.centres, np.float32),
     )
 
 
@@ -369,7 +379,14 @@ def read_tile(stream: FullRowStream, image_indices, significant_rows, *, collect
     if np.asarray(image_indices).size > stream.image_batch_size:
         raise ValueError("A full-row tile must fit one image batch")
     loader = _load_tile if stream.tile_loader is None else stream.tile_loader
-    return loader(stream, image_indices, significant_rows, collect_observation=collect_observation)
+    tile, observation_power, layout = loader(
+        stream, image_indices, significant_rows, collect_observation=collect_observation
+    )
+    if stream.pose_centres is not None:
+        # Per-particle arrays are in tile order, real images first (every reader): the input poses follow it.
+        centres = tile_centres(stream.pose_centres, layout["original_ids"], int(tile.coarse_mask.shape[0]))
+        tile = tile._replace(pose_centres=jax.device_put(centres, stream.device))
+    return tile, observation_power, layout
 
 
 def tile_support(stream: FullRowStream, significant_rows):

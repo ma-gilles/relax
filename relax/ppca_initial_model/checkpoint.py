@@ -71,6 +71,9 @@ _ADDED_CONFIG_DEFAULTS = {
     "sgd_fixed_step": None,
     "oversampling_from_update": None,
     "oversampling_rotations_only": False,
+    "pose_prior_sigma_deg": None,
+    "pose_prior_symmetry": "C1",
+    "pose_prior_until": None,
 }
 
 

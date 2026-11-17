@@ -137,17 +137,20 @@ def expectation_state(state):
     return dataclasses.replace(state, moments=None, sgd_momentum=None, order=None, rng_state=None, initialization=None)
 
 
-def run_fingerprint(dataset, config, identity) -> dict:
+def run_fingerprint(dataset, config, identity, input_poses=None) -> dict:
     """What the ranks must agree on before rank 0 sends them work: the inputs and code (``identity``), the
-    configuration, the particle count and grids, and the device model."""
+    configuration, the particle count and grids, the pose prior's input rotations and the device model."""
 
     import jax
+
+    from relax.ppca_refinement.pose_prior import centres_sha256
 
     return {
         "identity": identity,
         "config": dataclasses.asdict(config),
         "n_images": int(dataset.n_images),
         "image_shape": tuple(int(s) for s in dataset.image_shape),
+        "input_poses_sha256": None if input_poses is None else centres_sha256(input_poses),
         "device_kind": jax.devices()[0].device_kind,
     }
 
@@ -416,10 +419,13 @@ def accept_tile_ranks(listener: Listener, world: int, objects: dict[str, object]
     return TileRanks(connections, objects)
 
 
-def serve_tile_ranks(connection: Connection, rank: int, world: int, *, dataset, config, fingerprint: dict) -> None:
+def serve_tile_ranks(
+    connection: Connection, rank: int, world: int, *, dataset, config, fingerprint: dict, input_poses=None
+) -> None:
     """A rank's task loop: report the run's fingerprint, then score this rank's tiles of each E-step rank 0 sends,
     until rank 0 closes the connection (the run's end). A failed E-step is reported to rank 0 and raised here, so
-    this rank exits non-zero."""
+    this rank exits non-zero. ``input_poses``: this rank's own read of the pose prior's centres (the fingerprint
+    holds their hash)."""
 
     from relax.ppca_initial_model import iteration_loop
     from relax.runtime.host_memory import return_freed_heap
@@ -443,6 +449,7 @@ def serve_tile_ranks(connection: Connection, rank: int, world: int, *, dataset, 
                 diameter_ang=task.diameter_ang,
                 noise_inflation=task.noise_inflation,
                 ranks=FollowerTiles(connection, objects, task, rank, world),
+                input_poses=input_poses,
             )
         except BaseException:
             text = traceback.format_exc()

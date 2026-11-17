@@ -118,8 +118,9 @@ def brute_force(particles, stream, problem):
 
 
 def _brute_force(particles, stream, p):
-    """``p`` may give ``translations`` (default TRANSLATIONS) and each particle's flat ``noise`` (default NOISE);
-    the noise sums are then per noise group of ``particles``, ``(G, S)``."""
+    """``p`` may give ``translations`` (default TRANSLATIONS), each particle's flat ``noise`` (default NOISE; the
+    noise sums are then per noise group of ``particles``, ``(G, S)``) and ``image_rotation_log_prior`` (particles,
+    R), a per-particle rotation log-prior added to the shared one."""
     static = stream.static
     translations = np.asarray(p.get("translations", TRANSLATIONS))
     noise = np.asarray(p.get("noise", np.full(particles.n_images, NOISE)), np.float64)
@@ -201,6 +202,8 @@ def _brute_force(particles, stream, p):
                 covariance = np.eye(q) - B.T @ solve_B
                 moments[r, t] = (mean, covariance, shifted, A)
         log_prior = p["rotation_log_prior"][:, None].astype(np.float64) + p["translation_log_prior"][None, :]
+        if "image_rotation_log_prior" in p:  # (particles, R): each particle's own rotation prior on top
+            log_prior = log_prior + np.asarray(p["image_rotation_log_prior"], np.float64)[i][:, None]
         total = scores + log_prior
         log_z = np.max(total) + np.log(np.sum(np.exp(total - np.max(total))))
         gamma = np.exp(total - log_z)

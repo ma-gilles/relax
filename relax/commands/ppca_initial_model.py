@@ -18,6 +18,7 @@ from relax.ppca_initial_model.band_schedule import physical_band_stages
 from relax.ppca_initial_model.checkpoint import file_hash
 from relax.ppca_initial_model.config import Config
 from relax.runtime.host_memory import available_memory_bytes
+from relax.sampling.symmetry import canonicalize_rotational_symmetry
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +27,8 @@ def add_args(parser):
     parser.add_argument(
         "--i",
         dest="particles",
-        help="RELION particle STAR of single particles, read as relax refine reads it (input poses are not used)",
+        help="RELION particle STAR of single particles, read as relax refine reads it (input poses are not used "
+        "unless --pose-prior-sigma-deg)",
     )
     parser.add_argument("--ios", help="RELION 5 optimisation set of subtomogram particles (2D stacks) instead")
     parser.add_argument("--particle-diameter", type=float, required=True, help="Particle diameter in Angstrom")
@@ -328,6 +330,25 @@ def add_args(parser):
         help="Hold the Gaussian offset prior's sigma per axis at this many Angstrom (default: learned)",
     )
     parser.add_argument(
+        "--pose-prior-sigma-deg",
+        type=float,
+        help="Per-particle pose prior: each candidate rotation R adds -theta^2 / (2 S^2) to its log-prior, theta the "
+        "geodesic angle in degrees between R and the particle's input rlnAngleRot/Tilt/Psi (for --ios the pose in "
+        "its subtomogram frame); combines with the direction prior (default: off, input angles unread)",
+    )
+    parser.add_argument(
+        "--pose-prior-symmetry",
+        default="C1",
+        help="with --pose-prior-sigma-deg: point group (RELION label, e.g. D7) whose copies R G of the input pose "
+        "count as the same pose: theta is taken to the nearest copy (default C1)",
+    )
+    parser.add_argument(
+        "--pose-prior-until",
+        type=int,
+        help="with --pose-prior-sigma-deg: apply the pose prior to updates 1..U only, then release it (default: "
+        "every update and the final embeddings)",
+    )
+    parser.add_argument(
         "--gpu",
         default=None,
         help="RELION's GPU device list: one process per listed device id, separated by ':' or ',' (e.g. 0:1:2:3, at "
@@ -556,8 +577,9 @@ def load_tilt_training(
     """Subtomogram particles of a RELION 5 optimisation set (algorithm section 16), and the image-reading record.
 
     Only the tilt-series geometry (each image's ``Aproj``), the images and their CTF and dose
-    enter training; the particles' input angles and offsets are not read, except that ``particle_frame``
-    (the filament band) composes each particle's ``rlnAngle*`` into its projections. ``preread_images``
+    enter training; the particles' input angles and offsets are not read here, except that ``particle_frame``
+    (the filament band) composes each particle's ``rlnAngle*`` into its projections (``--pose-prior-sigma-deg``
+    reads the angles separately, as the prior's centres: :func:`relax.ppca_initial_model.pose_prior.read_input_rotations`). ``preread_images``
     (:func:`resolve_preread_images` of the tilt images' bytes) holds every tilt image in host memory after the
     first read (``ranks`` such copies on this host in a multi-GPU run). This process (rank ``rank``) stages its
     share of the tilt stacks first (:func:`relax.steps.tomo_half.stage_tilt_stacks`).
@@ -764,6 +786,9 @@ def main(args=None):
         initial_mean=args.initial_mean,
         initial_mean_scale=args.initial_mean_scale,
         likelihood_min_shell=args.likelihood_min_shell,
+        pose_prior_sigma_deg=args.pose_prior_sigma_deg,
+        pose_prior_symmetry=canonicalize_rotational_symmetry(args.pose_prior_symmetry),
+        pose_prior_until=args.pose_prior_until,
     )
     if (args.ios is None) == (args.particles is None):
         raise ValueError("Give either a particle STAR (--i) or an optimisation set (--ios)")
@@ -912,6 +937,26 @@ def main(args=None):
             json.dumps(config.shift_schedule), config.offset_sigma_hold_px,
         )
     identity["source"] = source_identity()
+    input_poses = None
+    if config.pose_prior_sigma_deg is not None:
+        from relax.ppca_initial_model.pose_prior import read_input_rotations
+
+        if args.ios:
+            from relax.star.tomo_input import read_optimisation_set
+
+            poses_star = read_optimisation_set(args.ios)[0]
+        else:
+            poses_star = args.particles
+        input_poses = read_input_rotations(poses_star)
+        if input_poses.shape[0] != data.n_images:
+            raise ValueError(f"{poses_star} holds {input_poses.shape[0]} poses for {data.n_images} particles")
+        logger.info(
+            "pose prior: sigma %g deg about the input poses of %s, symmetry %s, %s",
+            config.pose_prior_sigma_deg,
+            poses_star,
+            config.pose_prior_symmetry,
+            "every update" if config.pose_prior_until is None else f"updates 1-{config.pose_prior_until}",
+        )
     if rank_env is not None and not rank_env.is_leader:
         # This rank scores the tiles rank 0 sends it; rank 0 writes every output.
         from relax.parallel import channel
@@ -922,7 +967,8 @@ def main(args=None):
             world,
             dataset=data,
             config=config,
-            fingerprint=tile_ranks.run_fingerprint(data, config, identity),
+            fingerprint=tile_ranks.run_fingerprint(data, config, identity, input_poses),
+            input_poses=input_poses,
         )
         return
     if not args.resume and list(output.glob("checkpoint_*.npz")):
@@ -947,7 +993,10 @@ def main(args=None):
     ranks = None
     if listener is not None:
         ranks = tile_ranks.accept_tile_ranks(
-            listener, world, tile_ranks.run_objects(data, config), tile_ranks.run_fingerprint(data, config, identity)
+            listener,
+            world,
+            tile_ranks.run_objects(data, config),
+            tile_ranks.run_fingerprint(data, config, identity, input_poses),
         )
     try:
         run(
@@ -960,6 +1009,7 @@ def main(args=None):
             stop_after=args.stop_after,
             stop_file=args.stop_file,
             ranks=ranks,
+            input_poses=input_poses,
         )
     finally:
         if ranks is not None:
