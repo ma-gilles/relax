@@ -664,6 +664,9 @@ def _expectation(
         )
         prior = -jnp.sum(jnp.asarray(translations) ** 2, axis=-1) / (2 * offset_variance)
         prior = prior - jnp.log(jnp.sum(jnp.exp(prior)))
+        # A given pose's grid can be far smaller than a rotation block (fixed: one rotation): blocks of the grid's
+        # size, so the tile plan does not count (and the stream does not score) a block of sentinel rows.
+        schedule = dataclasses.replace(schedule, rotation_block_size=min(schedule.rotation_block_size, len(rotations)))
     else:
         rotations = _rotation_grid(hp)
         canonical_eulers = grids.get_relion_hidden_rotation_grid(hp, matrices=False)
