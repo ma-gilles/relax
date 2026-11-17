@@ -349,7 +349,7 @@ def real_imag(values):
     return jnp.concatenate([values.real, values.imag], axis=-1)
 
 
-def _latent_block(Y1, ctf2, proj, pose_log_prior, n_images: int, precision=HIGHEST):
+def _latent_block(Y1, ctf2, proj, pose_log_prior, n_images: int):
     """Pose scores, latent means and covariances for one rotation block.
 
     ``Y1`` is ``(K 2F, B T)`` (real and imaginary parts per frame), ``ctf2``
@@ -366,7 +366,7 @@ def _latent_block(Y1, ctf2, proj, pose_log_prior, n_images: int, precision=HIGHE
     score ``(R, B, T)``, means ``(q, R, B, T)`` and packed covariances
     ``(R, B, tri(q))``.
     """
-    inner, gram = _inner_gram(Y1, ctf2, proj, n_images, precision)
+    inner, gram = _inner_gram(Y1, ctf2, proj, n_images, HIGHEST)
     return latent_scores(inner, gram, pose_log_prior)
 
 
@@ -528,10 +528,10 @@ def score_block(arrays, tile, kept, start, *, static, block_size):
     )
     proj = project(arrays, frame_rotations(tile, arrays.rotations[rows]), static)
     proj = proj.reshape(proj.shape[0], rows.shape[0], n_frames(tile), proj.shape[-1])
-    # A volume stream runs this XLA formulation on the GPU too: its two GEMMs take the stream's GEMM precision, as
-    # the image route's CUDA path does (_score_block_cuda); the XLA image path stays the float32 reference.
-    precision = gemm(static) if static.observation == "volume" else HIGHEST
-    score, mean, covariance = _latent_block(tile.Y1, tile.ctf2, proj, prior, tile.y_norm.shape[0], precision)
+    # Float32 GEMMs for every XLA stream, the volume observations included: with TF32 here the masked ab initio's
+    # maps were consistently worse at equal poses (GPU job 7490206: FSC 0.143 at 23.7-24.7 A over three TF32 runs
+    # against 21.8 A for two float32 runs of the same seed, correlation 0.84-0.87 against 0.88; f65f428e reverted).
+    score, mean, covariance = _latent_block(tile.Y1, tile.ctf2, proj, prior, tile.y_norm.shape[0])
     return kept._replace(
         score=jax.lax.dynamic_update_slice_in_dim(kept.score, score, start, axis=0),
         latent_mean=jax.lax.dynamic_update_slice_in_dim(kept.latent_mean, mean, start, axis=1),
