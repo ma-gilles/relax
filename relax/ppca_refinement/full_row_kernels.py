@@ -105,6 +105,11 @@ class StreamStatic(NamedTuple):
     # weights, residual scatter); the XLA formulation runs elsewhere and is the float64 reference.
     cuda_kernels: bool
     gemm_precision: str  # resolved: "fp32" (exact float32 products) or "tf32" (TF32 tensor cores, sm_80+)
+    # What a tile observes: "slice", 2D images of the model (frames x half image, the default); "volume", one 3D
+    # half spectrum per particle observed through a Fourier-diagonal filter (the opt-in masked tomo likelihood,
+    # relax/ppca_initial_model/masked_volume.py). A volume stream projects by 3D gather and backprojects by its
+    # adjoint (``project``, ``_backproject_moments``), runs the XLA formulation and keeps no noise-power sums.
+    observation: str = "slice"
 
 
 class StreamArrays(NamedTuple):
@@ -254,6 +259,8 @@ def full_row_pose_log_prior(
 
 def project(arrays: StreamArrays, rotations, static: StreamStatic):
     """Windowed augmented projections ``(P, R, F)`` of the given rotations, component-major."""
+    if static.observation == "volume":
+        return _project_volume(arrays.augmented, arrays.score_indices, rotations, static.volume_shape)
     proj = _project_half(arrays, rotations, static)
     return proj if arrays.score_indices is None else proj[:, :, arrays.score_indices]
 
@@ -272,6 +279,53 @@ def _project_half(arrays: StreamArrays, rotations, static: StreamStatic):
         relion_texture_interp=static.relion_texture_interp,
         **kwargs,
     )
+
+
+def _volume_window_coordinates(indices, volume_shape):
+    """Centred 3D frequencies ``(F, 3)`` of half-volume voxels ``indices`` (last axis ``kz >= 0``, first two
+    centred), in the volume grid units of RECOVAR's half-volume trilinear gather."""
+    n0, n1, n2 = (int(n) for n in volume_shape)
+    half2 = n2 // 2 + 1
+    i0, rest = jnp.divmod(indices, n1 * half2)
+    i1, i2 = jnp.divmod(rest, half2)
+    return jnp.stack([i0 - n0 // 2, i1 - n1 // 2, i2], axis=-1).astype(jnp.float32)
+
+
+def _volume_grid_coordinates(indices, rotations, volume_shape):
+    """``(R, F, 3)`` gather coordinates ``k @ R + centre`` of the window voxels at ``rotations`` ``(R, 3, 3)``:
+    RECOVAR's slice convention (``[k0, k1, 0] @ R``) with the window's 3D ``k``."""
+    k = _volume_window_coordinates(indices, volume_shape)
+    centre = jnp.asarray([int(n) // 2 for n in volume_shape], jnp.float32)
+    return jnp.einsum("fa,rab->rfb", k, rotations, precision=HIGHEST) + centre
+
+
+def _project_volume(augmented, indices, rotations, volume_shape):
+    """Trilinear samples ``(P, R, F)`` of the augmented half volumes at the rotated window voxels ``k @ R``:
+    the volume observation's projection (RECOVAR's half-volume gather, the slicer's Hermitian convention)."""
+    from recovar.core.relion_interp import _trilinear_gather_half
+
+    n0, n1, n2 = (int(n) for n in volume_shape)
+    g = _volume_grid_coordinates(indices, rotations, volume_shape).reshape(-1, 3)
+    volumes = augmented.reshape(augmented.shape[0], n0, n1, n2 // 2 + 1)
+
+    def one(volume):
+        return _trilinear_gather_half(volume, g[:, 0], g[:, 1], g[:, 2], n0, n1, n2)
+
+    return jax.vmap(one)(volumes).reshape(augmented.shape[0], rotations.shape[0], -1)
+
+
+def _backproject_volume(images, indices, rotations, volume_shape):
+    """Adjoint of :func:`_project_volume` per channel: ``images`` ``(C, R, F)`` scattered into ``(C, half)``."""
+    from recovar.core.relion_interp import _scatter_trilinear_half
+
+    n0, n1, n2 = (int(n) for n in volume_shape)
+    half = n0 * n1 * (n2 // 2 + 1)
+    g = _volume_grid_coordinates(indices, rotations, volume_shape).reshape(-1, 3)
+
+    def one(values):
+        return _scatter_trilinear_half(half, g[:, 0], g[:, 1], g[:, 2], values.reshape(-1), n0, n1, n2)
+
+    return jax.vmap(one)(images)
 
 
 def real_imag(values):
@@ -718,7 +772,12 @@ def scatter_moment_images(carry, arrays, static, rhs_parts, lhs_images, rotation
     and the planar RHS images ``(P, R, 2F)`` at ``rotations`` ``(R, 3, 3)``, as residual images, and their
     noise-power correction (into ``noise_group``'s row of a noise table)."""
     block, correction = _scatter_block(arrays, static, rhs_parts, lhs_images, rotations)
-    residual_power = _add_residual(carry.residual_power, arrays, correction, noise_group)
+    # A volume observation's noise is fixed by its preprocessing: it keeps no noise-power sums.
+    residual_power = (
+        carry.residual_power
+        if static.observation == "volume"
+        else _add_residual(carry.residual_power, arrays, correction, noise_group)
+    )
     moments, moments_compensation = compensated_add(carry.moments, carry.moments_compensation, block)
     return carry._replace(moments=moments, moments_compensation=moments_compensation, residual_power=residual_power)
 
@@ -856,6 +915,8 @@ def _backproject_moments(real_images, complex_images, indices, rotations, static
     half = int(np.prod(static.volume_shape[:2])) * (int(static.volume_shape[2]) // 2 + 1)
 
     def adjoint(images, dtype):
+        if static.observation == "volume":
+            return _backproject_volume(images.astype(dtype), indices, rotations, static.volume_shape)
         return batch_adjoint_slice_volume_maybe_windowed(
             images,
             indices,

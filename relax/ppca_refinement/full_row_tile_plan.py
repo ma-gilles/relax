@@ -100,7 +100,8 @@ def tile_spec(stream: FullRowStream, n_images: int) -> TileArrays:
         Y1_recon=spec((BT, K * 2 * F), f32),
         ctf2_recon=spec((B, K * F), f32),
         y_norm=spec((B,), f32),
-        frames=None if _plan_reader(stream) is None else spec((K, 3, 3), f32),
+        # A volume-observation tile (one 3D frame per particle) has no tilt frames.
+        frames=None if _plan_reader(stream) is None or stream.static.observation == "volume" else spec((K, 3, 3), f32),
         # A one-key subtomogram tile (the planned shape; a mixed tile of as many particles holds as many
         # operand bytes and runs its keys one at a time).
         noise_groups=None if _plan_reader(stream) is None else spec((1,), jnp.int32),
