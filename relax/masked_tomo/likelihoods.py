@@ -273,7 +273,7 @@ class MaskedArm:
     name = "masked"
 
     def __init__(self, data: Particles, support_radius, mask_radius, *, lam_rel=0.1, crop=40, window=None,
-                 n_mc=2, seed=0, dof_correction=True, unmasked_gram=False):
+                 n_mc=2, seed=0, dof_correction=True, unmasked_gram=False, c_scale=1.0):
         d = self.d = data
         n, S = data.n, data.S
         self.n, self.S, self.G, self.Cc = n, S, 2 * n, crop
@@ -303,6 +303,8 @@ class MaskedArm:
         self.seed = seed
         self.n_mc = n_mc
         self.dof_correction = dof_correction
+        # Opt-in diagnostic temperature: c times this factor (1.0: none), e.g. the measured 1.3-1.5x overconfidence.
+        self.c_scale = float(c_scale)
         self._prep = {}
 
     # ---- fixed linear preprocessing (per particle, computed once) ----
@@ -376,6 +378,7 @@ class MaskedArm:
         c = var / self.n_mc
         if self.dof_correction:
             c = c * dof_ratio(D, lam, self.k_ok)
+        c = c * self.c_scale
         out = {"rt": rt, "V": (V * self.mask).astype(F32), "c": c, "lam": lam, "D": D,
                "filt": self.particle_from(rt, ctf, D, lam)["filt"]}
         self._prep[i] = out
