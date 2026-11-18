@@ -6,7 +6,7 @@ coarse operands shift an image by the phase ``exp(-2 pi i k.t / N)`` of each sco
 ``k``, RELION's coarse row relabelling included). One inverse real FFT of ``G_r`` on an ``M x M`` grid
 (``M = N / step``) gives ``X`` at every circular shift of the box on the lattice of ``step`` pixels, so the level
 covers the whole box at a cost that does not depend on the offset prior. Its offset prior over the lattice is flat or
-the model's Gaussian at the absolute offsets.
+the model's Gaussian, centred on the box centre as RELION's, at the full offsets (origin plus shift).
 
 Each image is first shifted to its origin, its rounded previous offset (zero fill), and masked there, as RELION's
 old-offset pre-shift does: the lattice is the circular shifts around the origin, and a particle that the mask would
@@ -177,7 +177,7 @@ def _local_masses(translation_mass, frames, offset_rows, offset_columns, *, m: i
 
 def lattice_log_prior(lattice, origins, kind: str, *, pixel_size: float, sigma_offset_angstrom: float):
     """The offset prior ``[1 or B, M * M]`` over the ``lattice`` ``[M * M, 2]`` around each image's origin ``[B, 2]``
-    (pixels): ``"flat"`` (zero) or ``"model"`` (the model's Gaussian at the absolute offset, as
+    (pixels): ``"flat"`` (zero) or ``"model"`` (the model's Gaussian centred on the box centre, at the full offset, as
     :func:`relax.scoring.bnb_search.offset_log_prior`)."""
 
     if kind == "flat":

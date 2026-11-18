@@ -102,8 +102,9 @@ class BnBSearchOptions:
 
     ``level0`` ``"fft"`` scores level 0 over every circular shift of the box by FFT, on a whole-pixel lattice around
     each particle's rounded previous offset (where its image is shifted and masked, as RELION does), with the model's
-    Gaussian offset prior at the absolute offsets, untruncated, or a flat one (``fft_prior``); the search radius then
-    bounds the disc reported around each image's frame, the finer levels and the window (``relax.scoring.bnb_fft``).
+    Gaussian offset prior centred on the box centre at the full offsets (origin plus shift), untruncated, or a flat one
+    (``fft_prior``); the search radius then bounds the disc reported around each image's frame, the finer levels and
+    the window (``relax.scoring.bnb_fft``).
     A flat prior lets noise peaks anywhere in the box win at low SNR.
     """
 

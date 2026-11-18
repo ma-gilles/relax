@@ -224,8 +224,8 @@ unchanged.
    iteration 1 the rotation masses agree to 2e-3 and the best poses all agree).
 2. Each image is first shifted to its origin, its rounded previous offset (zero fill), and masked there, as RELION
    does; the lattice is the circular shifts around the origin.
-3. The prior over the box is the model's Gaussian at the absolute offsets (origin plus shift), untruncated
-   (`--bnb_fft_prior model`, the default), or flat.
+3. The prior over the box is the model's Gaussian, centred on the box centre as RELION's (it does not follow the
+   origin), at the full offsets (origin plus shift), untruncated (`--bnb_fft_prior model`, the default), or flat.
 4. Rotations are kept by their whole-box translation-marginal posterior as before. Each image's frame is the lattice
    point whose window (the search radius) holds the most posterior mass; the finer levels and the window search
    around it.
