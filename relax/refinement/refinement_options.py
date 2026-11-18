@@ -99,6 +99,11 @@ class BnBSearchOptions:
     for ``window_quantile`` of the half's particles (0: RELION's range), at most the search radius; a widened window
     spans at most ``window_steps`` steps of its radius. A window moves to the search's centre only when that holds
     ``recentre_gain`` more of the particle's offset posterior than the window at its previous offset.
+
+    ``level0`` ``"fft"`` scores level 0 over every circular shift of the box by FFT, on a whole-pixel lattice around
+    each particle's rounded previous offset (where its image is shifted and masked, as RELION does), with a flat or the
+    model's Gaussian offset prior (``fft_prior``); the search radius then bounds the disc reported around each image's
+    frame, the finer levels and the window (``relax.scoring.bnb_fft``).
     """
 
     levels: int = 1
@@ -119,6 +124,10 @@ class BnBSearchOptions:
     window_quantile: float = 0.5
     window_steps: float = 6.0
     recentre_gain: float = 0.1
+    # Level 0 over the lattice disc ("lattice") or by FFT over every circular shift of the box ("fft"), whose offset
+    # prior over the box is flat or the model's Gaussian (fft_prior).
+    level0: Literal["lattice", "fft"] = "lattice"
+    fft_prior: Literal["flat", "model"] = "flat"
 
     def __post_init__(self):
         if int(self.levels) < 0:
@@ -133,6 +142,11 @@ class BnBSearchOptions:
             raise ValueError("bnb window_quantile must be in [0, 1] and window_steps at least 1")
         if not 0.0 < float(self.min_step_px) <= float(self.max_step_px):
             raise ValueError("bnb steps must satisfy 0 < min_step_px <= max_step_px")
+        if self.level0 not in {"lattice", "fft"} or self.fft_prior not in {"flat", "model"}:
+            raise ValueError(f"bnb level0 must be lattice or fft and fft_prior flat or model, got {self.level0!r}, "
+                             f"{self.fft_prior!r}")
+        if self.level0 == "fft" and self.half_band:
+            raise ValueError("bnb level0 fft scores the first order at its full window: it does not take half_band")
 
 
 @dataclass(frozen=True, kw_only=True)

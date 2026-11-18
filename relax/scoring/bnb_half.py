@@ -115,9 +115,12 @@ def _levels(
 ) -> list[BnBLevel]:
     """The search levels, coarse to fine: ``settings.levels`` coarser HEALPix orders (none below
     ``settings.min_order``), then the iteration's coarse grid, each at RELION's coarse size of its order; with
-    ``settings.half_band``, the first order is scored at half that size first."""
+    ``settings.half_band``, the first order is scored at half that size first. With ``settings.level0`` ``"fft"`` the
+    first level covers the whole box by FFT on a whole-pixel lattice (:func:`relax.scoring.bnb_fft.fft_step`); its
+    translations are the disc of the search radius reported around each image's frame."""
 
     from relax.sampling.healpix import angular_sampling_deg
+    from relax.scoring.bnb_fft import fft_step
 
     order = int(sampling.current_healpix_order)
     orders = sorted({max(min(int(settings.min_order), order), order - k) for k in range(int(settings.levels) + 1)})
@@ -147,7 +150,11 @@ def _levels(
         priors[k - 1] = coarse_level_prior(priors[k], children[k])
     levels = []
     for k, (o, size) in enumerate(schedule):
-        step = float(np.clip(box / (2.0 * size), settings.min_step_px, settings.max_step_px))
+        fft = k == 0 and settings.level0 == "fft"
+        if fft:
+            step = float(fft_step(box, size, settings.max_step_px))
+        else:
+            step = float(np.clip(box / (2.0 * size), settings.min_step_px, settings.max_step_px))
         translations = translation_grid(radius, step)
         levels.append(
             BnBLevel(
@@ -161,6 +168,7 @@ def _levels(
                 translation_log_prior=offset_log_prior(
                     translations, pixel_size=pixel, sigma_offset_angstrom=sigma_offset_angstrom
                 ),
+                fft_prior=settings.fft_prior if fft else None,
             )
         )
     return levels
@@ -219,7 +227,8 @@ def search_half(
     ``window_radius`` (pixels) is RELION's translation window. The window widens, when needed, to the radius that
     holds 99% of the offset posterior of ``window_quantile`` of the particles (at most the search radius); each image's
     window then moves from its previous offset (the origin before any) to the search's best window only when that
-    holds ``recentre_gain`` more of its posterior (:func:`relax.scoring.bnb_search.window_centres`).
+    holds ``recentre_gain`` more of its posterior (:func:`relax.scoring.bnb_search.window_centres`). An FFT level 0
+    searches around each image's rounded previous offset, where the image is shifted and masked.
     """
 
     from dataclasses import replace
@@ -241,6 +250,12 @@ def search_half(
         particles, half.data, options, image_batch_size=settings.image_batch_size,
         relion_translation_angle_scale=relion_translation_angle_scale,
     )
+    previous = particles.translations
+    origins = None
+    if settings.level0 == "fft" and previous is not None:
+        from relax.relion.macros import relion_round_array
+
+        origins = relion_round_array(np.asarray(previous, np.float64))
     result = run_search(
         levels,
         fields,
@@ -256,12 +271,12 @@ def search_half(
         pixel_size=float(image_geometry.pixel_size_angstrom),
         sigma_offset_angstrom=float(half.sigma_offset_angstrom),
         precision=settings.search_precision,
+        origins=origins,
     )
     radius = max(float(window_radius), 1.0)
     if settings.window_quantile > 0.0:
         search_radius = float(np.max(np.linalg.norm(levels[0].translations, axis=1), initial=0.0))
         radius = max(radius, min(float(np.quantile(result.hold_radius, settings.window_quantile)), search_radius))
-    previous = particles.translations
     previous_offsets = np.zeros_like(result.final_base) if previous is None else np.asarray(previous, np.float64)
     local, spread, hold = window_centres(
         result.final_mass, result.final_translations, radius,

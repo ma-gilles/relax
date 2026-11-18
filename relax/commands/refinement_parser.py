@@ -205,6 +205,17 @@ def parse_refinement_args(argv=None):
         "and later), the window significance and pass 2 stay float32",
     )
     parser.add_argument(
+        "--bnb_level0", choices=("lattice", "fft"), default="lattice",
+        help="bnb: level 0 over the translations within --bnb_translation_sigmas widths of the offset prior (lattice, "
+        "default) or by FFT cross-correlation over every circular shift of the box around each particle's rounded "
+        "previous offset, where its image is shifted and masked (fft), at a cost that does not depend on the offset "
+        "prior",
+    )
+    parser.add_argument(
+        "--bnb_fft_prior", choices=("flat", "model"), default="flat",
+        help="bnb: the offset prior of an fft level 0 over the box: flat (default) or the model's Gaussian",
+    )
+    parser.add_argument(
         "--bnb_window_quantile", type=float, default=0.5,
         help="bnb: widen the translation window to hold 99%% of the offset posterior of this fraction of the "
         "particles (0 keeps RELION's range)",

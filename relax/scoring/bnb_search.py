@@ -55,7 +55,9 @@ class BnBLevel:
     (``-1`` pads; ``None`` at level 0). ``size`` is the level's Fourier window (a current size, even pixels).
     ``translations`` ``[T, 2]`` are the level's lattice of ``step`` pixels within the search radius, absolute offsets,
     and ``translation_log_prior`` ``[T]`` their prior; a finer level scores a disk of the same step around each
-    image's centre instead (:func:`run_search`).
+    image's centre instead (:func:`run_search`). ``fft_prior`` (``"flat"`` or ``"model"``, level 0 only) scores the
+    level over every circular shift of the box by FFT (:mod:`relax.scoring.bnb_fft`) with that lattice prior; its
+    ``translations`` are then the disc reported around each image's frame.
     """
 
     order: int
@@ -66,6 +68,7 @@ class BnBLevel:
     step: float
     translations: np.ndarray
     translation_log_prior: np.ndarray
+    fft_prior: str | None = None
 
 
 @dataclass(frozen=True)
@@ -624,6 +627,7 @@ def run_search(
     pixel_size: float,
     sigma_offset_angstrom: float,
     precision: str = "float32",
+    origins: np.ndarray | None = None,
 ) -> BnBSearchResult:
     """Search every image of ``request_fields["experiment_dataset"]`` over ``levels`` (see the module docstring).
 
@@ -632,7 +636,10 @@ def run_search(
     absolute translation grid of ``levels[0]``; each finer level pre-shifts every image to the previous level's centre
     and scores a disk of its own step around it, wide enough for 90% of the images' 99% hold radii at the previous
     level (at least 2.5 of its step and ``centre_radius`` plus a step, at most the search radius), with the offset
-    prior (``pixel_size``, ``sigma_offset_angstrom``) at the absolute offsets. ``centre_radius`` (pixels) is the
+    prior (``pixel_size``, ``sigma_offset_angstrom``) at the absolute offsets. A level 0 with ``fft_prior`` scores
+    every circular shift of the box instead, around each image's ``origins`` ``[N, 2]`` (whole pixels, None: zero)
+    where the image is shifted and masked, and reports around each image's frame (:mod:`relax.scoring.bnb_fft`); the
+    search radius is then its disc's. ``centre_radius`` (pixels) is the
     RELION window the centres are chosen for. ``precision`` is the score products' algorithm (``"float32"`` or
     ``"tf32"``). Coarse levels keep at most ``pruning.max_kept`` rotations per image; the last level keeps every
     rotation its rules keep. A device batch holds at least ``image_batch_size`` images (:func:`image_batch`).
@@ -651,6 +658,7 @@ def run_search(
     pre_shifts = None
     hold = None
     used_levels = []
+    fft_grid = None
     for index, level in enumerate(levels):
         fields = dict(request_fields)
         if index > 0:
@@ -663,33 +671,71 @@ def run_search(
             level.translation_log_prior if index == 0 else np.zeros(level.translations.shape[0], np.float32)
         ))
         used_levels.append(level)
-        level_batch = image_batch(image_batch_size, level.translations.shape[0], level.size)
+        fft = index == 0 and level.fft_prior is not None
+        level_batch = image_batch(image_batch_size, 1 if fft else level.translations.shape[0], level.size)
         fields["image_batch_size"] = level_batch
         batches.append(level_batch)
         tick = time.time()
-        prepared = plan_level(level, fields, image_current_size=image_current_size)
+        planned = level
+        if fft:
+            # The FFT shifts the operands itself: plan them at the origins only.
+            if origins is not None and np.any(origins):
+                fields["image_pre_shifts"] = np.asarray(origins, dtype=np.float64)
+            origins = np.zeros((n_images, 2)) if origins is None else np.asarray(origins, dtype=np.float64)
+            planned = replace(level, translations=np.zeros((1, 2)), translation_log_prior=np.zeros(1, np.float32))
+        prepared = plan_level(planned, fields, image_current_size=image_current_size)
         clock["plan"] += time.time() - tick
         scores_before = clock["scores"]
-        (
-            parents, kept_counts[index], local_centres, spread, hold, best_rotation, best_translation, masses
-        ) = _level_pass(
-            prepared,
-            dataset,
-            parents=parents,
-            children=level.children,
-            pre_shifts=pre_shifts,
-            prior=(float(pixel_size), float(sigma_offset_angstrom)),
-            pruning=pruning,
-            coarse=index < n_levels - 1,
-            centre_radius=centre_radius,
-            image_batch_size=level_batch,
-            precision=precision,
-            clock=clock,
-        )
+        if fft:
+            from relax.scoring import bnb_fft
+
+            (
+                parents, kept_counts[index], local_centres, spread, hold, best_rotation, best_translation, masses,
+                frames, fft_grid,
+            ) = bnb_fft.level_pass(
+                prepared,
+                dataset,
+                local=level.translations,
+                origins=origins,
+                pixel_size=float(pixel_size),
+                sigma_offset_angstrom=float(sigma_offset_angstrom),
+                pruning=pruning,
+                coarse=index < n_levels - 1,
+                centre_radius=centre_radius,
+                image_batch_size=level_batch,
+                clock=clock,
+            )
+            base = origins + frames
+        else:
+            (
+                parents, kept_counts[index], local_centres, spread, hold, best_rotation, best_translation, masses
+            ) = _level_pass(
+                prepared,
+                dataset,
+                parents=parents,
+                children=level.children,
+                pre_shifts=pre_shifts,
+                prior=(float(pixel_size), float(sigma_offset_angstrom)),
+                pruning=pruning,
+                coarse=index < n_levels - 1,
+                centre_radius=centre_radius,
+                image_batch_size=level_batch,
+                precision=precision,
+                clock=clock,
+            )
+            base = np.zeros((n_images, 2)) if pre_shifts is None else pre_shifts
         level_scores.append(round(clock["scores"] - scores_before, 1))
-        base = np.zeros((n_images, 2)) if pre_shifts is None else pre_shifts
         pre_shifts = base + local_centres
         best_translation = base + best_translation
+    if fft_grid is not None:
+        logger.info(
+            "BnB FFT level 0: lattice %dx%d (step %.0f px, every circular shift of the box), %s offset prior; images "
+            "shifted to their origins (median %.1f px, max %.1f px); centres at median %.1f px, 90%% %.1f px, max %.1f "
+            "px from the box centre",
+            fft_grid, fft_grid, float(levels[0].step), levels[0].fft_prior, *(
+                float(v) for v in np.quantile(np.linalg.norm(origins, axis=1), [0.5, 1.0])
+            ), *(float(v) for v in np.quantile(np.linalg.norm(pre_shifts, axis=1), [0.5, 0.9, 1.0])),
+        )
     seconds = time.time() - t0
     logger.info(
         "BnB search time: %s, scores per level %s", {name: round(value, 1) for name, value in clock.items()}, level_scores

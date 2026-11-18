@@ -747,6 +747,8 @@ def resolve_adaptive_options(args, *, max_significants: int, log) -> AdaptiveOpt
             window_quantile=args.bnb_window_quantile,
             search_precision=args.bnb_search_precision,
             recentre_gain=args.bnb_recentre_gain,
+            level0=args.bnb_level0,
+            fft_prior=args.bnb_fft_prior,
         ),
     )
 
