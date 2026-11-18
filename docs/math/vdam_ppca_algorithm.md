@@ -2983,3 +2983,36 @@ oversampled children against the dense child grid with the prior; through the co
 is each particle's input grid row, also with the coarse pass at two significant coarse poses per particle; the
 checkpoint and resume round-trip the three options, a changed one refuses the resume, and a checkpoint written
 before the options existed resumes without them.
+
+**Smoke on real picks** (job 38150725, one H200, commit `489c14fc`). `tg70k_j0_annot`: the 4,620 thyroglobulin picks
+of `tg70k_j0` with each pick's angles replaced by the annotated particle's (the pick coordinates, so the images stay
+about 9 px off-centre). Three arms of 40 updates from the same random start: `--q 4 --iterations 3000 --stages
+[[1,12,1],[21,15,2]] --tilt-coarse-pass --stochastic-batch-size 300 --shift-range 4 --shift-step 2
+--offset-sigma-hold 20 --optimizer vdam --no-vdam-second-moment --likelihood-min-shell 2`, with no prior,
+`--pose-prior-sigma-deg 10`, and the same until update 20. Poses from `scripts/ppca_tilt_export.py` (the stage's
+full grid, HEALPix 2), error to the annotated rotation in the annotated frame:
+
+| Arm, checkpoint, scored | median error | within 10 / 20 / 30 degrees |
+| --- | --- | --- |
+| no prior, 40, likelihood | 129 deg | 0.0 / 0.0 / 0.1 % |
+| prior, 20, likelihood | 113 deg | 6 / 24 / 35 % |
+| prior, 40, likelihood | 61 deg | 17 / 43 / 47 % |
+| prior, 40, with the prior | 14 deg | 27 / 78 / 92 % |
+| prior until 20, 40, likelihood | 111 deg | 14 / 37 / 41 % |
+
+The prior moves pose selection to the input poses as intended, and with it applied the model learns the annotated
+frame (its own likelihood picks the annotated pose within 20 degrees for 43% of the picks at update 40, against none
+without the prior). Released after update 20 the model had not yet formed and drifted (41% within 30 degrees at
+update 40). The posterior with the prior sits 14 degrees from the annotation in the median, more than the order-2
+grid's half step: the 40-update model's likelihood still pulls away from the annotated pose. Mean top-pose
+posterior at update 40: 0.65 without the prior, 0.68 with it. These are 40-update smoke runs, not a converged
+comparison.
+
+**Off is unchanged.** The same three tiny subtomogram controller runs (3 updates and the final embeddings: dense
+HEALPix 1; HEALPix 2 with the coarse pass; oversampling 1 at the last stage) under `28304ce7` and under this change
+with the option off: on the CPU every checkpoint, embedding and log field is byte-identical. On one H200 (jobs
+38171076, 38177523: three runs of each tree) GPU runs are not bitwise reproducible (the moment scatter adds
+atomically), and the two trees' runs mix within one envelope: relative differences up to 2e-6 (theta) and 2e-5
+(max posterior) on the coarse-pass case, and on the oversampled case two clusters 1.5e-3 apart in theta (every image
+capped at 100 significant samples holding 16% of its mass, so the last bits move the capped set), each holding runs
+of both trees.
