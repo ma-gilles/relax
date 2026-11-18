@@ -2,9 +2,12 @@
 
 For each gradient M-step, per Fourier shell inside the current sphere: the voxel count, the shell means of the reference
 projector's amplitude and power and of the half first moments' difference (amplitude and power, before any scale), the
-FSC floor, the fudge, the step, the scale the run applied and the gate it applied. Each iteration's batch (particle ids
-and pseudo-halves) is saved too, so that the scale of every gate can be recomputed offline (analyze_gates.py). After each
-iteration's resolution update: its average Pmax, current size, batch size and data_vs_prior, and the next resolution.
+FSC floor, the fudge, the step, the scale the run applied and the gate it applied; also the shell means of the square
+root of the second moment u (``root_u``), of the cross power of the halves' unshrunk estimates Re (v + m_0)(v + m_1)^*
+(``cross``), and the share of voxels whose half-0 weight is below the floor 1 of the direction R / max(1, F)
+(``weight_below_1``). Each iteration's batch (particle ids and pseudo-halves) is saved too, so that the scale of every
+gate can be recomputed offline (analyze_gates.py). After each iteration's resolution update: its average Pmax, current
+size, batch size and data_vs_prior, and the next resolution.
 
 The run is the command's own, with three hooks: the M-step's jitted transaction is called with ``return_intermediates``
 (its projector, gradient and updated projector are dropped on the device after the statistics are read),
@@ -29,9 +32,20 @@ M-step (computed by a first call of the transaction without the scale and passed
 shell that enters the radius with near-zero power closed (v = 0 is stable); RELION's amplitude gate opens it when its
 data carry signal. The trace's ``floor`` is then that RELION gate.
 
+``--cross-gate {seen,window}`` (with ``--vdam-gate relion``) replaces the gate of every pseudo-halfset M-step by a Wiener
+weight whose signal comes from the data, not from the gated reference: per shell, P = max(0, <Re (v + m_0)(v + m_1)^*>)
+from the transaction's new first moments (independent half noise cancels), and the noise of the full estimate
+V = k <|m_0 - m_1|^2> / 4 with k the scale of the particles-seen model (``seen``: two half maps of the particles seen) or of
+the reference's own noise (``window``: open gate, u = 1), both from relax.vdam.gate. W = P / (P + V) (tau2 fudge 1), then
+phi = W r / (1 - W + W r) with r the shell mean of sqrt(u), so that the update's fixed point
+phi theta / (phi + (1 - phi) sqrt(u)) is W theta. A first call of the transaction gives the new moments; the second
+applies phi as its FSC floor with the scaled gate driven to zero (scale CROSS_SCALE). The trace's ``scale`` is then k,
+``floor`` and ``gate`` are phi, and ``wiener`` is W.
+
 Run:
     python scripts/vdam_gate_benchmark/traced_initial_model.py TRACE_DIR [--radius-rule {moment_window,signal}] \
-        [--incr-size N] [--switch-gate ITER:GATE] [--relion-floor] -- <relax initial_model arguments>
+        [--incr-size N] [--switch-gate ITER:GATE] [--relion-floor] [--cross-gate {seen,window}] \
+        -- <relax initial_model arguments>
 Writes TRACE_DIR/gate_trace.jsonl (one line per M-step), TRACE_DIR/iterations.jsonl (one line per iteration) and
 TRACE_DIR/batches.npz.
 """
@@ -47,6 +61,7 @@ from pathlib import Path
 import numpy as np
 
 _GEOMETRY: dict = {}
+CROSS_SCALE = 1e20  # drives the transaction's own scaled gate to zero, so that its FSC floor is the applied gate
 
 
 @dataclass(frozen=True)
@@ -104,10 +119,17 @@ def install(
     incr_size: int | None = None,
     switch: tuple[int, str] | None = None,
     relion_floor: bool = False,
+    cross_gate: str | None = None,
 ) -> list:
-    """Install the hooks (study radius options, gate switch, RELION floor); returns the list the batches are appended to."""
+    """Install the hooks (study radius options, gate switch, RELION floor, cross-power gate); returns the list the
+    batches are appended to."""
     from relax.vdam import driver, iteration_loop, relion_mstep
-    from relax.vdam.gate import advance_noise_coefficients, advance_window_coefficients, window_disagreement_scale
+    from relax.vdam.gate import (
+        advance_noise_coefficients,
+        advance_window_coefficients,
+        seen_disagreement_scale,
+        window_disagreement_scale,
+    )
 
     if switch is not None:
         make_gate = driver.vdam_gate
@@ -118,6 +140,7 @@ def install(
     batches: list = []
     context = {"iteration": None, "record": None}
     window = {"coefficients": None, "halves": np.zeros(0, np.int8), "moment": None, "reference": None}
+    cross_noise = {"coefficients": None, "moment": None, "reference": None}
     device = relion_mstep.relion_vdam_m_step_device
     maximize = iteration_loop.VdamUpdate.maximize
     update_resolution = iteration_loop.VdamUpdate.update_resolution
@@ -159,6 +182,51 @@ def install(
         fraction[:m] = np.clip(1.0 - disagreement[:m] * scale / 4.0 / np.where(power[:m] > 0, power[:m], np.inf), 0.0, 1.0)
         return fraction
 
+    def half_statistics(result: dict, projector: np.ndarray, weight_h0, radius: int) -> dict[str, np.ndarray]:
+        """Shell means of sqrt(u), of Re (v + m_0)(v + m_1)^* and of |m_0 - m_1|^2 on the projector's grid, the share of
+        voxels with half-0 weight below 1, and the voxel counts."""
+        capacity = projector.shape[0]
+        m0 = np.asarray(relion_mstep.pad_moment(result["mom1_h0"], capacity))
+        m1 = np.asarray(relion_mstep.pad_moment(result["mom1_h1"], capacity))
+        root_u = np.sqrt(np.asarray(relion_mstep.pad_moment(result["mom2"], capacity)).real)
+        cross, counts = shell_means(np.real((projector + m0) * np.conj(projector + m1)).astype(np.float64), radius)
+        return {
+            "root_u": shell_means(root_u.astype(np.float64), radius)[0],
+            "cross": cross,
+            "disagreement": shell_means((np.abs(m0 - m1) ** 2).astype(np.float64), radius)[0],
+            "weight_below_1": shell_means((np.asarray(weight_h0) < 1.0).astype(np.float64), radius)[0],
+            "counts": counts,
+        }
+
+    def cross_gate_of(first: dict, args: tuple, box_size: int) -> tuple[np.ndarray, dict]:
+        """The cross-power gate per shell 0..box_size // 2 from a first call's moments, and its trace fields."""
+        _, ids, halves = batches[-1]
+        size = int(ids.max()) + 1
+        if cross_noise["coefficients"] is not None:
+            size = max(size, cross_noise["coefficients"].size)
+        coefficients = advance_noise_coefficients(grown(cross_noise["coefficients"], size, 0.0), ids, halves, size)
+        cross_noise["coefficients"] = coefficients
+        if cross_gate == "window":
+            cross_noise["moment"], cross_noise["reference"] = advance_window_coefficients(
+                grown(cross_noise["moment"], size, 0.0), grown(cross_noise["reference"], size, 0.0), ids, halves, size,
+                float(np.asarray(args[10])),
+            )
+            scale = window_disagreement_scale(cross_noise["reference"], coefficients)
+        else:
+            scale = seen_disagreement_scale(coefficients)
+        radius = int(np.asarray(args[12]))
+        radius = radius if radius > 0 else box_size // 2
+        stats = half_statistics(first, np.asarray(first["projector"]), args[2], radius)
+        noise_power = scale * stats["disagreement"] / 4.0
+        positive = noise_power > 0
+        rho = np.where(positive, np.maximum(stats["cross"], 0.0) / np.where(positive, noise_power, 1.0), 0.0)
+        wiener = rho / (1.0 + rho)
+        r = stats["root_u"]
+        phi = np.where(stats["counts"] > 0, wiener * r / (1.0 - wiener + wiener * r), 0.0)
+        floor = np.zeros(box_size // 2 + 1)
+        floor[: radius + 1] = phi
+        return floor, {"cross_scale": float(scale), "wiener": wiener.tolist()}
+
     def traced_update_resolution(self, current):
         factor = 1.0
         if radius_rule in ("moment_window", "signal") and current.pseudo_halfsets:
@@ -192,6 +260,14 @@ def install(
         if relion_floor and len(args) > 16 and args[16] is not None and kwargs.get("pseudo_halfsets", True):
             relion_gate = device(*args[:16], None, *args[17:], **{**kwargs, "return_intermediates": True})["fsc_estimate"]
             args = (*args[:8], relion_gate, *args[9:])
+        cross_fields = None
+        if cross_gate is not None and kwargs.get("pseudo_halfsets", True):
+            if len(args) != 17 or args[16] is not None:
+                raise RuntimeError("--cross-gate needs --vdam-gate relion (the transaction's own gate unscaled)")
+            first = device(*args, **{**kwargs, "return_intermediates": True})
+            floor, cross_fields = cross_gate_of(first, args, kwargs["box_size"])
+            floor_dtype = np.asarray(args[8]).dtype
+            args = (*args[:8], floor.astype(floor_dtype), *args[9:16], floor_dtype.type(CROSS_SCALE))
         result = device(*args, **{**kwargs, "return_intermediates": True})
         projector = result.pop("projector")
         result.pop("gradient")
@@ -208,6 +284,7 @@ def install(
         ref_pow, _ = shell_means(np.abs(projector).astype(np.float64) ** 2, radius)
         dis_amp, _ = shell_means(np.abs(difference).astype(np.float64), radius)
         dis_pow, _ = shell_means(np.abs(difference).astype(np.float64) ** 2, radius)
+        halves_stats = half_statistics(result, projector, args[2], radius)
         scale = args[16] if len(args) > 16 else kwargs.get("disagreement_scale")
         record = {
             "iteration": context["iteration"],
@@ -222,7 +299,13 @@ def install(
             "dis_pow": dis_pow.tolist(),
             "floor": np.asarray(args[8], np.float64)[: radius + 1].tolist(),
             "gate": np.asarray(gate, np.float64)[: radius + 1].tolist(),
+            "root_u": halves_stats["root_u"].tolist(),
+            "cross": halves_stats["cross"].tolist(),
+            "weight_below_1": halves_stats["weight_below_1"].tolist(),
         }
+        if cross_fields is not None:
+            record["scale"] = cross_fields["cross_scale"]
+            record["wiener"] = cross_fields["wiener"]
         handle.write(json.dumps(record) + "\n")
         handle.flush()
         context["record"] = record
@@ -254,12 +337,15 @@ def main() -> int:
     parser.add_argument("--incr-size", type=int)
     parser.add_argument("--switch-gate", metavar="ITER:GATE", help="apply GATE from iteration ITER on")
     parser.add_argument("--relion-floor", action="store_true", help="a scaled gate is at least RELION's gate")
+    parser.add_argument("--cross-gate", choices=("seen", "window"), help="Wiener gate from the halves' cross power")
     options = parser.parse_args(sys.argv[1:split])
     switch = None
     if options.switch_gate:
         iteration, _, gate = options.switch_gate.partition(":")
         switch = (int(iteration), gate)
-    batches = install(options.trace_dir, options.radius_rule, options.incr_size, switch, options.relion_floor)
+    batches = install(
+        options.trace_dir, options.radius_rule, options.incr_size, switch, options.relion_floor, options.cross_gate
+    )
     trace_dir = options.trace_dir
     from relax.commands.initial_model import main as initial_model_main
 
