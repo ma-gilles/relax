@@ -187,6 +187,9 @@ class Config:
     # Hybrid schedule (opt-in): the image likelihood scores the updates before this one and the masked likelihood the
     # rest (1: masked throughout). The noise is held throughout (the masked observations use the start-up estimate).
     masked_from_update: int = 1
+    # Derived calibration (opt-in): c times the median over particles of kappa, the c I model's information about
+    # random particle-support templates over the Monte Carlo variance of their noise term (masked_volume.py).
+    masked_calibrate: bool = False
     # Keep the start-up noise estimate for the whole run (no noise update). The masked likelihood always holds it.
     hold_noise: bool = False
     # A single-volume model: q = 0 (the mean alone). Without it q must be positive.
@@ -379,7 +382,8 @@ class Config:
             raise ValueError(f"tomo_likelihood must be image or masked, got {self.tomo_likelihood}")
         if self.tomo_likelihood == "image":
             if (self.masked_mask_radius_px, self.masked_lambda, self.masked_mc_samples, self.masked_exact_mstep,
-                    self.masked_noise_scale, self.masked_from_update) != (None, 0.1, 2, False, 1.0, 1):
+                    self.masked_noise_scale, self.masked_from_update, self.masked_calibrate) != (
+                None, 0.1, 2, False, 1.0, 1, False):
                 raise ValueError("The masked likelihood's options need tomo_likelihood masked")
             return
         if self.masked_mask_radius_px is None or not self.masked_mask_radius_px > 0:

@@ -358,6 +358,11 @@ def add_args(parser):
         help="Masked likelihood: score the updates before this one with the image likelihood (hybrid; 1: masked throughout)",
     )
     parser.add_argument(
+        "--masked-calibrate", action="store_true",
+        help="Masked likelihood: scale its noise variance by the derived calibration factor (median kappa, see "
+        "relax/ppca_initial_model/masked_volume.py)",
+    )
+    parser.add_argument(
         "--masked-exact-mstep", action="store_true",
         help="Masked likelihood: the M-step residual with the masked prediction (the E-step keeps the unmasked Gram)",
     )  # fmt: skip
@@ -817,6 +822,7 @@ def main(args=None):
         masked_exact_mstep=args.masked_exact_mstep,
         masked_noise_scale=args.masked_noise_scale,
         masked_from_update=args.masked_from_update,
+        masked_calibrate=args.masked_calibrate,
         hold_noise=args.hold_noise,
         single_volume=args.single_volume,
         final_poses=args.final_poses,

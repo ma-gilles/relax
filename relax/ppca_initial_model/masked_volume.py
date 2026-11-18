@@ -103,7 +103,7 @@ def dof_ratio(s, weights) -> jax.Array:
 
 
 @functools.partial(jax.jit, static_argnames=("image_shape", "volume_shape", "n_mc"))
-def _particle_operands(half, ctf, frames, nv, mask, ball, weights, key, lam_rel, parseval, noise_scale, *,
+def _particle_operands(half, ctf, frames, nv, mask, ball, weights, key, lam_rel, parseval, noise_scale, fields, *,
                        image_shape, volume_shape, n_mc):
     """One particle's ``(data, filt2, y_norm, c, lam)`` on the half ball ``ball`` from its tilt half spectra
     ``half`` ``(K, n_half)``, CTF rows ``ctf`` (zero rows for padding tilts), frames ``(K, 3, 3)`` and noise
@@ -129,29 +129,45 @@ def _particle_operands(half, ctf, frames, nv, mask, ball, weights, key, lam_rel,
         return jnp.real(ftu.get_idft3(full.reshape(volume_shape)))
 
     V = measure(half) * mask
+    # Calibration templates (for the derived noise scale): ``fields`` (real maps) through the predicted-mean map
+    # f = F^-1[filt x^].
+    filt_full = ftu.half_volume_to_full_volume(jnp.where(inside, D * whiten, 0.0).astype(jnp.complex64), volume_shape)
+    templates = jnp.real(ftu.get_idft3(filt_full.reshape(volume_shape)[None] * ftu.get_dft3(fields.astype(jnp.complex64))))
     variance = 0.0
+    projections = []
     for _ in range(n_mc):
         key, sub = jax.random.split(key)
         white = jax.random.normal(sub, (half.shape[0],) + tuple(image_shape), jnp.float32)
         noise = ftu.get_dft2_real(white).reshape(half.shape[0], -1) * jnp.sqrt(nv / (image_shape[0] * image_shape[1]))
         Ve = measure(noise)
         variance = variance + jnp.sum(mask * Ve**2) / jnp.sum(mask)
+        projections.append(jnp.sum(templates * (mask * Ve)[None], axis=(1, 2, 3)))
     s_ball = D[ball] / (D[ball] + lam)
-    c = variance / n_mc * dof_ratio(s_ball, weights) * noise_scale
+    c0 = variance / n_mc * dof_ratio(s_ball, weights)
+    # kappa: the actual variance of a template's noise term <M V_noise, f> / c0 over the c I model's value
+    # ||f||^2 / c0: 1 for a calibrated score, > 1 when the noise at the templates' scale exceeds c0 I, i.e. the masked
+    # scores are overconfident by that factor.
+    kappa = (jnp.mean(jnp.stack(projections) ** 2) / c0**2) / (jnp.mean(jnp.sum(templates**2, axis=(1, 2, 3))) / c0)
+    c = c0 * noise_scale
     A = ftu.full_volume_to_half_volume(ftu.get_dft3((V / c).astype(jnp.complex64)), volume_shape).reshape(-1)
     filt = D[ball] * whiten[ball]
     data = (filt * A[ball] / parseval).astype(jnp.complex64)
     filt2 = (filt * filt / (c * parseval)).astype(jnp.float32)
-    return data, filt2, jnp.sum(V * V) / c, c, lam
+    return data, filt2, jnp.sum(V * V) / c, c, lam, kappa
 
 
 def prepare_volume_observations(particles, noise, *, mask_radius_px: float, lam_rel: float = 0.1, n_mc: int = 2,
-                                seed: int = 0, noise_scale: float = 1.0) -> VolumeObservations:
+                                seed: int = 0, noise_scale: float = 1.0, calibrate: bool = False,
+                                calibration_map: np.ndarray | None = None) -> VolumeObservations:
     """:class:`VolumeObservations` of every particle of ``particles`` (a ``TiltParticles``) under the noise rows
     ``noise`` ``(G, S)`` (one per noise group; held for the whole run). The Monte Carlo draws of particle ``p`` use
     ``PRNGKey(seed * 100003 + p)``, so the operands are a function of the particles, the noise and these options.
     ``noise_scale`` multiplies ``c`` (a temperature for the c I approximation's measured 1.3-1.5x overconfidence;
-    1.0: none)."""
+    1.0: none). ``calibrate`` (opt-in) derives the scale from the noise model instead: per particle, ``kappa`` is the
+    Monte Carlo variance of a template's noise term over the c I model's value (1 when calibrated, > 1 when the
+    masked scores are overconfident), for templates that are the differences between ``calibration_map`` (a real map
+    of the run's model, e.g. the start-up mean) and its 7 axis flips (what a pose score difference sees); the run's c is multiplied by the median ``kappa`` (times ``noise_scale``).
+    Without ``calibration_map`` the templates are white fields on a sphere of the mask radius minus 4 px."""
     image_shape = tuple(int(n) for n in particles.image_shape)
     volume_shape = tuple(int(n) for n in particles.volume_shape)
     n = volume_shape[0]
@@ -160,6 +176,14 @@ def prepare_volume_observations(particles, noise, *, mask_radius_px: float, lam_
     ball, r2 = half_ball(volume_shape, n // 2 - 1)
     weights = jnp.asarray(half_ball_weights(ball, volume_shape))
     mask = jnp.asarray(sphere(n, mask_radius_px))
+    if calibration_map is None:
+        base = np.random.default_rng(seed).standard_normal((n,) * 3).astype(np.float32) * sphere(n, max(mask_radius_px - 4, 1))
+    else:
+        base = np.asarray(calibration_map, np.float32)
+    # Pose scores compare a map with its other orientations: the templates are the map's differences to its 7 axis
+    # flips (what a pose score difference sees), not the map itself.
+    flips = [base[:: 1 - 2 * a, :: 1 - 2 * b, :: 1 - 2 * c] for a in (0, 1) for b in (0, 1) for c in (0, 1)]
+    fields = jnp.asarray(np.stack([base - f for f in flips[1:]]))
     parseval = parseval_factor(n)
     noise = np.asarray(noise, np.float32).reshape(-1, np.asarray(noise).shape[-1])
     nv_rows = [
@@ -174,7 +198,7 @@ def prepare_volume_observations(particles, noise, *, mask_radius_px: float, lam_
     data = np.zeros((count, ball.size), np.complex64)
     filt2 = np.zeros((count, ball.size), np.float32)
     y_norm = np.zeros(count, np.float32)
-    cs, lams, visible = np.zeros(count), np.zeros(count), np.zeros(count, np.int64)
+    cs, lams, visible, kappas = np.zeros(count), np.zeros(count), np.zeros(count, np.int64), np.zeros(count)
     for p in range(count):
         images, _ = particles.particle_images([p])
         _, half, ctf = particles.read(images)
@@ -187,9 +211,9 @@ def prepare_volume_observations(particles, noise, *, mask_radius_px: float, lam_
         out = _particle_operands(
             half, ctf, jnp.asarray(frames), nv_rows[int(groups[p]) if len(nv_rows) > 1 else 0], mask,
             jnp.asarray(ball), weights, jax.random.PRNGKey(seed * 100003 + p), jnp.float32(lam_rel),
-            jnp.float32(parseval), jnp.float32(noise_scale), image_shape=image_shape, volume_shape=volume_shape, n_mc=int(n_mc),
+            jnp.float32(parseval), jnp.float32(noise_scale), fields, image_shape=image_shape, volume_shape=volume_shape, n_mc=int(n_mc),
         )  # fmt: skip
-        data[p], filt2[p], y_norm[p], cs[p], lams[p] = (np.asarray(x) for x in out)
+        data[p], filt2[p], y_norm[p], cs[p], lams[p], kappas[p] = (np.asarray(x) for x in out)
         visible[p] = k
     bad = np.flatnonzero(
         ~(np.isfinite(cs) & (cs > 0) & np.isfinite(y_norm) & np.isfinite(lams) & np.all(np.isfinite(data), axis=1))
@@ -200,11 +224,17 @@ def prepare_volume_observations(particles, noise, *, mask_radius_px: float, lam_
             f"{bad[:20].tolist()}): noise variance c {cs[bad[:5]].tolist()}, ||MV||^2/c {y_norm[bad[:5]].tolist()}, "
             f"lam {lams[bad[:5]].tolist()}. Check those particles' tilt images and CTFs."
         )
+    calibration = float(np.median(kappas)) if calibrate else 1.0
+    if calibrate:  # c times the median kappa: the operands carrying 1 / c scale down by it
+        data, filt2, y_norm, cs = data / calibration, filt2 / calibration, y_norm / calibration, cs * calibration
     record = {
         "likelihood": "masked volume, B-diag (exact masked inner, unmasked Fourier Gram)",
         "mask_radius_px": float(mask_radius_px),
         "lam_rel": float(lam_rel),
         "noise_scale": float(noise_scale),
+        "calibrate": bool(calibrate),
+        "calibration_factor": calibration,
+        "kappa_quantiles": np.quantile(kappas, [0.05, 0.5, 0.95]).tolist(),
         "n_mc": int(n_mc),
         "seed": int(seed),
         "ball_radius": n // 2 - 1,

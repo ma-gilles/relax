@@ -506,6 +506,18 @@ def _update_rule_measured(config, diagnostics):
     )
 
 
+def _start_up_mean(state, output):
+    """The start-up model's mean column (the run's checkpoint 0 on resume), for the masked likelihood's derived
+    calibration: the same templates whether the run starts or resumes."""
+    if state.iteration == 0:
+        return np.asarray(state.theta)[:, 0]
+    first = Path(output) / "checkpoint_0000.npz"
+    if not first.exists():
+        raise ValueError("The masked likelihood's calibration needs the run's checkpoint_0000.npz on resume")
+    with np.load(first) as z:
+        return np.asarray(z["theta"])[:, 0]
+
+
 def _pose_input_grid(config, iteration):
     """``(rotations, rotation_log_prior, translations, shift_step)`` about the given poses at ``iteration``: the one
     pose (identity, zero shift) for pose_mode "fixed"; for "local" the stage's HEALPix rotations within 3 sigma of the
@@ -1082,6 +1094,17 @@ def run(
             n_mc=config.masked_mc_samples,
             seed=config.seed,
             noise_scale=config.masked_noise_scale,
+            calibrate=config.masked_calibrate,
+            # The templates of the derived calibration: the start-up model's mean (a map of the particle's size and
+            # spectrum, no truth involved).
+            calibration_map=None if not config.masked_calibrate else np.asarray(
+                ftu.get_idft3_real(
+                    jnp.asarray(_start_up_mean(state, output)).reshape(
+                        dataset.volume_shape[0], dataset.volume_shape[1], dataset.volume_shape[2] // 2 + 1
+                    ),
+                    dataset.volume_shape,
+                )
+            ),
         )
         dataset = dataclasses.replace(dataset, volume_observations=observations)
         record = {**observations.record, "seconds": round(time.monotonic() - clock, 2)}

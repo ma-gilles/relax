@@ -636,3 +636,19 @@ def test_hybrid_schedule_switches_likelihood_at_the_given_update(tmp_path):
     assert len({json.dumps(row["noise"]) for row in rows}) == 1
     with pytest.raises(ValueError, match="masked_from_update"):
         Config(iterations=3, tomo_likelihood="masked", masked_mask_radius_px=6.0, masked_from_update=4)
+
+
+def test_derived_calibration_scales_c_by_the_median_kappa():
+    """--masked-calibrate: c times the recorded median kappa (data, filt2, ||MV||^2/c divided by it); kappa is finite
+    and positive for every particle."""
+    n = 10
+    particles, _, _, _, _ = _noiseless_problem(n, n_particles=3, seed=4)
+    noise = np.ones((1, n // 2 + 1), np.float32)
+    base = prepare_volume_observations(particles, noise, mask_radius_px=3.5, n_mc=2)
+    cal = prepare_volume_observations(particles, noise, mask_radius_px=3.5, n_mc=2, calibrate=True)
+    k = cal.record["calibration_factor"]
+    assert np.isfinite(k) and k > 0 and all(np.isfinite(cal.record["kappa_quantiles"]))
+    assert k == pytest.approx(cal.record["kappa_quantiles"][1])
+    assert_matches(cal.filt2 * k, base.filt2, rtol=1e-5)
+    assert_matches(cal.data * k, base.data, rtol=1e-5)
+    assert_matches(cal.y_norm * k, base.y_norm, rtol=1e-5)
