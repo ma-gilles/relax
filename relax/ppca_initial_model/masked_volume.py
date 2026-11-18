@@ -103,8 +103,8 @@ def dof_ratio(s, weights) -> jax.Array:
 
 
 @functools.partial(jax.jit, static_argnames=("image_shape", "volume_shape", "n_mc"))
-def _particle_operands(half, ctf, frames, nv, mask, ball, weights, key, lam_rel, parseval, *, image_shape,
-                       volume_shape, n_mc):
+def _particle_operands(half, ctf, frames, nv, mask, ball, weights, key, lam_rel, parseval, noise_scale, *,
+                       image_shape, volume_shape, n_mc):
     """One particle's ``(data, filt2, y_norm, c, lam)`` on the half ball ``ball`` from its tilt half spectra
     ``half`` ``(K, n_half)``, CTF rows ``ctf`` (zero rows for padding tilts), frames ``(K, 3, 3)`` and noise
     ``nv`` ``(n_half,)``."""
@@ -137,7 +137,7 @@ def _particle_operands(half, ctf, frames, nv, mask, ball, weights, key, lam_rel,
         Ve = measure(noise)
         variance = variance + jnp.sum(mask * Ve**2) / jnp.sum(mask)
     s_ball = D[ball] / (D[ball] + lam)
-    c = variance / n_mc * dof_ratio(s_ball, weights)
+    c = variance / n_mc * dof_ratio(s_ball, weights) * noise_scale
     A = ftu.full_volume_to_half_volume(ftu.get_dft3((V / c).astype(jnp.complex64)), volume_shape).reshape(-1)
     filt = D[ball] * whiten[ball]
     data = (filt * A[ball] / parseval).astype(jnp.complex64)
@@ -146,10 +146,12 @@ def _particle_operands(half, ctf, frames, nv, mask, ball, weights, key, lam_rel,
 
 
 def prepare_volume_observations(particles, noise, *, mask_radius_px: float, lam_rel: float = 0.1, n_mc: int = 2,
-                                seed: int = 0) -> VolumeObservations:
+                                seed: int = 0, noise_scale: float = 1.0) -> VolumeObservations:
     """:class:`VolumeObservations` of every particle of ``particles`` (a ``TiltParticles``) under the noise rows
     ``noise`` ``(G, S)`` (one per noise group; held for the whole run). The Monte Carlo draws of particle ``p`` use
-    ``PRNGKey(seed * 100003 + p)``, so the operands are a function of the particles, the noise and these options."""
+    ``PRNGKey(seed * 100003 + p)``, so the operands are a function of the particles, the noise and these options.
+    ``noise_scale`` multiplies ``c`` (a temperature for the c I approximation's measured 1.3-1.5x overconfidence;
+    1.0: none)."""
     image_shape = tuple(int(n) for n in particles.image_shape)
     volume_shape = tuple(int(n) for n in particles.volume_shape)
     n = volume_shape[0]
@@ -185,7 +187,7 @@ def prepare_volume_observations(particles, noise, *, mask_radius_px: float, lam_
         out = _particle_operands(
             half, ctf, jnp.asarray(frames), nv_rows[int(groups[p]) if len(nv_rows) > 1 else 0], mask,
             jnp.asarray(ball), weights, jax.random.PRNGKey(seed * 100003 + p), jnp.float32(lam_rel),
-            jnp.float32(parseval), image_shape=image_shape, volume_shape=volume_shape, n_mc=int(n_mc),
+            jnp.float32(parseval), jnp.float32(noise_scale), image_shape=image_shape, volume_shape=volume_shape, n_mc=int(n_mc),
         )  # fmt: skip
         data[p], filt2[p], y_norm[p], cs[p], lams[p] = (np.asarray(x) for x in out)
         visible[p] = k
@@ -202,6 +204,7 @@ def prepare_volume_observations(particles, noise, *, mask_radius_px: float, lam_
         "likelihood": "masked volume, B-diag (exact masked inner, unmasked Fourier Gram)",
         "mask_radius_px": float(mask_radius_px),
         "lam_rel": float(lam_rel),
+        "noise_scale": float(noise_scale),
         "n_mc": int(n_mc),
         "seed": int(seed),
         "ball_radius": n // 2 - 1,

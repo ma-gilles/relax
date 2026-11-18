@@ -29,7 +29,7 @@ def canonical(value):
 # holds, so a run may resume under a different value (the controller logs the change).
 RUNTIME_CONFIG_FIELDS = (
     "gemm_precision", "preread_images", "pass2_mass_floor", "tilt_coarse_pass", "tilt_coarse_order", "tile_headroom",
-    "final_poses",
+    "final_poses", "center_latents_at_output",
 )  # fmt: skip
 
 
@@ -77,6 +77,7 @@ _ADDED_CONFIG_DEFAULTS = {
     "masked_lambda": 0.1,
     "masked_mc_samples": 2,
     "masked_exact_mstep": False,
+    "masked_noise_scale": 1.0,
     "hold_noise": False,
     "single_volume": False,
     "init_poses": None,

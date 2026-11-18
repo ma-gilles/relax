@@ -350,11 +350,19 @@ def add_args(parser):
     )  # fmt: skip
     parser.add_argument("--masked-mc-samples", type=int, default=2, help="Masked likelihood: Monte Carlo noise draws")
     parser.add_argument(
+        "--masked-noise-scale", type=float, default=1.0,
+        help="Masked likelihood: multiply its noise variance c by this factor (a temperature; default 1)",
+    )
+    parser.add_argument(
         "--masked-exact-mstep", action="store_true",
         help="Masked likelihood: the M-step residual with the masked prediction (the E-step keeps the unmasked Gram)",
     )  # fmt: skip
     parser.add_argument("--hold-noise", action="store_true", help="Keep the start-up noise estimate (no noise update)")
     parser.add_argument("--single-volume", action="store_true", help="A single-volume model: q = 0 (give --q 0)")
+    parser.add_argument(
+        "--center-latents-output", action="store_true",
+        help="At output: write the population average mu + W zbar as the mean (model_centred.npz) and centred latents",
+    )
     parser.add_argument(
         "--final-poses", action="store_true", help="Write each particle's top pose of the final pass to embeddings.npz"
     )
@@ -803,9 +811,11 @@ def main(args=None):
         masked_lambda=args.masked_lambda,
         masked_mc_samples=args.masked_mc_samples,
         masked_exact_mstep=args.masked_exact_mstep,
+        masked_noise_scale=args.masked_noise_scale,
         hold_noise=args.hold_noise,
         single_volume=args.single_volume,
         final_poses=args.final_poses,
+        center_latents_at_output=args.center_latents_output,
         init_poses=args.init_poses,
         pose_mode=args.pose_mode,
         local_sigma_deg=args.local_sigma,

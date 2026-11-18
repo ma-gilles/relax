@@ -566,3 +566,46 @@ def test_exact_masked_mstep_residual_is_the_masked_gradient():
     # The B-diag residual differs (the mask matters here).
     bdiag = observations.data[0][window] * phase - observations.filt2[0][window] * x[indices]
     assert np.abs(residual[indices][inner] - bdiag[inner]).max() > 1e-2 * np.abs(expected[inner]).max()
+
+
+@pytest.mark.parametrize("likelihood", [{}, {"tomo_likelihood": "masked", "masked_mask_radius_px": 6.0}])
+def test_centred_output_mean_is_the_population_average(tmp_path, likelihood):
+    """--center-latents-output: model_centred.npz's mean is mu + W zbar of the run's final model and latents, the
+    exported latents are centred, zbar is recorded, and the checkpoint (the EM state) keeps mu."""
+    from relax.ppca_initial_model import checkpoint, iteration_loop
+    from relax.ppca_initial_model.config import Config
+    from relax.ppca_initial_model.iteration_loop import run
+
+    iteration_loop._rotation_grid.cache_clear()
+    iteration_loop._direction_ids.cache_clear()
+    particles = _controller_particles()
+    config = Config(q=2, iterations=2, stages=((1, 3, 0),), shift_range=1, shift_step=1, image_batch_size=3,
+                    rotation_block_size=32, center_latents_at_output=True, **likelihood)  # fmt: skip
+    try:
+        state = run(particles, config, tmp_path, {"test": True}, diameter_ang=100.0)
+    finally:
+        iteration_loop._rotation_grid.cache_clear()
+        iteration_loop._direction_ids.cache_clear()
+    embeddings = np.load(tmp_path / "embeddings.npz")
+    centred = np.load(tmp_path / "model_centred.npz")
+    zbar = embeddings["zbar"]
+    np.testing.assert_allclose(embeddings["z"].mean(axis=0), 0.0, atol=1e-5 * max(1.0, np.abs(zbar).max()))
+    theta = np.asarray(state.theta)
+    raw_z = embeddings["z"] + zbar
+    population = theta[:, 0] + theta[:, 1:] @ raw_z.mean(axis=0).astype(theta.dtype)
+    assert_matches(centred["theta"][:, 0], population, rtol=1e-5)
+    assert_matches(centred["theta"][:, 1:], theta[:, 1:], rtol=1e-6)
+    saved = checkpoint.load(tmp_path / "checkpoint_0002.npz", config, {"test": True})
+    assert_matches(np.asarray(saved.theta), theta, rtol=1e-6)
+
+
+def test_masked_noise_scale_scales_c_only():
+    """--masked-noise-scale s: the per-particle operands scale as data / s and filt2 / s (c times s), nothing else."""
+    n = 10
+    particles, _, _, _, _ = _noiseless_problem(n, n_particles=2, seed=4)
+    noise = np.ones((1, n // 2 + 1), np.float32)
+    base = prepare_volume_observations(particles, noise, mask_radius_px=3.0, n_mc=1)
+    hot = prepare_volume_observations(particles, noise, mask_radius_px=3.0, n_mc=1, noise_scale=1.5)
+    assert_matches(hot.filt2 * 1.5, base.filt2, rtol=1e-5)
+    assert_matches(hot.data * 1.5, base.data, rtol=1e-5)
+    assert_matches(hot.y_norm * 1.5, base.y_norm, rtol=1e-5)

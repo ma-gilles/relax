@@ -181,12 +181,18 @@ class Config:
     # The M-step residual with the masked prediction (exact masked likelihood gradient; the E-step keeps the unmasked
     # Fourier Gram). Opt-in: per (particle, rotation) with posterior mass, full-box DFTs.
     masked_exact_mstep: bool = False
+    # The masked likelihood's noise variance c times this factor (a temperature; its c I approximation is measured
+    # 1.3-1.5x overconfident). 1.0: none.
+    masked_noise_scale: float = 1.0
     # Keep the start-up noise estimate for the whole run (no noise update). The masked likelihood always holds it.
     hold_noise: bool = False
     # A single-volume model: q = 0 (the mean alone). Without it q must be positive.
     single_volume: bool = False
     # Write each particle's top pose of the final embedding pass into embeddings.npz (a runtime setting).
     final_poses: bool = False
+    # At output only: write the population average mu + W zbar as the mean (model_centred.npz), the latents centred
+    # (z - zbar) and zbar in embeddings.npz. The EM state and checkpoints are unchanged (a runtime setting).
+    center_latents_at_output: bool = False
     # Given particle poses (relax/ppca_initial_model/pose_input.py: an .npz of rotations and 3D shifts) and how they are
     # used: pose_mode "fixed" scores each particle at its given pose only (fixed-pose PPCA); "local" searches the
     # stage's HEALPix rotations within 3 local_sigma_deg of it (Gaussian prior of that sigma) and the stage's shift
@@ -369,13 +375,14 @@ class Config:
         if self.tomo_likelihood not in ("image", "masked"):
             raise ValueError(f"tomo_likelihood must be image or masked, got {self.tomo_likelihood}")
         if self.tomo_likelihood == "image":
-            if (self.masked_mask_radius_px, self.masked_lambda, self.masked_mc_samples, self.masked_exact_mstep) != (
-                None, 0.1, 2, False
-            ):
+            if (self.masked_mask_radius_px, self.masked_lambda, self.masked_mc_samples, self.masked_exact_mstep,
+                    self.masked_noise_scale) != (None, 0.1, 2, False, 1.0):
                 raise ValueError("The masked likelihood's options need tomo_likelihood masked")
             return
         if self.masked_mask_radius_px is None or not self.masked_mask_radius_px > 0:
             raise ValueError("The masked likelihood needs a positive masked_mask_radius_px")
+        if not (np.isfinite(self.masked_noise_scale) and self.masked_noise_scale > 0):
+            raise ValueError("The masked likelihood's noise scale must be positive")
         if not (np.isfinite(self.masked_lambda) and self.masked_lambda > 0) or self.masked_mc_samples < 1:
             raise ValueError("The masked likelihood needs masked_lambda > 0 and at least one Monte Carlo sample")
         if (

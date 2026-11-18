@@ -1081,6 +1081,7 @@ def run(
             lam_rel=config.masked_lambda,
             n_mc=config.masked_mc_samples,
             seed=config.seed,
+            noise_scale=config.masked_noise_scale,
         )
         dataset = dataclasses.replace(dataset, volume_observations=observations)
         record = {**observations.record, "seconds": round(time.monotonic() - clock, 2)}
@@ -1461,10 +1462,22 @@ def run(
                 best_rotation_matrix=np.asarray(rotations, np.float32),
                 best_translation_px=np.asarray(translations, np.float32),
             )
+        z = np.asarray(final.embeddings)
+        if config.center_latents_at_output and z.shape[1]:
+            # Output only (the EM state and checkpoints are unchanged): the population average mu + W zbar becomes the
+            # exported mean and the latents are centred, z - zbar, so mu is the average map (the posterior latents
+            # are not kept centred by the updates).
+            zbar = z.mean(axis=0)
+            theta = np.asarray(state.theta)
+            centred = theta.copy()
+            centred[:, 0] = theta[:, 0] + theta[:, 1:] @ zbar.astype(theta.dtype)
+            np.savez(output / "model_centred.npz", theta=centred, zbar=zbar, iteration=state.iteration)
+            placement.update(zbar=zbar)
+            z = z - zbar
         np.savez(
             output / "embeddings.npz",
             particle_ids=final.original_image_ids,
-            z=np.asarray(final.embeddings),
+            z=z,
             log_evidence=final.log_evidence,
             best_pose_log_score=final.best_pose_log_score,
             max_posterior=final.max_posterior,
