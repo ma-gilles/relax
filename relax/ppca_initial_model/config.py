@@ -184,6 +184,9 @@ class Config:
     # The masked likelihood's noise variance c times this factor (a temperature; its c I approximation is measured
     # 1.3-1.5x overconfident). 1.0: none.
     masked_noise_scale: float = 1.0
+    # Hybrid schedule (opt-in): the image likelihood scores the updates before this one and the masked likelihood the
+    # rest (1: masked throughout). The noise is held throughout (the masked observations use the start-up estimate).
+    masked_from_update: int = 1
     # Keep the start-up noise estimate for the whole run (no noise update). The masked likelihood always holds it.
     hold_noise: bool = False
     # A single-volume model: q = 0 (the mean alone). Without it q must be positive.
@@ -376,11 +379,15 @@ class Config:
             raise ValueError(f"tomo_likelihood must be image or masked, got {self.tomo_likelihood}")
         if self.tomo_likelihood == "image":
             if (self.masked_mask_radius_px, self.masked_lambda, self.masked_mc_samples, self.masked_exact_mstep,
-                    self.masked_noise_scale) != (None, 0.1, 2, False, 1.0):
+                    self.masked_noise_scale, self.masked_from_update) != (None, 0.1, 2, False, 1.0, 1):
                 raise ValueError("The masked likelihood's options need tomo_likelihood masked")
             return
         if self.masked_mask_radius_px is None or not self.masked_mask_radius_px > 0:
             raise ValueError("The masked likelihood needs a positive masked_mask_radius_px")
+        if isinstance(self.masked_from_update, bool) or not isinstance(self.masked_from_update, (int, np.integer)) or not (
+            1 <= self.masked_from_update <= self.iterations
+        ):
+            raise ValueError("masked_from_update must be an update of the run (1 = masked throughout)")
         if not (np.isfinite(self.masked_noise_scale) and self.masked_noise_scale > 0):
             raise ValueError("The masked likelihood's noise scale must be positive")
         if not (np.isfinite(self.masked_lambda) and self.masked_lambda > 0) or self.masked_mc_samples < 1:
@@ -411,6 +418,10 @@ class Config:
             raise ValueError("local_sigma_deg must be positive")
         if self.oversampling or self.band_length_ang is not None or self.tilt_coarse_pass or self.fixed_core is not None:
             raise ValueError("Given poses run without oversampling, the filament band, the tilt coarse pass or a fixed core")
+
+    def masked_at(self, iteration):
+        """Whether update ``iteration`` scores with the masked likelihood (the hybrid schedule's switch)."""
+        return self.tomo_likelihood == "masked" and iteration >= self.masked_from_update
 
     def holds_noise(self):
         """Whether the run keeps the start-up noise (hold_noise, and always under the masked likelihood)."""

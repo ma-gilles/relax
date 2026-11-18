@@ -609,3 +609,30 @@ def test_masked_noise_scale_scales_c_only():
     assert_matches(hot.filt2 * 1.5, base.filt2, rtol=1e-5)
     assert_matches(hot.data * 1.5, base.data, rtol=1e-5)
     assert_matches(hot.y_norm * 1.5, base.y_norm, rtol=1e-5)
+
+
+def test_hybrid_schedule_switches_likelihood_at_the_given_update(tmp_path):
+    """--masked-from-update N: the image likelihood scores the updates before N and the masked one from N on (recorded
+    per update), with the noise held throughout."""
+    import json
+
+    from relax.ppca_initial_model import iteration_loop
+    from relax.ppca_initial_model.config import Config
+    from relax.ppca_initial_model.iteration_loop import run
+
+    iteration_loop._rotation_grid.cache_clear()
+    iteration_loop._direction_ids.cache_clear()
+    particles = _controller_particles()
+    config = Config(q=2, iterations=3, stages=((1, 3, 0),), shift_range=1, shift_step=1, image_batch_size=3,
+                    rotation_block_size=32, tomo_likelihood="masked", masked_mask_radius_px=6.0, masked_from_update=3)  # fmt: skip
+    try:
+        run(particles, config, tmp_path, {"test": True}, diameter_ang=100.0)
+    finally:
+        iteration_loop._rotation_grid.cache_clear()
+        iteration_loop._direction_ids.cache_clear()
+    rows = [json.loads(line) for line in (tmp_path / "iterations.jsonl").read_text().splitlines()]
+    assert [row["likelihood"] for row in rows] == ["image", "image", "masked"]
+    assert all(row["noise_held"] for row in rows)
+    assert len({json.dumps(row["noise"]) for row in rows}) == 1
+    with pytest.raises(ValueError, match="masked_from_update"):
+        Config(iterations=3, tomo_likelihood="masked", masked_mask_radius_px=6.0, masked_from_update=4)

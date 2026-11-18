@@ -715,7 +715,7 @@ def _expectation(
                 # The masked likelihood's stream (one 3D frame per particle, masked_volume.py) takes the same grids.
                 (
                     functools.partial(prepare_volume_stream, exact_masked_mstep=config.masked_exact_mstep)
-                    if config.tomo_likelihood == "masked"
+                    if config.masked_at(iteration)
                     else prepare_full_row_stream
                 )(
                     dataset,
@@ -1380,6 +1380,8 @@ def run(
             diagnostics["noise_inflation"] = noise_inflation
         if config.holds_noise():
             diagnostics["noise_held"] = True
+        if config.tomo_likelihood == "masked":
+            diagnostics["likelihood"] = "masked" if config.masked_at(iteration) else "image"
         if iteration == state_start + 1 or config.stage(iteration) != config.stage(iteration - 1):
             logger.info(
                 "update %d, radius %d, HEALPix order %d: %s",

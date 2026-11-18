@@ -354,6 +354,10 @@ def add_args(parser):
         help="Masked likelihood: multiply its noise variance c by this factor (a temperature; default 1)",
     )
     parser.add_argument(
+        "--masked-from-update", type=int, default=1,
+        help="Masked likelihood: score the updates before this one with the image likelihood (hybrid; 1: masked throughout)",
+    )
+    parser.add_argument(
         "--masked-exact-mstep", action="store_true",
         help="Masked likelihood: the M-step residual with the masked prediction (the E-step keeps the unmasked Gram)",
     )  # fmt: skip
@@ -812,6 +816,7 @@ def main(args=None):
         masked_mc_samples=args.masked_mc_samples,
         masked_exact_mstep=args.masked_exact_mstep,
         masked_noise_scale=args.masked_noise_scale,
+        masked_from_update=args.masked_from_update,
         hold_noise=args.hold_noise,
         single_volume=args.single_volume,
         final_poses=args.final_poses,

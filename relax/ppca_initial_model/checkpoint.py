@@ -78,6 +78,7 @@ _ADDED_CONFIG_DEFAULTS = {
     "masked_mc_samples": 2,
     "masked_exact_mstep": False,
     "masked_noise_scale": 1.0,
+    "masked_from_update": 1,
     "hold_noise": False,
     "single_volume": False,
     "init_poses": None,
