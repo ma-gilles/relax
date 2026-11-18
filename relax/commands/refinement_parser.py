@@ -212,8 +212,9 @@ def parse_refinement_args(argv=None):
         "prior",
     )
     parser.add_argument(
-        "--bnb_fft_prior", choices=("flat", "model"), default="flat",
-        help="bnb: the offset prior of an fft level 0 over the box: flat (default) or the model's Gaussian",
+        "--bnb_fft_prior", choices=("flat", "model"), default="model",
+        help="bnb: the offset prior of an fft level 0 over the box: the model's Gaussian at the absolute offsets "
+        "(model, default) or flat, which lets noise peaks win at low SNR",
     )
     parser.add_argument(
         "--bnb_window_quantile", type=float, default=0.5,

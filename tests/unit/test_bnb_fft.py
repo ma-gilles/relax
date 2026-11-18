@@ -136,7 +136,7 @@ def test_lattice_prior_is_flat_or_the_model_at_the_absolute_offset():
 def test_fft_level0_options():
     """The options take lattice or fft and flat or model; an fft level 0 refuses the half band."""
 
-    assert BnBSearchOptions(level0="fft").fft_prior == "flat"
+    assert BnBSearchOptions(level0="fft").fft_prior == "model"
     with pytest.raises(ValueError):
         BnBSearchOptions(level0="fft", half_band=True)
     with pytest.raises(ValueError):

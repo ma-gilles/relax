@@ -101,9 +101,10 @@ class BnBSearchOptions:
     ``recentre_gain`` more of the particle's offset posterior than the window at its previous offset.
 
     ``level0`` ``"fft"`` scores level 0 over every circular shift of the box by FFT, on a whole-pixel lattice around
-    each particle's rounded previous offset (where its image is shifted and masked, as RELION does), with a flat or the
-    model's Gaussian offset prior (``fft_prior``); the search radius then bounds the disc reported around each image's
-    frame, the finer levels and the window (``relax.scoring.bnb_fft``).
+    each particle's rounded previous offset (where its image is shifted and masked, as RELION does), with the model's
+    Gaussian offset prior at the absolute offsets, untruncated, or a flat one (``fft_prior``); the search radius then
+    bounds the disc reported around each image's frame, the finer levels and the window (``relax.scoring.bnb_fft``).
+    A flat prior lets noise peaks anywhere in the box win at low SNR.
     """
 
     levels: int = 1
@@ -125,9 +126,9 @@ class BnBSearchOptions:
     window_steps: float = 6.0
     recentre_gain: float = 0.1
     # Level 0 over the lattice disc ("lattice") or by FFT over every circular shift of the box ("fft"), whose offset
-    # prior over the box is flat or the model's Gaussian (fft_prior).
+    # prior over the box is the model's Gaussian or flat (fft_prior).
     level0: Literal["lattice", "fft"] = "lattice"
-    fft_prior: Literal["flat", "model"] = "flat"
+    fft_prior: Literal["flat", "model"] = "model"
 
     def __post_init__(self):
         if int(self.levels) < 0:
