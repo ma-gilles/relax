@@ -4,8 +4,8 @@ Record of the branch-and-bound pose search on branch `dev/global_search` (from `
 offset study's `--offset_prior_units consistent` commit). It replaces pass 1 of the global K=1 searches with a
 search over every translation the offset prior allows, coarse to fine over HEALPix orders, after the
 branch-and-bound of cryoSPARC (Punjani et al. 2017, Nature Methods 14:290, Supplementary Note 2). The default
-reproduces RELION 5.0.1; the option is opt-in. Branch `dev/global_search_v2` adds a level 0 over every shift of the
-box by FFT (`--bnb_level0 fft`, last section).
+reproduces RELION 5.0.1; the option is opt-in. `--bnb_level0 fft` replaces level 0 with a search over every shift
+of the box by FFT (last section).
 
 ## Why
 
@@ -187,7 +187,7 @@ more than 3 px off where RELION leaves 22-23% (65% at 30 A), and at noise 1 beat
 (0.732-0.740 against 0.702) and leaves 28% of the particles more than 3 px off against RELION's 47%. On EMPIAR-10076
 and at high SNR it equals RELION.
 
-## FFT level 0 (`--bnb_level0 fft`, branch `dev/global_search_v2`)
+## FFT level 0 (`--bnb_level0 fft`)
 
 Level 0 above searches the lattice within 4 widths of the offset prior (`sigma` 10 A at the start). On particles
 picked much farther off centre than that, does the prior keep the search from opening?
