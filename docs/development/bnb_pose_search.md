@@ -4,7 +4,8 @@ Record of the branch-and-bound pose search on branch `dev/global_search` (from `
 offset study's `--offset_prior_units consistent` commit). It replaces pass 1 of the global K=1 searches with a
 search over every translation the offset prior allows, coarse to fine over HEALPix orders, after the
 branch-and-bound of cryoSPARC (Punjani et al. 2017, Nature Methods 14:290, Supplementary Note 2). The default
-reproduces RELION 5.0.1; the option is opt-in.
+reproduces RELION 5.0.1; the option is opt-in. Branch `dev/global_search_v2` adds a level 0 over every shift of the
+box by FFT (`--bnb_level0 fft`, last section).
 
 ## Why
 
@@ -185,6 +186,129 @@ set (30 A offsets: 0.864 against 0.752, and 0.862 with the window set by hand), 
 more than 3 px off where RELION leaves 22-23% (65% at 30 A), and at noise 1 beats RELION started from the true poses
 (0.732-0.740 against 0.702) and leaves 28% of the particles more than 3 px off against RELION's 47%. On EMPIAR-10076
 and at high SNR it equals RELION.
+
+## FFT level 0 (`--bnb_level0 fft`, branch `dev/global_search_v2`)
+
+Level 0 above searches the lattice within 4 widths of the offset prior (`sigma` 10 A at the start). On particles
+picked much farther off centre than that, does the prior keep the search from opening?
+
+### The prior opens; the mask does not move
+
+8c9c with 60 A offsets per axis (`off60_8c9c_b256_n50k`: true radius median 71 A, 90% 129 A, 25% beyond 100 A), at
+noise 0.2 (as the 15 A set) and 0.5, with the lattice level 0 from `sigma` 10 A (the default) and 60 A. A particle is
+found when its offset error is below 3 px (after the frame shift) and its direction error below 10 degrees.
+
+| Start `sigma` | Noise | Found after iteration 1 | Found at the end | Map FSC AUC | > 3 px | Wall (s) | GPU |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | --- |
+| 10 A | 0.2 | 20% | 82% | 0.853 | 18% | 4398 | A100-SXM4-80GB |
+| 60 A | 0.2 | 64% | 82% | 0.854 | 18% | 5126 | A100-SXM4-80GB |
+| 10 A | 0.5 | 11% | 73% | 0.750 | 27% | 4155 | A100-SXM4-80GB |
+| 60 A | 0.5 | 30% | 73% | 0.751 | 27% | 5120 | A100-SXM4-80GB |
+
+The prior does cut the far particles in iterations 1-2, but RELION's `sigma` update opens it (10 -> 22 -> 44 -> 49 A)
+by iteration 3, and starting at 60 A ends at the same place. What stops the rest is the mask: the lattice level 0
+scores the images unshifted, so the 240 A mask stays at the box centre and cuts a particle more than about 100 A out,
+while RELION (and BnB's finer levels and window) shift each image by its rounded previous offset before masking. At
+the end (noise 0.2) the share found is 99% within 80 A, 95% at 80-100 A, 64% at 100-120 A, 8% at 120-160 A and none
+beyond, whatever the start.
+
+### The search
+
+`relax/scoring/bnb_fft.py`, used for level 0 by `--bnb_level0 fft`; the finer levels, the window and pass 2 are
+unchanged.
+
+1. Of the score `X - A/2 - C/2`, only `X(t) = Re sum_k G(k) exp(2 pi i k.t / N)`, `G = w conj(y) p_r`, depends on the
+   shift. One inverse real FFT of `G` on an `M x M` grid (`M = N / step`) gives it at every circular shift of the box
+   on a lattice of `step` pixels: half RELION's coarse Nyquist spacing, whole pixels dividing the box, at most
+   `--bnb_max_step_px` (2 px on both boxes here). It equals the lattice product on every shift (unit test; on 8c9c
+   iteration 1 the rotation masses agree to 2e-3 and the best poses all agree).
+2. Each image is first shifted to its origin, its rounded previous offset (zero fill), and masked there, as RELION
+   does; the lattice is the circular shifts around the origin.
+3. The prior over the box is the model's Gaussian at the absolute offsets (origin plus shift), untruncated
+   (`--bnb_fft_prior model`, the default), or flat.
+4. Rotations are kept by their whole-box translation-marginal posterior as before. Each image's frame is the lattice
+   point whose window (the search radius) holds the most posterior mass; the finer levels and the window search
+   around it.
+
+The block is memory-bound: 0.585 us per (image, rotation) pair at box 256 (`M` = 128, A100-SXM4), whatever `sigma`;
+the gather and inverse FFT alone take 0.417 us, and neither the inverse DFT as two matmuls (0.637 us) nor leaner
+reductions (0.570 us) help. The lattice GEMM costs about 0.54 us per pair at 2501 translations and grows with them: on
+the 60 A set its level-0 scores take 8 s per half at `sigma` 10 A, 37 s at 22 A and 115 s at 44-50 A, the FFT's 70 s
+at every `sigma`.
+
+### Ablations on the 60 A set
+
+| Level 0 | Noise | Found after iteration 1 | Found at the end | Map FSC AUC | > 3 px | Iterations | Wall (s) |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Lattice | 0.2 | 20% | 82% | 0.853 | 18% | 17 | 4398 |
+| FFT, flat prior, mask at the box centre | 0.2 | 64% | 82% | 0.857 | 18% | 18 | 3907 |
+| FFT, flat prior | 0.2 | 64% | 95% | 0.867 | 5% | 20 | 4311 |
+| FFT (default) | 0.2 | 58% | 95% | 0.867 | 5% | 20 | 4363 |
+| Lattice | 0.5 | 11% | 73% | 0.750 | 27% | 16 | 4155 |
+| FFT, flat prior, mask at the box centre | 0.5 | 30% | 73% | 0.753 | 26% | 15 | 3290 |
+| FFT, flat prior | 0.5 | 30% | 83% | 0.770 | 17% | 15 | 3148 |
+| FFT (default) | 0.5 | 25% | 83% | 0.769 | 17% | 18 | 4237 |
+
+All on A100-SXM4-80GB. Found at the end by true radius:
+
+| True radius (A) | Particles | Lattice, noise 0.2 | FFT, noise 0.2 | Lattice, noise 0.5 | FFT, noise 0.5 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 0-40 | 9,980 | 99% | 98% | 94% | 91% |
+| 40-60 | 9,702 | 99% | 98% | 94% | 90% |
+| 60-80 | 9,728 | 99% | 98% | 92% | 89% |
+| 80-100 | 8,067 | 95% | 98% | 79% | 86% |
+| 100-120 | 5,764 | 64% | 96% | 41% | 79% |
+| 120-160 | 5,370 | 8% | 81% | 4% | 59% |
+| 160-200 | 1,193 | 0% | 45% | 0% | 30% |
+| 200-400 | 196 | 0% | 23% | 0% | 15% |
+
+Without the shift to the origin the FFT finds the far particles no better than the lattice; with it they are found
+out to 160 A and beyond. Near the centre it finds a few fewer (1 point at noise 0.2, 3-4 at noise 0.5), with either
+prior. With a flat prior, noise peaks anywhere in the box win at low SNR: on the box-128 noise-1 set the first
+iteration put the offsets at a median 51 A (true 18 A), `sigma` jumped to 49 A and kept growing to 59 A, and the run
+ended at AUC 0.402 (the lattice: 0.740); at noise 0.25, 16% of the particles ended more than 3 px off (the lattice:
+2%). The model's prior gives the flat prior's recovery on the 60 A set and the lattice's results at low SNR, hence the
+default.
+
+### Results
+
+The FFT level 0 (`--bnb_level0 fft`) against the lattice (the default above), same code, data and GPU model per row;
+map FSC AUC, share of particles more than 3 px off, wall time.
+
+| Set | Lattice | FFT | FFT, flat prior | GPU |
+| --- | --- | --- | --- | --- |
+| 60 A offsets, noise 0.2 | 0.853, 18%, 4398 s | 0.867, 5%, 4363 s | 0.867, 5%, 4311 s | A100-SXM4-80GB |
+| 60 A offsets, noise 0.5 | 0.750, 27%, 4155 s | 0.769, 17%, 4237 s | 0.770, 17%, 3148 s | A100-SXM4-80GB |
+| 30 A offsets | 0.865, 2%, 3097 s | 0.860, 2%, 2741 s | 0.860, 2%, 2726 s | A100-SXM4-80GB |
+| 8c9c, 15 A offsets | 0.861, 2%, 2065 s | 0.860, 2%, 2553 s | | A100-SXM4-80GB |
+| EMPIAR-10076 | 0.962, 17%, 2126 s | 0.962, 17%, 2575 s | | A100-SXM4-80GB |
+| Box 128, noise 0.25 | 0.952, 2%, 1075 s | 0.952, 2%, 1156 s | 0.945, 16%, 1894 s | A100-PCIE-40GB |
+| Box 128, noise 1 | 0.740, 27%, 4120 s | 0.731, 28%, 3852 s | 0.402, 83%, 5069 s | A100-PCIE-40GB |
+
+RELION on the same sets (above): 0.752 at 30 A offsets, 0.852 at 15 A, 0.960 on EMPIAR-10076, 0.953 and 0.617 on the
+box-128 sets. The box-128 noise-1 runs of the lattice spread over 0.732-0.740 with their order-3 iteration counts
+(above); the FFT run left order 3 after 7 iterations against the lattice's 8 here, as the lattice run at 0.732 did.
+
+Run time follows the offset prior. The FFT level costs the same at every `sigma`; the lattice's grows with it:
+
+- 60 A offsets: an order-2 iteration takes 330-355 s against the lattice's 405-465 s once `sigma` has opened, and the
+  first iteration 187 s against 81 s. The FFT runs still take about the lattice's time (-1% and +2%): with the far
+  particles moving, they spend 7 order-2 iterations against 5 at noise 0.2 and 5 order-3 iterations against 3 at
+  noise 0.5.
+- 30 A offsets: 11% faster (order-2 iterations from the third 253-254 s against 269-280 s, order 3 261-284 s against
+  300-319 s).
+- Small offsets: 24% longer on 8c9c at 15 A (order-2 iterations 186-199 s against 64-96 s, order 3 239-263 s against
+  146-164 s), 21% on EMPIAR-10076 (order 2: 171-181 s against 107-118 s), 8% on box 128 at noise 0.25; 7% shorter on
+  box 128 at noise 1, one order-3 iteration fewer.
+
+In short, the FFT level 0 with the shift to the origin finds the particles picked far off centre that the lattice
+level 0 loses to its centred mask (60 A offsets: 82% -> 95% found, AUC 0.853 -> 0.867; at noise 0.5 73% -> 83%,
+0.750 -> 0.769), and matches it elsewhere (AUC within 0.005, and 0.731 against 0.740 at noise 1). It costs 8-24% more
+time where the offsets are small and saves 11% at 30 A.
+
+A lattice level 0 that shifts and masks each image at its origin (a per-image offset prior) would likely find the
+far particles too, since the prior opens on its own; the FFT would then pay only where the lattice's disc is larger
+than about 2500 translations at box 256. Not tried.
 
 ## Not covered
 
