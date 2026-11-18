@@ -24,9 +24,14 @@ reference holds does not count as signal. The state keeps the run's own data_vs_
 ``--switch-gate ITER:GATE`` applies the run's --vdam-gate before iteration ITER and GATE from ITER on. Both gates advance
 their state (noise coefficients) every iteration, so the later gate's scale is the one it would have had from the start.
 
+``--relion-floor``: in an M-step that applies a scale, the gate of each shell is at least RELION's gate of the same
+M-step (computed by a first call of the transaction without the scale and passed as its FSC floor). A power gate keeps a
+shell that enters the radius with near-zero power closed (v = 0 is stable); RELION's amplitude gate opens it when its
+data carry signal. The trace's ``floor`` is then that RELION gate.
+
 Run:
     python scripts/vdam_gate_benchmark/traced_initial_model.py TRACE_DIR [--radius-rule {moment_window,signal}] \
-        [--incr-size N] [--switch-gate ITER:GATE] -- <relax initial_model arguments>
+        [--incr-size N] [--switch-gate ITER:GATE] [--relion-floor] -- <relax initial_model arguments>
 Writes TRACE_DIR/gate_trace.jsonl (one line per M-step), TRACE_DIR/iterations.jsonl (one line per iteration) and
 TRACE_DIR/batches.npz.
 """
@@ -94,9 +99,13 @@ def grown(values: np.ndarray | None, size: int, fill) -> np.ndarray | None:
 
 
 def install(
-    trace_dir: Path, radius_rule: str = "relion", incr_size: int | None = None, switch: tuple[int, str] | None = None
+    trace_dir: Path,
+    radius_rule: str = "relion",
+    incr_size: int | None = None,
+    switch: tuple[int, str] | None = None,
+    relion_floor: bool = False,
 ) -> list:
-    """Install the hooks (with the study radius options and the gate switch); returns the list the batches are appended to."""
+    """Install the hooks (study radius options, gate switch, RELION floor); returns the list the batches are appended to."""
     from relax.vdam import driver, iteration_loop, relion_mstep
     from relax.vdam.gate import advance_noise_coefficients, advance_window_coefficients, window_disagreement_scale
 
@@ -180,6 +189,9 @@ def install(
         return updated
 
     def traced_device(*args, **kwargs):
+        if relion_floor and len(args) > 16 and args[16] is not None and kwargs.get("pseudo_halfsets", True):
+            relion_gate = device(*args[:16], None, *args[17:], **{**kwargs, "return_intermediates": True})["fsc_estimate"]
+            args = (*args[:8], relion_gate, *args[9:])
         result = device(*args, **{**kwargs, "return_intermediates": True})
         projector = result.pop("projector")
         result.pop("gradient")
@@ -241,12 +253,13 @@ def main() -> int:
     parser.add_argument("--radius-rule", choices=("relion", "moment_window", "signal"), default="relion")
     parser.add_argument("--incr-size", type=int)
     parser.add_argument("--switch-gate", metavar="ITER:GATE", help="apply GATE from iteration ITER on")
+    parser.add_argument("--relion-floor", action="store_true", help="a scaled gate is at least RELION's gate")
     options = parser.parse_args(sys.argv[1:split])
     switch = None
     if options.switch_gate:
         iteration, _, gate = options.switch_gate.partition(":")
         switch = (int(iteration), gate)
-    batches = install(options.trace_dir, options.radius_rule, options.incr_size, switch)
+    batches = install(options.trace_dir, options.radius_rule, options.incr_size, switch, options.relion_floor)
     trace_dir = options.trace_dir
     from relax.commands.initial_model import main as initial_model_main
 
