@@ -21,9 +21,12 @@ reference's signal fraction per shell, 1 - noise / power (clipped to [0, 1]), wi
 half-moment disagreement power times window_disagreement_scale / 4 (open gate: an upper bound), so that noise the
 reference holds does not count as signal. The state keeps the run's own data_vs_prior.
 
+``--switch-gate ITER:GATE`` applies the run's --vdam-gate before iteration ITER and GATE from ITER on. Both gates advance
+their state (noise coefficients) every iteration, so the later gate's scale is the one it would have had from the start.
+
 Run:
     python scripts/vdam_gate_benchmark/traced_initial_model.py TRACE_DIR [--radius-rule {moment_window,signal}] \
-        [--incr-size N] -- <relax initial_model arguments>
+        [--incr-size N] [--switch-gate ITER:GATE] -- <relax initial_model arguments>
 Writes TRACE_DIR/gate_trace.jsonl (one line per M-step), TRACE_DIR/iterations.jsonl (one line per iteration) and
 TRACE_DIR/batches.npz.
 """
@@ -33,12 +36,33 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import numpy as np
 
 _GEOMETRY: dict = {}
+
+
+@dataclass(frozen=True)
+class SwitchedGate:
+    """The gate ``early`` before iteration ``switch`` and ``late`` from it on; both advance their state every iteration."""
+
+    early: object
+    late: object
+    switch: int
+
+    @property
+    def name(self) -> str:
+        """``early>late@switch``."""
+        return f"{self.early.name}>{self.late.name}@{self.switch}"
+
+    def advance(self, state):
+        """The state advanced by both gates, and the scale of the gate that applies at ``state.iter``."""
+        iteration = int(state.iter)
+        state, early_scale = self.early.advance(state)
+        state, late_scale = self.late.advance(state)
+        return state, (early_scale if iteration < self.switch else late_scale)
 
 
 def shell_geometry(n: int, radius: int) -> tuple[np.ndarray, np.ndarray]:
@@ -69,11 +93,16 @@ def grown(values: np.ndarray | None, size: int, fill) -> np.ndarray | None:
     return np.concatenate([values, np.full(size - values.size, fill, values.dtype)])
 
 
-def install(trace_dir: Path, radius_rule: str = "relion", incr_size: int | None = None) -> list:
-    """Install the three hooks (with the study radius options); returns the list the batches are appended to."""
-    from relax.vdam import iteration_loop, relion_mstep
+def install(
+    trace_dir: Path, radius_rule: str = "relion", incr_size: int | None = None, switch: tuple[int, str] | None = None
+) -> list:
+    """Install the hooks (with the study radius options and the gate switch); returns the list the batches are appended to."""
+    from relax.vdam import driver, iteration_loop, relion_mstep
     from relax.vdam.gate import advance_noise_coefficients, advance_window_coefficients, window_disagreement_scale
 
+    if switch is not None:
+        make_gate = driver.vdam_gate
+        driver.vdam_gate = lambda name, n: SwitchedGate(make_gate(name, n), make_gate(switch[1], n), switch[0])
     trace_dir.mkdir(parents=True, exist_ok=True)
     handle = open(trace_dir / "gate_trace.jsonl", "w")
     iterations = open(trace_dir / "iterations.jsonl", "w")
@@ -211,8 +240,13 @@ def main() -> int:
     parser.add_argument("trace_dir", type=Path)
     parser.add_argument("--radius-rule", choices=("relion", "moment_window", "signal"), default="relion")
     parser.add_argument("--incr-size", type=int)
+    parser.add_argument("--switch-gate", metavar="ITER:GATE", help="apply GATE from iteration ITER on")
     options = parser.parse_args(sys.argv[1:split])
-    batches = install(options.trace_dir, options.radius_rule, options.incr_size)
+    switch = None
+    if options.switch_gate:
+        iteration, _, gate = options.switch_gate.partition(":")
+        switch = (int(iteration), gate)
+    batches = install(options.trace_dir, options.radius_rule, options.incr_size, switch)
     trace_dir = options.trace_dir
     from relax.commands.initial_model import main as initial_model_main
 
