@@ -713,7 +713,11 @@ def _expectation(
             }
             return [
                 # The masked likelihood's stream (one 3D frame per particle, masked_volume.py) takes the same grids.
-                (prepare_volume_stream if config.tomo_likelihood == "masked" else prepare_full_row_stream)(
+                (
+                    functools.partial(prepare_volume_stream, exact_masked_mstep=config.masked_exact_mstep)
+                    if config.tomo_likelihood == "masked"
+                    else prepare_full_row_stream
+                )(
                     dataset,
                     mu,
                     W,

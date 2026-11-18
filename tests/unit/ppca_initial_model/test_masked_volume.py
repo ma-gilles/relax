@@ -317,6 +317,7 @@ def _controller_particles():
         {"q": 2, "tomo_likelihood": "masked", "masked_mask_radius_px": 6.0},
         {"q": 0, "single_volume": True, "tomo_likelihood": "masked", "masked_mask_radius_px": 6.0},
         {"q": 0, "single_volume": True, "hold_noise": True},
+        {"q": 2, "tomo_likelihood": "masked", "masked_mask_radius_px": 6.0, "masked_exact_mstep": True},
     ],
 )
 def test_controller_trains_with_the_masked_likelihood_and_a_single_volume(tmp_path, options):
@@ -517,3 +518,51 @@ def test_pose_files_are_checked(tmp_path):
         Config(init_poses="x.npz")
     with pytest.raises(ValueError, match="tilt coarse pass"):
         Config(init_poses="x.npz", pose_mode="fixed", tilt_coarse_pass=True)
+
+
+def test_exact_masked_mstep_residual_is_the_masked_gradient():
+    """One particle, the identity rotation and one whole-pixel shift (posterior 1): with --masked-exact-mstep the
+    residual is ``data phase_t - filt phase_t DFT(M F^-1[filt x^ conj(phase_t)]) / (c s)`` (the masked likelihood's
+    gradient), evaluated here in float64 on the full box, on the window's kz > 0 voxels."""
+    n = 10
+    particles, _, _, _, _ = _noiseless_problem(n, n_particles=1, seed=6)
+    rng = np.random.default_rng(2)
+    half = (rng.standard_normal((particles.image_offsets[-1], n * (n // 2 + 1))) * 3).astype(np.complex64)
+    particles = _particles(n, half, np.full(half.shape, 0.9, np.float32), 1)
+    observations = prepare_volume_observations(particles, np.ones((1, n // 2 + 1), np.float32), mask_radius_px=3.0,
+                                               n_mc=1)  # fmt: skip
+    masked = TiltParticles(**{**particles.__dict__, "volume_observations": observations})
+    x = _half_volume(rng, n)
+    radius = 4
+    # An integer shift: the shift is moved onto the mask (a band-limited roll), exact for whole pixels only.
+    t = np.asarray([[1.0, -2.0, 1.0]], np.float32)
+    grid = dict(
+        rotations=np.eye(3, dtype=np.float32)[None], translations=t, rotation_log_prior=np.zeros(1, np.float32),
+        translation_log_prior=np.zeros(1, np.float32), rotation_parent=np.zeros(1, np.int32),
+        translation_parent=np.zeros(1, np.int32), n_coarse_rotations=1, n_coarse_translations=1,
+        geometry=GeometryConfig(current_size=2 * radius, q=0, volume_domain="fourier_half"),
+        schedule=ScheduleConfig(image_batch_size=1, rotation_block_size=1), gemm_precision="fp32",
+    )  # fmt: skip
+    stream = prepare_volume_stream(masked, jnp.asarray(x), None, exact_masked_mstep=True, **grid)
+    residual = np.asarray(accumulate_full_row_tile(stream, np.arange(1), [None]).residual_gradient)[:, 0]
+    window = observations.radius2 <= radius**2
+    indices = observations.indices[window]
+    k = np.stack(np.unravel_index(indices, (n, n, n // 2 + 1)), -1) - np.asarray([n // 2, n // 2, 0])
+    phase = np.exp(-2j * np.pi * k @ t[0].astype(np.float64) / n)
+    scale = float(observations.scale[0])
+    filt = np.sqrt(observations.filt2[0][window].astype(np.float64) * scale)
+    with jax.enable_x64(True):
+        G = np.zeros(n * n * (n // 2 + 1), np.complex128)
+        G[indices] = filt * x[indices].astype(np.complex128) * np.conj(phase)
+        full = np.asarray(ftu.half_volume_to_full_volume(jnp.asarray(G), (n, n, n))).reshape(n, n, n)
+        u = np.real(np.asarray(ftu.get_idft3(jnp.asarray(full))))
+        from relax.ppca_initial_model.masked_volume import sphere
+
+        masked_u = sphere(n, 3.0).astype(np.float64) * u
+        D = np.asarray(ftu.full_volume_to_half_volume(ftu.get_dft3(jnp.asarray(masked_u.astype(np.complex128))), (n, n, n))).reshape(-1)
+    expected = observations.data[0][window] * phase - filt * phase * D[indices] / scale
+    inner = k[:, 2] > 0
+    assert_matches(residual[indices][inner], expected[inner].astype(np.complex64), rtol=1e-4)
+    # The B-diag residual differs (the mask matters here).
+    bdiag = observations.data[0][window] * phase - observations.filt2[0][window] * x[indices]
+    assert np.abs(residual[indices][inner] - bdiag[inner]).max() > 1e-2 * np.abs(expected[inner]).max()

@@ -349,6 +349,10 @@ def add_args(parser):
         help="Masked likelihood: whitening regulariser, a fraction of the mean observed backprojected CTF^2/noise",
     )  # fmt: skip
     parser.add_argument("--masked-mc-samples", type=int, default=2, help="Masked likelihood: Monte Carlo noise draws")
+    parser.add_argument(
+        "--masked-exact-mstep", action="store_true",
+        help="Masked likelihood: the M-step residual with the masked prediction (the E-step keeps the unmasked Gram)",
+    )  # fmt: skip
     parser.add_argument("--hold-noise", action="store_true", help="Keep the start-up noise estimate (no noise update)")
     parser.add_argument("--single-volume", action="store_true", help="A single-volume model: q = 0 (give --q 0)")
     parser.add_argument(
@@ -798,6 +802,7 @@ def main(args=None):
         masked_mask_radius_px=args.masked_mask_radius,
         masked_lambda=args.masked_lambda,
         masked_mc_samples=args.masked_mc_samples,
+        masked_exact_mstep=args.masked_exact_mstep,
         hold_noise=args.hold_noise,
         single_volume=args.single_volume,
         final_poses=args.final_poses,

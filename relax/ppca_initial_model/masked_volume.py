@@ -65,6 +65,8 @@ class VolumeObservations:
     filt2: np.ndarray
     y_norm: np.ndarray
     record: dict
+    # Each particle's c s (noise variance times the DFT's Parseval factor), for the exact masked M-step.
+    scale: np.ndarray | None = None
 
 
 def sphere(box: int, radius: float) -> np.ndarray:
@@ -208,7 +210,7 @@ def prepare_volume_observations(particles, noise, *, mask_radius_px: float, lam_
         "y_norm_quantiles": np.quantile(y_norm, [0, 0.5, 1]).tolist(),
         "visible_tilts_quantiles": np.quantile(visible, [0, 0.5, 1]).tolist(),
     }
-    return VolumeObservations(ball, r2, data, filt2, y_norm, record)
+    return VolumeObservations(ball, r2, data, filt2, y_norm, record, (cs * parseval).astype(np.float32))
 
 
 @dataclasses.dataclass(frozen=True)
@@ -241,6 +243,7 @@ def prepare_volume_stream(
     gemm_precision: str = "auto",
     device=None,
     pass2_mass_floor: float = 0.0,
+    exact_masked_mstep: bool = False,
     **_image_only,
 ) -> FullRowStream:
     """The :class:`FullRowStream` of the masked-volume likelihood: :func:`relax.ppca_refinement.full_row_stream.
@@ -287,6 +290,13 @@ def prepare_volume_stream(
             # A volume stream keeps no noise sums (its noise is fixed by the preprocessing): a zero half image.
             coefficient_noise=jnp.zeros((n_half,), jnp.float32),
             shift_squared=jnp.sum(jnp.asarray(translations) ** 2, axis=-1),
+            volume_mask_ft=(
+                ftu.get_dft3(jnp.asarray(sphere(volume_shape[0], observations.record["mask_radius_px"]), jnp.complex64))
+                .reshape(-1)
+                if exact_masked_mstep
+                else None
+            ),
+            volume_translations=jnp.asarray(translations) if exact_masked_mstep else None,
         )
     static = StreamStatic(
         image_shape=tuple(int(n) for n in particles.image_shape),
@@ -301,6 +311,7 @@ def prepare_volume_stream(
         cuda_kernels=False,
         gemm_precision=resolve_gemm_precision(gemm_precision, device),
         observation="volume",
+        exact_masked_mstep=bool(exact_masked_mstep),
     )
     return FullRowStream(
         dataset=particles,
@@ -382,6 +393,11 @@ def load_volume_tile(stream, image_indices, significant_rows, *, collect_observa
             y_norm=y_norm,
             frames=None,
             noise_groups=jnp.zeros((1,), jnp.int32),
+            volume_scale=(
+                jnp.pad(jnp.asarray(observations.scale[ids]), (0, padded - B), constant_values=1.0)
+                if stream.static.exact_masked_mstep
+                else None
+            ),
         )
     layout.update(
         n_real=B,

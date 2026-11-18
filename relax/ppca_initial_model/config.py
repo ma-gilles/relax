@@ -178,6 +178,9 @@ class Config:
     masked_mask_radius_px: float | None = None
     masked_lambda: float = 0.1
     masked_mc_samples: int = 2
+    # The M-step residual with the masked prediction (exact masked likelihood gradient; the E-step keeps the unmasked
+    # Fourier Gram). Opt-in: per (particle, rotation) with posterior mass, full-box DFTs.
+    masked_exact_mstep: bool = False
     # Keep the start-up noise estimate for the whole run (no noise update). The masked likelihood always holds it.
     hold_noise: bool = False
     # A single-volume model: q = 0 (the mean alone). Without it q must be positive.
@@ -366,7 +369,9 @@ class Config:
         if self.tomo_likelihood not in ("image", "masked"):
             raise ValueError(f"tomo_likelihood must be image or masked, got {self.tomo_likelihood}")
         if self.tomo_likelihood == "image":
-            if (self.masked_mask_radius_px, self.masked_lambda, self.masked_mc_samples) != (None, 0.1, 2):
+            if (self.masked_mask_radius_px, self.masked_lambda, self.masked_mc_samples, self.masked_exact_mstep) != (
+                None, 0.1, 2, False
+            ):
                 raise ValueError("The masked likelihood's options need tomo_likelihood masked")
             return
         if self.masked_mask_radius_px is None or not self.masked_mask_radius_px > 0:

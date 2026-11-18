@@ -105,6 +105,7 @@ def tile_spec(stream: FullRowStream, n_images: int) -> TileArrays:
         # A one-key subtomogram tile (the planned shape; a mixed tile of as many particles holds as many
         # operand bytes and runs its keys one at a time).
         noise_groups=None if _plan_reader(stream) is None else spec((1,), jnp.int32),
+        volume_scale=spec((B,), f32) if stream.static.exact_masked_mstep else None,
     )
 
 

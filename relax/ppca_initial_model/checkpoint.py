@@ -76,6 +76,7 @@ _ADDED_CONFIG_DEFAULTS = {
     "masked_mask_radius_px": None,
     "masked_lambda": 0.1,
     "masked_mc_samples": 2,
+    "masked_exact_mstep": False,
     "hold_noise": False,
     "single_volume": False,
     "init_poses": None,
