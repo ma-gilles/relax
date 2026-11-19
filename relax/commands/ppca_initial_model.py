@@ -372,6 +372,11 @@ def add_args(parser):
         help="Masked likelihood: the M-step residual with the masked prediction (the E-step keeps the unmasked Gram)",
     )  # fmt: skip
     parser.add_argument("--hold-noise", action="store_true", help="Keep the start-up noise estimate (no noise update)")
+    parser.add_argument(
+        "--likelihood-temperature", type=float, default=1.0,
+        help="Image likelihood: multiply the log-likelihood by this factor in every E-step (the noise divided by it; "
+        "scores, posteriors and M-step statistics); the noise estimate stays in data units (1: none)",
+    )
     parser.add_argument("--single-volume", action="store_true", help="A single-volume model: q = 0 (give --q 0)")
     parser.add_argument(
         "--center-latents-output", action="store_true",
@@ -830,6 +835,7 @@ def main(args=None):
         masked_calibrate=args.masked_calibrate,
         masked_calibrate_per_stage=args.masked_calibrate_per_stage,
         hold_noise=args.hold_noise,
+        likelihood_temperature=args.likelihood_temperature,
         single_volume=args.single_volume,
         final_poses=args.final_poses,
         center_latents_at_output=args.center_latents_output,

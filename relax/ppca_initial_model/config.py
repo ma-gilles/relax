@@ -196,6 +196,10 @@ class Config:
     masked_calibrate_per_stage: bool = False
     # Keep the start-up noise estimate for the whole run (no noise update). The masked likelihood always holds it.
     hold_noise: bool = False
+    # Constant likelihood temperature (opt-in; the image likelihood): every E-step (scores, posteriors and the
+    # M-step's statistics) uses the noise estimate divided by this factor, i.e. the log-likelihood times it. The noise
+    # estimate itself stays in data units. 1.0: none.
+    likelihood_temperature: float = 1.0
     # A single-volume model: q = 0 (the mean alone). Without it q must be positive.
     single_volume: bool = False
     # Write each particle's top pose of the final embedding pass into embeddings.npz (a runtime setting).
@@ -380,6 +384,10 @@ class Config:
             raise ValueError("The held offset sigma must be finite and positive")
         self._check_likelihood()
         self._check_pose_input()
+        if not (np.isfinite(self.likelihood_temperature) and self.likelihood_temperature > 0):
+            raise ValueError("likelihood_temperature must be finite and positive")
+        if self.likelihood_temperature != 1.0 and self.tomo_likelihood != "image":
+            raise ValueError("likelihood_temperature applies to the image likelihood (the masked one has its own c)")
 
     def _check_likelihood(self):
         if self.tomo_likelihood not in ("image", "masked"):

@@ -6,6 +6,8 @@ gather on the full volume written here), the M-step statistics against the close
 whole preprocessing against a noiseless particle made by the image route's own forward model.
 """
 
+import dataclasses
+
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -726,3 +728,36 @@ def test_derived_calibration_without_a_usable_temperature_is_none():
     assert not cal.record["tau_usable"] and cal.record["calibration_factor"] == 1.0
     assert_matches(cal.filt2, base.filt2, rtol=1e-6)
     assert_matches(cal.data, base.data, rtol=1e-6)
+
+
+def test_likelihood_temperature_is_the_noise_divided_by_it(tmp_path):
+    """--likelihood-temperature beta: an E-step (scores, posteriors and the M-step's statistics) equals the E-step at
+    temperature 1 with the noise times 1 / beta, and differs from the untempered one; the option is checked."""
+    from relax.ppca_initial_model import checkpoint, iteration_loop
+    from relax.ppca_initial_model.config import Config
+    from relax.ppca_initial_model.iteration_loop import expectation_groups, run
+
+    iteration_loop._rotation_grid.cache_clear()
+    iteration_loop._direction_ids.cache_clear()
+    particles = _controller_particles()
+    config = Config(q=2, iterations=1, stages=((1, 3, 0),), shift_range=1, shift_step=1, image_batch_size=3,
+                    rotation_block_size=32)  # fmt: skip
+    try:
+        run(particles, config, tmp_path, {"test": True}, diameter_ang=100.0)
+        state = checkpoint.load(tmp_path / "checkpoint_0000.npz", config, {"test": True})
+        halves = [np.arange(0, 4), np.arange(4, 8)]
+        hot = expectation_groups(particles, state, dataclasses.replace(config, likelihood_temperature=2.0), halves, 1,
+                                 diameter_ang=100.0)  # fmt: skip
+        ref = expectation_groups(particles, state, config, halves, 1, diameter_ang=100.0, noise_inflation=0.5)
+        cold = expectation_groups(particles, state, config, halves, 1, diameter_ang=100.0)
+    finally:
+        iteration_loop._rotation_grid.cache_clear()
+        iteration_loop._direction_ids.cache_clear()
+    for a, b, c in zip(hot, ref, cold):
+        for field in ("lhs_tri", "residual_gradient"):
+            assert_matches(np.asarray(getattr(a, field)), np.asarray(getattr(b, field)), rtol=1e-6)
+        assert not np.allclose(np.asarray(a.residual_gradient), np.asarray(c.residual_gradient), rtol=1e-3)
+    with pytest.raises(ValueError, match="likelihood_temperature must be finite and positive"):
+        Config(likelihood_temperature=0.0)
+    with pytest.raises(ValueError, match="likelihood_temperature applies to the image likelihood"):
+        Config(iterations=3, tomo_likelihood="masked", masked_mask_radius_px=6.0, likelihood_temperature=2.0)

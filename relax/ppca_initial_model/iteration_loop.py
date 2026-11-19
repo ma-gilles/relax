@@ -773,8 +773,11 @@ def _expectation(
     # Subtomogram particles keep one noise spectrum per noise group (rows of ``state.noise``, section 16.6).
     noise_rows = np.asarray(state.noise) if tilts else np.asarray(state.noise)[None]
     nvs = [np.asarray(make_radial_noise(row, dataset.image_shape), np.float32) for row in noise_rows]
-    if noise_inflation != 1.0:
-        nvs = [np.float32(noise_inflation) * nv for nv in nvs]
+    # The likelihood temperature divides the noise in every E-step: the scores, the posteriors and the M-step's
+    # statistics alike (Config.likelihood_temperature).
+    factor = noise_inflation / config.likelihood_temperature
+    if factor != 1.0:
+        nvs = [np.float32(factor) * nv for nv in nvs]
     nv = nvs[0]
     common = dict(noise_variance=nv, geometry=geometry, schedule=schedule, scoring=scoring, image_indices=ids)
     mu, W = state.theta[:, 0], state.theta[:, 1:]
