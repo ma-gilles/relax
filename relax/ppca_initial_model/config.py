@@ -187,8 +187,9 @@ class Config:
     # Hybrid schedule (opt-in): the image likelihood scores the updates before this one and the masked likelihood the
     # rest (1: masked throughout). The noise is held throughout (the masked observations use the start-up estimate).
     masked_from_update: int = 1
-    # Derived calibration (opt-in): c times the median over particles of kappa, the c I model's information about
-    # random particle-support templates over the Monte Carlo variance of their noise term (masked_volume.py).
+    # Derived calibration (opt-in): c times the quasi-likelihood temperature tau = Var(Delta) / (2 E[Delta]) of pose
+    # score differences, signal from the start-up mean through the forward operator, noise by Monte Carlo
+    # (masked_volume.py).
     masked_calibrate: bool = False
     # Keep the start-up noise estimate for the whole run (no noise update). The masked likelihood always holds it.
     hold_noise: bool = False

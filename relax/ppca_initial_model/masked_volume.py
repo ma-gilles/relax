@@ -102,12 +102,35 @@ def dof_ratio(s, weights) -> jax.Array:
     return jnp.sum(weights) * jnp.sum(weights * s**2) / jnp.sum(weights * s) ** 2
 
 
+# The derived temperature's wrong poses (angle in degrees, axis): a small, a medium and a large rotation.
+CALIBRATION_ROTATIONS = ((10.0, (1.0, 0.0, 0.0)), (30.0, (0.0, 1.0, 0.0)), (180.0, (1.0, 1.0, 1.0)))
+
+
+def _gridding_correction(box: int) -> np.ndarray:
+    """Real-space ``1 / sinc^2`` per axis for a trilinear Fourier interpolation on a ``box`` grid."""
+    x = (np.arange(box) - box // 2) / box
+    w = np.sinc(x) ** 2
+    return (1.0 / (w[:, None, None] * w[None, :, None] * w[None, None, :])).astype(np.float32)
+
+
+def _rotated(volume: np.ndarray, angle_deg: float, axis) -> np.ndarray:
+    """``volume`` rotated by ``angle_deg`` about ``axis`` through the box centre ``n // 2`` (trilinear)."""
+    from scipy.ndimage import affine_transform
+    from scipy.spatial.transform import Rotation
+
+    R = Rotation.from_rotvec(np.deg2rad(angle_deg) * np.asarray(axis, float) / np.linalg.norm(axis)).as_matrix()
+    centre = np.full(3, volume.shape[0] // 2, float)
+    return affine_transform(volume, R, offset=centre - R @ centre, order=1, mode="constant").astype(np.float32)
+
+
 @functools.partial(jax.jit, static_argnames=("image_shape", "volume_shape", "n_mc"))
-def _particle_operands(half, ctf, frames, nv, mask, ball, weights, key, lam_rel, parseval, noise_scale, fields, *,
+def _particle_operands(half, ctf, frames, nv, mask, ball, weights, key, lam_rel, parseval, noise_scale, fields, source, *,
                        image_shape, volume_shape, n_mc):
-    """One particle's ``(data, filt2, y_norm, c, lam)`` on the half ball ``ball`` from its tilt half spectra
-    ``half`` ``(K, n_half)``, CTF rows ``ctf`` (zero rows for padding tilts), frames ``(K, 3, 3)`` and noise
-    ``nv`` ``(n_half,)``."""
+    """One particle's ``(data, filt2, y_norm, c, lam, noise_ratio, signal_ratio)`` on the half ball ``ball`` from its
+    tilt half spectra ``half`` ``(K, n_half)``, CTF rows ``ctf`` (zero rows for padding tilts), frames ``(K, 3, 3)``
+    and noise ``nv`` ``(n_half,)``; ``fields`` ``(1 + J, n, n, n)`` a map and its ``J`` rotations (the derived
+    temperature's poses, see below) and ``source`` the half DFT of ``fields[0]`` padded 2x and gridding-corrected (the
+    projector's input for the simulated signal)."""
     n = int(volume_shape[0])
     max_r = n // 2 - 1
 
@@ -129,10 +152,20 @@ def _particle_operands(half, ctf, frames, nv, mask, ball, weights, key, lam_rel,
         return jnp.real(ftu.get_idft3(full.reshape(volume_shape)))
 
     V = measure(half) * mask
-    # Calibration templates (for the derived noise scale): ``fields`` (real maps) through the predicted-mean map
-    # f = F^-1[filt x^].
+    # Derived temperature (calibration): ``fields[0]`` is a map in the particle's frame (the start-up mean) and
+    # ``fields[1:]`` its rotations. Pose score differences Delta = s(fields[0]) - s(fields[j]) for data simulated from
+    # fields[0] through the forward operator (2x padded, gridding-corrected trilinear projection) (CTF, tilt projections, backprojection, whitening, mask), with the noise
+    # by Monte Carlo: tau = Var(Delta) / (2 E[Delta]), 1 for a calibrated likelihood. Reported per particle as
+    # noise ratio Var(Delta) / nominal and signal ratio 2 E[Delta] / nominal, nominal = ||M g||^2 / c0 the c I
+    # model's value for the template difference g (tau = noise ratio / signal ratio).
     filt_full = ftu.half_volume_to_full_volume(jnp.where(inside, D * whiten, 0.0).astype(jnp.complex64), volume_shape)
     templates = jnp.real(ftu.get_idft3(filt_full.reshape(volume_shape)[None] * ftu.get_dft3(fields.astype(jnp.complex64))))
+    diffs = mask[None] * (templates[:1] - templates[1:])
+    padded_shape = tuple(2 * v for v in volume_shape)
+    clean = ctf * relion_interp.project(
+        source, frames, image_shape, padded_shape, order=1, half_volume=True, half_image=True, max_r=max_r
+    )
+    signal = measure(clean) * mask
     variance = 0.0
     projections = []
     for _ in range(n_mc):
@@ -141,19 +174,21 @@ def _particle_operands(half, ctf, frames, nv, mask, ball, weights, key, lam_rel,
         noise = ftu.get_dft2_real(white).reshape(half.shape[0], -1) * jnp.sqrt(nv / (image_shape[0] * image_shape[1]))
         Ve = measure(noise)
         variance = variance + jnp.sum(mask * Ve**2) / jnp.sum(mask)
-        projections.append(jnp.sum(templates * (mask * Ve)[None], axis=(1, 2, 3)))
+        projections.append(jnp.sum(diffs * Ve[None], axis=(1, 2, 3)))
     s_ball = D[ball] / (D[ball] + lam)
     c0 = variance / n_mc * dof_ratio(s_ball, weights)
-    # kappa: the actual variance of a template's noise term <M V_noise, f> / c0 over the c I model's value
-    # ||f||^2 / c0: 1 for a calibrated score, > 1 when the noise at the templates' scale exceeds c0 I, i.e. the masked
-    # scores are overconfident by that factor.
-    kappa = (jnp.mean(jnp.stack(projections) ** 2) / c0**2) / (jnp.mean(jnp.sum(templates**2, axis=(1, 2, 3))) / c0)
+    nominal = jnp.sum(diffs**2, axis=(1, 2, 3)) / c0
+    gram = jnp.sum(templates**2, axis=(1, 2, 3))  # B-diag: the unmasked Gram
+    mean_delta = (jnp.sum(signal[None] * diffs, axis=(1, 2, 3)) - 0.5 * (gram[0] - gram[1:])) / c0
+    var_delta = jnp.mean(jnp.stack(projections) ** 2, axis=0) / c0**2  # the noise term has mean zero
+    noise_ratio = jnp.mean(var_delta / nominal)
+    signal_ratio = jnp.mean(2 * mean_delta / nominal)
     c = c0 * noise_scale
     A = ftu.full_volume_to_half_volume(ftu.get_dft3((V / c).astype(jnp.complex64)), volume_shape).reshape(-1)
     filt = D[ball] * whiten[ball]
     data = (filt * A[ball] / parseval).astype(jnp.complex64)
     filt2 = (filt * filt / (c * parseval)).astype(jnp.float32)
-    return data, filt2, jnp.sum(V * V) / c, c, lam, kappa
+    return data, filt2, jnp.sum(V * V) / c, c, lam, noise_ratio, signal_ratio
 
 
 def prepare_volume_observations(particles, noise, *, mask_radius_px: float, lam_rel: float = 0.1, n_mc: int = 2,
@@ -163,10 +198,13 @@ def prepare_volume_observations(particles, noise, *, mask_radius_px: float, lam_
     ``noise`` ``(G, S)`` (one per noise group; held for the whole run). The Monte Carlo draws of particle ``p`` use
     ``PRNGKey(seed * 100003 + p)``, so the operands are a function of the particles, the noise and these options.
     ``noise_scale`` multiplies ``c`` (a temperature for the c I approximation's measured 1.3-1.5x overconfidence;
-    1.0: none). ``calibrate`` (opt-in) derives the scale from the noise model instead: per particle, ``kappa`` is the
-    Monte Carlo variance of a template's noise term over the c I model's value (1 when calibrated, > 1 when the
-    masked scores are overconfident), for templates that are the differences between ``calibration_map`` (a real map
-    of the run's model, e.g. the start-up mean) and its 7 axis flips (what a pose score difference sees); the run's c is multiplied by the median ``kappa`` (times ``noise_scale``).
+    1.0: none). ``calibrate`` (opt-in) derives the scale instead: the quasi-likelihood temperature
+    tau = Var(Delta) / (2 E[Delta]) of the pose score difference Delta between a map at the particle's frame and the
+    map rotated (10 deg about x, 30 deg about y, 180 deg about (1,1,1)), for data simulated from the map through the
+    forward operator (CTF, tilt projections, backprojection, whitening, mask) and the noise model by Monte Carlo;
+    tau is 1 for a calibrated likelihood and T when the scores are T times sharper. The map is ``calibration_map``
+    (a real map of the run's model, e.g. the start-up mean). The run's c is multiplied by mean noise ratio / mean
+    signal ratio over particles (Var(Delta) and 2 E[Delta] over the c I model's value; times ``noise_scale``).
     Without ``calibration_map`` the templates are white fields on a sphere of the mask radius minus 4 px."""
     image_shape = tuple(int(n) for n in particles.image_shape)
     volume_shape = tuple(int(n) for n in particles.volume_shape)
@@ -180,10 +218,11 @@ def prepare_volume_observations(particles, noise, *, mask_radius_px: float, lam_
         base = np.random.default_rng(seed).standard_normal((n,) * 3).astype(np.float32) * sphere(n, max(mask_radius_px - 4, 1))
     else:
         base = np.asarray(calibration_map, np.float32)
-    # Pose scores compare a map with its other orientations: the templates are the map's differences to its 7 axis
-    # flips (what a pose score difference sees), not the map itself.
-    flips = [base[:: 1 - 2 * a, :: 1 - 2 * b, :: 1 - 2 * c] for a in (0, 1) for b in (0, 1) for c in (0, 1)]
-    fields = jnp.asarray(np.stack([base - f for f in flips[1:]]))
+    fields = jnp.asarray(np.stack([base] + [_rotated(base, angle, axis) for angle, axis in CALIBRATION_ROTATIONS]))
+    padded = np.zeros((2 * n,) * 3, np.float32)
+    padded[n // 2 : n // 2 + n, n // 2 : n // 2 + n, n // 2 : n // 2 + n] = base
+    padded = padded * _gridding_correction(2 * n)
+    source = ftu.full_volume_to_half_volume(ftu.get_dft3(jnp.asarray(padded, jnp.complex64)), (2 * n,) * 3).reshape(-1)
     parseval = parseval_factor(n)
     noise = np.asarray(noise, np.float32).reshape(-1, np.asarray(noise).shape[-1])
     nv_rows = [
@@ -198,7 +237,8 @@ def prepare_volume_observations(particles, noise, *, mask_radius_px: float, lam_
     data = np.zeros((count, ball.size), np.complex64)
     filt2 = np.zeros((count, ball.size), np.float32)
     y_norm = np.zeros(count, np.float32)
-    cs, lams, visible, kappas = np.zeros(count), np.zeros(count), np.zeros(count, np.int64), np.zeros(count)
+    cs, lams, visible = np.zeros(count), np.zeros(count), np.zeros(count, np.int64)
+    noise_ratios, signal_ratios = np.zeros(count), np.zeros(count)
     for p in range(count):
         images, _ = particles.particle_images([p])
         _, half, ctf = particles.read(images)
@@ -211,9 +251,9 @@ def prepare_volume_observations(particles, noise, *, mask_radius_px: float, lam_
         out = _particle_operands(
             half, ctf, jnp.asarray(frames), nv_rows[int(groups[p]) if len(nv_rows) > 1 else 0], mask,
             jnp.asarray(ball), weights, jax.random.PRNGKey(seed * 100003 + p), jnp.float32(lam_rel),
-            jnp.float32(parseval), jnp.float32(noise_scale), fields, image_shape=image_shape, volume_shape=volume_shape, n_mc=int(n_mc),
+            jnp.float32(parseval), jnp.float32(noise_scale), fields, source, image_shape=image_shape, volume_shape=volume_shape, n_mc=int(n_mc),
         )  # fmt: skip
-        data[p], filt2[p], y_norm[p], cs[p], lams[p], kappas[p] = (np.asarray(x) for x in out)
+        data[p], filt2[p], y_norm[p], cs[p], lams[p], noise_ratios[p], signal_ratios[p] = (np.asarray(x) for x in out)
         visible[p] = k
     bad = np.flatnonzero(
         ~(np.isfinite(cs) & (cs > 0) & np.isfinite(y_norm) & np.isfinite(lams) & np.all(np.isfinite(data), axis=1))
@@ -224,8 +264,9 @@ def prepare_volume_observations(particles, noise, *, mask_radius_px: float, lam_
             f"{bad[:20].tolist()}): noise variance c {cs[bad[:5]].tolist()}, ||MV||^2/c {y_norm[bad[:5]].tolist()}, "
             f"lam {lams[bad[:5]].tolist()}. Check those particles' tilt images and CTFs."
         )
-    calibration = float(np.median(kappas)) if calibrate else 1.0
-    if calibrate:  # c times the median kappa: the operands carrying 1 / c scale down by it
+    tau = float(np.mean(noise_ratios) / np.mean(signal_ratios))
+    calibration = tau if calibrate else 1.0
+    if calibrate:  # c times tau: the operands carrying 1 / c scale down by it
         data, filt2, y_norm, cs = data / calibration, filt2 / calibration, y_norm / calibration, cs * calibration
     record = {
         "likelihood": "masked volume, B-diag (exact masked inner, unmasked Fourier Gram)",
@@ -234,7 +275,9 @@ def prepare_volume_observations(particles, noise, *, mask_radius_px: float, lam_
         "noise_scale": float(noise_scale),
         "calibrate": bool(calibrate),
         "calibration_factor": calibration,
-        "kappa_quantiles": np.quantile(kappas, [0.05, 0.5, 0.95]).tolist(),
+        "tau": tau,
+        "noise_ratio_quantiles": np.quantile(noise_ratios, [0.05, 0.5, 0.95]).tolist(),
+        "signal_ratio_quantiles": np.quantile(signal_ratios, [0.05, 0.5, 0.95]).tolist(),
         "n_mc": int(n_mc),
         "seed": int(seed),
         "ball_radius": n // 2 - 1,

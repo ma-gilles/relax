@@ -638,17 +638,21 @@ def test_hybrid_schedule_switches_likelihood_at_the_given_update(tmp_path):
         Config(iterations=3, tomo_likelihood="masked", masked_mask_radius_px=6.0, masked_from_update=4)
 
 
-def test_derived_calibration_scales_c_by_the_median_kappa():
-    """--masked-calibrate: c times the recorded median kappa (data, filt2, ||MV||^2/c divided by it); kappa is finite
-    and positive for every particle."""
+def test_derived_calibration_scales_c_by_the_temperature():
+    """--masked-calibrate: c times the recorded temperature tau (data, filt2, ||MV||^2/c divided by it); tau and its
+    noise and signal ratios are finite and positive, and the signal ratio (2 E[Delta] over the c I model's value,
+    data simulated through the forward operator) is near 1: the masked mean matches the template."""
     n = 10
     particles, _, _, _, _ = _noiseless_problem(n, n_particles=3, seed=4)
     noise = np.ones((1, n // 2 + 1), np.float32)
     base = prepare_volume_observations(particles, noise, mask_radius_px=3.5, n_mc=2)
     cal = prepare_volume_observations(particles, noise, mask_radius_px=3.5, n_mc=2, calibrate=True)
     k = cal.record["calibration_factor"]
-    assert np.isfinite(k) and k > 0 and all(np.isfinite(cal.record["kappa_quantiles"]))
-    assert k == pytest.approx(cal.record["kappa_quantiles"][1])
+    assert np.isfinite(k) and k > 0
+    assert k == pytest.approx(cal.record["tau"]) and base.record["calibration_factor"] == 1.0
+    assert base.record["tau"] == pytest.approx(k, rel=1e-5)
+    assert all(np.isfinite(cal.record["noise_ratio_quantiles"])) and min(cal.record["noise_ratio_quantiles"]) > 0
+    assert 0.5 < cal.record["signal_ratio_quantiles"][1] < 1.5
     assert_matches(cal.filt2 * k, base.filt2, rtol=1e-5)
     assert_matches(cal.data * k, base.data, rtol=1e-5)
     assert_matches(cal.y_norm * k, base.y_norm, rtol=1e-5)

@@ -359,7 +359,8 @@ def add_args(parser):
     )
     parser.add_argument(
         "--masked-calibrate", action="store_true",
-        help="Masked likelihood: scale its noise variance by the derived calibration factor (median kappa, see "
+        help="Masked likelihood: scale its noise variance by the derived temperature tau = Var/(2 mean) of pose score "
+        "differences (see "
         "relax/ppca_initial_model/masked_volume.py)",
     )
     parser.add_argument(
