@@ -158,11 +158,13 @@ ENGINE_DISC_TYPE = "linear_interp"
 class MultiShapeTranslations:
     """What each image shape (optics groups on several shapes) rebuilds its pre-shifts and coarse ``pdf_offset``
     from, in its own pixels: every particle's offset ``offsets_px`` ``[N, 2]`` (float64, reference pixels), the
-    coarse prior grid ``coarse_prior_translations`` (float32, reference pixels) and the offset sigma in Angstrom."""
+    coarse prior grid ``coarse_prior_translations`` (float32, reference pixels), the offset sigma in Angstrom and
+    ``consistent_units`` (``--offset_prior_units consistent``)."""
 
     offsets_px: np.ndarray
     coarse_prior_translations: np.ndarray
     sigma_angstrom: float
+    consistent_units: bool
 
 
 @dataclass(frozen=True, kw_only=True)

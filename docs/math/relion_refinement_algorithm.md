@@ -271,6 +271,9 @@ model offset sigma `s` in Angstrom, the source-equivalent log prior is
 sampling stores Angstrom translations and its accelerated code applies another
 pixel-size-squared factor. This documents source parity, not a proposed unit
 convention. Perturbation affects scoring translations, not this base-grid prior.
+`--offset_prior_units consistent` (a RELION-consistency option,
+[relion_consistency_options.md](relion_consistency_options.md)) scores `-0.5 * ||o + t||^2 * a^2 / s^2` on the
+whole offset instead (`pdf_offset_score_sigma`).
 
 [`make_relion_translation_log_prior`](../../relax/sampling/orientation_priors.py)
 implements the formula; its explicit `None` center still requests a flat prior.

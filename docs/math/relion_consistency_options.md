@@ -18,6 +18,7 @@ below keeps RELION's rule unless it is given by name. `relax` sets every option 
 | `--initial_noise_pair_counting` | `relion` | `once` |
 | `--nyquist_column_counting` | `relion` | `once` |
 | `--firstiter_cc_support` | `relion` | `gaussian` |
+| `--offset_prior_units` | `relion` | `consistent` |
 
 The bundle is one constant, `RELAX_MODE_CONSISTENCY` (`relax/refinement/refinement_options.py`). The command
 resolves the mode to options once (`resolve_consistency_options`, `relax/commands/refinement_arguments.py`); the
@@ -41,9 +42,11 @@ refinement sees the options only.
   to (`_relax_consistency_<name>`), and the start-up log prints them. A continuation must resolve to the
   recorded options; the mode itself is a label, so the same options given by name continue the run.
 
-Measured effect: no measurable effect on two synthetic K=1 fixtures (5,000 particles at box 128 and 10,000 at
-box 256, full auto-refinement, three or four seeds; ground-truth map FSC, pose error, reported resolution and
-iterations to convergence against the default's seed-to-seed spread). Not tested on real data or Class3D.
+Measured effect of the six options before `--offset_prior_units`: no measurable effect on two synthetic K=1
+fixtures (5,000 particles at box 128 and 10,000 at box 256, full auto-refinement, three or four seeds;
+ground-truth map FSC, pose error, reported resolution and iterations to convergence against the default's
+seed-to-seed spread). Not tested on real data or Class3D. `--offset_prior_units` has an effect of its own at
+large pixel sizes (its section).
 
 ## The options
 
@@ -195,3 +198,81 @@ without DC. The first iteration therefore picks its poses on a different set of 
 The noise, norm and scale sums of the CC iteration and its backprojection are RELION's (they are
 not part of the score). Refused: a run without a CC iteration (`--no-firstiter_cc`), the
 experimental `gemm_dense` coarse engine, subtomograms and full-grid GEMM passes.
+
+## `--offset_prior_units {relion,consistent}`
+
+The Gaussian offset prior of the scores, `pdf_offset` (`acc_ml_optimiser_impl.h:2135-2167`; the CPU path,
+`ml_optimiser.cpp:7863-7876`, has the same formula), adds the sampled translation
+`sampling.translations_x[itrans]`, which is in Angstrom since RELION 3.1, to the rounded old offset
+`old_offset_x`, which is in pixels, subtracts the prior offset (pixels) and then multiplies the squared
+difference by `my_pixel_size^2` ("sigma_offsets are in Angstroms"). For a search shift `t` in pixels, pixel size
+`a`, old offset `o` and prior `p`, the log prior is therefore `-a^2 |a t + o - p|^2 / (2 sigma^2)`: a Gaussian on
+`t` of width `sigma / a^2` pixels centred on `(p - o) / a`, instead of width `sigma / a` centred on `p - o`. The
+two agree at 1 A per pixel. At larger pixels the prior pulls every offset towards `(1 - 1/a)` times its old
+value, and a particle moves r pixels only where its log-likelihood gain beats a penalty `a^2` times the
+consistent one; `sigma2_offset`, re-estimated from the offsets the prior let through, then shrinks and narrows
+it further. The `wsum_sigma2_offset` statistic that updates `sigma2_offset` is in consistent units and is not
+affected.
+
+`consistent` scores `-|o + t - p|^2 a^2 / (2 sigma^2)`: the prior centre in pixels
+(`relion_translation_prior_center(consistent_units=True)`) and the width `sigma` passed to
+`make_relion_translation_log_prior` as `sigma * a` (`pdf_offset_score_sigma`,
+`relax/sampling/orientation_priors.py`), for the global and the local searches of every numbered iteration and
+of the final pass. Refused: subtomograms (their 3-D prior, `relion_offset_log_prior_3d`, has the same unit mix
+and is not changed) and optics groups on several image shapes. `relax multibody` does not take it.
+
+`relax initial_model` takes the same option, without `--mode`. InitialModel's coarse `pdf_offset` has the same
+mix with no prior offset, `-a^2 |round(o) + a t|^2 / (2 sigma^2)`, and `consistent` adds `t` in pixels:
+`-a^2 |round(o) + t|^2 / (2 sigma^2)`, a Gaussian of width `sigma` on the whole offset
+(`sampling_translation_log_prior(consistent_units=True)`, `relax/vdam/native_sampling.py`). Each oversampled
+translation keeps its coarse parent's value, and optics groups on several image shapes rebuild the same prior in
+their own pixels. Refused: subtomograms (`--ios`) and a diagnostic continuation from RELION's optimiser. The run's
+`<output>_native_options.json` records the value.
+
+Measured effect on `relax initial_model` (2026-11-16, commit `c87d0dc9`, clean diff; K=1 at RELION's InitialModel
+defaults: 200 iterations, offset search 6 px in steps of 2, sigma 10 A; seeds 11 to 15; one Slurm job per run on
+Grace). The Ribosembly sets are 100,000 CryoBench Ribosembly particles (SNR 0.01) Fourier-cropped to box 64; `shift25`
+shifts each by a Gaussian of 2.5 px per axis truncated at 3 sd (median offset 2.9 px). EMPIAR-10076 is 131,899
+particles at box 64 as picked (consensus offsets: median 3.2 px, 5% beyond 6 px), or shifted by the consensus
+origins. Pose: rotation error against the truth or consensus after one global frame and hand. Map: FSC-AUC of the
+last class map against the population mean (Ribosembly) or the consensus map, after a global rigid alignment.
+
+| Data, box 64 | Pixel (A) | Prior | Maps with AUC above 0.9 | Map AUC | Within 10 degrees |
+| --- | ---: | --- | ---: | ---: | ---: |
+| Ribosembly, centred | 6.0 | `relion` | 4 of 5 | 0.21 to 0.98 | 15% to 99% |
+| | | `consistent` | 5 of 5 | 0.981 to 0.982 | 97% to 98% |
+| Ribosembly, `shift25` | 6.0 | `relion` | 0 of 5 | 0.19 to 0.75 | 3% to 18% |
+| | | `consistent` | 5 of 5 | 0.958 to 0.967 | 60% to 71% |
+| EMPIAR-10076, as picked | 6.55 | `relion` | 0 of 5 | 0.19 to 0.67 | 5% to 11% |
+| | | `consistent` | 1 of 5 (two more at 0.75) | 0.25 to 0.95 | 7% to 39% |
+| EMPIAR-10076, centred by the consensus | 6.55 | `relion` | 5 of 5 | 0.984 to 0.987 | 90% to 91% |
+| | | `consistent` | 4 of 5 | 0.21 to 0.985 | 28% to 81% |
+
+With RELION's prior `sigma_offset` falls from 10 A to its floor, 1.4 A, by iteration 80 (seed 11 on each shifted set;
+1.4 to 1.7 A at the end of every such run); the prior is then 0.03 to 0.04 px wide and the offsets barely move
+(`shift25`: median error 2.2 to 2.6 px at the end, 2.9 px at the start). With `consistent` it ends at 8.6 to 12.9 A
+and the `shift25` offsets reach 0.3 to 0.5 px. On the synthetic shifts the unit
+mix alone decides the run: the same search with the consistent prior poses every seed. On EMPIAR-10076 as picked the
+fix helps but does not make the run reliable, while the centred stack succeeds with either prior. On centred data the
+prior's narrowness happens to be right: `consistent` places fewer particles within 5 degrees (Ribosembly 85% to 87%
+against 93%; EMPIAR-10076 70% to 75% against 82% to 84%).
+
+Measured effect (K=1 auto-refinements from zero offsets and angles, 2026-11-15; directions within 5 degrees of
+the truth, or of the published consensus for EMPIAR-10076):
+
+| Data | Pixel (A) | RELION | consistent | Started from the true origins |
+| --- | ---: | ---: | ---: | ---: |
+| EMPIAR-10076 binned to box 64, 131,899 particles | 6.55 | 59%, 63% | 77%, 77% | 77% |
+| 5nrl simulated, box 128, noise 1, 15 A offsets per axis, 20,000 particles | 4.25 | 11% | 41%, 39% | 56% |
+| the same at four times the SNR | 4.25 | 65% | 95% | |
+| EMPIAR-10076 binned to box 128 | 3.275 | 73%, 74% | 77%, 77% | 78% |
+| 8c9c simulated, box 256, 15 A offsets, 50,000 particles | 2.125 | 74%, 75% | 78%, 76% | 100% |
+| EMPIAR-10076 unbinned, box 256 | 1.64 | 67% | 68% | 79% |
+
+Two values are two seeds. On the 5nrl box-128 set RELION's prior never moved an offset (median error 4.2 px,
+the median true offset) and the map stalled at 27 A; a wider first window alone (`--offset_range 12`) changed
+nothing, and `consistent` with it reached 55% (aligned map FSC AUC 0.695 against 0.702 from the true origins).
+At 2.125 A per pixel the difference is within the seed spread, and at 1.64 A it is 1% (one seed). At these pixel
+sizes the gap to the true origins comes from RELION's 5 px first window, which `--offset_range` widens:
+EMPIAR-10076 at box 256 reaches 77% with `--offset_range 15 --offset_step 3`.
+

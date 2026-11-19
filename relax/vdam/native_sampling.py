@@ -789,6 +789,7 @@ def sampling_translation_log_prior(
     voxel_size: float,
     sigma_angstrom: float,
     old_offsets: np.ndarray,
+    consistent_units: bool,
 ) -> np.ndarray:
     """Mirror InitialModel's accelerated coarse ``pdf_offset`` arithmetic.
 
@@ -798,6 +799,9 @@ def sampling_translation_log_prior(
     arithmetic is source behavior and is distinct from both the image
     pre-shift and the offset-variance sufficient statistic. See
     ``docs/math/relion_initial_model_em_parity_conventions.md#prior-preparation``.
+    ``consistent_units`` (``--offset_prior_units consistent``) adds the
+    translations in pixels: a Gaussian of width ``sigma_angstrom`` on the whole
+    offset ``old_offsets + translations``. Returns ``[N, T]`` float32.
     """
 
     if sigma_angstrom <= 0.0:
@@ -809,9 +813,10 @@ def sampling_translation_log_prior(
     if old_offsets_arr.ndim != 2 or old_offsets_arr.shape[1] != 2:
         raise ValueError(f"old_offsets must have shape (N, 2), got {old_offsets_arr.shape}")
 
-    sampled_translations_angstrom = translations_arr[None, :, :] * float(voxel_size)
+    # RELION's sampled translations are in Angstrom; the consistent prior keeps them in pixels.
+    sampled_translations = translations_arr[None, :, :] * (1.0 if consistent_units else float(voxel_size))
     # The prior centre is zero (no particle-offset priors in InitialModel).
-    source_differences = old_offsets_arr[:, None, :] + sampled_translations_angstrom
+    source_differences = old_offsets_arr[:, None, :] + sampled_translations
     log_prior = -0.5 * np.sum(source_differences**2, axis=-1) * float(voxel_size) ** 2 / sigma_angstrom**2
     return log_prior.astype(np.float32, copy=False)
 

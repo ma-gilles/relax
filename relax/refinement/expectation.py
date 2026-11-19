@@ -40,6 +40,7 @@ from relax.sampling.grids import TrialGrid, rotation_grid_size
 from relax.sampling.orientation_priors import (
     HalfDirectionLogPriors,
     make_relion_translation_log_prior,
+    pdf_offset_score_sigma,
     relion_half_translation_prior_inputs,
     relion_translation_search_base,
 )
@@ -727,6 +728,10 @@ def score_numbered_half(
     # RELION translation priors: relion_half_translation_prior_inputs
     # documents the pdf_offset / wsum_sigma2_offset centers, the
     # cold-start engine center and the prior-grid selection.
+    consistent_offset_prior = options.consistency.offset_prior_units == "consistent"
+    score_sigma_offset = pdf_offset_score_sigma(
+        half.sigma_offset_angstrom, image_geometry.pixel_size_angstrom, consistent_units=consistent_offset_prior
+    )
     if tomo_halves:
         # A subtomogram half builds its 3D offset priors per particle (score_tomo_half).
         translation_prior_inputs = None
@@ -738,6 +743,7 @@ def score_numbered_half(
             base_translations=sampling.base_translations,
             current_translations=phase.grid.translations,
             dtype=scoring_dtype,
+            consistent_units=consistent_offset_prior,
         )
         trans_prior_center = translation_prior_inputs.prior_center
         local_trans_prior_center = translation_prior_inputs.local_prior_center
@@ -752,7 +758,7 @@ def score_numbered_half(
         translation_log_prior = make_relion_translation_log_prior(
             translation_prior_inputs.prior_translations,
             image_geometry.pixel_size_angstrom,
-            half.sigma_offset_angstrom,
+            score_sigma_offset,
             trans_prior_center,
             offset_range_pixels=None,
             dtype=scoring_dtype,
@@ -856,7 +862,7 @@ def score_numbered_half(
             priors=LocalPriorSpec(
                 trans_prior_center=local_trans_prior_center,
                 trans_prior_center_for_engine=trans_prior_center_for_engine,
-                current_sigma_offset_angstrom=half.sigma_offset_angstrom,
+                current_sigma_offset_angstrom=score_sigma_offset,
                 translation_search_base=translation_search_base,
                 replay_prior_translations=replay_prior_translations,
                 class_log_priors=class_log_priors if k_class_enabled else None,

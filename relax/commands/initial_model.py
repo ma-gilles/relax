@@ -340,6 +340,17 @@ def make_parser() -> argparse.ArgumentParser:
         type=float,
     )
     parser.add_argument(
+        "--offset-prior-units",
+        "--offset_prior_units",
+        dest="offset_prior_units",
+        choices=("relion", "consistent"),
+        default=DEFAULTS.offset_prior_units,
+        help="Units of the Gaussian offset prior of the scores (pdf_offset). relion adds RELION's Angstrom "
+        "translation grid to the pixel offset and multiplies the squared distance by pixel_size^2, a prior of "
+        "width sigma_offset / pixel_size^2 pixels; consistent scores the whole offset in pixels, width "
+        "sigma_offset / pixel_size. The two agree at 1 A per pixel. Not for subtomograms (--ios)",
+    )
+    parser.add_argument(
         "--padding-factor",
         "--padding_factor",
         dest="padding_factor",
@@ -563,6 +574,7 @@ def _native_options_dict(args: argparse.Namespace) -> dict[str, object]:
         "datadir": args.datadir,
         "strip_prefix": args.strip_prefix,
         "translation_sigma_angstrom": args.translation_sigma_angstrom,
+        "offset_prior_units": args.offset_prior_units,
         "write_iter_artifacts": args.write_iter_artifacts,
         "grad_write_iter": args.grad_write_iter,
     }
