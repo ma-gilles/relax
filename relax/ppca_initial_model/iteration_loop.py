@@ -25,7 +25,12 @@ from relax.parallel.channel import ordered_sum
 from relax.ppca_initial_model import checkpoint
 from relax.ppca_initial_model import ranks as ranks_module
 from relax.ppca_initial_model.filament_band import attachment_support_mask, uniform_log_prior
-from relax.ppca_initial_model.masked_volume import prepare_volume_observations, prepare_volume_stream
+from relax.ppca_initial_model.masked_volume import (
+    estimate_temperature,
+    prepare_volume_observations,
+    prepare_volume_stream,
+    rescale_observations,
+)
 from relax.ppca_initial_model.pose_input import absolute_poses, local_rotations, particles_at_poses, read_pose_file
 from relax.ppca_initial_model.initialization import (
     bandlimit_and_mask,
@@ -504,6 +509,71 @@ def _update_rule_measured(config, diagnostics):
         f"second-moment scaling {'on' if diagnostics['second_moment_scaling'] else 'off'}, direction divisor mean "
         f"{diagnostics['direction_divisor_mean']}, second moment mean {diagnostics['second_moment_mean']}"
     )
+
+
+TEMPERATURE_LOG = "masked_temperature.jsonl"
+
+
+def _mean_map(theta, volume_shape):
+    """The real map of the model's mean column."""
+    return np.asarray(
+        ftu.get_idft3_real(
+            jnp.asarray(np.asarray(theta)[:, 0]).reshape(volume_shape[0], volume_shape[1], volume_shape[2] // 2 + 1),
+            volume_shape,
+        )
+    )
+
+
+def _restage_temperature(dataset, state, config, output, iteration):
+    """``--masked-calibrate-per-stage``: tau from the current mean at the start of a stage; the observations' c is
+    rescaled from the tau in effect to it, and the stage's entry appended to masked_temperature.jsonl."""
+    clock = time.monotonic()
+    observations = dataset.volume_observations
+    estimate = estimate_temperature(
+        dataset, np.asarray(state.noise), _mean_map(state.theta, dataset.volume_shape),
+        mask_radius_px=config.masked_mask_radius_px, lam_rel=config.masked_lambda, n_mc=config.masked_mc_samples,
+        seed=config.seed,
+    )  # fmt: skip
+    current = float(observations.record["calibration_factor"])
+    # A mean without a usable pose signal (e.g. noise-like early on) can give E[Delta] <= 0: keep the tau in effect.
+    applied = bool(np.isfinite(estimate["tau"]) and estimate["tau"] > 0)
+    if applied:
+        observations = rescale_observations(observations, estimate["tau"] / current)
+        observations = dataclasses.replace(
+            observations, record={**observations.record, "calibration_factor": estimate["tau"]}
+        )
+    else:
+        logger.warning("masked likelihood temperature at update %d is not positive (%s); keeping %g", iteration,
+                       estimate["tau"], current)  # fmt: skip
+    entry = {"iteration": iteration, "stage": list(config.stage(iteration)), **estimate, "applied": applied,
+             "calibration_factor": estimate["tau"] if applied else current,
+             "seconds": round(time.monotonic() - clock, 2)}  # fmt: skip
+    with open(Path(output) / TEMPERATURE_LOG, "a") as f:
+        f.write(json.dumps(entry) + "\n")
+    logger.info("masked likelihood temperature at update %d: %s", iteration, json.dumps(entry))
+    return dataclasses.replace(dataset, volume_observations=observations)
+
+
+def _resume_temperature(dataset, output, iteration):
+    """``--masked-calibrate-per-stage`` at start-up: a fresh run starts the temperature log with the start-up tau; a
+    resumed run takes the last tau logged at or before its iteration."""
+    path = Path(output) / TEMPERATURE_LOG
+    observations = dataset.volume_observations
+    start = float(observations.record["calibration_factor"])
+    if iteration == 0:
+        entry = {"iteration": 1, "stage": None, "tau": start, "noise_ratio": None, "signal_ratio": None,
+                 "n_particles": None, "start_up": True, "applied": True, "calibration_factor": start}  # fmt: skip
+        path.write_text(json.dumps(entry) + "\n")
+        return dataset
+    rows = [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
+    rows = [row for row in rows if row["iteration"] <= iteration]
+    if not rows:
+        raise ValueError(f"Resuming --masked-calibrate-per-stage needs {TEMPERATURE_LOG} in the output directory")
+    path.write_text("".join(json.dumps(row) + "\n" for row in rows))  # drop the entries after the resumed update
+    tau = float(rows[-1]["calibration_factor"])
+    observations = rescale_observations(observations, tau / start)
+    observations = dataclasses.replace(observations, record={**observations.record, "calibration_factor": tau})
+    return dataclasses.replace(dataset, volume_observations=observations)
 
 
 def _start_up_mean(state, output):
@@ -1110,6 +1180,8 @@ def run(
         record = {**observations.record, "seconds": round(time.monotonic() - clock, 2)}
         (output / "masked_observations.json").write_text(json.dumps(record, indent=1))
         logger.info("masked likelihood observations: %s", json.dumps(record))
+        if config.masked_calibrate_per_stage:
+            dataset = _resume_temperature(dataset, output, state.iteration)
     mask = (
         support_mask(dataset.grid_size, diameter_ang / dataset.voxel_size)
         if config.band() is None
@@ -1146,6 +1218,8 @@ def run(
         selected, halves = _select_halves(rng, state.order, count, config.balanced_stochastic_halves)
         if any(len(ids) == 0 for ids in halves):
             raise ValueError("Selected batch has an empty pseudo-halfset")
+        if config.masked_calibrate_per_stage and iteration > 1 and config.stage(iteration) != config.stage(iteration - 1):
+            dataset = _restage_temperature(dataset, state, config, output, iteration)
         noise_inflation = config.noise_inflation(iteration)
         stats = expectation_groups(
             dataset, state, config, halves, iteration, diameter_ang=diameter_ang, noise_inflation=noise_inflation,

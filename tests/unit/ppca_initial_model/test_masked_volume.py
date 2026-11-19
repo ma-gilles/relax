@@ -656,3 +656,73 @@ def test_derived_calibration_scales_c_by_the_temperature():
     assert_matches(cal.filt2 * k, base.filt2, rtol=1e-5)
     assert_matches(cal.data * k, base.data, rtol=1e-5)
     assert_matches(cal.y_norm * k, base.y_norm, rtol=1e-5)
+
+
+def test_temperature_estimate_and_rescale_match_the_calibrated_observations():
+    """estimate_temperature on every particle with the preprocessing's map (the particles' own) and seed is the
+    recorded tau, and rescale_observations by tau turns the uncalibrated operands into the calibrated ones."""
+    from relax.ppca_initial_model.masked_volume import estimate_temperature, rescale_observations
+
+    n = 10
+    from relax.ppca_initial_model.iteration_loop import _mean_map
+
+    particles, volume, _, _, _ = _noiseless_problem(n, n_particles=3, seed=4)
+    noise = np.ones((1, n // 2 + 1), np.float32)
+    field = _mean_map(np.asarray(volume).reshape(-1, 1), (n,) * 3).astype(np.float32)  # the particles' own map
+    base = prepare_volume_observations(particles, noise, mask_radius_px=3.5, n_mc=2, calibration_map=field)
+    cal = prepare_volume_observations(particles, noise, mask_radius_px=3.5, n_mc=2, calibrate=True, calibration_map=field)
+    estimate = estimate_temperature(particles, noise, field, mask_radius_px=3.5, n_mc=2, n_particles=10)
+    assert cal.record["tau_usable"] and estimate["n_particles"] == 3
+    assert estimate["tau"] == pytest.approx(cal.record["tau"], rel=1e-5)
+    assert estimate["tau"] == pytest.approx(estimate["noise_ratio"] / estimate["signal_ratio"])
+    scaled = rescale_observations(base, estimate["tau"])
+    assert_matches(scaled.data, cal.data, rtol=1e-5)
+    assert_matches(scaled.filt2, cal.filt2, rtol=1e-5)
+    assert_matches(scaled.y_norm, cal.y_norm, rtol=1e-5)
+    assert_matches(scaled.scale, cal.scale, rtol=1e-5)
+
+
+def test_per_stage_temperature_is_logged_at_every_stage_start(tmp_path):
+    """--masked-calibrate-per-stage: the temperature log holds the start-up tau and one re-estimate per stage start;
+    the factor in effect stays finite and positive (a non-positive estimate keeps the previous one); the option needs
+    --masked-calibrate."""
+    import json
+
+    from relax.ppca_initial_model import iteration_loop
+    from relax.ppca_initial_model.config import Config
+    from relax.ppca_initial_model.iteration_loop import run
+
+    iteration_loop._rotation_grid.cache_clear()
+    iteration_loop._direction_ids.cache_clear()
+    particles = _controller_particles()
+    config = Config(q=2, iterations=3, stages=((1, 3, 0), (3, 4, 0)), shift_range=1, shift_step=1, image_batch_size=3,
+                    rotation_block_size=32, tomo_likelihood="masked", masked_mask_radius_px=6.0, masked_calibrate=True,
+                    masked_calibrate_per_stage=True)  # fmt: skip
+    try:
+        run(particles, config, tmp_path, {"test": True}, diameter_ang=100.0)
+    finally:
+        iteration_loop._rotation_grid.cache_clear()
+        iteration_loop._direction_ids.cache_clear()
+    rows = [json.loads(line) for line in (tmp_path / "masked_temperature.jsonl").read_text().splitlines()]
+    assert [row["iteration"] for row in rows] == [1, 3]
+    assert rows[0]["start_up"] and rows[1]["stage"] == [4, 0]
+    assert all(np.isfinite(row["calibration_factor"]) and row["calibration_factor"] > 0 for row in rows)
+    assert rows[1]["calibration_factor"] == (rows[1]["tau"] if rows[1]["applied"] else rows[0]["tau"])
+    with pytest.raises(ValueError, match="masked_calibrate_per_stage needs masked_calibrate"):
+        Config(iterations=3, tomo_likelihood="masked", masked_mask_radius_px=6.0, masked_calibrate_per_stage=True)
+    with pytest.raises(ValueError, match="need tomo_likelihood masked"):
+        Config(iterations=3, masked_calibrate_per_stage=True)
+
+
+def test_derived_calibration_without_a_usable_temperature_is_none():
+    """--masked-calibrate with a map that carries no pose signal (zero: tau is not finite and positive) leaves c
+    unscaled (factor 1) and records the estimate as unusable."""
+    n = 10
+    particles, _, _, _, _ = _noiseless_problem(n, n_particles=3, seed=4)
+    noise = np.ones((1, n // 2 + 1), np.float32)
+    zero = np.zeros((n,) * 3, np.float32)
+    base = prepare_volume_observations(particles, noise, mask_radius_px=3.5, n_mc=2, calibration_map=zero)
+    cal = prepare_volume_observations(particles, noise, mask_radius_px=3.5, n_mc=2, calibrate=True, calibration_map=zero)
+    assert not cal.record["tau_usable"] and cal.record["calibration_factor"] == 1.0
+    assert_matches(cal.filt2, base.filt2, rtol=1e-6)
+    assert_matches(cal.data, base.data, rtol=1e-6)

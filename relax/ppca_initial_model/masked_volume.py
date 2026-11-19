@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import dataclasses
 import functools
+import logging
 
 import jax
 import jax.numpy as jnp
@@ -48,6 +49,8 @@ from relax.ppca_refinement.full_row_kernels import (
 from relax.ppca_refinement.full_row_stream import device_block_starts, tile_size_bucket, tile_support
 from relax.ppca_refinement.occupancy import check_occupancy
 
+
+logger = logging.getLogger(__name__)
 
 @dataclasses.dataclass(frozen=True)
 class VolumeObservations:
@@ -191,21 +194,10 @@ def _particle_operands(half, ctf, frames, nv, mask, ball, weights, key, lam_rel,
     return data, filt2, jnp.sum(V * V) / c, c, lam, noise_ratio, signal_ratio
 
 
-def prepare_volume_observations(particles, noise, *, mask_radius_px: float, lam_rel: float = 0.1, n_mc: int = 2,
-                                seed: int = 0, noise_scale: float = 1.0, calibrate: bool = False,
-                                calibration_map: np.ndarray | None = None) -> VolumeObservations:
-    """:class:`VolumeObservations` of every particle of ``particles`` (a ``TiltParticles``) under the noise rows
-    ``noise`` ``(G, S)`` (one per noise group; held for the whole run). The Monte Carlo draws of particle ``p`` use
-    ``PRNGKey(seed * 100003 + p)``, so the operands are a function of the particles, the noise and these options.
-    ``noise_scale`` multiplies ``c`` (a temperature for the c I approximation's measured 1.3-1.5x overconfidence;
-    1.0: none). ``calibrate`` (opt-in) derives the scale instead: the quasi-likelihood temperature
-    tau = Var(Delta) / (2 E[Delta]) of the pose score difference Delta between a map at the particle's frame and the
-    map rotated (10 deg about x, 30 deg about y, 180 deg about (1,1,1)), for data simulated from the map through the
-    forward operator (CTF, tilt projections, backprojection, whitening, mask) and the noise model by Monte Carlo;
-    tau is 1 for a calibrated likelihood and T when the scores are T times sharper. The map is ``calibration_map``
-    (a real map of the run's model, e.g. the start-up mean). The run's c is multiplied by mean noise ratio / mean
-    signal ratio over particles (Var(Delta) and 2 E[Delta] over the c I model's value; times ``noise_scale``).
-    Without ``calibration_map`` the templates are white fields on a sphere of the mask radius minus 4 px."""
+def _particle_operand_rows(particles, noise, indices, *, mask_radius_px, lam_rel, n_mc, seed, noise_scale,
+                           calibration_map):
+    """``(p, visible tilts, _particle_operands(...))`` for the particles ``indices`` (see
+    :func:`prepare_volume_observations` for the options)."""
     image_shape = tuple(int(n) for n in particles.image_shape)
     volume_shape = tuple(int(n) for n in particles.volume_shape)
     n = volume_shape[0]
@@ -233,13 +225,7 @@ def prepare_volume_observations(particles, noise, *, mask_radius_px: float, lam_
     ]
     groups = particles.particle_noise_group
     K = max(len(frames) for frames in particles.group_frames)
-    count = particles.n_images
-    data = np.zeros((count, ball.size), np.complex64)
-    filt2 = np.zeros((count, ball.size), np.float32)
-    y_norm = np.zeros(count, np.float32)
-    cs, lams, visible = np.zeros(count), np.zeros(count), np.zeros(count, np.int64)
-    noise_ratios, signal_ratios = np.zeros(count), np.zeros(count)
-    for p in range(count):
+    for p in indices:
         images, _ = particles.particle_images([p])
         _, half, ctf = particles.read(images)
         frames = particles.image_projections(images).astype(np.float32)
@@ -253,6 +239,68 @@ def prepare_volume_observations(particles, noise, *, mask_radius_px: float, lam_
             jnp.asarray(ball), weights, jax.random.PRNGKey(seed * 100003 + p), jnp.float32(lam_rel),
             jnp.float32(parseval), jnp.float32(noise_scale), fields, source, image_shape=image_shape, volume_shape=volume_shape, n_mc=int(n_mc),
         )  # fmt: skip
+        yield p, k, out
+
+
+def estimate_temperature(particles, noise, calibration_map, *, mask_radius_px: float, lam_rel: float = 0.1,
+                         n_mc: int = 2, seed: int = 0, n_particles: int = 256) -> dict:
+    """The derived temperature tau of :func:`prepare_volume_observations` (``calibrate``) for the map
+    ``calibration_map``, on ``n_particles`` particles drawn with ``seed`` (all when fewer): ``{"tau", "noise_ratio",
+    "signal_ratio", "n_particles"}`` (the ratios as means over those particles)."""
+    count = particles.n_images
+    chosen = np.sort(np.random.default_rng(seed).choice(count, min(n_particles, count), replace=False))
+    noise_ratios, signal_ratios = [], []
+    for _, _, out in _particle_operand_rows(
+        particles, noise, chosen, mask_radius_px=mask_radius_px, lam_rel=lam_rel, n_mc=n_mc, seed=seed,
+        noise_scale=1.0, calibration_map=calibration_map,
+    ):  # fmt: skip
+        noise_ratios.append(float(out[5]))
+        signal_ratios.append(float(out[6]))
+    noise_ratio, signal_ratio = float(np.mean(noise_ratios)), float(np.mean(signal_ratios))
+    return {"tau": noise_ratio / signal_ratio, "noise_ratio": noise_ratio, "signal_ratio": signal_ratio,
+            "n_particles": len(chosen)}  # fmt: skip
+
+
+def rescale_observations(observations: VolumeObservations, factor: float) -> VolumeObservations:
+    """``observations`` with ``c`` multiplied by ``factor`` (the operands carrying ``1 / c`` divided by it)."""
+    return dataclasses.replace(
+        observations,
+        data=(observations.data / factor).astype(np.complex64),
+        filt2=(observations.filt2 / factor).astype(np.float32),
+        y_norm=(observations.y_norm / factor).astype(np.float32),
+        scale=None if observations.scale is None else (observations.scale * factor).astype(np.float32),
+    )
+
+
+def prepare_volume_observations(particles, noise, *, mask_radius_px: float, lam_rel: float = 0.1, n_mc: int = 2,
+                                seed: int = 0, noise_scale: float = 1.0, calibrate: bool = False,
+                                calibration_map: np.ndarray | None = None) -> VolumeObservations:
+    """:class:`VolumeObservations` of every particle of ``particles`` (a ``TiltParticles``) under the noise rows
+    ``noise`` ``(G, S)`` (one per noise group; held for the whole run). The Monte Carlo draws of particle ``p`` use
+    ``PRNGKey(seed * 100003 + p)``, so the operands are a function of the particles, the noise and these options.
+    ``noise_scale`` multiplies ``c`` (a temperature for the c I approximation's measured 1.3-1.5x overconfidence;
+    1.0: none). ``calibrate`` (opt-in) derives the scale instead: the quasi-likelihood temperature
+    tau = Var(Delta) / (2 E[Delta]) of the pose score difference Delta between a map at the particle's frame and the
+    map rotated (10 deg about x, 30 deg about y, 180 deg about (1,1,1)), for data simulated from the map through the
+    forward operator (CTF, tilt projections, backprojection, whitening, mask) and the noise model by Monte Carlo;
+    tau is 1 for a calibrated likelihood and T when the scores are T times sharper. The map is ``calibration_map``
+    (a real map of the run's model, e.g. the start-up mean). The run's c is multiplied by mean noise ratio / mean
+    signal ratio over particles (Var(Delta) and 2 E[Delta] over the c I model's value; times ``noise_scale``).
+    Without ``calibration_map`` the templates are white fields on a sphere of the mask radius minus 4 px."""
+    volume_shape = tuple(int(n) for n in particles.volume_shape)
+    n = volume_shape[0]
+    ball, r2 = half_ball(volume_shape, n // 2 - 1)
+    parseval = parseval_factor(n)
+    count = particles.n_images
+    data = np.zeros((count, ball.size), np.complex64)
+    filt2 = np.zeros((count, ball.size), np.float32)
+    y_norm = np.zeros(count, np.float32)
+    cs, lams, visible = np.zeros(count), np.zeros(count), np.zeros(count, np.int64)
+    noise_ratios, signal_ratios = np.zeros(count), np.zeros(count)
+    for p, k, out in _particle_operand_rows(
+        particles, noise, range(count), mask_radius_px=mask_radius_px, lam_rel=lam_rel, n_mc=n_mc, seed=seed,
+        noise_scale=noise_scale, calibration_map=calibration_map,
+    ):  # fmt: skip
         data[p], filt2[p], y_norm[p], cs[p], lams[p], noise_ratios[p], signal_ratios[p] = (np.asarray(x) for x in out)
         visible[p] = k
     bad = np.flatnonzero(
@@ -265,7 +313,11 @@ def prepare_volume_observations(particles, noise, *, mask_radius_px: float, lam_
             f"lam {lams[bad[:5]].tolist()}. Check those particles' tilt images and CTFs."
         )
     tau = float(np.mean(noise_ratios) / np.mean(signal_ratios))
-    calibration = tau if calibrate else 1.0
+    # A map without a usable pose signal (e.g. a noise-like start-up mean) can give E[Delta] <= 0: no calibration then.
+    usable = bool(np.isfinite(tau) and tau > 0)
+    if calibrate and not usable:
+        logger.warning("masked likelihood temperature %s is not positive for this map; calibration factor 1", tau)
+    calibration = tau if calibrate and usable else 1.0
     if calibrate:  # c times tau: the operands carrying 1 / c scale down by it
         data, filt2, y_norm, cs = data / calibration, filt2 / calibration, y_norm / calibration, cs * calibration
     record = {
@@ -276,6 +328,7 @@ def prepare_volume_observations(particles, noise, *, mask_radius_px: float, lam_
         "calibrate": bool(calibrate),
         "calibration_factor": calibration,
         "tau": tau,
+        "tau_usable": usable,
         "noise_ratio_quantiles": np.quantile(noise_ratios, [0.05, 0.5, 0.95]).tolist(),
         "signal_ratio_quantiles": np.quantile(signal_ratios, [0.05, 0.5, 0.95]).tolist(),
         "n_mc": int(n_mc),

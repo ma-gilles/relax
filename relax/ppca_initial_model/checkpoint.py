@@ -80,6 +80,7 @@ _ADDED_CONFIG_DEFAULTS = {
     "masked_noise_scale": 1.0,
     "masked_from_update": 1,
     "masked_calibrate": False,
+    "masked_calibrate_per_stage": False,
     "hold_noise": False,
     "single_volume": False,
     "init_poses": None,

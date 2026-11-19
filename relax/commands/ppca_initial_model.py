@@ -364,6 +364,10 @@ def add_args(parser):
         "relax/ppca_initial_model/masked_volume.py)",
     )
     parser.add_argument(
+        "--masked-calibrate-per-stage", action="store_true",
+        help="With --masked-calibrate: re-estimate the temperature from the current mean at every stage start",
+    )
+    parser.add_argument(
         "--masked-exact-mstep", action="store_true",
         help="Masked likelihood: the M-step residual with the masked prediction (the E-step keeps the unmasked Gram)",
     )  # fmt: skip
@@ -824,6 +828,7 @@ def main(args=None):
         masked_noise_scale=args.masked_noise_scale,
         masked_from_update=args.masked_from_update,
         masked_calibrate=args.masked_calibrate,
+        masked_calibrate_per_stage=args.masked_calibrate_per_stage,
         hold_noise=args.hold_noise,
         single_volume=args.single_volume,
         final_poses=args.final_poses,

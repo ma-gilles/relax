@@ -191,6 +191,9 @@ class Config:
     # score differences, signal from the start-up mean through the forward operator, noise by Monte Carlo
     # (masked_volume.py).
     masked_calibrate: bool = False
+    # With masked_calibrate (opt-in): re-estimate tau from the current model's mean at the start of every stage (on a
+    # subset of particles) and rescale c to it; the start-up estimate holds until the first stage change.
+    masked_calibrate_per_stage: bool = False
     # Keep the start-up noise estimate for the whole run (no noise update). The masked likelihood always holds it.
     hold_noise: bool = False
     # A single-volume model: q = 0 (the mean alone). Without it q must be positive.
@@ -383,8 +386,8 @@ class Config:
             raise ValueError(f"tomo_likelihood must be image or masked, got {self.tomo_likelihood}")
         if self.tomo_likelihood == "image":
             if (self.masked_mask_radius_px, self.masked_lambda, self.masked_mc_samples, self.masked_exact_mstep,
-                    self.masked_noise_scale, self.masked_from_update, self.masked_calibrate) != (
-                None, 0.1, 2, False, 1.0, 1, False):
+                    self.masked_noise_scale, self.masked_from_update, self.masked_calibrate,
+                    self.masked_calibrate_per_stage) != (None, 0.1, 2, False, 1.0, 1, False, False):
                 raise ValueError("The masked likelihood's options need tomo_likelihood masked")
             return
         if self.masked_mask_radius_px is None or not self.masked_mask_radius_px > 0:
@@ -393,6 +396,8 @@ class Config:
             1 <= self.masked_from_update <= self.iterations
         ):
             raise ValueError("masked_from_update must be an update of the run (1 = masked throughout)")
+        if self.masked_calibrate_per_stage and not self.masked_calibrate:
+            raise ValueError("masked_calibrate_per_stage needs masked_calibrate")
         if not (np.isfinite(self.masked_noise_scale) and self.masked_noise_scale > 0):
             raise ValueError("The masked likelihood's noise scale must be positive")
         if not (np.isfinite(self.masked_lambda) and self.masked_lambda > 0) or self.masked_mc_samples < 1:
