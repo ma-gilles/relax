@@ -378,6 +378,13 @@ def add_args(parser):
         "scores, posteriors and M-step statistics); the noise estimate stays in data units (1: none)",
     )
     parser.add_argument(
+        "--direction-prior-blend",
+        type=float,
+        help="Weight of the previous direction prior in every update's blend, prior <- mu old + (1 - mu) posterior "
+        "mass (default: RELION's rule, 0 on a full-batch update, 0.9 on a subset); e.g. 0.9 keeps every direction "
+        "possible on full-batch updates",
+    )
+    parser.add_argument(
         "--px-em",
         action="store_true",
         help="VDAM: after every update, the PX-EM reduction of the latent prior (mu <- mu + W zbar, W <- W chol(S), "
@@ -815,6 +822,7 @@ def main(args=None):
         tilt_coarse_order=args.tilt_coarse_order,
         stages=tuple(tuple(stage) for stage in json.loads(args.stages)) if args.stages else Config().stages,
         uniform_direction_prior=args.uniform_direction_prior,
+        direction_prior_blend=args.direction_prior_blend,
         band_length_ang=args.filament_band_length,
         band_axial_step_ang=args.filament_band_axial_step,
         band_phi_step_deg=args.filament_band_phi_step,

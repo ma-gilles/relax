@@ -119,6 +119,10 @@ class Config:
     likelihood_min_shell: int = 0
     # Keep the orientation prior uniform (the learned direction prior is never used or kept).
     uniform_direction_prior: bool = False
+    # The learned direction prior's blend weight on the previous prior (opt-in): prior <- mu old + (1 - mu) new mass on
+    # every update. None: RELION's rule, mu = 0 on a full-batch update (the prior is replaced by the update's posterior
+    # mass, so every direction no particle holds gets exactly 0) and 0.9 on a subset (relion_blend).
+    direction_prior_blend: float | None = None
     # Translation search per update: ((first update, range px, step px), ...) replacing shift_range and
     # shift_step from each entry's first update on (empty: those two throughout). offset_sigma_hold_px holds the
     # zero-centred Gaussian offset prior's sigma per axis at this value in pixels (None: the learned sigma).
@@ -395,6 +399,10 @@ class Config:
             raise ValueError("likelihood_temperature must be finite and positive")
         if self.likelihood_temperature != 1.0 and self.tomo_likelihood != "image":
             raise ValueError("likelihood_temperature applies to the image likelihood (the masked one has its own c)")
+        if self.direction_prior_blend is not None and not (
+            0.0 <= self.direction_prior_blend < 1.0 and not self.uniform_direction_prior
+        ):
+            raise ValueError("direction_prior_blend is in [0, 1) and needs the learned direction prior")
         if self.px_em and (self.optimizer != "vdam" or self.q < 1 or self.single_volume):
             raise ValueError("px_em reduces the latent prior of a VDAM PPCA run (optimizer vdam, q >= 1)")
 

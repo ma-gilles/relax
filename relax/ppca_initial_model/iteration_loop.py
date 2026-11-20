@@ -1397,7 +1397,12 @@ def run(
             direction_prior = (
                 None
                 if config.uniform_direction_prior
-                else relion_blend(old_prior, rotation_mass, count, beta).astype(np.float32)
+                else relion_blend(
+                    old_prior,
+                    rotation_mass,
+                    count,
+                    beta if config.direction_prior_blend is None else config.direction_prior_blend,
+                ).astype(np.float32)
             )
         state = State(
             theta,

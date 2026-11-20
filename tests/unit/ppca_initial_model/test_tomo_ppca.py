@@ -777,6 +777,7 @@ def _controller_particles():
         ("vdam", {}),
         ("vdam", {"vdam_second_moment": False}),
         ("vdam", {"px_em": True}),
+        ("vdam", {"direction_prior_blend": 0.9}),
         ("momentum_sgd", {}),
         ("momentum_sgd", {"sgd_momentum": 0.0, "sgd_learning_rate": 1.95}),
     ],
@@ -824,6 +825,10 @@ def test_controller_runs_subtomogram_particles(tmp_path, caplog, optimizer, opti
     np.testing.assert_array_equal(np.sort(embeddings["particle_ids"]), np.arange(n_particles))
     assert embeddings["z"].shape == (n_particles, 2)
     # The logs show the update rule that ran: every update's record, and the job log at the first update.
+    if "direction_prior_blend" in options:
+        # Full-batch updates blend 0.9 of the previous prior: from the uniform start no direction can reach 0.
+        prior = np.asarray(state.direction_prior, np.float64)
+        assert prior.min() >= 0.9**2 / prior.size * (1 - 1e-5) and np.isclose(prior.sum(), 1.0, rtol=1e-5)
     if optimizer == "vdam":
         assert all(("px_em_zbar" in row) is bool(options.get("px_em")) for row in rows)
         off = options.get("vdam_second_moment") is False
