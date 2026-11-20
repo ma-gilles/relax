@@ -748,6 +748,7 @@ def _controller_particles():
     [
         ("vdam", {}),
         ("vdam", {"vdam_second_moment": False}),
+        ("vdam", {"px_em": True}),
         ("momentum_sgd", {}),
         ("momentum_sgd", {"sgd_momentum": 0.0, "sgd_learning_rate": 1.95}),
     ],
@@ -796,6 +797,7 @@ def test_controller_runs_subtomogram_particles(tmp_path, caplog, optimizer, opti
     assert embeddings["z"].shape == (n_particles, 2)
     # The logs show the update rule that ran: every update's record, and the job log at the first update.
     if optimizer == "vdam":
+        assert all(("px_em_zbar" in row) is bool(options.get("px_em")) for row in rows)
         off = options.get("vdam_second_moment") is False
         assert all(row["second_moment_scaling"] is not off for row in rows)
         if off:

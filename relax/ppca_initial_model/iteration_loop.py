@@ -47,9 +47,11 @@ from relax.ppca_initial_model.state import State
 from relax.ppca_initial_model.tomo import TiltParticles, initialize_tilts, load_tilt_tile, tilt_tiles
 from relax.ppca_initial_model.update import (
     advance_moments,
+    apply_px_em,
     coupled_direction,
     empty_moments,
     metric_floor,
+    px_em_reduction,
     shell_gates,
     stochastic_update,
 )
@@ -488,7 +490,10 @@ def _update_rule(config):
             f"momentum SGD, momentum {config.sgd_momentum:g} ({'on' if config.sgd_momentum else 'off'}), "
             f"learning rate {rate:g} = {rate / (config.q + 1):.4g} (1 + q)"
         )
-    return f"VDAM, second-moment scaling {'on' if config.vdam_second_moment else 'off'}"
+    return (
+        f"VDAM, second-moment scaling {'on' if config.vdam_second_moment else 'off'}"
+        + (", PX-EM reduction every update" if config.px_em else "")
+    )
 
 
 def _update_rule_measured(config, diagnostics):
@@ -508,6 +513,7 @@ def _update_rule_measured(config, diagnostics):
     return (
         f"second-moment scaling {'on' if diagnostics['second_moment_scaling'] else 'off'}, direction divisor mean "
         f"{diagnostics['direction_divisor_mean']}, second moment mean {diagnostics['second_moment_mean']}"
+        + (f", PX-EM zbar {np.round(diagnostics['px_em_zbar'], 3).tolist()}" if "px_em_zbar" in diagnostics else "")
     )
 
 
@@ -1309,6 +1315,16 @@ def run(
                 image_size=dataset.grid_size,
                 second_moment=config.vdam_second_moment,
             )
+            if config.px_em:
+                # The reduction from this update's E-step (at the old model), applied to the updated model: the
+                # expanded prior N(zbar, S) of the M-step back to N(0, I) (update.px_em_reduction; the stream keeps
+                # the posterior covariances' trace only, taken isotropically).
+                T, record = px_em_reduction(
+                    np.concatenate([np.asarray(s.embeddings) for s in stats]),
+                    sum(s.diagnostics["latent_covariance_trace_mean"] * s.n_images for s in stats),
+                )
+                theta, moments = apply_px_em(theta, moments, T)
+                diagnostics.update(record)
             theta = bandlimit_and_mask(theta, dataset.volume_shape, radius, mask, config.likelihood_min_shell)
             momentum = None
         numerator = sum(s.residual_num for s in stats)

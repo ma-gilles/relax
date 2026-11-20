@@ -201,3 +201,51 @@ def stochastic_update(theta, moments, directions, coverage, shells, *, step, fud
         "second_moment_mean": (jnp.sum(second * active[:, None], axis=0) / active_count).tolist(),
     }
     return updated, moments, gates.diagnostics() | scaling
+
+
+def px_em_reduction(embeddings, posterior_covariance_sum):
+    """The PX-EM reduction (Liu, Rubin & Wu 1998, Biometrika 85:755) of one update's latents, ``(T, record)``.
+
+    The latent prior is expanded to ``N(a, S)`` for the M-step; its maximum-likelihood ``a`` and ``S`` given the
+    update's E-step are the mean posterior latent ``zbar`` and the latents' second moment about it, ``Cov(E[z]) +
+    mean Cov(z | image)``. Reducing to ``N(0, I)`` maps ``mu -> mu + W a`` and ``W -> W chol(S)``: ``theta -> theta T``
+    with ``T = [[1, 0], [a, chol(S)]]`` ``(1 + q, 1 + q)`` (float64), which leaves the marginal distribution of the
+    expanded fit unchanged. At a maximum-likelihood point ``a = 0`` and ``S = I``, so ``T = I``.
+
+    ``embeddings`` ``(n, q)`` are the batch's pose-marginal posterior latent means; ``posterior_covariance_sum`` is the
+    sum over the batch of the posterior latent covariances, ``(q, q)``, or a scalar: the sum of their traces, taken
+    isotropically (what the streamed E-step keeps, ``latent_covariance_trace_sum``; it biases ``S`` by the posterior
+    covariance's anisotropy, measured at about 1% on a plain-PPCA case with posterior variances 0.01 and 0.03). The
+    between-pose spread of each image's posterior means is not in either, so ``S`` is exact only for a peaked pose
+    posterior.
+    """
+    z = np.asarray(embeddings, np.float64)
+    if z.ndim != 2 or z.shape[0] < 2 or z.shape[1] < 1:
+        raise ValueError(f"PX-EM needs (n >= 2, q >= 1) posterior latent means, got {z.shape}")
+    n, q = z.shape
+    posterior = np.asarray(posterior_covariance_sum, np.float64)
+    posterior = posterior / q * np.eye(q) if posterior.ndim == 0 else posterior
+    if posterior.shape != (q, q):
+        raise ValueError(f"Posterior covariance sum must be a scalar trace or ({q}, {q}), got {posterior.shape}")
+    zbar = z.mean(axis=0)
+    second = (z - zbar).T @ (z - zbar) / n + posterior / n
+    if not np.all(np.isfinite(second)):
+        raise ValueError("Nonfinite latent second moment")
+    chol = np.linalg.cholesky(second)
+    T = np.eye(q + 1)
+    T[1:, 0] = zbar
+    T[1:, 1:] = chol
+    return T, {"px_em_zbar": zbar.tolist(), "px_em_chol": chol.tolist()}
+
+
+@full_float32
+def apply_px_em(theta, moments, T):
+    """``theta T`` and the half-set first moments times ``T`` (increments of theta transform as theta does); the
+    second moments (scalar power ratios per channel group) and the initialized flags are kept."""
+    T = jnp.asarray(np.asarray(T, np.float32))
+    theta = jnp.asarray(theta)
+    reduced = (theta @ T.astype(theta.dtype)).astype(theta.dtype)
+    if moments is None:
+        return reduced, None
+    first = (moments.first @ T.astype(moments.first.dtype)).astype(moments.first.dtype)
+    return reduced, Moments(first, moments.second, moments.initialized)

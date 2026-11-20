@@ -82,6 +82,7 @@ _ADDED_CONFIG_DEFAULTS = {
     "masked_calibrate": False,
     "masked_calibrate_per_stage": False,
     "likelihood_temperature": 1.0,
+    "px_em": False,
     "hold_noise": False,
     "single_volume": False,
     "init_poses": None,

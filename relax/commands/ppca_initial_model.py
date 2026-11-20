@@ -377,6 +377,13 @@ def add_args(parser):
         help="Image likelihood: multiply the log-likelihood by this factor in every E-step (the noise divided by it; "
         "scores, posteriors and M-step statistics); the noise estimate stays in data units (1: none)",
     )
+    parser.add_argument(
+        "--px-em",
+        action="store_true",
+        help="VDAM: after every update, the PX-EM reduction of the latent prior (mu <- mu + W zbar, W <- W chol(S), "
+        "zbar and S the update's posterior latent mean and second moment about it), so the N(0, I) prior stays "
+        "matched to the latents",
+    )
     parser.add_argument("--single-volume", action="store_true", help="A single-volume model: q = 0 (give --q 0)")
     parser.add_argument(
         "--center-latents-output", action="store_true",
@@ -836,6 +843,7 @@ def main(args=None):
         masked_calibrate_per_stage=args.masked_calibrate_per_stage,
         hold_noise=args.hold_noise,
         likelihood_temperature=args.likelihood_temperature,
+        px_em=args.px_em,
         single_volume=args.single_volume,
         final_poses=args.final_poses,
         center_latents_at_output=args.center_latents_output,

@@ -5,7 +5,16 @@ import numpy as np
 import pytest
 from recovar.ppca.triangular import pack_upper_tri
 
-from relax.ppca_initial_model.update import coupled_direction, empty_moments, metric_floor, stochastic_update
+from helpers.float_compare import assert_matches
+
+from relax.ppca_initial_model.update import (
+    apply_px_em,
+    coupled_direction,
+    empty_moments,
+    metric_floor,
+    px_em_reduction,
+    stochastic_update,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -107,3 +116,79 @@ def test_scalar_vdam_reference_in_normalized_units():
         )
         np.testing.assert_allclose(theta[0, 0] / scale, value, rtol=2e-6, atol=2e-6)
         np.testing.assert_allclose(moments.second[0, 0], second, rtol=2e-6, atol=2e-6)
+
+
+def test_px_em_reduction_maps_the_expanded_prior_onto_the_model():
+    """theta T is (mu + W a, W chol(S)) and the half-set first moments move the same way."""
+    rng = np.random.default_rng(4)
+    z = rng.normal(size=(50, 2)) * [3.0, 0.5] + [2.0, -1.0]
+    T, record = px_em_reduction(z, 50 * 2 * 0.1)
+    second = np.cov(z.T, bias=True) + 0.1 * np.eye(2)
+    chol = np.linalg.cholesky(second)
+    assert_matches(np.asarray(record["px_em_zbar"]), z.mean(0), rtol=1e-12)
+    assert_matches(T[1:, 1:] @ T[1:, 1:].T, second, rtol=1e-12)
+    theta = (rng.normal(size=(7, 3)) + 1j * rng.normal(size=(7, 3))).astype(np.complex64)
+    moments = empty_moments(jnp.asarray(theta))
+    moments.first = jnp.asarray((rng.normal(size=(2, 7, 3)) + 1j * rng.normal(size=(2, 7, 3))).astype(np.complex64))
+    reduced, moved = apply_px_em(jnp.asarray(theta), moments, T)
+    expected = np.concatenate([theta[:, :1] + theta[:, 1:] @ z.mean(0)[:, None], theta[:, 1:] @ chol], axis=1)
+    assert_matches(np.asarray(reduced), expected, rtol=2e-6)
+    assert_matches(np.asarray(moved.first[1]), np.asarray(moments.first[1]) @ T, rtol=2e-6)
+    assert moved.second is moments.second and moved.initialized is moments.initialized
+
+
+def _ppca_em_update(theta, x, s2, px_em):
+    """One exact EM update of plain PPCA (no projection) through RELAX's M-step solve; optionally PX-EM after."""
+    q = theta.shape[1] - 1
+    W = theta[:, 1:]
+    M = W.T @ W + s2 * np.eye(q)
+    m = (x - theta[:, 0]) @ W @ np.linalg.inv(M)
+    S = s2 * np.linalg.inv(M)
+    a = np.concatenate([np.ones((len(x), 1)), m], axis=1)
+    second = a.T @ a
+    second[1:, 1:] += len(x) * S
+    lhs = np.broadcast_to(pack_upper_tri(jnp.asarray(second / s2))[None], (theta.shape[0], (q + 1) * (q + 2) // 2))
+    gradient = ((x.T @ a - theta @ second) / s2).astype(np.complex64)
+    direction, _ = coupled_direction(jnp.asarray(lhs, jnp.float32), jnp.asarray(gradient), np.ones(len(theta), bool), floor=1e-12)
+    new = theta + np.real(np.asarray(direction, np.complex128))
+    if px_em:
+        T, _ = px_em_reduction(m, len(x) * S)
+        new = new @ T
+    return new, m.mean(axis=0), np.cov(m.T, bias=True) + S
+
+
+def test_px_em_removes_the_slow_em_mode_of_the_latent_mean():
+    """Exact EM moves zbar by (I - s2 M^-1) per update (0.97-0.99 here: the mean-loading direction is EM's slow mode);
+    with the PX-EM reduction zbar and the latent second moment reach 0 and the identity within a few updates."""
+    rng = np.random.default_rng(0)
+    F, q, n, s2 = 60, 2, 200, 1.0
+    mu = rng.normal(size=F) * 3
+    W = np.linalg.qr(rng.normal(size=(F, q)))[0] * np.sqrt([100.0, 30.0])
+    x = mu + rng.normal(size=(n, q)) @ W.T + rng.normal(size=(n, F)) * np.sqrt(s2)
+    start = np.concatenate([(mu - W @ [2.0, -1.5])[:, None], W / 4], axis=1)
+    theta = start.copy()
+    for _ in range(3):
+        theta, zbar, _ = _ppca_em_update(theta, x, s2, px_em=False)
+    nxt, zbar, _ = _ppca_em_update(theta, x, s2, px_em=False)
+    Wn = nxt[:, 1:]
+    predicted = (np.eye(q) - s2 * np.linalg.inv(Wn.T @ Wn + s2 * np.eye(q))) @ zbar
+    _, measured, _ = _ppca_em_update(nxt, x, s2, px_em=False)
+    # float32 metric solve against float64: measured 1e-6 relative.
+    assert_matches(measured, predicted, rtol=1e-4)
+    assert np.linalg.norm(measured) > 0.9 * np.linalg.norm(zbar)
+    theta = start.copy()
+    history = []
+    for _ in range(6):
+        theta, zbar, second = _ppca_em_update(theta, x, s2, px_em=True)
+        history.append((np.linalg.norm(zbar), np.max(np.abs(second - np.eye(q)))))
+    assert history[0][0] > 5 and history[2][0] < 1e-3 and history[2][1] < 0.02
+    assert_matches(second, np.eye(q), rtol=1e-3)
+    # The maximum-likelihood point (fixed noise) is a fixed point of the PX-EM update: there T = I.
+    centred = x - x.mean(axis=0)
+    values, vectors = np.linalg.eigh(centred.T @ centred / n)
+    ml = np.concatenate([x.mean(axis=0)[:, None], vectors[:, ::-1][:, :q] * np.sqrt(values[::-1][:q] - s2)], axis=1)
+    moved, zbar, second = _ppca_em_update(ml, x, s2, px_em=True)
+    assert np.linalg.norm(zbar) < 1e-8
+    assert_matches(second, np.eye(q), rtol=1e-6)
+    # float32 metric solve: measured 2e-7 of the largest loading entry.
+    assert_matches(moved, ml, rtol=1e-5)

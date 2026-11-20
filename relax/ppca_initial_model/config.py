@@ -200,6 +200,13 @@ class Config:
     # M-step's statistics) uses the noise estimate divided by this factor, i.e. the log-likelihood times it. The noise
     # estimate itself stays in data units. 1.0: none.
     likelihood_temperature: float = 1.0
+    # PX-EM reduction after every VDAM update (opt-in; Liu, Rubin & Wu 1998): the latent prior is expanded to
+    # N(a, S) for the M-step, a and S estimated from the update's own E-step (a = mean posterior latent zbar, S = the
+    # latents' second moment about it), and reduced back to N(0, I) by mu <- mu + W a, W <- W chol(S), applied to the
+    # updated model and to the half-set first moments. Exact EM moves zbar only by the factor lambda / (lambda + s2)
+    # per update along the mean-loading direction (lambda a component's per-particle signal), and VDAM's decay term
+    # also shrinks W; the reduction removes both offsets each update (update.px_em_reduction).
+    px_em: bool = False
     # A single-volume model: q = 0 (the mean alone). Without it q must be positive.
     single_volume: bool = False
     # Write each particle's top pose of the final embedding pass into embeddings.npz (a runtime setting).
@@ -388,6 +395,8 @@ class Config:
             raise ValueError("likelihood_temperature must be finite and positive")
         if self.likelihood_temperature != 1.0 and self.tomo_likelihood != "image":
             raise ValueError("likelihood_temperature applies to the image likelihood (the masked one has its own c)")
+        if self.px_em and (self.optimizer != "vdam" or self.q < 1 or self.single_volume):
+            raise ValueError("px_em reduces the latent prior of a VDAM PPCA run (optimizer vdam, q >= 1)")
 
     def _check_likelihood(self):
         if self.tomo_likelihood not in ("image", "masked"):
