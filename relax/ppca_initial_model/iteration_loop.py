@@ -25,6 +25,13 @@ from relax.parallel.channel import ordered_sum
 from relax.ppca_initial_model import checkpoint
 from relax.ppca_initial_model import ranks as ranks_module
 from relax.ppca_initial_model.filament_band import attachment_support_mask, uniform_log_prior
+from relax.ppca_initial_model.masked_volume import (
+    estimate_temperature,
+    prepare_volume_observations,
+    prepare_volume_stream,
+    rescale_observations,
+)
+from relax.ppca_initial_model.pose_input import absolute_poses, local_rotations, particles_at_poses, read_pose_file
 from relax.ppca_initial_model.initialization import (
     bandlimit_and_mask,
     initialize,
@@ -40,9 +47,11 @@ from relax.ppca_initial_model.state import State
 from relax.ppca_initial_model.tomo import TiltParticles, initialize_tilts, load_tilt_tile, tilt_tiles
 from relax.ppca_initial_model.update import (
     advance_moments,
+    apply_px_em,
     coupled_direction,
     empty_moments,
     metric_floor,
+    px_em_reduction,
     shell_gates,
     stochastic_update,
 )
@@ -176,7 +185,8 @@ class _ModelLog:
         theta_host = np.asarray(theta)
         loadings = np.ascontiguousarray(theta_host[:, 1:])
         diagnostics.update(
-            loading_singular_values=np.linalg.svd(loadings, compute_uv=False),
+            # A single-volume model (q = 0) has no loadings.
+            loading_singular_values=np.linalg.svd(loadings, compute_uv=False) if loadings.shape[1] else [],
             mean_power=float(np.sum(np.abs(np.ascontiguousarray(theta_host[:, 0])) ** 2)),
             loading_power=float(np.sum(np.abs(loadings) ** 2)),
         )
@@ -480,7 +490,10 @@ def _update_rule(config):
             f"momentum SGD, momentum {config.sgd_momentum:g} ({'on' if config.sgd_momentum else 'off'}), "
             f"learning rate {rate:g} = {rate / (config.q + 1):.4g} (1 + q)"
         )
-    return f"VDAM, second-moment scaling {'on' if config.vdam_second_moment else 'off'}"
+    return (
+        f"VDAM, second-moment scaling {'on' if config.vdam_second_moment else 'off'}"
+        + (", PX-EM reduction every update" if config.px_em else "")
+    )
 
 
 def _update_rule_measured(config, diagnostics):
@@ -500,7 +513,98 @@ def _update_rule_measured(config, diagnostics):
     return (
         f"second-moment scaling {'on' if diagnostics['second_moment_scaling'] else 'off'}, direction divisor mean "
         f"{diagnostics['direction_divisor_mean']}, second moment mean {diagnostics['second_moment_mean']}"
+        + (f", PX-EM zbar {np.round(diagnostics['px_em_zbar'], 3).tolist()}" if "px_em_zbar" in diagnostics else "")
     )
+
+
+TEMPERATURE_LOG = "masked_temperature.jsonl"
+
+
+def _mean_map(theta, volume_shape):
+    """The real map of the model's mean column."""
+    return np.asarray(
+        ftu.get_idft3_real(
+            jnp.asarray(np.asarray(theta)[:, 0]).reshape(volume_shape[0], volume_shape[1], volume_shape[2] // 2 + 1),
+            volume_shape,
+        )
+    )
+
+
+def _restage_temperature(dataset, state, config, output, iteration):
+    """``--masked-calibrate-per-stage``: tau from the current mean at the start of a stage; the observations' c is
+    rescaled from the tau in effect to it, and the stage's entry appended to masked_temperature.jsonl."""
+    clock = time.monotonic()
+    observations = dataset.volume_observations
+    estimate = estimate_temperature(
+        dataset, np.asarray(state.noise), _mean_map(state.theta, dataset.volume_shape),
+        mask_radius_px=config.masked_mask_radius_px, lam_rel=config.masked_lambda, n_mc=config.masked_mc_samples,
+        seed=config.seed,
+    )  # fmt: skip
+    current = float(observations.record["calibration_factor"])
+    # A mean without a usable pose signal (e.g. noise-like early on) can give E[Delta] <= 0: keep the tau in effect.
+    applied = bool(np.isfinite(estimate["tau"]) and estimate["tau"] > 0)
+    if applied:
+        observations = rescale_observations(observations, estimate["tau"] / current)
+        observations = dataclasses.replace(
+            observations, record={**observations.record, "calibration_factor": estimate["tau"]}
+        )
+    else:
+        logger.warning("masked likelihood temperature at update %d is not positive (%s); keeping %g", iteration,
+                       estimate["tau"], current)  # fmt: skip
+    entry = {"iteration": iteration, "stage": list(config.stage(iteration)), **estimate, "applied": applied,
+             "calibration_factor": estimate["tau"] if applied else current,
+             "seconds": round(time.monotonic() - clock, 2)}  # fmt: skip
+    with open(Path(output) / TEMPERATURE_LOG, "a") as f:
+        f.write(json.dumps(entry) + "\n")
+    logger.info("masked likelihood temperature at update %d: %s", iteration, json.dumps(entry))
+    return dataclasses.replace(dataset, volume_observations=observations)
+
+
+def _resume_temperature(dataset, output, iteration):
+    """``--masked-calibrate-per-stage`` at start-up: a fresh run starts the temperature log with the start-up tau; a
+    resumed run takes the last tau logged at or before its iteration."""
+    path = Path(output) / TEMPERATURE_LOG
+    observations = dataset.volume_observations
+    start = float(observations.record["calibration_factor"])
+    if iteration == 0:
+        entry = {"iteration": 1, "stage": None, "tau": start, "noise_ratio": None, "signal_ratio": None,
+                 "n_particles": None, "start_up": True, "applied": True, "calibration_factor": start}  # fmt: skip
+        path.write_text(json.dumps(entry) + "\n")
+        return dataset
+    rows = [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
+    rows = [row for row in rows if row["iteration"] <= iteration]
+    if not rows:
+        raise ValueError(f"Resuming --masked-calibrate-per-stage needs {TEMPERATURE_LOG} in the output directory")
+    path.write_text("".join(json.dumps(row) + "\n" for row in rows))  # drop the entries after the resumed update
+    tau = float(rows[-1]["calibration_factor"])
+    observations = rescale_observations(observations, tau / start)
+    observations = dataclasses.replace(observations, record={**observations.record, "calibration_factor": tau})
+    return dataclasses.replace(dataset, volume_observations=observations)
+
+
+def _start_up_mean(state, output):
+    """The start-up model's mean column (the run's checkpoint 0 on resume), for the masked likelihood's derived
+    calibration: the same templates whether the run starts or resumes."""
+    if state.iteration == 0:
+        return np.asarray(state.theta)[:, 0]
+    first = Path(output) / "checkpoint_0000.npz"
+    if not first.exists():
+        raise ValueError("The masked likelihood's calibration needs the run's checkpoint_0000.npz on resume")
+    with np.load(first) as z:
+        return np.asarray(z["theta"])[:, 0]
+
+
+def _pose_input_grid(config, iteration):
+    """``(rotations, rotation_log_prior, translations, shift_step)`` about the given poses at ``iteration``: the one
+    pose (identity, zero shift) for pose_mode "fixed"; for "local" the stage's HEALPix rotations within 3 sigma of the
+    identity (pose_input.local_rotations) and the stage's 3D shift grid."""
+    if config.pose_mode == "fixed":
+        return np.eye(3, dtype=np.float32)[None], np.zeros(1, np.float32), np.zeros((1, 3), np.float32), None
+    _, hp = config.stage(iteration)
+    rotations, log_prior, _ = local_rotations(_rotation_grid(hp), config.local_sigma_deg)
+    shift_range, shift_step = config.shifts(iteration)
+    translations = grids.get_relion_translation_grid_3d(shift_range, shift_step).astype(np.float32)
+    return rotations, log_prior, translations, shift_step
 
 
 def _frozen_noise_shells(dataset):
@@ -608,6 +712,8 @@ def _expectation(
     share = None
     laps = _Laps()
     if ranks is not None:
+        if config.tomo_likelihood == "masked":
+            raise NotImplementedError("The masked likelihood runs on one GPU")
         if not config.stream_coarse_recompute:
             raise NotImplementedError("Several GPUs split the streamed engine's tiles only")
         # Rank 0 sends the E-step first, so the other ranks prepare their streams while it prepares its own.
@@ -635,6 +741,20 @@ def _expectation(
         translations = band.translations_px(dataset.voxel_size)
         prior = jnp.asarray(uniform_log_prior(len(translations)))
         shift_step = None
+    elif config.pose_mode is not None:
+        # Given poses: each particle in its own frame (pose_input.particles_at_poses), searched about the identity.
+        if not tilts or dataset.input_poses is None:
+            raise ValueError("Given poses train subtomogram particles composed with their poses")
+        rotations, rotation_log_prior, translations, shift_step = _pose_input_grid(config, iteration)
+        canonical_eulers = np.zeros((len(rotations), 3), np.float32)  # the composed frames carry the orientations
+        offset_variance = (
+            state.offset_variance if config.offset_sigma_hold_px is None else config.offset_sigma_hold_px**2
+        )
+        prior = -jnp.sum(jnp.asarray(translations) ** 2, axis=-1) / (2 * offset_variance)
+        prior = prior - jnp.log(jnp.sum(jnp.exp(prior)))
+        # A given pose's grid can be far smaller than a rotation block (fixed: one rotation): blocks of the grid's
+        # size, so the tile plan does not count (and the stream does not score) a block of sentinel rows.
+        schedule = dataclasses.replace(schedule, rotation_block_size=min(schedule.rotation_block_size, len(rotations)))
     else:
         rotations = _rotation_grid(hp)
         canonical_eulers = grids.get_relion_hidden_rotation_grid(hp, matrices=False)
@@ -659,8 +779,11 @@ def _expectation(
     # Subtomogram particles keep one noise spectrum per noise group (rows of ``state.noise``, section 16.6).
     noise_rows = np.asarray(state.noise) if tilts else np.asarray(state.noise)[None]
     nvs = [np.asarray(make_radial_noise(row, dataset.image_shape), np.float32) for row in noise_rows]
-    if noise_inflation != 1.0:
-        nvs = [np.float32(noise_inflation) * nv for nv in nvs]
+    # The likelihood temperature divides the noise in every E-step: the scores, the posteriors and the M-step's
+    # statistics alike (Config.likelihood_temperature).
+    factor = noise_inflation / config.likelihood_temperature
+    if factor != 1.0:
+        nvs = [np.float32(factor) * nv for nv in nvs]
     nv = nvs[0]
     common = dict(noise_variance=nv, geometry=geometry, schedule=schedule, scoring=scoring, image_indices=ids)
     mu, W = state.theta[:, 0], state.theta[:, 1:]
@@ -680,7 +803,12 @@ def _expectation(
                 **grid,
             }
             return [
-                prepare_full_row_stream(
+                # The masked likelihood's stream (one 3D frame per particle, masked_volume.py) takes the same grids.
+                (
+                    functools.partial(prepare_volume_stream, exact_masked_mstep=config.masked_exact_mstep)
+                    if config.masked_at(iteration)
+                    else prepare_full_row_stream
+                )(
                     dataset,
                     mu,
                     W,
@@ -966,6 +1094,11 @@ def run(
     scores each E-step's tiles on every GPU. Initialization, the updates, checkpoints and outputs run here."""
     output = Path(output)
     output.mkdir(parents=True, exist_ok=True)
+    if config.pose_mode is not None:
+        if not isinstance(dataset, TiltParticles):
+            raise ValueError("Given poses train subtomogram particles (--ios)")
+        dataset = particles_at_poses(dataset, read_pose_file(config.init_poses, dataset.n_images))
+        logger.info("given poses from %s, pose mode %s", config.init_poses, config.pose_mode)
     resumed_precision = None
     resumed_source = None
     if resume:
@@ -986,9 +1119,16 @@ def run(
             # The band seeds inside the attachment support (initialization.seed_model).
             band_seed = {} if config.band() is None else {"band": config.band()}
             theta, noise, info = initialize_tilts(
-                dataset, seed=config.seed, diameter_ang=diameter_ang, q=config.q, **band_seed
+                # A single-volume model starts from the mean of the rank-1 seed (same draws as a q = 1 run).
+                dataset, seed=config.seed, diameter_ang=diameter_ang, q=1 if config.single_volume else config.q,
+                **band_seed,
             )
+            if config.single_volume:
+                theta = theta[:, :1]
+                info = {**info, "single_volume": "mean of the q = 1 seed"}
         else:
+            if config.single_volume:
+                raise ValueError("A single-volume model trains subtomogram particles (--ios)")
             theta, noise, info = initialize(dataset, seed=config.seed, diameter_ang=diameter_ang, q=config.q)
         if config.initial_mean is not None:
             theta = with_initial_mean(
@@ -1019,6 +1159,38 @@ def run(
         raise TypeError("InitialModel requires production float32 model and noise")
     if dataset.n_images < 4:
         raise ValueError("Both pseudo-halfsets need particles")
+    if config.tomo_likelihood == "masked":
+        # The masked likelihood's fixed preprocessing, from the noise it holds for the run (the start-up estimate, or
+        # the resumed state's, which a masked run never updates).
+        if not isinstance(dataset, TiltParticles):
+            raise ValueError("The masked likelihood trains subtomogram particles (--ios)")
+        clock = time.monotonic()
+        observations = prepare_volume_observations(
+            dataset,
+            np.asarray(state.noise),
+            mask_radius_px=config.masked_mask_radius_px,
+            lam_rel=config.masked_lambda,
+            n_mc=config.masked_mc_samples,
+            seed=config.seed,
+            noise_scale=config.masked_noise_scale,
+            calibrate=config.masked_calibrate,
+            # The templates of the derived calibration: the start-up model's mean (a map of the particle's size and
+            # spectrum, no truth involved).
+            calibration_map=None if not config.masked_calibrate else np.asarray(
+                ftu.get_idft3_real(
+                    jnp.asarray(_start_up_mean(state, output)).reshape(
+                        dataset.volume_shape[0], dataset.volume_shape[1], dataset.volume_shape[2] // 2 + 1
+                    ),
+                    dataset.volume_shape,
+                )
+            ),
+        )
+        dataset = dataclasses.replace(dataset, volume_observations=observations)
+        record = {**observations.record, "seconds": round(time.monotonic() - clock, 2)}
+        (output / "masked_observations.json").write_text(json.dumps(record, indent=1))
+        logger.info("masked likelihood observations: %s", json.dumps(record))
+        if config.masked_calibrate_per_stage:
+            dataset = _resume_temperature(dataset, output, state.iteration)
     mask = (
         support_mask(dataset.grid_size, diameter_ang / dataset.voxel_size)
         if config.band() is None
@@ -1055,6 +1227,8 @@ def run(
         selected, halves = _select_halves(rng, state.order, count, config.balanced_stochastic_halves)
         if any(len(ids) == 0 for ids in halves):
             raise ValueError("Selected batch has an empty pseudo-halfset")
+        if config.masked_calibrate_per_stage and iteration > 1 and config.stage(iteration) != config.stage(iteration - 1):
+            dataset = _restage_temperature(dataset, state, config, output, iteration)
         noise_inflation = config.noise_inflation(iteration)
         stats = expectation_groups(
             dataset, state, config, halves, iteration, diameter_ang=diameter_ang, noise_inflation=noise_inflation,
@@ -1141,6 +1315,16 @@ def run(
                 image_size=dataset.grid_size,
                 second_moment=config.vdam_second_moment,
             )
+            if config.px_em:
+                # The reduction from this update's E-step (at the old model), applied to the updated model: the
+                # expanded prior N(zbar, S) of the M-step back to N(0, I) (update.px_em_reduction; the stream keeps
+                # the posterior covariances' trace only, taken isotropically).
+                T, record = px_em_reduction(
+                    np.concatenate([np.asarray(s.embeddings) for s in stats]),
+                    sum(s.diagnostics["latent_covariance_trace_mean"] * s.n_images for s in stats),
+                )
+                theta, moments = apply_px_em(theta, moments, T)
+                diagnostics.update(record)
             theta = bandlimit_and_mask(theta, dataset.volume_shape, radius, mask, config.likelihood_min_shell)
             momentum = None
         numerator = sum(s.residual_num for s in stats)
@@ -1151,12 +1335,17 @@ def run(
         padding = [(0, 0)] * (current.ndim - 1) + [(0, max(0, noise_shells - current.shape[-1]))]
         previous = np.pad(current, padding, mode="edge")[..., :noise_shells]
         try:
-            noise = update_noise(
-                previous,
-                numerator,
-                denominator,
-                full_data=count == dataset.n_images,
-                frozen_shells=_frozen_noise_shells(dataset),
+            # Held noise (Config.holds_noise: the masked likelihood, or hold_noise) keeps the start-up estimate.
+            noise = (
+                current
+                if config.holds_noise()
+                else update_noise(
+                    previous,
+                    numerator,
+                    denominator,
+                    full_data=count == dataset.n_images,
+                    frozen_shells=_frozen_noise_shells(dataset),
+                )
             )
         except ValueError:
             checkpoint.save(output / f"failure_before_{iteration:04d}.npz", state, config, identity)
@@ -1190,7 +1379,8 @@ def run(
         if not bool(jnp.all(jnp.isfinite(theta))):
             raise ValueError("Nonfinite PPCA model")
         hp = config.stage(iteration)[1]
-        if band is not None:
+        if band is not None or config.pose_mode is not None:
+            # The band's and the given poses' grids are not the HEALPix order's: no direction prior.
             direction_prior = None
         else:
             direction_ids = _direction_ids(hp)
@@ -1304,6 +1494,10 @@ def run(
                 diagnostics.update(sgd_halfset_gate=config.sgd_halfset_gate, sgd_step_scale=config.sgd_step_scale)
         if config.noise_anneal_updates:
             diagnostics["noise_inflation"] = noise_inflation
+        if config.holds_noise():
+            diagnostics["noise_held"] = True
+        if config.tomo_likelihood == "masked":
+            diagnostics["likelihood"] = "masked" if config.masked_at(iteration) else "image"
         if iteration == state_start + 1 or config.stage(iteration) != config.stage(iteration - 1):
             logger.info(
                 "update %d, radius %d, HEALPix order %d: %s",
@@ -1356,10 +1550,52 @@ def run(
                 **({} if final.p_occupied is None else {"p_occupied": final.p_occupied}),
             )
         )
+        if config.final_poses and band is None:
+            # Each particle's top pose of the final pass on the last stage's grids: the rotation matrix (RECOVAR's
+            # convention, as the stream projects it) and the 3D (or 2D) shift in pixels.
+            _, hp_final = config.stage(config.iterations)
+            shift_range, shift_step = config.shifts(config.iterations)
+            if config.pose_mode is not None:
+                # The stream's poses are about each particle's given pose: report the particle poses.
+                grid_rotations, _, grid_translations, _ = _pose_input_grid(config, config.iterations)
+                order = np.argsort(final.original_image_ids)
+                rotations, translations = absolute_poses(
+                    dataset.input_poses,
+                    grid_rotations[final.best_rotation][order],
+                    np.asarray(grid_translations)[final.best_translation][order],
+                )
+                inverse = np.argsort(order)
+                rotations, translations = rotations[inverse], translations[inverse]
+            else:
+                grid_translations = (
+                    grids.get_relion_translation_grid_3d(shift_range, shift_step)
+                    if isinstance(dataset, TiltParticles)
+                    else grids.get_relion_translation_grid(max_pixel=shift_range, pixel_offset=shift_step)
+                )
+                rotations = _rotation_grid(hp_final)[final.best_rotation]
+                translations = np.asarray(grid_translations, np.float32)[final.best_translation]
+            placement.update(
+                best_rotation=final.best_rotation,
+                best_translation=final.best_translation,
+                best_rotation_matrix=np.asarray(rotations, np.float32),
+                best_translation_px=np.asarray(translations, np.float32),
+            )
+        z = np.asarray(final.embeddings)
+        if config.center_latents_at_output and z.shape[1]:
+            # Output only (the EM state and checkpoints are unchanged): the population average mu + W zbar becomes the
+            # exported mean and the latents are centred, z - zbar, so mu is the average map (the posterior latents
+            # are not kept centred by the updates).
+            zbar = z.mean(axis=0)
+            theta = np.asarray(state.theta)
+            centred = theta.copy()
+            centred[:, 0] = theta[:, 0] + theta[:, 1:] @ zbar.astype(theta.dtype)
+            np.savez(output / "model_centred.npz", theta=centred, zbar=zbar, iteration=state.iteration)
+            placement.update(zbar=zbar)
+            z = z - zbar
         np.savez(
             output / "embeddings.npz",
             particle_ids=final.original_image_ids,
-            z=np.asarray(final.embeddings),
+            z=z,
             log_evidence=final.log_evidence,
             best_pose_log_score=final.best_pose_log_score,
             max_posterior=final.max_posterior,

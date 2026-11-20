@@ -168,6 +168,59 @@ class Config:
     # seed); the loadings stay random. None: the random seed.
     initial_mean: str | None = None
     initial_mean_scale: float = 1.0
+    # The subtomogram likelihood: "image" (the default) scores each particle's tilt images; "masked" scores its masked,
+    # whitened scene backprojection (relax/ppca_initial_model/masked_volume.py; the masked-tomo pilot's arm B with the
+    # unmasked Fourier Gram). The masked likelihood's preprocessing is a fixed map of the noise model, so it holds
+    # the start-up noise. masked_mask_radius_px: the observation mask's radius (pixels of the box); masked_lambda:
+    # the whitening regulariser as a fraction of the mean observed backprojected CTF^2 / noise; masked_mc_samples:
+    # Monte Carlo noise draws per particle for its voxel variance.
+    tomo_likelihood: str = "image"
+    masked_mask_radius_px: float | None = None
+    masked_lambda: float = 0.1
+    masked_mc_samples: int = 2
+    # The M-step residual with the masked prediction (exact masked likelihood gradient; the E-step keeps the unmasked
+    # Fourier Gram). Opt-in: per (particle, rotation) with posterior mass, full-box DFTs.
+    masked_exact_mstep: bool = False
+    # The masked likelihood's noise variance c times this factor (a temperature; its c I approximation is measured
+    # 1.3-1.5x overconfident). 1.0: none.
+    masked_noise_scale: float = 1.0
+    # Hybrid schedule (opt-in): the image likelihood scores the updates before this one and the masked likelihood the
+    # rest (1: masked throughout). The noise is held throughout (the masked observations use the start-up estimate).
+    masked_from_update: int = 1
+    # Derived calibration (opt-in): c times the quasi-likelihood temperature tau = Var(Delta) / (2 E[Delta]) of pose
+    # score differences, signal from the start-up mean through the forward operator, noise by Monte Carlo
+    # (masked_volume.py).
+    masked_calibrate: bool = False
+    # With masked_calibrate (opt-in): re-estimate tau from the current model's mean at the start of every stage (on a
+    # subset of particles) and rescale c to it; the start-up estimate holds until the first stage change.
+    masked_calibrate_per_stage: bool = False
+    # Keep the start-up noise estimate for the whole run (no noise update). The masked likelihood always holds it.
+    hold_noise: bool = False
+    # Constant likelihood temperature (opt-in; the image likelihood): every E-step (scores, posteriors and the
+    # M-step's statistics) uses the noise estimate divided by this factor, i.e. the log-likelihood times it. The noise
+    # estimate itself stays in data units. 1.0: none.
+    likelihood_temperature: float = 1.0
+    # PX-EM reduction after every VDAM update (opt-in; Liu, Rubin & Wu 1998): the latent prior is expanded to
+    # N(a, S) for the M-step, a and S estimated from the update's own E-step (a = mean posterior latent zbar, S = the
+    # latents' second moment about it), and reduced back to N(0, I) by mu <- mu + W a, W <- W chol(S), applied to the
+    # updated model and to the half-set first moments. Exact EM moves zbar only by the factor lambda / (lambda + s2)
+    # per update along the mean-loading direction (lambda a component's per-particle signal), and VDAM's decay term
+    # also shrinks W; the reduction removes both offsets each update (update.px_em_reduction).
+    px_em: bool = False
+    # A single-volume model: q = 0 (the mean alone). Without it q must be positive.
+    single_volume: bool = False
+    # Write each particle's top pose of the final embedding pass into embeddings.npz (a runtime setting).
+    final_poses: bool = False
+    # At output only: write the population average mu + W zbar as the mean (model_centred.npz), the latents centred
+    # (z - zbar) and zbar in embeddings.npz. The EM state and checkpoints are unchanged (a runtime setting).
+    center_latents_at_output: bool = False
+    # Given particle poses (relax/ppca_initial_model/pose_input.py: an .npz of rotations and 3D shifts) and how they are
+    # used: pose_mode "fixed" scores each particle at its given pose only (fixed-pose PPCA); "local" searches the
+    # stage's HEALPix rotations within 3 local_sigma_deg of it (Gaussian prior of that sigma) and the stage's shift
+    # grid about its shift. None: the full pose grid (the default).
+    init_poses: str | None = None
+    pose_mode: str | None = None
+    local_sigma_deg: float = 3.0
 
     def band(self):
         """The :class:`FilamentBand` search, or None for the full grid."""
@@ -207,7 +260,10 @@ class Config:
                 raise ValueError("An occupancy prior needs the filament band's full grid")
             if not 0 < self.occupancy <= 1:
                 raise ValueError(f"Occupancy prior must be in (0, 1], got {self.occupancy}")
-        if isinstance(self.q, bool) or not isinstance(self.q, (int, np.integer)) or self.q <= 0 or self.seed <= 0 or self.iterations <= 0:
+        if self.single_volume:
+            if isinstance(self.q, bool) or self.q != 0 or self.seed <= 0 or self.iterations <= 0:
+                raise ValueError("A single-volume model needs q = 0 and a positive seed and iteration count")
+        elif isinstance(self.q, bool) or not isinstance(self.q, (int, np.integer)) or self.q <= 0 or self.seed <= 0 or self.iterations <= 0:
             raise ValueError("PPCA requires positive integer q, seed and iteration count")
         if not self.stages or self.stages[0][0] != 1:
             raise ValueError("Stages must begin at iteration 1")
@@ -333,6 +389,70 @@ class Config:
                 raise ValueError("The shift schedule is sorted (first update, range >= 0, step > 0) entries from update 1")
         if self.offset_sigma_hold_px is not None and not (np.isfinite(self.offset_sigma_hold_px) and self.offset_sigma_hold_px > 0):
             raise ValueError("The held offset sigma must be finite and positive")
+        self._check_likelihood()
+        self._check_pose_input()
+        if not (np.isfinite(self.likelihood_temperature) and self.likelihood_temperature > 0):
+            raise ValueError("likelihood_temperature must be finite and positive")
+        if self.likelihood_temperature != 1.0 and self.tomo_likelihood != "image":
+            raise ValueError("likelihood_temperature applies to the image likelihood (the masked one has its own c)")
+        if self.px_em and (self.optimizer != "vdam" or self.q < 1 or self.single_volume):
+            raise ValueError("px_em reduces the latent prior of a VDAM PPCA run (optimizer vdam, q >= 1)")
+
+    def _check_likelihood(self):
+        if self.tomo_likelihood not in ("image", "masked"):
+            raise ValueError(f"tomo_likelihood must be image or masked, got {self.tomo_likelihood}")
+        if self.tomo_likelihood == "image":
+            if (self.masked_mask_radius_px, self.masked_lambda, self.masked_mc_samples, self.masked_exact_mstep,
+                    self.masked_noise_scale, self.masked_from_update, self.masked_calibrate,
+                    self.masked_calibrate_per_stage) != (None, 0.1, 2, False, 1.0, 1, False, False):
+                raise ValueError("The masked likelihood's options need tomo_likelihood masked")
+            return
+        if self.masked_mask_radius_px is None or not self.masked_mask_radius_px > 0:
+            raise ValueError("The masked likelihood needs a positive masked_mask_radius_px")
+        if isinstance(self.masked_from_update, bool) or not isinstance(self.masked_from_update, (int, np.integer)) or not (
+            1 <= self.masked_from_update <= self.iterations
+        ):
+            raise ValueError("masked_from_update must be an update of the run (1 = masked throughout)")
+        if self.masked_calibrate_per_stage and not self.masked_calibrate:
+            raise ValueError("masked_calibrate_per_stage needs masked_calibrate")
+        if not (np.isfinite(self.masked_noise_scale) and self.masked_noise_scale > 0):
+            raise ValueError("The masked likelihood's noise scale must be positive")
+        if not (np.isfinite(self.masked_lambda) and self.masked_lambda > 0) or self.masked_mc_samples < 1:
+            raise ValueError("The masked likelihood needs masked_lambda > 0 and at least one Monte Carlo sample")
+        if (
+            not self.stream_coarse_recompute
+            or self.oversampling
+            or self.band_length_ang is not None
+            or self.fixed_core is not None
+            or self.likelihood_min_shell
+            or self.sgd_step_scale != "trace"
+        ):
+            raise ValueError(
+                "The masked likelihood runs on the streamed engine without oversampling, the filament band, a fixed "
+                "core, likelihood_min_shell or the exact-diagonal step scale"
+            )
+
+    def _check_pose_input(self):
+        if (self.init_poses is None) != (self.pose_mode is None):
+            raise ValueError("Given poses need both init_poses and pose_mode (fixed or local)")
+        if self.pose_mode is None:
+            if self.local_sigma_deg != 3.0:
+                raise ValueError("local_sigma_deg is a pose_mode local option")
+            return
+        if self.pose_mode not in ("fixed", "local"):
+            raise ValueError(f"pose_mode must be fixed or local, got {self.pose_mode}")
+        if not (np.isfinite(self.local_sigma_deg) and self.local_sigma_deg > 0):
+            raise ValueError("local_sigma_deg must be positive")
+        if self.oversampling or self.band_length_ang is not None or self.tilt_coarse_pass or self.fixed_core is not None:
+            raise ValueError("Given poses run without oversampling, the filament band, the tilt coarse pass or a fixed core")
+
+    def masked_at(self, iteration):
+        """Whether update ``iteration`` scores with the masked likelihood (the hybrid schedule's switch)."""
+        return self.tomo_likelihood == "masked" and iteration >= self.masked_from_update
+
+    def holds_noise(self):
+        """Whether the run keeps the start-up noise (hold_noise, and always under the masked likelihood)."""
+        return self.hold_noise or self.tomo_likelihood == "masked"
 
     def newton_sgd(self):
         """Whether the update is the Newton SGD step (sgd_recipe.NewtonSGD) rather than the momentum step."""

@@ -18,6 +18,8 @@ from helpers.full_row_tile import accumulate_full_row_tile
 from recovar import core
 from scipy.spatial.transform import Rotation
 
+from recovar.reconstruction.noise import make_radial_noise, to_batched_half_pixel_noise
+
 from relax.fourier.half_spectrum import make_half_image_weights, make_shell_indices_half
 from relax.fourier.preprocessing import relion_half_translation_lattice
 from relax.ppca_initial_model.tomo import TiltParticles, load_tilt_tile, tilt_shifts, tilt_tiles
@@ -64,7 +66,7 @@ def _particles(images, ctf, image_frames, frames):
     )
 
 
-def make_problem(q=2, image_frames=IMAGE_FRAMES, frames=FRAMES, translations=TRANSLATIONS, seed=5):
+def make_problem(q=2, image_frames=IMAGE_FRAMES, frames=FRAMES, translations=TRANSLATIONS, seed=5, noise_image=None):
     rng = np.random.default_rng(seed)
     n_images = sum(len(f) for f in image_frames)
     images = (rng.standard_normal((n_images, N_HALF)) + 1j * rng.standard_normal((n_images, N_HALF))) * 6
@@ -79,7 +81,7 @@ def make_problem(q=2, image_frames=IMAGE_FRAMES, frames=FRAMES, translations=TRA
         particles,
         mu,
         W,
-        noise_variance=np.full(IMAGE_SHAPE, NOISE, np.float32),
+        noise_variance=np.full(IMAGE_SHAPE, NOISE, np.float32) if noise_image is None else noise_image,
         rotations=rotations,
         translations=translations,
         rotation_log_prior=rotation_log_prior,
@@ -107,6 +109,7 @@ def make_problem(q=2, image_frames=IMAGE_FRAMES, frames=FRAMES, translations=TRA
             rotations=rotations,
             rotation_log_prior=rotation_log_prior,
             translation_log_prior=translation_log_prior,
+            **({} if noise_image is None else {"noise_image": noise_image}),
         ),
     )
 
@@ -124,6 +127,11 @@ def _brute_force(particles, stream, p):
     translations = np.asarray(p.get("translations", TRANSLATIONS))
     noise = np.asarray(p.get("noise", np.full(particles.n_images, NOISE)), np.float64)
     noise_group = particles.particle_noise_group
+    noise_half = (
+        np.asarray(to_batched_half_pixel_noise(p["noise_image"], IMAGE_SHAPE), np.float64).reshape(-1)
+        if "noise_image" in p
+        else None
+    )
     window = np.asarray(stream.resolved.score_indices)
     weights = np.asarray(make_half_image_weights(IMAGE_SHAPE), np.float64)
     lattice = np.asarray(relion_half_translation_lattice(IMAGE_SHAPE), np.float64)
@@ -177,9 +185,11 @@ def _brute_force(particles, stream, p):
         C = p["ctf"][image_ids].astype(np.float64)
         outside = np.ones(N_HALF, bool)
         outside[window] = False
-        sigma2 = noise[i]
-        D = weights[window] / sigma2  # pixel precision of the half-spectrum metric
-        offset = -0.5 * np.sum(np.abs(y[:, outside]) ** 2 * weights[outside] / sigma2)
+        # Per-pixel noise variance (half spectrum): a flat noise[i], or the radial image p["noise_image"] in the
+        # stream's half layout.
+        sigma2 = noise_half if noise_half is not None else np.full(N_HALF, noise[i])
+        D = weights[window] / sigma2[window]  # pixel precision of the half-spectrum metric
+        offset = -0.5 * np.sum(np.abs(y[:, outside]) ** 2 * weights[outside] / sigma2[outside])
         scores, moments = np.zeros((R, T)), {}
         for r in range(R):
             for t in range(T):
@@ -214,10 +224,10 @@ def _brute_force(particles, stream, p):
             G = np.outer(alpha, alpha)
             G[1:, 1:] += covariance
             for n, k in enumerate(slots):
-                y_recon = shifted[n] * C[n, window] / sigma2
+                y_recon = shifted[n] * C[n, window] / sigma2[window]
                 rhs_images[(group, r, k)][:, window] += g * alpha[:, None] * y_recon[None]
                 for c, (a, b) in enumerate(tri):
-                    lhs_images[(group, r, k)][c, window] += g * G[a, b] * C[n, window] ** 2 / sigma2
+                    lhs_images[(group, r, k)][c, window] += g * G[a, b] * C[n, window] ** 2 / sigma2[window]
                 predicted = alpha @ A[:, n]  # CTF-weighted projection of mu + W m
                 loading = A[1:, n]  # (q, F)
                 expected = (
@@ -298,6 +308,24 @@ def test_tilt_tile_matches_brute_force_joint_gaussian(problem):
     assert_matches(np.asarray(actual.residual_num), truth["residual_num"], rtol=rtol)
     assert_matches(np.asarray(actual.residual_den), truth["residual_den"], rtol=1e-6)
     np.testing.assert_array_equal(actual.original_image_ids, np.arange(3))
+
+
+def test_tilt_tile_with_a_radial_noise_spectrum_matches_brute_force():
+    """The production noise: one variance per image shell (make_radial_noise, as the controller builds it), rising
+    tenfold from the centre, whitens every pixel by its own shell in the scores, posteriors and M-step statistics."""
+    spectrum = NOISE * np.linspace(0.3, 3.0, IMAGE_SHAPE[0] // 2 + 1).astype(np.float32)
+    noise_image = np.asarray(make_radial_noise(spectrum, IMAGE_SHAPE), np.float32)
+    particles, stream, arrays = make_problem(noise_image=noise_image)
+    truth = brute_force(particles, stream, arrays)
+    actual = accumulate_full_row_tile(stream, np.arange(3), [None] * 3)
+    # The flat-noise test's band (2e-5, 5x its measured 4.0e-6).
+    rtol = 2e-5
+    assert_matches(actual.log_likelihood, truth["log_likelihood"], rtol=rtol)
+    assert_matches(np.asarray(actual.embeddings), truth["embeddings"], rtol=rtol)
+    assert_matches(actual.diagnostics["rotation_mass"], truth["rotation_mass"], rtol=rtol)
+    assert_matches(np.asarray(actual.lhs_tri), truth["lhs_tri"], rtol=rtol)
+    assert_matches(np.asarray(actual.residual_gradient), truth["residual_gradient"], rtol=rtol)
+    assert_matches(np.asarray(actual.residual_num), truth["residual_num"], rtol=rtol)
 
 
 def test_metric_is_positive_semidefinite_on_every_row(problem):
@@ -748,6 +776,7 @@ def _controller_particles():
     [
         ("vdam", {}),
         ("vdam", {"vdam_second_moment": False}),
+        ("vdam", {"px_em": True}),
         ("momentum_sgd", {}),
         ("momentum_sgd", {"sgd_momentum": 0.0, "sgd_learning_rate": 1.95}),
     ],
@@ -796,6 +825,7 @@ def test_controller_runs_subtomogram_particles(tmp_path, caplog, optimizer, opti
     assert embeddings["z"].shape == (n_particles, 2)
     # The logs show the update rule that ran: every update's record, and the job log at the first update.
     if optimizer == "vdam":
+        assert all(("px_em_zbar" in row) is bool(options.get("px_em")) for row in rows)
         off = options.get("vdam_second_moment") is False
         assert all(row["second_moment_scaling"] is not off for row in rows)
         if off:

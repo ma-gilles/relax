@@ -37,6 +37,13 @@ logger = logging.getLogger("relax.ppca_refinement.full_row_stream")  # the strea
 TILE_FRAGMENTATION_HEADROOM = 0.10
 
 
+def on_gpu(stream: FullRowStream) -> bool:
+    """Whether the stream's tiles live on a GPU: the planner then budgets the device's memory, else the host's.
+
+    A stream that runs the XLA formulation on a GPU (``static.cuda_kernels`` off) still allocates there."""
+    return stream.device.platform == "gpu"
+
+
 def tile_headroom(stream: FullRowStream) -> float:
     """The stream's share of the device memory left unplanned: its ``tile_headroom``, else the default."""
     return TILE_FRAGMENTATION_HEADROOM if stream.tile_headroom is None else float(stream.tile_headroom)
@@ -93,10 +100,12 @@ def tile_spec(stream: FullRowStream, n_images: int) -> TileArrays:
         Y1_recon=spec((BT, K * 2 * F), f32),
         ctf2_recon=spec((B, K * F), f32),
         y_norm=spec((B,), f32),
-        frames=None if _plan_reader(stream) is None else spec((K, 3, 3), f32),
+        # A volume-observation tile (one 3D frame per particle) has no tilt frames.
+        frames=None if _plan_reader(stream) is None or stream.static.observation == "volume" else spec((K, 3, 3), f32),
         # A one-key subtomogram tile (the planned shape; a mixed tile of as many particles holds as many
         # operand bytes and runs its keys one at a time).
         noise_groups=None if _plan_reader(stream) is None else spec((1,), jnp.int32),
+        volume_scale=spec((B,), f32) if stream.static.exact_masked_mstep else None,
     )
 
 
@@ -239,7 +248,7 @@ def _planned_tile_images(stream, requested: int, memory_bytes, device_bytes, *, 
         key = (plan_shape_key(stream), requested, stream.device.id, pipelined, tile_headroom(stream))
         if key not in _PLANS:
             _PLANS[key] = _planned_tile_images(stream, requested, *available_bytes(stream), pipelined=pipelined)
-            if stream.static.cuda_kernels:
+            if on_gpu(stream):
                 reserve_plan_region(stream.device, tile_bytes(stream, _PLANS[key], pipelined=pipelined))
         return _PLANS[key]
     if not memory_bytes:
@@ -306,7 +315,7 @@ def fragmentation_budget(stream, memory_bytes, device_bytes):
     ``device_bytes`` None on a GPU stream (what :func:`available_bytes` returns there) is the device's memory
     limit; on a CPU stream, or when no total is known, the headroom is taken of ``memory_bytes``.
     """
-    if device_bytes is None and stream.static.cuda_kernels:
+    if device_bytes is None and on_gpu(stream):
         from relax.runtime import memory_budget as budget
 
         device_bytes = budget.device_memory_limit_bytes(None)  # PPCA takes no EngineTuning: the device's own memory
@@ -316,7 +325,7 @@ def fragmentation_budget(stream, memory_bytes, device_bytes):
 def available_bytes(stream):
     """``(available, total)`` memory for the stream's tiles: the GPU's after the stream's upload and
     its memory, or the host memory left to this process and the host memory it may use."""
-    if not stream.static.cuda_kernels:
+    if not on_gpu(stream):
         from relax.runtime.host_memory import available_memory_bytes, resident_bytes
 
         host = available_memory_bytes()
