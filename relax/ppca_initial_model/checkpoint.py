@@ -28,7 +28,8 @@ def canonical(value):
 # Runtime settings: they change how later updates are computed, not the model a checkpoint
 # holds, so a run may resume under a different value (the controller logs the change).
 RUNTIME_CONFIG_FIELDS = (
-    "gemm_precision", "preread_images", "pass2_mass_floor", "tilt_coarse_pass", "tilt_coarse_order", "tile_headroom"
+    "gemm_precision", "preread_images", "pass2_mass_floor", "tilt_coarse_pass", "tilt_coarse_order", "tile_headroom",
+    "final_poses", "center_latents_at_output",
 )  # fmt: skip
 
 
@@ -71,6 +72,23 @@ _ADDED_CONFIG_DEFAULTS = {
     "sgd_fixed_step": None,
     "oversampling_from_update": None,
     "oversampling_rotations_only": False,
+    "tomo_likelihood": "image",
+    "masked_mask_radius_px": None,
+    "masked_lambda": 0.1,
+    "masked_mc_samples": 2,
+    "masked_exact_mstep": False,
+    "masked_noise_scale": 1.0,
+    "masked_from_update": 1,
+    "masked_calibrate": False,
+    "masked_calibrate_per_stage": False,
+    "likelihood_temperature": 1.0,
+    "px_em": False,
+    "direction_prior_blend": None,
+    "hold_noise": False,
+    "single_volume": False,
+    "init_poses": None,
+    "pose_mode": None,
+    "local_sigma_deg": 3.0,
 }
 
 

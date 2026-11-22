@@ -78,6 +78,11 @@ class TiltParticles:
     # K > 0 when ``read`` returns half spectra zeroed on the shells below K (:func:`free_low_shells`); the controller
     # keeps those noise shells fixed and the model zero there (``Config.likelihood_min_shell``).
     free_shells: int = 0
+    # The masked-volume likelihood's per-particle operands (``masked_volume.VolumeObservations``), attached by the
+    # controller when ``Config.tomo_likelihood`` is "masked"; None for the image likelihood.
+    volume_observations: object | None = None
+    # The given particle poses the frames and images are composed with (pose_input.particles_at_poses); None: none.
+    input_poses: object | None = None
 
     @property
     def particle_noise_group(self) -> np.ndarray:

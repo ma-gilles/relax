@@ -335,6 +335,81 @@ def add_args(parser):
         "rank 0 runs the update and writes every output. Absent or one device runs on one GPU. The relax command "
         "starts the processes before JAX (relax_cli)",
     )
+    parser.add_argument(
+        "--tomo-likelihood",
+        choices=("image", "masked"),
+        default="image",
+        help="Subtomogram likelihood: 'image' (default) scores the tilt images; 'masked' scores each particle's masked, "
+        "whitened scene backprojection with the unmasked Fourier Gram (relax/ppca_initial_model/masked_volume.py); "
+        "it holds the start-up noise and runs on one GPU",
+    )
+    parser.add_argument("--masked-mask-radius", type=float, help="Masked likelihood: observation mask radius, pixels")
+    parser.add_argument(
+        "--masked-lambda", type=float, default=0.1,
+        help="Masked likelihood: whitening regulariser, a fraction of the mean observed backprojected CTF^2/noise",
+    )  # fmt: skip
+    parser.add_argument("--masked-mc-samples", type=int, default=2, help="Masked likelihood: Monte Carlo noise draws")
+    parser.add_argument(
+        "--masked-noise-scale", type=float, default=1.0,
+        help="Masked likelihood: multiply its noise variance c by this factor (a temperature; default 1)",
+    )
+    parser.add_argument(
+        "--masked-from-update", type=int, default=1,
+        help="Masked likelihood: score the updates before this one with the image likelihood (hybrid; 1: masked throughout)",
+    )
+    parser.add_argument(
+        "--masked-calibrate", action="store_true",
+        help="Masked likelihood: scale its noise variance by the derived temperature tau = Var/(2 mean) of pose score "
+        "differences (see "
+        "relax/ppca_initial_model/masked_volume.py)",
+    )
+    parser.add_argument(
+        "--masked-calibrate-per-stage", action="store_true",
+        help="With --masked-calibrate: re-estimate the temperature from the current mean at every stage start",
+    )
+    parser.add_argument(
+        "--masked-exact-mstep", action="store_true",
+        help="Masked likelihood: the M-step residual with the masked prediction (the E-step keeps the unmasked Gram)",
+    )  # fmt: skip
+    parser.add_argument("--hold-noise", action="store_true", help="Keep the start-up noise estimate (no noise update)")
+    parser.add_argument(
+        "--likelihood-temperature", type=float, default=1.0,
+        help="Image likelihood: multiply the log-likelihood by this factor in every E-step (the noise divided by it; "
+        "scores, posteriors and M-step statistics); the noise estimate stays in data units (1: none)",
+    )
+    parser.add_argument(
+        "--direction-prior-blend",
+        type=float,
+        help="Weight of the previous direction prior in every update's blend, prior <- mu old + (1 - mu) posterior "
+        "mass (default: RELION's rule, 0 on a full-batch update, 0.9 on a subset); e.g. 0.9 keeps every direction "
+        "possible on full-batch updates",
+    )
+    parser.add_argument(
+        "--px-em",
+        action="store_true",
+        help="VDAM: after every update, the PX-EM reduction of the latent prior (mu <- mu + W zbar, W <- W chol(S), "
+        "zbar and S the update's posterior latent mean and second moment about it), so the N(0, I) prior stays "
+        "matched to the latents",
+    )
+    parser.add_argument("--single-volume", action="store_true", help="A single-volume model: q = 0 (give --q 0)")
+    parser.add_argument(
+        "--center-latents-output", action="store_true",
+        help="At output: write the population average mu + W zbar as the mean (model_centred.npz) and centred latents",
+    )
+    parser.add_argument(
+        "--final-poses", action="store_true", help="Write each particle's top pose of the final pass to embeddings.npz"
+    )
+    parser.add_argument(
+        "--init-poses",
+        help="Given particle poses (.npz: rotations (P,3,3), translations_px (P,3), optional particle_ids; "
+        "relax/ppca_initial_model/pose_input.py); needs --pose-mode",
+    )
+    parser.add_argument(
+        "--pose-mode", choices=("fixed", "local"),
+        help="With --init-poses: 'fixed' scores each particle at its pose only; 'local' searches the stage's HEALPix "
+        "rotations within 3 --local-sigma of it and the stage's shift grid about its shift",
+    )  # fmt: skip
+    parser.add_argument("--local-sigma", type=float, default=3.0, help="--pose-mode local: rotation prior sigma, degrees")
     parser.add_argument("--resume")
     parser.add_argument("--stop-after", type=int, help="Checkpoint stop without changing the scientific schedule")
     parser.add_argument("--stop-file", help="Stop between iterations after an atomic checkpoint")
@@ -747,6 +822,7 @@ def main(args=None):
         tilt_coarse_order=args.tilt_coarse_order,
         stages=tuple(tuple(stage) for stage in json.loads(args.stages)) if args.stages else Config().stages,
         uniform_direction_prior=args.uniform_direction_prior,
+        direction_prior_blend=args.direction_prior_blend,
         band_length_ang=args.filament_band_length,
         band_axial_step_ang=args.filament_band_axial_step,
         band_phi_step_deg=args.filament_band_phi_step,
@@ -764,6 +840,24 @@ def main(args=None):
         initial_mean=args.initial_mean,
         initial_mean_scale=args.initial_mean_scale,
         likelihood_min_shell=args.likelihood_min_shell,
+        tomo_likelihood=args.tomo_likelihood,
+        masked_mask_radius_px=args.masked_mask_radius,
+        masked_lambda=args.masked_lambda,
+        masked_mc_samples=args.masked_mc_samples,
+        masked_exact_mstep=args.masked_exact_mstep,
+        masked_noise_scale=args.masked_noise_scale,
+        masked_from_update=args.masked_from_update,
+        masked_calibrate=args.masked_calibrate,
+        masked_calibrate_per_stage=args.masked_calibrate_per_stage,
+        hold_noise=args.hold_noise,
+        likelihood_temperature=args.likelihood_temperature,
+        px_em=args.px_em,
+        single_volume=args.single_volume,
+        final_poses=args.final_poses,
+        center_latents_at_output=args.center_latents_output,
+        init_poses=args.init_poses,
+        pose_mode=args.pose_mode,
+        local_sigma_deg=args.local_sigma,
     )
     if (args.ios is None) == (args.particles is None):
         raise ValueError("Give either a particle STAR (--i) or an optimisation set (--ios)")

@@ -174,6 +174,12 @@ def require_tile_route(config, world: int) -> None:
         raise NotImplementedError(
             "--fixed-core fits per-particle core scales on all particles before training; run it on one GPU"
         )
+    if config.pose_mode is not None:
+        raise NotImplementedError("--init-poses composes the particles' frames on the training process; run it on one GPU")
+    if config.tomo_likelihood == "masked":
+        raise NotImplementedError(
+            "--tomo-likelihood masked prepares each particle's masked volume on the training process; run it on one GPU"
+        )
 
 
 def require_gpu_ranks(gpu, ranks) -> None:

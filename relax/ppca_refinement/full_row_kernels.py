@@ -105,6 +105,14 @@ class StreamStatic(NamedTuple):
     # weights, residual scatter); the XLA formulation runs elsewhere and is the float64 reference.
     cuda_kernels: bool
     gemm_precision: str  # resolved: "fp32" (exact float32 products) or "tf32" (TF32 tensor cores, sm_80+)
+    # What a tile observes: "slice", 2D images of the model (frames x half image, the default); "volume", one 3D
+    # half spectrum per particle observed through a Fourier-diagonal filter (the opt-in masked tomo likelihood,
+    # relax/ppca_initial_model/masked_volume.py). A volume stream projects by 3D gather and backprojects by its
+    # adjoint (``project``, ``_backproject_moments``), runs the XLA formulation and keeps no noise-power sums.
+    observation: str = "slice"
+    # Volume observations only (opt-in): the M-step residual uses the masked prediction M F^-1[filt x^ phase] instead
+    # of the unmasked Fourier one (the E-step keeps the unmasked Gram); see _exact_masked_prediction.
+    exact_masked_mstep: bool = False
 
 
 class StreamArrays(NamedTuple):
@@ -123,6 +131,10 @@ class StreamArrays(NamedTuple):
     gemm_window: jax.Array | None
     coefficient_noise: jax.Array  # (n_half,) noise variance per half-image pixel
     shift_squared: jax.Array  # (T,) squared fine shift length in px^2
+    # Volume observations with the exact masked M-step: the centred DFT of the real-space observation mask (N^3) and
+    # the shifts (T, 3) in pixels. None otherwise.
+    volume_mask_ft: jax.Array | None = None
+    volume_translations: jax.Array | None = None
 
 
 class TileArrays(NamedTuple):
@@ -153,6 +165,9 @@ class TileArrays(NamedTuple):
     slots: jax.Array | None = None
     # Mixed tiles only: the number of real keys (scalar int32); keys from it on are padding and skip their work.
     keys: jax.Array | None = None
+    # Volume tiles with the exact masked M-step: each particle's c s (noise variance times the DFT's Parseval factor),
+    # so filt = sqrt(ctf2_recon c s). None otherwise.
+    volume_scale: jax.Array | None = None
 
 
 class Posterior(NamedTuple):
@@ -254,6 +269,8 @@ def full_row_pose_log_prior(
 
 def project(arrays: StreamArrays, rotations, static: StreamStatic):
     """Windowed augmented projections ``(P, R, F)`` of the given rotations, component-major."""
+    if static.observation == "volume":
+        return _project_volume(arrays.augmented, arrays.score_indices, rotations, static.volume_shape)
     proj = _project_half(arrays, rotations, static)
     return proj if arrays.score_indices is None else proj[:, :, arrays.score_indices]
 
@@ -272,6 +289,69 @@ def _project_half(arrays: StreamArrays, rotations, static: StreamStatic):
         relion_texture_interp=static.relion_texture_interp,
         **kwargs,
     )
+
+
+def _volume_window_coordinates(indices, volume_shape):
+    """Centred 3D frequencies ``(F, 3)`` of half-volume voxels ``indices`` (last axis ``kz >= 0``, first two
+    centred), in the volume grid units of RECOVAR's half-volume trilinear gather."""
+    n0, n1, n2 = (int(n) for n in volume_shape)
+    half2 = n2 // 2 + 1
+    i0, rest = jnp.divmod(indices, n1 * half2)
+    i1, i2 = jnp.divmod(rest, half2)
+    return jnp.stack([i0 - n0 // 2, i1 - n1 // 2, i2], axis=-1).astype(jnp.float32)
+
+
+def _volume_grid_coordinates(indices, rotations, volume_shape):
+    """``(R, F, 3)`` gather coordinates ``k @ R + centre`` of the window voxels at ``rotations`` ``(R, 3, 3)``:
+    RECOVAR's slice convention (``[k0, k1, 0] @ R``) with the window's 3D ``k``."""
+    k = _volume_window_coordinates(indices, volume_shape)
+    centre = jnp.asarray([int(n) // 2 for n in volume_shape], jnp.float32)
+    return jnp.einsum("fa,rab->rfb", k, rotations, precision=HIGHEST) + centre
+
+
+def _trilinear_channels(volume, coords):
+    """Trilinear samples ``(n, C)`` of a channels-last full volume ``(N0, N1, N2, C)`` at grid coordinates ``(n, 3)``
+    (zero outside the grid): each corner reads all ``C`` channels of a voxel at once."""
+    shape = volume.shape[:3]
+    base = jnp.floor(coords)
+    frac = coords - base
+    base = base.astype(jnp.int32)
+    out = 0
+    for corner in ((0, 0, 0), (0, 0, 1), (0, 1, 0), (0, 1, 1), (1, 0, 0), (1, 0, 1), (1, 1, 0), (1, 1, 1)):
+        index = base + jnp.asarray(corner, jnp.int32)
+        weight = 1.0
+        for axis, d in enumerate(corner):
+            weight = weight * (frac[:, axis] if d else 1 - frac[:, axis])
+        inside = jnp.all((index >= 0) & (index < jnp.asarray(shape, jnp.int32)), axis=-1)
+        index = jnp.clip(index, 0, jnp.asarray(shape, jnp.int32) - 1)
+        out = out + jnp.where(inside, weight, 0)[:, None] * volume[index[:, 0], index[:, 1], index[:, 2]]
+    return out
+
+
+def _project_volume(augmented, indices, rotations, volume_shape):
+    """Trilinear samples ``(P, R, F)`` of the augmented half volumes at the rotated window voxels ``k @ R``: the
+    volume observation's projection. The half volumes are expanded to full Hermitian volumes (RECOVAR's
+    ``half_volume_to_full_volume``) and read channels-last, every component per corner read; on the window (radius
+    below ``N / 2 - 1``, so no Nyquist plane) this is RECOVAR's half-volume gather (``relion_interp``) up to float32
+    rounding (tests/unit/ppca_initial_model/test_masked_volume.py)."""
+    from recovar.core.fourier_transform_utils import half_volume_to_full_volume
+
+    shape = tuple(int(n) for n in volume_shape)
+    full = jax.vmap(lambda h: half_volume_to_full_volume(h, shape).reshape(shape))(augmented)
+    g = _volume_grid_coordinates(indices, rotations, shape).reshape(-1, 3)
+    samples = _trilinear_channels(jnp.moveaxis(full, 0, -1), g)  # (R F, P)
+    return samples.T.reshape(augmented.shape[0], rotations.shape[0], -1)
+
+
+def _backproject_volume(images, indices, rotations, volume_shape):
+    """Adjoint of :func:`_project_volume`: ``images`` ``(C, R, F)`` into ``(C, half)``, all channels in one transposed
+    gather (``jax.vjp``; at the half volume's Hermitian partners the conjugated adjoint, as RECOVAR's half-volume
+    scatter)."""
+    half = int(volume_shape[0]) * int(volume_shape[1]) * (int(volume_shape[2]) // 2 + 1)
+    # Real channels (the metric) transpose the gather of a real volume: half the work of a complex one.
+    zero = jnp.zeros((images.shape[0], half), images.dtype)
+    _, adjoint = jax.vjp(lambda v: _project_volume(v, indices, rotations, volume_shape), zero)
+    return adjoint(images)[0]
 
 
 def real_imag(values):
@@ -458,6 +538,9 @@ def score_block(arrays, tile, kept, start, *, static, block_size):
     )
     proj = project(arrays, frame_rotations(tile, arrays.rotations[rows]), static)
     proj = proj.reshape(proj.shape[0], rows.shape[0], n_frames(tile), proj.shape[-1])
+    # Float32 GEMMs for every XLA stream, the volume observations included: with TF32 here the masked ab initio's
+    # maps were consistently worse at equal poses (GPU job 7490206: FSC 0.143 at 23.7-24.7 A over three TF32 runs
+    # against 21.8 A for two float32 runs of the same seed, correlation 0.84-0.87 against 0.88; f65f428e reverted).
     score, mean, covariance = _latent_block(tile.Y1, tile.ctf2, proj, prior, tile.y_norm.shape[0])
     return kept._replace(
         score=jax.lax.dynamic_update_slice_in_dim(kept.score, score, start, axis=0),
@@ -650,6 +733,82 @@ def _normalize_partials(kept, rows, *, n_blocks, block_size):
     )
 
 
+def _exact_masked_prediction(arrays, tile, kept, posterior, start, static, block_size):
+    """The exact masked prediction term of the M-step residual of one rotation block, ``(P, R, F)`` on the window.
+
+    For particle ``b`` at rotation ``r`` and shift ``t`` the B-diag residual's prediction ``filt^2 x^ / (c s)`` (the
+    unmasked Fourier Gram) becomes ``filt phase_t DFT(M F^-1[filt x^ conj(phase_t)]) / (c s)`` (the gradient of
+    ``-||M (V - F^-1[filt x^ conj(phase_t)])||^2 / 2c``). Summed over the shifts with the posterior second moments
+    ``a_pq(t)``, ``sum_t a_pq(t) phase_t DFT(M F^-1[conj(phase_t) G_q]) = DFT(M_pq u_q)`` with ``u_q = F^-1[G_q]``,
+    ``G_q = filt x^_q`` and the shift-averaged mask ``M_pq = F^-1[M^ sum_t a_pq(t) phase_t]`` (a mask rolled by
+    ``t``): per (rotation, particle) ``P`` inverse DFTs, ``tri(P)`` mask DFTs and ``P`` DFTs of the full box.
+    Pairs with no posterior mass are skipped. Moving the shift onto the mask is exact for whole-pixel shifts; a
+    sub-pixel shift rolls the hard mask by Fourier interpolation (labelled approximation). Given poses carry their own
+    shift in the images, so the fixed pose mode's one trial shift is zero."""
+    from recovar.core.fourier_transform_utils import (
+        full_volume_to_half_volume,
+        get_dft3,
+        get_idft3,
+        half_volume_to_full_volume,
+    )
+
+    from relax.fourier.preprocessing import translation_phases
+
+    shape = tuple(int(n) for n in static.volume_shape)
+    n = shape[0]
+    half = n * n * (n // 2 + 1)
+    P = static.basis_size
+    q = P - 1
+    rows = _block_rows(tile, start, block_size)
+    proj = project(arrays, arrays.rotations[rows], static)  # (P, R, F)
+    score = jax.lax.dynamic_slice_in_dim(kept.score, start, block_size, axis=0)  # (R, B, T)
+    mean = jax.lax.dynamic_slice_in_dim(kept.latent_mean, start, block_size, axis=1)  # (q, R, B, T)
+    covariance = jax.lax.dynamic_slice_in_dim(kept.latent_covariance, start, block_size, axis=0)  # (R, B, tri(q))
+    gamma = jnp.exp((score - posterior.center[None, :, None]) - posterior.centered_logZ[None, :, None])
+    gamma = jnp.where(jnp.isfinite(gamma), gamma, 0.0)
+    cov_index = {(int(i), int(j)): k for k, (i, j) in enumerate(zip(*np.triu_indices(q)))}
+    pairs = list(zip(*np.triu_indices(P)))
+    second = []
+    for i, j in pairs:
+        if i == 0:
+            second.append(gamma if j == 0 else gamma * mean[j - 1])
+        else:
+            second.append(gamma * (covariance[..., cov_index[(i - 1, j - 1)], None] + mean[i - 1] * mean[j - 1]))
+    second = jnp.stack(second)  # (tri(P), R, B, T)
+    g = np.indices(shape).reshape(3, -1).T - np.asarray([n // 2] * 3)
+    phases = translation_phases(arrays.volume_translations, jnp.asarray(g / n, jnp.float32))  # (T, N^3)
+    filt = jnp.sqrt(tile.ctf2_recon * tile.volume_scale[:, None])  # (B, F)
+    indices = arrays.score_indices
+    pair_index = {}
+    for k, (i, j) in enumerate(pairs):
+        pair_index[(i, j)] = pair_index[(j, i)] = k
+
+    def one(x, f, scale, a):
+        """``x`` (P, F), ``f`` (F,), ``scale`` c s, ``a`` (tri(P), T): this pair's prediction (P, F)."""
+        G = jnp.zeros((P, half), jnp.complex64).at[:, indices].set(f[None] * x)
+        u = jnp.real(get_idft3(jax.vmap(lambda h: half_volume_to_full_volume(h, shape))(G).reshape((P,) + shape)))
+        A = jnp.dot(a.astype(jnp.complex64), phases, precision=HIGHEST)  # (tri, N^3)
+        masks = jnp.real(get_idft3((arrays.volume_mask_ft[None] * A).reshape((len(pairs),) + shape)))
+        S = jnp.stack([sum(masks[pair_index[(p_, q_)]] * u[q_] for q_ in range(P)) for p_ in range(P)])
+        D = jax.vmap(lambda v: full_volume_to_half_volume(get_dft3(v.astype(jnp.complex64)), shape).reshape(-1))(S)
+        return (f / scale)[None] * D[:, indices]
+
+    def per_row(r):
+        def body(total, b):
+            a = second[:, r, b, :]
+            out = jax.lax.cond(
+                jnp.sum(a[0]) > 0,
+                lambda: one(proj[:, r], filt[b], tile.volume_scale[b], a),
+                lambda: jnp.zeros((P, indices.shape[0]), jnp.complex64),
+            )
+            return total + out, None
+
+        total, _ = jax.lax.scan(body, jnp.zeros((P, indices.shape[0]), jnp.complex64), jnp.arange(filt.shape[0]))
+        return total
+
+    return jnp.moveaxis(jax.lax.map(per_row, jnp.arange(block_size)), 0, 1)  # (P, R, F)
+
+
 def second_moment_sums(gamma, mean, covariance):
     """``sum_t gamma E[[1, z][1, z]^T]`` packed upper ``(tri(P), R, B)`` per rotation and image."""
     q = mean.shape[0]
@@ -685,9 +844,15 @@ def moment_block(carry, arrays, tile, kept, posterior, start, *, static, block_s
     rotations = frame_rotations(tile, arrays.rotations[_block_rows(tile, start, block_size)])
     rhs_parts = jnp.dot(weights.reshape(P * block_size, -1), tile.Y1_recon, precision=gemm(static)).reshape(P, R, 2 * F)
     lhs_images = _metric_dot(sums.reshape(n_moments * block_size, -1), tile.ctf2_recon, static).reshape(n_moments, R, F)
-    return scatter_moment_images(
-        carry, arrays, static, rhs_parts, lhs_images, rotations, noise_group=tile_noise_group(tile)
+    prediction = (
+        _exact_masked_prediction(arrays, tile, kept, posterior, start, static, block_size)
+        if static.exact_masked_mstep
+        else None
     )
+    return scatter_moment_images(
+        carry, arrays, static, rhs_parts, lhs_images, rotations, noise_group=tile_noise_group(tile),
+        prediction=prediction,
+    )  # fmt: skip
 
 
 def tile_noise_group(tile):
@@ -713,18 +878,24 @@ def _add_residual(residual_power, arrays, correction, noise_group):
     return residual_power.at[noise_group, indices].add(correction * row[indices])
 
 
-def scatter_moment_images(carry, arrays, static, rhs_parts, lhs_images, rotations, *, noise_group=None):
+def scatter_moment_images(carry, arrays, static, rhs_parts, lhs_images, rotations, *, noise_group=None, prediction=None):
     """Backproject one block's M-step images into the carry: the packed LHS metric images ``(tri(P), R, F)``
     and the planar RHS images ``(P, R, 2F)`` at ``rotations`` ``(R, 3, 3)``, as residual images, and their
     noise-power correction (into ``noise_group``'s row of a noise table)."""
-    block, correction = _scatter_block(arrays, static, rhs_parts, lhs_images, rotations)
-    residual_power = _add_residual(carry.residual_power, arrays, correction, noise_group)
+    block, correction = _scatter_block(arrays, static, rhs_parts, lhs_images, rotations, prediction)
+    # A volume observation's noise is fixed by its preprocessing: it keeps no noise-power sums.
+    residual_power = (
+        carry.residual_power
+        if static.observation == "volume"
+        else _add_residual(carry.residual_power, arrays, correction, noise_group)
+    )
     moments, moments_compensation = compensated_add(carry.moments, carry.moments_compensation, block)
     return carry._replace(moments=moments, moments_compensation=moments_compensation, residual_power=residual_power)
 
 
-def _scatter_block(arrays, static, rhs_parts, lhs_images, rotations):
-    """``(block volumes, correction on the score window)`` of :func:`scatter_moment_images`."""
+def _scatter_block(arrays, static, rhs_parts, lhs_images, rotations, prediction=None):
+    """``(block volumes, correction on the score window)`` of :func:`scatter_moment_images`. ``prediction``
+    ``(P, R, F)`` (volume observations, exact masked M-step) replaces the residual's ``sum_q LHS_pq A_q``."""
     P = static.basis_size
     F = lhs_images.shape[2]
     # The reconstruction operands equal the score operands without the
@@ -762,6 +933,8 @@ def _scatter_block(arrays, static, rhs_parts, lhs_images, rotations):
         proj = project(arrays, rotations, static)
         rhs_images = jax.lax.complex(rhs_parts[..., :F], rhs_parts[..., F:])  # (P, R, F)
         residual_images, correction = residual_statistics_from_moment_images(rhs_images, lhs_images, proj)
+        if prediction is not None:
+            residual_images = rhs_images - prediction
         if static.metric_trace_only:
             # The adjoint is linear per channel, so the trace of the LHS volume is the
             # adjoint of the per-pose trace images.
@@ -856,6 +1029,8 @@ def _backproject_moments(real_images, complex_images, indices, rotations, static
     half = int(np.prod(static.volume_shape[:2])) * (int(static.volume_shape[2]) // 2 + 1)
 
     def adjoint(images, dtype):
+        if static.observation == "volume":
+            return _backproject_volume(images.astype(dtype), indices, rotations, static.volume_shape)
         return batch_adjoint_slice_volume_maybe_windowed(
             images,
             indices,
