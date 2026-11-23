@@ -10,9 +10,10 @@ from dataclasses import dataclass
 import jax.numpy as jnp
 import numpy as np
 
-from relax.reconstruction import regularization
+from relax.reconstruction import conical_regularization, regularization
 from relax.refinement import numbered_reconstruction, priors
 from relax.refinement.numbered_reconstruction import ReconstructionSettings
+from relax.runtime.timing import Stopwatch
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +22,8 @@ class HalfmapPrior:
     variance: object
     fsc: object
     details: dict
+    # The conical-FSC prior of the joined halves (relax.reconstruction.conical_regularization.ConePrior); None: RELION's.
+    cone_prior: object = None
 
 
 @dataclass(frozen=True)
@@ -66,7 +69,8 @@ def compute_final_halfmap_prior(
     full_half_axis: int,
     scoring_dtype,
 ) -> HalfmapPrior:
-    """Estimate the whole-data prior from the joined halves' backprojector FSC."""
+    """Estimate the whole-data prior from the joined halves' backprojector FSC (and its conical-FSC form with
+    ``settings.conical_prior``)."""
     fsc = regularization.compute_relion_fsc_from_backprojector(
         numerators[0],
         numerators[1],
@@ -111,7 +115,28 @@ def compute_final_halfmap_prior(
         output_dtype=scoring_dtype,
         shell_pair_counting=settings.shell_pair_counting,
     )
-    return HalfmapPrior(variance=variance, fsc=fsc, details=details)
+    cone_prior = None
+    if settings.conical_prior is not None:
+        clock = Stopwatch()
+        # RECOVAR adds the shell prior in the dtype of the weight and the prior volume; the term keeps it.
+        solve_dtype = np.result_type(np.finfo(np.dtype(denominators[0].dtype)).dtype, np.dtype(variance.dtype))
+        cone_prior = conical_regularization.estimate_cone_prior(
+            numerators,
+            denominators,
+            [details["prior_shells"]],
+            settings=settings.conical_prior,
+            volume_shape=settings.volume_shape,
+            accumulator_shape=accumulator_shape,
+            padding_factor=settings.padding_factor,
+            current_size=current_size,
+            tau2_fudge=settings.tau2_fudge,
+            minres_map=settings.minres_map,
+            whole=True,
+            solve_dtype=solve_dtype,
+        )
+        logger.info("Computed final-iteration conical-FSC prior: %.1fs", clock.seconds)
+        cone_prior.log_summary("final iteration")
+    return HalfmapPrior(variance=variance, fsc=fsc, details=details, cone_prior=cone_prior)
 
 
 def compute_final_class_priors(
@@ -214,8 +239,12 @@ def reconstruct_final_halfmaps(
     settings: ReconstructionSettings,
     current_size: int,
     accumulator_shape: tuple,
+    cone_prior=None,
 ) -> FinalMaps:
     """Each half's map from its own backprojection, then the merged map from their sum, keeping maps on the host.
+
+    With ``cone_prior`` (the joined halves' conical-FSC prior) every weight carries its prior term and the solves add
+    no shell prior.
 
     ``half_backprojections`` holds the two halves' (denominator, numerator) pairs and is emptied here: this
     function is their last reader. The halves are solved first, so the merged accumulators can then be formed
@@ -226,9 +255,15 @@ def reconstruct_final_halfmaps(
     """
 
     def solve(denominator, numerator):
+        if cone_prior is not None:
+            denominator = cone_prior.regularized_weight(0, denominator)
         return np.asarray(
             settings.reconstruct(
-                denominator, numerator, tau=prior, current_size=current_size, accumulator_volume_shape=accumulator_shape
+                denominator,
+                numerator,
+                tau=prior if cone_prior is None else None,
+                current_size=current_size,
+                accumulator_volume_shape=accumulator_shape,
             ).reshape(-1)
         )
 

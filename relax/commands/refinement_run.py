@@ -53,6 +53,7 @@ from relax.parity import (
     startup_noise_inputs,
 )
 from relax.refinement import refinement_options, remote_halves, run_files, startup_noise, startup_references
+from relax.refinement.ports import InputSource
 from relax.refinement.result_files import (
     RunReport,
     build_archive_metadata,
@@ -1206,6 +1207,7 @@ def main(command=None):
                 our_particles, from_input=relion_half_sets_from_input, resumed=resume_snapshot is not None
             ),
         ),
+        conical_prior=refinement_arguments.resolve_conical_prior(args, tomographic=tomo_run),
         local_search=refinement_arguments.resolve_local_search(args),
         k_class=refinement_arguments.resolve_k_class(
             args,
@@ -1247,6 +1249,8 @@ def main(command=None):
         ),
         run_options,
     )
+    if run_options.conical_prior is not None and type(source) is not InputSource:
+        raise ValueError("--cfsc-regularization cannot be combined with a RELION replay or a frozen boundary")
     if args.fixed_direction_prior is not None:
         source = fixed_direction_prior.FixedDirectionPriorSource.for_run(
             args.fixed_direction_prior, source, run_options, tomographic=tomo_run, multi_gpu=ranks is not None

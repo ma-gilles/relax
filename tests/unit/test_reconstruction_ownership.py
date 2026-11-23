@@ -26,7 +26,7 @@ def test_mean_reconstruction_variants_share_run_level_settings():
 
     assert tuple(inspect.signature(numbered_reconstruction_module.reconstruct_numbered_k1_halfmaps).parameters) == (
         "numerators_by_half", "denominators_by_half", "tau_by_half", "settings", "this_iteration",
-        "accumulator_volume_shape", "retained_first_numerator", "probe",
+        "accumulator_volume_shape", "retained_first_numerator", "probe", "cone_prior",
     )
     assert tuple(inspect.signature(numbered_reconstruction_module.reconstruct_numbered_class_maps).parameters) == (
         "combined_numerators", "combined_denominators", "tau_by_class", "settings", "n_classes",
@@ -37,7 +37,7 @@ def test_mean_reconstruction_variants_share_run_level_settings():
         "projection_padding_factor", "minres_map", "width_mask_edge", "fmask_edge",
         "tau2_fudge", "particle_diameter_angstrom", "first_iteration_lowpass_angstrom",
         "gridding_kernel", "shell_pair_counting",
-        "solvent_mask", "solvent_correct_fsc", "solvent_phase_stream", "programs",
+        "solvent_mask", "solvent_correct_fsc", "solvent_phase_stream", "programs", "conical_prior",
     )
     for name in (
         "MeanReconstructionData", "MeanAccumulatorState", "MeanPriorSpec",

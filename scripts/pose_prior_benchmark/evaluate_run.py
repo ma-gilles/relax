@@ -88,6 +88,7 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
+from relax.reconstruction.conical_regularization import cone_axes  # noqa: E402
 from relax.sampling.healpix import euler_angles_to_matrix  # noqa: E402
 from relax.sampling.orientation_priors import infer_direction_prior_healpix_order  # noqa: E402
 from relax.star.blocks import read_star_blocks  # noqa: E402
@@ -96,7 +97,6 @@ from scripts.conical_fsc import (  # noqa: E402
     HALF_ANGLE_DEG,
     N_AXES,
     ConicalFsc,
-    cone_axes,
     conical_fsc,
     conical_fsc_summary,
 )

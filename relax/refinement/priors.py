@@ -1,6 +1,6 @@
 """The numbered M-steps' priors: the Class3D class priors and the K=1 split-half prior (tau2 from the
-half-map FSC, solvent-corrected when asked), the low-resolution join of the halves' accumulators, and the
-first-iteration CC reporting tapers."""
+half-map FSC, solvent-corrected when asked, and its conical-FSC form when asked), the low-resolution join of the
+halves' accumulators, and the first-iteration CC reporting tapers."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ import jax.numpy as jnp
 import numpy as np
 from recovar.core import fourier_transform_utils
 
-from relax.reconstruction import low_resolution_join, regularization
+from relax.reconstruction import conical_regularization, low_resolution_join, regularization
 from relax.reconstruction.resolution import (
     firstiter_cc_ini_high_tapered,
     firstiter_cc_ini_high_tau2_taper,
@@ -555,6 +555,44 @@ def estimate_split_half_prior(
         fsc=current_iter_fsc,
         details_per_half=tau2_update_details_per_half,
     )
+
+
+def estimate_split_half_cone_prior(
+    numerators,
+    denominators,
+    split_prior: SplitHalfPrior,
+    settings: ReconstructionSettings,
+    *,
+    current_size,
+    accumulator_shape,
+    iteration,
+    log,
+) -> conical_regularization.ConePrior:
+    """The conical-FSC prior of a numbered K=1 M-step (``settings.conical_prior``'s cones): each half's RELION shell
+    tau2 of ``split_prior`` times its per-voxel cone ratio, from this iteration's half accumulators.
+
+    The solves promote the shell prior to float64 (``numbered_reconstruction``), so the prior term is float64.
+    See docs/math/conical_fsc_regularization.md.
+    """
+
+    clock = Stopwatch()
+    cone_prior = conical_regularization.estimate_cone_prior(
+        numerators,
+        denominators,
+        split_prior.shells_per_half,
+        settings=settings.conical_prior,
+        volume_shape=settings.volume_shape,
+        accumulator_shape=accumulator_shape,
+        padding_factor=settings.padding_factor,
+        current_size=current_size,
+        tau2_fudge=settings.tau2_fudge,
+        minres_map=settings.minres_map,
+        whole=False,
+        solve_dtype=np.float64,
+    )
+    log.info("Computed iter-%d conical-FSC prior: %.1fs", iteration + 1, clock.seconds)
+    cone_prior.log_summary(f"iter-{iteration + 1}")
+    return cone_prior
 
 
 def solvent_corrected_fsc(numerators, denominators, settings, *, current_size, accumulator_shape, label, like, log):

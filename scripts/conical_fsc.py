@@ -7,7 +7,8 @@ the directional FSC of the Fourier shell occupancy, whose cone half-angle sets i
 Tagare 2023, Nat Methods 20:1021-1024). The threshold 0.143 is the gold-standard criterion of Rosenthal and Henderson
 2003, J Mol Biol 333:721-745. Shells are those of ``scripts.fsc_metrics.shell_fsc`` (``rint(|k|)``, Nyquist edges
 excluded), so a conical curve is directly comparable to the global one. The axes are spread uniformly over the
-hemisphere (``cone_axes``); an axis is a direction in Fourier space, not a viewing direction, and the maps' array
+hemisphere (``relax.reconstruction.conical_regularization.cone_axes``, which the conical-FSC regularization of
+``relax refine --cfsc-regularization`` uses too); an axis is a direction in Fourier space, not a viewing direction, and the maps' array
 axes are ``[x, y, z]`` of RELION's frame (``recovar.utils.helpers.load_relion_volume``), so an axis' ``tilt`` is its
 angle from RELION's z and ``rot`` its azimuth.
 
@@ -19,7 +20,8 @@ fewer than ``MIN_CONE_VOXELS`` voxels in a cone is unmeasured, so it neither cro
 
 Use::
 
-    from scripts.conical_fsc import conical_fsc, conical_fsc_summary, cone_axes
+    from relax.reconstruction.conical_regularization import cone_axes
+    from scripts.conical_fsc import conical_fsc, conical_fsc_summary
 
     cfsc = conical_fsc(half1, half2, cone_axes(100), half_angle_deg=20.0)
     summary = conical_fsc_summary(cfsc, voxel=1.06, box=256)  # summary["cfar"]
@@ -53,21 +55,6 @@ class ConicalFsc(NamedTuple):
     half_angle_deg: float
     curves: np.ndarray  # (n_axes, n_shells)
     voxels: np.ndarray  # (n_axes, n_shells), int
-
-
-def cone_axes(n_axes: int = N_AXES) -> np.ndarray:
-    """``n_axes`` unit vectors spread uniformly over the upper hemisphere (z > 0), a Fibonacci lattice.
-
-    Fourier transforms of real maps are Hermitian, so the cone of an axis and of its opposite are one: the
-    hemisphere holds every distinct cone. Returns an array of shape ``(n_axes, 3)``, columns x, y, z.
-    """
-    if n_axes < 1:
-        raise ValueError(f"n_axes must be positive, got {n_axes}")
-    index = np.arange(n_axes)
-    z = (index + 0.5) / n_axes  # cos(tilt): uniform in z is uniform in area
-    azimuth = index * math.pi * (3.0 - math.sqrt(5.0))
-    radius = np.sqrt(1.0 - z * z)
-    return np.stack([radius * np.cos(azimuth), radius * np.sin(azimuth), z], axis=1)
 
 
 def axes_rot_tilt_deg(axes: np.ndarray) -> tuple[np.ndarray, np.ndarray]:

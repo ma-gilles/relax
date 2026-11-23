@@ -7,10 +7,10 @@ import numpy as np
 import pytest
 from helpers.float_compare import assert_matches
 
+from relax.reconstruction.conical_regularization import cone_axes
 from scripts.conical_fsc import (
     ConicalFsc,
     axes_rot_tilt_deg,
-    cone_axes,
     conical_fsc,
     conical_fsc_summary,
     measured_curves,

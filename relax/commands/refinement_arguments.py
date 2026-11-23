@@ -14,6 +14,7 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING, NamedTuple
 
+from relax.reconstruction.conical_regularization import ConicalPriorSettings
 from relax.refinement.refinement_options import (
     FIRSTITER_CC_TREE_RESCORE_DEFAULT_MAX_MARGIN,
     AdaptiveOptions,
@@ -742,6 +743,23 @@ def resolve_execution(args) -> ExecutionOptions:
         image_batch_size=args.image_batch_size,
         rotation_block_size=args.rotation_block_size,
     )
+
+
+def resolve_conical_prior(args, *, tomographic: bool) -> ConicalPriorSettings | None:
+    """The cones of ``--cfsc-regularization`` (``--cfsc-half-angle``, ``--cfsc-axes``), or None without the flag.
+
+    The conical-FSC prior replaces RELION's K=1 split-half shell prior, so it needs K=1 single-particle data and the
+    backprojector FSC that ``--solvent_correct_fsc`` would replace.
+    """
+    if not args.cfsc_regularization:
+        return None
+    if int(args.n_classes) != 1:
+        raise ValueError("--cfsc-regularization is for K=1 refinement")
+    if tomographic:
+        raise ValueError("--cfsc-regularization is for single-particle data")
+    if args.solvent_correct_fsc:
+        raise ValueError("--cfsc-regularization cannot be combined with --solvent_correct_fsc")
+    return ConicalPriorSettings(half_angle_deg=float(args.cfsc_half_angle), n_axes=int(args.cfsc_axes))
 
 
 def resolve_local_search(args) -> LocalSearchOptions:

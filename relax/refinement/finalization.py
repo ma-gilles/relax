@@ -666,6 +666,7 @@ def run_final_all_data(
             settings=ctx.reconstruction_settings,
             current_size=final_current_size,
             accumulator_shape=final_mstep_accumulator_shape,
+            cone_prior=final_halfmap_prior.cone_prior,
         )
         final_prior_weight_combination = "sum"
         final_class_assignments = None

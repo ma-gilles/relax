@@ -296,6 +296,27 @@ def parse_refinement_args(argv=None):
         "it, as --fixed-direction-prior does. The model STARs record the fits. Not combinable with "
         "--fixed-direction-prior or a RELION replay.",
     )
+    parser.add_argument(
+        "--cfsc-regularization",
+        action="store_true",
+        help="Experimental, K=1 single-particle: regularize every K=1 reconstruction with RELION's FSC-to-tau2 rule "
+        "applied in double cones of Fourier space instead of in whole shells (docs/math/conical_fsc_regularization.md). "
+        "Each voxel's tau2 is RELION's shell tau2 times the mean, over the cones that hold it, of the cone's "
+        "SSNR * sigma2 over the shell's. The shell FSC still sets the resolution, the image size and the reported "
+        "tau2. Not combinable with --solvent_correct_fsc or a RELION replay.",
+    )
+    parser.add_argument(
+        "--cfsc-half-angle",
+        type=float,
+        default=20.0,
+        help="Half-angle in degrees of each cone of --cfsc-regularization (the cones must cover the sphere).",
+    )
+    parser.add_argument(
+        "--cfsc-axes",
+        type=int,
+        default=100,
+        help="Number of cone axes of --cfsc-regularization, spread uniformly over the hemisphere.",
+    )
     for flag in ("--relion-projector-capture-dir", "--relion-projector-capture-manifest",
                  "--relion-projector-capture-iteration"):
         parser.add_argument(flag, action=RetiredFlag, feature="the captured RELION projector",

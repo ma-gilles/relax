@@ -34,6 +34,11 @@ Two deliberate differences from RELION's files:
   under these names, a Class3D model's fit of class ``k`` with ``_class_<k>`` appended. A continued
   run reads them back with the sampling STAR's ``rlnSymmetryGroup`` (``relax.sampling.fvml_direction_prior``).
   ``MlModel::read`` reads its blocks by name, so RELION ignores them.
+* A half's model STAR of a run with the conical-FSC prior (``--cfsc-regularization``) carries its
+  statistics in two extra blocks, ``data_relax_cfsc_regularization`` (half-angle, axes, minimum voxels)
+  and ``data_relax_cfsc_regularization_bins`` (each cone-shell bin's axis, voxels, cone FSC and tau2
+  ratio; ``relax.reconstruction.conical_regularization``). They are a record only: a continued run
+  recomputes the prior from its accumulators.
 
 ``--continue`` keeps each half's own noise spectrum. RELION's MPI restart broadcasts
 rank 1's ``sigma2_noise`` to every rank (ml_optimiser_mpi.cpp:750-758), so its half 2
@@ -64,6 +69,10 @@ from relax.sampling import fvml_direction_prior
 from relax.star.blocks import general_columns, read_star_blocks
 
 logger = logging.getLogger(__name__)
+
+# The extra model-STAR blocks of the conical-FSC prior (ConePrior.star_tables).
+CONE_PRIOR_BLOCK = "relax_cfsc_regularization"
+CONE_PRIOR_BINS_BLOCK = "relax_cfsc_regularization_bins"
 
 RUN_FILES_FORMAT = "relax.run_files.v1"
 
@@ -573,6 +582,10 @@ def _write_model_stars(root: Path, snapshot: IterationSnapshot, settings: RunSet
             )
             for k in range(prior.shape[0]):
                 text.append(_loop_block(f"model_pdf_orient_class_{k + 1}", {"rlnOrientationDistribution": prior[k]}))
+        if snapshot.cone_prior_tables is not None:
+            cone_general, cone_bins = snapshot.cone_prior_tables[h]
+            text.append(_list_block(CONE_PRIOR_BLOCK, cone_general))
+            text.append(_loop_block(CONE_PRIOR_BINS_BLOCK, cone_bins))
         fits = None if snapshot.direction_prior_fits is None else snapshot.direction_prior_fits[h]
         for k, fit in enumerate(fits or ()):
             fit_block, component_block = fvml_direction_prior.star_block_names(k if snapshot.k_class else None)

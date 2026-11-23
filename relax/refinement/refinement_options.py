@@ -17,6 +17,7 @@ from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any, Literal, NamedTuple
 
 from relax.reconstruction.accumulator_guard import HALF_ACCUMULATOR_GUARD_ENV, half_accumulator_guard_mode
+from relax.reconstruction.conical_regularization import ConicalPriorSettings
 from relax.reconstruction.volume_solver import ReconstructionPrograms
 from relax.refinement.refinement_state import (
     APPROX_ACC_ROT_CONVERGENCE_ENV,
@@ -812,6 +813,8 @@ class RefinementOptions:
     # The command reads it from the environment (RefinementEnvironment.from_environ); nothing below reads it again.
     environment: RefinementEnvironment = field(default_factory=RefinementEnvironment)
     solvent: SolventOptions = field(default_factory=SolventOptions)
+    # relax refine --cfsc-regularization: the cones of the K=1 conical-FSC prior; None: RELION's shell prior.
+    conical_prior: ConicalPriorSettings | None = None
     expected_accuracy: ExpectedAccuracyOptions = field(default_factory=ExpectedAccuracyOptions)
     # The dense scoring precision: the command reads it (DensePrecisionPolicy.from_environ) and passes it.
     precision: DensePrecisionPolicy

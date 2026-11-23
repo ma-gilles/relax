@@ -19,6 +19,7 @@ from relax.refinement.numbered_reconstruction import reconstruct_numbered_class_
 from relax.refinement.ports import ClassTau2
 from relax.refinement.priors import (
     estimate_class_priors,
+    estimate_split_half_cone_prior,
     estimate_split_half_prior,
     join_half_accumulators_at_low_resolution,
     stack_class_tau2_update_details,
@@ -350,6 +351,8 @@ class K1Maximization(NamedTuple):
     fsc: object
     tau2_update_details: dict
     tau2_update_details_per_half: list
+    # The conical-FSC prior the solves used (relax.reconstruction.conical_regularization.ConePrior); None: RELION's.
+    cone_prior: object = None
 
 
 def k1_maximization(
@@ -365,7 +368,8 @@ def k1_maximization(
     """RELION's split-half auto-refine M-step (compareTwoHalves -> updateSSNRarrays -> reconstruct).
 
     In order: join the half accumulators at low resolution when requested, copy the previous references
-    to host and release them, estimate the split-half prior from this iteration's FSC, replace
+    to host and release them, estimate the split-half prior from this iteration's FSC (and its conical-FSC form,
+    which the solves then use, with ``reconstruction_settings.conical_prior``), replace
     ``reference_model``'s tau2 and maps; after a first-iteration CC pass, taper the reported tau2; then
     park the tau2 volumes on the host. ``ctx.maximization_probe`` sees the joined accumulators before the prior
     reads them. Reads from ``ctx``: the reconstruction settings, scoring dtype and pixel size; from
@@ -410,6 +414,20 @@ def k1_maximization(
         log=logger,
     )
     logger.info("tau2 updated from this iteration's FSC")
+    cone_prior = (
+        None
+        if ctx.reconstruction_settings.conical_prior is None
+        else estimate_split_half_cone_prior(
+            (Ft_y_0, Ft_y_1),
+            (Ft_ctf_0, Ft_ctf_1),
+            split_prior,
+            ctx.reconstruction_settings,
+            current_size=this_iteration.current_size,
+            accumulator_shape=operands.accumulator_shape,
+            iteration=this_iteration.iteration,
+            log=logger,
+        )
+    )
     reference_model.tau2 = split_prior.variance
     reference_model.tau2_per_half = _updated_mean_variance_per_half(
         split_prior.variance_per_half, use_per_half_mean_variance=parity.use_per_half_mean_variance,
@@ -427,6 +445,7 @@ def k1_maximization(
         accumulator_volume_shape=operands.accumulator_shape,
         retained_first_numerator=retained_Ft_y_0_device,
         probe=ctx.maximization_probe,
+        cone_prior=cone_prior,
     )
     logger.info(
         "Regularized reconstruction (2 halves + flatten): %.1fs",
@@ -474,6 +493,7 @@ def k1_maximization(
         # Diagnostics follow the half-1 model.star, matching the parity report.
         split_prior.details_per_half[0],
         split_prior.details_per_half,
+        cone_prior,
     )
 
 

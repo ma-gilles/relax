@@ -195,8 +195,8 @@ def reconstruction_settings_for_run(
     consistency: RelionConsistencyOptions,
 ) -> ReconstructionSettings:
     """The run's one ``ReconstructionSettings``, every M-step's: RELION's padding and filter constants, the
-    options' mask, fudge and programs, ``consistency``'s gridding and shell counting, and the ``--solvent_mask``
-    read on the model grid (None without one)."""
+    options' mask, fudge, programs and conical-FSC prior, ``consistency``'s gridding and shell counting, and the
+    ``--solvent_mask`` read on the model grid (None without one)."""
     return ReconstructionSettings(
         box_size=image_geometry.box_size,
         voxel_size=image_geometry.pixel_size_angstrom,
@@ -217,6 +217,7 @@ def reconstruction_settings_for_run(
         solvent_correct_fsc=options.solvent.correct_fsc,
         programs=options.variants.reconstruction,
         solvent_phase_stream=_solvent_phase_stream(options) if options.solvent.correct_fsc else None,
+        conical_prior=options.conical_prior,
     )
 
 

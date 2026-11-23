@@ -21,8 +21,9 @@ from relax.diagnostics.gt_registration import apply_rigid_volume_transform
 from relax.io.map_io import require_relion_convention_reference
 from relax.parity.fixed_direction_prior import PROVENANCE_FILE, FixedDirectionPrior
 from relax.parity.fvml_prior_source import FvmlDirectionPriorSource
+from relax.reconstruction.conical_regularization import cone_axes
 from relax.sampling.healpix import euler_angles_to_matrix, euler_matrix_to_angles, n_pixels, pixel_rot_tilt
-from scripts.conical_fsc import ConicalFsc, cone_axes, conical_fsc, conical_fsc_summary
+from scripts.conical_fsc import ConicalFsc, conical_fsc, conical_fsc_summary
 from scripts.pose_prior_benchmark import add_offsets as ao
 from scripts.pose_prior_benchmark import align_to_truth as al
 from scripts.pose_prior_benchmark import compare_variants as cmp

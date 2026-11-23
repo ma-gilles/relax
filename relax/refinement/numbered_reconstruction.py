@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 import jax.numpy as jnp
 import numpy as np
 
+from relax.reconstruction.conical_regularization import ConePrior, ConicalPriorSettings
 from relax.reconstruction.volume_solver import (
     ReconstructionPrograms,
     finish_host_staged_reconstruction,
@@ -76,6 +77,9 @@ class ReconstructionSettings:
     solvent_phase_stream: object = field(compare=False, repr=False)
     # The run's reconstruction programs (ScoringVariants.reconstruction): no effect on values.
     programs: ReconstructionPrograms
+    # relax refine --cfsc-regularization: the K=1 prior is RELION's per cone of Fourier space
+    # (relax.reconstruction.conical_regularization); None keeps RELION's shell prior.
+    conical_prior: ConicalPriorSettings | None = None
 
     def __post_init__(self):
         # Python floats, so the solvent-mask radius is the same double arithmetic for every caller.
@@ -124,20 +128,29 @@ def _reconstruct_k1_maps(
     current_size,
     accumulator_volume_shape,
     retained_first_numerator=None,
+    cone_prior: ConePrior | None = None,
 ) -> list:
-    """Reconstruct both K=1 halves while preserving RELION buffer lifetime."""
+    """Reconstruct both K=1 halves while preserving RELION buffer lifetime.
+
+    With ``cone_prior`` each half's weight carries its conical-FSC prior term and the solve adds no shell prior.
+    """
 
     cs_int = int(current_size) if current_size is not None else None
     reconstructed_means = []
     retained_device_numerator = retained_first_numerator
     for k, (Ft_y_half, Ft_ctf_half, tau_half) in enumerate(zip(numerators_by_half, denominators_by_half, tau_by_half)):
-        # This RELION build uses double RFLOAT in BackProjector::reconstruct.
-        # Keep the stored/controller tau2 state compact, but promote the
-        # reconstruction operand so 1 / (padding_factor**3 * tau2) is not
-        # rounded in float32 before it enters the Wiener denominator.
-        reconstruction_tau = jnp.asarray(tau_half, dtype=jnp.float64)
+        if cone_prior is None:
+            # This RELION build uses double RFLOAT in BackProjector::reconstruct.
+            # Keep the stored/controller tau2 state compact, but promote the
+            # reconstruction operand so 1 / (padding_factor**3 * tau2) is not
+            # rounded in float32 before it enters the Wiener denominator.
+            reconstruction_tau = jnp.asarray(tau_half, dtype=jnp.float64)
+            solve_weight = Ft_ctf_half
+        else:
+            reconstruction_tau = None
+            solve_weight = cone_prior.regularized_weight(k, Ft_ctf_half)
         reconstructed = settings.reconstruct(
-            Ft_ctf_half,
+            solve_weight,
             Ft_y_half,
             tau=reconstruction_tau,
             current_size=cs_int,
@@ -152,6 +165,7 @@ def _reconstruct_k1_maps(
             ),
         ).reshape(-1)
         reconstructed_means.append(finish_host_staged_reconstruction(reconstructed, Ft_ctf_half, Ft_y_half))
+        del solve_weight
         if k == 0 and retained_device_numerator is not None:
             retained_device_numerator = None
     return reconstructed_means
@@ -236,13 +250,15 @@ def reconstruct_numbered_k1_halfmaps(
     accumulator_volume_shape,
     retained_first_numerator=None,
     probe: MaximizationProbe | None = None,
+    cone_prior: ConePrior | None = None,
 ) -> list:
     """Solve two independent numbered K1 maps, then postprocess each half.
 
     Reads from ``this_iteration``: its index, current size and first-iteration CC.
 
     Numerators, denominators and priors are ordered half pairs; each prior is
-    a shell curve. The private solve frame owns promoted priors, host
+    a shell curve, which ``cone_prior`` (the conical-FSC prior of this M-step, None: RELION's) replaces in the
+    solves. The private solve frame owns promoted priors, host
     completion and the retained half-0 numerator boundary. Both solves finish
     before each half is captured, first-CC filtered and solvent-flattened in
     turn. The flatten host-stages box-scale results and consumes its mask.
@@ -257,6 +273,7 @@ def reconstruct_numbered_k1_halfmaps(
         current_size=this_iteration.current_size,
         accumulator_volume_shape=accumulator_volume_shape,
         retained_first_numerator=retained_first_numerator,
+        cone_prior=cone_prior,
     )
     for k in range(2):
         probe.map_solved(

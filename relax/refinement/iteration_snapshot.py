@@ -106,6 +106,8 @@ class IterationSnapshot:
     # Per half: the FvML-mixture fits its direction prior comes from, one per class
     # (relax.sampling.fvml_direction_prior), or None.
     direction_prior_fits: list | None = None
+    # Per half: the conical-FSC prior's STAR tables (ConePrior.star_tables), or None without --cfsc-regularization.
+    cone_prior_tables: list | None = None
 
     @property
     def k_class(self) -> bool:
@@ -456,11 +458,13 @@ class SnapshotCapture:
         significant_counts,
         avg_norm_correction,
         log_likelihood_contribution,
+        cone_prior=None,
     ) -> IterationSnapshot:
         """Complete a checkpoint in the layout of the run's mode (``finish_class`` or ``finish_k1``).
 
         Each form takes its own mode's operands: the caller passes ``None`` for the two FSC curves in
-        Class3D and for the two class operands in K=1, and those are not forwarded.
+        Class3D and for the two class operands in K=1, and those are not forwarded; ``cone_prior`` (the
+        conical-FSC prior of a K=1 M-step) is K=1's only.
         """
         if int(self.n_classes) > 1:
             return self.finish_class(
@@ -494,6 +498,7 @@ class SnapshotCapture:
             significant_counts=significant_counts,
             avg_norm_correction=avg_norm_correction,
             log_likelihood_contribution=log_likelihood_contribution,
+            cone_prior=cone_prior,
         )
 
     def finish_k1(
@@ -513,11 +518,12 @@ class SnapshotCapture:
         significant_counts,
         avg_norm_correction,
         log_likelihood_contribution,
+        cone_prior=None,
     ) -> IterationSnapshot:
         """Copy a K=1 iteration's maps, spectra, priors and particles into a complete checkpoint.
 
         One map and one tau2 curve per half, the split-half FSC and the curve
-        that drives image-size growth; no class operands.
+        that drives image-size growth, each half's conical-FSC tables with ``cone_prior``; no class operands.
 
         Fills ``assembly`` (from ``begin``) in place. ``begin`` precedes array capture so replacing the prior
         header releases
@@ -532,6 +538,7 @@ class SnapshotCapture:
             fsc=host_array(fsc, np.float64),
             fsc_for_growth=host_array(fsc_for_growth, np.float64),
             unfiltered_means=_host_unfiltered_means(unfiltered_means),
+            cone_prior_tables=None if cone_prior is None else [cone_prior.star_tables(h) for h in range(2)],
         )
         assembly.values.update(
             class_weights=None,
@@ -653,7 +660,7 @@ def k1_run_files_snapshot(
         fsc=mstep.fsc, fsc_for_growth=mstep.fsc, class_weights=None, direction_priors=carry.direction_priors,
         half_inputs=halves, class_assignments=None, max_posterior=expected.per_half.max_posterior,
         significant_counts=expected.significance.per_half, avg_norm_correction=corrections.avg_norm_correction_per_half,
-        log_likelihood_contribution=expected.per_half.log_likelihood_contribution,
+        log_likelihood_contribution=expected.per_half.log_likelihood_contribution, cone_prior=mstep.cone_prior,
     )
 
 
