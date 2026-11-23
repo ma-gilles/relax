@@ -1074,7 +1074,7 @@ def _relion_fsc_downsample_labels(padded_shape, pf, max_shell):
 def _packed_half_of_hermitian_full(values, padded_shape):
     """The packed-half layout of a Hermitian full centered volume (host copy).
 
-    The inverse of the expansion in :func:`compute_relion_fsc_from_backprojector`:
+    The inverse of :func:`packed_half_to_full_numpy`:
     the last axis keeps its centered non-negative frequencies, with the Nyquist
     column of an even axis last, as ``half_volume_to_full_volume`` lays it out.
     """
@@ -1087,6 +1087,34 @@ def _packed_half_of_hermitian_full(values, padded_shape):
     else:
         packed_idx = np.arange(ic2, n2, dtype=np.int64)
     return np.ascontiguousarray(full[:, :, packed_idx]).reshape(-1)
+
+
+def packed_half_to_full_numpy(values, padded_shape) -> np.ndarray:
+    """The centered full volume of shape ``padded_shape`` whose packed half ``values`` holds (host copy).
+
+    The packed last axis keeps the centered non-negative frequencies (an even axis' Nyquist column last); the
+    other columns are filled with the Hermitian mates, as ``half_volume_to_full_volume`` does on the device.
+    """
+    padded_shape = tuple(int(s) for s in padded_shape)
+    half_grid = np.asarray(values).reshape(fourier_transform_utils.volume_shape_to_half_volume_shape(padded_shape))
+    n0, n1, n2 = padded_shape
+    ic2 = n2 // 2
+    if n2 % 2 == 0:
+        packed_idx = np.concatenate([np.arange(ic2, n2, dtype=np.int64), np.asarray([0], dtype=np.int64)])
+        redundant = np.arange(1, ic2, dtype=np.int64)
+    else:
+        packed_idx = np.arange(ic2, n2, dtype=np.int64)
+        redundant = np.arange(0, ic2, dtype=np.int64)
+
+    full_grid = np.zeros(padded_shape, dtype=half_grid.dtype)
+    full_grid[:, :, packed_idx] = half_grid
+    if redundant.size:
+        partner_i0 = (n0 - (n0 % 2) - np.arange(n0, dtype=np.int64)) % n0
+        partner_i1 = (n1 - (n1 % 2) - np.arange(n1, dtype=np.int64)) % n1
+        conj_partner = np.conj(half_grid[partner_i0[:, None], partner_i1[None, :], :])
+        source_cols = ic2 - redundant
+        full_grid[:, :, redundant] = conj_partner[:, :, source_cols]
+    return full_grid
 
 
 def compute_relion_fsc_from_backprojector(
@@ -1204,34 +1232,12 @@ def compute_relion_fsc_from_backprojector(
             )
         return jnp.asarray(fsc, dtype=fsc_dtype)
 
-    def _packed_half_to_full_numpy(arr_np):
-        """Expand RECOVAR's centered packed half-volume layout on host."""
-        half_grid = np.asarray(arr_np).reshape(half_shape)
-        n0, n1, n2 = padded_shape
-        ic2 = n2 // 2
-        if n2 % 2 == 0:
-            packed_idx = np.concatenate([np.arange(ic2, n2, dtype=np.int64), np.asarray([0], dtype=np.int64)])
-            redundant = np.arange(1, ic2, dtype=np.int64)
-        else:
-            packed_idx = np.arange(ic2, n2, dtype=np.int64)
-            redundant = np.arange(0, ic2, dtype=np.int64)
-
-        full_grid = np.zeros(padded_shape, dtype=half_grid.dtype)
-        full_grid[:, :, packed_idx] = half_grid
-        if redundant.size:
-            partner_i0 = (n0 - (n0 % 2) - np.arange(n0, dtype=np.int64)) % n0
-            partner_i1 = (n1 - (n1 % 2) - np.arange(n1, dtype=np.int64)) % n1
-            conj_partner = np.conj(half_grid[partner_i0[:, None], partner_i1[None, :], :])
-            source_cols = ic2 - redundant
-            full_grid[:, :, redundant] = conj_partner[:, :, source_cols]
-        return full_grid
-
     def _as_padded_full(arr, name):
         arr_np = np.asarray(arr)
         if arr_np.size == full_size:
             return arr_np.reshape(padded_shape)
         if arr_np.size == half_size:
-            return _packed_half_to_full_numpy(arr_np)
+            return packed_half_to_full_numpy(arr_np, padded_shape)
         raise ValueError(
             f"{name} must be centered full Fourier data with {full_size} entries or packed half "
             f"Fourier data with {half_size} entries for volume_shape={volume_shape}, "
