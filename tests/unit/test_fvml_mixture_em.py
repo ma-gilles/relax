@@ -1,4 +1,4 @@
-"""FvML-mixture EM (scripts/lib/fvml_mixture_em.py): the density, the closed-form M-step against a numerical
+"""FvML-mixture EM (relax/sampling/fvml_mixture.py): the density, the closed-form M-step against a numerical
 maximizer, monotone ascent, recovery of a generating mixture, symmetry, and the concentration cap."""
 
 import math
@@ -10,9 +10,10 @@ from helpers.float_compare import assert_matches
 from scipy.optimize import minimize
 from scipy.special import logsumexp, softmax
 
-from scripts.lib.fvml_mixture_em import (
+from relax.sampling.fvml_mixture import (
     FvmlMixture,
     fit_fvml_mixture,
+    fit_fvml_mixture_cells,
     init_fvml_mixture,
     inverse_langevin,
     kappa_max_for_grid,
@@ -146,9 +147,10 @@ def test_inverse_langevin_round_trips_and_clips() -> None:
 
 
 def test_kappa_max_for_grid_is_the_spacing_rule() -> None:
-    """The cap is ``1/delta^2`` with ``delta^2 = 4 pi / n`` and scales with the minimum width in spacings."""
+    """The cap is ``1/(c delta)^2`` with ``delta^2 = 4 pi / n``; the default width is ``c = 0.25`` spacings."""
     n = hp.nside2npix(NSIDE)
-    assert_matches(kappa_max_for_grid(n), n / (4.0 * math.pi))
+    assert_matches(kappa_max_for_grid(n, 1.0), n / (4.0 * math.pi))
+    assert_matches(kappa_max_for_grid(n), 16.0 * n / (4.0 * math.pi))
     assert_matches(kappa_max_for_grid(n, 0.5), 4.0 * n / (4.0 * math.pi))
     with pytest.raises(ValueError):
         kappa_max_for_grid(0)
@@ -253,7 +255,7 @@ def test_one_m_step_is_the_numerical_maximizer_of_the_surrogate(symmetry: np.nda
 def test_objective_never_decreases_and_dirichlet_keeps_weights_positive(dirichlet: float) -> None:
     """Every EM iterate raises the (MAP) objective; a Dirichlet concentration above 1 floors the weights."""
     directions, masses, _ = _mixture_data(seed=3, n=20_000)
-    kappa_max = kappa_max_for_grid(directions.shape[0])
+    kappa_max = kappa_max_for_grid(directions.shape[0], 1.0)
     rng = np.random.default_rng(3)
     start = init_fvml_mixture(directions, masses, 4, kappa_max=kappa_max, rng=rng)
     fit = fit_fvml_mixture(directions, masses, start, kappa_max=kappa_max, dirichlet=dirichlet, max_iter=60)
@@ -268,7 +270,7 @@ def test_objective_never_decreases_and_dirichlet_keeps_weights_positive(dirichle
 def test_fit_recovers_the_generating_mixture_from_binned_draws() -> None:
     """Best of 5 k-means++ starts on 1e5 binned draws returns the weights, directions and widths of the truth."""
     directions, masses, truth = _mixture_data(seed=4)
-    kappa_max = kappa_max_for_grid(directions.shape[0])
+    kappa_max = kappa_max_for_grid(directions.shape[0], 1.0)
     fit = _best_of_starts(directions, masses, 3, kappa_max, seed=4)
     order = np.argsort(fit.mixture.kappas)  # truth has kappa 25 (z) before 120 (x)
     assert fit.converged
@@ -310,7 +312,7 @@ def test_antipodal_symmetry_recovers_a_two_lobed_truth_that_a_plain_fit_cannot()
         [-1.0, 1.0], size=(int(in_lobe.sum()), 1)
     )
     directions, masses = _sphere_grid(NSIDE), _bin_masses(points, NSIDE)
-    kappa_max = kappa_max_for_grid(directions.shape[0])
+    kappa_max = kappa_max_for_grid(directions.shape[0], 1.0)
     results = {}
     for name, ops in (("antipodal", ANTIPODAL), ("plain", None)):
         starts = [
@@ -343,10 +345,82 @@ def test_cap_binds_on_a_dominant_atom_and_the_objective_grows_with_it() -> None:
     assert objectives[1] - objectives[0] > 0.9 * 50.0 * math.log(1e3)
 
 
+def _children(nside: int, levels: int) -> np.ndarray:
+    """Centres of the ``4**levels`` NEST children of each pixel at ``nside``, shape (12 nside^2, 4**levels, 3)."""
+    return _sphere_grid(nside << levels).reshape(hp.nside2npix(nside), 4**levels, 3)
+
+
+def test_cell_fit_with_one_child_is_the_point_fit_plus_the_log_cell_area() -> None:
+    """Cells represented by their centres alone give the point fit; the objective adds ``N log(4 pi / D)``."""
+    directions, masses, truth = _mixture_data(seed=8, n=20_000)
+    kappa_max = kappa_max_for_grid(directions.shape[0], 1.0)
+    # 8 fixed steps, still ascending: the stopping rule is relative to |objective|, which the constant shifts
+    points = fit_fvml_mixture(directions, masses, truth, kappa_max=kappa_max, max_iter=8, tol=0.0)
+    cells = fit_fvml_mixture_cells(directions[:, None], masses, truth, kappa_max=kappa_max, max_iter=8, tol=0.0)
+    assert points.n_iter == cells.n_iter == 8
+    assert_matches(cells.mixture.kappas, points.mixture.kappas)
+    assert_matches(cells.mixture.weights, points.mixture.weights)
+    assert_matches(cells.mixture.means, points.mixture.means)
+    log_area = math.log(4.0 * math.pi / directions.shape[0])
+    assert_matches(cells.objective, points.objective + masses.sum() * log_area)
+
+
+def test_cell_fit_removes_the_quantization_bias_of_kappa() -> None:
+    """A lobe with kappa delta^2 = 2: the point fit is biased low by node quantization, the cell fit is not."""
+    rng = np.random.default_rng(9)
+    mu = np.array([0.3, 0.2, 0.93]) / np.linalg.norm([0.3, 0.2, 0.93])
+    kappa = 2.0 * hp.nside2npix(NSIDE) / (4.0 * math.pi)  # kappa delta^2 = 2
+    masses = _bin_masses(_sample_fvml(rng, 200_000, mu, kappa), NSIDE)
+    start = FvmlMixture([0.05, 0.95], [mu], [kappa / 2.0])
+    common: dict = dict(kappa_max=1e5, max_iter=2000, tol=1e-12)
+    point = fit_fvml_mixture(_sphere_grid(NSIDE), masses, start, **common)
+    cell = fit_fvml_mixture_cells(_children(NSIDE, 2), masses, start, **common)
+    assert point.converged and cell.converged
+    # measured on this seed: point 0.847 of kappa (quantization predicts 1 / (1 + 2/12) = 0.857, 1.1 % apart), cell
+    # 0.988 (quantization at the children's spacing predicts 1 / (1 + 2/192) = 0.990, 0.2 % apart)
+    assert_matches(point.mixture.kappas[0], kappa / (1.0 + 2.0 / 12.0), rtol=0.02)
+    assert_matches(cell.mixture.kappas[0], kappa / (1.0 + 2.0 / 192.0), rtol=0.01)
+    assert np.all(np.diff(cell.objective) >= -1e-9 * abs(cell.objective[-1]))
+
+
+def test_cell_fit_recovers_the_generating_mixture() -> None:
+    """Best k-means++ start on 1e5 binned draws: the cell fit returns the truth's weights, widths and directions."""
+    directions, masses, truth = _mixture_data(seed=4)
+    kappa_max = kappa_max_for_grid(directions.shape[0], 1.0)
+    rng = np.random.default_rng(4)
+    starts = [init_fvml_mixture(directions, masses, 3, kappa_max=kappa_max, rng=rng) for _ in range(3)]
+    fits = [fit_fvml_mixture_cells(_children(NSIDE, 2), masses, s, kappa_max=kappa_max) for s in starts]
+    fit = max(fits, key=lambda f: f.objective[-1])
+    order = np.argsort(fit.mixture.kappas)
+    assert fit.converged
+    assert np.all(np.diff(fit.objective) >= -1e-9 * abs(fit.objective[-1]))
+    # measured on this seed: weights within 0.0021 of the truth, kappa 0.9 % low (25) and 0.06 % high (120) where the
+    # point fit is 2.6 % and 3.7 % low, means 0.12 and 0.01 deg off; two of the three starts end at a poorer optimum
+    assert_matches(fit.mixture.weights[[0, *(order + 1)]], truth.weights, rtol=0.02)
+    for fitted, true in zip(fit.mixture.kappas[order], truth.kappas):
+        assert_matches(fitted, true, rtol=0.02)
+    cos_to_truth = np.abs(np.einsum("jb,jb->j", fit.mixture.means[order], truth.means))
+    assert np.all(cos_to_truth > math.cos(math.radians(1.0)))
+
+
+@pytest.mark.parametrize("change", ["points_not_3d", "masses_wrong_length", "non_unit_child"])
+def test_cell_fit_rejects_invalid_cells(change: str) -> None:
+    """The cell fit needs (D, C, 3) unit child directions and one mass per cell."""
+    cells, masses = _children(2, 1), np.ones(hp.nside2npix(2))
+    if change == "points_not_3d":
+        cells = cells.reshape(-1, 3)
+    elif change == "masses_wrong_length":
+        masses = masses[:-1]
+    elif change == "non_unit_child":
+        cells = cells * 1.1
+    with pytest.raises(ValueError):
+        fit_fvml_mixture_cells(cells, masses, FvmlMixture([0.5, 0.5], [Z_AXIS], [10.0]), kappa_max=100.0)
+
+
 def test_init_is_valid_deterministic_and_symmetry_aware() -> None:
     """k-means++ gives a valid mixture, the same one for the same seed, and merges antipodal copies into one lobe."""
     directions, masses, _ = _mixture_data(seed=7, n=20_000)
-    kappa_max = kappa_max_for_grid(directions.shape[0])
+    kappa_max = kappa_max_for_grid(directions.shape[0], 1.0)
     first = init_fvml_mixture(directions, masses, 3, kappa_max=kappa_max, rng=np.random.default_rng(0))
     again = init_fvml_mixture(directions, masses, 3, kappa_max=kappa_max, rng=np.random.default_rng(0))
     assert_matches(first.weights[0], 0.2)

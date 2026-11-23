@@ -1,0 +1,79 @@
+# FvML-mixture prior simulation (Snakefile beside this file): targets, particle counts and fit settings.
+
+output_root: null           # where targets/, results/ and summary/ go; set with --config output_root=<dir>
+benchmark_root: /scratch/gpfs/CRYOEM/gilleslab/ry2228/data/pose_prior_benchmark   # pose-prior benchmark runs
+repo_root: /home/ry2228/project/relax
+
+# Draws per trial ("inf": fit the target's own cell probabilities, the model's floor) and replicates per count.
+n_particles: [1000, 10000, 100000, 1000000, inf]
+replicates: 5
+
+# Fit settings: c of the cap kappa_max = 1 / (c delta)^2 (delta the fit grid's spacing) and the lobe count (besides the
+# uniform component) of targets without a known one; a known mixture is fitted with its own count, once per c.
+# The first entry is the base setting of the per-target figures (c = 0.25 with 5 lobes is the recommended one).
+settings:
+  - {c: 0.25, lobes: 5}
+  - {c: 0.25, lobes: 10}
+  - {c: 0.25, lobes: 20}
+  - {c: 1.0, lobes: 5}
+  - {c: 1.0, lobes: 10}
+  - {c: 1.0, lobes: 20}
+  - {c: 0.5, lobes: 5}
+fit_orders: [3, 4, 5]        # HEALPix orders the draws are binned on and fitted at
+eval_order: 6                # fine comparison order of the mixture targets (a refinement target uses its own order)
+
+fit:
+  n_starts: 5                # k-means++ starts per fit, the best final objective kept; both fits share them
+  cell_levels: 2             # the cell-mass fit represents a cell by its 4**levels children
+  max_iter: 1000
+  tol: 1.0e-7                # objective gain per particle (nats) at which a fit stops
+  reference_mass: 1.0e6      # total mass of the "inf" trial (its masses are the truth times this)
+
+# Directions are RELION (rot, tilt) in degrees; weights list the uniform component first.
+targets:
+  gt_one_lobe:
+    mixture: {weights: [0.4, 0.6], directions_deg: [[30, 40]], kappas: [20]}
+  gt_three_lobes:
+    mixture:
+      weights: [0.2, 0.3, 0.3, 0.2]
+      directions_deg: [[0, 10], [120, 70], [250, 120]]
+      kappas: [8, 60, 300]
+  gt_five_lobes:             # lobes 1 and 2 are 23 deg apart and overlap
+    mixture:
+      weights: [0.15, 0.25, 0.2, 0.15, 0.15, 0.1]
+      directions_deg: [[0, 20], [40, 35], [150, 90], [260, 60], [300, 150]]
+      kappas: [10, 40, 120, 250, 400]
+  run_kent_mild:             # learned prior, 100k particles, mild Kent cap, noise 0.5
+    refine_dir: "{benchmark_root}/sweep_mild_box256/mix_w100_n100k_nz0p5/learned/refine"
+    order: 5
+  run_kent_mild_66:          # 66 % mild Kent cap, 34 % uniform, noise 0.5
+    refine_dir: "{benchmark_root}/sweep_mild_box256/mix_w066_n100k_nz0p5/learned/refine"
+    order: 5
+  run_kent_strong:           # strong Kent cap, noise 1
+    refine_dir: "{benchmark_root}/fixed_prior_100k_box256/kent_cap/learned/refine"
+    order: 5
+  kent_mild_population:      # the population run_kent_mild and run_kent_mild_66 (its Kent part) learn
+    kent_population: {kappa: 4.0, beta: 1.0, mu: [1.0, 1.0, 0.0], mu0: [0.0, 0.0, 1.0]}
+    order: 5
+  kent_strong_population:    # the population run_kent_strong learns
+    kent_population: {kappa: 8.0, beta: 2.0, mu: [1.0, 1.0, 0.0], mu0: [0.0, 0.0, 1.0]}
+    order: 5
+  empiar10096:               # RELION poses of 130k HA-trimer particles (owner's test.star), C3
+    particle_star: "{repo_root}/test.star"
+    symmetry: C3
+    order: 5
+
+# Replay of benchmark refinements (rule replay_half): each half-set's estimated directions at every iteration, a fixed
+# held-out share of its particles choosing the lobe count, cell-mass fits warm-started from the previous iteration
+# (and, for the `cold` combination only, best of fit.n_starts k-means++ starts), scored against the simulated population.
+replay:
+  runs:
+    run_kent_mild: "{benchmark_root}/sweep_mild_box256/mix_w100_n100k_nz0p5"
+    run_kent_mild_66: "{benchmark_root}/sweep_mild_box256/mix_w066_n100k_nz0p5"
+    run_kent_strong: "{benchmark_root}/fixed_prior_100k_box256/kent_cap"
+  halves: [1, 2]
+  heldout_fractions: [0.1, 0.2]
+  c: [0.25, 1.0]
+  lobes: [5, 10, 20]
+  max_fit_order: 5           # iterations at a finer order are fitted at this order and scored at their own
+  cold: {c: 0.25, heldout_fraction: 0.2}

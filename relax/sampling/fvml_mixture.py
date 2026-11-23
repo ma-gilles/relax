@@ -3,24 +3,32 @@
 Fits the rotation prior of the pose-prior M-step, derived in docs/math/fvml_mixture_direction_prior.md: the atoms
 are viewing directions with non-negative masses (the posterior mass the E-step puts on each direction), component 0
 is the uniform density with a free weight, and the other components are FvML lobes, each optionally copied by a
-finite set of orthogonal maps (antipodal symmetry, a point group). Host float64 NumPy; no refinement code calls it.
+finite set of orthogonal maps (antipodal symmetry, a point group). ``fit_fvml_mixture`` treats each mass as sitting
+at its direction; ``fit_fvml_mixture_cells`` treats it as the mass of a grid cell (the grouped-data likelihood).
+The recommended setting is the cell fit with the default cap of ``kappa_max_for_grid`` (lobes at least a quarter
+of a grid spacing wide): with a looser cap than one spacing the point fit's quantization bias shows (section 10 of
+the document). ``healpix_cell_points`` and ``cell_log_probabilities`` put a mixture on RELION's C1 direction grid
+(HEALPix NEST pixels); ``relax.sampling.fvml_direction_prior`` fits it as a refinement's direction prior. Host
+float64 NumPy.
 
 Use::
 
     import numpy as np
-    from scripts.lib.fvml_mixture_em import fit_fvml_mixture, init_fvml_mixture, kappa_max_for_grid
+    from relax.sampling.fvml_mixture import fit_fvml_mixture_cells, init_fvml_mixture, kappa_max_for_grid
 
-    kappa_max = kappa_max_for_grid(directions.shape[0])  # directions: (D, 3) unit vectors on a whole-sphere grid
+    kappa_max = kappa_max_for_grid(directions.shape[0])  # directions: (D, 3) pixel centres of a whole-sphere grid
     start = init_fvml_mixture(directions, masses, 4, kappa_max=kappa_max, rng=np.random.default_rng(0))
-    fit = fit_fvml_mixture(directions, masses, start, kappa_max=kappa_max)
+    fit = fit_fvml_mixture_cells(cell_points, masses, start, kappa_max=kappa_max)  # cell_points: (D, C, 3) children
     fit.mixture.weights, fit.mixture.means, fit.mixture.kappas, fit.objective
 """
 
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
+import healpy as hp
 import numpy as np
 from scipy.special import logsumexp
 
@@ -78,10 +86,10 @@ class FvmlMixture:
 
 @dataclass(frozen=True, eq=False)
 class FitResult:
-    """Outcome of :func:`fit_fvml_mixture`: the mixture, the objective at every iterate and whether it converged.
+    """Outcome of a fit: the mixture, the objective at every iterate and whether it converged.
 
-    ``objective[0]`` is the start and ``objective[-1]`` belongs to ``mixture``; the objective is the log-likelihood
-    ``sum_m mass_m log lambda(v_m)`` plus the Dirichlet log-prior of the weights (zero for ``dirichlet=1``).
+    ``objective[0]`` is the start and ``objective[-1]`` belongs to ``mixture``; the objective is the fit's
+    log-likelihood plus the Dirichlet log-prior of the weights (zero for ``dirichlet=1``).
     """
 
     mixture: FvmlMixture
@@ -150,7 +158,7 @@ def inverse_langevin(r_bar: float, kappa_max: float) -> float:
     raise RuntimeError(f"inverse_langevin did not converge for r_bar={r_bar!r}")
 
 
-def kappa_max_for_grid(n_sphere_directions: int, min_sigma_in_spacings: float = 1.0) -> float:
+def kappa_max_for_grid(n_sphere_directions: int, min_sigma_in_spacings: float = 0.25) -> float:
     """Concentration cap that keeps a lobe at least ``min_sigma_in_spacings`` node spacings wide.
 
     ``n_sphere_directions`` is the size of the equal-area grid over the whole sphere (``12 * 4**order`` for HEALPix),
@@ -229,12 +237,55 @@ def _m_step(
     return FvmlMixture(counts / counts.sum(), means, kappas, mixture.symmetry)
 
 
-def _objective(masses: np.ndarray, log_lambda: np.ndarray, weights: np.ndarray, dirichlet: float) -> float:
-    """``sum_m mass_m log lambda_m`` plus the Dirichlet log-prior ``(dirichlet - 1) sum_j log w_j``."""
-    value = float(masses @ log_lambda)
+def _objective(log_likelihood: float, weights: np.ndarray, dirichlet: float) -> float:
+    """The log-likelihood plus the Dirichlet log-prior ``(dirichlet - 1) sum_j log w_j``."""
+    value = log_likelihood
     if dirichlet > 1.0:
         value += (dirichlet - 1.0) * float(np.sum(np.log(weights)))
     return value
+
+
+def _check_fit_options(start: FvmlMixture, kappa_max: float, dirichlet: float, max_iter: int, tol: float) -> None:
+    """Reject a bad cap, Dirichlet concentration, iteration budget or tolerance, and a start above the cap."""
+    _check_kappa_max(kappa_max)
+    if dirichlet < 1.0 or max_iter < 0 or tol < 0.0:
+        raise ValueError("dirichlet must be >= 1, max_iter >= 0 and tol >= 0")
+    if np.any(start.kappas > kappa_max):
+        raise ValueError("start has a concentration above kappa_max")
+
+
+def _run_em(
+    start: FvmlMixture,
+    e_step: Callable[[FvmlMixture], tuple[float, np.ndarray, np.ndarray]],
+    transformed: np.ndarray,
+    *,
+    kappa_max: float,
+    dirichlet: float,
+    max_iter: int,
+    tol: float,
+    total_mass: float,
+) -> FitResult:
+    """EM loop shared by the fits: ``e_step(mixture)`` gives the log-likelihood, per-atom masses and responsibilities.
+
+    The M-step is :func:`_m_step` on the atoms ``transformed`` with those masses; stops when the gain of the objective
+    (log-likelihood plus Dirichlet term) is at most ``tol * total_mass`` or after ``max_iter`` M-steps; raises if the
+    objective drops.
+    """
+    mixture, history, converged = start, [], False
+    for iteration in range(max_iter + 1):
+        log_likelihood, masses, responsibilities = e_step(mixture)
+        history.append(_objective(log_likelihood, mixture.weights, dirichlet))
+        if iteration > 0:
+            gain = history[-1] - history[-2]
+            if gain < -DECREASE_TOL * abs(history[-1]):
+                raise RuntimeError(f"EM objective decreased at iteration {iteration}: {history[-2]} -> {history[-1]}")
+            if gain <= tol * total_mass:
+                converged = True
+                break
+        if iteration == max_iter:
+            break
+        mixture = _m_step(mixture, responsibilities, masses, transformed, kappa_max, dirichlet)
+    return FitResult(mixture, np.array(history), converged)
 
 
 def fit_fvml_mixture(
@@ -245,40 +296,91 @@ def fit_fvml_mixture(
     kappa_max: float,
     dirichlet: float = 1.0,
     max_iter: int = 500,
-    tol: float = 1e-10,
+    tol: float = 1e-8,
 ) -> FitResult:
     """EM for the mixture on weighted direction atoms, from ``start`` (the warm start or an initialization).
 
     ``directions`` is ``(D, 3)`` unit vectors, ``masses`` is ``(D,)`` non-negative posterior masses (their sum is
     the particle count, which sets the strength of the Dirichlet prior). Every ``kappa`` stays in ``[0, kappa_max]``;
     the cap is required because the unregularized objective is unbounded (``kappa_max_for_grid`` gives a grid rule).
-    ``dirichlet >= 1`` is the symmetric Dirichlet concentration on the weights (1 is flat). Stops when the relative
-    objective gain is at most ``tol`` or after ``max_iter`` M-steps; raises if the objective ever drops.
+    ``dirichlet >= 1`` is the symmetric Dirichlet concentration on the weights (1 is flat). Stops when an iteration
+    gains at most ``tol`` nats of objective per unit of mass (per particle) or after ``max_iter`` M-steps; raises if
+    the objective ever drops. The objective's likelihood is ``sum_m mass_m log lambda(v_m)``.
     """
     directions, masses = _check_atoms(directions, masses)
-    _check_kappa_max(kappa_max)
-    if dirichlet < 1.0 or max_iter < 0 or tol < 0.0:
-        raise ValueError("dirichlet must be >= 1, max_iter >= 0 and tol >= 0")
-    if np.any(start.kappas > kappa_max):
-        raise ValueError("start has a concentration above kappa_max")
+    _check_fit_options(start, kappa_max, dirichlet, max_iter, tol)
     transformed = _transform(directions, start.symmetry)
-    mixture, history, converged = start, [], False
-    for iteration in range(max_iter + 1):
+
+    def e_step(mixture: FvmlMixture) -> tuple[float, np.ndarray, np.ndarray]:
+        """Log-likelihood of the atoms and their component responsibilities."""
         log_joint = _log_joint(mixture, transformed)
         log_lambda = logsumexp(log_joint, axis=1)
-        history.append(_objective(masses, log_lambda, mixture.weights, dirichlet))
-        if iteration > 0:
-            gain = history[-1] - history[-2]
-            if gain < -DECREASE_TOL * abs(history[-1]):
-                raise RuntimeError(f"EM objective decreased at iteration {iteration}: {history[-2]} -> {history[-1]}")
-            if gain <= tol * abs(history[-1]):
-                converged = True
-                break
-        if iteration == max_iter:
-            break
-        responsibilities = np.exp(log_joint - log_lambda[:, None])
-        mixture = _m_step(mixture, responsibilities, masses, transformed, kappa_max, dirichlet)
-    return FitResult(mixture, np.array(history), converged)
+        return float(masses @ log_lambda), masses, np.exp(log_joint - log_lambda[:, None])
+
+    return _run_em(
+        start,
+        e_step,
+        transformed,
+        kappa_max=kappa_max,
+        dirichlet=dirichlet,
+        max_iter=max_iter,
+        tol=tol,
+        total_mass=float(masses.sum()),
+    )
+
+
+def fit_fvml_mixture_cells(
+    cell_points: np.ndarray,
+    masses: np.ndarray,
+    start: FvmlMixture,
+    *,
+    kappa_max: float,
+    dirichlet: float = 1.0,
+    max_iter: int = 500,
+    tol: float = 1e-8,
+) -> FitResult:
+    """EM for the grouped-data likelihood ``sum_m mass_m log P(cell m)``: each mass belongs to a cell, not a point.
+
+    ``cell_points`` is ``(D, C, 3)``: the centres of ``C`` equal-area children of each of ``D`` equal-area cells that
+    tile the sphere (the HEALPix pixels of a finer order). ``P(cell m)`` is the quadrature
+    ``(4 pi / D) mean_c lambda(v_mc)``. The E-step spreads each cell's mass over its children in proportion to the
+    current density and over the components; the M-step is the closed form of :func:`fit_fvml_mixture` on the
+    children. Other arguments and the return value are those of :func:`fit_fvml_mixture`; the objective's
+    likelihood is the log probability of the cell masses.
+    """
+    cell_points = np.asarray(cell_points, dtype=np.float64)
+    if cell_points.ndim != 3 or cell_points.shape[2] != 3:
+        raise ValueError(f"cell_points must be (D, C, 3), got {cell_points.shape}")
+    n_cells, n_children, _ = cell_points.shape
+    masses = np.asarray(masses, dtype=np.float64)
+    if masses.shape != (n_cells,):
+        raise ValueError(f"masses must be ({n_cells},), got {masses.shape}")
+    children, _ = _check_atoms(cell_points.reshape(-1, 3), np.repeat(masses, n_children))
+    _check_fit_options(start, kappa_max, dirichlet, max_iter, tol)
+    transformed = _transform(children, start.symmetry)
+    log_child_area = math.log(4.0 * math.pi / n_cells) - math.log(n_children)
+
+    def e_step(mixture: FvmlMixture) -> tuple[float, np.ndarray, np.ndarray]:
+        """Log probability of the cell masses, each child's share of its cell's mass, and component responsibilities."""
+        log_joint = _log_joint(mixture, transformed)
+        log_child = logsumexp(log_joint, axis=1)
+        log_child_by_cell = log_child.reshape(n_cells, n_children)
+        log_cell = logsumexp(log_child_by_cell, axis=1)
+        child_share = np.exp(log_child_by_cell - log_cell[:, None])
+        log_likelihood = float(masses @ (log_cell + log_child_area))
+        child_masses = (masses[:, None] * child_share).reshape(-1)
+        return log_likelihood, child_masses, np.exp(log_joint - log_child[:, None])
+
+    return _run_em(
+        start,
+        e_step,
+        transformed,
+        kappa_max=kappa_max,
+        dirichlet=dirichlet,
+        max_iter=max_iter,
+        tol=tol,
+        total_mass=float(masses.sum()),
+    )
 
 
 def _best_images(transformed: np.ndarray, centers: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -340,3 +442,24 @@ def init_fvml_mixture(
     shares = np.maximum(cluster_mass / masses.sum(), EMPTY_CLUSTER_SHARE)
     weights = np.concatenate([[uniform_weight], (1.0 - uniform_weight) * shares / shares.sum()])
     return FvmlMixture(weights, centers, kappas, symmetry)
+
+
+def healpix_cell_points(order: int, levels: int) -> np.ndarray:
+    """Centres of the ``4**levels`` NEST children of every HEALPix pixel at ``order``: ``(12 * 4**order, 4**levels, 3)``.
+
+    The pixels are RELION's C1 directions at ``order``, numbered as its ``rlnOrientationDistribution`` (NEST).
+    """
+    nside = 1 << (order + levels)
+    points = np.stack(hp.pix2vec(nside, np.arange(hp.nside2npix(nside)), nest=True), axis=1)
+    return points.reshape(12 * 4**order, 4**levels, 3)
+
+
+def cell_log_probabilities(mixture: FvmlMixture, order: int, levels: int) -> np.ndarray:
+    """Log probability of each HEALPix pixel at ``order`` (NEST) under ``mixture``, normalized over the sphere.
+
+    The midpoint rule over the pixel's ``4**levels`` children, the quadrature of :func:`fit_fvml_mixture_cells`.
+    Kept in logs: far from every lobe of a mixture with a small uniform weight a probability can underflow.
+    """
+    log_values = log_density(mixture, healpix_cell_points(order, levels).reshape(-1, 3)).reshape(12 * 4**order, -1)
+    log_cell = logsumexp(log_values, axis=1)
+    return log_cell - logsumexp(log_cell)

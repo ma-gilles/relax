@@ -1,0 +1,235 @@
+# FvML-mixture prior simulation: how well does the FvML-mixture fit of relax/sampling/fvml_mixture.py recover a
+# viewing-direction distribution from binned particle directions, against the histogram RELION uses?
+#
+# Stages:
+#   1. make_target   one target per config entry: a known FvML mixture (ground truth), the learned direction prior
+#                    of a pose-prior benchmark refinement, or the expanded pose histogram of a particle STAR.
+#   2. run_trials    per target, fit setting (config `settings`: the cap's c and the lobe count) and particle count:
+#                    `replicates` draws of that many directions, each binned at every fit order and estimated three
+#                    ways (histogram, point-atom FvML fit, cell-mass FvML fit) and scored against the target
+#                    (Jensen-Shannon distance and others; the log-likelihood of a second, held-out draw; parameter
+#                    errors for the mixture targets). The count "inf" fits the target's own cell probabilities.
+#   3. summarize     summary.csv and the figures.
+#   4. replay_half   per benchmark refinement (config `replay`), half-set, held-out share and c: the run's iterations
+#                    replayed with the FvML prior: a held-out share of the half's particles chooses the lobe count,
+#                    fits warm-started from the previous iteration (and cold-started for one combination), scored
+#                    against the simulated population beside RELION's learned prior.
+#   5. summarize_replay  replay/summary: replay.csv and the figures.
+#
+# Outputs, under config `output_root`:
+#   targets/<target>.npz
+#   results/<target>/<setting>/n<count>.jsonl, results/<target>/<setting>/n<count>_masses.npz
+#       (<setting> is c<c>_lobes<count>, or c<c>_lobestruth for a known mixture)
+#   summary/summary.csv, summary/js_fit_order.png, summary/js_eval_order.png, summary/relative_fit_order.png,
+#   summary/kappa_recovery.png,
+#   summary/maps_<target>.png, summary/by_lobes_c<c>.png, summary/by_c.png, summary/selection.csv
+#   replay/<run>/c<c>_f<fraction>_half<half>.jsonl, replay/summary/
+#   logs/
+#
+# Run on Della (CPU jobs through the profile):
+#   export TMPDIR=/scratch/gpfs/CRYOEM/gilleslab/ry2228/tmp
+#   snakemake --snakefile scripts/fvml_prior_simulation/Snakefile --directory <dir> --profile slurm \
+#       --config output_root=<dir>
+
+import sys
+from pathlib import Path
+
+import yaml
+
+configfile: str(Path(workflow.basedir) / "config.yaml")
+
+OUT = Path(config["output_root"] or sys.exit("set --config output_root=<dir>"))
+SCRIPTS = Path(workflow.basedir)
+# JAX (imported through relax) must not take a GPU: the local rules run on a shared node
+PYTHON = "JAX_PLATFORMS=cpu " + config.get("python", str(Path(config["repo_root"]) / ".pixi/envs/default/bin/python"))
+TARGETS = list(config["targets"])
+COUNTS = [str(n) for n in config["n_particles"]]
+TRIAL_PROCESSES = int(config["replicates"])
+REPLAY = config["replay"]
+SINGLE_THREAD = "OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1"  # one process per core
+
+
+def target_settings(target):
+    """The fit settings of a target: every configured one, or one per c (true lobe count) for a known mixture."""
+    if "mixture" in config["targets"][target]:
+        return list(dict.fromkeys(f"c{s['c']:g}_lobestruth" for s in config["settings"]))
+    return [f"c{s['c']:g}_lobes{s['lobes']}" for s in config["settings"]]
+
+
+TRIALS = [
+    OUT / "results" / target / setting / f"n{n}.jsonl"
+    for target in TARGETS
+    for setting in target_settings(target)
+    for n in COUNTS
+]
+
+REPLAYS = [
+    OUT / "replay" / run / f"c{c:g}_f{f:g}_half{half}.jsonl"
+    for run in REPLAY["runs"]
+    for c in REPLAY["c"]
+    for f in REPLAY["heldout_fractions"]
+    for half in REPLAY["halves"]
+]
+
+
+def replay_mode(wildcards):
+    """``--cold`` for the configured cold-start combination of c and held-out share, else nothing."""
+    cold = REPLAY["cold"]
+    is_cold = float(wildcards.c) == cold["c"] and float(wildcards.f) == cold["heldout_fraction"]
+    return "--cold" if is_cold else ""
+
+
+wildcard_constraints:
+    run="|".join(REPLAY["runs"]),
+    f=r"[0-9.]+",
+    half=r"[12]",
+    target="|".join(TARGETS),
+    n="|".join(COUNTS),
+    c=r"[0-9.]+",
+    lobes=r"truth|[0-9]+",
+
+localrules: all, write_config, make_target, summarize, summarize_replay
+
+
+rule all:
+    """The summary table and figures of every target and particle count, and of the refinement replays."""
+    input:
+        csv = OUT / "summary" / "summary.csv",
+        replay = OUT / "replay" / "summary" / "replay.csv",
+
+
+# ---------------------------------------------------------------------------------------------------------------
+# Targets
+# ---------------------------------------------------------------------------------------------------------------
+
+rule write_config:
+    output:
+        config = OUT / "config.yaml",
+    params:
+        text = lambda wildcards: yaml.safe_dump(config, sort_keys=False),
+    message: "effective config (config.yaml with the --config overrides)"
+    run:
+        Path(output.config).write_text(params.text)
+
+
+rule make_target:
+    input:
+        config = rules.write_config.output.config,
+    output:
+        target = OUT / "targets" / "{target}.npz",
+    log:
+        OUT / "logs" / "make_target_{target}.log",
+    message: "target {wildcards.target}"
+    shell:
+        "{PYTHON} {SCRIPTS}/make_target.py"
+        " --config {input.config}"
+        " --target {wildcards.target}"
+        " --out {output.target}"
+        " > {log} 2>&1"
+
+
+# ---------------------------------------------------------------------------------------------------------------
+# Trials
+# ---------------------------------------------------------------------------------------------------------------
+
+rule run_trials:
+    input:
+        config = rules.write_config.output.config,
+        target = rules.make_target.output.target,
+    output:
+        rows = OUT / "results" / "{target}" / "c{c}_lobes{lobes}" / "n{n}.jsonl",
+        masses = OUT / "results" / "{target}" / "c{c}_lobes{lobes}" / "n{n}_masses.npz",
+    log:
+        OUT / "logs" / "run_trials_{target}_c{c}_lobes{lobes}_n{n}.log",
+    message: "trials of {wildcards.target}, c {wildcards.c}, lobes {wildcards.lobes}, {wildcards.n} particles"
+    threads: TRIAL_PROCESSES
+    resources:
+        mem = "32G",
+    shell:
+        "{SINGLE_THREAD} {PYTHON} {SCRIPTS}/run_trials.py"
+        " --config {input.config}"
+        " --target {input.target}"
+        " --c {wildcards.c}"
+        " --n-lobes {wildcards.lobes}"
+        " --n-particles {wildcards.n}"
+        " --processes {threads}"
+        " --rows {output.rows}"
+        " --masses {output.masses}"
+        " > {log} 2>&1"
+
+
+# ---------------------------------------------------------------------------------------------------------------
+# Summary
+# ---------------------------------------------------------------------------------------------------------------
+
+rule summarize:
+    input:
+        config = rules.write_config.output.config,
+        rows = TRIALS,
+        targets = expand(rules.make_target.output.target, target=TARGETS),
+    output:
+        csv = OUT / "summary" / "summary.csv",
+        js_fit = OUT / "summary" / "js_fit_order.png",
+        js_eval = OUT / "summary" / "js_eval_order.png",
+        kappa = OUT / "summary" / "kappa_recovery.png",
+        relative = OUT / "summary" / "relative_fit_order.png",
+    log:
+        OUT / "logs" / "summarize.log",
+    message: "summary of {TARGETS}"
+    shell:
+        "{PYTHON} {SCRIPTS}/summarize.py"
+        " --config {input.config}"
+        " --results-dir {OUT}/results"
+        " --targets-dir {OUT}/targets"
+        " --out-dir {OUT}/summary"
+        " > {log} 2>&1"
+
+
+# ---------------------------------------------------------------------------------------------------------------
+# Refinement replays
+# ---------------------------------------------------------------------------------------------------------------
+
+rule replay_half:
+    output:
+        rows = OUT / "replay" / "{run}" / "c{c}_f{f}_half{half}.jsonl",
+    params:
+        run_dir = lambda wildcards: REPLAY["runs"][wildcards.run].format(**config),
+        lobes = " ".join(str(n) for n in REPLAY["lobes"]),
+        mode = replay_mode,
+    log:
+        OUT / "logs" / "replay_{run}_c{c}_f{f}_half{half}.log",
+    message: "replay of {wildcards.run} half {wildcards.half}, c {wildcards.c}, held-out share {wildcards.f}"
+    resources:
+        mem = "16G",
+    shell:
+        "{SINGLE_THREAD} {PYTHON} {SCRIPTS}/replay_refinement.py"
+        " --refine-dir {params.run_dir}/learned/refine"
+        " --dataset-dir {params.run_dir}/dataset"
+        " --name {wildcards.run}"
+        " --half {wildcards.half}"
+        " --heldout-fraction {wildcards.f}"
+        " --c {wildcards.c}"
+        " --lobes {params.lobes}"
+        " --n-starts {config[fit][n_starts]}"
+        " --cell-levels {config[fit][cell_levels]}"
+        " --max-iter {config[fit][max_iter]}"
+        " --tol {config[fit][tol]}"
+        " --max-fit-order {REPLAY[max_fit_order]}"
+        " {params.mode}"
+        " --rows {output.rows}"
+        " > {log} 2>&1"
+
+
+rule summarize_replay:
+    input:
+        rows = REPLAYS,
+    output:
+        csv = OUT / "replay" / "summary" / "replay.csv",
+    log:
+        OUT / "logs" / "summarize_replay.log",
+    message: "summary of the refinement replays"
+    shell:
+        "{PYTHON} {SCRIPTS}/summarize_replay.py"
+        " --replay-dir {OUT}/replay"
+        " --out-dir {OUT}/replay/summary"
+        " > {log} 2>&1"
