@@ -166,6 +166,10 @@ scenarios:
 # settings above.
 variants:
   learned: {}
+  # RELION's learned prior replaced, after every iteration, by a uniform component plus five FvML lobes fitted to each
+  # half's posterior direction masses (relax refine --fvml-direction-prior 5), scoring every later search with it.
+  fvml:
+    refine: {extra_args: [--fvml-direction-prior, 5]}
   fixed_true:
     fixed_prior: {kind: truth}
   fixed_uniform:

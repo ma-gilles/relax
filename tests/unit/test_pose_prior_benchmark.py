@@ -20,6 +20,7 @@ from scipy.spatial.transform import Rotation
 from relax.diagnostics.gt_registration import apply_rigid_volume_transform
 from relax.io.map_io import require_relion_convention_reference
 from relax.parity.fixed_direction_prior import PROVENANCE_FILE, FixedDirectionPrior
+from relax.parity.fvml_prior_source import FvmlDirectionPriorSource
 from relax.sampling.healpix import euler_angles_to_matrix, euler_matrix_to_angles, n_pixels, pixel_rot_tilt
 from scripts.conical_fsc import ConicalFsc, cone_axes, conical_fsc, conical_fsc_summary
 from scripts.pose_prior_benchmark import add_offsets as ao
@@ -345,6 +346,12 @@ def test_direction_prior_used_is_read_from_the_sidecar_relax_writes(tmp_path):
     record = {"path": "/prior.npy", "sha256": "abc", "healpix_order": 7}
     (tmp_path / PROVENANCE_FILE).write_text(json.dumps(record))
     assert ev.read_direction_prior_used(tmp_path) == {"source": "fixed", **record}
+
+
+def test_fvml_direction_prior_is_read_from_the_settings_relax_writes(tmp_path):
+    FvmlDirectionPriorSource(5, dtype=np.float32).write_provenance(tmp_path)
+    used = ev.read_direction_prior_used(tmp_path)
+    assert used["source"] == "fvml" and used["lobes"] == 5
 
 
 # Three cones of a box-8 map (shells 0 to 2, 500 voxels each): the half maps' and the truth pair's cFSC curves.

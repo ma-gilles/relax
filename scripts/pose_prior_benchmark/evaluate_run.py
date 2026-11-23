@@ -26,7 +26,9 @@ divergence, Hellinger distance, KL divergence and the population mass the prior 
 sit beside them: the uniform prior, and the histogram of the half's true viewing directions (the plug-in prior
 that perfect poses would give), which is how close any estimate from that many particles can come. A run scored
 with ``relax refine --fixed-direction-prior`` still estimates and writes the learned prior, so it is evaluated
-the same way; ``run.direction_prior_used`` in ``metrics.json`` says which prior scored the run.
+the same way. A run with ``relax refine --fvml-direction-prior`` writes its fitted FvML mixture's cell probabilities
+as the learned prior, so the same metrics score the mixture. ``run.direction_prior_used`` in ``metrics.json`` says which
+prior scored the run.
 
 Frame offset: a run started from a map that sits a little off the ground truth's frame returns maps and poses in that
 frame, which adds the offset to every pose error and takes from the map's FSC to the truth. Both are therefore reported
@@ -650,11 +652,13 @@ def require_unseeded_run(run_dir: Path) -> str:
 
 
 def read_direction_prior_used(run_dir: Path) -> dict[str, Any]:
-    """Which direction prior scored the run: ``fixed`` with the file relax recorded, else the ``learned`` one."""
-    record = run_dir / "fixed_direction_prior.json"
-    if not record.is_file():
-        return {"source": "learned"}
-    return {"source": "fixed", **json.loads(record.read_text())}
+    """Which direction prior scored the run: ``fixed`` with the file relax recorded, ``fvml`` with the FvML-mixture
+    prior's settings, else the ``learned`` one."""
+    for source, name in (("fixed", "fixed_direction_prior.json"), ("fvml", "fvml_direction_prior.json")):
+        record = run_dir / name
+        if record.is_file():
+            return {"source": source, **json.loads(record.read_text())}
+    return {"source": "learned"}
 
 
 def read_fourier_radius(run_dir: Path, iteration: int) -> int:
