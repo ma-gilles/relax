@@ -282,19 +282,11 @@ def _cone_membership(coords, radius, axes, cos_half_angle) -> np.ndarray:
     return np.abs(coords.astype(np.float64) @ axes.T) >= radius[:, None] * cos_half_angle
 
 
-def cone_to_shell_ratios(sums: ConeShellSums, *, whole: bool) -> tuple[np.ndarray, np.ndarray]:
-    """RELION's estimate of each cone-shell bin over the shell's: ``(ratios, measured)``, shapes
-    ``(n_sets, n_axes, r_max + 1)`` and ``(n_axes, r_max + 1)``.
-
-    ``ratio = [SSNR_cone / SSNR_shell] * [mean weight of the shell / mean weight of the cone]``: the cone's
-    ``SSNR sigma2`` over the shell's, ``sigma2`` being RELION's inverse mean weight. A bin with fewer than
-    ``MIN_CONE_VOXELS`` voxels, no power or no weight keeps the shell's value (ratio 1); so does shell 0.
-    """
-    ssnr_ratio = relion_ssnr(sums.cone_fsc(), whole=whole) / relion_ssnr(sums.shell_fsc(), whole=whole)[None, :]
+def _measured_bins(sums: ConeShellSums) -> np.ndarray:
+    """``(n_axes, r_max + 1)`` booleans: the cone-shell bins with at least ``MIN_CONE_VOXELS`` voxels, power in both
+    halves and weight in every set, in a shell with power (never shell 0)."""
     with np.errstate(divide="ignore", invalid="ignore"):
         cone_mean = sums.weight / sums.counts[None, :, :]
-        shell_mean = sums.shell_weight / sums.shell_counts[None, :]
-        ratios = ssnr_ratio[None, :, :] * shell_mean[:, None, :] / cone_mean
     measured = (
         (sums.counts >= MIN_CONE_VOXELS)
         & (sums.power[0] * sums.power[1] > 0.0)
@@ -302,8 +294,52 @@ def cone_to_shell_ratios(sums: ConeShellSums, *, whole: bool) -> tuple[np.ndarra
         & np.all(cone_mean > 0.0, axis=0)
     )
     measured[:, 0] = False
+    return measured
+
+
+def cone_fsc_shrinkage(sums: ConeShellSums, measured: np.ndarray) -> np.ndarray:
+    """Each shell's factor ``lambda_s`` in ``[0, 1]`` that shrinks its cone FSCs toward the shell FSC.
+
+    A cone's FSC of ``m`` voxels (``m / 2`` independent complex values) scatters around its true value with variance
+    about ``(1 - F^2)^2 / m``. Over the measured cones of a shell, the spread of the cone FSCs is that noise plus the
+    true anisotropy, so ``lambda_s = max(0, 1 - mean noise variance / variance of the cone FSCs)`` keeps the
+    anisotropy and removes the noise (an empirical-Bayes shrinkage). A shell whose cones differ by noise alone gets
+    ``lambda = 0``, RELION's shell value; one with fewer than two measured cones also does.
+    """
+    cone_fsc = sums.cone_fsc()
+    shell_fsc = sums.shell_fsc()
+    shrinkage = np.zeros(shell_fsc.shape)
+    for s in range(1, shell_fsc.size):
+        cones = measured[:, s]
+        if cones.sum() < 2:
+            continue
+        spread = float(np.var(cone_fsc[cones, s]))
+        noise = float(np.mean((1.0 - shell_fsc[s] ** 2) ** 2 / sums.counts[cones, s]))
+        if spread > 0.0:
+            shrinkage[s] = max(0.0, 1.0 - noise / spread)
+    return shrinkage
+
+
+def cone_to_shell_ratios(sums: ConeShellSums, *, whole: bool) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """RELION's estimate of each cone-shell bin over the shell's: ``(ratios, measured, shrinkage)``, shapes
+    ``(n_sets, n_axes, r_max + 1)``, ``(n_axes, r_max + 1)`` and ``(r_max + 1,)``.
+
+    ``ratio = [SSNR_cone / SSNR_shell] * [mean weight of the shell / mean weight of the cone]``: the cone's
+    ``SSNR sigma2`` over the shell's, ``sigma2`` being RELION's inverse mean weight. The cone's SSNR is RELION's of its
+    FSC shrunk toward the shell FSC, ``F_shell + lambda_s (F_cone - F_shell)`` (:func:`cone_fsc_shrinkage`). A bin with
+    fewer than ``MIN_CONE_VOXELS`` voxels, no power or no weight keeps the shell's value (ratio 1); so does shell 0.
+    """
+    measured = _measured_bins(sums)
+    shrinkage = cone_fsc_shrinkage(sums, measured)
+    shell_fsc = sums.shell_fsc()
+    shrunk_fsc = shell_fsc[None, :] + shrinkage[None, :] * (sums.cone_fsc() - shell_fsc[None, :])
+    ssnr_ratio = relion_ssnr(shrunk_fsc, whole=whole) / relion_ssnr(shell_fsc, whole=whole)[None, :]
+    with np.errstate(divide="ignore", invalid="ignore"):
+        cone_mean = sums.weight / sums.counts[None, :, :]
+        shell_mean = sums.shell_weight / sums.shell_counts[None, :]
+        ratios = ssnr_ratio[None, :, :] * shell_mean[:, None, :] / cone_mean
     ratios = np.where(measured[None, :, :], ratios, 1.0)
-    return ratios, measured
+    return ratios, measured, shrinkage
 
 
 def voxel_ratio_cubes(native: NativeGrid, ratios: np.ndarray, axes: np.ndarray, cos_half_angle: float) -> np.ndarray:
@@ -337,7 +373,7 @@ class ConePrior:
 
     ``tau2_shells`` holds RELION's shell curve of each weight set (each half of a split-half M-step, the joined
     halves of the final one); ``ratio_cubes`` the per-voxel ratios (:func:`voxel_ratio_cubes`); ``sums``,
-    ``ratios`` and ``measured`` the cone statistics they come from. ``solve_dtype`` is the dtype of RELION's
+    ``ratios``, ``measured`` and ``shrinkage`` the cone statistics they come from. ``solve_dtype`` is the dtype of RELION's
     regularized weight on this path (float64 when the shell prior is promoted, as the numbered solves do).
     """
 
@@ -353,6 +389,7 @@ class ConePrior:
     sums: ConeShellSums
     ratios: np.ndarray
     measured: np.ndarray
+    shrinkage: np.ndarray
     ratio_cubes: np.ndarray
     solve_dtype: np.dtype
 
@@ -420,8 +457,8 @@ class ConePrior:
 
     def star_tables(self, index: int) -> tuple[list, dict]:
         """Weight set ``index``'s statistics as a model STAR's extra blocks: the settings (list items) and one row
-        per cone-shell bin from shell 1 (axis index from 1, axis components, shell, voxels, cone FSC, ratio,
-        measured flag)."""
+        per cone-shell bin from shell 1 (axis index from 1, axis components, shell, voxels, cone FSC, the shell's
+        shrinkage factor, ratio, measured flag)."""
         n_axes, n_shells = self.ratios.shape[1:]
         axes = self.settings.axes()
         axis_index = np.repeat(np.arange(n_axes), n_shells - 1)
@@ -440,6 +477,7 @@ class ConePrior:
             "rlnSpectralIndex": shell,
             "rlnRelaxCfscVoxels": self.sums.counts[axis_index, shell],
             "rlnRelaxCfscConeFsc": self.sums.cone_fsc()[axis_index, shell],
+            "rlnRelaxCfscShrinkage": self.shrinkage[shell],
             "rlnRelaxCfscTau2Ratio": self.ratios[index][axis_index, shell],
             "rlnRelaxCfscMeasured": self.measured[axis_index, shell].astype(np.int64),
         }
@@ -457,9 +495,10 @@ class ConePrior:
             quantiles = np.quantile(values, [0.0, 0.1, 0.5, 0.9, 1.0]) if values.size else [float("nan")] * 5
             logger.info(
                 "%s conical-FSC prior set %d: %d of %d cone-shell bins measured; tau2 ratio min/p10/median/p90/max "
-                "%.3g/%.3g/%.3g/%.3g/%.3g; shell %d (shell FSC %.3f): cone FSC %.3f..%.3f",
+                "%.3g/%.3g/%.3g/%.3g/%.3g; shell %d (shell FSC %.3f): cone FSC %.3f..%.3f, shrinkage %.2f",
                 label, index + 1, int(self.measured.sum()), self.measured.size, *quantiles, shell,
                 float(shell_fsc[shell]), float(fsc[:, shell].min()), float(fsc[:, shell].max()),
+                float(self.shrinkage[shell]),
             )
 
 
@@ -496,7 +535,7 @@ def estimate_cone_prior(
     weight_sets = native.weights.sum(axis=0, keepdims=True) if whole else native.weights
     axes = settings.axes()
     sums = cone_shell_sums(native, weight_sets, axes, settings.cos_half_angle)
-    ratios, measured = cone_to_shell_ratios(sums, whole=whole)
+    ratios, measured, shrinkage = cone_to_shell_ratios(sums, whole=whole)
     cubes = voxel_ratio_cubes(native, ratios, axes, settings.cos_half_angle)
     return ConePrior(
         settings=settings,
@@ -511,6 +550,7 @@ def estimate_cone_prior(
         sums=sums,
         ratios=ratios,
         measured=measured,
+        shrinkage=shrinkage,
         ratio_cubes=cubes,
         solve_dtype=np.dtype(solve_dtype),
     )

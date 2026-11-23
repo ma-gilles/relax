@@ -70,6 +70,7 @@ def _unit_prior(tau2_shells, shape, *, whole=False, solve_dtype=np.float64):
         current_size=CURRENT_SIZE, tau2_fudge=1.0, minres_map=2, tau2_shells=tuple(tau2_shells), sums=sums,
         ratios=np.ones((n_sets, SETTINGS.n_axes, CURRENT_SIZE // 2 + 1)),
         measured=np.zeros((SETTINGS.n_axes, CURRENT_SIZE // 2 + 1), dtype=bool),
+        shrinkage=np.zeros(CURRENT_SIZE // 2 + 1),
         ratio_cubes=np.ones((n_sets, side, side, side)), solve_dtype=np.dtype(solve_dtype),
     )
 
@@ -200,6 +201,33 @@ def test_a_cone_without_shared_signal_gets_a_small_tau2():
     cube = prior.ratio_cubes[0]
     centre = CURRENT_SIZE // 2 + 1
     assert cube[centre, centre, centre + s] < cube[centre + s, centre, centre]
+
+
+def test_cones_that_differ_by_noise_alone_keep_relions_value():
+    """Equal weights and an isotropic signal at a low SNR: the cone FSCs scatter by noise only, the shrinkage stays
+    small and the ratios stay near 1 (RELION's prior) instead of following each cone's noise. Over seeds 23, 29 and 31
+    the median |log ratio| falls from 0.5-0.85 without shrinkage to about 0.035 with it; the test asks for a factor 5."""
+    rng = np.random.default_rng(23)
+    shape = _accumulator_shape()
+    data, weights = _hermitian_pair(
+        shape, rng, weight_of=lambda a, b, c: np.ones(a.shape), signal_scale=0.3, noise_scale=1.0
+    )
+    sums_prior = cr.estimate_cone_prior(
+        data, weights, [np.full(BOX // 2 + 1, 0.05)] * 2, settings=SETTINGS, volume_shape=(BOX,) * 3,
+        accumulator_shape=shape, padding_factor=PAD, current_size=CURRENT_SIZE, tau2_fudge=1.0, minres_map=2,
+        whole=False, solve_dtype=np.float64,
+    )
+    measured_shells = np.flatnonzero(sums_prior.measured.any(axis=0))
+    assert measured_shells.size > 0
+    assert np.all(sums_prior.shrinkage[measured_shells] < 0.5)
+    measured = sums_prior.measured
+    raw = cr.relion_ssnr(sums_prior.sums.cone_fsc(), whole=False) / cr.relion_ssnr(
+        sums_prior.sums.shell_fsc(), whole=False
+    )[None, :]
+    raw_spread = np.median(np.abs(np.log(raw[measured])))
+    shrunk_spread = np.median(np.abs(np.log(sums_prior.ratios[0][measured])))
+    assert raw_spread > 0.3
+    assert shrunk_spread < 0.2 * raw_spread
 
 
 def test_whole_data_prior_has_one_weight_set():

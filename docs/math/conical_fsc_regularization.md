@@ -32,6 +32,10 @@ MAP term, and RELION's shell value as the anchor, so that equal statistics in ev
 - **The rule (section 3).** For each cone `j` and shell `s`, RELION's estimate `SSNR_j(s) sigma2_j(s)` over the shell's
   `SSNR(s) sigma2(s)` is a ratio `rho_j(s)`; a voxel's `tau2` is RELION's shell `tau2` times the mean ratio of the cones
   that contain it.
+- **Noise in a cone's FSC (section 3.3).** A cone holds far fewer voxels than a shell, and RELION's clamp turns the
+  positive noise of a near-zero FSC into SSNR while it clips the negative noise. Each shell's cone FSCs are therefore
+  shrunk toward the shell FSC by the share of their spread that is not noise; cones that differ by noise alone keep
+  RELION's value.
 - **What does not change.** The shell FSC still sets the resolution, the image size (`current_size`), the reported
   `tau2` and `data_vs_prior`. Only the prior term inside the reconstructions changes.
 
@@ -141,13 +145,39 @@ The same sums over the whole shell give the native-grid counterparts `SSNR~(s)` 
 RELION's backprojector FSC with every Hermitian pair counted once; the test
 `test_shell_fsc_matches_relion_backprojector_fsc_with_pairs_counted_once` checks it).
 
-### 3.3 The ratio and the per-voxel prior
+### 3.3 Noise in the cone FSC
+
+A cone's FSC over `m` native voxels (`m / 2` independent complex values, since `nu` and `-nu` are one) scatters around
+its true value `F` with variance about `(1 - F^2)^2 / m`. The shell FSC has the same variance with the shell's
+`n ~ 16.6 m` voxels (a double cone of 20 degrees holds `1 - cos 20 = 6.0%` of a shell), so a cone's FSC is about four
+times noisier. Where the true FSC is near zero, RELION's
+clamp `max(FSC, 0.001)` clips the negative fluctuations but turns the positive ones into SSNR, so the plain per-cone rule
+gives random cones of a signal-free shell a `tau2` up to a hundred times the shell's. We measured this on a
+2000-particle, box-64 smoke refinement: at the edge shell of its window (shell FSC -0.005), cone FSCs of 0.04 to 0.14
+gave ratios of 90 to 190. In a refinement it matters most in the final iteration, which reconstructs the whole box,
+far beyond the resolution.
+
+We therefore shrink each shell's cone FSCs toward its shell FSC by the share of their spread that is not noise (an
+empirical-Bayes estimate):
+
+```
+lambda_s = max(0, 1 - mean_j[(1 - FSC~(s)^2)^2 / m_{j,s}] / var_j[cFSC_j(s)]),
+cFSC'_j(s) = FSC~(s) + lambda_s (cFSC_j(s) - FSC~(s)),                                                  (4)
+```
+
+where the mean and the variance run over the measured cones of the shell (`lambda_s = 0` with fewer than two), and
+`SSNR_j(s)` in (5) is RELION's SSNR of `cFSC'_j(s)`. A shell whose cones differ by noise alone gets `lambda_s ~ 0`,
+that is, RELION's value; a shell with a real anisotropy keeps most of it. In the smoke refinement, `lambda` is 0.8 to
+0.9 in the shells with signal (cone FSCs spread 2.5 to 4 times the noise) and 0 at the signal-free edge shell, where
+the cone FSCs spread less than the predicted noise (sd 0.042 against 0.053).
+
+### 3.4 The ratio and the per-voxel prior
 
 The cone-to-shell ratio of half `h` is
 
 ```
 rho_{h,j}(s) = [ SSNR_j(s) / SSNR~(s) ] * [ sigma2_{h,j}(s) / sigma2~_h(s) ]
-             = [ SSNR_j(s) / SSNR~(s) ] * [ <W^_h>_{S_s} / <W^_h>_{S_{j,s}} ],                            (4)
+             = [ SSNR_j(s) / SSNR~(s) ] * [ <W^_h>_{S_s} / <W^_h>_{S_{j,s}} ],                            (5)
 ```
 
 the fudge factor cancelling. A bin with fewer than `m = 100` native voxels (`MIN_CONE_VOXELS`, the benchmark's
@@ -159,7 +189,7 @@ A native voxel takes the mean ratio of the cones that contain it, at its shell `
 `1 .. r_max`):
 
 ```
-rho_h(nu) = (1 / |J(nu)|) sum_{j in J(nu)} rho_{h,j}(s(nu)),       J(nu) = {j : nu in C_j},                (5)
+rho_h(nu) = (1 / |J(nu)|) sum_{j in J(nu)} rho_{h,j}(s(nu)),       J(nu) = {j : nu in C_j},                (6)
 ```
 
 a box kernel of radius `alpha` over the axes. The prior of a padded voxel is RELION's shell value times the ratio of its
@@ -167,15 +197,15 @@ native voxel, and it enters (2) unchanged otherwise:
 
 ```
 tau2_h(k) = tau2_h(ires(k)) * rho_h(ROUND(k / p)),
-F_h(k) = D_h(k) / ( W_h(k) + 1 / (p^3 T tau2_h(k)) ),      on the support of (2).                        (6)
+F_h(k) = D_h(k) / ( W_h(k) + 1 / (p^3 T tau2_h(k)) ),      on the support of (2).                        (7)
 ```
 
-Expanding (6) with (1) and (4) shows what it is: `tau2_h(k)` is the mean over the voxel's cones of RELION's own estimate
+Expanding (7) with (1) and (5) shows what it is: `tau2_h(k)` is the mean over the voxel's cones of RELION's own estimate
 `SSNR_j sigma2_{h,j}`, times `sigma2_h / sigma2~_h`, the ratio of RELION's padded-grid shell `sigma2` to the native-grid
 one (about 1, it absorbs the difference between the two binnings). By (3), each cone's estimate is its surviving signal
 power over its own Jensen factor.
 
-### 3.4 Where it applies
+### 3.5 Where it applies
 
 - **Numbered split-half M-steps.** Each half has its own `tau2_h(s)` and its own ratio, from its own weight `W^_h`,
   as RELION computes `sigma2` per half; the FSC terms are shared.
@@ -183,34 +213,41 @@ power over its own Jensen factor.
   the summed weights; the conical rule does the same, with one ratio from `W^_1 + W^_2`, used for both final half maps
   and the merged map.
 
-### 3.5 Properties
+### 3.6 Properties
 
-1. **It reduces to RELION.** When every cone's FSC and mean weight equal the shell's, `rho = 1` and (6) is (2). With
+1. **It reduces to RELION.** When every cone's FSC and mean weight equal the shell's, or the cones' FSCs differ by
+   noise alone and their weights agree, `rho = 1` and (7) is (2). With
    `rho = 1` the implementation reproduces RELION's regularized map to float precision, in both accumulator layouts
    (`test_unit_ratios_reproduce_relion_shell_reconstruction`) and in a whole refinement
    (`test_refinement_with_unmeasured_cones_gives_relions_maps`).
 2. **It stays gold standard.** The cFSCs correlate the two independent halves; each half is regularized with its own
    weight, as in RELION.
 3. **It needs no new parameter beyond the cones.** The half-angle and the number of axes set the angular resolution of
-   the prior; `m` is the benchmark's existing measurement threshold.
+   the prior; the shrinkage is estimated from the data; `m` is the benchmark's existing measurement threshold.
 4. **Cost.** The statistics take `O(N J)` operations for the `N` native voxels inside `r_max` (each tested against the
    `J` axes once per M-step) and the prior term `O(N_p)` for the `N_p` padded voxels.
 
 ## 4. Choices we made, and their alternatives
 
 1. **Anchoring on RELION's value.** We could set `tau2(k)` directly to the mean of `SSNR_j sigma2_j`. The ratio form
-   (4)-(6) gives the same up to the binning of `sigma2` and makes the reduction to RELION exact, which keeps every other
+   (5)-(7) gives the same up to the binning of `sigma2` and makes the reduction to RELION exact, which keeps every other
    part of RELION's arithmetic (the clamps, the double fudge factor of (1)-(2), the padded-grid `sigma2`) as it is.
-2. **The mean of the ratios.** (5) averages `tau2` linearly. A geometric mean or a mean of `1 / tau2` would weigh low
+2. **The mean of the ratios.** (6) averages `tau2` linearly. A geometric mean or a mean of `1 / tau2` would weigh low
    cones more; we chose the linear kernel average of the signal power, the simplest smooth interpolation, and note that
    it regularizes the least of the three at a boundary between cones of very different SSNR.
-3. **The resolution and the image size stay RELION's.** RELION's current resolution is the last shell with
+3. **Shrinkage instead of a threshold.** A significance threshold on each cone FSC (zero below a few standard errors)
+   would also remove the noise floor, but it biases weak real signal to zero and adds a parameter. The shrinkage (4)
+   needs neither, follows the per-cone noise model, and is exact in the two limits (no anisotropy: RELION; anisotropy
+   far above the noise: the plain per-cone rule). The noise model ignores the overlap of neighbouring cones and the
+   correlation of neighbouring native voxels; the smoke data's signal-free shell suggests it overestimates the noise
+   slightly, which shrinks a little more than needed.
+4. **The resolution and the image size stay RELION's.** RELION's current resolution is the last shell with
    `SSNR > 1` (shell FSC above about 0.5), and it sets the image size of the next expectation. Under a preferred
    orientation this, too, is a shell average: in the benchmark's `kent_cap_offsets` baseline RELION's resolution stays at
    21.8 A (shell 25, `current_size` 114) for ten iterations, although the final map reaches 8.2 A against the ground
    truth. A cone-aware window (for example the resolution of the best cones) is a separate change; keeping it fixed here
    isolates the effect of the prior.
-4. **`data_vs_prior` and the reported `tau2` stay RELION's.** The model STARs keep RELION's shell curves; the cone
+5. **`data_vs_prior` and the reported `tau2` stay RELION's.** The model STARs keep RELION's shell curves; the cone
    statistics are written next to them (section 5).
 
 ## 5. Implementation
@@ -221,20 +258,21 @@ power over its own Jensen factor.
 - **Numbered M-steps.** `maximization.k1_maximization` calls `priors.estimate_split_half_cone_prior` after RELION's
   split-half prior; it calls `conical_regularization.estimate_cone_prior` with each half's shell curve. The solves
   (`numbered_reconstruction._reconstruct_k1_maps`) take `ConePrior.regularized_weight(h, W_h)`, the weight plus the
-  term `1 / (p^3 T tau2_h(k))` of (6), and run without a shell prior. RELION's `reconstruct` adds the term to `Fweight`
+  term `1 / (p^3 T tau2_h(k))` of (7), and run without a shell prior. RELION's `reconstruct` adds the term to `Fweight`
   and then floors the regularized weight at 1/1000 of its shell average; adding it before the solve gives the same
   regularized weight and the same floor, so the solver's support, floor and windowing stay RELION's.
 - **The final M-step.** `final_reconstruction.compute_final_halfmap_prior` builds the whole-data prior (summed weights,
   RELION's whole-map SSNR) and `reconstruct_final_halfmaps` solves the three maps with it.
 - **Statistics.** `native_half_averages` bins every padded voxel of both halves onto the native grid in the
   accumulators' own axis frame (the full grid, so a packed half and its full expansion give the same statistics); the
-  cones and the voxels the term is added to share that frame. `cone_shell_sums` and `cone_to_shell_ratios` give (4),
-  `voxel_ratio_cubes` gives (5) on the native cube of half-width `r_max + 1` (which holds `ROUND(k / p)` for every `k`
-  of the support), and `ConePrior.weight_term` gives the term of (6) on the accumulator, with RECOVAR's `ires` and
-  support.
+  cones and the voxels the term is added to share that frame. `cone_shell_sums` gives the sums of section 3.2,
+  `cone_fsc_shrinkage` gives `lambda_s` of (4), `cone_to_shell_ratios` gives (5), `voxel_ratio_cubes` gives (6) on the
+  native cube of half-width `r_max + 1` (which holds `ROUND(k / p)` for every `k` of the support), and
+  `ConePrior.weight_term` gives the term of (7) on the accumulator, with RECOVAR's `ires` and support.
 - **Records.** Each half model STAR of a numbered iteration carries the blocks `data_relax_cfsc_regularization` (half
   angle, axes, minimum voxels) and `data_relax_cfsc_regularization_bins` (one row per cone-shell bin: axis, voxels,
-  cFSC, ratio, whether measured); the log has one line per M-step with the spread of the ratios.
+  cFSC, the shell's `lambda`, ratio, whether measured); the log has one line per M-step with the spread of the
+  ratios.
 - **Admission.** K=1 single-particle runs only; not with `--solvent_correct_fsc` (which replaces the FSC the ratios
   are anchored to), a RELION replay or a frozen boundary, nor on a reconstruction grid large enough for RECOVAR's
   single-precision path (200 M voxels; box 256 at padding 2 is 134 M).
@@ -244,8 +282,9 @@ power over its own Jensen factor.
 `tests/unit/test_conical_regularization.py` (CPU): unit ratios reproduce RELION's regularized map (packed and full
 layouts) and RELION's maps in a tiny refinement; the native shell FSC equals RELION's backprojector FSC with pairs
 counted once; a packed half and its full expansion give the same prior; a better-sampled cone gets a ratio below 1 and
-the others above when the FSC saturates; a cone without shared signal gets a ratio far below 1; the whole-data prior
-has one weight set; RELION's SSNR transform; the cone coverage check; the STAR blocks parse back.
+the others above when the FSC saturates; a cone without shared signal gets a ratio far below 1; cones that differ by
+noise alone keep ratios near 1 (the shrinkage cuts the median |log ratio| at least fivefold, measured 15 to 25 fold);
+the whole-data prior has one weight set; RELION's SSNR transform; the cone coverage check; the STAR blocks parse back.
 
 ## 7. Benchmark test
 
@@ -256,4 +295,4 @@ FSC-AUC is 0.326 with RELION's learned prior and 0.366 with the true prior, and 
 degrees.
 
 *Results pending: the runs `learned` (control, RELION's regularization rerun on Grace), `learned_cfsc` and
-`fixed_true_cfsc` (relax 2ce648f8) are queued.*
+`fixed_true_cfsc` are queued.*
