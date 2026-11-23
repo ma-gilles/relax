@@ -288,11 +288,12 @@ the whole-data prior has one weight set; RELION's SSNR transform; the cone cover
 
 ## 7. Benchmark test
 
-The test case is the pose-prior benchmark's `kent_cap_offsets` scenario (100k particles, box 256, noise level 1, a
-Kent cap of preferred views with `kappa = 8`, offsets of 7 A per axis), where the learned direction prior falls well
-short of the true one: in the Della runs of `offsets_100k_box256_noise1` (relax 29fde1de), the aligned ground-truth
-FSC-AUC is 0.326 with RELION's learned prior and 0.366 with the true prior, and the median pose error is 37 and 10
-degrees.
+The test case is the cell `off_w100_n100k_nz1` of the pose-prior benchmark's mild-cap offsets sweep
+(`sweep_mild_offsets_box256`): 100k particles of a Kent cap of preferred views (`kappa = 4`, `beta = 1`), box 256, noise
+level 1, offsets of 7 A per axis. There the learned direction prior falls well short of the true one. In the Della runs
+(relax c32edba9 for `learned`, `fixed_true` and `fixed_uniform`, d2dff905 for `fvml`), the aligned ground-truth FSC-AUC
+is 0.319 with RELION's learned prior, 0.326 with the FvML-mixture prior, 0.303 with a uniform prior and 0.371 with the
+true prior, and the median pose error is 48.5, 46.6, 63.0 and 22.3 degrees.
 
 *Results pending: the runs `learned` (control, RELION's regularization rerun on Grace), `learned_cfsc` and
 `fixed_true_cfsc` are queued.*
