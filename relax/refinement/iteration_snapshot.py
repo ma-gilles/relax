@@ -103,6 +103,8 @@ class IterationSnapshot:
     extra: dict
     # Per half: RELION's rlnLogLikeliContribution of each particle (relax.relion.log_likelihood); None: not known.
     log_likelihood_contribution: list | None = None
+    # Per half: the FvML-mixture fit its direction prior comes from (relax.sampling.fvml_direction_prior), or None.
+    direction_prior_fits: list | None = None
 
     @property
     def k_class(self) -> bool:
@@ -147,8 +149,8 @@ def direction_priors_from_snapshot(
     dtype,
     log,
 ) -> list[DirectionPrior]:
-    """Each half's direction prior a continued run starts from: the snapshot's, with the sampling orders it
-    saved; ``init_direction_prior`` at the run's grid order (``grid_healpix_order``) when it saved none."""
+    """Each half's direction prior a continued run starts from: the snapshot's, with the sampling orders and FvML
+    fits it saved; ``init_direction_prior`` at the run's grid order (``grid_healpix_order``) when it saved none."""
 
     if snapshot.direction_prior is None:
         return initial_direction_priors_from_snapshot(
@@ -168,9 +170,10 @@ def direction_priors_from_snapshot(
         log=log,
         symmetry=symmetry, expected_order=saved_orders[0],
     )
+    fits = snapshot.direction_prior_fits or [None, None]
     return [
-        DirectionPrior(prior.values, order)
-        for prior, order in zip(direction_priors, saved_orders, strict=True)
+        DirectionPrior(prior.values, order, fit)
+        for prior, order, fit in zip(direction_priors, saved_orders, fits, strict=True)
     ]
 
 
@@ -303,6 +306,13 @@ def _host_direction_prior(direction_priors):
     if any(prior is not None for prior in direction_prior):
         return host_half_pair(direction_prior)
     return None
+
+
+def _direction_prior_fits(direction_priors):
+    """The two halves' FvML-mixture fits, or ``None`` when neither half has one."""
+
+    fits = [p.fit for p in direction_priors]
+    return fits if any(fit is not None for fit in fits) else None
 
 
 def _host_particle_state(
@@ -525,6 +535,7 @@ class SnapshotCapture:
         assembly.values.update(
             class_weights=None,
             direction_prior=_host_direction_prior(direction_priors),
+            direction_prior_fits=_direction_prior_fits(direction_priors),
         )
         assembly.values.update(
             **_host_particle_state(

@@ -907,7 +907,10 @@ def refine_single_volume(
         plan = replace(
             plan, scoring_rotation_ids=source.scoring_rotation_ids(plan.trial_grid, use_local=use_local),
             direction_log_priors=[
-                source.direction_log_prior(i, p, healpix_order=plan.direction_prior_healpix_order, use_local=use_local)
+                source.direction_log_prior(
+                    i, p, prior=carry.direction_priors[i], healpix_order=plan.direction_prior_healpix_order,
+                    use_local=use_local,
+                )
                 for i, p in enumerate(plan.direction_log_priors)
             ],
             coarse_angular_step_deg=None if coarse_image_plan is None else coarse_image_plan.angular_step_deg,
@@ -1012,7 +1015,10 @@ def refine_single_volume(
 
         history.record_rotation_posterior(expected.per_half.rotation_posterior)
         # pdf_direction: each half's next direction prior from this iteration's posteriors (None: kept).
-        learned_priors = mode.learned_direction_priors(ctx, options, expected.per_half, plan, use_local)
+        learned_priors = source.learned_direction_priors(
+            mode.learned_direction_priors(ctx, options, expected.per_half, plan, use_local),
+            previous=carry.direction_priors,
+        )
         for half_index, learned in enumerate(learned_priors):
             if learned is not None:
                 carry.direction_priors[half_index] = learned

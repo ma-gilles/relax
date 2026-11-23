@@ -115,10 +115,10 @@ class FixedDirectionPriorSource(InputSource):
         return cls(prior, dtype=options.precision.rotation_real_dtype)
 
     def direction_log_prior(
-        self, half_index: int, log_prior: HalfDirectionLogPriors, *, healpix_order: int, use_local: bool
+        self, half_index: int, log_prior: HalfDirectionLogPriors, *, prior, healpix_order: int, use_local: bool
     ) -> HalfDirectionLogPriors:
         """The fixed prior on the rotation grid of ``healpix_order``, whatever the half, the search or the run's own
-        ``log_prior``."""
+        ``prior`` and ``log_prior``."""
         logger.info(
             "Fixed direction prior half-%d: %s search at healpix_order=%d",
             half_index + 1, "local" if use_local else "global", healpix_order,

@@ -30,6 +30,7 @@ from relax.refinement.run_files import (
     RunSettings,
     read_run_files,
 )
+from relax.sampling import fvml_direction_prior
 from relax.sampling.orientation_priors import DirectionPrior
 from relax.star.blocks import input_general_block, read_star_blocks
 from relax.steps.half_inputs import initialize_halfsets
@@ -384,6 +385,35 @@ def test_auto_refine_run_files_round_trip(tmp_path):
     _assert_snapshots_match(read, snapshot)
     for h in range(2):
         assert_matches(read.unfiltered_means[h], snapshot.unfiltered_means[h], rtol=1e-6)
+
+
+def test_fvml_direction_prior_fits_round_trip_through_the_model_stars(tmp_path):
+    """Each half's FvML fit is written as two extra model STAR blocks and read back for a continued run."""
+    rng = np.random.default_rng(0)
+    input_star = _write_input_star(tmp_path, 7)
+    half_rows = [np.array([4, 0, 2, 6]), np.array([5, 1, 3])]
+    masses = [rng.random(48) + 0.1, rng.random(48) + 0.1]
+    fits = [fvml_direction_prior.fit_direction_prior(m, 1, n_lobes=2, previous=None, seed=h) for h, m in enumerate(masses)]
+    snapshot = _k1_snapshot([4, 3], rng)
+    snapshot.direction_prior_fits = fits
+    optimiser = _writer(tmp_path, input_star, half_rows)(snapshot)
+    model = read_star_blocks(tmp_path / "out" / "run_it005_half2_model.star")
+    assert model[fvml_direction_prior.STAR_FIT_BLOCK]["relax_fvml_lobes"] == "2"
+    names = read_star_blocks(input_star)["particles"]["rlnImageName"]
+    read = read_run_files(optimiser, image_names=names, half_rows=half_rows)
+    _assert_snapshots_match(read, snapshot)
+    for read_fit, fit in zip(read.direction_prior_fits, fits, strict=True):
+        for name in ("weights", "means", "kappas"):
+            assert_matches(getattr(read_fit.mixture, name), getattr(fit.mixture, name))
+        assert (read_fit.start, read_fit.fit_order) == (fit.start, fit.fit_order)
+    # A run without the prior writes neither block and reads back no fit.
+    plain = _k1_snapshot([4, 3], rng)
+    optimiser = RunFileWriter(
+        tmp_path / "plain", settings=_run_settings(tmp_path / "plain" / "run"), input_star=input_star,
+        half_rows=half_rows, background=False,
+    )(plain)
+    assert fvml_direction_prior.STAR_FIT_BLOCK not in read_star_blocks(tmp_path / "plain" / "run_it005_half1_model.star")
+    assert read_run_files(optimiser, image_names=names, half_rows=half_rows).direction_prior_fits is None
 
 
 def test_optimiser_star_records_mode_relax_and_relions_mode_writes_nothing(tmp_path):

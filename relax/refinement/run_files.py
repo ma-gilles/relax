@@ -27,6 +27,12 @@ Two deliberate differences from RELION's files:
   hold the latched fine-enough flag or the growth FSC, which the next iteration reads.
   ``MlOptimiser::read`` parses only ``data_optimiser_general`` (ml_optimiser.cpp:1107), so
   RELION ignores the extra blocks.
+* A half's model STAR of a run with an FvML-mixture direction prior (``--fvml-direction-prior``)
+  carries its fit in two extra blocks, ``data_relax_direction_prior_fvml`` (lobes, fit order, cap,
+  start, EM iterations, objective) and ``data_relax_direction_prior_fvml_components`` (each
+  component's weight, mean direction and concentration; component 0 is the uniform one), which a
+  continued run reads back (``relax.sampling.fvml_direction_prior``). ``MlModel::read`` reads its
+  blocks by name, so RELION ignores them.
 
 ``--continue`` keeps each half's own noise spectrum. RELION's MPI restart broadcasts
 rank 1's ``sigma2_noise`` to every rank (ml_optimiser_mpi.cpp:750-758), so its half 2
@@ -53,6 +59,7 @@ from relax.refinement.iteration_snapshot import (
     REFINEMENT_STATE_SCALAR_FIELDS,
     IterationSnapshot,
 )
+from relax.sampling import fvml_direction_prior
 from relax.star.blocks import general_columns, read_star_blocks
 
 logger = logging.getLogger(__name__)
@@ -565,6 +572,12 @@ def _write_model_stars(root: Path, snapshot: IterationSnapshot, settings: RunSet
             )
             for k in range(prior.shape[0]):
                 text.append(_loop_block(f"model_pdf_orient_class_{k + 1}", {"rlnOrientationDistribution": prior[k]}))
+        fit = None if snapshot.direction_prior_fits is None else snapshot.direction_prior_fits[h]
+        if fit is not None:
+            text.append(_list_block(fvml_direction_prior.STAR_FIT_BLOCK, fvml_direction_prior.star_fit_items(fit)))
+            text.append(
+                _loop_block(fvml_direction_prior.STAR_COMPONENT_BLOCK, fvml_direction_prior.star_component_columns(fit))
+            )
         path.write_text("".join(text))
         paths.append(path)
     return paths
@@ -975,6 +988,14 @@ def read_run_files(optimiser_star, *, image_names, half_rows) -> IterationSnapsh
         direction_prior.append(_class_conditionals(prior, class_weights) if k_class else prior[0])
     if all(p is None for p in direction_prior):
         direction_prior = None
+    direction_prior_fits = [
+        fvml_direction_prior.fit_from_star(
+            model[fvml_direction_prior.STAR_FIT_BLOCK], model[fvml_direction_prior.STAR_COMPONENT_BLOCK]
+        )
+        if fvml_direction_prior.STAR_FIT_BLOCK in model
+        else None
+        for model in halves
+    ]
 
     avg_norm = tuple(float(m["model_general"]["rlnNormCorrectionAverage"]) * float(box_size) ** 2 for m in halves)
     classes_table = models[0]["model_classes"]
@@ -1052,6 +1073,7 @@ def read_run_files(optimiser_star, *, image_names, half_rows) -> IterationSnapsh
         acc_rot_per_class=acc_rot,
         acc_trans_per_class_angstrom=acc_trans,
         extra=extra,
+        direction_prior_fits=None if all(fit is None for fit in direction_prior_fits) else direction_prior_fits,
     )
 
 

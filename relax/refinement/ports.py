@@ -27,7 +27,7 @@ from dataclasses import dataclass
 from typing import Any, NamedTuple, Protocol
 
 from relax.refinement.refinement_options import RELION_INCR_SIZE
-from relax.sampling.orientation_priors import HalfDirectionLogPriors
+from relax.sampling.orientation_priors import DirectionPrior, HalfDirectionLogPriors
 
 
 @dataclass
@@ -308,12 +308,20 @@ class InputSource:
         return None
 
     def direction_log_prior(
-        self, half_index: int, log_prior: HalfDirectionLogPriors, *, healpix_order: int, use_local: bool
+        self, half_index: int, log_prior: HalfDirectionLogPriors, *, prior: DirectionPrior, healpix_order: int,
+        use_local: bool,
     ) -> HalfDirectionLogPriors:
         """The direction log prior half ``half_index`` scores an expectation with, on the HEALPix grid of
-        ``healpix_order`` (a local search's parent order when ``use_local``); the native source returns the run's
-        own ``log_prior``, which a local search leaves empty as RELION's does."""
+        ``healpix_order`` (a local search's parent order when ``use_local``), given the half's ``prior`` and the run's
+        own ``log_prior`` built from it; the native source returns ``log_prior``, which a local search leaves empty
+        as RELION's does."""
         return log_prior
+
+    def learned_direction_priors(self, learned: tuple, *, previous: list) -> tuple:
+        """Each half's next direction prior after a numbered M-step, from the run's ``learned`` ones (a
+        ``DirectionPrior`` per half, or None: the half keeps its prior) and the ones the expectation scored with
+        (``previous``); the native source returns ``learned``."""
+        return learned
 
     def relion_run_directory(self, iteration: int):
         """The RELION run directory whose numbered STAR files supply iteration ``iteration``'s sampling (None:

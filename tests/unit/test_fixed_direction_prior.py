@@ -20,9 +20,11 @@ from relax.refinement.ports import InputSource
 from relax.runtime.engine_tuning import EngineTuning
 from relax.sampling.grids import build_local_search_grid_metadata, rotation_grid_n_in_planes, rotation_grid_size
 from relax.sampling.healpix import euler_angles_to_matrix
-from relax.sampling.orientation_priors import HalfDirectionLogPriors, make_relion_direction_log_prior
+from relax.sampling.orientation_priors import DirectionPrior, HalfDirectionLogPriors, make_relion_direction_log_prior
 
 pytestmark = pytest.mark.unit
+
+NO_PRIOR = DirectionPrior(None, None)
 
 
 def _prior(order: int, seed: int = 0) -> np.ndarray:
@@ -167,7 +169,7 @@ def test_log_prior_is_the_fixed_prior_on_every_rotation_of_the_grid(tmp_path, ha
     source = _source(tmp_path, order=2)
     own = HalfDirectionLogPriors(rotation_log_prior=np.zeros(3, dtype=np.float32), class_rotation_log_prior=None)
     order = 1
-    log_prior = source.direction_log_prior(half_index, own, healpix_order=order, use_local=use_local)
+    log_prior = source.direction_log_prior(half_index, own, prior=NO_PRIOR, healpix_order=order, use_local=use_local)
     n_rot, n_directions = rotation_grid_size(order, "C1"), 12 * 4**order
     # Rotation r of the grid lies on direction r % n_directions.
     by_hand = np.log(source.prior.at_order(order))[np.arange(n_rot) % n_directions]
@@ -179,7 +181,7 @@ def test_log_prior_is_the_fixed_prior_on_every_rotation_of_the_grid(tmp_path, ha
 
 def test_native_source_leaves_the_log_prior_alone():
     own = HalfDirectionLogPriors(rotation_log_prior=None, class_rotation_log_prior=None)
-    assert InputSource().direction_log_prior(0, own, healpix_order=3, use_local=True) is own
+    assert InputSource().direction_log_prior(0, own, prior=NO_PRIOR, healpix_order=3, use_local=True) is own
 
 
 # ---- the local search selects with its Gaussian and weights every hypothesis of a rotation by the prior alone ----
@@ -206,7 +208,7 @@ def _layout(rotation_log_prior):
 
 def _table(source, order=ORDER):
     return source.direction_log_prior(
-        0, HalfDirectionLogPriors(None, None), healpix_order=order, use_local=True
+        0, HalfDirectionLogPriors(None, None), prior=NO_PRIOR, healpix_order=order, use_local=True
     ).rotation_log_prior
 
 
@@ -331,9 +333,11 @@ def test_local_half_builds_its_parent_layout_with_the_prior(tmp_path):
 class _Recording(FixedDirectionPriorSource):
     seen: list = []
 
-    def direction_log_prior(self, half_index, log_prior, *, healpix_order, use_local):
+    def direction_log_prior(self, half_index, log_prior, *, prior, healpix_order, use_local):
         self.seen.append((half_index, healpix_order, use_local))
-        return super().direction_log_prior(half_index, log_prior, healpix_order=healpix_order, use_local=use_local)
+        return super().direction_log_prior(
+            half_index, log_prior, prior=prior, healpix_order=healpix_order, use_local=use_local
+        )
 
 
 def test_every_expectation_of_a_run_scores_with_the_fixed_prior(monkeypatch, tmp_path):

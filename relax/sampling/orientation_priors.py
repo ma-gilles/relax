@@ -7,6 +7,7 @@ finalization steps, the VDAM E-step and the parity replays call them.
 """
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 import healpy as hp
 import numpy as np
@@ -14,6 +15,9 @@ import numpy as np
 from relax.relion.macros import relion_round_array
 from relax.sampling.grids import rotation_direction_ids, rotation_grid_n_in_planes, rotation_grid_size
 from relax.sampling.healpix import angular_sampling_deg
+
+if TYPE_CHECKING:
+    from relax.sampling.fvml_direction_prior import FvmlPriorFit
 
 
 def relion_round_away_from_zero(values, *, dtype: np.dtype = np.float32):
@@ -225,11 +229,14 @@ class DirectionPrior:
     """One half-model's direction probabilities and their HEALPix sampling order.
 
     ``values`` is ``(n_directions,)`` for K=1 and ``(n_classes, n_directions)``
-    for K>1; a half without a prior holds ``None``.
+    for K>1; a half without a prior holds ``None``. ``fit`` is the FvML-mixture
+    fit the values come from (``relax.sampling.fvml_direction_prior``; None: the
+    values are RELION's learned or given prior).
     """
 
     values: np.ndarray | None
     healpix_order: int | None
+    fit: "FvmlPriorFit | None" = None
 
 
 def initial_direction_priors_from_snapshot(

@@ -1,10 +1,13 @@
 # Fitting a mixture-of-FvML viewing-direction prior by a nested EM
 
-**Status (2026-11-06, branch `pose_prior`).** Derived, numerically checked (section 10) and implemented standalone
-(section 8). Nothing in the refinement loop calls the implementation; section 9 says what an integration needs. The
-implementation is [`scripts/lib/fvml_mixture_em.py`](../../scripts/lib/fvml_mixture_em.py), placed there because no
-command of `relax/` reaches it, and its tests are
-[`tests/unit/test_fvml_mixture_em.py`](../../tests/unit/test_fvml_mixture_em.py). The document is self-contained: it
+**Status (2026-11-20, branch `fvml_refinement`).** Derived, numerically checked (section 10), implemented (section
+8) with a point-atom and a cell-mass fit (section 7), wired into K=1 refinement as an opt-in prior,
+`relax refine --fvml-direction-prior N` (section 9), and benchmarked on the pose-prior sweep (section 10). The implementation is
+[`relax/sampling/fvml_mixture.py`](../../relax/sampling/fvml_mixture.py) (the EM) and
+[`relax/sampling/fvml_direction_prior.py`](../../relax/sampling/fvml_direction_prior.py) (the refinement's fit), with the
+input source [`relax/parity/fvml_prior_source.py`](../../relax/parity/fvml_prior_source.py); its tests are
+[`tests/unit/test_fvml_mixture_em.py`](../../tests/unit/test_fvml_mixture_em.py) and
+[`tests/unit/test_fvml_direction_prior.py`](../../tests/unit/test_fvml_direction_prior.py). The document is self-contained: it
 formalizes the mixture-of-FvML pose prior proposed in the team's note on EM for cryo-EM reconstruction (May 2026, a PDF
 outside the repository) but does not require reading it.
 
@@ -299,8 +302,16 @@ The atoms are grid nodes, but (E3) evaluates a *density* at them. Three measured
 3. **Cap.** A lobe narrower than the node spacing is resolved by one or two atoms, the situation of Proposition 4. Requiring $\sigma=\kappa^{-1/2}\ge c\,\delta$ gives $\kappa_{\max}=1/(c\delta)^2$ (E9). Starting points to test: $c=1$ ($\kappa_{\max}=1/\delta^2$, about 244 at
    HEALPix order 4 and 978 at order 5) and $c=\tfrac12$ ($4/\delta^2$), which follows narrower peaks at the price of a larger bias. These are heuristics, not derived thresholds.
 
-An alternative that removes (2) and (3) is the grouped-data likelihood $\prod_m(\int_{{\rm cell}\,m}\lambda)^{\rho_m}$: its EM is the same M-step with each cell represented by child atoms of a finer grid, and an E-step that redistributes the cell's mass over its children in proportion to the current model,
-$r_{m,c,k}=a_k(v_c)/\sum_{c'\in m}\sum_{k'}a_{k'}(v_{c'})$. It is *not* implemented and *not* checked numerically here; it is listed in section 11.
+**The cell-mass (grouped-data) likelihood.** Treating $\rho_m$ as the mass of the whole cell $m$ instead of a point gives the objective
+$\sum_m\rho_m\log P_m$ with $P_m=\int_{{\rm cell}\,m}\lambda\,dS$. With the cell integral replaced by the midpoint rule on $C$ equal-area children $v_{m,1..C}$ of a finer grid,
+$P_m\approx\frac{4\pi}{DC}\sum_c\lambda(v_{m,c})=\frac{4\pi}{DC}\sum_c\sum_ka_k(v_{m,c})$, this is again a latent-variable model, now with the latent pair (child $c$, component $k$). Its EM is the M-step (E6) on the children,
+with the masses and responsibilities of the E-step
+$$
+r_{m,c,k}=\frac{a_k(v_{m,c})}{\sum_{c'}\sum_{k'}a_{k'}(v_{m,c'})},\qquad\text{child mass }\rho_m\sum_kr_{m,c,k},
+$$
+i.e. each cell's mass is spread over its children in proportion to the current density, then over the components. Ascent and the other properties of section 6 carry over unchanged. Two consequences, both measured (section 10):
+the $\kappa$ bias of (2) shrinks to the bias at the *children's* spacing, $1/(1+\kappa\delta^2/(12C))$, and with $C=1$ the fit is exactly the point-atom fit (the objective shifted by $N\log(4\pi/D)$). The objective is still unbounded (a lobe can
+collapse onto one child), so the cap stays; with a cap of $c=1$ on the fit grid and $C=16$ the remaining bias is $1/(1+1/192)$. The cost is $C$ times that of the point fit.
 
 ## 8. Algorithm and implementation
 
@@ -312,24 +323,25 @@ for s = 0, 1, ..., s_max-1:
     E:  log a_k(v_m) for all k;  log lambda_m = logsumexp_k;  r_mk = exp(log a_k - log lambda_m)
         Q_s = sum_m rho_m log lambda_m
     M:  N_j, S_j; pi_j; eta_j = S_j/|S_j|; kappa_j = min(A^{-1}(|S_j|/N_j), kappa_max)
-    stop if Q_s - Q_{s-1} <= tol * |Q_s|
+    stop if Q_s - Q_{s-1} <= tol * sum_m rho_m        # tol in nats per particle
 output  Theta, [Q_s]                      # the history is part of the result
 ```
 
 - **Cold start.** Weighted spherical k-means++ seeding ($n_r-1$ centres drawn with probability $\propto\rho_m(1-\max\cos)^2$, the cosine taken to the nearest seed and best over the symmetry maps), ten Lloyd steps on the cosine, then $\eta_j$ the cluster's resultant direction, $\kappa_j=A^{-1}(\bar R_j)$ of the cluster and
   $\pi$ from the cluster masses with $\pi_1=0.2$ (the choices of the checks in section 10). An empty cluster keeps its seed with a small weight share. Run several seeds and keep the highest $Q$; the measured success rates are in section 10.
 - **Cost.** $O(D\,n_r\,n_g)$ per sub-iteration. Measured (4 threads, 50 iterations, one run each): 3.4 ms per iteration at $D=12\,288$ (order 5, $n_r=4$); 20.9 ms at $D=49\,152$ (order 6, $n_r=6$) and 27.7 ms at $n_r=10$; 69.6 ms at order 6, $n_r=6$ with C3 (three maps).
-- **Implementation** ([`scripts/lib/fvml_mixture_em.py`](../../scripts/lib/fvml_mixture_em.py)): `FvmlMixture` holds $\Theta_{22}$ and the symmetry maps; `init_fvml_mixture` is the cold start above; `fit_fvml_mixture` runs the loop and returns a `FitResult` (mixture, the objective at every iterate, whether it converged);
-  `log_density` evaluates $\log\lambda$; `inverse_langevin` solves $A(\kappa)=\bar R$; `kappa_max_for_grid` is the cap rule (E9) with $c$ the minimum width in node spacings. `kappa_max` has no default (an uncapped fit is unbounded), the Dirichlet concentration is one scalar,
+- **Implementation** ([`relax/sampling/fvml_mixture.py`](../../relax/sampling/fvml_mixture.py)): `FvmlMixture` holds $\Theta_{22}$ and the symmetry maps; `init_fvml_mixture` is the cold start above; `fit_fvml_mixture` runs the loop and returns a `FitResult` (mixture, the objective at every iterate, whether it converged); `fit_fvml_mixture_cells` is the cell-mass fit of section 7 on `(D, C, 3)` child directions, with the same M-step and loop;
+  `log_density` evaluates $\log\lambda$; `inverse_langevin` solves $A(\kappa)=\bar R$; `kappa_max_for_grid` is the cap rule (E9) with $c$ the minimum width in node spacings, $c=0.25$ by default. The fit's `kappa_max` has no default (an uncapped fit is unbounded), the Dirichlet concentration is one scalar,
   the returned objective includes the Dirichlet term so it is the quantity that never decreases, and the loop raises if it does. The maps may be any finite set of orthogonal matrices; only a group makes $\lambda$ invariant.
 - **Precision.** Host float64, cast once at the boundary, as `orientation_priors.py` does for the other priors; a 3-vector and a few scalars per component do not justify float32, and $A^{-1}$ near $\bar R\to1$ loses $\approx10^{-16}/(1-\bar R)$ in relative accuracy.
 
-## 9. Interface to the refinement loop (not implemented)
+## 9. Interface to the refinement loop
 
-- **Input.** One half-set's (and class's) direction masses $\rho_m$ on the grid of its E-step and the grid's unit vectors; per half, because the gold-standard halves keep separate priors. The Dirichlet pseudo-counts are in units of particles, so $N$ (not the normalized sum) is passed.
-- **Output.** $\Theta_{22}$. The E-step needs $\log\lambda(v)$ at its node directions, up to a constant for K=1 (the constant cancels in each particle's normalization); K>1 needs the per-class normalization over the grid. Because $\lambda$ is a function
-  on the sphere and not on a grid, a prior learned at one HEALPix order can be evaluated at the next one: RELION and RELAX reset `pdf_direction` to uniform at every order change (`relion_direction_log_priors_for_half`), which this prior would not
-  need, and local search could evaluate $\log\lambda(Re_3)$ at any rotation.
+- **Input.** One half-set's direction masses $\rho_m$ on the grid of its E-step: per half, because the gold-standard halves keep separate priors. With the flat Dirichlet ($\alpha=1$) the masses' scale does not matter, so the refinement passes the normalized sum (RELION's learned `pdf_direction`), and the stopping rule stays per particle.
+- **Output.** $\Theta_{22}$. The E-step needs $\log\lambda(v)$ at its node directions, up to a constant for K=1 (the constant cancels in each particle's normalization); K>1 would need the per-class normalization over the grid. Because $\lambda$ is a function
+  on the sphere and not on a grid, a prior learned at one HEALPix order can be evaluated at the next one: RELION and RELAX reset `pdf_direction` to uniform at every order change (`relion_direction_log_priors_for_half`), which this prior does not
+  need.
+- **As implemented** (`relax refine --fvml-direction-prior N`, K=1, C1, single-particle, one GPU; 2026-11-19). After every numbered M-step, [`FvmlDirectionPriorSource.learned_direction_priors`](../../relax/parity/fvml_prior_source.py) fits each half's learned `pdf_direction` with [`fit_direction_prior`](../../relax/sampling/fvml_direction_prior.py): the cell-mass fit on the masses summed to order $\min(\text{order},5)$, cells of 16 children, $c=0.25$, a half's first fit the best of five k-means++ starts and every later one warm-started from its previous fit (the settings section 10 and its replays support; five lobes is the owner's choice of 2026-11-19, from the replays). The half's prior is then the mixture's cell probabilities, which every later expectation of the half scores with, on whatever order it samples, through `InputSource.direction_log_prior`, as the fixed prior does: each global search, each local search (which keeps its three-width selection of orientations and weights them by this prior alone, without the Gaussian log priors; the owner's choice of 2026-11-19) and the final pass. The first iteration has no fit and scores as RELION's does. Each half's `run_itNNN_half{1,2}_model.star` holds the cell probabilities as `rlnOrientationDistribution` and the fit in two blocks, `data_relax_direction_prior_fvml` (lobes, fit order, cap, cold or warm start, EM iterations, objective per particle, seconds) and `data_relax_direction_prior_fvml_components` (component 0 the uniform one; weight, mean direction as RELION's rot and tilt and as a unit vector, $\kappa$); `--continue` reads the fit back and warm-starts from it.
 - **Approximation in the E-step.** RELION-style significance truncation makes $\rho$ the truncated posterior, so the outer EM guarantee of section 6.2 is as approximate as it is for the existing nonparametric update.
 - **Number of components.** $n_r$ is fixed here. A Dirichlet-process mixture (a countably infinite number of lobes) is a separate derivation and is not covered.
 
@@ -378,12 +390,103 @@ $Q=-77\,140$.
 Bias of $\kappa$ (HEALPix $N_{\rm side}=32$, $3\times10^{5}$ draws per run, mean of 5 runs, one component): fitted/true against $1/(1+\kappa\delta^2/12)$: $\kappa=20$: 0.999 / 0.998; 100: 0.991 / 0.992; 400: 0.966 / 0.967; 1000: 0.921 / 0.921; 2000: 0.854 / 0.854; 4000: 0.735 / 0.746. Beyond that range, single runs ($N_{\rm side}=32$,
 $2\times10^{5}$ draws, $\kappa_{\max}=10^{5}$): $\kappa=8000$ ($\kappa\delta^2=8.2$): 0.76 against 0.60 predicted; $\kappa=30\,000$ (30.7): 0.43 against 0.28.
 
+**Cell-mass fit** (section 7; `fit_fvml_mixture_cells`, same data and starts as the point fit, $N_{\rm side}=32$, $3\times10^5$ draws, mean of 3 runs, one component, fitted/true for $C=4,16,64$ children against the point fit):
+$\kappa=100$ ($\kappa\delta^2=0.10$): 0.997, 0.999, 0.999 against 0.990; $\kappa=1000$ (1.02): 0.978, 0.994, 0.998 against 0.916; $\kappa=4000$ (4.09): 0.918, 0.977, 0.993 against 0.742; $\kappa=8000$ (8.18): 0.847, 0.956, 0.988 against 0.622. The residual
+follows quantization at the children's spacing, $1/(1+\kappa\delta^2/(12C))$ (0.979 predicted for $\kappa=4000$, $C=16$). With $C=1$ the fit equals the point fit and its objective is the point objective plus $N\log(4\pi/D)$ (unit test). On the three-component data above,
+$n_r=3$, best of three k-means++ starts, $C=16$: $\kappa=(24.8,120.1)$, $-0.9\,\%$ and $+0.06\,\%$, where the point fit is $-2.6\,\%$ and $-3.7\,\%$ low.
+
+**Simulation against the histogram** ([`scripts/fvml_prior_simulation/`](../../scripts/fvml_prior_simulation/Snakefile), run 2026-11-17 13:55–14:47 locally on 20 cores, root `/scratch/gpfs/CRYOEM/gilleslab/ry2228/data/fvml_prior_simulation/run2`, snapshot
+`sim_20261117_1353` = HEAD `b4319a3c` plus the uncommitted simulation and cell fit, `git diff HEAD | sha256sum` `eb880722…986b`). Particles are drawn from a target, binned at HEALPix orders 3–5 and estimated by the histogram (RELION's update), the point fit and the cell fit
+($C=16$); best of 5 k-means++ starts, $c=1$ ($\kappa_{\max}$ 61 / 244 / 978), stop at a gain below $10^{-7}$ nats per particle or 1000 iterations; 5 replicates per count; score the Jensen–Shannon distance (bits) to the target on the fit grid. Targets: three known mixtures,
+the closed-form Kent populations of the pose-prior benchmark's mild and strong caps, the final learned `pdf_direction` of three benchmark refinements (100k particles; mild cap, 66 % mild cap, strong cap) and the C3-expanded RELION poses of 130k EMPIAR-10096 particles; 5 lobes plus uniform unless the truth's count is known.
+Median JS(cell fit) / JS(histogram) on the same draw:
+
+| target | order | $10^3$ | $10^4$ | $10^5$ | $10^6$ |
+| --- | --- | --- | --- | --- | --- |
+| Kent population, mild | 3 / 4 / 5 | 0.038 / 0.015 / 0.006 | 0.030 / 0.009 / 0.003 | 0.025 / 0.006 / 0.002 | 0.099 / 0.027 / 0.006 |
+| Kent population, strong | 3 / 4 / 5 | 0.069 / 0.022 / 0.010 | 0.028 / 0.008 / 0.003 | 0.046 / 0.014 / 0.004 | 0.19 / 0.058 / 0.016 |
+| three lobes ($\kappa$ 8, 60, 300) | 3 / 4 / 5 | 0.32 / 0.013 / 0.006 | 2.6 / 0.019 / 0.001 | 28 / 0.19 / 0.001 | 293 / 2.0 / 0.001 |
+| learned prior, mild-cap run | 3 / 4 / 5 | 0.081 / 0.058 / 0.060 | 0.27 / 0.28 / 0.23 | 2.4 / 2.4 / 1.8 | 23 / 25 / 19 |
+| learned prior, strong-cap run | 3 / 4 / 5 | 0.13 / 0.15 / 0.12 | 0.52 / 0.59 / 0.44 | 5.5 / 4.7 / 2.5 | 58 / 53 / 25 |
+| EMPIAR-10096 poses, C3 | 3 / 4 / 5 | 0.17 / 0.093 / 0.077 | 1.2 / 0.36 / 0.22 | 13 / 3.7 / 1.4 | 136 / 40 / 16 |
+
+- Smooth targets that are not FvML mixtures (the Kent populations) are fitted to $1$–$2\times10^{-5}$ bits without sampling noise, so the fit stays closer than the histogram up to $10^6$ particles.
+- With $c=1$ a lobe narrower than the grid spacing is held at the cap (the $\kappa=300$ lobe at 61 on order 3), the fit's floor is then 0.04–0.06 bits and the histogram overtakes it from about $3\times10^3$ particles (order 3) or $10^5$–$10^6$ (order 4).
+- On learned priors and real poses the fit wins below $1$–$6\times10^4$ particles. For the mild-cap run its floor (0.0031 / 0.0115 / 0.0302 bits at orders 3 / 4 / 5) equals the learned prior's own distance to the Kent population it estimates (0.0032 / 0.0115 / 0.0302): the fit returns the population and the floor is the learned prior's
+  noise (31 % of its order-5 cells are empty). For the strong-cap run the learned prior is 0.026 / 0.047 / 0.068 bits from its population and the fit's floor 0.008 / 0.029 / 0.053.
+- Point and cell fits agree to about 1 % in this table except where lobes are narrow for the grid, where the cell fit's floor is 5–10 times lower (strong cap at order 3, the known mixtures at order 5). Cost per start at order 5: about 1 s (point) and 19 s (cell); 87 % of fits met the gain criterion before 1000 iterations,
+  the rest are on the learned-prior targets.
+
+**Lobe count, cap width and held-out choice** (run 2026-11-17 15:16–21:11 locally on 20 cores, root `/scratch/gpfs/CRYOEM/gilleslab/ry2228/data/fvml_prior_simulation/run3`, snapshot `sim_20261117_1514` = HEAD `b4319a3c` plus the uncommitted simulation and library,
+`git diff HEAD | sha256sum` `84a5d1a6…f243`). Same protocol as above with 3 replicates at $10^3$, $10^4$, $10^5$ particles and no draws. Settings: 5, 10 and 20 lobes at $c=1$ (targets without a known count), and $c=1, 0.5, 0.25$ with 5 lobes or the true count.
+Each trial also draws a second, independent sample of the same size and scores every estimate by its mean log cell probability under that sample (held-out score). Median JS (bits) of the cell fit at order 4, $c=1$:
+
+| target | lobes | $10^3$ | $10^4$ | $10^5$ | no draws | histogram $10^5$ |
+| --- | --- | --- | --- | --- | --- | --- |
+| Kent population, mild | 5 / 10 / 20 | 0.0042 / 0.0095 / 0.019 | 0.00034 / 0.0008 / 0.0015 | 3.4e-5 / 6.1e-5 / 1.0e-4 | 1.1e-5 / 1.2e-5 / 1.4e-5 | 0.0057 |
+| learned prior, mild-cap run | 5 / 10 / 20 | 0.015 / 0.020 / 0.028 | 0.012 / 0.012 / 0.011 | 0.011 / 0.011 / 0.0094 | 0.011 / 0.011 / 0.0097 | 0.0048 |
+| learned prior, strong-cap run | 5 / 10 / 20 | 0.030 / 0.035 / 0.035 | 0.029 / 0.021 / 0.018 | 0.029 / 0.020 / 0.017 | 0.029 / 0.020 / 0.017 | 0.0061 |
+| EMPIAR-10096 poses, C3 | 5 / 10 / 20 | 0.027 / 0.023 / 0.027 | 0.022 / 0.017 / 0.013 | 0.022 / 0.017 / 0.012 | 0.022 / 0.017 / 0.011 | 0.0059 |
+
+- More lobes help only on targets that are not smooth: on the Kent populations 5 lobes is best at every finite draw and all counts share the floor; on the strong-cap learned prior and EMPIAR-10096 the floor falls by 40–50 % from 5 to 20 lobes; the mild-cap floor is the learned prior's
+  noise and barely moves. The histogram still wins on these four targets at $10^5$ particles.
+- The held-out score picks the setting with the lowest median JS in 98 % of the 270 (target, order, count, fit, choice) cases; where it misses, the pick is at most 1.05 times farther. It picks 5 lobes on smooth targets and at $10^3$ particles, and 20 lobes on the rough targets from
+  $10^4$. In refinement the two half-sets can play the sample and held-out roles.
+- Known mixtures without draws at order 3: $c=1$ leaves 0.040 / 0.056 bits (three / five lobes), $c=0.5$ 0.0007 / 0.002, $c=0.25$ $1\times10^{-5}$ / $2\times10^{-5}$; at order 4, $c\le0.5$ lowers the floor from $10^{-3}$ to $10^{-6}$. On the other targets with 5 lobes the three caps give
+  the same fit, except EMPIAR-10096 at order 3 (0.018 to 0.009). No overfitting from the looser cap was seen, even at $10^3$ particles; a loose cap with 10–20 lobes was not run (at $c=1$, 20-lobe fits hold a median 1–4 lobes at the cap).
+- With $c\le0.5$ the point fit's quantization bias shows: its floor on the known mixtures at order 4 is $2.7\times10^{-4}$ / $4.1\times10^{-4}$ bits against $1.0\times10^{-6}$ / $1.7\times10^{-6}$ for the cell fit.
+- From a cold start the cost grows with the lobe count: at order 5 the 20-lobe cell fit takes a median 15 min for 5 starts (point fit 52 s), and 57 % reach the 1000-iteration limit.
+
+**Lobe count at $c=0.25$ and refinement replays** (run 2026-11-18 15:57–21:34 locally on 20 cores, root `/scratch/gpfs/CRYOEM/gilleslab/ry2228/data/fvml_prior_simulation/run4`, snapshot `sim_20261118_1556` = HEAD `b4319a3c` plus the uncommitted simulation, replay and library,
+`git diff HEAD | sha256sum` `f1a02a1b…e288`). Static trials as in run 3 with 10 and 20 lobes at $c=0.25$ (5 lobes from run 3, same trial code). They repeat run 3's result: on the strong-cap learned prior and EMPIAR-10096 the order-4 floor falls from 0.029 to 0.0095 and from 0.022 to 0.0071 bits with 20 lobes,
+on the Kent populations 10 and 20 lobes are 2–4 times farther at finite draws, and the held-out score picks the best count in 99 % of 108 cases (worst 1.02 times farther).
+
+Replays (`replay_refinement.py`): three benchmark refinements (100k particles; mild cap, 66 % mild cap, strong cap), each half-set on its own, every iteration. The half's max-posterior directions (`run_itNNN_data.star`) are binned at the iteration's prior order (at most 5) and fitted with the cell fit;
+a fixed random 10 % or 20 % of the half is held out, 5, 10 and 20 lobes are fitted on the rest, the best held-out count is refitted on the whole half. Warm: each candidate starts from its own previous fit. Cold: best of 5 k-means++ starts ($c=0.25$, 20 % only). Score: JS distance (bits) to the
+population the particles were drawn from, at the iteration's order (6 at the end). Medians over both halves and the last 3 iterations, $c=0.25$, 20 % held out, warm:
+
+| run | chosen, refit | 5 lobes | 10 lobes | 20 lobes | RELION learned prior | histogram of the poses |
+| --- | --- | --- | --- | --- | --- | --- |
+| mild cap | 0.0070 | 0.0013 | 0.0023 | 0.0069 | 0.107 | 0.142 |
+| 66 % mild cap | 0.0058 | 0.0017 | 0.0036 | 0.0057 | 0.160 | 0.223 |
+| strong cap | 0.042 | 0.025 | 0.032 | 0.042 | 0.080 | 0.095 |
+
+- The fit is 15–30 times closer to the population than RELION's learned prior on the mild runs and 2 times on the strong run; a fixed 5-lobe fit 60–100 and 3 times.
+- The held-out score from the same half picks 20 lobes in 96 % of 540 (iteration, setting) cases, while the 5-lobe candidate is the closest to the population in 98 %. The cause is in the data, not the score: pose estimation leaves small clumps that the population does not have
+  (66 % run, half 1, iteration 16: the warm 5-lobe fit spends two lobes of weight 0.003 at $\kappa$ 1550 and 15200, cap 15600; within 2° of them the estimated poses hold 0.39 % and 0.31 % of the half against 0.17 % and 0.15 % under the population), and the held-out particles share them
+  (20 against 5 lobes: +0.01 to +0.05 nats per held-out particle). Neither the 10 % share nor $c=1$ changes the choice; $c=1$ still has 2–4 lobes at its cap.
+- Warm fits reach a higher objective than the best cold start at late iterations (+0.003 to +0.015 nats per particle) and are about 10 times farther from the population (5 lobes: 0.0014 against 0.0001 bits): the cold starts miss the clumps. Cold's lower distance is overfitting seen from
+  the other side, not a better optimizer.
+- Cost at order 5, one core (numpy), median per refinement iteration: warm 110 s (5 / 10 / 20 lobes 4 / 12 / 45 s, refit 37 s; 45 / 83 / 204 EM iterations), cold 1800 s. Keeping every candidate's mixture costs about 100 numbers each.
+- Caveat: the replay fits max-posterior poses; the sub-EM inside refinement would see each particle's posterior over directions, which is smoother. The run files do not keep it, so the replay cannot test whether the clumps survive there.
+
+**In refinement: the pose-prior sweep** (`relax refine --fvml-direction-prior 5`, Slurm jobs 17934685–17934696, 2026-11-19/20; snapshot `fvml_refinement_20261119_1024` = HEAD `d2dff905` plus this change, `git diff HEAD | sha256sum` `87c25f25…c95a`;
+root `/scratch/gpfs/CRYOEM/gilleslab/ry2228/data/pose_prior_benchmark/sweep_mild_box256`, variant `fvml` of `scripts/pose_prior_benchmark/config.yaml`). The 12 sweep cells with 100k particles (box 256; Kent share 0, 0.33, 0.66, 1 of the mild cap mixed with uniform directions; noise 0.5, 1, 2) are refined with the
+same start map, settings and seed as the sweep's other variants: RELION's learned prior, the true prior fixed and the uniform prior fixed (`--fixed-direction-prior`). Aligned ground-truth FSC area (`gt_fsc_auc_aligned` of `compare_variants.py`) and, last, the area of the map from the true poses:
+
+| Kent share | noise | learned | fixed uniform | fixed true | FvML | true poses |
+| --- | --- | --- | --- | --- | --- | --- |
+| 0 | 0.5 / 1 / 2 | 0.7552 / 0.5819 / 0.1735 | 0.7556 / 0.5874 / 0.1755 | – | 0.7554 / 0.5872 / 0.1746 | 0.7846 / 0.7111 / 0.6345 |
+| 0.33 | 0.5 / 1 / 2 | 0.7503 / 0.5827 / 0.1691 | 0.7528 / 0.5866 / 0.1704 | 0.7561 / 0.5897 / 0.1726 | 0.7560 / 0.5890 / 0.1708 | 0.7819 / 0.7083 / 0.6316 |
+| 0.66 | 0.5 / 1 / 2 | 0.7448 / 0.5663 / 0.1697 | 0.7471 / 0.5653 / 0.1695 | 0.7475 / 0.5774 / 0.1763 | 0.7475 / 0.5751 / 0.1712 | 0.7725 / 0.6981 / 0.6213 |
+| 1 | 0.5 / 1 / 2 | 0.7365 / 0.5632 / 0.1725 | 0.7401 / 0.5549 / 0.1724 | 0.7409 / 0.5768 / 0.1919 | 0.7446 / 0.5733 / 0.1753 | 0.7462 / 0.6705 / 0.5934 |
+
+- FvML is at or above the learned prior in all 12 cells (+0.0002 to +0.0101) and lowers the median direction error in 11 (at Kent share 1: 0.765 to 0.736°, 1.96 to 1.84°, 79.0 to 77.4°). At noise 0.5 it ties the fixed true prior (better at Kent share 1); at noise 1 it gets 74–90 % of the fixed true prior's
+  gain over the learned prior. On uniform directions it ties the fixed uniform prior within 0.0009 (one seed per variant: a scale for run-to-run differences), where the learned prior loses up to 0.0055.
+- At noise 2 every run but the fixed true prior stays near failure (median direction error about 80°): FvML adds 0.001–0.003, the fixed true prior 0.004–0.019. A prior fitted to wrong poses follows them: the uniform weight falls to about 0 in every cell, the uniform one included, once the
+  search reaches order 3.
+- The final prior's JS distance to the population (the final model STAR's `rlnOrientationDistribution`): FvML $6\times10^{-5}$–$10^{-3}$ bits at noise 0.5 and 0.0008–0.006 at noise 1, against 0.10–0.17 and 0.042–0.053 for the learned prior (9–3000 times closer); at noise 2 both are 0.01–0.3.
+- Fits: under one minute per run in total (both halves, every iteration; 0–4 of 24–36 fits stop at the 1000-iteration limit). Lobes stay broad ($\kappa$ 1–20) except one small lobe (final weight 0.007–0.011) in the noise-1 cells at Kent share 0.66 and 1 that peaks at $\kappa$ 800–900 mid-run. The FvML jobs' wall
+  times (1.2–2.4 times the learned runs') are not the method's: iteration 1, which has no fit yet, is already about 5 times slower in host-side stages (operand preparation 241 s against 28 s at Kent share 1, noise 2) while 12 jobs shared nodes. Run time was not measured cleanly.
+
 ## 11. Open decisions
 
-1. The cap or hyperprior on $\kappa$: the interval $\kappa_{\max}=1/(c\delta)^2$ with which $c$ (section 7), or the exponential prior with a mean $\kappa_0$ (E8).
-2. Point atoms (this document) versus the grouped-data likelihood of section 7, which removes the $\kappa$ bias and the grid-tied cap.
-3. How $n_r$ is chosen; a Dirichlet-process mixture is a separate derivation.
-4. Integration: when the prior is wired into the refinement loop the module moves from `scripts/lib/` to `relax/sampling/` and the links in this document move with it.
+1. The cap or hyperprior on $\kappa$. Decided (2026-11-17): the cap $\kappa_{\max}=1/(c\delta)^2$, not the exponential prior (E8), which needs its own tuning. Decided (2026-11-18), from the simulation of section 10: $c=0.25$ with the cell-mass fit is the default.
+2. Point atoms versus the cell-mass likelihood of section 7: both are implemented and compared in a simulation (`scripts/fvml_prior_simulation/`); the cell-mass fit is the default (2026-11-18), since a cap looser than one spacing exposes the point fit's quantization bias.
+3. How $n_r$ is chosen: five lobes plus the uniform component by default, the true count when the target is a known mixture. The held-out score (section 10) picks the count well on i.i.d. draws. Decided (2026-11-18): the held-out particles are a fixed 10–20 % of the same half-set, never the other half-set, so the two halves stay independent. Open: in the refinement replays this choice always takes the
+   largest count, which fits pose-estimation clumps and is farther from the population than 5 lobes; whether to fix the count, penalize it, widen the cap or fit the posterior masses instead. Warm starts for every candidate work (keep each candidate's mixture; 16 times cheaper than cold).
+4. Integration (2026-11-19): five lobes, fixed, warm-started, acting in every search including local search (section 9); the module moved to `relax/sampling/`. Benchmarked (2026-11-20, section 10) on the 12 sweep cells with 100k particles: at or above RELION's learned prior everywhere, near the fixed true prior at noise $\le 1$. Open: the 50k cells, a clean run-time measurement, and seeds to put a
+   spread on the differences.
 
 ## References
 

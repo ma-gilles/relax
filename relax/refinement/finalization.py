@@ -1029,6 +1029,7 @@ def score_final_half(
             directions=source.direction_log_prior(
                 half.index,
                 final_inputs.directions,
+                prior=final_pass.direction_priors[half.index],
                 healpix_order=(
                     final_pass.route.sampling.search.parent_order
                     if final_pass.use_local

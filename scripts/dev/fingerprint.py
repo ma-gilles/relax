@@ -220,6 +220,7 @@ def default_scoring_overrides(value) -> bool:
 RETIRED_OPERAND_FIELDS = {
     "projection_relion_acc_double_floorf_quirk": False,  # RELAX_RELION_ACC_DOUBLE_FLOORF_QUIRK, retired 2026-10-15
     "direction_log_prior": None,  # LocalPriorSpec, LocalSearchGridSpec: RELION's local search adds no direction prior
+    "fit": None,  # DirectionPrior: only --fvml-direction-prior sets an FvML fit
 }
 
 

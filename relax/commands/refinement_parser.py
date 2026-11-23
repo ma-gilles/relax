@@ -283,6 +283,17 @@ def parse_refinement_args(argv=None):
         "summing to 1) instead of RELION's learned prior, which is still estimated and written but not used. "
         "Requires --max_healpix_order of at most the file's order. Not combinable with a RELION replay.",
     )
+    parser.add_argument(
+        "--fvml-direction-prior",
+        type=int,
+        default=None,
+        metavar="N_LOBES",
+        help="Experimental, K=1 C1 single-particle on one GPU: replace RELION's learned direction prior with a "
+        "uniform component plus N_LOBES FvML lobes fitted to each half's posterior direction masses after every "
+        "iteration (warm-started), and score every later global and local search and the final pass with it, as "
+        "--fixed-direction-prior does. The model STARs record the fit. Not combinable with --fixed-direction-prior "
+        "or a RELION replay.",
+    )
     for flag in ("--relion-projector-capture-dir", "--relion-projector-capture-manifest",
                  "--relion-projector-capture-iteration"):
         parser.add_argument(flag, action=RetiredFlag, feature="the captured RELION projector",

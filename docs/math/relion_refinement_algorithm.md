@@ -408,6 +408,18 @@ log priors are not added ([`LocalPriorSpec.direction_log_prior`](../../relax/ref
 on the direction only, so the selected in-plane angles of a direction weigh the same. A pass-2 child inherits its
 parent's value. The learned prior is still estimated and written to the model STARs; it is not fed back.
 
+An FvML-mixture direction prior (`--fvml-direction-prior N`, K=1, C1, single-particle, one GPU) is a second
+intentional difference. After every numbered M-step,
+[`FvmlDirectionPriorSource.learned_direction_priors`](../../relax/parity/fvml_prior_source.py) (the
+`InputSource.learned_direction_priors` port, which natively returns the learned priors) replaces each half's learned
+prior with a uniform component plus `N` FvML lobes fitted to it
+([`fit_direction_prior`](../../relax/sampling/fvml_direction_prior.py), warm-started from the half's previous fit,
+which `DirectionPrior.fit` carries). From the second iteration on, `InputSource.direction_log_prior` hands the scorers
+the half's mixture on the grid of the expectation's HEALPix order, with no reset at an order change, in every global
+search, local search (weighted as with a fixed prior, without the Gaussian log priors) and the final pass. The model
+STARs record the fit ([`run_files`](../../relax/refinement/run_files.py)); the derivation and the checks are
+[`fvml_mixture_direction_prior.md`](fvml_mixture_direction_prior.md).
+
 The source Euler and matrix precision can also matter at score ties.
 
 For oversampling level `s`, `get_oversampled_rotation_grid_from_samples`
