@@ -759,6 +759,10 @@ reconstruction shells and detail records. It runs after the existing optional
 low-frequency join and previous-map release, before regularized reconstruction.
 The controller applies tau2 updates and retains post-reconstruction firstiter-CC
 taper and K1 host parking. Class3D continues using previous Iref power.
+With the opt-in `--cfsc-regularization`, `estimate_split_half_cone_prior` (and, in the final pass,
+`compute_final_halfmap_prior`) applies RELION's FSC-to-tau2 rule per cone of Fourier space, and the solves use
+that per-voxel prior instead of the shell curves; the shell FSC still drives tau2 reporting and size growth
+([conical_fsc_regularization.md](conical_fsc_regularization.md)).
 For K-class refinement, regularized and diagnostic unregularized maps retain
 the sign determined by the image/CTF convention. They are not negated to match
 the previous reference: a weak class can have unreliable overlap. Both half
