@@ -2,7 +2,8 @@
 
 **Status (2026-11-23, branch `dev/cfsc_regularization`).** Derived (sections 2-4), implemented as the opt-in K=1 option
 `relax refine --cfsc-regularization` (section 5) and checked on synthetic accumulators and on the tiny CPU refinement
-(section 6). The benchmark test on the pose-prior benchmark's `kent_cap_offsets` scenario is in section 7. The
+(section 6), and tested on one cell of the pose-prior benchmark (section 7), where it improves the learned-prior
+refinement's ground-truth FSC area from 0.319 to 0.347 (the true prior gives 0.371) and its poses with it. The
 implementation is [`relax/reconstruction/conical_regularization.py`](../../relax/reconstruction/conical_regularization.py);
 its tests are [`tests/unit/test_conical_regularization.py`](../../tests/unit/test_conical_regularization.py).
 
@@ -37,7 +38,8 @@ MAP term, and RELION's shell value as the anchor, so that equal statistics in ev
   shrunk toward the shell FSC by the share of their spread that is not noise; cones that differ by noise alone keep
   RELION's value.
 - **What does not change.** The shell FSC still sets the resolution, the image size (`current_size`), the reported
-  `tau2` and `data_vs_prior`. Only the prior term inside the reconstructions changes.
+  `tau2` and `data_vs_prior`. Only the prior term inside the reconstructions changes. Since the half maps change, the
+  shell FSC computed from them changes too (section 7.3).
 
 ## 2. RELION's rule and what it estimates
 
@@ -245,8 +247,9 @@ power over its own Jensen factor.
    `SSNR > 1` (shell FSC above about 0.5), and it sets the image size of the next expectation. Under a preferred
    orientation this, too, is a shell average: in the benchmark's `kent_cap_offsets` baseline RELION's resolution stays at
    21.8 A (shell 25, `current_size` 114) for ten iterations, although the final map reaches 8.2 A against the ground
-   truth. A cone-aware window (for example the resolution of the best cones) is a separate change; keeping it fixed here
-   isolates the effect of the prior.
+   truth. A cone-aware window (for example the resolution of the best cones) is a separate change. We keep RELION's
+   rule; we note, however, that its input, the FSC of the regularized half maps, does change with the cone prior, so
+   the resolution and the image size do not stay those of a RELION run (section 7.3).
 5. **`data_vs_prior` and the reported `tau2` stay RELION's.** The model STARs keep RELION's shell curves; the cone
    statistics are written next to them (section 5).
 
@@ -295,5 +298,75 @@ level 1, offsets of 7 A per axis. There the learned direction prior falls well s
 is 0.319 with RELION's learned prior, 0.326 with the FvML-mixture prior, 0.303 with a uniform prior and 0.371 with the
 true prior, and the median pose error is 48.5, 46.6, 63.0 and 22.3 degrees.
 
-*Results pending: the runs `learned` (control, RELION's regularization rerun on Grace), `learned_cfsc` and
-`fixed_true_cfsc` are queued.*
+We ran three refinements on Grace from the snapshot of commit 2faa4a37, with the benchmark's refinement settings
+(optimiser seed 1): `learned` (RELION's regularization, the control) and
+`learned_cfsc` (`--cfsc-regularization`, 20 degree cones on 100 axes) on two RTX 8000 cards of one node, and
+`fixed_true_cfsc` (the true direction prior and the cone rule) on a V100. Each was scored by `evaluate_run.py`. In
+addition, every run's final poses were reconstructed by `relion_reconstruct` without any regularization
+(`reconstruct_with_poses.py`), which scores the poses alone. The control matches the Della run (commit c32edba9, same
+seed) to within 0.0004 in ground-truth FSC area; its per-iteration resolution and `ave_Pmax` agree, and so do
+its median pose errors. We therefore compare `fixed_true_cfsc` with the Della `fixed_true` run. Both rows of a pair
+use the same seed, so the run-to-run spread over seeds is not measured here.
+
+### 7.1 Results
+
+| Variant | Machine | Iter. | GT FSC area | GT FSC area, poses only | GT res. 0.143 (A) | Direction error, median (deg) | In-plane error, median (deg) | Origin error, median (A) | Particles within 10 deg | GT cFAR |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `fixed_uniform` | Della | 16 | 0.304 | | 9.22 | 63.1 | 38.3 | 7.15 | 28.9% | 0.053 |
+| `learned` | Della | 15 | 0.319 | 0.286 | 8.92 | 48.5 | 27.5 | 6.59 | 33.4% | 0.051 |
+| `learned` (control) | Grace | 15 | 0.319 | 0.286 | 8.77 | 48.5 | 27.5 | 6.58 | 33.4% | 0.050 |
+| `fvml` | Della | 16 | 0.326 | 0.292 | 8.77 | 46.6 | 25.7 | 6.51 | 34.2% | 0.048 |
+| **`learned_cfsc`** | Grace | 17 | **0.347** | **0.310** | 8.24 | 40.6 | 19.2 | 6.08 | 37.7% | 0.036 |
+| `fixed_true` | Della | 17 | 0.371 | 0.329 | 8.00 | 22.3 | 6.4 | 4.91 | 43.2% | 0.046 |
+| **`fixed_true_cfsc`** | Grace | 14 | **0.382** | **0.339** | 7.66 | 20.9 | 5.8 | 4.73 | 43.9% | 0.033 |
+
+The GT columns are those of the final map aligned to the ground truth; "poses only" is the unregularized
+reconstruction of the final poses (0.671 with the true poses); "particles within 10 deg" counts the particles whose
+direction and in-plane errors are both below 10 degrees. Figures and the per-cone numbers are in the run root
+`/vast/palmer/scratch/lederman/ry295/pose_prior_benchmark/cfsc_regularization` (`mild_w100_n100k_nz1/comparison`,
+`analysis`, made by `scripts/analyze_cfsc.py` and `scripts/summary_figure.py` there).
+
+### 7.2 What we observe
+
+- **The learned prior gains about half of its gap to the true prior.** The ground-truth FSC area rises from 0.319 to
+  0.347, which is 53% of the gap to the true prior's 0.371, and more than the FvML-mixture prior gains (0.326). The
+  poses improve with it: the median direction error falls from 48.5 to 40.6 degrees, the in-plane error from 27.5 to
+  19.2 degrees, and the share of particles within 10 degrees rises from 33.4% to 37.7% (the true prior: 43.2%). The
+  learned direction prior is closer to the truth as well (Jensen-Shannon divergence 0.161 to 0.143 bits).
+- **The gain is in the poses, not in the final filter.** The unregularized maps of the final poses gain 0.024 (0.286
+  to 0.310), 85% of the refined maps' 0.028; so most of the improvement comes from better alignment during the
+  refinement, and little from the cone prior acting on the final map.
+- **The true prior gains too, less.** With the true prior the area rises from 0.371 to 0.382 (poses only: 0.329 to
+  0.339) and the median direction error from 22.3 to 20.9 degrees. This pair crosses machines; the learned pair shows
+  that the cross-machine difference is about 0.0004.
+- **The gain lies in the cones away from the rarely seen direction.** Per cone, the final map's ground-truth area
+  rises by 23% on average (geometric mean) in the 91 cones farther than 25 degrees from z with the learned prior, and
+  by 7% with the true prior; the same runs on two machines differ there by 3% (standard deviation of the log ratio).
+  The nine cones within 25 degrees of z, where the half maps share almost no signal beyond shell 22, do not change on
+  average (0.99 and 1.05), with a spread of the size of their machine-to-machine noise. The cone along z loses 4% and
+  18% of its area.
+- **The cFAR falls** (0.050 to 0.036, and 0.046 to 0.033) because the best cones improve and the worst do not; it
+  does not indicate a worse map.
+
+### 7.3 Mechanism: the shell FSC and the image size
+
+The cone rule leaves RELION's resolution rule as it is, but that rule reads the FSC of the regularized half maps,
+which the cone prior changes. At iteration 3 the half-map FSC of shell 22 (24.7 A) is 0.503 in the control and 0.557
+with the cone rule. Split by cone, the equatorial cones (axis farther than 65 degrees from z) go from 0.631 to 0.665,
+the cones between 25 and 65 degrees stay at 0.315 and 0.317, and the cones near z go from 0.099 to 0.090. The shell FSC
+thus rises more than any group of cones: the harder regularization of the signal-free cones near z lowers their noise
+power, which weighs the shell FSC toward the cones that carry signal. The reported resolution follows (25.9 to 23.65 A
+at iteration 3), and so does the image size: `current_size` is 114 at iteration 8 with the cone rule and 82 in the
+control. The gain above therefore mixes two effects, the cone prior inside each reconstruction and the larger image
+size it leads to; a run with the cone prior and the control's `current_size` schedule would separate them.
+
+### 7.4 Cost
+
+The cone prior takes 0.2 s per M-step. The larger image size makes the iterations slower (770 to 1140 s against 450 to
+580 s at HEALPix order 3 on the RTX 8000), and the cFSC run took 4.4 h against 3.6 h for the control on the same node.
+
+### 7.5 Limitations
+
+One benchmark cell and one seed. The cell has a strong preferred orientation with noise level 1 and offsets; the cone
+rule should be tested on other cells of the sweeps (other cap widths, noise levels and particle counts, and an
+isotropic cell, where it should change little) and with a second seed before it is relied upon.
