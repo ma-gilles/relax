@@ -40,12 +40,14 @@ the reference's own noise (``window``: open gate, u = 1), both from relax.vdam.g
 phi = W r / (1 - W + W r) with r the shell mean of sqrt(u), so that the update's fixed point
 phi theta / (phi + (1 - phi) sqrt(u)) is W theta. A first call of the transaction gives the new moments; the second
 applies phi as its FSC floor with the scaled gate driven to zero (scale CROSS_SCALE). The trace's ``scale`` is then k,
-``floor`` and ``gate`` are phi, and ``wiener`` is W.
+``floor`` and ``gate`` are phi, and ``wiener`` is W. ``--cross-iterations A:B`` applies it in iterations A <= it < B only
+(``A:`` from A on) and RELION's gate elsewhere; its noise state still advances every iteration, and the trace's
+``cross_applied`` says which gate an M-step applied (``wiener`` is W in both cases).
 
 Run:
     python scripts/vdam_gate_benchmark/traced_initial_model.py TRACE_DIR [--radius-rule {moment_window,signal}] \
         [--incr-size N] [--switch-gate ITER:GATE] [--relion-floor] [--cross-gate {seen,window}] \
-        -- <relax initial_model arguments>
+        [--cross-iterations A:B] -- <relax initial_model arguments>
 Writes TRACE_DIR/gate_trace.jsonl (one line per M-step), TRACE_DIR/iterations.jsonl (one line per iteration) and
 TRACE_DIR/batches.npz.
 """
@@ -120,6 +122,7 @@ def install(
     switch: tuple[int, str] | None = None,
     relion_floor: bool = False,
     cross_gate: str | None = None,
+    cross_iterations: tuple[int, float] = (1, float("inf")),
 ) -> list:
     """Install the hooks (study radius options, gate switch, RELION floor, cross-power gate); returns the list the
     batches are appended to."""
@@ -266,8 +269,10 @@ def install(
                 raise RuntimeError("--cross-gate needs --vdam-gate relion (the transaction's own gate unscaled)")
             first = device(*args, **{**kwargs, "return_intermediates": True})
             floor, cross_fields = cross_gate_of(first, args, kwargs["box_size"])
-            floor_dtype = np.asarray(args[8]).dtype
-            args = (*args[:8], floor.astype(floor_dtype), *args[9:16], floor_dtype.type(CROSS_SCALE))
+            cross_fields["applied"] = cross_iterations[0] <= context["iteration"] < cross_iterations[1]
+            if cross_fields["applied"]:
+                floor_dtype = np.asarray(args[8]).dtype
+                args = (*args[:8], floor.astype(floor_dtype), *args[9:16], floor_dtype.type(CROSS_SCALE))
         result = device(*args, **{**kwargs, "return_intermediates": True})
         projector = result.pop("projector")
         result.pop("gradient")
@@ -304,7 +309,8 @@ def install(
             "weight_below_1": halves_stats["weight_below_1"].tolist(),
         }
         if cross_fields is not None:
-            record["scale"] = cross_fields["cross_scale"]
+            record["cross_applied"] = cross_fields["applied"]
+            record["scale"] = cross_fields["cross_scale"] if cross_fields["applied"] else record["scale"]
             record["wiener"] = cross_fields["wiener"]
         handle.write(json.dumps(record) + "\n")
         handle.flush()
@@ -338,13 +344,17 @@ def main() -> int:
     parser.add_argument("--switch-gate", metavar="ITER:GATE", help="apply GATE from iteration ITER on")
     parser.add_argument("--relion-floor", action="store_true", help="a scaled gate is at least RELION's gate")
     parser.add_argument("--cross-gate", choices=("seen", "window"), help="Wiener gate from the halves' cross power")
+    parser.add_argument("--cross-iterations", metavar="A:B", default="1:", help="apply the cross gate for A <= it < B")
     options = parser.parse_args(sys.argv[1:split])
+    first, _, last = options.cross_iterations.partition(":")
+    cross_iterations = (int(first), float(last) if last else float("inf"))
     switch = None
     if options.switch_gate:
         iteration, _, gate = options.switch_gate.partition(":")
         switch = (int(iteration), gate)
     batches = install(
-        options.trace_dir, options.radius_rule, options.incr_size, switch, options.relion_floor, options.cross_gate
+        options.trace_dir, options.radius_rule, options.incr_size, switch, options.relion_floor, options.cross_gate,
+        cross_iterations,
     )
     trace_dir = options.trace_dir
     from relax.commands.initial_model import main as initial_model_main
