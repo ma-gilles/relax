@@ -10,13 +10,16 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import replace
-from typing import Literal, Optional
+from typing import TYPE_CHECKING, Literal, Optional
 
 import jax.numpy as jnp
 import numpy as np
 
 from relax.relion.macros import relion_round
 from relax.vdam.state import InitialModelState, VdamAccumulator, half_slot_count, half_slot_index
+
+if TYPE_CHECKING:
+    from relax.vdam.relion_mstep import MStepGate
 
 
 def relion_solvent_mask(
@@ -99,11 +102,11 @@ def vdam_m_step(
     mstep_compute_dtype: Literal["float32", "float64"],
     average_ctf2=None,
     stable_window_quantum: int,
-    disagreement_scale: float | None = None,
+    gate: MStepGate | None = None,
     single_class_m_step: Callable[..., InitialModelState],
 ) -> InitialModelState:
     """Full VDAM M-step over K classes (``stable_window_quantum``: ``EngineTuning.stable_window_quantum``;
-    ``disagreement_scale``: the gate, :func:`relax.vdam.relion_mstep.relion_vdam_m_step_device`).
+    ``gate``: the shrinkage gate, :class:`relax.vdam.relion_mstep.MStepGate`; None is RELION's).
 
     ``accumulators`` holds ``2K`` entries when ``pseudo_halfsets`` is active
     (halfset 0 of each class first, then halfset 1), else ``K``. ``single_class_m_step`` is each class's
@@ -128,7 +131,7 @@ def vdam_m_step(
             mstep_compute_dtype=mstep_compute_dtype,
             average_ctf2=average_ctf2,
             stable_window_quantum=stable_window_quantum,
-            disagreement_scale=disagreement_scale,
+            gate=gate,
         )
     return out
 
@@ -232,7 +235,7 @@ def _run_m_step_transaction(
     mstep_compute_dtype: Literal["float32", "float64"],
     average_ctf2,
     stable_window_quantum: int,
-    disagreement_scale: float | None,
+    gate: MStepGate | None,
 ) -> InitialModelState:
     """Apply one shared-layout transaction and publish the new state on the device.
 
@@ -248,7 +251,7 @@ def _run_m_step_transaction(
         device_volumes=True,
         average_ctf2=average_ctf2,
         stable_window_quantum=stable_window_quantum,
-        disagreement_scale=disagreement_scale,
+        gate=gate,
     )
     if mstep_compute_dtype == "float32":
         host_options["compute_dtype"] = np.float32
@@ -331,7 +334,7 @@ def vdam_m_step_single_class(
     mstep_compute_dtype: Literal["float32", "float64"],
     average_ctf2=None,
     stable_window_quantum: int,
-    disagreement_scale: float | None = None,
+    gate: MStepGate | None = None,
 ) -> InitialModelState:
     """VDAM M-step for one class: the transaction of
     :func:`relax.vdam.relion_mstep.relion_vdam_m_step_host`.
@@ -340,7 +343,7 @@ def vdam_m_step_single_class(
     in ``applyMomenta``; ``reconstructGrad`` then uses ``mom1_noise_power``.
     ``average_ctf2``: the E-step's CTF-premultiplied average CTF^2 (SSNR tau2 correction), or None.
     ``stable_window_quantum``: ``EngineTuning.stable_window_quantum``.
-    ``disagreement_scale``: the gate (:func:`relax.vdam.relion_mstep.relion_vdam_m_step_device`); None is RELION's.
+    ``gate``: the shrinkage gate (:class:`relax.vdam.relion_mstep.MStepGate`); None is RELION's.
     The options refuse an unknown precision; the command refuses the native replay variables without the oracle.
     """
     if mstep_compute_dtype == "float32":
@@ -366,5 +369,5 @@ def vdam_m_step_single_class(
         mstep_compute_dtype=mstep_compute_dtype,
         average_ctf2=average_ctf2,
         stable_window_quantum=stable_window_quantum,
-        disagreement_scale=disagreement_scale,
+        gate=gate,
     )

@@ -446,10 +446,10 @@ real data.
 ## 9. The gate in `relax initial_model` (`--vdam-gate full_data_power`)
 
 The homogeneous InitialModel (K=1) takes the changes of section 7 as one opt-in option, `--vdam-gate`. `relion`, the
-default, is RELION's gate: the M-step is the transaction it was before the option existed (`disagreement_scale=None`).
+default, is RELION's gate: the M-step is the transaction it was before the option existed (`gate=None`).
 `full_data_power` is the gate of section 7. Code: [gate.py](../../relax/vdam/gate.py) (`advance_noise_weight` and
 `full_data_disagreement_scale`, as in the PPCA code, and the two gate records), the M-step in
-[relion_mstep.py](../../relax/vdam/relion_mstep.py) (`disagreement_scale`).
+[relion_mstep.py](../../relax/vdam/relion_mstep.py) (`MStepGate`, the scale and statistic each gate record returns).
 
 **What the run does.** Every gradient iteration `VdamUpdate.maximize` asks its gate record for the scale before the
 M-step. `FullDataPowerGate` advances the noise weight of section 7.4, kept in `InitialModelState.gate_noise_weight`, by
@@ -487,3 +487,76 @@ sum of squared coefficients and the constant-batch limit `(b / N) / e`; the gate
 with and without a scale, against a NumPy evaluation of the formulas of section 4.1 and 7 on the transaction's own moments
 and projector; the scale through the iteration loop and the EM tail; the option and its refusals. The benchmark runs
 that compare the two gates on the ab initio benchmark datasets are in `scripts/vdam_gate_benchmark/`.
+
+## 10. The cross-power gate (`--vdam-gate cross_window`)
+
+The power gates of section 7 keep RELION's signal, the reference's own power. That power holds the noise the gate let
+in and the shrinkage it applied before, so $\rho$ is quadratic in the gate's past output: zero is a stable state (a
+shell that enters the sphere at low power stays shut), and an open shell stays open on its own noise. The cross-power
+gate measures both the signal and the noise from the halves and targets the Wiener weight of the reference.
+
+**10.1 Derivation.**
+
+1. *Target.* For $y=S+e$ with signal power $P$ and noise variance $V$, $\mathbb E|gy-S|^2=(1-g)^2P+g^2V$ is minimal at
+   $g=P/(P+V)$ (section 3). The gate should give the reference this weight.
+2. *Signal.* Each half's reconstruction, averaged over recent batches, is $A_h=v+m_h$ (since $d_h=\hat\theta_h-v$).
+   With $A_h=S+e_h$ and independent $e_0,e_1$ (disjoint particles), $\mathbb E\,\mathrm{Re}\,A_0A_1^*=P$, so per shell
+   $\hat P=\max(0,\langle\mathrm{Re}\,(v+m_0)(v+m_1)^*\rangle)$, the cross spectrum of 6.3. It does not depend on what the
+   gate admitted into $v$ before.
+3. *Noise of the full estimate.* The measured disagreement $D=\langle|m_0-m_1|^2\rangle$ is $s^2\sum_ic_i^2$ (section
+   7.4, per particle). A scale $k$ turns it into the disagreement of two half maps of a target reconstruction,
+   $2V_{\mathrm{half}}$; their mean has $V=V_{\mathrm{half}}/2$, so $\hat V=kD/4$.
+4. *Wiener weight.* $W=\hat P/(\hat P+\hat V)$, with no fudge ($T=1$): the fudge multiplies the SNR, and the Wiener weight
+   has none.
+5. *Second moment.* The update divides the data term by $\sqrt u$. With $\bar m\to\hat\theta-v$ its fixed point is
+   $v^\star=\varphi\hat\theta/(\varphi+(1-\varphi)\sqrt u)$. Setting $v^\star=W\hat\theta$ gives the applied gate
+   $\varphi=Wr/(1-W+Wr)$, with $r$ the shell mean of $\sqrt u$. On real runs $r$ is 1 early and up to 1.7 in middle
+   shells by iteration 100, where the gate is near 1, so this step moves $\varphi$ by 0.01-0.07.
+
+**10.2 The noise reference.** `cross_window` takes the scale of `window_power` (`window_disagreement_scale`): the noise
+the momentum-averaged reference itself holds, for an open gate and $u=1$. Each particle's weight in the mean moment and
+in the reference follows $\mu_i\leftarrow0.9\mu_i+0.1(\delta_i-w_i)$, $w_i\leftarrow w_i+\eta\mu_i$, with
+$\delta_i=1/(2n_h)$ for a particle in half $h$ of the batch (`advance_window_coefficients`), and $k=4\sum w_i^2/\sum c_i^2$.
+It is 5-30 times the scale of a full map of the particles seen so far over iterations 2-80, and about 3 times by
+iterations 150-200 (EMPIAR-10097 seed 29): the running average forgets old batches. In a shell model with known poses
+(the noise1 batch sequence, steps and fudge; untracked script `analysis/gate_toy_model.py` of the benchmark root below),
+this combination never over-opens and its error is at or below RELION's gate at every checkpoint, while the cross power
+with the particles-seen noise admits noise up to 5 times the signal early.
+
+**10.3 Code.** `CrossWindowGate` in [gate.py](../../relax/vdam/gate.py) advances `WindowPowerGate`'s state and returns
+its scale as `MStepGate(scale, cross_power=True)`. The device transaction in
+[relion_mstep.py](../../relax/vdam/relion_mstep.py) (`relion_vdam_m_step_device`, static `cross_power`) then computes
+$\hat P$, $\hat V$, $W$ and $\varphi$ from the moments, the second moment and the reference projector of the same
+transaction, and applies $\varphi$ in place of RELION's gate: the clamp to `[fsc_reconstruct, 1]`, the update and the
+radius rule (with RELION's fudge in `data_vs_prior`) are unchanged. Refused where `window_power` is (section 9).
+
+**10.4 Evidence.** The traced benchmark wrapper (`scripts/vdam_gate_benchmark/traced_initial_model.py --cross-gate
+window`, commit d03b0776) applies the same formula, as the M-step's floor with the scaled gate driven to zero. Five
+rows of the ab initio benchmark (section 9), seeds 29/41/53 (HCN1: 29/41/42), unmasked FSC-AUC to each row's
+reference after a registration audit of the scorer's low-fit runs (Slurm 18203550 and 18288424), against RELION's gate
+re-run in the same round (run root `/scratch/gpfs/CRYOEM/gilleslab/ry2228/data/vdam_gate_benchmark/cross`, plain text):
+
+| row | difference per seed | better |
+| --- | --- | --- |
+| noise1_50k | +0.001, +0.001, +0.219 (RELION's gate fails on seed 53 in every run) | 3 / 3 |
+| ribosembly_k1 | -0.006, +0.230, -0.238 (finds the structure on seed 41, loses it on 53) | 1 / 3 |
+| empiar10097 | +0.014, -0.002, -0.041 | 1 / 3 |
+| empiar10076 | -0.011, -0.010, -0.013 | 0 / 3 |
+| empiar10081_hcn1 | +0.000, -0.000, -0.001 | 1 / 3 |
+
+Overall 6 of 15 better, median -0.001: level with RELION's gate. It is as shrunk as RELION's gate over iterations 1-60
+(30-44% of the shells inside the radius below 0.5, against 23-38%) and its posteriors are no sharper, but its radius
+grows more slowly mid-run (iteration 100: 30 against 39 shells on 10097, 33 against 46 on HCN1, 50 against 57 on 10076):
+$T=1$ has no fudge ramp, which is what releases RELION's band at iterations 70-80. The same gate with the particles-seen
+noise (wrapper only, not an option) wins 18 of 30 pairs on these and the held-out seeds 7/17/61, gaining on 10076, noise1
+and HCN1 and losing on 10097 and Ribosembly; its gains come from opening more than a consistent Wiener weight would.
+
+**10.5 What it does not correct.** The shared-model bias of the halves (section 5.5): both are aligned to the same
+reference, so a structure both fit, the reference included, counts in $\hat P$; it is largest early, when the gate
+decides the outcome. Unequal information per particle, voxels that enter the sphere late, and the floor `max(1, F)` as
+in section 9. The window noise is that of an open gate; a shell the gate partly closes holds less.
+
+**Checks.** [test_vdam_gate.py](../../tests/unit/initial_model/test_vdam_gate.py): the applied gate against a NumPy
+evaluation of 10.1 on the transaction's own moments, second moment and projector (float64), float32 against float64,
+the refusal without a scale, `CrossWindowGate`'s state and scale against `WindowPowerGate`'s, and the gate through the
+iteration loop.

@@ -82,7 +82,7 @@ command, which fixes the sampling line (`pipeline_jobs.cpp:3544-3549`).
 | `--padding-factor` | 1 | 1 | 3544 | 2 | no |
 | `--grad-write-iter` | 10 | not passed | - | 10 | no |
 | `--random-seed` | 0 (RELION's "skip randomisation") | not passed: -1, the time | - | -1 (`ml_optimiser.cpp:993, 2588, 3364`) | yes |
-| `--vdam-gate` | `relion` | (no option) | - | (no option) | no; `full_data_power` is the opt-in, K=1 only: shell means of power, the half disagreement rescaled to two full-data half maps ([vdam_gate_derivation.md](../math/vdam_gate_derivation.md), [relion_consistency_options.md](../math/relion_consistency_options.md)) |
+| `--vdam-gate` | `relion` | (no option) | - | (no option) | no; opt-ins, K=1 only: `full_data_power` (shell means of power, the half disagreement rescaled to two full-data half maps) and `cross_window` (the Wiener weight from the halves' cross power with the reference's own noise) ([vdam_gate_derivation.md](../math/vdam_gate_derivation.md), [relion_consistency_options.md](../math/relion_consistency_options.md)) |
 
 ## Oracle builds and particle order
 

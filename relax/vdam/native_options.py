@@ -187,9 +187,10 @@ class InitialModelDefaults:
     fixed_healpix_order: int | None = None
     stochastic_all_iterations: bool = False
     uniform_class_direction_prior: bool = False
-    # The shrinkage gate of VDAM's update (relax.vdam.gate); RELION's unless the full-data power gate is asked for.
+    # The shrinkage gate of VDAM's update (relax.vdam.gate); RELION's unless another gate is asked for.
     vdam_gate: Literal[
-        "relion", "power", "full_data_power", "full_data_power_overlap", "seen_power_overlap", "window_power"
+        "relion", "power", "full_data_power", "full_data_power_overlap", "seen_power_overlap", "window_power",
+        "cross_window",
     ] = "relion"
 
 

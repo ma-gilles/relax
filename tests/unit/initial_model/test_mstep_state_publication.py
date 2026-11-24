@@ -66,7 +66,7 @@ def _call(state, k, transaction, monkeypatch):
         mstep_compute_dtype="float64",
         average_ctf2=None,
         stable_window_quantum=DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM,
-        disagreement_scale=None,
+        gate=None,
     )
 
 

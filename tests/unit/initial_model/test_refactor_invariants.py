@@ -372,8 +372,9 @@ LOC_BUDGETS = {
     # The shrinkage gate's noise reference (RELION's and the full-data power gate, docs/math/vdam_gate_derivation.md):
     # its own module (2026-11-13); exact size, the module's docstring and imports included. The power gate without a
     # rescale and the per-particle overlap gate (study variants of the same day): 87 -> 173. The seen-particles and the
-    # reference-window gates (study variants, 2026-11-16): 173 -> 281.
-    "vdam_gate": (281, ("gate.py",)),
+    # reference-window gates (study variants, 2026-11-16): 173 -> 281. The cross-power gate with the reference's noise
+    # (CrossWindowGate, opt-in, 2026-11-24) and the M-step gate record the power gates return: 281 -> 299.
+    "vdam_gate": (299, ("gate.py",)),
     # Scalar-curvature momentum and masked observation-noise adaptation are an
     # opt-in package with its own exact reviewed budget and complete inventory.
     # The package's three files (309 lines) are one module, vdam/sgd.py, since 2026-10-08 (e3).

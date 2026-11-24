@@ -181,7 +181,7 @@ class VdamUpdate:
     single_class_m_step: Callable[..., InitialModelState] = vdam_m_step_single_class
 
     def maximize(self, current: InitialModelState, accumulators, sums: EstepSums, meta: dict) -> InitialModelState:
-        current, disagreement_scale = self.gate.advance(current)
+        current, mstep_gate = self.gate.advance(current)
         updated = vdam_m_step(
             current,
             accumulators=accumulators,
@@ -191,12 +191,12 @@ class VdamUpdate:
             mstep_compute_dtype=self.mstep_compute_dtype,
             average_ctf2=sums.average_ctf2,
             stable_window_quantum=self.stable_window_quantum,
-            disagreement_scale=disagreement_scale,
+            gate=mstep_gate,
             single_class_m_step=self.single_class_m_step,
         )
         meta["vdam_gate"] = {
             "gate": self.gate.name,
-            "disagreement_scale": disagreement_scale,
+            "disagreement_scale": None if mstep_gate is None else mstep_gate.scale,
             "noise_weight": current.gate_noise_weight,
         }
         return updated

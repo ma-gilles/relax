@@ -4,8 +4,8 @@ The gate of a gradient iteration is rho / (1 + rho), rho = 2 * fudge * signal / 
 (docs/math/vdam_gate_derivation.md, section 4). It stands in for the FSC of two half maps of the full data set.
 :class:`RelionGate` is RELION's: shell means of amplitudes, with the disagreement of the two half-batch first moments
 taken as measured. The other gates take shell means of power (section 7.2 of the note) and differ in the noise the
-disagreement is rescaled to, a factor the M-step multiplies onto it
-(:func:`relax.vdam.relion_mstep.relion_vdam_m_step_device`, ``disagreement_scale``):
+disagreement is rescaled to, a factor the M-step multiplies onto it (:class:`relax.vdam.relion_mstep.MStepGate`).
+:class:`CrossWindowGate` is not a power ratio but the Wiener weight from the halves' cross power (section 10).
 
 - :class:`PowerGate`: none, the disagreement as measured (the half-batch noise after the running average);
 - :class:`FullDataPowerGate`: two full-data half maps, with the running average's noise reduction of independent batches
@@ -21,7 +21,7 @@ from dataclasses import dataclass, replace
 
 import numpy as np
 
-from relax.vdam.relion_mstep import FIRST_MOMENT_DECAY
+from relax.vdam.relion_mstep import FIRST_MOMENT_DECAY, MStepGate
 from relax.vdam.state import InitialModelState
 
 
@@ -99,9 +99,9 @@ class PowerGate:
 
     name = "power"
 
-    def advance(self, state: InitialModelState) -> tuple[InitialModelState, float]:
-        """``(state, 1.0)``: nothing to carry."""
-        return state, 1.0
+    def advance(self, state: InitialModelState) -> tuple[InitialModelState, MStepGate]:
+        """``state`` and the scale 1: nothing to carry."""
+        return state, MStepGate(1.0, cross_power=False)
 
 
 @dataclass(frozen=True)
@@ -116,16 +116,17 @@ class FullDataPowerGate:
     n_particles: int
     name = "full_data_power"
 
-    def advance(self, state: InitialModelState) -> tuple[InitialModelState, float]:
+    def advance(self, state: InitialModelState) -> tuple[InitialModelState, MStepGate]:
         """The state after this iteration's mini-batch joined the moments, and the scale for its disagreement.
 
         An iteration without pseudo-halfsets (RELION's EM tail) has no disagreement; the scale is then 1 and the
         weight unchanged.
         """
         if not state.pseudo_halfsets:
-            return state, 1.0
+            return state, MStepGate(1.0, cross_power=False)
         weight = advance_noise_weight(state.gate_noise_weight, int(state.subset_particle_ids.size))
-        return replace(state, gate_noise_weight=weight), full_data_disagreement_scale(weight, self.n_particles)
+        scale = full_data_disagreement_scale(weight, self.n_particles)
+        return replace(state, gate_noise_weight=weight), MStepGate(scale, cross_power=False)
 
 
 @dataclass(frozen=True)
@@ -139,14 +140,14 @@ class FullDataOverlapPowerGate:
     n_particles: int
     name = "full_data_power_overlap"
 
-    def advance(self, state: InitialModelState) -> tuple[InitialModelState, float]:
+    def advance(self, state: InitialModelState) -> tuple[InitialModelState, MStepGate]:
         """The state after this iteration's mini-batch joined the moments, and the scale for its disagreement.
 
         An iteration without pseudo-halfsets (RELION's EM tail) has no disagreement; the scale is then 1 and the
         coefficients unchanged.
         """
         if not state.pseudo_halfsets:
-            return state, 1.0
+            return state, MStepGate(1.0, cross_power=False)
         coefficients = advance_noise_coefficients(
             state.gate_noise_coefficients,
             np.asarray(state.subset_particle_ids),
@@ -154,7 +155,7 @@ class FullDataOverlapPowerGate:
             self.n_particles,
         )
         scale = overlap_disagreement_scale(coefficients, self.n_particles)
-        return replace(state, gate_noise_coefficients=coefficients), scale
+        return replace(state, gate_noise_coefficients=coefficients), MStepGate(scale, cross_power=False)
 
 
 def seen_disagreement_scale(coefficients: np.ndarray) -> float:
@@ -214,17 +215,18 @@ class SeenOverlapPowerGate:
     n_particles: int
     name = "seen_power_overlap"
 
-    def advance(self, state: InitialModelState) -> tuple[InitialModelState, float]:
+    def advance(self, state: InitialModelState) -> tuple[InitialModelState, MStepGate]:
         """The state after this iteration's mini-batch joined the moments, and the scale for its disagreement."""
         if not state.pseudo_halfsets:
-            return state, 1.0
+            return state, MStepGate(1.0, cross_power=False)
         coefficients = advance_noise_coefficients(
             state.gate_noise_coefficients,
             np.asarray(state.subset_particle_ids),
             np.asarray(state.subset_halfset_ids),
             self.n_particles,
         )
-        return replace(state, gate_noise_coefficients=coefficients), seen_disagreement_scale(coefficients)
+        scale = seen_disagreement_scale(coefficients)
+        return replace(state, gate_noise_coefficients=coefficients), MStepGate(scale, cross_power=False)
 
 
 @dataclass(frozen=True)
@@ -239,10 +241,10 @@ class WindowPowerGate:
     n_particles: int
     name = "window_power"
 
-    def advance(self, state: InitialModelState) -> tuple[InitialModelState, float]:
+    def advance(self, state: InitialModelState) -> tuple[InitialModelState, MStepGate]:
         """The state after this iteration's mini-batch and step, and the scale for its disagreement."""
         if not state.pseudo_halfsets:
-            return state, 1.0
+            return state, MStepGate(1.0, cross_power=False)
         ids, halves = np.asarray(state.subset_particle_ids), np.asarray(state.subset_halfset_ids)
         coefficients = advance_noise_coefficients(state.gate_noise_coefficients, ids, halves, self.n_particles)
         moment, reference = advance_window_coefficients(
@@ -256,11 +258,25 @@ class WindowPowerGate:
         state = replace(
             state, gate_noise_coefficients=coefficients, gate_window_moment=moment, gate_window_reference=reference
         )
-        return state, window_disagreement_scale(reference, coefficients)
+        return state, MStepGate(window_disagreement_scale(reference, coefficients), cross_power=False)
+
+
+@dataclass(frozen=True)
+class CrossWindowGate(WindowPowerGate):
+    """The Wiener weight from the halves' cross power, with :class:`WindowPowerGate`'s noise of the reference itself
+    (section 10 of the note): signal and noise are both measured from the halves, not from the gated reference."""
+
+    name = "cross_window"
+
+    def advance(self, state: InitialModelState) -> tuple[InitialModelState, MStepGate]:
+        """:class:`WindowPowerGate`'s state and scale, for the cross-power gate."""
+        state, gate = WindowPowerGate.advance(self, state)
+        return state, replace(gate, cross_power=True)
 
 
 VdamGate = (
     RelionGate | PowerGate | FullDataPowerGate | FullDataOverlapPowerGate | SeenOverlapPowerGate | WindowPowerGate
+    | CrossWindowGate
 )
 
 
@@ -278,4 +294,6 @@ def vdam_gate(name: str, n_particles: int) -> VdamGate:
         return SeenOverlapPowerGate(n_particles=n_particles)
     if name == "window_power":
         return WindowPowerGate(n_particles=n_particles)
+    if name == "cross_window":
+        return CrossWindowGate(n_particles=n_particles)
     raise ValueError(f"unknown VDAM gate: {name!r}")

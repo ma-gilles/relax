@@ -1,4 +1,4 @@
-"""The VDAM shrinkage gate (docs/math/vdam_gate_derivation.md): RELION's, and the full-data power gate."""
+"""The VDAM shrinkage gate (docs/math/vdam_gate_derivation.md): RELION's, the power gates and the cross-power gate."""
 
 from dataclasses import replace
 
@@ -13,6 +13,7 @@ from relax.steps.sgd_schedule import DEFAULT_GRAD_MU
 from relax.vdam import relion_mstep
 from relax.vdam.bootstrap_iref import initialise_denovo_state
 from relax.vdam.gate import (
+    CrossWindowGate,
     FullDataOverlapPowerGate,
     FullDataPowerGate,
     PowerGate,
@@ -31,7 +32,7 @@ from relax.vdam.gate import (
 from relax.vdam.iteration_loop import VdamUpdate, run_vdam_iterations
 from relax.vdam.native_options import NativeInitialModelOptions, VdamEnvironment
 from relax.vdam.ports import NoProbe, VdamObserver
-from relax.vdam.relion_mstep import FIRST_MOMENT_DECAY, relion_vdam_m_step_host
+from relax.vdam.relion_mstep import FIRST_MOMENT_DECAY, MStepGate, pad_moment, relion_vdam_m_step_host
 from relax.vdam.state import VdamAccumulator
 
 pytestmark = pytest.mark.unit
@@ -79,13 +80,13 @@ def test_the_full_data_gate_carries_the_weight_of_each_gradient_batch_in_the_sta
         expected = advance_noise_weight(expected, count)
         state, scale = gate.advance(replace(state, subset_particle_ids=np.arange(count)))
         assert state.gate_noise_weight == expected
-        assert scale == full_data_disagreement_scale(expected, 1000)
+        assert scale == MStepGate(full_data_disagreement_scale(expected, 1000), cross_power=False)
 
 
 def test_an_iteration_without_pseudo_halfsets_leaves_the_weight_and_scales_by_one():
     gate, state = FullDataPowerGate(n_particles=1000), _state(pseudo_halfsets=False)
     tail, scale = gate.advance(replace(state, subset_particle_ids=np.arange(1000), gate_noise_weight=0.02))
-    assert tail.gate_noise_weight == 0.02 and scale == 1.0
+    assert tail.gate_noise_weight == 0.02 and scale == MStepGate(1.0, cross_power=False)
 
 
 def _halves(particle_ids):
@@ -157,22 +158,22 @@ def test_the_overlap_gate_carries_the_coefficients_and_the_power_gate_scales_by_
         expected = advance_noise_coefficients(expected, ids, _halves(ids), 1000)
         state, scale = gate.advance(replace(state, subset_particle_ids=ids, subset_halfset_ids=_halves(ids)))
         assert_matches(state.gate_noise_coefficients, expected, strict=True)
-        assert scale == overlap_disagreement_scale(expected, 1000)
+        assert scale == MStepGate(overlap_disagreement_scale(expected, 1000), cross_power=False)
     tail, scale = gate.advance(replace(state, pseudo_halfsets=False))
-    assert scale == 1.0 and tail.gate_noise_coefficients is state.gate_noise_coefficients
+    assert scale == MStepGate(1.0, cross_power=False) and tail.gate_noise_coefficients is state.gate_noise_coefficients
     unchanged, scale = PowerGate().advance(state)
-    assert unchanged is state and scale == 1.0
+    assert unchanged is state and scale == MStepGate(1.0, cross_power=False)
 
 
 def test_the_seen_scale_is_one_for_the_first_batch_and_the_overlap_scale_once_every_particle_is_seen():
     gate, state = SeenOverlapPowerGate(n_particles=1000), _state()
     ids = np.arange(0, 200)
     state, scale = gate.advance(replace(state, subset_particle_ids=ids, subset_halfset_ids=_halves(ids)))
-    assert scale == pytest.approx(1.0, rel=1e-12)
+    assert scale.scale == pytest.approx(1.0, rel=1e-12)
     for ids in (np.arange(100, 400), np.arange(0, 1000)):
         state, scale = gate.advance(replace(state, subset_particle_ids=ids, subset_halfset_ids=_halves(ids)))
-    assert scale == overlap_disagreement_scale(state.gate_noise_coefficients, 1000)
-    assert seen_disagreement_scale(state.gate_noise_coefficients) == scale
+    assert scale == MStepGate(overlap_disagreement_scale(state.gate_noise_coefficients, 1000), cross_power=False)
+    assert seen_disagreement_scale(state.gate_noise_coefficients) == scale.scale
 
 
 @pytest.mark.parametrize("step", [0.3, 0.5, 0.9])
@@ -212,9 +213,21 @@ def test_the_window_scale_is_the_step_squared_at_the_first_iteration_and_one_whe
     state, scale = gate.advance(
         replace(state, subset_particle_ids=ids, subset_halfset_ids=_halves(ids), grad_current_stepsize=0.5)
     )
-    assert scale == pytest.approx(0.25, rel=1e-12) and state.gate_window_reference is not None
+    assert scale.scale == pytest.approx(0.25, rel=1e-12) and state.gate_window_reference is not None
     tail, scale = gate.advance(replace(state, pseudo_halfsets=False))
-    assert scale == 1.0 and tail.gate_window_reference is state.gate_window_reference
+    assert scale == MStepGate(1.0, cross_power=False) and tail.gate_window_reference is state.gate_window_reference
+
+
+def test_the_cross_window_gate_carries_the_window_state_and_asks_for_the_cross_power():
+    ids = np.arange(1000)
+    state = replace(_state(), subset_particle_ids=ids, subset_halfset_ids=_halves(ids), grad_current_stepsize=0.5)
+    window_state, window = WindowPowerGate(n_particles=1000).advance(state)
+    cross_state, cross = CrossWindowGate(n_particles=1000).advance(state)
+    assert cross == MStepGate(window.scale, cross_power=True)
+    assert_matches(cross_state.gate_window_reference, window_state.gate_window_reference, rtol=1e-12)
+    assert_matches(cross_state.gate_noise_coefficients, window_state.gate_noise_coefficients, rtol=1e-12)
+    tail, scale = CrossWindowGate(n_particles=1000).advance(replace(cross_state, pseudo_halfsets=False))
+    assert scale == MStepGate(1.0, cross_power=True) and tail.gate_window_reference is cross_state.gate_window_reference
 
 
 def test_relion_gate_takes_no_scale_and_leaves_the_state():
@@ -225,6 +238,7 @@ def test_relion_gate_takes_no_scale_and_leaves_the_state():
     assert vdam_gate("full_data_power", 1000) == FullDataPowerGate(n_particles=1000)
     assert vdam_gate("full_data_power_overlap", 1000) == FullDataOverlapPowerGate(n_particles=1000)
     assert vdam_gate("power", 1000) == PowerGate()
+    assert vdam_gate("cross_window", 1000) == CrossWindowGate(n_particles=1000)
     with pytest.raises(ValueError, match="unknown VDAM gate"):
         vdam_gate("fsc", 1000)
 
@@ -304,7 +318,7 @@ def test_the_m_step_gate_is_the_ratio_of_shell_means_of_the_note(scale, monkeypa
         return seen
 
     monkeypatch.setattr(relion_mstep, "relion_vdam_m_step_device", with_intermediates)
-    relion_vdam_m_step_host(**case, disagreement_scale=scale)
+    relion_vdam_m_step_host(**case, gate=None if scale is None else MStepGate(scale, cross_power=False))
 
     size, radius = case["box_size"], case["r_max"]
     expected, disagreement, counts = _expected_gate(
@@ -321,8 +335,8 @@ def test_the_m_step_gate_is_the_ratio_of_shell_means_of_the_note(scale, monkeypa
 def test_the_scale_multiplies_the_disagreement_power_and_only_it():
     """Doubling the scale doubles ``mom1_noise_power`` and leaves the moments and the second moment as they were."""
     case = _m_step_case()
-    once = relion_vdam_m_step_host(**case, disagreement_scale=0.5)
-    twice = relion_vdam_m_step_host(**case, disagreement_scale=1.0)
+    once = relion_vdam_m_step_host(**case, gate=MStepGate(0.5, cross_power=False))
+    twice = relion_vdam_m_step_host(**case, gate=MStepGate(1.0, cross_power=False))
     inside = once["mom1_noise_power"] > 0
     assert_matches(twice["mom1_noise_power"][inside], 2 * once["mom1_noise_power"][inside], rtol=1e-12)
     assert_matches(twice["mom1_h0"], once["mom1_h0"], strict=True)
@@ -331,10 +345,70 @@ def test_the_scale_multiplies_the_disagreement_power_and_only_it():
 
 def test_the_float32_transaction_takes_the_scale_in_float32():
     case = _m_step_case()
-    reference = relion_vdam_m_step_host(**case, disagreement_scale=0.25)
-    single = relion_vdam_m_step_host(**case, disagreement_scale=0.25, compute_dtype=np.float32)
+    reference = relion_vdam_m_step_host(**case, gate=MStepGate(0.25, cross_power=False))
+    single = relion_vdam_m_step_host(**case, gate=MStepGate(0.25, cross_power=False), compute_dtype=np.float32)
     assert single["mom1_noise_power"].dtype == np.float32
     assert_matches(single["mom1_noise_power"], reference["mom1_noise_power"], rtol=1e-4)
+
+
+def _expected_cross_gate(case, projector, first_h0, first_h1, second, scale):
+    """The cross-power gate of the note (section 10): W = P / (P + V) applied as W r / (1 - W + W r), floored, <= 1."""
+    size, radius = case["box_size"], case["r_max"]
+    capacity = projector.shape[0]
+    half0 = projector + np.asarray(pad_moment(first_h0, capacity))
+    half1 = projector + np.asarray(pad_moment(first_h1, capacity))
+    cross, counts = _shell_means((half0 * np.conj(half1)).real, size, radius)
+    disagreement, _ = _shell_means(np.abs(first_h0 - first_h1) ** 2, size, radius)
+    noise = scale * disagreement / 4
+    snr = np.where(noise > 0, np.maximum(cross, 0) / np.where(noise > 0, noise, 1), 0)
+    wiener = snr / (1 + snr)
+    root_u, _ = _shell_means(np.sqrt(second.real), size, radius)
+    gate = wiener * root_u / (1 - wiener + wiener * root_u)
+    gate = np.minimum(np.where(gate >= case["fsc_reconstruct"], gate, case["fsc_reconstruct"]), 1.0)
+    return np.where(counts > 0, gate, 0.0), np.where(counts > 0, wiener, 0.0)
+
+
+def _cross_case():
+    """The M-step case with a second moment near 3, so that the sqrt(u) conversion moves the gate."""
+    rng = np.random.default_rng(41)
+    case = _m_step_case()
+    return dict(case, mom2=rng.uniform(2.0, 4.0, case["mom2"].shape) + 0j)
+
+
+def test_the_cross_power_gate_is_the_wiener_weight_of_the_halves_converted_for_the_second_moment(monkeypatch):
+    """P from the shell mean of Re (v + m0)(v + m1)^*, V = scale <|m0 - m1|^2> / 4, T = 1 (the case's fudge is 4 and
+    does not enter), applied as W r / (1 - W + W r) with r the shell mean of sqrt(u). From the returned moments,
+    second moment and projector; float64, so rtol is 1e-9.
+    """
+    case = _cross_case()
+    seen = {}
+    device = relion_mstep.relion_vdam_m_step_device
+
+    def with_intermediates(*args, **options):
+        seen.update(device(*args, **{**options, "return_intermediates": True}))
+        return seen
+
+    monkeypatch.setattr(relion_mstep, "relion_vdam_m_step_device", with_intermediates)
+    relion_vdam_m_step_host(**case, gate=MStepGate(0.5, cross_power=True))
+    expected, wiener = _expected_cross_gate(
+        case, *(np.asarray(seen[name]) for name in ("projector", "mom1_h0", "mom1_h1", "mom2")), 0.5
+    )
+    assert_matches(np.asarray(seen["fsc_estimate"]), expected, rtol=1e-9)
+    free = (expected > case["fsc_reconstruct"]) & (expected < 1)
+    assert free[1 : case["r_max"] - 1].any()
+    assert np.max(np.abs(expected - wiener)[free]) > 0.05  # the conversion, not W itself, is what is applied
+
+
+def test_the_float32_cross_power_gate_follows_float64():
+    case, gate = _cross_case(), MStepGate(0.5, cross_power=True)
+    reference = relion_vdam_m_step_host(**case, gate=gate)
+    single = relion_vdam_m_step_host(**case, gate=gate, compute_dtype=np.float32)
+    assert_matches(np.asarray(single["iref"]), np.asarray(reference["iref"]))
+
+
+def test_the_device_refuses_the_cross_power_gate_without_a_scale():
+    with pytest.raises(ValueError, match="cross-power gate needs the scale"):
+        relion_mstep.relion_vdam_m_step_device(*([None] * 15), box_size=16, cross_power=True)
 
 
 # --- Through the iteration loop ---
@@ -449,6 +523,18 @@ def test_the_two_gates_give_different_references_and_relion_reports_no_scale():
     assert not np.allclose(np.asarray(relion.Iref), np.asarray(full_data.Iref), rtol=1e-3)
 
 
+def test_the_cross_window_gate_runs_through_the_loop_with_the_window_scale():
+    cross, metas = _run(CrossWindowGate(n_particles=200))
+    window, window_metas = _run(WindowPowerGate(n_particles=200))
+    relion, _ = _run(RelionGate())
+    assert [meta["vdam_gate"]["gate"] for meta in metas] == ["cross_window"] * 4
+    scales = [meta["vdam_gate"]["disagreement_scale"] for meta in metas]
+    assert_matches(scales, [meta["vdam_gate"]["disagreement_scale"] for meta in window_metas], rtol=1e-12)
+    assert np.all(np.isfinite(np.asarray(cross.Iref)))
+    for other in (window, relion):
+        assert not np.allclose(np.asarray(cross.Iref), np.asarray(other.Iref), rtol=1e-3)
+
+
 def test_the_em_tail_runs_without_a_disagreement_and_keeps_the_weight():
     """The last two iterations are RELION's EM tail (no pseudo-halfsets): scale 1 and the weight stays."""
     _, metas = _run(FullDataPowerGate(n_particles=200), nr_iter=6, grad_em_iters=2)
@@ -479,11 +565,12 @@ def test_the_command_defaults_to_relion_s_gate_and_takes_the_full_data_power_gat
     options = _options("--vdam-gate", "full_data_power")
     assert options.vdam_gate == "full_data_power"
     options.validate_run()
+    _options("--vdam-gate", "cross_window").validate_run()
     with pytest.raises(SystemExit):
         make_parser().parse_args(_ARGS + ["--vdam-gate", "fsc"])
 
 
-@pytest.mark.parametrize("gate", ["power", "full_data_power", "full_data_power_overlap"])
+@pytest.mark.parametrize("gate", ["power", "full_data_power", "full_data_power_overlap", "cross_window"])
 @pytest.mark.parametrize(
     "extra, changes",
     [

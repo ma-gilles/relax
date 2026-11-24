@@ -13,6 +13,7 @@ unproven. Larger tested geometries and the captured N128 input pass the FP64
 oracle; broader GPU geometries and full trajectories remain unqualified.
 """
 
+from dataclasses import dataclass
 from functools import partial
 
 import jax
@@ -42,6 +43,19 @@ def _compute_dtypes(compute_dtype):
 
 # RELION's first moment: first = FIRST_MOMENT_DECAY * first + (1 - FIRST_MOMENT_DECAY) * direction (getFristMoment).
 FIRST_MOMENT_DECAY = 0.9
+
+
+@dataclass(frozen=True)
+class MStepGate:
+    """A shrinkage gate other than RELION's, for one M-step (docs/math/vdam_gate_derivation.md, sections 7 and 10).
+
+    ``scale`` multiplies the shell mean of the halves' disagreement power |m0 - m1|^2. ``cross_power`` False: the power
+    gate rho / (1 + rho), rho = 2 fudge <|v|^2> / (scale <|m0 - m1|^2>). True: the Wiener weight P / (P + V) with
+    P = max(0, <Re (v + m0)(v + m1)^*>) and V = scale <|m0 - m1|^2> / 4, converted for the update's sqrt(u).
+    """
+
+    scale: float
+    cross_power: bool
 
 
 def _complex(real, imag):
@@ -74,7 +88,7 @@ def _first_moment(old, data, initialize, valid):
 @partial(
     jax.jit,
     static_argnames=(
-        "box_size", "padding_factor", "pseudo_halfsets", "return_intermediates", "compute_dtype"
+        "box_size", "padding_factor", "pseudo_halfsets", "return_intermediates", "compute_dtype", "cross_power"
     ),
 )
 def relion_vdam_m_step_device(
@@ -101,6 +115,7 @@ def relion_vdam_m_step_device(
     pseudo_halfsets: bool = True,
     return_intermediates: bool = False,
     compute_dtype=jnp.float64,
+    cross_power: bool = False,
 ):
     """Return device arrays matching the native transaction's final outputs.
 
@@ -112,13 +127,16 @@ def relion_vdam_m_step_device(
     ``disagreement_scale`` chooses the shrinkage gate. None: RELION's, a ratio of shell means of amplitudes. A scale:
     the gate of docs/math/vdam_gate_derivation.md (section 7), a ratio of shell means of power whose half-moment
     disagreement is multiplied by the scale (:mod:`relax.vdam.gate`); the FSC of two full-data half maps, for
-    independent noise. ``mom1_noise_power`` is the disagreement statistic (amplitudes or power, after the scale).
+    independent noise. ``cross_power`` (with a scale): the Wiener weight of :class:`MStepGate` instead (section 10).
+    ``mom1_noise_power`` is the disagreement statistic (amplitudes or power, after the scale).
     The private invalid flags preserve native SSNR error conditions; the host
     wrapper raises after the one result transfer. No host operations occur here.
     """
     real_dtype, complex_dtype = _compute_dtypes(compute_dtype)
     if not jax.config.x64_enabled:
         raise ValueError("RELION VDAM M-step requires JAX float64 support")
+    if cross_power and disagreement_scale is None:
+        raise ValueError("the cross-power gate needs the scale of its noise reference")
     if box_size <= 0 or box_size % 2 or padding_factor not in (1, 2):
         raise ValueError("device M-step supports positive even boxes and padding 1/2")
     fft_size = padding_factor * box_size
@@ -243,16 +261,27 @@ def relion_vdam_m_step_device(
             padding_factor=padding_factor,
             compute_dtype=real_dtype,
         )
-    if disagreement_scale is None:
-        previous_power = shell_sum(jnp.sqrt(_norm(projector))) / safe_counts
+    if cross_power:
+        # Signal from the halves' cross power, noise V = scale <|m0 - m1|^2> / 4 of their mean: rho = P / V, T = 1.
+        # The update divides the data term by sqrt(u), so W r / (1 - W + W r) (r: shell mean of sqrt(u)) has the
+        # Wiener weight W as its fixed point.
+        half0, half1 = projector + m10, projector + m11
+        cross = jnp.maximum(shell_sum(half0.real * half1.real + half0.imag * half1.imag) / safe_counts, 0.0)
+        snr = jnp.where(noise_power > 0.0, 4.0 * cross / noise_power, 0.0)
+        wiener = snr / (1.0 + snr)
+        root_u = shell_sum(jnp.sqrt(m2.real)) / safe_counts
+        f = wiener * root_u / (1.0 - wiener + wiener * root_u)
     else:
-        previous_power = shell_sum(_norm(projector)) / safe_counts
-    snr = jnp.where(noise_power > 0.0, 2.0 * fudge * previous_power / noise_power, 0.0)
+        if disagreement_scale is None:
+            previous_power = shell_sum(jnp.sqrt(_norm(projector))) / safe_counts
+        else:
+            previous_power = shell_sum(_norm(projector)) / safe_counts
+        snr = jnp.where(noise_power > 0.0, 2.0 * fudge * previous_power / noise_power, 0.0)
+        f = snr / (1.0 + snr)
     # backprojector.cpp:2339 clamps with XMIPP_MIN(XMIPP_MAX(f, fsc), 1), and
     # macros.h:169/181 define both as ternaries: a NaN f (a NaN tau2_fudge in
     # short schedules) selects the FSC spectrum, where jnp.maximum would carry
     # the NaN into the reference.
-    f = snr / (1.0 + snr)
     fsc = jnp.where(f >= fsc_reconstruct, f, fsc_reconstruct)
     fsc = jnp.where(counts > 0.0, jnp.where(fsc >= 1.0, 1.0, fsc), 0.0)
     fsc_voxel = fsc[shell_lookup]
@@ -388,7 +417,7 @@ def relion_vdam_m_step_host(
     device_volumes: bool = False,
     average_ctf2=None,
     stable_window_quantum: int,
-    disagreement_scale=None,
+    gate: MStepGate | None = None,
 ):
     """Host-facing adapter of the device VDAM M-step transaction (FFT grids of at least 16).
 
@@ -410,7 +439,7 @@ def relion_vdam_m_step_host(
     as RELION's ``updateSSNRarrays`` does; the reconstruction keeps the uncorrected tau2.
     ``stable_window_quantum`` (``EngineTuning.stable_window_quantum``): the window class step a host BPref
     slab is padded to (:func:`_pad_bpref_to_window_class`).
-    ``disagreement_scale``: the gate of :func:`relion_vdam_m_step_device` (None: RELION's).
+    ``gate``: the shrinkage gate (:class:`MStepGate`; None: RELION's).
     """
     real_dtype, complex_dtype = _compute_dtypes(compute_dtype)
     if box_size * padding_factor < 16:
@@ -466,11 +495,12 @@ def relion_vdam_m_step_host(
         np.bool_(first0),
         np.bool_(first1),
         None if average_ctf2 is None else np.asarray(average_ctf2, np.float64),
-        None if disagreement_scale is None else real_dtype.type(disagreement_scale),
+        None if gate is None else real_dtype.type(gate.scale),
         box_size=box_size,
         padding_factor=padding_factor,
         pseudo_halfsets=pseudo,
         compute_dtype=real_dtype,
+        cross_power=gate is not None and gate.cross_power,
     )
     if recovar_layout:
         result["iref"] = swap_relion_volume_layout(result["iref"], real_dtype)

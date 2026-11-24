@@ -197,7 +197,7 @@ The noise, norm and scale sums of the CC iteration and its backprojection are RE
 not part of the score). Refused: a run without a CC iteration (`--no-firstiter_cc`), the
 experimental `gemm_dense` coarse engine, subtomograms and full-grid GEMM passes.
 
-## `relax initial_model --vdam-gate {relion,full_data_power}`
+## `relax initial_model --vdam-gate {relion,full_data_power,cross_window}`
 
 VDAM replaces the FSC of the paper's equation 12 by a gate built from the disagreement of two pseudo-half
 first moments, because an InitialModel run reconstructs no half maps. RELION's gate takes the ratio of two shell
@@ -209,5 +209,6 @@ first moments have averaged it down. The derivation, with the evidence, is
 `relion` (the default) is RELION's gate. `full_data_power` takes shell means of power, rescales the disagreement
 to the noise of two full-data half maps and divides out the running average, which is the gate of the note's
 section 7. Where it applies, what it changes in the run, what it does not correct and the checks are in
-section 9 of the note. Refused, naming the option: K above 1, `--optimizer momentum_sgd` and a continuation of a
+section 9 of the note. `cross_window` takes the signal from the cross power of the two halves and the noise of the
+reference itself, and applies the Wiener weight converted for the second moment (section 10 of the note). Refused, naming the option: K above 1, `--optimizer momentum_sgd` and a continuation of a
 RELION optimiser (`--diagnostic_continue_optimiser`).

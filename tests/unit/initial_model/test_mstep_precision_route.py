@@ -285,7 +285,7 @@ def test_publication_rejects_wrong_result_dtype_or_rounded_prior(bad_field, monk
             mstep_compute_dtype="float32",
             average_ctf2=None,
             stable_window_quantum=DEFAULT_STABLE_FOURIER_WINDOW_QUANTUM,
-            disagreement_scale=None,
+            gate=None,
         )
 
 

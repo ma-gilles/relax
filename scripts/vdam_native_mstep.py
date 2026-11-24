@@ -269,7 +269,7 @@ def vdam_m_step_single_class_native(
     mstep_compute_dtype: str = "float64",
     average_ctf2=None,
     stable_window_quantum: int,
-    disagreement_scale: float | None = None,
+    gate=None,
 ) -> InitialModelState:
     """Drop-in for ``vdam_m_step_single_class`` running RELION's primitives (float64 only); RELION's
     primitives have no window classes, so ``stable_window_quantum`` is not read, and only RELION's gate."""
@@ -278,7 +278,7 @@ def vdam_m_step_single_class_native(
 
     if mstep_compute_dtype != "float64":
         raise ValueError("RELION's step-by-step M-step is double precision; pass --mstep-compute-dtype float64")
-    if disagreement_scale is not None:
+    if gate is not None:
         raise ValueError("RELION's step-by-step M-step has only RELION's gate (--vdam-gate relion)")
     production.validate_mstep_inputs(state, k, accum_h1)
     iteration = int(getattr(state, "iter", 0))
