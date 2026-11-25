@@ -8,8 +8,8 @@ at its direction; ``fit_fvml_mixture_cells`` treats it as the mass of a grid cel
 The recommended setting is the cell fit with the default cap of ``kappa_max_for_grid`` (lobes at least a quarter
 of a grid spacing wide): with a looser cap than one spacing the point fit's quantization bias shows (section 10 of
 the document). ``healpix_cell_points`` and ``cell_log_probabilities`` put a mixture on RELION's C1 direction grid
-(HEALPix NEST pixels); ``relax.sampling.fvml_direction_prior`` fits it as a refinement's direction prior. Host
-float64 NumPy.
+(HEALPix NEST pixels); ``relax.sampling.fvml_direction_prior`` fits it as a refinement's direction prior, under a
+point group on weighted cells (``fit_fvml_mixture_weighted_cells``, ``weighted_cell_log_probabilities``). Host float64 NumPy.
 
 Use::
 
@@ -381,6 +381,98 @@ def fit_fvml_mixture_cells(
         tol=tol,
         total_mass=float(masses.sum()),
     )
+
+
+def _check_weighted_cells(
+    children: np.ndarray, child_weights: np.ndarray, cell_starts: np.ndarray
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Float64 ``(n, 3)`` children, the log of their positive ``(n,)`` weights and each child's cell; rejects a
+    layout whose cells are not consecutive non-empty runs starting at child 0."""
+    children = np.asarray(children, dtype=np.float64)
+    child_weights = np.asarray(child_weights, dtype=np.float64)
+    cell_starts = np.asarray(cell_starts, dtype=np.int64)
+    if children.ndim != 2 or children.shape[1] != 3 or child_weights.shape != (children.shape[0],):
+        raise ValueError(f"children must be (n, 3) and child_weights (n,), got {children.shape} and {child_weights.shape}")
+    if cell_starts.ndim != 1 or cell_starts.size < 1 or cell_starts[0] != 0 or np.any(np.diff(cell_starts) <= 0):
+        raise ValueError("cell_starts must start at 0 and increase: every cell holds at least one child")
+    if cell_starts[-1] >= children.shape[0]:
+        raise ValueError("the last cell must hold at least one child")
+    if not np.all(np.isfinite(child_weights)) or np.any(child_weights <= 0.0):
+        raise ValueError("child_weights must be finite and positive")
+    cell_of_child = np.repeat(np.arange(cell_starts.size), np.diff(np.append(cell_starts, children.shape[0])))
+    return children, np.log(child_weights), cell_of_child
+
+
+def _cell_logsumexp(values: np.ndarray, cell_starts: np.ndarray) -> np.ndarray:
+    """``log sum exp`` of ``values`` over each cell's consecutive run of children."""
+    peak = np.maximum.reduceat(values, cell_starts)
+    safe = np.where(np.isfinite(peak), peak, 0.0)
+    counts = np.diff(np.append(cell_starts, values.size))
+    with np.errstate(divide="ignore"):
+        return safe + np.log(np.add.reduceat(np.exp(values - np.repeat(safe, counts)), cell_starts))
+
+
+def fit_fvml_mixture_weighted_cells(
+    children: np.ndarray,
+    child_weights: np.ndarray,
+    cell_starts: np.ndarray,
+    masses: np.ndarray,
+    start: FvmlMixture,
+    *,
+    kappa_max: float,
+    dirichlet: float = 1.0,
+    max_iter: int = 500,
+    tol: float = 1e-8,
+) -> FitResult:
+    """:func:`fit_fvml_mixture_cells` for cells of any shape and size, without padding.
+
+    ``children`` ``(n, 3)`` are grouped by cell: cell ``m`` holds those from ``cell_starts[m]`` to the next start.
+    Each stands for ``child_weights`` equal areas of the sphere (``W`` their sum), so ``P(cell m)`` is
+    ``(4 pi / W) sum_c w_mc lambda(v_mc)``. Under a point group (``start.symmetry``) a cell may be a set of orbits,
+    or shares of them: its children may lie anywhere on them, the mixture being invariant. The E-step spreads each
+    cell's mass over its children in proportion to the current density times the weight. Other arguments and the
+    return value are those of :func:`fit_fvml_mixture_cells`.
+    """
+    children, log_weights, cell_of_child = _check_weighted_cells(children, child_weights, cell_starts)
+    cell_starts = np.asarray(cell_starts, dtype=np.int64)
+    masses = np.asarray(masses, dtype=np.float64)
+    if masses.shape != (cell_starts.size,):
+        raise ValueError(f"masses must be ({cell_starts.size},), got {masses.shape}")
+    children, _ = _check_atoms(children, masses[cell_of_child])
+    _check_fit_options(start, kappa_max, dirichlet, max_iter, tol)
+    transformed = _transform(children, start.symmetry)
+    log_child_area = math.log(4.0 * math.pi / float(np.sum(child_weights)))
+
+    def e_step(mixture: FvmlMixture) -> tuple[float, np.ndarray, np.ndarray]:
+        """Log probability of the cell masses, each child's share of its cell's mass, and component responsibilities."""
+        log_joint = _log_joint(mixture, transformed)
+        log_child = logsumexp(log_joint, axis=1)
+        log_weighted = log_child + log_weights
+        log_cell = _cell_logsumexp(log_weighted, cell_starts)
+        child_share = np.exp(log_weighted - log_cell[cell_of_child])
+        log_likelihood = float(masses @ (log_cell + log_child_area))
+        return log_likelihood, masses[cell_of_child] * child_share, np.exp(log_joint - log_child[:, None])
+
+    return _run_em(
+        start,
+        e_step,
+        transformed,
+        kappa_max=kappa_max,
+        dirichlet=dirichlet,
+        max_iter=max_iter,
+        tol=tol,
+        total_mass=float(masses.sum()),
+    )
+
+
+def weighted_cell_log_probabilities(
+    mixture: FvmlMixture, children: np.ndarray, child_weights: np.ndarray, cell_starts: np.ndarray
+) -> np.ndarray:
+    """Log probability of each cell of :func:`fit_fvml_mixture_weighted_cells`'s layout under ``mixture``,
+    normalized over the cells: the quadrature ``sum_c w_mc lambda(v_mc)``."""
+    children, log_weights, _ = _check_weighted_cells(children, child_weights, cell_starts)
+    log_cell = _cell_logsumexp(log_density(mixture, children) + log_weights, np.asarray(cell_starts, dtype=np.int64))
+    return log_cell - logsumexp(log_cell)
 
 
 def _best_images(transformed: np.ndarray, centers: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:

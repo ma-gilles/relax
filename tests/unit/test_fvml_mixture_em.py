@@ -13,13 +13,16 @@ from scipy.special import logsumexp, softmax
 from relax.sampling.fvml_mixture import (
     FvmlMixture,
     fit_fvml_mixture,
+    cell_log_probabilities,
     fit_fvml_mixture_cells,
+    fit_fvml_mixture_weighted_cells,
     init_fvml_mixture,
     inverse_langevin,
     kappa_max_for_grid,
     langevin,
     log_density,
     log_fvml,
+    weighted_cell_log_probabilities,
 )
 
 NSIDE = 16
@@ -415,6 +418,76 @@ def test_cell_fit_rejects_invalid_cells(change: str) -> None:
         cells = cells * 1.1
     with pytest.raises(ValueError):
         fit_fvml_mixture_cells(cells, masses, FvmlMixture([0.5, 0.5], [Z_AXIS], [10.0]), kappa_max=100.0)
+
+
+def _flat_layout(cells: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """``fit_fvml_mixture_weighted_cells``'s layout of ``(D, C, 3)`` equal cells: children, unit weights, starts."""
+    n_cells, n_children, _ = cells.shape
+    return cells.reshape(-1, 3), np.ones(n_cells * n_children), np.arange(n_cells) * n_children
+
+
+def test_weighted_cell_fit_with_unit_weights_is_the_cell_fit() -> None:
+    directions, masses, truth = _mixture_data(seed=4)
+    kappa_max = kappa_max_for_grid(directions.shape[0], 1.0)
+    cells = _children(NSIDE, 2)
+    common: dict = dict(kappa_max=kappa_max, max_iter=8, tol=0.0)
+    equal = fit_fvml_mixture_cells(cells, masses, truth, **common)
+    weighted = fit_fvml_mixture_weighted_cells(*_flat_layout(cells), masses, truth, **common)
+    assert weighted.n_iter == equal.n_iter == 8
+    # The same sums in another order: measured 2.3e-13 relative on kappa after the 8 steps.
+    for name in ("weights", "means", "kappas"):
+        assert_matches(getattr(weighted.mixture, name), getattr(equal.mixture, name), rtol=1e-11)
+    assert_matches(weighted.objective, equal.objective, rtol=1e-11)
+    assert_matches(
+        weighted_cell_log_probabilities(truth, *_flat_layout(_children(4, 2))), cell_log_probabilities(truth, 2, 2)
+    )
+
+
+def test_a_weight_counts_as_that_many_copies_of_its_child() -> None:
+    """A cell whose children are listed once with weight 2 is the cell with each child listed twice."""
+    directions, masses, truth = _mixture_data(seed=5)
+    kappa_max = kappa_max_for_grid(directions.shape[0], 1.0)
+    cells = _children(NSIDE, 1)
+    children, _, starts = _flat_layout(cells)
+    twice = np.repeat(cells, 2, axis=1)
+    common: dict = dict(kappa_max=kappa_max, max_iter=8, tol=0.0)
+    weighted = fit_fvml_mixture_weighted_cells(children, np.full(children.shape[0], 2.0), starts, masses, truth, **common)
+    repeated = fit_fvml_mixture_cells(twice, masses, truth, **common)
+    # The same sums in another order: measured 7.6e-13 relative on kappa after the 8 steps.
+    for name in ("weights", "means", "kappas"):
+        assert_matches(getattr(weighted.mixture, name), getattr(repeated.mixture, name), rtol=1e-11)
+
+
+def test_symmetric_weighted_cells_may_hold_any_point_of_an_orbit() -> None:
+    """Under C3 a cell's children may be moved to other points of their orbits: the fit does not change."""
+    directions, masses, _ = _mixture_data(seed=6, n=20_000)
+    children, weights, starts = _flat_layout(_children(NSIDE, 1))
+    moved = children @ _rot_z(2.0 * math.pi / 3.0).T
+    start = FvmlMixture([0.4, 0.6], [X_AXIS], [20.0], _c3())
+    common: dict = dict(kappa_max=1e3, max_iter=8, tol=0.0)
+    fit = fit_fvml_mixture_weighted_cells(children, weights, starts, masses, start, **common)
+    fit_moved = fit_fvml_mixture_weighted_cells(moved, weights, starts, masses, start, **common)
+    assert_matches(fit_moved.objective, fit.objective, rtol=1e-12)
+    assert_matches(fit_moved.mixture.kappas, fit.mixture.kappas, rtol=1e-12)
+
+
+@pytest.mark.parametrize("change", ["starts_not_at_zero", "empty_cell", "zero_weight", "weights_wrong_length"])
+def test_weighted_cell_fit_rejects_invalid_layouts(change: str) -> None:
+    children, weights, starts = _flat_layout(_children(2, 1))
+    if change == "starts_not_at_zero":
+        starts = starts + 1
+    elif change == "empty_cell":
+        starts = starts.copy()
+        starts[2] = starts[1]
+    elif change == "zero_weight":
+        weights = weights.copy()
+        weights[5] = 0.0
+    elif change == "weights_wrong_length":
+        weights = weights[:-1]
+    with pytest.raises(ValueError):
+        fit_fvml_mixture_weighted_cells(
+            children, weights, starts, np.ones(starts.size), FvmlMixture([0.5, 0.5], [Z_AXIS], [10.0]), kappa_max=100.0
+        )
 
 
 def test_init_is_valid_deterministic_and_symmetry_aware() -> None:
