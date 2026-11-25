@@ -1,17 +1,26 @@
-"""The FvML-mixture direction prior as the input source of a K=1 refinement (code rule 15).
+"""The FvML-mixture direction prior as the input source of a refinement (code rule 15).
 
 ``relax refine --fvml-direction-prior N`` replaces RELION's learned direction prior with a uniform component plus
-``N`` FvML lobes fitted, after every numbered M-step, to each half's posterior mass over the directions (the learned
-prior the run computed, ``relax.sampling.fvml_direction_prior``). Each half fits its own mixture from its own
-particles, warm-started from its previous fit. The fitted prior then scores every expectation of the half, as a
-fixed prior does (``relax.parity.fixed_direction_prior``): each global search, each local search (which keeps its
-selection of orientations within three widths of each particle's pose and weights them by this prior alone, without
-the Gaussian log priors) and the final pass. A mixture is a density on the sphere, so it is evaluated on whatever
-HEALPix order a search samples, with no reset at an order change. The first iteration, before any fit, scores as
-RELION's does (no direction prior).
+``N`` FvML lobes fitted, after every numbered M-step, to the posterior mass over the directions (the learned prior
+the run computed, ``relax.sampling.fvml_direction_prior``), warm-started from the previous fit:
 
-The model STARs hold the mixture's cell probabilities as ``rlnOrientationDistribution`` (the prior the next
-expectation scores with when its order is unchanged) and the fit in two extra blocks
+* K=1 (Refine3D): each half fits its own mixture from its own particles. The fitted prior scores every expectation
+  of the half, as a fixed prior does (``relax.parity.fixed_direction_prior``): each global search, each local search
+  (which keeps its selection of orientations within three widths of each particle's pose and weights them by this
+  prior alone, without the Gaussian log priors) and the final pass.
+* K classes (Class3D): RELION keeps one ``pdf_direction`` per class, the direction's distribution given the class,
+  from the posteriors of all particles (the halves only split the work, and both hold the same learned prior).
+  Each class's mixture is fitted to that conditional mass once and shared by the halves, and scores every global
+  search of the class. Local searches (``--sigma_ang``) are refused: the local engine takes one direction prior,
+  not one per class.
+
+Under a point group the directions are those of one asymmetric unit, the mixture is invariant under the group, and
+``N`` counts the lobes of one unit. A mixture is a density on the sphere, so it is evaluated on whatever HEALPix
+order a search samples, with no reset at an order change. The first iteration, before any fit, scores as RELION's
+does.
+
+The model STARs hold the mixtures' cell probabilities as ``rlnOrientationDistribution`` (the prior the next
+expectation scores with when its order is unchanged) and each fit in two extra blocks
 (``relax.refinement.run_files``), which a continued run warm-starts from.
 """
 
@@ -33,13 +42,18 @@ PROVENANCE_FILE = "fvml_direction_prior.json"
 
 
 class FvmlDirectionPriorSource(InputSource):
-    """The native source, except that each half's learned prior is the FvML mixture with ``n_lobes`` lobes fitted to
-    its posterior masses, and every expectation after the first scores with it."""
+    """The native source, except that each learned prior (a K=1 half's, or each class's) is the FvML mixture with
+    ``n_lobes`` lobes fitted to its posterior masses under point group ``symmetry``, and every expectation after
+    the first scores with it."""
 
-    def __init__(self, n_lobes: int, *, dtype: np.dtype):
+    def __init__(self, n_lobes: int, *, n_classes: int, symmetry: str, dtype: np.dtype):
         if n_lobes < 1:
             raise ValueError(f"an FvML direction prior needs at least one lobe, got {n_lobes}")
+        if n_classes < 1:
+            raise ValueError(f"an FvML direction prior needs at least one class, got {n_classes}")
         self.n_lobes = int(n_lobes)
+        self.n_classes = int(n_classes)
+        self.symmetry = symmetry
         self.dtype = np.dtype(dtype)
 
     @classmethod
@@ -48,26 +62,43 @@ class FvmlDirectionPriorSource(InputSource):
     ) -> FvmlDirectionPriorSource:
         """The source of a run with ``options`` whose prior is the ``n_lobes``-lobe mixture.
 
-        ``replacing`` is the source the command chose: only the native one can be replaced. K=1, C1, single-particle
-        runs on one GPU are admitted.
+        ``replacing`` is the source the command chose: only the native one can be replaced. Single-particle runs on
+        one GPU are admitted, with any point group and class count, but a Class3D run without local searches; the
+        asymmetric unit at the first sampling order (or the fit's coarsest, ``FIT_MAX_ORDER``) must hold at least
+        ``n_lobes`` directions.
         """
         if type(replacing) is not InputSource:
             raise ValueError(
                 "--fvml-direction-prior cannot be combined with a RELION replay, a frozen boundary or a fixed prior"
             )
-        if options.k_class.n_classes != 1:
-            raise ValueError("--fvml-direction-prior is for K=1 refinement")
-        if options.symmetry.point_group != "C1":
-            raise ValueError("--fvml-direction-prior is for C1 symmetry")
         if tomographic:
             raise ValueError("--fvml-direction-prior is for single-particle data")
         if multi_gpu:
             raise ValueError("--fvml-direction-prior runs on one GPU")
-        return cls(n_lobes, dtype=options.precision.rotation_real_dtype)
+        n_classes = int(options.k_class.n_classes)
+        if n_classes > 1 and options.local_search.sigma_ang_deg is not None:
+            raise ValueError(
+                "--fvml-direction-prior with several classes scores global searches only: drop --sigma_ang"
+            )
+        symmetry = options.symmetry.point_group
+        first_order = min(int(options.schedule.init_healpix_order), fvml_direction_prior.FIT_MAX_ORDER)
+        n_directions = fvml_direction_prior.direction_pixels(first_order, symmetry).size
+        if n_directions < n_lobes:
+            raise ValueError(
+                f"--fvml-direction-prior {n_lobes}: the {symmetry} asymmetric unit has only {n_directions} directions "
+                f"at HEALPix order {first_order}; start at a finer order (--healpix_order) or fit fewer lobes"
+            )
+        return cls(n_lobes, n_classes=n_classes, symmetry=symmetry, dtype=options.precision.rotation_real_dtype)
 
     def learned_direction_priors(self, learned: tuple, *, previous: list) -> tuple:
-        """Each half's mixture fitted to its ``learned`` masses, from its ``previous`` fit when it has one; a half
-        without learned masses keeps its prior (None)."""
+        """The next direction prior of each half from the run's ``learned`` ones (None: the half keeps its prior),
+        each warm-started from the fits of the half's ``previous`` prior when it has them."""
+        if self.n_classes == 1:
+            return self._learned_k1(learned, previous)
+        return self._learned_classes(learned, previous)
+
+    def _learned_k1(self, learned: tuple, previous: list) -> tuple:
+        """Each half's mixture fitted to its own masses (cold starts seeded by the half)."""
         priors = []
         for half_index, (masses, scored) in enumerate(zip(learned, previous, strict=True)):
             if masses is None:
@@ -75,33 +106,72 @@ class FvmlDirectionPriorSource(InputSource):
                 continue
             order = int(masses.healpix_order)
             fit = fvml_direction_prior.fit_direction_prior(
-                masses.values, order, n_lobes=self.n_lobes, previous=scored.fit, seed=half_index
+                masses.values, order, symmetry=self.symmetry, n_lobes=self.n_lobes,
+                previous=None if scored.fits is None else scored.fits[0], seed=half_index,
             )
-            fvml_direction_prior.log_fit(half_index, order, fit)
+            fvml_direction_prior.log_fit(f"half-{half_index + 1}", order, fit)
             values = np.exp(fvml_direction_prior.direction_log_probabilities(fit, order))
-            priors.append(DirectionPrior(values.astype(np.asarray(masses.values).dtype), order, fit))
+            priors.append(DirectionPrior(values.astype(np.asarray(masses.values).dtype), order, (fit,)))
         return tuple(priors)
+
+    def _learned_classes(self, learned: tuple, previous: list) -> tuple:
+        """Each class's mixture fitted once to its conditional masses (cold starts seeded by the class), the same
+        prior for both halves; the halves must hold the same learned prior, as Class3D's one model does."""
+        if all(masses is None for masses in learned):
+            return tuple(learned)
+        if any(masses is None for masses in learned) or not all(
+            masses.healpix_order == learned[0].healpix_order and np.array_equal(masses.values, learned[0].values)
+            for masses in learned
+        ):
+            raise ValueError("a Class3D run's halves must hold the same learned direction prior")
+        order = int(learned[0].healpix_order)
+        values = np.asarray(learned[0].values)
+        if values.shape[0] != self.n_classes:
+            raise ValueError(f"a learned prior of {values.shape[0]} classes, the run has {self.n_classes}")
+        warm = previous[0].fits
+        fits = []
+        for class_index in range(self.n_classes):
+            fit = fvml_direction_prior.fit_direction_prior(
+                values[class_index], order, symmetry=self.symmetry, n_lobes=self.n_lobes,
+                previous=None if warm is None else warm[class_index], seed=class_index,
+            )
+            fvml_direction_prior.log_fit(f"class {class_index + 1}", order, fit)
+            fits.append(fit)
+        fitted = np.stack([np.exp(fvml_direction_prior.direction_log_probabilities(fit, order)) for fit in fits])
+        prior = DirectionPrior(fitted.astype(values.dtype), order, tuple(fits))
+        return tuple(prior for _ in learned)
 
     def direction_log_prior(
         self, half_index: int, log_prior: HalfDirectionLogPriors, *, prior: DirectionPrior, healpix_order: int,
         use_local: bool,
     ) -> HalfDirectionLogPriors:
-        """The half's mixture on the rotation grid of ``healpix_order``; the run's own ``log_prior`` before the half
-        has a fit."""
-        if prior.fit is None:
+        """The half's mixtures on the rotation grid of ``healpix_order`` (one per class in Class3D); the run's own
+        ``log_prior`` before the half has fits."""
+        if prior.fits is None:
             return log_prior
         logger.info(
             "FvML direction prior half-%d: %s search at healpix_order=%d",
             half_index + 1, "local" if use_local else "global", healpix_order,
         )
-        rotation_log_prior = fvml_direction_prior.rotation_log_prior(prior.fit, healpix_order, dtype=self.dtype)
-        rotation_log_prior.setflags(write=False)
-        return HalfDirectionLogPriors(rotation_log_prior=rotation_log_prior, class_rotation_log_prior=None)
+        tables = [
+            fvml_direction_prior.rotation_log_prior(fit, healpix_order, dtype=self.dtype) for fit in prior.fits
+        ]
+        if self.n_classes == 1:
+            rotation_log_prior = tables[0]
+            rotation_log_prior.setflags(write=False)
+            return HalfDirectionLogPriors(rotation_log_prior=rotation_log_prior, class_rotation_log_prior=None)
+        if use_local:
+            raise ValueError("an FvML direction prior with several classes scores global searches only")
+        class_rotation_log_prior = np.stack(tables)
+        class_rotation_log_prior.setflags(write=False)
+        return HalfDirectionLogPriors(rotation_log_prior=None, class_rotation_log_prior=class_rotation_log_prior)
 
     def write_provenance(self, directory: str | Path) -> Path:
         """Record the prior's settings in ``directory`` for whoever reads the run."""
         record = {
             "lobes": self.n_lobes,
+            "classes": self.n_classes,
+            "symmetry": self.symmetry,
             "fit_max_order": fvml_direction_prior.FIT_MAX_ORDER,
             "cell_levels": fvml_direction_prior.CELL_LEVELS,
             "cap_spacings": fvml_direction_prior.CAP_SPACINGS,

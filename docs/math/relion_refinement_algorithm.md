@@ -408,15 +408,18 @@ log priors are not added ([`LocalPriorSpec.direction_log_prior`](../../relax/ref
 on the direction only, so the selected in-plane angles of a direction weigh the same. A pass-2 child inherits its
 parent's value. The learned prior is still estimated and written to the model STARs; it is not fed back.
 
-An FvML-mixture direction prior (`--fvml-direction-prior N`, K=1, C1, single-particle, one GPU) is a second
+An FvML-mixture direction prior (`--fvml-direction-prior N`, single-particle, one GPU) is a second
 intentional difference. After every numbered M-step,
 [`FvmlDirectionPriorSource.learned_direction_priors`](../../relax/parity/fvml_prior_source.py) (the
-`InputSource.learned_direction_priors` port, which natively returns the learned priors) replaces each half's learned
-prior with a uniform component plus `N` FvML lobes fitted to it
-([`fit_direction_prior`](../../relax/sampling/fvml_direction_prior.py), warm-started from the half's previous fit,
-which `DirectionPrior.fit` carries). From the second iteration on, `InputSource.direction_log_prior` hands the scorers
-the half's mixture on the grid of the expectation's HEALPix order, with no reset at an order change, in every global
-search, local search (weighted as with a fixed prior, without the Gaussian log priors) and the final pass. The model
+`InputSource.learned_direction_priors` port, which natively returns the learned priors) replaces each learned prior
+with a uniform component plus `N` FvML lobes fitted to it
+([`fit_direction_prior`](../../relax/sampling/fvml_direction_prior.py), warm-started from the previous fit, which
+`DirectionPrior.fits` carries, one per class): each half's in K=1, each class's once in Class3D (shared by the
+halves, as the learned prior is). Under a point group the mixture is invariant under the group and fitted on the
+asymmetric unit's orbit cells. From the second iteration on, `InputSource.direction_log_prior` hands the scorers
+the mixtures on the grid of the expectation's HEALPix order, with no reset at an order change: in K=1 in every global
+search, local search (weighted as with a fixed prior, without the Gaussian log priors) and the final pass; in
+Class3D in every global search, one table per class (local searches are refused). The model
 STARs record the fit ([`run_files`](../../relax/refinement/run_files.py)); the derivation and the checks are
 [`fvml_mixture_direction_prior.md`](fvml_mixture_direction_prior.md).
 

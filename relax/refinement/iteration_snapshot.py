@@ -103,7 +103,8 @@ class IterationSnapshot:
     extra: dict
     # Per half: RELION's rlnLogLikeliContribution of each particle (relax.relion.log_likelihood); None: not known.
     log_likelihood_contribution: list | None = None
-    # Per half: the FvML-mixture fit its direction prior comes from (relax.sampling.fvml_direction_prior), or None.
+    # Per half: the FvML-mixture fits its direction prior comes from, one per class
+    # (relax.sampling.fvml_direction_prior), or None.
     direction_prior_fits: list | None = None
 
     @property
@@ -172,8 +173,8 @@ def direction_priors_from_snapshot(
     )
     fits = snapshot.direction_prior_fits or [None, None]
     return [
-        DirectionPrior(prior.values, order, fit)
-        for prior, order, fit in zip(direction_priors, saved_orders, fits, strict=True)
+        DirectionPrior(prior.values, order, half_fits)
+        for prior, order, half_fits in zip(direction_priors, saved_orders, fits, strict=True)
     ]
 
 
@@ -309,10 +310,10 @@ def _host_direction_prior(direction_priors):
 
 
 def _direction_prior_fits(direction_priors):
-    """The two halves' FvML-mixture fits, or ``None`` when neither half has one."""
+    """The two halves' FvML-mixture fits (one per class), or ``None`` when neither half has any."""
 
-    fits = [p.fit for p in direction_priors]
-    return fits if any(fit is not None for fit in fits) else None
+    fits = [p.fits for p in direction_priors]
+    return fits if any(half_fits is not None for half_fits in fits) else None
 
 
 def _host_particle_state(
@@ -592,6 +593,7 @@ class SnapshotCapture:
         assembly.values.update(
             class_weights=host_array(class_weights, np.float64),
             direction_prior=_host_direction_prior(direction_priors),
+            direction_prior_fits=_direction_prior_fits(direction_priors),
         )
         assembly.values.update(
             **_host_particle_state(

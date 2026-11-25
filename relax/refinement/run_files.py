@@ -27,12 +27,13 @@ Two deliberate differences from RELION's files:
   hold the latched fine-enough flag or the growth FSC, which the next iteration reads.
   ``MlOptimiser::read`` parses only ``data_optimiser_general`` (ml_optimiser.cpp:1107), so
   RELION ignores the extra blocks.
-* A half's model STAR of a run with an FvML-mixture direction prior (``--fvml-direction-prior``)
-  carries its fit in two extra blocks, ``data_relax_direction_prior_fvml`` (lobes, fit order, cap,
-  start, EM iterations, objective) and ``data_relax_direction_prior_fvml_components`` (each
-  component's weight, mean direction and concentration; component 0 is the uniform one), which a
-  continued run reads back (``relax.sampling.fvml_direction_prior``). ``MlModel::read`` reads its
-  blocks by name, so RELION ignores them.
+* A model STAR of a run with an FvML-mixture direction prior (``--fvml-direction-prior``) carries
+  each fit in two extra blocks, ``data_relax_direction_prior_fvml`` (lobes, fit order, cap, start,
+  EM iterations, objective) and ``data_relax_direction_prior_fvml_components`` (each component's
+  weight, mean direction and concentration; component 0 is the uniform one): a K=1 half's one fit
+  under these names, a Class3D model's fit of class ``k`` with ``_class_<k>`` appended. A continued
+  run reads them back with the sampling STAR's ``rlnSymmetryGroup`` (``relax.sampling.fvml_direction_prior``).
+  ``MlModel::read`` reads its blocks by name, so RELION ignores them.
 
 ``--continue`` keeps each half's own noise spectrum. RELION's MPI restart broadcasts
 rank 1's ``sigma2_noise`` to every rank (ml_optimiser_mpi.cpp:750-758), so its half 2
@@ -572,12 +573,11 @@ def _write_model_stars(root: Path, snapshot: IterationSnapshot, settings: RunSet
             )
             for k in range(prior.shape[0]):
                 text.append(_loop_block(f"model_pdf_orient_class_{k + 1}", {"rlnOrientationDistribution": prior[k]}))
-        fit = None if snapshot.direction_prior_fits is None else snapshot.direction_prior_fits[h]
-        if fit is not None:
-            text.append(_list_block(fvml_direction_prior.STAR_FIT_BLOCK, fvml_direction_prior.star_fit_items(fit)))
-            text.append(
-                _loop_block(fvml_direction_prior.STAR_COMPONENT_BLOCK, fvml_direction_prior.star_component_columns(fit))
-            )
+        fits = None if snapshot.direction_prior_fits is None else snapshot.direction_prior_fits[h]
+        for k, fit in enumerate(fits or ()):
+            fit_block, component_block = fvml_direction_prior.star_block_names(k if snapshot.k_class else None)
+            text.append(_list_block(fit_block, fvml_direction_prior.star_fit_items(fit)))
+            text.append(_loop_block(component_block, fvml_direction_prior.star_component_columns(fit)))
         path.write_text("".join(text))
         paths.append(path)
     return paths
@@ -864,6 +864,30 @@ def _state_text(relax_state, name):
     raise KeyError(f"run files have no {key}")
 
 
+def _sampling_symmetry(directory: Path, general: dict) -> str:
+    """The run's point group, from the sampling STAR the optimiser STAR names."""
+
+    return read_star_blocks(directory / general["rlnOrientSamplingStarFile"])["sampling_general"]["rlnSymmetryGroup"]
+
+
+def _fvml_fits(model: dict, n_classes: int | None, *, symmetry: str | None) -> tuple | None:
+    """The FvML-mixture fits a model STAR holds, one per class (``n_classes``; None: a K=1 half's one fit), or None
+    when it holds none."""
+
+    names = [
+        fvml_direction_prior.star_block_names(k) for k in ([None] if n_classes is None else range(n_classes))
+    ]
+    present = [fit_block in model for fit_block, _ in names]
+    if not any(present):
+        return None
+    if not all(present):
+        raise ValueError(f"a model STAR holds FvML fits for {sum(present)} of {len(names)} classes")
+    return tuple(
+        fvml_direction_prior.fit_from_star(model[fit_block], model[component_block], symmetry=symmetry)
+        for fit_block, component_block in names
+    )
+
+
 def _class_conditionals(joint_prior: np.ndarray, class_weights: np.ndarray) -> np.ndarray:
     """Each class's direction prior given the class, from the written joint rows ``conditional * weight``."""
 
@@ -988,14 +1012,12 @@ def read_run_files(optimiser_star, *, image_names, half_rows) -> IterationSnapsh
         direction_prior.append(_class_conditionals(prior, class_weights) if k_class else prior[0])
     if all(p is None for p in direction_prior):
         direction_prior = None
-    direction_prior_fits = [
-        fvml_direction_prior.fit_from_star(
-            model[fvml_direction_prior.STAR_FIT_BLOCK], model[fvml_direction_prior.STAR_COMPONENT_BLOCK]
-        )
-        if fvml_direction_prior.STAR_FIT_BLOCK in model
+    fvml_symmetry = (
+        _sampling_symmetry(directory, general)
+        if any(name.startswith(fvml_direction_prior.STAR_FIT_BLOCK) for model in halves for name in model)
         else None
-        for model in halves
-    ]
+    )
+    direction_prior_fits = [_fvml_fits(model, n_classes if k_class else None, symmetry=fvml_symmetry) for model in halves]
 
     avg_norm = tuple(float(m["model_general"]["rlnNormCorrectionAverage"]) * float(box_size) ** 2 for m in halves)
     classes_table = models[0]["model_classes"]

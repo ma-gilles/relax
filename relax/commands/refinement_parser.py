@@ -288,11 +288,13 @@ def parse_refinement_args(argv=None):
         type=int,
         default=None,
         metavar="N_LOBES",
-        help="Experimental, K=1 C1 single-particle on one GPU: replace RELION's learned direction prior with a "
-        "uniform component plus N_LOBES FvML lobes fitted to each half's posterior direction masses after every "
-        "iteration (warm-started), and score every later global and local search and the final pass with it, as "
-        "--fixed-direction-prior does. The model STARs record the fit. Not combinable with --fixed-direction-prior "
-        "or a RELION replay.",
+        help="Experimental, single-particle on one GPU: replace RELION's learned direction prior with a "
+        "uniform component plus N_LOBES FvML lobes fitted to the posterior direction masses after every "
+        "iteration (warm-started): each half's in refine, each class's (shared by the halves) in class3d. Under "
+        "--sym the mixture is symmetric and N_LOBES counts the lobes of one asymmetric unit. Every later global "
+        "search, local search and final pass scores with it, as --fixed-direction-prior does; class3d refuses "
+        "local searches (--sigma_ang). The model STARs record the fits. Not combinable with "
+        "--fixed-direction-prior or a RELION replay.",
     )
     for flag in ("--relion-projector-capture-dir", "--relion-projector-capture-manifest",
                  "--relion-projector-capture-iteration"):

@@ -103,10 +103,11 @@ Through the ports (`relax/refinement/ports.py`), chosen by the command:
   numbered iteration, in the `replace` of the plan that installs the source's other choices, and once per half of
   the final pass (`score_final_half`); the native source returns the run's own prior.
 - `InputSource.learned_direction_priors` and `InputSource.direction_log_prior` (`relax/parity/fvml_prior_source.py`,
-  `FvmlDirectionPriorSource`, 2026-11-19): `--fvml-direction-prior N`, an experimental K=1 C1 single-particle
-  prior on one GPU. The controller hands the source each half's learned prior after the numbered M-step (the
-  native source returns it); this source returns an FvML mixture fitted to it, carried in `DirectionPrior.fit`,
-  and scores every later expectation with it as the fixed prior does. Both ports receive the half's
+  `FvmlDirectionPriorSource`, 2026-11-19, Class3D and point groups 2026-11-25): `--fvml-direction-prior N`, an
+  experimental single-particle prior on one GPU. The controller hands the source each half's learned prior after
+  the numbered M-step (the native source returns it); this source returns FvML mixtures fitted to it, one per
+  class, carried in `DirectionPrior.fits` (in Class3D fitted once and shared by the halves), and scores every later
+  expectation with them as the fixed prior does (Class3D: global searches only). Both ports receive the half's
   `DirectionPrior`.
 - `InputSource` (`relax/parity/relion_replay_source.py`, `RelionReplay`): the numbered STAR replay
   (`--perturb_replay_relion_dir`), `--relion_init_dir`'s run_it000 slot and every other override slot, the

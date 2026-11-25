@@ -349,7 +349,7 @@ def test_direction_prior_used_is_read_from_the_sidecar_relax_writes(tmp_path):
 
 
 def test_fvml_direction_prior_is_read_from_the_settings_relax_writes(tmp_path):
-    FvmlDirectionPriorSource(5, dtype=np.float32).write_provenance(tmp_path)
+    FvmlDirectionPriorSource(5, n_classes=1, symmetry="C1", dtype=np.float32).write_provenance(tmp_path)
     used = ev.read_direction_prior_used(tmp_path)
     assert used["source"] == "fvml" and used["lobes"] == 5
 

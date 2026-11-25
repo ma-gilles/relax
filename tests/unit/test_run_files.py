@@ -393,7 +393,10 @@ def test_fvml_direction_prior_fits_round_trip_through_the_model_stars(tmp_path):
     input_star = _write_input_star(tmp_path, 7)
     half_rows = [np.array([4, 0, 2, 6]), np.array([5, 1, 3])]
     masses = [rng.random(48) + 0.1, rng.random(48) + 0.1]
-    fits = [fvml_direction_prior.fit_direction_prior(m, 1, n_lobes=2, previous=None, seed=h) for h, m in enumerate(masses)]
+    fits = [
+        (fvml_direction_prior.fit_direction_prior(m, 1, symmetry="C1", n_lobes=2, previous=None, seed=h),)
+        for h, m in enumerate(masses)
+    ]
     snapshot = _k1_snapshot([4, 3], rng)
     snapshot.direction_prior_fits = fits
     optimiser = _writer(tmp_path, input_star, half_rows)(snapshot)
@@ -402,10 +405,10 @@ def test_fvml_direction_prior_fits_round_trip_through_the_model_stars(tmp_path):
     names = read_star_blocks(input_star)["particles"]["rlnImageName"]
     read = read_run_files(optimiser, image_names=names, half_rows=half_rows)
     _assert_snapshots_match(read, snapshot)
-    for read_fit, fit in zip(read.direction_prior_fits, fits, strict=True):
+    for (read_fit,), (fit,) in zip(read.direction_prior_fits, fits, strict=True):
         for name in ("weights", "means", "kappas"):
             assert_matches(getattr(read_fit.mixture, name), getattr(fit.mixture, name))
-        assert (read_fit.start, read_fit.fit_order) == (fit.start, fit.fit_order)
+        assert (read_fit.start, read_fit.fit_order, read_fit.symmetry) == (fit.start, fit.fit_order, "C1")
     # A run without the prior writes neither block and reads back no fit.
     plain = _k1_snapshot([4, 3], rng)
     optimiser = RunFileWriter(
@@ -775,14 +778,11 @@ def test_data_star_writes_the_iterations_log_likelihood_contribution_and_model_s
         assert float(model["rlnLogLikelihood"]) == pytest.approx(float(np.sum(values)))
 
 
-def test_class3d_run_files_round_trip(tmp_path):
-    rng = np.random.default_rng(2)
-    n, k = 6, 3
-    input_star = _write_input_star(tmp_path, n)
-    half_rows = [np.array([3, 1, 5, 0, 2, 4]), np.array([], dtype=np.int64)]
+def _class3d_snapshot(rng, n, k):
+    """A Class3D checkpoint of ``n`` particles in ``k`` classes, every particle in half 1, priors at order 1."""
     stack = np.stack([_fourier(rng.standard_normal((BOX, BOX, BOX)).astype(np.float32)) for _ in range(k)])
     group_ids = [np.zeros(n, dtype=np.int64), np.zeros(0, dtype=np.int64)]
-    snapshot = IterationSnapshot(
+    return IterationSnapshot(
         relion_iteration=3,
         n_classes=k,
         box_size=BOX,
@@ -803,7 +803,7 @@ def test_class3d_run_files_round_trip(tmp_path):
         image_corrections=[rng.uniform(0.8, 1.2, n).astype(np.float32), np.zeros(0, np.float32)],
         scale_corrections=[np.ones(n, np.float32), np.zeros(0, np.float32)],
         group_ids=group_ids,
-        class_weights=np.array([0.5, 0.3, 0.2]),
+        class_weights=np.array([0.5, 0.3, 0.2][:k]),
         direction_prior=[rng.random((k, 48))] * 2,
         class_assignments=[rng.integers(0, k, n), np.zeros(0, dtype=np.int64)],
         fsc=None,
@@ -812,10 +812,19 @@ def test_class3d_run_files_round_trip(tmp_path):
         significant_counts=None,
         unfiltered_means=None,
         avg_norm_correction=(0.75 * BOX**2, 0.75 * BOX**2),
-        acc_rot_per_class=np.array([3.5, 999.0, 7.25]),
-        acc_trans_per_class_angstrom=np.array([1.5, 999.0, 2.75]),
+        acc_rot_per_class=np.array([3.5, 999.0, 7.25][:k]),
+        acc_trans_per_class_angstrom=np.array([1.5, 999.0, 2.75][:k]),
         extra={"euler_dtype": "float64", "translation_dtype": "float32", "correction_dtype": "float32"},
     )
+
+
+def test_class3d_run_files_round_trip(tmp_path):
+    rng = np.random.default_rng(2)
+    n, k = 6, 3
+    input_star = _write_input_star(tmp_path, n)
+    half_rows = [np.array([3, 1, 5, 0, 2, 4]), np.array([], dtype=np.int64)]
+    snapshot = _class3d_snapshot(rng, n, k)
+    stack = snapshot.means[0]
     optimiser = _writer(tmp_path, input_star, half_rows)(snapshot)
     out = tmp_path / "out"
     # RELION's conventions in the files: per-class accuracies, norm corrections over
@@ -840,6 +849,52 @@ def test_class3d_run_files_round_trip(tmp_path):
     _assert_snapshots_match(read, snapshot)
     assert np.array_equal(read.class_assignments[0], snapshot.class_assignments[0])
     assert_matches(read.means[0], stack, rtol=1e-6)
+
+
+def test_class3d_fvml_fits_round_trip_one_block_pair_per_class(tmp_path):
+    """A Class3D model STAR holds each class's FvML fit under the class-numbered block names; both halves read the
+    same fits back, with the run's point group."""
+    rng = np.random.default_rng(3)
+    n, k = 6, 2
+    input_star = _write_input_star(tmp_path, n)
+    half_rows = [np.arange(n), np.array([], dtype=np.int64)]
+    fits = tuple(
+        fvml_direction_prior.fit_direction_prior(
+            rng.random(48) + 0.1, 1, symmetry="C1", n_lobes=1 + c, previous=None, seed=c
+        )
+        for c in range(k)
+    )
+    snapshot = _class3d_snapshot(rng, n, k)
+    snapshot.direction_prior_fits = [fits, fits]
+    optimiser = _writer(tmp_path, input_star, half_rows)(snapshot)
+    model = read_star_blocks(tmp_path / "out" / "run_it003_model.star")
+    assert fvml_direction_prior.STAR_FIT_BLOCK not in model
+    for c in range(k):
+        fit_block, component_block = fvml_direction_prior.star_block_names(c)
+        assert model[fit_block]["relax_fvml_lobes"] == str(1 + c)
+        assert len(model[component_block]["relax_fvml_weight"]) == 2 + c
+    names = read_star_blocks(input_star)["particles"]["rlnImageName"]
+    read = read_run_files(optimiser, image_names=names, half_rows=half_rows)
+    assert len(read.direction_prior_fits) == 2
+    for half_fits in read.direction_prior_fits:
+        assert len(half_fits) == k
+        for read_fit, fit in zip(half_fits, fits, strict=True):
+            for name in ("weights", "means", "kappas"):
+                assert_matches(getattr(read_fit.mixture, name), getattr(fit.mixture, name))
+            assert (read_fit.n_lobes, read_fit.symmetry) == (fit.n_lobes, "C1")
+
+
+def test_a_class3d_model_with_fits_for_some_classes_only_is_refused(tmp_path):
+    rng = np.random.default_rng(4)
+    input_star = _write_input_star(tmp_path, 6)
+    half_rows = [np.arange(6), np.array([], dtype=np.int64)]
+    fit = fvml_direction_prior.fit_direction_prior(rng.random(48) + 0.1, 1, symmetry="C1", n_lobes=1, previous=None, seed=0)
+    snapshot = _class3d_snapshot(rng, 6, 2)
+    snapshot.direction_prior_fits = [(fit,), (fit,)]  # one fit for a two-class model
+    optimiser = _writer(tmp_path, input_star, half_rows)(snapshot)
+    names = read_star_blocks(input_star)["particles"]["rlnImageName"]
+    with pytest.raises(ValueError, match="FvML fits for 1 of 2 classes"):
+        read_run_files(optimiser, image_names=names, half_rows=half_rows)
 
 
 def test_writer_frequency_and_unfiltered_maps(tmp_path):

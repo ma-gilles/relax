@@ -229,14 +229,14 @@ class DirectionPrior:
     """One half-model's direction probabilities and their HEALPix sampling order.
 
     ``values`` is ``(n_directions,)`` for K=1 and ``(n_classes, n_directions)``
-    for K>1; a half without a prior holds ``None``. ``fit`` is the FvML-mixture
-    fit the values come from (``relax.sampling.fvml_direction_prior``; None: the
-    values are RELION's learned or given prior).
+    for K>1; a half without a prior holds ``None``. ``fits`` are the FvML-mixture
+    fits the values come from, one per class (``relax.sampling.fvml_direction_prior``;
+    None: the values are RELION's learned or given prior).
     """
 
     values: np.ndarray | None
     healpix_order: int | None
-    fit: "FvmlPriorFit | None" = None
+    fits: "tuple[FvmlPriorFit, ...] | None" = None
 
 
 def initial_direction_priors_from_snapshot(
