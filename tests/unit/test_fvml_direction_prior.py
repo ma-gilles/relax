@@ -46,12 +46,11 @@ def _masses(order: int) -> np.ndarray:
     return np.exp(cell_log_probabilities(TRUTH, order, fdp.CELL_LEVELS))
 
 
-def _options(*, n_classes=1, point_group="C1", sigma_ang_deg=None, init_healpix_order=2):
+def _options(*, n_classes=1, point_group="C1", init_healpix_order=2):
     """The fields ``FvmlDirectionPriorSource.for_run`` reads."""
     return SimpleNamespace(
         k_class=SimpleNamespace(n_classes=n_classes),
         symmetry=SimpleNamespace(point_group=point_group),
-        local_search=SimpleNamespace(sigma_ang_deg=sigma_ang_deg),
         schedule=SimpleNamespace(init_healpix_order=init_healpix_order),
         precision=SimpleNamespace(rotation_real_dtype=np.float32),
     )
@@ -361,7 +360,6 @@ def test_class_fits_have_class_numbered_blocks():
     "replacing, options, flags, message",
     [
         (FvmlDirectionPriorSource(5, n_classes=1, symmetry="C1", dtype=np.float32), _options(), {}, "cannot be combined"),
-        (InputSource(), _options(n_classes=2, sigma_ang_deg=3.0), {}, "global searches only"),
         (InputSource(), _options(point_group="I", init_healpix_order=2), {}, "only 2 directions at HEALPix order 2"),
         (InputSource(), _options(), {"tomographic": True}, "single-particle"),
         (InputSource(), _options(), {"multi_gpu": True}, "one GPU"),
@@ -457,18 +455,18 @@ def test_class_source_keeps_the_priors_when_nothing_was_learned():
     )
 
 
-def test_class_source_scores_each_class_with_its_mixture():
+@pytest.mark.parametrize("use_local", [False, True])
+def test_class_source_scores_each_class_with_its_mixture(use_local):
+    """One table per class, for a global search and a local one (whose rows of each class it weights)."""
     source = _class_source()
     prior = source.learned_direction_priors(_class_learned(), previous=[DirectionPrior(None, None)] * 2)[0]
     own = HalfDirectionLogPriors(rotation_log_prior=None, class_rotation_log_prior=None)
-    log_prior = source.direction_log_prior(1, own, prior=prior, healpix_order=3, use_local=False)
+    log_prior = source.direction_log_prior(1, own, prior=prior, healpix_order=3, use_local=use_local)
     assert log_prior.rotation_log_prior is None
     assert log_prior.class_rotation_log_prior.shape == (2, rotation_grid_size(3, "C1"))
     assert not log_prior.class_rotation_log_prior.flags.writeable
     for row, fit in zip(log_prior.class_rotation_log_prior, prior.fits, strict=True):
         assert_matches(row, fdp.rotation_log_prior(fit, 3, dtype=np.float32))
-    with pytest.raises(ValueError, match="global searches only"):
-        source.direction_log_prior(1, own, prior=prior, healpix_order=3, use_local=True)
 
 
 def test_symmetric_source_fits_on_the_asymmetric_unit():
@@ -583,9 +581,10 @@ def test_flag_in_class3d_fits_each_class(monkeypatch, tmp_path):
     assert json.loads((tmp_path / "out" / PROVENANCE_FILE).read_text())["classes"] == 2
 
 
-def test_flag_in_class3d_with_local_searches_is_refused(monkeypatch, tmp_path):
-    with pytest.raises(ValueError, match="global searches only"):
-        controller_inputs(
-            monkeypatch, tmp_path, "class3d", "--n_classes", "2", "--sigma_ang", "5", "--fvml-direction-prior", "3",
-            n_classes=2,
-        )
+def test_flag_in_class3d_with_local_searches_is_admitted(monkeypatch, tmp_path):
+    inputs = controller_inputs(
+        monkeypatch, tmp_path, "class3d", "--n_classes", "2", "--sigma_ang", "5", "--fvml-direction-prior", "3",
+        n_classes=2,
+    )
+    assert inputs["options"].local_search.sigma_ang_deg == 5.0
+    assert type(inputs["source"]) is FvmlDirectionPriorSource and inputs["source"].n_classes == 2

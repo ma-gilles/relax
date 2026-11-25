@@ -10,9 +10,10 @@ the run computed, ``relax.sampling.fvml_direction_prior``), warm-started from th
   prior alone, without the Gaussian log priors) and the final pass.
 * K classes (Class3D): RELION keeps one ``pdf_direction`` per class, the direction's distribution given the class,
   from the posteriors of all particles (the halves only split the work, and both hold the same learned prior).
-  Each class's mixture is fitted to that conditional mass once and shared by the halves, and scores every global
-  search of the class. Local searches (``--sigma_ang``) are refused: the local engine takes one direction prior,
-  not one per class.
+  Each class's mixture is fitted to that conditional mass once and shared by the halves, and scores every search
+  of the class: a global search's rotations, and a local search's (``--sigma_ang``) rows of that class, which
+  RELION scores against every class at each particle's local orientations
+  (``relax.local_search.layout.with_class_rotation_log_priors``).
 
 Under a point group the directions are those of one asymmetric unit, the mixture is invariant under the group, and
 ``N`` counts the lobes of one unit. A mixture is a density on the sphere, so it is evaluated on whatever HEALPix
@@ -63,9 +64,8 @@ class FvmlDirectionPriorSource(InputSource):
         """The source of a run with ``options`` whose prior is the ``n_lobes``-lobe mixture.
 
         ``replacing`` is the source the command chose: only the native one can be replaced. Single-particle runs on
-        one GPU are admitted, with any point group and class count, but a Class3D run without local searches; the
-        asymmetric unit at the first sampling order (or the fit's coarsest, ``FIT_MAX_ORDER``) must hold at least
-        ``n_lobes`` directions.
+        one GPU are admitted, with any point group and class count; the asymmetric unit at the first sampling order
+        (or the fit's coarsest, ``FIT_MAX_ORDER``) must hold at least ``n_lobes`` directions.
         """
         if type(replacing) is not InputSource:
             raise ValueError(
@@ -76,10 +76,6 @@ class FvmlDirectionPriorSource(InputSource):
         if multi_gpu:
             raise ValueError("--fvml-direction-prior runs on one GPU")
         n_classes = int(options.k_class.n_classes)
-        if n_classes > 1 and options.local_search.sigma_ang_deg is not None:
-            raise ValueError(
-                "--fvml-direction-prior with several classes scores global searches only: drop --sigma_ang"
-            )
         symmetry = options.symmetry.point_group
         first_order = min(int(options.schedule.init_healpix_order), fvml_direction_prior.FIT_MAX_ORDER)
         n_directions = fvml_direction_prior.direction_pixels(first_order, symmetry).size
@@ -145,8 +141,8 @@ class FvmlDirectionPriorSource(InputSource):
         self, half_index: int, log_prior: HalfDirectionLogPriors, *, prior: DirectionPrior, healpix_order: int,
         use_local: bool,
     ) -> HalfDirectionLogPriors:
-        """The half's mixtures on the rotation grid of ``healpix_order`` (one per class in Class3D); the run's own
-        ``log_prior`` before the half has fits."""
+        """The half's mixtures on the rotation grid of ``healpix_order`` (one per class in Class3D), for a global
+        or a local search alike; the run's own ``log_prior`` before the half has fits."""
         if prior.fits is None:
             return log_prior
         logger.info(
@@ -160,8 +156,6 @@ class FvmlDirectionPriorSource(InputSource):
             rotation_log_prior = tables[0]
             rotation_log_prior.setflags(write=False)
             return HalfDirectionLogPriors(rotation_log_prior=rotation_log_prior, class_rotation_log_prior=None)
-        if use_local:
-            raise ValueError("an FvML direction prior with several classes scores global searches only")
         class_rotation_log_prior = np.stack(tables)
         class_rotation_log_prior.setflags(write=False)
         return HalfDirectionLogPriors(rotation_log_prior=None, class_rotation_log_prior=class_rotation_log_prior)

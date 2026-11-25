@@ -107,7 +107,7 @@ Through the ports (`relax/refinement/ports.py`), chosen by the command:
   experimental single-particle prior on one GPU. The controller hands the source each half's learned prior after
   the numbered M-step (the native source returns it); this source returns FvML mixtures fitted to it, one per
   class, carried in `DirectionPrior.fits` (in Class3D fitted once and shared by the halves), and scores every later
-  expectation with them as the fixed prior does (Class3D: global searches only). Both ports receive the half's
+  expectation with them as the fixed prior does (Class3D: one table per class, local rows included). Both ports receive the half's
   `DirectionPrior`.
 - `InputSource` (`relax/parity/relion_replay_source.py`, `RelionReplay`): the numbered STAR replay
   (`--perturb_replay_relion_dir`), `--relion_init_dir`'s run_it000 slot and every other override slot, the

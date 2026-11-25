@@ -568,6 +568,33 @@ def expand_local_layout_classes(layout: LocalHypothesisLayout, n_classes: int) -
     )
 
 
+def with_class_rotation_log_priors(layout: LocalHypothesisLayout, class_rotation_log_prior) -> LocalHypothesisLayout:
+    """The class-expanded ``layout`` with each row weighted by its class's direction prior: row ``r`` of class
+    ``k`` on grid rotation ``i`` gets ``class_rotation_log_prior[k, i]``.
+
+    ``class_rotation_log_prior`` is ``(n_classes, n_global_rotations)``, one table per class on the grid the rows
+    were selected on, as ``build_local_hypothesis_layout``'s ``rotation_log_prior`` is for K=1: it replaces the
+    Gaussian direction and psi log priors as the rows' weight (they still select the rows). Applied to the parent
+    rows, before any restriction to a class or drop of one; a pass-2 child takes its parent's value. Rows that are
+    oversampled children index the finer grid and are refused.
+    """
+
+    table = np.asarray(class_rotation_log_prior)
+    if layout.n_classes == 1:
+        raise ValueError("only a class-expanded layout takes one direction prior per class")
+    if layout.oversampled_rows:
+        raise ValueError("oversampled child rows index the finer grid: weight their parents instead")
+    if table.shape != (layout.n_classes, int(layout.n_global_rotations)):
+        raise ValueError(
+            f"a per-class direction prior must be ({layout.n_classes}, {int(layout.n_global_rotations)}), "
+            f"got {table.shape}"
+        )
+    row_class = np.asarray(layout.row_class_flat, dtype=np.int64)
+    rotation_ids = np.asarray(layout.rotation_ids_flat, dtype=np.int64)
+    dtype = np.asarray(layout.rotation_log_priors_flat).dtype
+    return replace(layout, rotation_log_priors_flat=table[row_class, rotation_ids].astype(dtype, copy=False))
+
+
 def restrict_local_layout_classes(layout: LocalHypothesisLayout, image_classes) -> LocalHypothesisLayout:
     """A class-expanded layout keeping, for each image, only the rows of its given class.
 

@@ -292,8 +292,8 @@ def parse_refinement_args(argv=None):
         "uniform component plus N_LOBES FvML lobes fitted to the posterior direction masses after every "
         "iteration (warm-started): each half's in refine, each class's (shared by the halves) in class3d. Under "
         "--sym the mixture is symmetric and N_LOBES counts the lobes of one asymmetric unit. Every later global "
-        "search, local search and final pass scores with it, as --fixed-direction-prior does; class3d refuses "
-        "local searches (--sigma_ang). The model STARs record the fits. Not combinable with "
+        "search, local search (class3d: each class's rows with its class's mixture) and final pass scores with "
+        "it, as --fixed-direction-prior does. The model STARs record the fits. Not combinable with "
         "--fixed-direction-prior or a RELION replay.",
     )
     for flag in ("--relion-projector-capture-dir", "--relion-projector-capture-manifest",

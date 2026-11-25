@@ -865,6 +865,7 @@ def score_numbered_half(
                 replay_prior_translations=replay_prior_translations,
                 class_log_priors=class_log_priors if k_class_enabled else None,
                 direction_log_prior=half.direction_priors.rotation_log_prior,
+                class_direction_log_prior=half.direction_priors.class_rotation_log_prior,
             ),
             batching=LocalBatchPolicy(
                 max_significants=options.adaptive.max_significants,

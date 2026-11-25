@@ -21,6 +21,7 @@ from relax.local_search.layout import (
     local_layout_device_rotations,
     local_layout_host_rotations,
     restrict_local_layout_classes,
+    with_class_rotation_log_priors,
 )
 from relax.local_search.records import (
     LocalSearchData,
@@ -85,6 +86,9 @@ class LocalPriorSpec:
     # local hypothesis of that rotation in place of the Gaussian direction and psi log priors, which then only
     # select the hypotheses; None (RELION's local search) keeps the Gaussian log priors.
     direction_log_prior: object | None = None
+    # Class3D: the same, one table per class (``(n_classes, n_rotations)``): each class's rows are weighted by
+    # their class's prior (``with_class_rotation_log_priors``). None: RELION's Gaussian log priors.
+    class_direction_log_prior: object | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -532,8 +536,9 @@ def _score_half_local_one_shape(
     # PRIOR_ROTTILT_PSI and weight their hypotheses with the local direction/psi
     # Gaussian priors of the hypothesis layout, so the learned global direction
     # prior is not applied here. A direction prior from the input source
-    # (``priors.direction_log_prior``) weights the hypotheses in place of those
-    # Gaussians, which then only select them.
+    # (``priors.direction_log_prior``; in Class3D ``class_direction_log_prior``,
+    # one per class) weights the hypotheses in place of those Gaussians, which
+    # then only select them.
 
     reconstruction_current_size_for_engine = (
         sampling.image_window_size
@@ -631,6 +636,7 @@ def _score_half_local_one_shape(
             image_seed_classes=half.image_seed_classes if n_classes > 1 else None,
             empty_classes=empty_classes,
             direction_log_prior=priors.direction_log_prior,
+            class_direction_log_prior=priors.class_direction_log_prior,
     )
     local_kernel = LocalSearchKernelPolicy(
             disc_type=execution.disc_type,
@@ -684,6 +690,8 @@ def _score_half_local_one_shape(
             # Class3D: pass 1 and pass 2 share the class-expanded parents, so the significant samples
             # carry their class into pass 2's support.
             parent_layout = expand_local_layout_classes(parent_layout, n_classes)
+            if priors.class_direction_log_prior is not None:
+                parent_layout = with_class_rotation_log_priors(parent_layout, priors.class_direction_log_prior)
             if half.image_seed_classes is not None:
                 parent_layout = restrict_local_layout_classes(parent_layout, half.image_seed_classes)
             parent_layout = drop_local_layout_classes(parent_layout, empty_classes)
@@ -1010,8 +1018,10 @@ class LocalSearchGridSpec:
     image_seed_classes: object | None = None
     # Classes at zero weight (RELION's pdf_class == 0): not scored (drop_local_layout_classes).
     empty_classes: tuple = ()
-    # LocalPriorSpec.direction_log_prior, for a layout built from this spec rather than prebuilt (``pass2_layout``).
+    # LocalPriorSpec.direction_log_prior and class_direction_log_prior, for a layout built from this spec rather
+    # than prebuilt (``pass2_layout``).
     direction_log_prior: object | None = None
+    class_direction_log_prior: object | None = None
 
 
 def _run_local_search_iteration(
@@ -1098,6 +1108,8 @@ def _run_local_search_iteration(
     # Class3D local searches (--sigma_ang) score each image's rows against every class.
     if int(grid.n_classes) > 1 and local_layout.n_classes == 1:
         local_layout = expand_local_layout_classes(local_layout, int(grid.n_classes))
+        if grid.class_direction_log_prior is not None:
+            local_layout = with_class_rotation_log_priors(local_layout, grid.class_direction_log_prior)
         if grid.image_seed_classes is not None:
             local_layout = restrict_local_layout_classes(local_layout, grid.image_seed_classes)
         local_layout = drop_local_layout_classes(local_layout, grid.empty_classes)

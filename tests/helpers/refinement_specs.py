@@ -75,6 +75,8 @@ def local_iteration_owners(*args, **values):
             generate_relion_mstep_rotations=values.pop("generate_relion_mstep_rotations", False),
             symmetry=values.pop("symmetry", "C1"),
             n_classes=values.pop("n_classes", 1),
+            direction_log_prior=values.pop("direction_log_prior", None),
+            class_direction_log_prior=values.pop("class_direction_log_prior", None),
         ),
         records.LocalSearchKernelPolicy(
             disc_type=values.pop("disc_type"),

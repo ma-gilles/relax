@@ -419,7 +419,8 @@ halves, as the learned prior is). Under a point group the mixture is invariant u
 asymmetric unit's orbit cells. From the second iteration on, `InputSource.direction_log_prior` hands the scorers
 the mixtures on the grid of the expectation's HEALPix order, with no reset at an order change: in K=1 in every global
 search, local search (weighted as with a fixed prior, without the Gaussian log priors) and the final pass; in
-Class3D in every global search, one table per class (local searches are refused). The model
+Class3D in every global and local search, one table per class (a local search weights each class's copy of a
+row by that class's prior, [`with_class_rotation_log_priors`](../../relax/local_search/layout.py)). The model
 STARs record the fit ([`run_files`](../../relax/refinement/run_files.py)); the derivation and the checks are
 [`fvml_mixture_direction_prior.md`](fvml_mixture_direction_prior.md).
 
