@@ -305,8 +305,11 @@ We ran three refinements on Grace from the snapshot of commit 2faa4a37, with the
 addition, every run's final poses were reconstructed by `relion_reconstruct` without any regularization
 (`reconstruct_with_poses.py`), which scores the poses alone. The control matches the Della run (commit c32edba9, same
 seed) to within 0.0004 in ground-truth FSC area; its per-iteration resolution and `ave_Pmax` agree, and so do
-its median pose errors. We therefore compare `fixed_true_cfsc` with the Della `fixed_true` run. Both rows of a pair
-use the same seed, so the run-to-run spread over seeds is not measured here.
+its median pose errors. We therefore compare `fixed_true_cfsc` with the Della `fixed_true` run. Same-seed
+replicates on other cards give 0.3190 for the control and 0.3490 for `learned_cfsc` (A100s; the latter stopped one
+iteration earlier), and 0.3823 again for `fixed_true_cfsc` (a second V100); the hardware spread is thus at most
+0.0023, against a gain of 0.028 to 0.030. Both rows of a pair use the same seed, so the run-to-run spread over seeds
+is not measured here.
 
 ### 7.1 Results
 
@@ -347,6 +350,13 @@ direction and in-plane errors are both below 10 degrees. Figures and the per-con
   18% of its area.
 - **The cFAR falls** (0.050 to 0.036, and 0.046 to 0.033) because the best cones improve and the worst do not; it
   does not indicate a worse map.
+- **The renders agree.** In ChimeraX renders of the final maps (`render_volume.py`, every map at the isosurface that
+  encloses the ground truth's volume), the cone rule's map resolves features that the control's map merges and that
+  both true-prior maps show: a hole in the central band and the helix above it (a bump in the control, a stub with the
+  cone rule, a rod with the true prior). The same holds for the poses-only reconstructions low-passed alike at 8 A, so
+  it is the poses. The true poses' reconstruction is not smeared along the preferred axis, while every estimated map
+  is; in this cell the smearing comes from misaligned particles, not from missing views. Same-seed runs on other
+  cards look the same. The images are in the run root's `analysis/renders` (`scripts/render_montage.py`).
 
 ### 7.3 Mechanism: the shell FSC and the image size
 
