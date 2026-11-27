@@ -118,7 +118,8 @@ def compute_final_halfmap_prior(
     cone_prior = None
     if settings.conical_prior is not None:
         clock = Stopwatch()
-        # RECOVAR adds the shell prior in the dtype of the weight and the prior volume; the term keeps it.
+        # RECOVAR adds the shell prior in the dtype of the weight and the prior volume; the term keeps it (float32 on
+        # RECOVAR's large-grid single-precision path: estimate_cone_prior).
         solve_dtype = np.result_type(np.finfo(np.dtype(denominators[0].dtype)).dtype, np.dtype(variance.dtype))
         cone_prior = conical_regularization.estimate_cone_prior(
             numerators,

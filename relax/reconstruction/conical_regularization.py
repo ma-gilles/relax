@@ -18,13 +18,18 @@ The statistics are those of RELION's FSC: the two halves' unregularized averages
 accumulators' own axis frame on the full Fourier grid, so the cones and the voxels the prior is added to share one
 frame whatever the accumulator layout. The prior is added to the weight before the solve
 (:meth:`ConePrior.regularized_weight`), on the support of RELION's MAP term (``|k| < p r_max`` and
-``ires >= minres_map``), so the solver's denominator floor and windowing stay RELION's.
+``ires >= minres_map``), so the solver's denominator floor and windowing stay RELION's. The weight is float64 where
+RELAX promotes the shell prior and float32 on RECOVAR's large-grid single-precision path, where RELAX rounds its shell
+prior to float32 too (:func:`large_grid_single_precision`); the statistics and the prior term are built a plane block
+at a time, so neither path forms a full padded grid or an accumulator-sized float64 array beside the accumulators.
 """
 
 from __future__ import annotations
 
+import functools
 import logging
 import math
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 
 import numpy as np
@@ -104,18 +109,21 @@ class ConicalPriorSettings:
         return math.cos(math.radians(float(self.half_angle_deg)))
 
 
-def _full_padded(values, accumulator_shape: tuple) -> np.ndarray:
-    """The centered full padded grid of an accumulator stored full or as a packed half, on the host."""
-    from relax.reconstruction.regularization import packed_half_to_full_numpy
+def _padded_planes(values, accumulator_shape: tuple) -> Callable[[int], np.ndarray]:
+    """A function giving plane ``i0`` (first axis) of the centered full padded grid of an accumulator stored full or
+    as a packed half, on the host. A packed half is expanded one plane at a time, never to the full grid."""
+    from relax.reconstruction.regularization import packed_half_plane_to_full_numpy
 
     shape = tuple(int(s) for s in accumulator_shape)
     array = np.asarray(values)
     full_size = int(np.prod(shape))
     half_size = shape[0] * shape[1] * (shape[2] // 2 + 1)
     if array.size == full_size:
-        return array.reshape(shape)
+        grid = array.reshape(shape)
+        return lambda i0: grid[i0]
     if array.size == half_size:
-        return packed_half_to_full_numpy(array, shape)
+        half_grid = array.reshape(shape[0], shape[1], shape[2] // 2 + 1)
+        return lambda i0: packed_half_plane_to_full_numpy(half_grid, shape, i0)
     raise ValueError(f"an accumulator of grid {shape} has {full_size} or {half_size} entries, got {array.size}")
 
 
@@ -161,10 +169,10 @@ def native_half_averages(numerators, denominators, *, accumulator_shape, padding
 
     def downsample(values, *, complex_values):
         # One padded plane at a time into its native plane: bins of one plane, not of the cube.
-        grid = _full_padded(values, shape)
+        plane_of = _padded_planes(values, shape)
         sums = np.zeros((side, side * side), dtype=np.complex128 if complex_values else np.float64)
         for local, i0 in enumerate(range(s0.start, s0.stop)):
-            plane = grid[i0, s1, s2].reshape(-1)
+            plane = plane_of(i0)[s1, s2].reshape(-1)
             target = sums[int(b0[local])]
             target += np.bincount(plane_labels, weights=plane.real, minlength=side * side)
             if complex_values:
@@ -172,10 +180,11 @@ def native_half_averages(numerators, denominators, *, accumulator_shape, padding
         return sums.reshape(-1)
 
     axis = np.arange(-cube, cube + 1, dtype=np.int64)
-    c0, c1, c2 = np.meshgrid(axis, axis, axis, indexing="ij")
-    radius_cube = np.sqrt((c0 * c0 + c1 * c1 + c2 * c2).astype(np.float64)).reshape(-1)
-    kept = np.flatnonzero((radius_cube > 0.0) & (radius_cube <= float(cube)))
-    coords = np.stack([c0.reshape(-1)[kept], c1.reshape(-1)[kept], c2.reshape(-1)[kept]], axis=1)
+    r2 = (axis[:, None, None] ** 2 + axis[None, :, None] ** 2 + axis[None, None, :] ** 2).reshape(-1)
+    kept = np.flatnonzero((r2 > 0) & (r2 <= cube * cube))  # 0 < |nu| <= r_max + 1, exact on integers
+    radius = np.sqrt(r2[kept].astype(np.float64))
+    del r2
+    coords = np.stack(np.unravel_index(kept, (side,) * 3), axis=1).astype(np.int64) - cube
     averages = np.zeros((2, kept.size), dtype=np.complex128)
     weights = np.zeros((2, kept.size), dtype=np.float64)
     for half, (numerator, denominator) in enumerate(zip(numerators, denominators, strict=True)):
@@ -184,7 +193,7 @@ def native_half_averages(numerators, denominators, *, accumulator_shape, padding
         has_weight = weight > 0.0
         averages[half, has_weight] = data[has_weight] / weight[has_weight]
         weights[half] = weight
-    return NativeGrid(r_max=int(r_max), coords=coords, radius=radius_cube[kept], averages=averages, weights=weights)
+    return NativeGrid(r_max=int(r_max), coords=coords, radius=radius, averages=averages, weights=weights)
 
 
 def relion_ssnr(fsc, *, whole: bool) -> np.ndarray:
@@ -373,8 +382,9 @@ class ConePrior:
 
     ``tau2_shells`` holds RELION's shell curve of each weight set (each half of a split-half M-step, the joined
     halves of the final one); ``ratio_cubes`` the per-voxel ratios (:func:`voxel_ratio_cubes`); ``sums``,
-    ``ratios``, ``measured`` and ``shrinkage`` the cone statistics they come from. ``solve_dtype`` is the dtype of RELION's
-    regularized weight on this path (float64 when the shell prior is promoted, as the numbered solves do).
+    ``ratios``, ``measured`` and ``shrinkage`` the cone statistics they come from. ``solve_dtype`` is the dtype of the
+    regularized weight the solve takes (:func:`estimate_cone_prior`: float64 where RELAX promotes the shell prior,
+    float32 on RECOVAR's large-grid single-precision path).
     """
 
     settings: ConicalPriorSettings
@@ -398,13 +408,14 @@ class ConePrior:
         """RELION's support radius of this M-step, ``current_size // 2``."""
         return int(self.current_size) // 2
 
-    def weight_term(self, index: int, *, packed: bool) -> np.ndarray:
-        """``1 / (p^3 T tau2(k))`` of weight set ``index`` at every voxel of the accumulator (flat, float64), 0
-        outside RELION's MAP support (``|k| >= p r_max`` or ``ires < minres_map``).
+    def _weight_term_blocks(self, index: int, *, packed: bool) -> Iterator[tuple[slice, np.ndarray]]:
+        """``1 / (p^3 T tau2(k))`` of weight set ``index`` on the accumulator, ``_PLANES_PER_BLOCK`` first-axis planes
+        at a time: ``(planes, values)`` with float64 ``values`` of shape ``(planes, n1, m)``, 0 outside RELION's MAP
+        support (``|k| >= p r_max`` or ``ires < minres_map``).
 
         ``tau2(k) = tau2_shells[index][ires(k)] * rho(ROUND(k / p))`` with ``ires(k) = ROUND(|k| / p)`` clipped to
         the curve, as RECOVAR maps a shell curve onto the accumulator. ``packed`` selects the packed-half layout
-        (last axis ``0 .. n // 2``) over the full one.
+        (last axis ``0 .. n // 2``, ``m = n // 2 + 1``) over the full one.
         """
         shape = tuple(int(s) for s in self.accumulator_shape)
         p = int(self.padding_factor)
@@ -418,7 +429,6 @@ class ConePrior:
         rho = self.ratio_cubes[index]
         scale = float(p**3) * float(self.tau2_fudge)
         k1_sq = freqs[1][:, None] ** 2 + freqs[2][None, :] ** 2
-        out = np.zeros((len(freqs[0]), len(freqs[1]), len(freqs[2])), dtype=np.float64)
         for start in range(0, len(freqs[0]), _PLANES_PER_BLOCK):
             block = slice(start, min(start + _PLANES_PER_BLOCK, len(freqs[0])))
             r2 = freqs[0][block, None, None] ** 2 + k1_sq[None, :, :]
@@ -429,31 +439,42 @@ class ConePrior:
                 raise ValueError("a shell tau2 inside the MAP support is zero; RELION's zero-tau2 fallback is not reproduced")
             local_rho = rho[native[0][block, None, None], native[1][None, :, None], native[2][None, None, :]]
             with np.errstate(divide="ignore"):
-                out[block] = np.where(support, 1.0 / (scale * shell_tau2 * local_rho), 0.0)
-        return out.reshape(-1)
+                yield block, np.where(support, 1.0 / (scale * shell_tau2 * local_rho), 0.0)
 
     def regularized_weight(self, index: int, weight):
         """The accumulator weight ``weight`` plus weight set ``index``'s prior term, in ``solve_dtype``, in the
         layout and shape of ``weight`` (a host array stays on the host, a device array on the device). The solve
-        then runs without a shell prior (``tau=None``)."""
-        from recovar.reconstruction import relion_functions
+        then runs without a shell prior (``tau=None``).
 
-        reconstruction_shape = relion_functions._relion_reconstruction_padded_shape(self.volume_shape, self.padding_factor)
-        if relion_functions.large_grid_postprocess_single_precision_enabled(int(np.prod(reconstruction_shape))):
-            raise ValueError("the conical-FSC prior does not take RECOVAR's large-grid single-precision reconstruction")
+        A host weight's sum is formed a block of planes at a time, and a device weight gets the term as one host
+        array in ``solve_dtype``, added on the device in that array's buffer: no accumulator-sized array wider than
+        ``solve_dtype`` is made, which keeps RECOVAR's large-grid path within its memory plan.
+        """
         shape = tuple(int(s) for s in self.accumulator_shape)
         full_size = int(np.prod(shape))
-        packed = int(np.size(weight)) != full_size
-        term = self.weight_term(index, packed=packed)
-        if term.size != int(np.size(weight)):
-            raise ValueError(f"an accumulator weight of {np.size(weight)} entries does not fit grid {shape}")
+        half_size = shape[0] * shape[1] * (shape[2] // 2 + 1)
+        size = int(np.size(weight))
+        if size not in (full_size, half_size):
+            raise ValueError(f"an accumulator weight of {size} entries does not fit grid {shape}")
+        packed = size != full_size
         dtype = np.dtype(self.solve_dtype)
         if isinstance(weight, np.ndarray):
-            return (weight.real.reshape(-1).astype(dtype) + term.astype(dtype)).reshape(weight.shape)
+            out = np.empty(weight.shape, dtype=dtype)
+            out_planes, weight_planes = out.reshape(shape[0], -1), weight.reshape(shape[0], -1)
+            for planes, term in self._weight_term_blocks(index, packed=packed):
+                term = term.reshape(len(term), -1).astype(dtype)
+                out_planes[planes] = weight_planes[planes].real.astype(dtype) + term
+            return out
+        import jax
         import jax.numpy as jnp
 
         device_weight = jnp.asarray(weight)
-        return (device_weight.real.reshape(-1).astype(dtype) + jnp.asarray(term, dtype=dtype)).reshape(device_weight.shape)
+        term = np.empty((shape[0], size // shape[0]), dtype=dtype)
+        for planes, values in self._weight_term_blocks(index, packed=packed):
+            term[planes] = values.reshape(len(values), -1)
+        term_device = jax.device_put(term.reshape(device_weight.shape), device_weight.sharding)
+        del term
+        return _add_weight_into_term()(term_device, device_weight)
 
     def star_tables(self, index: int) -> tuple[list, dict]:
         """Weight set ``index``'s statistics as a model STAR's extra blocks: the settings (list items) and one row
@@ -502,6 +523,29 @@ class ConePrior:
             )
 
 
+@functools.cache
+def _add_weight_into_term():
+    """A jitted ``term + weight`` (the weight's real part cast to the term's dtype) written into the term's buffer."""
+    import jax
+
+    return jax.jit(lambda term, weight: term + weight.real.astype(term.dtype), donate_argnums=0)
+
+
+def large_grid_single_precision(volume_shape, accumulator_shape, padding_factor: int) -> bool:
+    """Whether RECOVAR solves this grid on its large-grid single-precision path: the accumulator or the padded
+    reconstruction grid reaches its voxel threshold (``relion_functions.post_process_from_filter_v2``, which then casts
+    the weight to float32; the host-staged solve of ``volume_solver.reconstruct_volume_eager`` takes only float32)."""
+    from recovar.reconstruction import relion_functions
+
+    reconstruction_shape = relion_functions._relion_reconstruction_padded_shape(
+        tuple(int(s) for s in volume_shape), int(padding_factor)
+    )
+    return any(
+        relion_functions.large_grid_postprocess_single_precision_enabled(int(np.prod(grid)))
+        for grid in (accumulator_shape, reconstruction_shape)
+    )
+
+
 def estimate_cone_prior(
     numerators,
     denominators,
@@ -522,6 +566,9 @@ def estimate_cone_prior(
     A split-half M-step (``whole=False``) passes each half's shell curve in ``tau2_shells`` and gets a ratio per half
     from that half's weight; the final M-step (``whole=True``) passes the joined halves' one curve and gets one ratio
     from the summed weights, with RELION's whole-map SSNR.
+
+    ``solve_dtype`` is the dtype of the regularized weight on RECOVAR's default solve; on its large-grid
+    single-precision path (:func:`large_grid_single_precision`) the weight is float32, as RECOVAR's own shell prior is.
     """
     if len(numerators) != 2 or len(denominators) != 2:
         raise ValueError("the conical-FSC prior needs the two half accumulators")
@@ -552,5 +599,7 @@ def estimate_cone_prior(
         measured=measured,
         shrinkage=shrinkage,
         ratio_cubes=cubes,
-        solve_dtype=np.dtype(solve_dtype),
+        solve_dtype=np.dtype(
+            np.float32 if large_grid_single_precision(volume_shape, accumulator_shape, padding_factor) else solve_dtype
+        ),
     )

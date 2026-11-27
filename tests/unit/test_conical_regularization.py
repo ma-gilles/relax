@@ -55,22 +55,22 @@ def _packed(values, shape):
     return np.asarray(regularization._packed_half_of_hermitian_full(values, shape))
 
 
-def _unit_prior(tau2_shells, shape, *, whole=False, solve_dtype=np.float64):
+def _unit_prior(tau2_shells, shape, *, whole=False, solve_dtype=np.float64, current_size=CURRENT_SIZE):
     """A ConePrior whose ratios are 1 everywhere: RELION's shell prior."""
-    cube = CURRENT_SIZE // 2 + 1
+    cube = current_size // 2 + 1
     side = 2 * cube + 1
     n_sets = len(tau2_shells)
-    zeros = np.zeros((SETTINGS.n_axes, CURRENT_SIZE // 2 + 1))
+    zeros = np.zeros((SETTINGS.n_axes, current_size // 2 + 1))
     sums = cr.ConeShellSums(
         zeros.astype(np.int64), zeros, np.stack([zeros, zeros]), np.stack([zeros] * n_sets),
         zeros[0].astype(np.int64), zeros[0], np.stack([zeros[0]] * 2), np.stack([zeros[0]] * n_sets),
     )
     return cr.ConePrior(
         settings=SETTINGS, whole=whole, volume_shape=(BOX,) * 3, accumulator_shape=shape, padding_factor=PAD,
-        current_size=CURRENT_SIZE, tau2_fudge=1.0, minres_map=2, tau2_shells=tuple(tau2_shells), sums=sums,
-        ratios=np.ones((n_sets, SETTINGS.n_axes, CURRENT_SIZE // 2 + 1)),
-        measured=np.zeros((SETTINGS.n_axes, CURRENT_SIZE // 2 + 1), dtype=bool),
-        shrinkage=np.zeros(CURRENT_SIZE // 2 + 1),
+        current_size=current_size, tau2_fudge=1.0, minres_map=2, tau2_shells=tuple(tau2_shells), sums=sums,
+        ratios=np.ones((n_sets, SETTINGS.n_axes, current_size // 2 + 1)),
+        measured=np.zeros((SETTINGS.n_axes, current_size // 2 + 1), dtype=bool),
+        shrinkage=np.zeros(current_size // 2 + 1),
         ratio_cubes=np.ones((n_sets, side, side, side)), solve_dtype=np.dtype(solve_dtype),
     )
 
@@ -108,6 +108,73 @@ def test_unit_ratios_reproduce_relion_shell_reconstruction(packed):
     assert_matches(np.asarray(cone_map), np.asarray(relion_map))
 
 
+@pytest.mark.parametrize(
+    "layout, current_size",
+    [("full", CURRENT_SIZE), ("packed_host", CURRENT_SIZE), ("packed_host", BOX), ("packed_device", CURRENT_SIZE)],
+)
+def test_unit_ratios_reproduce_relion_shell_reconstruction_on_the_large_grid_path(monkeypatch, layout, current_size):
+    """On RECOVAR's large-grid single-precision path (forced on a small grid by lowering its voxel threshold) the
+    prior's weight is float32, and with every ratio 1 the cone map is RELAX's shell-prior map on that path.
+
+    The packed host layout takes the host-staged solve: at current size 32 the 67^3 accumulator exceeds the 64^3
+    reconstruction grid, the Stage-A branch that takes only a float32 weight. A device weight is not donated.
+    """
+    import jax.numpy as jnp
+
+    monkeypatch.setenv("RECOVAR_RELION_POSTPROCESS_LARGE_GRID_SINGLE_PRECISION", "auto")
+    monkeypatch.setenv("RECOVAR_RELION_POSTPROCESS_SINGLE_PRECISION_MIN_VOXELS", "1000")
+    rng = np.random.default_rng(5)
+    shape = _accumulator_shape(current_size)
+    (data, data2), (weight, weight2) = _hermitian_pair(
+        shape, rng, weight_of=lambda a, b, c: 1.0 + 0.1 * (a * a + b * b + c * c)
+    )
+    estimated = cr.estimate_cone_prior(
+        (data, data2), (weight, weight2), [np.full(BOX // 2 + 1, 0.05)] * 2, settings=SETTINGS,
+        volume_shape=(BOX,) * 3, accumulator_shape=shape, padding_factor=PAD, current_size=current_size,
+        tau2_fudge=1.0, minres_map=2, whole=False, solve_dtype=np.float64,
+    )
+    assert cr.large_grid_single_precision((BOX,) * 3, shape, PAD)
+    assert estimated.solve_dtype == np.float32
+    tau2 = rng.uniform(0.5, 2.0, size=BOX // 2 + 1) * 1e-2
+    data, weight = data.astype(np.complex64), weight.astype(np.float32)
+    if layout == "full":
+        data, weight = data.reshape(-1), weight.reshape(-1)
+    else:
+        data, weight = _packed(data, shape), _packed(weight, shape)
+    if layout == "packed_device":
+        data, weight = jnp.asarray(data), jnp.asarray(weight)
+    settings = _settings()
+    relion_map = settings.reconstruct(
+        weight, data, tau=np.asarray(tau2, dtype=np.float64), current_size=current_size,
+        accumulator_volume_shape=shape, tau_is_1d=True,
+    )
+    unit = _unit_prior([tau2], shape, solve_dtype=estimated.solve_dtype, current_size=current_size)
+    regularized = unit.regularized_weight(0, weight)
+    assert regularized.dtype == np.float32 and regularized.shape == weight.shape
+    assert isinstance(regularized, np.ndarray) == isinstance(weight, np.ndarray)
+    if layout == "packed_device":
+        assert not weight.is_deleted()
+    cone_map = settings.reconstruct(
+        regularized, data, tau=None, current_size=current_size, accumulator_volume_shape=shape, tau_is_1d=True,
+    )
+    assert_matches(np.asarray(cone_map), np.asarray(relion_map))
+
+
+def test_the_default_grid_path_keeps_the_callers_dtype():
+    """Below RECOVAR's large-grid threshold the prior keeps the caller's dtype (float64 for the numbered solves)."""
+    rng = np.random.default_rng(6)
+    shape = _accumulator_shape()
+    data, weights = _hermitian_pair(shape, rng, weight_of=lambda a, b, c: 1.0 + np.abs(a))
+    assert not cr.large_grid_single_precision((BOX,) * 3, shape, PAD)
+    prior = cr.estimate_cone_prior(
+        data, weights, [np.full(BOX // 2 + 1, 0.05)] * 2, settings=SETTINGS, volume_shape=(BOX,) * 3,
+        accumulator_shape=shape, padding_factor=PAD, current_size=CURRENT_SIZE, tau2_fudge=1.0, minres_map=2,
+        whole=False, solve_dtype=np.float64,
+    )
+    assert prior.solve_dtype == np.float64
+    assert prior.regularized_weight(0, weights[0].reshape(-1)).dtype == np.float64
+
+
 def test_shell_fsc_matches_relion_backprojector_fsc_with_pairs_counted_once():
     """The native averages are RELION's downsampled averages: their shell FSC is the backprojector FSC that counts
     every Hermitian pair once."""
@@ -142,8 +209,9 @@ def test_packed_and_full_accumulators_give_one_prior():
         [_packed(d, shape) for d in data], [_packed(w, shape) for w in weights], tau2, **common
     )
     assert_matches(packed.ratios, full.ratios)
-    full_term = full.weight_term(1, packed=False)
-    packed_term = packed.weight_term(1, packed=True)
+    zero_weight = np.zeros(shape)
+    full_term = full.regularized_weight(1, zero_weight.reshape(-1))
+    packed_term = packed.regularized_weight(1, _packed(zero_weight, shape))
     assert_matches(packed_term, _packed(full_term.reshape(shape), shape))
 
 

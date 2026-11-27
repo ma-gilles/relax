@@ -571,7 +571,8 @@ def estimate_split_half_cone_prior(
     """The conical-FSC prior of a numbered K=1 M-step (``settings.conical_prior``'s cones): each half's RELION shell
     tau2 of ``split_prior`` times its per-voxel cone ratio, from this iteration's half accumulators.
 
-    The solves promote the shell prior to float64 (``numbered_reconstruction``), so the prior term is float64.
+    The solves promote the shell prior to float64 (``numbered_reconstruction``), so the prior term is float64, except on
+    RECOVAR's large-grid single-precision path, where it is float32 (``conical_regularization.estimate_cone_prior``).
     See docs/math/conical_fsc_regularization.md.
     """
 

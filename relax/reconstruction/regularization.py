@@ -1098,23 +1098,48 @@ def packed_half_to_full_numpy(values, padded_shape) -> np.ndarray:
     padded_shape = tuple(int(s) for s in padded_shape)
     half_grid = np.asarray(values).reshape(fourier_transform_utils.volume_shape_to_half_volume_shape(padded_shape))
     n0, n1, n2 = padded_shape
-    ic2 = n2 // 2
-    if n2 % 2 == 0:
-        packed_idx = np.concatenate([np.arange(ic2, n2, dtype=np.int64), np.asarray([0], dtype=np.int64)])
-        redundant = np.arange(1, ic2, dtype=np.int64)
-    else:
-        packed_idx = np.arange(ic2, n2, dtype=np.int64)
-        redundant = np.arange(0, ic2, dtype=np.int64)
+    packed_idx, redundant = _packed_half_columns(n2)
 
     full_grid = np.zeros(padded_shape, dtype=half_grid.dtype)
     full_grid[:, :, packed_idx] = half_grid
     if redundant.size:
-        partner_i0 = (n0 - (n0 % 2) - np.arange(n0, dtype=np.int64)) % n0
-        partner_i1 = (n1 - (n1 % 2) - np.arange(n1, dtype=np.int64)) % n1
+        partner_i0 = _hermitian_partner_index(n0)
+        partner_i1 = _hermitian_partner_index(n1)
         conj_partner = np.conj(half_grid[partner_i0[:, None], partner_i1[None, :], :])
-        source_cols = ic2 - redundant
+        source_cols = n2 // 2 - redundant
         full_grid[:, :, redundant] = conj_partner[:, :, source_cols]
     return full_grid
+
+
+def packed_half_plane_to_full_numpy(half_grid: np.ndarray, padded_shape, i0: int) -> np.ndarray:
+    """Plane ``i0`` (first axis) of :func:`packed_half_to_full_numpy` without forming the full volume.
+
+    ``half_grid`` is the packed half on the host, shaped ``(n0, n1, n2 // 2 + 1)``; the result is ``(n1, n2)``: the
+    packed columns of plane ``i0`` and the conjugated Hermitian mates from plane ``-i0``.
+    """
+    n0, n1, n2 = (int(s) for s in padded_shape)
+    packed_idx, redundant = _packed_half_columns(n2)
+    plane = np.zeros((n1, n2), dtype=half_grid.dtype)
+    plane[:, packed_idx] = half_grid[i0]
+    if redundant.size:
+        partner = half_grid[_hermitian_partner_index(n0)[i0]][_hermitian_partner_index(n1)]
+        plane[:, redundant] = np.conj(partner[:, n2 // 2 - redundant])
+    return plane
+
+
+def _packed_half_columns(n2: int) -> tuple[np.ndarray, np.ndarray]:
+    """``(packed_idx, redundant)``: the full-grid columns of the packed half's last axis, in packed order (the
+    centered non-negative frequencies, an even axis' Nyquist column last), and the columns filled from mates."""
+    ic2 = n2 // 2
+    if n2 % 2 == 0:
+        packed_idx = np.concatenate([np.arange(ic2, n2, dtype=np.int64), np.asarray([0], dtype=np.int64)])
+        return packed_idx, np.arange(1, ic2, dtype=np.int64)
+    return np.arange(ic2, n2, dtype=np.int64), np.arange(0, ic2, dtype=np.int64)
+
+
+def _hermitian_partner_index(n: int) -> np.ndarray:
+    """The index of ``-k`` for each index ``k`` of a centered axis of length ``n`` (modulo ``n``)."""
+    return (n - (n % 2) - np.arange(n, dtype=np.int64)) % n
 
 
 def compute_relion_fsc_from_backprojector(

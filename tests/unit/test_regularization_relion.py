@@ -808,6 +808,17 @@ def test_hermitian_full_accumulators_take_the_streamed_fsc_with_equal_result(sha
         )
 
 
+@pytest.mark.parametrize("accumulator_shape", [(8, 8, 8), (9, 9, 9), (6, 7, 8)])
+def test_packed_half_planes_are_the_planes_of_the_full_expansion(accumulator_shape):
+    """``packed_half_plane_to_full_numpy`` gives each first-axis plane of ``packed_half_to_full_numpy``."""
+    half_shape = fourier_transform_utils.volume_shape_to_half_volume_shape(accumulator_shape)
+    rng = np.random.default_rng(616)
+    half = (rng.normal(size=half_shape) + 1j * rng.normal(size=half_shape)).astype(np.complex64)
+    full = regularization_relion.packed_half_to_full_numpy(half, accumulator_shape)
+    for i0 in range(accumulator_shape[0]):
+        assert_matches(regularization_relion.packed_half_plane_to_full_numpy(half, accumulator_shape, i0), full[i0])
+
+
 def test_host_tau2_weight_sum_matches_the_converted_sum(monkeypatch):
     """The host route adds the float32 halves in float64 in one ufunc and matches converting both first."""
     shape = (8, 8, 8)
