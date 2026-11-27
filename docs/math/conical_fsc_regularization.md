@@ -267,18 +267,28 @@ power over its own Jensen factor.
 - **The final M-step.** `final_reconstruction.compute_final_halfmap_prior` builds the whole-data prior (summed weights,
   RELION's whole-map SSNR) and `reconstruct_final_halfmaps` solves the three maps with it.
 - **Statistics.** `native_half_averages` bins every padded voxel of both halves onto the native grid in the
-  accumulators' own axis frame (the full grid, so a packed half and its full expansion give the same statistics); the
-  cones and the voxels the term is added to share that frame. `cone_shell_sums` gives the sums of section 3.2,
+  accumulators' own axis frame, one plane of the full grid at a time (a packed half is expanded plane by plane,
+  `regularization.packed_half_plane_to_full_numpy`, so a packed half and its full expansion give the same statistics);
+  the cones and the voxels the term is added to share that frame. `cone_shell_sums` gives the sums of section 3.2,
   `cone_fsc_shrinkage` gives `lambda_s` of (4), `cone_to_shell_ratios` gives (5), `voxel_ratio_cubes` gives (6) on the
   native cube of half-width `r_max + 1` (which holds `ROUND(k / p)` for every `k` of the support), and
-  `ConePrior.weight_term` gives the term of (7) on the accumulator, with RECOVAR's `ires` and support.
+  `ConePrior.regularized_weight` adds the term of (7) to the weight a block of planes at a time, with RECOVAR's `ires`
+  and support.
 - **Records.** Each half model STAR of a numbered iteration carries the blocks `data_relax_cfsc_regularization` (half
   angle, axes, minimum voxels) and `data_relax_cfsc_regularization_bins` (one row per cone-shell bin: axis, voxels,
   cFSC, the shell's `lambda`, ratio, whether measured); the log has one line per M-step with the spread of the
   ratios.
+- **Precision.** The regularized weight has the dtype the shell prior would have in the same solve. The numbered solves
+  promote RELION's shell prior to float64, as RELION's `BackProjector::reconstruct` works in double, so the weight is
+  float64 there. From 200 M voxels in the accumulator or in the padded reconstruction grid (box 293 and up at padding
+  2), RECOVAR solves in single precision (`relion_functions.post_process_from_filter_v2`): it casts the weight and the
+  shell prior to float32, and its host-staged solve (`volume_solver.reconstruct_volume_eager`) takes only a float32
+  weight, so the cone prior's weight is float32 there (`conical_regularization.large_grid_single_precision`, decided in
+  `estimate_cone_prior`). A host weight (large grids are solved from host-staged accumulators) gets the term a block of
+  planes at a time in one new float32 array, and a device weight gets it in a donated buffer, so no accumulator-sized
+  float64 array is made.
 - **Admission.** K=1 single-particle runs only; not with `--solvent_correct_fsc` (which replaces the FSC the ratios
-  are anchored to), a RELION replay or a frozen boundary, nor on a reconstruction grid large enough for RECOVAR's
-  single-precision path (200 M voxels; box 256 at padding 2 is 134 M).
+  are anchored to), a RELION replay or a frozen boundary.
 
 ## 6. Checks
 
@@ -288,6 +298,20 @@ counted once; a packed half and its full expansion give the same prior; a better
 the others above when the FSC saturates; a cone without shared signal gets a ratio far below 1; cones that differ by
 noise alone keep ratios near 1 (the shrinkage cuts the median |log ratio| at least fivefold, measured 15 to 25 fold);
 the whole-data prior has one weight set; RELION's SSNR transform; the cone coverage check; the STAR blocks parse back.
+On RECOVAR's large-grid path, forced on the test grid by lowering its voxel threshold, the weight is float32 and unit
+ratios reproduce RELAX's shell-prior map on that path, in the full, packed host (host-staged, including the Stage-A
+branch that takes only float32) and packed device layouts; below the threshold the weight keeps the caller's dtype.
+`tests/unit/test_regularization_relion.py` checks the plane-by-plane expansion of a packed half against the full one.
+
+End to end, we reran `learned_cfsc` of Section 7 (same command, seed and card model, RTX 8000) with RECOVAR's voxel
+threshold lowered to 1.5e7, so that every reconstruction, including the 512^3 inverse-FFT grid of box 256, took the
+large-grid path (job 62763381, the large-grid change on 2852a3db). Its per-iteration ground-truth FSC area stays within
+6.3e-5 of the double-precision run through iteration 12, and the median cone ratio within 0.002. At iteration 13 the
+auto-sampling stayed at HEALPix order 3 for two more iterations, where the double-precision run moved to order 4, and
+the trajectories part from there: the run stopped after 18 iterations instead of 17, with a ground-truth FSC area of
+0.358 against 0.347 and a median direction error of 37.5 against 40.6 degrees. We read this as one draw of the spread
+that a flipped discrete decision causes, not as a gain from single precision. The difference also includes RECOVAR's
+own float32 arrays on that path, which this run cannot separate from the cone prior's float32 weight.
 
 ## 7. Benchmark test
 
@@ -372,8 +396,26 @@ size it leads to; a run with the cone prior and the control's `current_size` sch
 
 ### 7.4 Cost
 
-The cone prior takes 0.2 s per M-step. The larger image size makes the iterations slower (770 to 1140 s against 450 to
-580 s at HEALPix order 3 on the RTX 8000), and the cFSC run took 4.4 h against 3.6 h for the control on the same node.
+Estimating the cone prior takes 0.2 to 0.5 s per M-step while the image size is 56 to 72, 2.0 to 3.4 s at 114 to 132,
+and 25 to 27 s for the final pass at the full size 256 (both cFSC runs). It runs on the host and grows as `r_max^3`
+times the number of cones: at box 256 the membership tests and sums of `cone_shell_sums` and `voxel_ratio_cubes`, which
+compute the membership of every voxel once each, take three quarters of it, and the native binning the rest. The larger
+image size makes the iterations slower (770 to 1140 s against 450 to 580 s at HEALPix order 3 on the RTX 8000), and the
+cFSC run took 4.4 h against 3.6 h for the control on the same node.
+
+At large boxes we measured the host cost on synthetic packed accumulators (complex64 data, float32 weights) at the full
+image size (`day` node, job 62763345; the code before the large-grid change, which refused these grids, for
+comparison):
+
+| Box (accumulator) | Accumulators | Statistics: time, memory | Weight: time, memory | Before: statistics, weight memory |
+| --- | --- | --- | --- | --- |
+| 512 (1027^3) | 12.1 GiB | 238 s, 11.6 GiB | 21 s, 2.4 GiB | 25.7 GiB, 12.1 GiB |
+| 800 (1603^3) | 46.1 GiB | 1147 s, 42.3 GiB | 74 s, 8.6 GiB | 97.3 GiB, 46.0 GiB |
+
+Memory is the resident peak above the accumulators; the statistics keep the per-voxel ratio cubes (2.0 and 7.7 GiB)
+for the solves, and the weight is one float32 copy of a half's weight. A full-size M-step at box 800 thus needs about as
+much host memory again as its accumulators and 19 min of host time; numbered M-steps at smaller image sizes need the
+fraction `(current_size / box)^3` of both.
 
 ### 7.5 Limitations
 
